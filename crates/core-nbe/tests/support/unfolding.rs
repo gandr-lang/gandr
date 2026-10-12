@@ -149,8 +149,9 @@ pub struct Unfolded(pub u64);
                 match *node {
                     ValueType::Data { ref arguments, .. } => 1_u64.saturating_add(u64::try_from(arguments.len()).unwrap_or(u64::MAX)),
                     ValueType::Record(ref fields) => 1_u64.saturating_add(u64::try_from(fields.len()).unwrap_or(u64::MAX)),
-                    ValueType::Base(_) | ValueType::Unit | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => 1,
-                    ValueType::Stack { .. } | ValueType::PathUniverse(..) | ValueType::Product(_, _) | ValueType::Sum(_, _) | ValueType::StaticPi { .. } => 3,
+                    ValueType::Product(ref parts) | ValueType::Sum(ref parts) => 1_u64.saturating_add(u64::try_from(parts.len()).unwrap_or(u64::MAX)),
+                    ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => 1,
+                    ValueType::Stack { .. } | ValueType::PathUniverse(..) | ValueType::StaticPi { .. } => 3,
                     ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 2,
                 }
             },
@@ -359,13 +360,13 @@ pub fn unfolded(
                     | ValueType::PathUniverse(source, target) => {
                         pending.extend([CoreNode::Value(source), CoreNode::Value(target)]);
                     },
+                    | ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
+                        pending.extend(parts.iter().map(|&part| CoreNode::ValueType(part)));
+                    },
                     | ValueType::Base(_)
-                    | ValueType::Unit
                     | ValueType::Universe { .. }
                     | ValueType::Abstract(_)
                     | ValueType::Unknown => {},
-                    | ValueType::Product(first, second)
-                    | ValueType::Sum(first, second)
                     | ValueType::StaticPi {
                         domain: first,
                         codomain: second,

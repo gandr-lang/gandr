@@ -2266,7 +2266,7 @@ mod tests
         ));
         let mut arena = CoreArena::new();
         let integer_type = arena.value_type_base(BaseType::Integer);
-        let product = arena.value_type_product(integer_type, foreign_value_type);
+        let product = arena.value_type_product(&[integer_type, foreign_value_type]);
         programs.push((
             Sort::ValueType,
             nested(

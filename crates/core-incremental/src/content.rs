@@ -373,12 +373,11 @@ pub enum ContentNode
     },
     /// A base-type atom.
     Base(BaseType),
-    /// The unit type.
-    UnitType,
-    /// A product type.
-    Product(NodeIndex, NodeIndex),
-    /// A sum type.
-    Sum(NodeIndex, NodeIndex),
+    /// A product type over its components, in order; the empty product is
+    /// the unit type.
+    Product(Vec<NodeIndex>),
+    /// A sum type over its summands, in order.
+    Sum(Vec<NodeIndex>),
     /// A finite-list type.
     List(NodeIndex),
     /// A thunk type.
@@ -701,9 +700,8 @@ impl ContentNode
         | Self::Stack { .. }
         | Self::PathUniverse(..)
         | Self::Base(_)
-        | Self::UnitType
-        | Self::Product(..)
-        | Self::Sum(..)
+        | Self::Product(_)
+        | Self::Sum(_)
         | Self::List(_)
         | Self::ThunkType(_)
         | Self::Universe { .. }
@@ -778,9 +776,8 @@ impl ContentNode
             | Self::Stack { .. }
             | Self::PathUniverse(..)
             | Self::Base(_)
-            | Self::UnitType
-            | Self::Product(..)
-            | Self::Sum(..)
+            | Self::Product(_)
+            | Self::Sum(_)
             | Self::List(_)
             | Self::ThunkType(_)
             | Self::Universe { .. }
@@ -846,7 +843,6 @@ impl ContentNode
             | Self::ListNil
             | Self::Literal(_)
             | Self::Base(_)
-            | Self::UnitType
             | Self::Universe { .. }
             | Self::Abstract(_)
             | Self::Unresolved(_)
@@ -878,8 +874,7 @@ impl ContentNode
                 on_left: b,
                 on_right: c,
             } => actual == Some(&[(a, V), (b, M), (c, M)][..]),
-            | Self::Product(a, b)
-            | Self::Sum(a, b)
+            | Self::Product(ref parts) | Self::Sum(ref parts) => ret.iter().eq(parts.iter().map(|&part| (part, A))),
             | Self::StaticPi {
                 domain: a,
                 codomain: b,
@@ -970,7 +965,6 @@ impl ContentNode
             | Self::ListNil
             | Self::Literal(_)
             | Self::Base(_)
-            | Self::UnitType
             | Self::Universe { .. }
             | Self::Abstract(_)
             | Self::Unresolved(_)
@@ -1015,8 +1009,9 @@ impl ContentNode
                 on_left,
                 on_right,
             } => Children::of(&[(scrutinee, V), (on_left, M), (on_right, M)]),
-            | Self::Product(first, second)
-            | Self::Sum(first, second)
+            | Self::Product(ref parts) | Self::Sum(ref parts) => {
+                Children::default().followed_by(parts, A)
+            },
             | Self::StaticPi {
                 domain: first,
                 codomain: second,
@@ -1109,9 +1104,8 @@ impl ContentNode
             | Self::Force(_)
             | Self::Case { .. }
             | Self::Base(_)
-            | Self::UnitType
-            | Self::Product(..)
-            | Self::Sum(..)
+            | Self::Product(_)
+            | Self::Sum(_)
             | Self::List(_)
             | Self::ThunkType(_)
             | Self::Universe { .. }
@@ -2317,18 +2311,21 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 ContentNode::PathUniverse(source, self.discover(ArenaNode::Value(target)))
             },
             | ValueType::Base(base) => ContentNode::Base(base),
-            | ValueType::Unit => ContentNode::UnitType,
             | ValueType::List(element) => {
                 ContentNode::List(self.discover(ArenaNode::ValueType(element)))
             },
-            | ValueType::Product(first, second) => {
-                let first = self.discover(ArenaNode::ValueType(first));
-                ContentNode::Product(first, self.discover(ArenaNode::ValueType(second)))
-            },
-            | ValueType::Sum(first, second) => {
-                let first = self.discover(ArenaNode::ValueType(first));
-                ContentNode::Sum(first, self.discover(ArenaNode::ValueType(second)))
-            },
+            | ValueType::Product(ref parts) => ContentNode::Product(
+                parts
+                    .iter()
+                    .map(|&part| self.discover(ArenaNode::ValueType(part)))
+                    .collect(),
+            ),
+            | ValueType::Sum(ref parts) => ContentNode::Sum(
+                parts
+                    .iter()
+                    .map(|&part| self.discover(ArenaNode::ValueType(part)))
+                    .collect(),
+            ),
             | ValueType::Thunk(body) => {
                 ContentNode::ThunkType(self.discover(ArenaNode::CompType(body)))
             },
@@ -2661,7 +2658,6 @@ where
         | ContentNode::ListNil
         | ContentNode::Literal(_)
         | ContentNode::Base(_)
-        | ContentNode::UnitType
         | ContentNode::Universe { .. }
         | ContentNode::Abstract(_)
         | ContentNode::Unresolved(_)
@@ -2717,13 +2713,11 @@ where
                 on_right: image(on_right),
             }
         },
-        | ContentNode::Product(first, second) => {
-            let first = image(first);
-            ContentNode::Product(first, image(second))
+        | ContentNode::Product(ref parts) => {
+            ContentNode::Product(parts.iter().map(|&part| image(part)).collect())
         },
-        | ContentNode::Sum(first, second) => {
-            let first = image(first);
-            ContentNode::Sum(first, image(second))
+        | ContentNode::Sum(ref parts) => {
+            ContentNode::Sum(parts.iter().map(|&part| image(part)).collect())
         },
         | ContentNode::List(element) => ContentNode::List(image(element)),
         | ContentNode::ThunkType(body) => ContentNode::ThunkType(image(body)),
@@ -3082,7 +3076,6 @@ fn mint_node(
             | _ => ill_sorted,
         },
         | ContentNode::Base(base) => Maybe::Present(Minted::ValueType(arena.value_type_base(base))),
-        | ContentNode::UnitType => Maybe::Present(Minted::ValueType(arena.value_type_unit())),
         | ContentNode::Universe { sort, ref level } => Maybe::Present(Minted::ValueType(
             arena.value_type_universe(sort, level.clone()),
         )),
@@ -3092,27 +3085,23 @@ fn mint_node(
             },
             | Maybe::Absent(reason) => Maybe::Absent(reason),
         },
-        | ContentNode::Product(first, second) => {
-            match (
-                minted_value_type(states, first),
-                minted_value_type(states, second),
-            ) {
-                | (Maybe::Present(first), Maybe::Present(second)) => {
-                    Maybe::Present(Minted::ValueType(arena.value_type_product(first, second)))
-                },
-                | _ => ill_sorted,
+        | ContentNode::Product(ref parts) | ContentNode::Sum(ref parts) => {
+            let mut minted = Vec::with_capacity(parts.len());
+            for &part in parts {
+                let Maybe::Present(part) = minted_value_type(states, part)
+                else {
+                    return ill_sorted;
+                };
+                minted.push(part);
             }
-        },
-        | ContentNode::Sum(first, second) => {
-            match (
-                minted_value_type(states, first),
-                minted_value_type(states, second),
-            ) {
-                | (Maybe::Present(first), Maybe::Present(second)) => {
-                    Maybe::Present(Minted::ValueType(arena.value_type_sum(first, second)))
+            Maybe::Present(Minted::ValueType(
+                if matches!(*node, ContentNode::Product(_)) {
+                    arena.value_type_product(&minted)
+                }
+                else {
+                    arena.value_type_sum(&minted)
                 },
-                | _ => ill_sorted,
-            }
+            ))
         },
         | ContentNode::List(element) => match minted_value_type(states, element) {
             | Maybe::Present(element) => {
@@ -3608,7 +3597,7 @@ mod tests
             content.nodes().get(2 ..),
             Some(
                 [
-                    ContentNode::UnitType,
+                    ContentNode::Product(Vec::new()),
                     ContentNode::Base(BaseType::String),
                     ContentNode::List(NodeIndex::from(3_usize)),
                     ContentNode::Base(BaseType::Integer)
@@ -3638,15 +3627,15 @@ mod tests
             (
                 vec![
                     ContentNode::PathUniverse(NodeIndex::from(1_usize), NodeIndex::from(1_usize)),
-                    ContentNode::UnitType,
+                    ContentNode::Product(Vec::new()),
                 ],
                 seating::Absent::Unseatable,
             ),
             (
-                vec![ContentNode::Product(
+                vec![ContentNode::Product(vec![
                     NodeIndex::from(0_usize),
                     NodeIndex::from(0_usize),
-                )],
+                ])],
                 seating::Absent::Cyclic,
             ),
             (
@@ -3828,8 +3817,8 @@ mod tests
     {
         let index = NodeIndex::from;
         let nodes = [
-            ContentNode::UnitType,
-            ContentNode::Product(index(3_usize), index(3_usize)),
+            ContentNode::Product(Vec::new()),
+            ContentNode::Product(vec![index(3_usize), index(3_usize)]),
             ContentNode::Abstract(Reference::Unoccupied),
             ContentNode::ThunkType(index(4_usize)),
             ContentNode::Returner {
@@ -3838,7 +3827,7 @@ mod tests
             },
         ];
         assert_eq!(super::renumber(&nodes, index(1_usize)), [
-            ContentNode::Product(index(1_usize), index(1_usize)),
+            ContentNode::Product(vec![index(1_usize), index(1_usize)]),
             ContentNode::ThunkType(index(2_usize)),
             ContentNode::Returner {
                 result: index(0_usize),
@@ -3873,23 +3862,23 @@ mod tests
         let cases = [
             vec![],
             vec![
-                ContentNode::Product(index(1_usize), index(usize::MAX)),
-                ContentNode::UnitType,
+                ContentNode::Product(vec![index(1_usize), index(usize::MAX)]),
+                ContentNode::Product(Vec::new()),
             ],
             vec![
-                ContentNode::Product(index(1_usize), index(2_usize)),
+                ContentNode::Product(vec![index(1_usize), index(2_usize)]),
                 ContentNode::Returner {
                     result: index(2_usize),
                     effects: gandr_core_term::effect::EffectRow::EMPTY,
                 },
-                ContentNode::UnitType,
+                ContentNode::Product(Vec::new()),
             ],
             vec![
                 ContentNode::Arrow {
                     domain: index(1_usize),
                     codomain: index(1_usize),
                 },
-                ContentNode::UnitType,
+                ContentNode::Product(Vec::new()),
             ],
         ];
         for nodes in cases {

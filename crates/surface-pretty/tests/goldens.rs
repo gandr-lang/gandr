@@ -669,18 +669,18 @@ mod tests
         let returns_unit = core.comp_type_returner(unit);
         let suspended_unit = core.value_type_thunk(returns_unit);
         let returns_thunk = core.comp_type_returner(suspended_unit);
-        let string_unit = core.value_type_product(string, unit);
-        let right_nested = core.value_type_product(integer, string_unit);
-        let integer_string = core.value_type_product(integer, string);
-        let left_nested = core.value_type_product(integer_string, unit);
-        let product_then_sum = core.value_type_sum(integer_string, unit);
-        let sum_of_product = core.value_type_sum(integer, string_unit);
-        let integer_or_string = core.value_type_sum(integer, string);
-        let sum_then_product = core.value_type_product(integer_or_string, unit);
-        let string_or_unit = core.value_type_sum(string, unit);
-        let sum_chain = core.value_type_sum(integer, string_or_unit);
-        let sum_left = core.value_type_sum(integer_or_string, unit);
-        let thunk_in_product = core.value_type_product(thunk, unit);
+        let string_unit = core.value_type_product(&[string, unit]);
+        let right_nested = core.value_type_product(&[integer, string_unit]);
+        let integer_string = core.value_type_product(&[integer, string]);
+        let left_nested = core.value_type_product(&[integer_string, unit]);
+        let product_then_sum = core.value_type_sum(&[integer_string, unit]);
+        let sum_of_product = core.value_type_sum(&[integer, string_unit]);
+        let integer_or_string = core.value_type_sum(&[integer, string]);
+        let sum_then_product = core.value_type_product(&[integer_or_string, unit]);
+        let string_or_unit = core.value_type_sum(&[string, unit]);
+        let sum_chain = core.value_type_sum(&[integer, string_or_unit]);
+        let sum_left = core.value_type_sum(&[integer_or_string, unit]);
+        let thunk_in_product = core.value_type_product(&[thunk, unit]);
         let sum_domain = core.comp_type_arrow(integer_or_string, returns_unit);
         let function = core.comp_type_arrow(integer, returns_unit);
         let suspended_function = core.value_type_thunk(function);
@@ -830,14 +830,14 @@ mod tests
         let classifier = core.value_type_static_pi(family, rest);
 
         let element = bound(&mut core, DeBruijnIndex::from(0_u32));
-        let squared = core.value_type_product(element, element);
+        let squared = core.value_type_product(&[element, element]);
         let returns_squared = core.comp_type_returner(squared);
         let squared_code = core.value_quote_computation(returns_squared);
         let squaring = core.value_static_lambda(squared_code);
 
         let outer = bound(&mut core, DeBruijnIndex::from(1_u32));
         let inner = bound(&mut core, DeBruijnIndex::from(0_u32));
-        let both = core.value_type_product(outer, inner);
+        let both = core.value_type_product(&[outer, inner]);
         let both_code = core.value_quote(both);
         let over_inner = core.value_static_lambda(both_code);
         let nested = core.value_static_lambda(over_inner);

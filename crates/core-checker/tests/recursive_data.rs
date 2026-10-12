@@ -850,7 +850,7 @@ mod recursive_data
                 let function = arena.comp_type_arrow(own, returner);
                 arena.value_type_thunk(function)
             },
-            | Fixture::Nested => arena.value_type_product(own, unit),
+            | Fixture::Nested => arena.value_type_product(&[own, unit]),
             | Fixture::Returner => {
                 let returner = arena.comp_type_returner(own);
                 arena.value_type_thunk(returner)

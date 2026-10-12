@@ -1026,7 +1026,7 @@ mod tests
         else {
             panic!("returner");
         };
-        assert_eq!(Some(&crate::ValueType::Unit), target.value_type(result));
+        assert_eq!(Some(&crate::ValueType::unit()), target.value_type(result));
         let signature = effects.signatures().next().unwrap();
         let Maybe::Present(get) = signature.operation(&get)
         else {
@@ -1038,14 +1038,14 @@ mod tests
         };
         assert_eq!((get.payload, get.reply), (put.reply, put.payload));
         assert_eq!(
-            Some(&crate::ValueType::Unit),
+            Some(&crate::ValueType::unit()),
             target.value_type(get.payload)
         );
         let Some(&crate::ValueType::List(element)) = target.value_type(get.reply)
         else {
             panic!("list");
         };
-        assert_eq!(Some(&crate::ValueType::Unit), target.value_type(element));
+        assert_eq!(Some(&crate::ValueType::unit()), target.value_type(element));
         let crate::CompType::Returner { ref effects, .. } = *source.comp_type(open).unwrap()
         else {
             panic!("original returner");

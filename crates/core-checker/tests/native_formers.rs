@@ -393,7 +393,9 @@ mod native_formers
         );
         for (label, &field) in fields {
             if label.as_ref() == "x" {
-                assert!(matches!(arena.value_type(field), Some(ValueType::Unit)));
+                assert!(arena.value_type(field).is_some_and(
+                    |held| matches!(*held, ValueType::Product(ref parts) if parts.is_empty())
+                ));
             }
             else {
                 let Some(matched_native_node) = arena.value_type(field)
@@ -410,11 +412,9 @@ mod native_formers
                         .map(core::convert::AsRef::as_ref)
                         .eq(["x", "y"])
                 );
-                assert!(
-                    inner
-                        .values()
-                        .all(|&ty| matches!(arena.value_type(ty), Some(ValueType::Unit)))
-                );
+                assert!(inner.values().all(|&ty| arena.value_type(ty).is_some_and(
+                    |held| matches!(*held, ValueType::Product(ref parts) if parts.is_empty())
+                )));
             }
         }
         let Verdict::Synthesised { synthesised, .. } = report.judged()[9].verdict()

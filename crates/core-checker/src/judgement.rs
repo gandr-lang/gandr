@@ -3682,8 +3682,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
             ) => {
                 let (right_source, right_target) = self.path_endpoints(at, classifier)?;
                 let arena = self.context.arena_mut();
-                let source = arena.value_type_product(source, right_source);
-                let target = arena.value_type_product(target, right_target);
+                let source = arena.value_type_product(&[source, right_source]);
+                let target = arena.value_type_product(&[target, right_target]);
                 let source = arena.value_quote(source);
                 let target = arena.value_quote(target);
                 let classifier = arena.value_type_path_universe(source, target);
@@ -3924,7 +3924,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }))
             },
             | (Frame::PairSecondSynthesised { first }, Produced::ValueType(second)) => {
-                let product = self.context.arena_mut().value_type_product(first, second);
+                let product = self
+                    .context
+                    .arena_mut()
+                    .value_type_product(&[first, second]);
                 Ok(Step::Ascend(Produced::ValueType(product)))
             },
             | (
@@ -4083,7 +4086,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   site.
     /// - witness: `bridge::tests::native_path_module_round_trips`
     #[spec(ensures: |ret| match ret {
-        Ok(pair) => <[ValueTypeId; 2]>::from(pair).iter().all(|&id| matches!(self.context.arena().value_type(id), Some(&gandr_core_term::ValueType::Unit | &gandr_core_term::ValueType::Base(_) | &gandr_core_term::ValueType::Product(..) | &gandr_core_term::ValueType::Sum(..)))),
+        Ok(pair) => <[ValueTypeId; 2]>::from(pair).iter().all(|&id| matches!(self.context.arena().value_type(id), Some(&(gandr_core_term::ValueType::Base(_) | gandr_core_term::ValueType::Product(_) | gandr_core_term::ValueType::Sum(_))))),
         Err(CheckRefusal::ShapeMismatch { at: found_at, wanted, found }) => found_at == TermNode::Value(at) && wanted == ExpectedShape::PathUniverse && found == TypeNode::Value(classifier),
         Err(_) => true,
     })]
@@ -4142,7 +4145,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `bridge::tests::native_path_module_round_trips`
     /// - witness: `judgement::tests::an_introduction_against_the_unknown_type_checks_its_parts`
     #[spec(ensures: |ret| match ret {
-        Ok((left, right)) => self.context.arena().value_type(left).is_some() && self.context.arena().value_type(right).is_some() && match self.context.arena().value_type(classifier) { Some(&gandr_core_term::ValueType::Sum(a, b)) => left == a && right == b, _ => true },
+        Ok((left, right)) => self.context.arena().value_type(left).is_some() && self.context.arena().value_type(right).is_some() && self.context.arena().value_type(classifier).is_none_or(|held| !matches!(*held, gandr_core_term::ValueType::Sum(ref parts) if **parts != [left, right])),
         Err(CheckRefusal::ShapeMismatch { at: found_at, wanted, found }) => found_at == TermNode::Value(at) && wanted == ExpectedShape::Sum && found == TypeNode::Value(classifier),
         Err(_) => true,
     })]
@@ -4410,7 +4413,7 @@ mod tests
         let integer = arena.value_type_base(BaseType::Integer);
         let string = arena.value_type_base(BaseType::String);
         let unit_type = arena.value_type_unit();
-        let sum = arena.value_type_sum(unit_type, unit_type);
+        let sum = arena.value_type_sum(&[unit_type, unit_type]);
         let returns_integer = arena.comp_type_returner(integer);
         let thunk_returns_integer = arena.value_type_thunk(returns_integer);
         let arrow = arena.comp_type_arrow(integer, returns_integer);
@@ -4513,8 +4516,8 @@ mod tests
         let unit_type = arena.value_type_unit();
         let returns_integer = arena.comp_type_returner(integer);
         let suspended = arena.value_type_thunk(returns_integer);
-        let product = arena.value_type_product(unit_type, integer);
-        let checking_only = arena.value_type_product(suspended, integer);
+        let product = arena.value_type_product(&[unit_type, integer]);
+        let checking_only = arena.value_type_product(&[suspended, integer]);
         let unit = arena.value_unit();
         let zero = arena.value_literal(integer_literal());
         let returned = arena.computation_return(zero);
@@ -4525,9 +4528,17 @@ mod tests
         let synthesised = synthesise_value(&mut context, pair)
             .map(|found| found.produced().id())
             .unwrap();
-        let Some(&ValueType::Product(first, second)) = context.arena().value_type(synthesised)
+        let Some(held) = context.arena().value_type(synthesised)
         else {
             panic!("a pair synthesises an eager product");
+        };
+        let ValueType::Product(ref parts) = *held
+        else {
+            panic!("a pair synthesises an eager product");
+        };
+        let [first, second] = **parts
+        else {
+            panic!("the pair's product is binary");
         };
         assert_eq!(
             (first, second),
@@ -4692,7 +4703,7 @@ mod tests
         drop(context);
         assert_eq!(
             arena.value_type(found),
-            Some(&ValueType::Unit),
+            Some(&ValueType::unit()),
             "the refusal reports the scrutinee's actual classifier, independent of arena allocation"
         );
     }

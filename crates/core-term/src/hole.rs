@@ -354,11 +354,12 @@ pub fn matched_thunk(
 ///
 /// # Specification
 /// - requires: `subject` is read at its weak head.
-/// - ensures: both factors of a product; two freshly minted unknown value types
-///   when `subject` is unknown.
+/// - ensures: both factors of a product of two components; two freshly minted
+///   unknown value types when `subject` is unknown.
 /// - provides: what a pair checks its components against.
-/// - fails: [`matching::Absent::Mismatched`] for another known former,
-///   [`matching::Absent::Dangling`] for an id naming no node.
+/// - fails: [`matching::Absent::Mismatched`] for another known former or a
+///   product of another arity, [`matching::Absent::Dangling`] for an id naming
+///   no node.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -380,7 +381,10 @@ pub fn matched_product(
         return Maybe::Present((unknown, unknown));
     }
     match arena.value_type(subject) {
-        | Some(&ValueType::Product(first, second)) => Maybe::Present((first, second)),
+        | Some(&ValueType::Product(ref components)) => match **components {
+            | [first, second] => Maybe::Present((first, second)),
+            | _ => mismatched(),
+        },
         | Some(_) => mismatched(),
         | None => dangling(),
     }
@@ -390,12 +394,12 @@ pub fn matched_product(
 ///
 /// # Specification
 /// - requires: `subject` is read at its weak head.
-/// - ensures: both summands of a sum; two freshly minted unknown value types
-///   when `subject` is unknown.
+/// - ensures: both summands of a sum of two summands; two freshly minted
+///   unknown value types when `subject` is unknown.
 /// - provides: what an injection checks its payload against and what a case
 ///   binds in each branch.
-/// - fails: [`matching::Absent::Mismatched`] for another known former,
-///   [`matching::Absent::Dangling`] for an id naming no node.
+/// - fails: [`matching::Absent::Mismatched`] for another known former or a sum
+///   of another arity, [`matching::Absent::Dangling`] for an id naming no node.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -417,7 +421,10 @@ pub fn matched_sum(
         return Maybe::Present((unknown, unknown));
     }
     match arena.value_type(subject) {
-        | Some(&ValueType::Sum(left, right)) => Maybe::Present((left, right)),
+        | Some(&ValueType::Sum(ref summands)) => match **summands {
+            | [left, right] => Maybe::Present((left, right)),
+            | _ => mismatched(),
+        },
         | Some(_) => mismatched(),
         | None => dangling(),
     }
@@ -800,8 +807,8 @@ mod tests
         let mut arena = CoreArena::new();
         let atom = arena.value_type_base(BaseType::Integer);
         let text = arena.value_type_base(BaseType::String);
-        let product = arena.value_type_product(atom, text);
-        let sum = arena.value_type_sum(text, atom);
+        let product = arena.value_type_product(&[atom, text]);
+        let sum = arena.value_type_sum(&[text, atom]);
         let returner = arena.comp_type_returner(atom);
         let thunk = arena.value_type_thunk(returner);
         let universe = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());

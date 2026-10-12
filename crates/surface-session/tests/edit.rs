@@ -977,7 +977,9 @@ fn native_snapshots_preserve_schema_and_fourth_children()
             ref constructors, ..
         } = *(revised.items()[0].declaration())
         {
-            assert_eq!(constructors[3][3].nodes(), [ContentNode::UnitType]);
+            assert_eq!(constructors[3][3].nodes(), [ContentNode::Product(
+                Vec::new()
+            )]);
         }
     }
 }

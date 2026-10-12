@@ -6993,7 +6993,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }),
             | Plan::Product(first, second) => self.value_type_at(first).and_then(|left| {
                 self.value_type_at(second).map(|right| {
-                    let id = sink.arena.value_type_product(left, right);
+                    let id = sink.arena.value_type_product(&[left, right]);
                     sink.origins.record_value_type(id, origin);
                     Lowered::ValueType(id)
                 })
@@ -8764,8 +8764,8 @@ impl Sink<'_>
     #[spec(
         ensures: |ret| match ret {
             | Lowered::ValueType(id) => self.origins.value_type(id) == Maybe::Present(origin) && match atom {
-                TypeAtom::Boolean => matches!(self.arena.value_type(id), Some(&ValueType::Sum(first, second)) if self.arena.value_type(first) == Some(&ValueType::Unit) && self.arena.value_type(second) == Some(&ValueType::Unit)),
-                TypeAtom::Unit => self.arena.value_type(id) == Some(&ValueType::Unit),
+                TypeAtom::Boolean => self.arena.value_type(id).is_some_and(|held| matches!(*held, ValueType::Sum(ref parts) if parts.len() == 2 && parts.iter().all(|&part| self.arena.value_type(part) == Some(&ValueType::unit())))),
+                TypeAtom::Unit => self.arena.value_type(id) == Some(&ValueType::unit()),
                 TypeAtom::Integer => self.arena.value_type(id) == Some(&ValueType::Base(BaseType::Integer)),
                 TypeAtom::Text => self.arena.value_type(id) == Some(&ValueType::Base(BaseType::String)),
             },
@@ -8782,7 +8782,7 @@ impl Sink<'_>
             | TypeAtom::Boolean => {
                 let unit = self.arena.value_type_unit();
                 self.origins.record_value_type(unit, origin);
-                self.arena.value_type_sum(unit, unit)
+                self.arena.value_type_sum(&[unit, unit])
             },
             | TypeAtom::Unit => self.arena.value_type_unit(),
             | TypeAtom::Integer => self.arena.value_type_base(BaseType::Integer),
@@ -9549,12 +9549,20 @@ mod tests
         else {
             panic!("result classifier");
         };
-        let Some(&ValueType::Sum(first, second)) = arena.value_type(boolean)
+        let Some(held) = arena.value_type(boolean)
         else {
             panic!("canonical boolean sum");
         };
-        assert_eq!(arena.value_type(first), Some(&ValueType::Unit));
-        assert_eq!(arena.value_type(second), Some(&ValueType::Unit));
+        let ValueType::Sum(ref parts) = *held
+        else {
+            panic!("canonical boolean sum");
+        };
+        let [first, second] = **parts
+        else {
+            panic!("the boolean sum is binary");
+        };
+        assert_eq!(arena.value_type(first), Some(&ValueType::unit()));
+        assert_eq!(arena.value_type(second), Some(&ValueType::unit()));
         assert!(matches!(
             module.origins().value_type(first),
             Maybe::Present(_)
@@ -10215,7 +10223,7 @@ mod tests
         assert_eq!(
             lowered,
             [
-                Some(ValueType::Unit),
+                Some(ValueType::unit()),
                 Some(ValueType::Base(BaseType::Integer)),
                 Some(ValueType::Base(BaseType::String)),
             ],
@@ -11389,8 +11397,8 @@ mod tests
     #[spec(
         ensures: |ret| match arena.value_type(root) {
             | Some(&ValueType::Thunk(_)) => ret.first().is_some_and(|token| token == "U"),
-            | Some(&ValueType::Product(..)) => ret.first().is_some_and(|token| token == "*"),
-            | Some(&ValueType::Unit) => ret.first().is_some_and(|token| token == "Unit"),
+            | Some(&ValueType::Product(ref parts)) if parts.is_empty() => ret.first().is_some_and(|token| token == "Unit"),
+            | Some(&ValueType::Product(_)) => ret.first().is_some_and(|token| token == "*"),
             | _ => true,
         },
     )]
@@ -11405,15 +11413,16 @@ mod tests
             match next {
                 | TypeNode::Value(at) => match arena.value_type(at) {
                     | Some(&ValueType::Base(base)) => tokens.push(format!("{base:?}")),
-                    | Some(&ValueType::Unit) => tokens.push(String::from("Unit")),
+                    | Some(&ValueType::Product(ref parts)) if parts.is_empty() => {
+                        tokens.push(String::from("Unit"));
+                    },
                     | Some(&ValueType::Thunk(inner)) => {
                         tokens.push(String::from("U"));
                         pending.push(TypeNode::Computation(inner));
                     },
-                    | Some(&ValueType::Product(first, second)) => {
+                    | Some(&ValueType::Product(ref parts)) => {
                         tokens.push(String::from("*"));
-                        pending.push(TypeNode::Value(second));
-                        pending.push(TypeNode::Value(first));
+                        pending.extend(parts.iter().rev().map(|&part| TypeNode::Value(part)));
                     },
                     | other => tokens.push(format!("{other:?}")),
                 },
@@ -11687,9 +11696,17 @@ mod tests
         else {
             panic!("a type written as the body is quoted");
         };
-        let Some(&ValueType::Product(first, second)) = arena.value_type(quoted)
+        let Some(held) = arena.value_type(quoted)
         else {
             panic!("the body is the product it spells");
+        };
+        let ValueType::Product(ref parts) = *held
+        else {
+            panic!("the body is the product it spells");
+        };
+        let [first, second] = **parts
+        else {
+            panic!("the spelled product is binary");
         };
         assert_eq!(
             (decoded(first), decoded(second)),
@@ -11778,9 +11795,17 @@ mod tests
         else {
             panic!("a quoted body");
         };
-        let Some(&ValueType::Product(left, right)) = arena.value_type(quoted)
+        let Some(held) = arena.value_type(quoted)
         else {
             panic!("a product body");
+        };
+        let ValueType::Product(ref parts) = *held
+        else {
+            panic!("a product body");
+        };
+        let [left, right] = **parts
+        else {
+            panic!("the product body is binary");
         };
         let Some(&ValueType::Thunk(family)) = arena.value_type(left)
         else {

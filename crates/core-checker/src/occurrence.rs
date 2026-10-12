@@ -364,9 +364,12 @@ fn worst(
                             .map(|&field| (AnyNode::ValueType(field), nest(reach))),
                     );
                 },
-                | Some(&(ValueType::Product(first, second) | ValueType::Sum(first, second))) => {
-                    pending.push((AnyNode::ValueType(first), nest(reach)));
-                    pending.push((AnyNode::ValueType(second), nest(reach)));
+                | Some(&(ValueType::Product(ref parts) | ValueType::Sum(ref parts))) => {
+                    pending.extend(
+                        parts
+                            .iter()
+                            .map(|&part| (AnyNode::ValueType(part), nest(reach))),
+                    );
                 },
                 | Some(&ValueType::Lift { inner, .. }) => {
                     pending.push((AnyNode::ValueType(inner), term(reach)));
@@ -392,12 +395,7 @@ fn worst(
                     pending.push((AnyNode::CompType(input), Reach::Domain));
                     pending.push((AnyNode::CompType(output), nest(reach)));
                 },
-                | Some(
-                    &(ValueType::Base(_)
-                    | ValueType::Unit
-                    | ValueType::Universe { .. }
-                    | ValueType::Unknown),
-                )
+                | Some(&(ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Unknown))
                 | None => {},
             },
             | AnyNode::CompType(id) => match arena.comp_type(id) {

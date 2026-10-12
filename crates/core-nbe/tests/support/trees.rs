@@ -80,7 +80,7 @@ pub enum Trees
         },
         (Term::ValueType(left), Term::ValueType(right)) => match (left_arena.value_type(left), right_arena.value_type(right)) {
             (Some(a), Some(b)) => match *a {
-                ValueType::Base(_) | ValueType::Unit | ValueType::Universe { .. } | ValueType::Abstract(_) => (ret == Trees::Same) == (a == b),
+                ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => (ret == Trees::Same) == (a == b),
                 _ => ret == Trees::Different || core::mem::discriminant(a) == core::mem::discriminant(b),
             },
             _ => ret == Trees::Different,
@@ -274,14 +274,14 @@ pub fn same_tree(
                         pending.push((Term::Value(target), Term::Value(other_target)));
                         pending.push((Term::Value(source), Term::Value(other_source)));
                     },
-                    | (
-                        &ValueType::Product(first, second),
-                        &ValueType::Product(other_first, other_second),
-                    )
-                    | (
-                        &ValueType::Sum(first, second),
-                        &ValueType::Sum(other_first, other_second),
-                    )
+                    | (&ValueType::Product(ref parts), &ValueType::Product(ref other_parts))
+                    | (&ValueType::Sum(ref parts), &ValueType::Sum(ref other_parts))
+                        if parts.len() == other_parts.len() =>
+                    {
+                        pending.extend(parts.iter().zip(other_parts.iter()).rev().map(
+                            |(&part, &other)| (Term::ValueType(part), Term::ValueType(other)),
+                        ));
+                    },
                     | (
                         &ValueType::StaticPi {
                             domain: first,
@@ -317,10 +317,7 @@ pub fn same_tree(
                         pending.push((Term::Value(code), Term::Value(other_code)));
                     },
                     | (
-                        &(ValueType::Base(_)
-                        | ValueType::Unit
-                        | ValueType::Universe { .. }
-                        | ValueType::Abstract(_)),
+                        &(ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_)),
                         _,
                     ) if left == right => {},
                     | _ => return Trees::Different,

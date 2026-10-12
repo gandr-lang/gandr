@@ -594,13 +594,13 @@ mod tests
     ///   binder from the outer one as opening shifts de Bruijn indices.
     /// - witness: `context::tests::opening_a_binder_shifts_the_zones_indices`
     #[spec(ensures: |ret| ret.1 != ret.2
-        && ret.0.value_type(ret.1) == Some(&crate::ValueType::Unit)
-        && ret.0.value_type(ret.2) == Some(&crate::ValueType::Product(ret.1, ret.1)))]
+        && ret.0.value_type(ret.1) == Some(&crate::ValueType::unit())
+        && ret.0.value_type(ret.2) == Some(&crate::ValueType::Product([ret.1, ret.1].into())))]
     fn two_types() -> (CoreArena, ValueTypeId, ValueTypeId)
     {
         let mut arena = CoreArena::new();
         let unit = arena.value_type_unit();
-        let pair = arena.value_type_product(unit, unit);
+        let pair = arena.value_type_product(&[unit, unit]);
         (arena, unit, pair)
     }
 

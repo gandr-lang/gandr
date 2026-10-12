@@ -327,12 +327,13 @@ pub enum ValueType
     PathUniverse(ValueId, ValueId),
     /// A rigid base-type atom.
     Base(BaseType),
-    /// The unit type, inhabited by [`Value::Unit`] alone.
-    Unit,
-    /// The non-dependent product `A × B`.
-    Product(ValueTypeId, ValueTypeId),
-    /// The sum `A + B`, with left and right injections.
-    Sum(ValueTypeId, ValueTypeId),
+    /// The product of its components, in order: `Product([])` is the unit
+    /// type, inhabited by [`Value::Unit`] alone, and `Product([A, B])` the
+    /// pair type `A × B`.
+    Product(alloc::boxed::Box<[ValueTypeId]>),
+    /// The sum of its summands, in order: `Sum([])` is the empty type and
+    /// `Sum([A, B])` the binary sum `A + B`, with left and right injections.
+    Sum(alloc::boxed::Box<[ValueTypeId]>),
     /// The native finite-list type over its element type.
     List(ValueTypeId),
     /// The thunk type `U C` of a computation type `C`.
@@ -399,6 +400,28 @@ pub enum ValueType
         /// The answer delivered by the stack.
         output: CompTypeId,
     },
+}
+
+impl ValueType
+{
+    /// The unit type: the product of no components.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Product([])`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the unit built here and the one the arena mints are
+    ///   the same node, and a product of two components is not the unit.
+    /// - witness: `syntax::tests::the_unit_is_the_empty_product`
+    #[spec(ensures: |ret| matches!(ret, Self::Product(ref components) if components.is_empty()))]
+    #[inline]
+    #[must_use]
+    pub fn unit() -> Self
+    {
+        Self::Product(alloc::boxed::Box::default())
+    }
 }
 
 /// A computation type: the negative fragment of the core type vocabulary.
@@ -1006,15 +1029,17 @@ fn equal_syntax(
                             pending.extend([V(a, c), V(b, d)]);
                         }
                     }
-                    else if let ValueType::Product(a, b) = *matched_left_value
-                        && let ValueType::Product(c, d) = *matched_right_value
+                    else if let ValueType::Product(ref a) = *matched_left_value
+                        && let ValueType::Product(ref b) = *matched_right_value
+                        && a.len() == b.len()
                     {
-                        pending.extend([VT(a, c), VT(b, d)]);
+                        pending.extend(a.iter().zip(b.iter()).map(|(a, b)| VT(*a, *b)));
                     }
-                    else if let ValueType::Sum(a, b) = *matched_left_value
-                        && let ValueType::Sum(c, d) = *matched_right_value
+                    else if let ValueType::Sum(ref a) = *matched_left_value
+                        && let ValueType::Sum(ref b) = *matched_right_value
+                        && a.len() == b.len()
                     {
-                        pending.extend([VT(a, c), VT(b, d)]);
+                        pending.extend(a.iter().zip(b.iter()).map(|(a, b)| VT(*a, *b)));
                     }
                     else if let ValueType::StaticPi {
                         domain: a,
@@ -1059,7 +1084,6 @@ fn equal_syntax(
                     else if (matches!(
                         *matched_left_value,
                         ValueType::Base(_)
-                            | ValueType::Unit
                             | ValueType::Universe { .. }
                             | ValueType::Abstract(_)
                             | ValueType::Unknown
@@ -1146,6 +1170,35 @@ fn equal_syntax(
 mod tests
 {
     use super::*;
+
+    #[test]
+    fn the_unit_is_the_empty_product()
+    {
+        let mut arena = crate::CoreArena::new();
+        let unit = arena.value_type_unit();
+        let first = arena.value_type_unit();
+        let pair = arena.value_type_product(&[unit, first]);
+        assert_eq!(
+            arena.value_type(unit),
+            Some(&ValueType::unit()),
+            "the minted unit is the empty product"
+        );
+        assert_ne!(
+            arena.value_type(pair),
+            Some(&ValueType::unit()),
+            "a product of two components is not the unit"
+        );
+        assert_eq!(
+            equal_type_syntax(&arena, unit, first),
+            CertificateEquality::Equal,
+            "two units are one type"
+        );
+        assert_eq!(
+            equal_type_syntax(&arena, unit, pair),
+            CertificateEquality::Different,
+            "and no arity but zero is the unit"
+        );
+    }
 
     #[test]
     fn certificate_syntax_erases_only_evidence()

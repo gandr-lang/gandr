@@ -93,7 +93,7 @@ impl PrimitiveType
             | Self::Integer => arena.value_type_base(BaseType::Integer),
             | Self::Boolean => {
                 let unit = arena.value_type_unit();
-                arena.value_type_sum(unit, unit)
+                arena.value_type_sum(&[unit, unit])
             },
         }
     }

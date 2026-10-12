@@ -83,9 +83,9 @@ use crate::typing::Site;
 use crate::typing::Typing;
 
 /// The magic and version a persisted checkpoint set opens with.
-const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x07";
+const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x08";
 /// The magic and version a program's address is computed over.
-const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x05";
+const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x06";
 /// The decoder's cap on a level atom's offset.
 ///
 /// A level holds `x + o` only as `o` successors of `x`, so decoding an offset
@@ -1520,16 +1520,13 @@ where
                 | BaseType::Numeric => Tag(2),
             });
         },
-        | ContentNode::UnitType => writer.tag(Tag(0x21)),
-        | ContentNode::Product(first, second) => {
+        | ContentNode::Product(ref parts) => {
             writer.tag(Tag(0x22));
-            write_index(writer, first)?;
-            write_index(writer, second)?;
+            write_indices(writer, parts)?;
         },
-        | ContentNode::Sum(first, second) => {
+        | ContentNode::Sum(ref parts) => {
             writer.tag(Tag(0x23));
-            write_index(writer, first)?;
-            write_index(writer, second)?;
+            write_indices(writer, parts)?;
         },
         | ContentNode::List(element) => {
             writer.tag(Tag(0x56));
@@ -2066,7 +2063,6 @@ fn read_effect_row(
                     | ContentNode::ComputationMark { .. } => tag == 0x18,
                     | ContentNode::Fixpoint { .. } => tag == 0x19,
                     | ContentNode::Base(_) => tag == 0x20,
-                    | ContentNode::UnitType => tag == 0x21,
                     | ContentNode::Product(..) => tag == 0x22,
                     | ContentNode::Sum(..) => tag == 0x23,
                     | ContentNode::ThunkType(_) => tag == 0x24,
@@ -2339,17 +2335,8 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
                 | _ => return Err(CodecError::Corrupt),
             })
         },
-        | 0x21 => ContentNode::UnitType,
-        | 0x22 => {
-            let first = read_index(reader)?;
-            let second = read_index(reader)?;
-            ContentNode::Product(first, second)
-        },
-        | 0x23 => {
-            let first = read_index(reader)?;
-            let second = read_index(reader)?;
-            ContentNode::Sum(first, second)
-        },
+        | 0x22 => ContentNode::Product(read_indices(reader)?),
+        | 0x23 => ContentNode::Sum(read_indices(reader)?),
         | 0x24 => {
             let body = read_index(reader)?;
             ContentNode::ThunkType(body)
@@ -3316,7 +3303,7 @@ fn read_site(reader: &mut Reader<'_>) -> Result<Site, CodecError>
 }
 
 /// The tags of the unadmitted formers, in stable wire order.
-const FORMERS: [UnadmittedFormer; 18] = [
+const FORMERS: [UnadmittedFormer; 20] = [
     UnadmittedFormer::ValueLift,
     UnadmittedFormer::NumericLiteral,
     UnadmittedFormer::NumericAtom,
@@ -3335,6 +3322,8 @@ const FORMERS: [UnadmittedFormer; 18] = [
     UnadmittedFormer::Shift,
     UnadmittedFormer::With,
     UnadmittedFormer::Project,
+    UnadmittedFormer::ProductArity,
+    UnadmittedFormer::SumArity,
 ];
 
 /// The shapes a rule can require, in stable wire order.
@@ -5173,7 +5162,7 @@ mod tests
                     result: index(1_usize),
                     effects,
                 },
-                ContentNode::UnitType,
+                ContentNode::Product(Vec::new()),
                 ContentNode::Base(BaseType::String),
             ])
         });
@@ -5296,7 +5285,7 @@ mod tests
             assert_eq!(reader.finish(), Ok(()));
         }
         let at = super::Site::Node(index(7_usize));
-        let typed = super::TypeContent::from_nodes(vec![ContentNode::UnitType]);
+        let typed = super::TypeContent::from_nodes(vec![ContentNode::Product(Vec::new())]);
         for refusal in [
             super::Refusal::UnknownOperation { at },
             super::Refusal::HandlerCoverage { at },
@@ -5451,8 +5440,8 @@ mod tests
     {
         assert_eq!(check_discovery(&[], core::iter::empty()), Ok(()));
         let nodes = [
-            ContentNode::Product(NodeIndex::from(0_usize), NodeIndex::from(1_usize)),
-            ContentNode::UnitType,
+            ContentNode::Product(vec![NodeIndex::from(0_usize), NodeIndex::from(1_usize)]),
+            ContentNode::Product(Vec::new()),
         ];
         assert_eq!(
             check_discovery(
@@ -5470,7 +5459,7 @@ mod tests
     #[test]
     fn type_tables_validate_roots_child_extents_and_sorts()
     {
-        let nodes = [ContentNode::UnitType];
+        let nodes = [ContentNode::Product(Vec::new())];
         assert_eq!(
             root_of_sort(&nodes, NodeIndex::from(0_usize), Sort::ValueType),
             Ok(())
@@ -5494,15 +5483,15 @@ mod tests
         assert_eq!(decode(vec![]), Err(CodecError::Corrupt));
         assert_eq!(decode(vec![ContentNode::Unit]), Err(CodecError::Corrupt));
         assert_eq!(
-            decode(vec![ContentNode::Product(
+            decode(vec![ContentNode::Product(vec![
                 NodeIndex::from(1_usize),
                 NodeIndex::from(0_usize)
-            ),]),
+            ]),]),
             Err(CodecError::Corrupt)
         );
         assert_eq!(
             decode(vec![
-                ContentNode::Product(NodeIndex::from(1_usize), NodeIndex::from(1_usize)),
+                ContentNode::Product(vec![NodeIndex::from(1_usize), NodeIndex::from(1_usize)]),
                 ContentNode::Unit,
             ]),
             Err(CodecError::Corrupt)
@@ -5512,7 +5501,7 @@ mod tests
                 result: NodeIndex::from(1_usize),
                 effects: gandr_core_term::effect::EffectRow::EMPTY,
             },
-            ContentNode::UnitType,
+            ContentNode::Product(Vec::new()),
         ])
         .expect("closed computation type");
         assert_eq!(
@@ -5574,7 +5563,7 @@ mod tests
     {
         let checkpoints = Checkpoints::new(CheckBudget::from(0x0102_0304_usize), vec![]);
         let expected = [
-            b'G', b'C', b'K', b'P', b'T', 0, 0, 7, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            b'G', b'C', b'K', b'P', b'T', 0, 0, 8, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ];
         assert_eq!(
             encode_checkpoints(&checkpoints)
@@ -5584,14 +5573,14 @@ mod tests
         );
         assert_eq!(decode_checkpoints(Bytes(&expected)), Ok(checkpoints));
         let mut wrong_version = expected;
-        *wrong_version.get_mut(7).expect("version byte") = 6;
+        *wrong_version.get_mut(7).expect("version byte") = 7;
         assert_eq!(
             decode_checkpoints(Bytes(&wrong_version)),
             Err(CodecError::Corrupt)
         );
         let mut program = CheckpointBytes::default();
         write_program(&mut program, &[]).expect("empty program");
-        assert_eq!(program.as_ref(), b"GPROG\0\0\x05\0\0\0\0\0\0\0\0");
+        assert_eq!(program.as_ref(), b"GPROG\0\0\x06\0\0\0\0\0\0\0\0");
         assert_eq!(
             decode_checkpoints(Bytes(program.as_ref())),
             Err(CodecError::Corrupt)
@@ -5687,7 +5676,7 @@ mod tests
                 vec![ContentNode::Unit],
                 Answer::Untyped,
                 mismatch(
-                    TypeContent::from_nodes(vec![ContentNode::UnitType]),
+                    TypeContent::from_nodes(vec![ContentNode::Product(Vec::new())]),
                     unresolved(Sort::Computation)
                 ),
             ),
@@ -5785,7 +5774,7 @@ mod tests
             level = level.succ().expect("representable offset");
         }
         let unit = || vec![ContentNode::Unit];
-        let valid_type = || TypeContent::from_nodes(vec![ContentNode::UnitType]);
+        let valid_type = || TypeContent::from_nodes(vec![ContentNode::Product(Vec::new())]);
         let at = Site::Unreached;
         let cases = [
             (
@@ -5806,7 +5795,7 @@ mod tests
                         inner: NodeIndex::from(1_usize),
                         target: level.clone(),
                     },
-                    ContentNode::UnitType,
+                    ContentNode::Product(Vec::new()),
                 ])),
                 Typing::Owed,
             ),
@@ -5892,7 +5881,7 @@ mod tests
                 level: level.clone(),
             }])
         };
-        let valid = || TypeContent::from_nodes(vec![ContentNode::UnitType]);
+        let valid = || TypeContent::from_nodes(vec![ContentNode::Product(Vec::new())]);
         let at = Site::Unreached;
         let mismatches: [Mismatch; 4] = [
             |synthesised, expected| Refusal::TypeMismatch {

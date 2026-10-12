@@ -444,9 +444,10 @@ pub fn level_of(
 ///
 /// # Specification
 /// - requires: nothing; a non-quote is refused.
-/// - ensures: every reachable type is Unit, Base, Sum or Product.
+/// - ensures: every reachable type is Base, a product of zero or two
+///   components, or a sum of two summands.
 /// - provides: the decoded endpoint of an admitted native path.
-/// - fails: `PathCode` for any other endpoint or reachable former.
+/// - fails: `PathCode` for any other endpoint, reachable former or arity.
 /// - panics: none.
 ///
 /// # Errors
@@ -455,7 +456,7 @@ pub fn level_of(
 /// # Adequacy
 /// - hypothesis: L3 — a native Bool equivalence crosses; open codes refuse.
 /// - witness: `bridge::tests::native_path_module_round_trips`
-#[spec(ensures: |ret| match ret { Ok(root) => matches!(arena.value(code), Some(&gandr_core_term::Value::Quote(quoted)) if root == quoted) && matches!(arena.value_type(root), Some(&gandr_core_term::ValueType::Unit | &gandr_core_term::ValueType::Base(_) | &gandr_core_term::ValueType::Product(..) | &gandr_core_term::ValueType::Sum(..))), Err(CheckRefusal::PathCode(found)) => found == code, Err(_) => false })]
+#[spec(ensures: |ret| match ret { Ok(root) => matches!(arena.value(code), Some(&gandr_core_term::Value::Quote(quoted)) if root == quoted) && matches!(arena.value_type(root), Some(&(gandr_core_term::ValueType::Base(_) | gandr_core_term::ValueType::Product(_) | gandr_core_term::ValueType::Sum(_)))), Err(CheckRefusal::PathCode(found)) => found == code, Err(_) => false })]
 pub fn path_code(
     arena: &CoreArena,
     code: gandr_core_term::ValueId,
@@ -472,11 +473,15 @@ pub fn path_code(
             continue;
         }
         match arena.value_type(node) {
-            | Some(&(gandr_core_term::ValueType::Base(_) | gandr_core_term::ValueType::Unit)) => {},
-            | Some(
-                &(gandr_core_term::ValueType::Product(a, b)
-                | gandr_core_term::ValueType::Sum(a, b)),
-            ) => pending.extend([a, b]),
+            | Some(&gandr_core_term::ValueType::Base(_)) => {},
+            | Some(&gandr_core_term::ValueType::Product(ref parts))
+                if matches!(parts.len(), 0_usize | 2_usize) =>
+            {
+                pending.extend(parts.iter().copied());
+            },
+            | Some(&gandr_core_term::ValueType::Sum(ref parts)) if parts.len() == 2_usize => {
+                pending.extend(parts.iter().copied());
+            },
             | _ => return Err(CheckRefusal::PathCode(code)),
         }
     }
@@ -647,8 +652,8 @@ mod tests
             ),
             (unit, Ok(value_at(zero))),
             (arena.value_type_thunk(returner), Ok(value_at(zero))),
-            (arena.value_type_product(unit, unit), Ok(value_at(zero))),
-            (arena.value_type_sum(unit, unit), Ok(value_at(zero))),
+            (arena.value_type_product(&[unit, unit]), Ok(value_at(zero))),
+            (arena.value_type_sum(&[unit, unit]), Ok(value_at(zero))),
             (small, Ok(value_at(one))),
             (arena.value_type_lift(unit, level(one)), Ok(value_at(one))),
             (
@@ -860,7 +865,7 @@ mod tests
         let mut arena = CoreArena::new();
         let unit = arena.value_type_unit();
         let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
-        let product = arena.value_type_product(unit, unit);
+        let product = arena.value_type_product(&[unit, unit]);
         let sealed = arena.value_type_abstract(ConstantIndex::from(0_usize));
         let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
         let decoded = arena.value_type_element(bound, Level::zero());

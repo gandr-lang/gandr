@@ -183,7 +183,7 @@ fn program() -> Program
     });
     let nested = occurrence(&mut arena, ConstantIndex::from(6_usize), |arena, own| {
         let unit = arena.value_type_unit();
-        (vec![], arena.value_type_product(own, unit))
+        (vec![], arena.value_type_product(&[own, unit]))
     });
     let non_uniform = occurrence(&mut arena, ConstantIndex::from(7_usize), |arena, _own| {
         let unit = arena.value_type_unit();

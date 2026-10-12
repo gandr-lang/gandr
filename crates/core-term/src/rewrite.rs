@@ -674,8 +674,9 @@ Computation::Hole(_) => 0_usize,
         | Node::ValueType(id) => self.arena.value_type(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
 ValueType::Data { ref arguments, .. } => arguments.len(),
 ValueType::Record(ref fields) => fields.len(),
-ValueType::Base(_) | ValueType::Unit | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => 0_usize,
-ValueType::Stack { .. } | ValueType::Product(..) | ValueType::Sum(..) | ValueType::StaticPi { .. } | ValueType::PathUniverse(..) => 2,
+ValueType::Product(ref components) | ValueType::Sum(ref components) => components.len(),
+ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => 0_usize,
+ValueType::Stack { .. } | ValueType::StaticPi { .. } | ValueType::PathUniverse(..) => 2,
 ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
 }),
         | Node::CompType(id) => match self.arena.comp_type(id) {
@@ -922,13 +923,18 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                             .rev()
                             .map(|&field| open(Node::ValueType(field), depth)),
                     ),
+                    | ValueType::Product(ref components) | ValueType::Sum(ref components) => {
+                        self.tasks.extend(
+                            components
+                                .iter()
+                                .rev()
+                                .map(|&component| open(Node::ValueType(component), depth)),
+                        );
+                    },
                     | ValueType::Base(_)
-                    | ValueType::Unit
                     | ValueType::Universe { .. }
                     | ValueType::Abstract(_)
                     | ValueType::Unknown => {},
-                    | ValueType::Product(first, second)
-                    | ValueType::Sum(first, second)
                     | ValueType::StaticPi {
                         domain: first,
                         codomain: second,
@@ -1799,8 +1805,9 @@ Computation::Hole(_) => 0_usize,
         captures: [ready = self.results.len(), children = self.arena.value_type(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
 ValueType::Data { ref arguments, .. } => arguments.len(),
 ValueType::Record(ref fields) => fields.len(),
-ValueType::Base(_) | ValueType::Unit | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => 0_usize,
-ValueType::Stack { .. } | ValueType::Product(..) | ValueType::Sum(..) | ValueType::StaticPi { .. } | ValueType::PathUniverse(..) => 2,
+ValueType::Product(ref components) | ValueType::Sum(ref components) => components.len(),
+ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => 0_usize,
+ValueType::Stack { .. } | ValueType::StaticPi { .. } | ValueType::PathUniverse(..) => 2,
 ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
 })],
         ensures: |ret| self.results.len() == ready.saturating_sub(children)
@@ -1884,29 +1891,25 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                 }
             },
             | ValueType::Base(_)
-            | ValueType::Unit
             | ValueType::Universe { .. }
             | ValueType::Abstract(_)
             | ValueType::Unknown => id,
-            | ValueType::Product(first, second) => {
-                let rewritten_second = Self::value_type(&mut self.results, second);
-                let rewritten_first = Self::value_type(&mut self.results, first);
-                if (rewritten_first, rewritten_second) == (first, second) {
-                    id
+            | ValueType::Product(ref components) | ValueType::Sum(ref components) => {
+                let product = matches!(*node, ValueType::Product(_));
+                let mut changed: Option<Vec<ValueTypeId>> = None;
+                for (index, original) in components.iter().enumerate().rev() {
+                    let rewritten = Self::value_type(&mut self.results, *original);
+                    if rewritten != *original {
+                        let changed = changed.get_or_insert_with(|| components.to_vec());
+                        if let Some(slot) = changed.get_mut(index) {
+                            *slot = rewritten;
+                        }
+                    }
                 }
-                else {
-                    self.arena
-                        .value_type_product(rewritten_first, rewritten_second)
-                }
-            },
-            | ValueType::Sum(first, second) => {
-                let rewritten_second = Self::value_type(&mut self.results, second);
-                let rewritten_first = Self::value_type(&mut self.results, first);
-                if (rewritten_first, rewritten_second) == (first, second) {
-                    id
-                }
-                else {
-                    self.arena.value_type_sum(rewritten_first, rewritten_second)
+                match changed {
+                    | Some(components) if product => self.arena.value_type_product(&components),
+                    | Some(summands) => self.arena.value_type_sum(&summands),
+                    | None => id,
                 }
             },
             | ValueType::Thunk(body) => {
@@ -2535,13 +2538,13 @@ mod tests
         let captured = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
         let local_type = arena.value_type_element(local, Level::zero());
         let captured_type = arena.value_type_element(captured, Level::zero());
-        let pair = arena.value_type_product(local_type, captured_type);
+        let pair = arena.value_type_product(&[local_type, captured_type]);
         let unit = arena.value_type_unit();
         let code = arena.value_quote(unit);
         let closed = super::instantiate_value_type_under(&mut arena, pair, code, Binders::ONE);
         assert_eq!(
             arena.value_type(closed),
-            Some(&ValueType::Product(local_type, unit))
+            Some(&ValueType::Product([local_type, unit].into()))
         );
     }
     use alloc::vec;
@@ -2804,7 +2807,7 @@ mod tests
             | Some(&ValueType::Element { .. }) => Token::Element,
             | Some(&ValueType::Thunk(_)) => Token::Thunk,
             | Some(&ValueType::Product(..)) => Token::Product,
-            Some(&ValueType::Stack { .. } | &ValueType::List(_) | &ValueType::Data { .. } | &ValueType::Record(_) | &ValueType::Unit |
+            Some(&ValueType::Stack { .. } | &ValueType::List(_) | &ValueType::Data { .. } | &ValueType::Record(_) |
 &ValueType::Sum(..) | &ValueType::PathUniverse(..) | &ValueType::Universe { ..
 } | &ValueType::Lift { .. } | &ValueType::Abstract(_) | &ValueType::StaticPi {
 .. } | &ValueType::Unknown) | None => Token::Other,
@@ -2865,10 +2868,14 @@ mod tests
                         tokens.push(Token::Thunk);
                         pending.push(Visit::CompType(body));
                     },
-                    | Some(&ValueType::Product(first, second)) => {
+                    | Some(&ValueType::Product(ref components)) => {
                         tokens.push(Token::Product);
-                        pending.push(Visit::ValueType(second));
-                        pending.push(Visit::ValueType(first));
+                        pending.extend(
+                            components
+                                .iter()
+                                .rev()
+                                .map(|&component| Visit::ValueType(component)),
+                        );
                     },
                     | Some(_) | None => tokens.push(Token::Other),
                 },
@@ -3198,7 +3205,7 @@ mod tests
                 },
                 | Shape::Thunk => Built::ValueType(arena.value_type_thunk(comp_type(0))),
                 | Shape::Product => {
-                    Built::ValueType(arena.value_type_product(value_type(0), value_type(1)))
+                    Built::ValueType(arena.value_type_product(&[value_type(0), value_type(1)]))
                 },
                 | Shape::Quote => Built::Value(arena.value_quote(value_type(0))),
                 | Shape::QuoteComputation => {
@@ -3398,7 +3405,7 @@ mod tests
             let mut current = ret;
             let mut valid = true;
             for _ in 0_u32..64_u32 {
-                if let Some(&ValueType::Product(first, second)) = arena.value_type(current) {
+                if let Some(held) = arena.value_type(current) && let ValueType::Product(ref components) = *held && let [first, second] = **components {
                     valid &= first == second;
                     current = first;
                 } else { valid = false; }
@@ -3413,7 +3420,7 @@ mod tests
         {
             let mut shared = decoded(arena, index);
             for _ in 0 .. 64_u32 {
-                shared = arena.value_type_product(shared, shared);
+                shared = arena.value_type_product(&[shared, shared]);
             }
             shared
         }
@@ -3868,16 +3875,16 @@ mod tests
         }
         for (original, unchanged, changed, expected) in [
             (
-                arena.value_type_product(t0, t1),
+                arena.value_type_product(&[t0, t1]),
                 vec![Node::ValueType(t0), Node::ValueType(t1)],
                 vec![Node::ValueType(u0), Node::ValueType(u1)],
-                ValueType::Product(u0, u1),
+                ValueType::Product([u0, u1].into()),
             ),
             (
-                arena.value_type_sum(t0, t1),
+                arena.value_type_sum(&[t0, t1]),
                 vec![Node::ValueType(t0), Node::ValueType(t1)],
                 vec![Node::ValueType(u0), Node::ValueType(u1)],
-                ValueType::Sum(u0, u1),
+                ValueType::Sum([u0, u1].into()),
             ),
             (
                 arena.value_type_static_pi(t0, t1),

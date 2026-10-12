@@ -165,10 +165,10 @@ mod readback_terms
         let first = core.value_type_unit();
         let second = core.value_type_unit();
         let atom = core.value_type_abstract(ConstantIndex::from(7_usize));
-        let left = core.value_type_product(first, atom);
-        let right = core.value_type_product(second, atom);
-        let swapped = core.value_type_product(atom, second);
-        let other_former = core.value_type_sum(second, atom);
+        let left = core.value_type_product(&[first, atom]);
+        let right = core.value_type_product(&[second, atom]);
+        let swapped = core.value_type_product(&[atom, second]);
+        let other_former = core.value_type_sum(&[second, atom]);
         let left_returner = core.comp_type_returner(left);
         let right_returner = core.comp_type_returner(right);
         let left_arrow = core.comp_type_arrow(first, left_returner);

@@ -166,7 +166,7 @@ fn a_hole_scrutinee_leaves_every_branch_possible()
 {
     let mut core = CoreArena::new();
     let unit = core.value_type_unit();
-    let sum = core.value_type_sum(unit, unit);
+    let sum = core.value_type_sum(&[unit, unit]);
     let hole = core.value_hole(HoleId::from(0_u32));
     let checkpoint = checkpoint(&core, hole);
     let mut patterns = Patterns::new();
@@ -210,7 +210,7 @@ fn a_constructor_scrutinee_refutes_the_head_and_suspends_the_payload()
 {
     let mut core = CoreArena::new();
     let unit = core.value_type_unit();
-    let sum = core.value_type_sum(unit, unit);
+    let sum = core.value_type_sum(&[unit, unit]);
     let hole = core.value_hole(HoleId::from(0_u32));
     let value = core.value_injection(Side::Left, hole);
     let checkpoint = checkpoint(&core, value);
@@ -240,7 +240,7 @@ fn a_pattern_hole_downgrades_the_residue()
 {
     let mut core = CoreArena::new();
     let unit = core.value_type_unit();
-    let sum = core.value_type_sum(unit, unit);
+    let sum = core.value_type_sum(&[unit, unit]);
     let value = core.value_unit();
     let value = core.value_injection(Side::Left, value);
     let checkpoint = checkpoint(&core, value);
@@ -275,7 +275,7 @@ fn completing_the_match_clears_the_obligation()
 {
     let mut core = CoreArena::new();
     let unit = core.value_type_unit();
-    let sum = core.value_type_sum(unit, unit);
+    let sum = core.value_type_sum(&[unit, unit]);
     let value = core.value_hole(HoleId::from(0_u32));
     let checkpoint = checkpoint(&core, value);
     let mut patterns = Patterns::new();
@@ -356,7 +356,7 @@ fn filling_a_hole_refines_a_possible_verdict()
 {
     let mut core = CoreArena::new();
     let unit = core.value_type_unit();
-    let sum = core.value_type_sum(unit, unit);
+    let sum = core.value_type_sum(&[unit, unit]);
     let hole = HoleId::from(0_u32);
     let value = core.value_hole(hole);
     let mut checkpoint = checkpoint(&core, value);
@@ -457,7 +457,7 @@ fn the_eliminator_still_fires_on_a_hole_payload()
 {
     let mut core = CoreArena::new();
     let unit = core.value_type_unit();
-    let sum = core.value_type_sum(unit, unit);
+    let sum = core.value_type_sum(&[unit, unit]);
     let hole = core.value_hole(HoleId::from(0_u32));
     let left = core.value_injection(Side::Left, hole);
     let mut checkpoint = checkpoint(&core, left);

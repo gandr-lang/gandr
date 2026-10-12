@@ -314,7 +314,7 @@ pub fn decode_desc<G>(
         return Err(DecodeError::Uninhabited);
     };
     for summand in summands.into_iter().rev() {
-        result = arena.value_type_sum(summand, result);
+        result = arena.value_type_sum(&[summand, result]);
     }
     Ok(result)
 }
@@ -521,10 +521,10 @@ fn interpret<G>(
                 let right = values.pop().ok_or(DecodeError::MalformedCode)?;
                 let left = values.pop().ok_or(DecodeError::MalformedCode)?;
                 values.push(if matches!(frame, Frame::Product) {
-                    arena.value_type_product(left, right)
+                    arena.value_type_product(&[left, right])
                 }
                 else {
-                    arena.value_type_sum(left, right)
+                    arena.value_type_sum(&[left, right])
                 });
             },
             | Frame::Apply(declaration, arity) => {
@@ -652,7 +652,7 @@ fn decode_primitive(
         | PrimTy::Unit => Ok(arena.value_type_unit()),
         | PrimTy::Boolean => {
             let unit = arena.value_type_unit();
-            Ok(arena.value_type_sum(unit, unit))
+            Ok(arena.value_type_sum(&[unit, unit]))
         },
         | PrimTy::Char
         | PrimTy::U32

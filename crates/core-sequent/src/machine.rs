@@ -3465,7 +3465,7 @@ mod tests
         let list = core.value_list_cons(one, tail);
         let unit_type = core.value_type_unit();
         let integer_type = core.value_type_base(gandr_kernel_term::BaseType::Integer);
-        let pair_type = core.value_type_product(integer_type, integer_type);
+        let pair_type = core.value_type_product(&[integer_type, integer_type]);
         let list_type = core.value_type_list(integer_type);
         for (payload, payload_type) in [(pair, pair_type), (list, list_type)] {
             let signature = gandr_core_term::effect::EffectSig::new("Inspect".into(), [
@@ -3544,7 +3544,7 @@ mod tests
     {
         let element = core.value_type_base(gandr_kernel_term::BaseType::Integer);
         let unit = core.value_type_unit();
-        let result = core.value_type_sum(unit, unit);
+        let result = core.value_type_sum(&[unit, unit]);
         let zero = core.value_variable(Zone::Intuitionistic, 0_u32.into());
         let one = core.value_variable(Zone::Intuitionistic, 1_u32.into());
         let greater = gandr_core_term::primitive::PRELUDE
@@ -3604,7 +3604,7 @@ mod tests
         let tail = core.value_list_cons(two, tail);
         let list = core.value_list_cons(one, tail);
         let unit_type = core.value_type_unit();
-        let boolean = core.value_type_sum(unit_type, unit_type);
+        let boolean = core.value_type_sum(&[unit_type, unit_type]);
         let signature = gandr_core_term::effect::EffectSig::new("Assert".into(), [
             gandr_core_term::effect::EffectOp {
                 name: "assert".into(),
@@ -3646,7 +3646,7 @@ mod tests
         let nil = core.value_list_nil();
         let list = core.value_list_cons(one, nil);
         let unit_type = core.value_type_unit();
-        let boolean = core.value_type_sum(unit_type, unit_type);
+        let boolean = core.value_type_sum(&[unit_type, unit_type]);
         let signature = gandr_core_term::effect::EffectSig::new("Assert".into(), [
             gandr_core_term::effect::EffectOp {
                 name: "assert".into(),
@@ -3779,7 +3779,7 @@ mod tests
         use gandr_core_term::ValueType;
         let mut source = CoreArena::new();
         let integer_type = source.value_type_base(gandr_kernel_term::BaseType::Integer);
-        let pair_type = source.value_type_product(integer_type, integer_type);
+        let pair_type = source.value_type_product(&[integer_type, integer_type]);
         let result_type = source.value_type_list(pair_type);
         let nil = source.value_list_nil();
         let two = integer(&mut source, Digits("2"));
@@ -3830,7 +3830,7 @@ mod tests
         };
         assert_eq!(
             target.value_type(pair),
-            Some(&ValueType::Product(element, element))
+            Some(&ValueType::Product([element, element].into()))
         );
         for (mut core, program) in [(source, program), (target, decoded)] {
             let mut arena = CommandArena::new();

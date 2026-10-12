@@ -538,10 +538,10 @@ fn translate(
                     | ValueType::Base(base) => core.value_type_base(base),
                     | ValueType::Unit => core.value_type_unit(),
                     | ValueType::Product(first, second) => {
-                        core.value_type_product(types[&first], types[&second])
+                        core.value_type_product(&[types[&first], types[&second]])
                     },
                     | ValueType::Sum(first, second) => {
-                        core.value_type_sum(types[&first], types[&second])
+                        core.value_type_sum(&[types[&first], types[&second]])
                     },
                     | ValueType::Thunk(body) => core.value_type_thunk(comp_types[&body]),
                     | ValueType::Universe { sort, ref level } => {

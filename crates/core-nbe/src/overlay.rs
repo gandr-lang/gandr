@@ -2855,9 +2855,9 @@ impl Erasure<'_>
          Ok(id) => results.checked_sub(match graft.children() { Children::Leaf => 0, Children::One(_) => 1, Children::Two(..) => 2, Children::Three(..) => 3 }) == Some(self.results.len())
          && self.core.value_type(id).is_some_and(|actual| match *graft {
             ValueTypeGraft::Base(base) => matches!(*actual, gandr_core_term::ValueType::Base(actual) if base == actual),
-            ValueTypeGraft::Unit => matches!(*actual, gandr_core_term::ValueType::Unit),
-            ValueTypeGraft::Product(..) => matches!(*actual, gandr_core_term::ValueType::Product(first,second) if children[1] == Some(CoreId::ValueType(first)) && children[0] == Some(CoreId::ValueType(second))),
-            ValueTypeGraft::Sum(..) => matches!(*actual, gandr_core_term::ValueType::Sum(first,second) if children[1] == Some(CoreId::ValueType(first)) && children[0] == Some(CoreId::ValueType(second))),
+           ValueTypeGraft::Unit => matches!(*actual, gandr_core_term::ValueType::Product(ref components) if components.is_empty()),
+           ValueTypeGraft::Product(..) => matches!(*actual, gandr_core_term::ValueType::Product(ref components) if matches!(**components, [first, second] if children[1] == Some(CoreId::ValueType(first)) && children[0] == Some(CoreId::ValueType(second)))),
+           ValueTypeGraft::Sum(..) => matches!(*actual, gandr_core_term::ValueType::Sum(ref summands) if matches!(**summands, [first, second] if children[1] == Some(CoreId::ValueType(first)) && children[0] == Some(CoreId::ValueType(second)))),
             ValueTypeGraft::Thunk(_) => matches!(*actual, gandr_core_term::ValueType::Thunk(body) if children[0] == Some(CoreId::CompType(body))),
             ValueTypeGraft::Universe{sort,ref level} => matches!(*actual, gandr_core_term::ValueType::Universe{sort:actual_sort,level:ref actual_level} if sort == actual_sort && level == actual_level),
             ValueTypeGraft::Lift{ref target,..} => matches!(*actual, gandr_core_term::ValueType::Lift{inner,target:ref actual} if target == actual && children[0] == Some(CoreId::ValueType(inner))),
@@ -2878,12 +2878,12 @@ impl Erasure<'_>
             | ValueTypeGraft::Product(..) => {
                 let second = self.value_type()?;
                 let first = self.value_type()?;
-                Ok(self.core.value_type_product(first, second))
+                Ok(self.core.value_type_product(&[first, second]))
             },
             | ValueTypeGraft::Sum(..) => {
                 let second = self.value_type()?;
                 let first = self.value_type()?;
-                Ok(self.core.value_type_sum(first, second))
+                Ok(self.core.value_type_sum(&[first, second]))
             },
             | ValueTypeGraft::Thunk(_) => {
                 let body = self.comp_type()?;
@@ -3917,7 +3917,7 @@ mod tests
 
         let r_base = reference.value_type_base(BaseType::Integer);
         let r_unit = reference.value_type_unit();
-        let r_sum = reference.value_type_sum(r_base, r_unit);
+        let r_sum = reference.value_type_sum(&[r_base, r_unit]);
         let r_result = reference.value_type_unit();
         let r_returner = reference.comp_type_returner(r_result);
         let r_thunk_type = reference.value_type_thunk(r_returner);
@@ -3930,11 +3930,11 @@ mod tests
         let r_comp_code = reference.value_unit();
         let r_comp_element = reference.comp_type_element(r_comp_code, target.clone());
         let r_suspended_element = reference.value_type_thunk(r_comp_element);
-        let r_decodes = reference.value_type_product(r_element, r_suspended_element);
-        let r_codes = reference.value_type_product(r_lift_type, r_decodes);
-        let r_universes = reference.value_type_product(r_universe, r_codes);
-        let r_thunks = reference.value_type_product(r_thunk_type, r_universes);
-        let r_value_type = reference.value_type_product(r_sum, r_thunks);
+        let r_decodes = reference.value_type_product(&[r_element, r_suspended_element]);
+        let r_codes = reference.value_type_product(&[r_lift_type, r_decodes]);
+        let r_universes = reference.value_type_product(&[r_universe, r_codes]);
+        let r_thunks = reference.value_type_product(&[r_thunk_type, r_universes]);
+        let r_value_type = reference.value_type_product(&[r_sum, r_thunks]);
 
         let r_domain = reference.value_type_unit();
         let r_sealed = reference.value_type_abstract(second);

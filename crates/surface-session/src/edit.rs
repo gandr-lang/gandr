@@ -3075,9 +3075,8 @@ where
                 ValueType::Base(base) => {
                     matches!(ret, ContentNode::Base(found) if found == base)
                 }
-                ValueType::Unit => matches!(ret, ContentNode::UnitType),
-                ValueType::Product(..) => matches!(ret, ContentNode::Product(..)),
-                ValueType::Sum(..) => matches!(ret, ContentNode::Sum(..)),
+                ValueType::Product(ref parts) => matches!(ret, ContentNode::Product(ref found) if found.len() == parts.len()),
+                ValueType::Sum(ref parts) => matches!(ret, ContentNode::Sum(ref found) if found.len() == parts.len()),
                 ValueType::List(_) => matches!(ret, ContentNode::List(_)),
                 ValueType::Thunk(_) => matches!(ret, ContentNode::ThunkType(_)),
                 ValueType::Universe { sort, ref level } => {
@@ -3147,15 +3146,18 @@ where
             ContentNode::PathUniverse(source, child(Root::Value(target)))
         },
         | Some(&ValueType::Base(base)) => ContentNode::Base(base),
-        | Some(&ValueType::Unit) => ContentNode::UnitType,
-        | Some(&ValueType::Product(first, second)) => {
-            let first = child(Root::ValueType(first));
-            ContentNode::Product(first, child(Root::ValueType(second)))
-        },
-        | Some(&ValueType::Sum(first, second)) => {
-            let first = child(Root::ValueType(first));
-            ContentNode::Sum(first, child(Root::ValueType(second)))
-        },
+        | Some(&ValueType::Product(ref parts)) => ContentNode::Product(
+            parts
+                .iter()
+                .map(|&part| child(Root::ValueType(part)))
+                .collect(),
+        ),
+        | Some(&ValueType::Sum(ref parts)) => ContentNode::Sum(
+            parts
+                .iter()
+                .map(|&part| child(Root::ValueType(part)))
+                .collect(),
+        ),
         | Some(&ValueType::List(element)) => ContentNode::List(child(Root::ValueType(element))),
         | Some(&ValueType::Thunk(body)) => ContentNode::ThunkType(child(Root::CompType(body))),
         | Some(&ValueType::Universe { sort, ref level }) => ContentNode::Universe {
@@ -3869,7 +3871,7 @@ def body = 1 ;
             ContentNode::PathUniverse(NodeIndex::from(1_usize), NodeIndex::from(2_usize)),
             ContentNode::Quote(NodeIndex::from(3_usize)),
             ContentNode::Quote(NodeIndex::from(4_usize)),
-            ContentNode::UnitType,
+            ContentNode::Product(Vec::new()),
             ContentNode::Base(BaseType::Integer),
         ]);
         let (body, spans) = read(&program, &origins, Root::Value(equivalence));

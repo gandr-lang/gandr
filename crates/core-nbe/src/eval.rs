@@ -4929,7 +4929,7 @@ mod tests
             let mut core = CoreArena::new();
             let unit = core.value_unit();
             let unit_type = core.value_type_unit();
-            let boolean = core.value_type_sum(unit_type, unit_type);
+            let boolean = core.value_type_sum(&[unit_type, unit_type]);
             let code = core.value_quote(boolean);
             let refl = core.value_path_refl(code);
             let first_path = if first_stuck {
@@ -5343,7 +5343,7 @@ mod tests
         let argument = core.value_quote(integer);
         let bound = core.value_variable(Zone::Intuitionistic, innermost());
         let decoded = core.value_type_element(bound, Level::zero());
-        let doubled = core.value_type_product(decoded, decoded);
+        let doubled = core.value_type_product(&[decoded, decoded]);
         let body = core.value_quote(doubled);
         let operator = core.value_static_lambda(body);
         let redex = core.value_static_application(operator, argument);
@@ -5371,9 +5371,17 @@ mod tests
         else {
             panic!("the normal form is a quote");
         };
-        let Some(&ValueType::Product(first, second)) = core.value_type(quoted)
+        let Some(held) = core.value_type(quoted)
         else {
             panic!("the quoted type is the body's product");
+        };
+        let ValueType::Product(ref components) = *held
+        else {
+            panic!("the quoted type is the body's product");
+        };
+        let [first, second] = **components
+        else {
+            panic!("the body's product is binary");
         };
         for component in [first, second] {
             assert_eq!(
@@ -6218,8 +6226,8 @@ mod tests
             alternate = core.computation_lambda(alternate);
         }
         let unit_type = core.value_type_unit();
-        let sum = core.value_type_sum(unit_type, unit_type);
-        let product = core.value_type_product(unit_type, unit_type);
+        let sum = core.value_type_sum(&[unit_type, unit_type]);
+        let product = core.value_type_product(&[unit_type, unit_type]);
         let empty_type = core.value_type_record(BTreeMap::new());
         let record_type = core.value_type_record(
             labels

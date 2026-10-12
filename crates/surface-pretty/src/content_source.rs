@@ -113,7 +113,6 @@ impl Source for ContentSource<'_>
 (Some(&ContentNode::ListNil), Former::ListNil) |
 (Some(&ContentNode::Thunk(_)), Former::Thunk) |
 (Some(&ContentNode::ValueLift { .. }), Former::ValueLift) |
-(Some(&ContentNode::UnitType), Former::UnitType) |
 (Some(&ContentNode::TypeLift { .. }), Former::TypeLift) => true,
         (Some(&ContentNode::Stack { input: a, output: b }), Former::Stack(c, d))
         | (Some(&ContentNode::WithType(a, b)), Former::With(c, d)) | (Some(&ContentNode::PathUniverse(a, b)), Former::PathUniverse(c, d))
@@ -121,8 +120,6 @@ impl Source for ContentSource<'_>
         | (Some(&ContentNode::PathEquiv { forward: a, backward: b, .. }), Former::PathEquiv(c, d))
         | (Some(&ContentNode::Pair(a, b)), Former::Pair(c, d))
         | (Some(&ContentNode::ListCons(a, b)), Former::ListCons(c, d))
-        | (Some(&ContentNode::Product(a, b)), Former::Product(c, d))
-        | (Some(&ContentNode::Sum(a, b)), Former::Sum(c, d))
         | (Some(&ContentNode::StaticApplication(a, b)), Former::StaticApplication(c, d))
         | (Some(&ContentNode::Arrow { domain: a, codomain: b }), Former::Arrow { domain: c, codomain: d })
         | (Some(&ContentNode::Pi { domain: a, codomain: b }), Former::Pi { domain: c, codomain: d })
@@ -147,6 +144,13 @@ impl Source for ContentSource<'_>
         (Some(&ContentNode::Returner { result, ref effects }), Former::Returner(actual)) => result == actual && effects.signatures().len() == 0,
         (Some(&ContentNode::Returner { result, ref effects }), Former::EffectfulReturner { result: actual, .. }) => result == actual && effects.signatures().len() != 0,
         (Some(&ContentNode::Base(a)), Former::BaseType(b)) => a == b,
+        (Some(held), Former::UnitType) => matches!(*held, ContentNode::Product(ref parts) if parts.is_empty()),
+        (Some(&ContentNode::Product(ref parts)), Former::Product(c, d)) | (Some(&ContentNode::Sum(ref parts)), Former::Sum(c, d)) => **parts == [c, d],
+        (Some(held), Former::Unreadable) if matches!(*held, ContentNode::Product(_) | ContentNode::Sum(_)) => match *held {
+            ContentNode::Product(ref parts) => !matches!(parts.len(), 0 | 2),
+            ContentNode::Sum(ref parts) => parts.len() != 2,
+            _ => false,
+        },
         (Some(&ContentNode::Universe { sort, ref level }), Former::Universe { sort: actual_sort, level: actual_level }) =>
             sort == actual_sort && level == actual_level,
 
@@ -213,9 +217,17 @@ impl Source for ContentSource<'_>
             | ContentNode::Quote(quoted) => Former::Quote(quoted),
             | ContentNode::QuoteComputation(quoted) => Former::QuoteComputation(quoted),
             | ContentNode::Base(base) => Former::BaseType(base),
-            | ContentNode::UnitType => Former::UnitType,
-            | ContentNode::Product(first, second) => Former::Product(first, second),
-            | ContentNode::Sum(first, second) => Former::Sum(first, second),
+            | ContentNode::Product(ref parts) => match **parts {
+                | [] => Former::UnitType,
+                | [first, second] => Former::Product(first, second),
+                // A product of any other arity has no spelling yet.
+                | _ => Former::Unreadable,
+            },
+            | ContentNode::Sum(ref parts) => match **parts {
+                | [first, second] => Former::Sum(first, second),
+                // A sum of any other arity has no spelling yet.
+                | _ => Former::Unreadable,
+            },
             | ContentNode::List(element) => Former::List(element),
             | ContentNode::ThunkType(body) => Former::ThunkType(body),
             | ContentNode::Universe { sort, ref level } => Former::Universe { sort, level },
@@ -369,7 +381,10 @@ mod tests
             spelled(&[ContentNode::Base(BaseType::String)]),
             faithful("String".into())
         );
-        assert_eq!(spelled(&[ContentNode::UnitType]), faithful("Unit".into()));
+        assert_eq!(
+            spelled(&[ContentNode::Product(Vec::new())]),
+            faithful("Unit".into())
+        );
         assert_eq!(
             spelled(&[named(ItemKey::from("Shape"))]),
             faithful("Shape".into())
@@ -405,7 +420,7 @@ mod tests
                 ContentNode::PathUniverse(n1, n2),
                 ContentNode::Quote(n3),
                 ContentNode::Quote(n4),
-                ContentNode::UnitType,
+                ContentNode::Product(Vec::new()),
                 ContentNode::Base(BaseType::Integer),
             ]),
             approximate("Path_U(Unit, Integer)".into())
@@ -441,7 +456,7 @@ mod tests
                     result: n3,
                     effects: gandr_core_term::effect::EffectRow::EMPTY
                 },
-                ContentNode::UnitType,
+                ContentNode::Product(Vec::new()),
             ]),
             faithful("-F (+U (-F Unit))".into())
         );
@@ -461,7 +476,7 @@ mod tests
                     result: n5,
                     effects: gandr_core_term::effect::EffectRow::EMPTY
                 },
-                ContentNode::UnitType,
+                ContentNode::Product(Vec::new()),
             ]),
             faithful("Integer -> String -> -F Unit".into())
         );
@@ -580,7 +595,7 @@ mod tests
                 result: n4,
                 effects: gandr_core_term::effect::EffectRow::EMPTY,
             },
-            ContentNode::UnitType,
+            ContentNode::Product(Vec::new()),
         ];
         let spelling = spell(&nodes, n0).expect("a transcript type lays out");
         assert_eq!(spelling.to_string(), "+U (String -> -F Unit)");

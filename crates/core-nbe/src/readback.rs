@@ -698,10 +698,12 @@ enum Task
     Quote,
     /// Assemble a computation-type quote from the type on the stack.
     QuoteComputation,
-    /// Assemble a product type from the two types on the stack.
-    Product,
-    /// Assemble a sum type from the two types on the stack.
-    Sum,
+    /// Assemble a product type from as many types on the stack as the source
+    /// has components.
+    ProductType(ValueTypeId),
+    /// Assemble a sum type from as many types on the stack as the source has
+    /// summands.
+    SumType(ValueTypeId),
     /// Assemble a native List type from its element type.
     ListType,
     /// Assemble a thunk type from the computation type on the stack.
@@ -2011,7 +2013,13 @@ fn run(
             && entry_comps.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comps.len())
             && entry_value_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.value_types.len())
             && entry_comp_types.checked_sub(1_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comp_types.len()),
-        | Task::Product | Task::Sum | Task::StaticPi => machine.tasks.len() == entry_tasks
+        | Task::ProductType(source) | Task::SumType(source) => core.value_type(source).is_some_and(|held| matches!(*held, ValueType::Product(ref parts) | ValueType::Sum(ref parts)
+            if machine.tasks.len() == entry_tasks
+            && machine.values.len() == entry_values && machine.comps.len() == entry_comps
+            && entry_value_types.checked_sub(parts.len()).and_then(|left| left.checked_add(1)) == Some(machine.value_types.len())
+            && machine.comp_types.len() == entry_comp_types
+            && machine.value_types.last().is_some_and(|&id| core.value_type(id).is_some_and(|held| matches!(*held, ValueType::Product(ref result) | ValueType::Sum(ref result) if result.len() == parts.len()))))),
+        | Task::StaticPi => machine.tasks.len() == entry_tasks
             && entry_values.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.values.len())
             && entry_comps.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comps.len())
             && entry_value_types.checked_sub(2_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.value_types.len())
@@ -2406,18 +2414,29 @@ fn step(
             machine.values.push(core.value_quote_computation(quoted));
             Ok(())
         },
-        | Task::Product => {
-            let second = machine.pop_value_type()?;
-            let first = machine.pop_value_type()?;
-            machine
+        | Task::ProductType(source) | Task::SumType(source) => {
+            let (product, arity) = match core.value_type(source) {
+                | Some(&ValueType::Product(ref parts)) => (true, parts.len()),
+                | Some(&ValueType::Sum(ref parts)) => (false, parts.len()),
+                | _ => return Err(ReadbackFault::MachineInvariant),
+            };
+            let start = machine
                 .value_types
-                .push(core.value_type_product(first, second));
-            Ok(())
-        },
-        | Task::Sum => {
-            let second = machine.pop_value_type()?;
-            let first = machine.pop_value_type()?;
-            machine.value_types.push(core.value_type_sum(first, second));
+                .len()
+                .checked_sub(arity)
+                .ok_or(ReadbackFault::MachineInvariant)?;
+            let read = machine
+                .value_types
+                .get(start ..)
+                .ok_or(ReadbackFault::MachineInvariant)?;
+            let assembled = if product {
+                core.value_type_product(read)
+            }
+            else {
+                core.value_type_sum(read)
+            };
+            machine.value_types.truncate(start);
+            machine.value_types.push(assembled);
             Ok(())
         },
         | Task::ThunkType => {
@@ -2683,9 +2702,12 @@ fn held_level(
     } else { ret.is_ok() && machine.tasks.get(entry_tasks ..).is_some_and(|new_tasks| match core.value_type(quoted) { Some(matched_native_node) => match *matched_native_node {
         ValueType::Stack { input, output } => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::StackType, Task::QuotedCompType { quoted: second, frame: second_frame, binders: second_binders }, Task::QuotedCompType { quoted: first, frame: first_frame, binders: first_binders }] if *first == input && *second == output && *first_frame == frame && *second_frame == frame && *first_binders == binders && *second_binders == binders),
         ValueType::List(element) => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::ListType, Task::QuotedValueType { quoted: child, frame: child_frame, binders: child_binders }] if *child == element && *child_frame == frame && *child_binders == binders),
-ValueType::PathUniverse(..) | ValueType::Base(_) | ValueType::Unit | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => new_tasks.is_empty() && machine.value_types.len() == entry_results.saturating_add(1_usize) && machine.value_types.last() == Some(&quoted),
-ValueType::Product(first, second) => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::Product, Task::QuotedValueType { quoted: second_task, frame: second_task_frame, binders: second_task_binders }, Task::QuotedValueType { quoted: first_task, frame: first_task_frame, binders: first_task_binders }] if *first_task == first && *first_task_frame == frame && *first_task_binders == binders && *second_task == second && *second_task_frame == frame && *second_task_binders == binders),
-ValueType::Sum(first, second) => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::Sum, Task::QuotedValueType { quoted: second_task, frame: second_task_frame, binders: second_task_binders }, Task::QuotedValueType { quoted: first_task, frame: first_task_frame, binders: first_task_binders }] if *first_task == first && *first_task_frame == frame && *first_task_binders == binders && *second_task == second && *second_task_frame == frame && *second_task_binders == binders),
+ValueType::PathUniverse(..) | ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => new_tasks.is_empty() && machine.value_types.len() == entry_results.saturating_add(1_usize) && machine.value_types.last() == Some(&quoted),
+ValueType::Product(ref parts) | ValueType::Sum(ref parts) if parts.is_empty() => new_tasks.is_empty() && machine.value_types.len() == entry_results.saturating_add(1_usize) && machine.value_types.last() == Some(&quoted),
+ValueType::Product(ref parts) | ValueType::Sum(ref parts) => machine.value_types.len() == entry_results
+            && new_tasks.first() == Some(&if matches!(*matched_native_node, ValueType::Product(_)) { Task::ProductType(quoted) } else { Task::SumType(quoted) })
+            && new_tasks.len() == parts.len().saturating_add(1)
+            && new_tasks.iter().skip(1).zip(parts.iter().rev()).all(|(task, part)| *task == Task::QuotedValueType { quoted: *part, frame, binders }),
 ValueType::StaticPi { domain: first, codomain: second } => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::StaticPi, Task::QuotedValueType { quoted: second_task, frame: second_task_frame, binders: second_task_binders }, Task::QuotedValueType { quoted: first_task, frame: first_task_frame, binders: first_task_binders }] if *first_task == first && *first_task_frame == frame && *first_task_binders == binders && *second_task == second && *second_task_frame == frame && *second_task_binders == binders),
 ValueType::Thunk(body) => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::ThunkType, Task::QuotedCompType { quoted: child, frame: child_frame, binders: child_binders }] if *child == body && *child_frame == frame && *child_binders == binders),
 ValueType::Lift { inner, ref target } => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::LiftType { target: held }, Task::QuotedValueType { quoted: child, frame: child_frame, binders: child_binders }] if domain.level(*held).is_some_and(|level| level.level() == target) && *child == inner && *child_frame == frame && *child_binders == binders),
@@ -2741,10 +2763,13 @@ fn step_quoted_value_type(
         },
         | ValueType::PathUniverse(..)
         | ValueType::Base(_)
-        | ValueType::Unit
         | ValueType::Universe { .. }
         | ValueType::Abstract(_)
         | ValueType::Unknown => {
+            machine.value_types.push(quoted);
+        },
+        // The empty product and the empty sum are closed leaves.
+        | ValueType::Product(ref parts) | ValueType::Sum(ref parts) if parts.is_empty() => {
             machine.value_types.push(quoted);
         },
         | ValueType::Data { ref arguments, .. } => {
@@ -2763,15 +2788,17 @@ fn step_quoted_value_type(
                 .tasks
                 .extend(fields.values().rev().map(|&field| at(field)));
         },
-        | ValueType::Product(first, second) => {
-            machine.tasks.push(Task::Product);
-            machine.tasks.push(at(second));
-            machine.tasks.push(at(first));
+        | ValueType::Product(ref parts) => {
+            machine.tasks.push(Task::ProductType(quoted));
+            machine
+                .tasks
+                .extend(parts.iter().rev().map(|&part| at(part)));
         },
-        | ValueType::Sum(first, second) => {
-            machine.tasks.push(Task::Sum);
-            machine.tasks.push(at(second));
-            machine.tasks.push(at(first));
+        | ValueType::Sum(ref parts) => {
+            machine.tasks.push(Task::SumType(quoted));
+            machine
+                .tasks
+                .extend(parts.iter().rev().map(|&part| at(part)));
         },
         // The static Pi opens no binder: its codomain stands in the ambient
         // context, so both halves read in the same frame.
@@ -5509,7 +5536,7 @@ mod tests
             panic!("the read value is a quote");
         };
         assert_eq!(
-            Some(&ValueType::Unit),
+            Some(&ValueType::unit()),
             core.value_type(quoted),
             "the decode's code unfolded to a quote, and decoding it on mint left the quoted type"
         );
@@ -5524,7 +5551,7 @@ mod tests
         let inner = core.value_variable(Zone::Intuitionistic, innermost());
         let first = core.value_type_element(outer, Level::zero());
         let second = core.value_type_element(inner, Level::zero());
-        let product = core.value_type_product(first, second);
+        let product = core.value_type_product(&[first, second]);
         let quote = core.value_quote(product);
         let inner_lambda = core.value_static_lambda(quote);
         let lambda = core.value_static_lambda(inner_lambda);
@@ -5574,9 +5601,17 @@ mod tests
         else {
             panic!("whose body is the quote");
         };
-        let Some(&ValueType::Product(left, right)) = core.value_type(quoted)
+        let Some(held) = core.value_type(quoted)
         else {
             panic!("the quoted type is the product");
+        };
+        let ValueType::Product(ref components) = *held
+        else {
+            panic!("the quoted type is the product");
+        };
+        let [left, right] = **components
+        else {
+            panic!("the product is binary");
         };
         for (component, index) in [(left, 1_u32), (right, 0_u32)] {
             let Some(&ValueType::Element { code, .. }) = core.value_type(component)
@@ -5646,7 +5681,7 @@ mod tests
         let second = core.value_variable(Zone::Intuitionistic, innermost());
         let left = core.value_type_element(first, Level::zero());
         let right = core.value_type_element(second, Level::zero());
-        let product = core.value_type_product(left, right);
+        let product = core.value_type_product(&[left, right]);
         let quote = core.value_quote(product);
         let inner = core.value_static_lambda(quote);
         let body = core.value_static_lambda(inner);
@@ -5713,14 +5748,22 @@ mod tests
         else {
             panic!("the reduct is the body's quote, with no application left");
         };
-        let Some(&ValueType::Product(read_left, read_right)) = core.value_type(quoted)
+        let Some(held) = core.value_type(quoted)
         else {
             panic!("the quoted type is the body's product");
+        };
+        let ValueType::Product(ref components) = *held
+        else {
+            panic!("the quoted type is the body's product");
+        };
+        let [read_left, read_right] = **components
+        else {
+            panic!("the body's product is binary");
         };
         assert_eq!(
             (
                 Some(&ValueType::Base(gandr_kernel_term::BaseType::Integer)),
-                Some(&ValueType::Unit)
+                Some(&ValueType::unit())
             ),
             (core.value_type(read_left), core.value_type(read_right)),
             "each parameter was replaced by its own argument, in order"
@@ -6067,7 +6110,7 @@ mod tests
         assert_eq!(operations[0].name.as_ref(), "get");
         assert_eq!(
             core.value_type(operations[0].payload),
-            Some(&ValueType::Unit)
+            Some(&ValueType::unit())
         );
         assert_eq!(operations[1].name.as_ref(), "put");
         assert_eq!(
@@ -6079,7 +6122,7 @@ mod tests
             else {
                 panic!("the operation retains its List former")
             };
-            assert_eq!(core.value_type(element), Some(&ValueType::Unit));
+            assert_eq!(core.value_type(element), Some(&ValueType::unit()));
         }
     }
 
@@ -6304,12 +6347,12 @@ mod tests
         };
         let types = [
             (
-                core.value_type_product(unit, universe),
-                ValueType::Product(unit, universe),
+                core.value_type_product(&[unit, universe]),
+                ValueType::Product([unit, universe].into()),
             ),
             (
-                core.value_type_sum(universe, unit),
-                ValueType::Sum(universe, unit),
+                core.value_type_sum(&[universe, unit]),
+                ValueType::Sum([universe, unit].into()),
             ),
             (
                 core.value_type_lift(unit, target.clone()),

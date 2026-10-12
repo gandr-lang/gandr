@@ -947,13 +947,17 @@ pub fn loose_reach(
                         work.push((CoreNode::Term(TermNode::Value(source)), depth));
                         work.push((CoreNode::Term(TermNode::Value(target)), depth));
                     },
+                    | ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
+                        work.extend(
+                            parts
+                                .iter()
+                                .map(|&part| (CoreNode::Type(TypeNode::Value(part)), depth)),
+                        );
+                    },
                     | ValueType::Base(_)
-                    | ValueType::Unit
                     | ValueType::Universe { .. }
                     | ValueType::Abstract(_)
                     | ValueType::Unknown => {},
-                    | ValueType::Product(first, second)
-                    | ValueType::Sum(first, second)
                     | ValueType::StaticPi {
                         domain: first,
                         codomain: second,
@@ -1044,8 +1048,8 @@ mod tests
     ///   separates swapped substitution and wrong quoted children.
     /// - witness: `code::tests::a_static_step_reduces_saturated_instances_and_redexes_only`
     #[spec(ensures: |ret| matches!(arena.value(reduct), Some(Value::Quote(quoted))
-        if matches!(arena.value_type(*quoted), Some(ValueType::Product(first, second))
-            if arena.value_type(*first) == Some(&ret.0) && arena.value_type(*second) == Some(&ret.1))))]
+        if arena.value_type(*quoted).is_some_and(|held| matches!(*held, ValueType::Product(ref parts)
+            if matches!(**parts, [first, second] if arena.value_type(first) == Some(&ret.0) && arena.value_type(second) == Some(&ret.1))))))]
     fn quoted_pair(
         arena: &CoreArena,
         reduct: ValueId,
@@ -1055,9 +1059,17 @@ mod tests
         else {
             panic!("the reduct is a quote: {:?}", arena.value(reduct));
         };
-        let Some(&ValueType::Product(first, second)) = arena.value_type(quoted)
+        let Some(held) = arena.value_type(quoted)
         else {
             panic!("the quote holds a product");
+        };
+        let ValueType::Product(ref parts) = *held
+        else {
+            panic!("the quote holds a product");
+        };
+        let [first, second] = **parts
+        else {
+            panic!("the quoted product is binary");
         };
         (
             arena.value_type(first).cloned().unwrap(),
@@ -1080,7 +1092,7 @@ mod tests
         let inner = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
         let first = arena.value_type_element(outer, Level::zero());
         let second = arena.value_type_element(inner, Level::zero());
-        let product = arena.value_type_product(first, second);
+        let product = arena.value_type_product(&[first, second]);
         let quoted = arena.value_quote(product);
         let inner_lambda = arena.value_static_lambda(quoted);
         let both_body = arena.value_static_lambda(inner_lambda);

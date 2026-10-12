@@ -184,6 +184,12 @@ pub enum UnadmittedFormer
     With,
     /// Observation of a lazy computation pair.
     Project,
+    /// A product of neither zero nor two components, which the binary
+    /// kernel product has no image for.
+    ProductArity,
+    /// A sum of other than two summands, which the binary kernel sum has no
+    /// image for.
+    SumArity,
 }
 
 /// A count of static arguments: how many a static application passes, or how

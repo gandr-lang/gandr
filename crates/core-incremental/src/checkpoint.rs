@@ -2312,7 +2312,7 @@ mod tests
             occurrence: Occurrence::from(0_usize),
         };
         let table = TypeContent::from_nodes(vec![
-            ContentNode::Product(NodeIndex::from(1_usize), NodeIndex::from(2_usize)),
+            ContentNode::Product(vec![NodeIndex::from(1_usize), NodeIndex::from(2_usize)]),
             ContentNode::Abstract(abstract_name.clone()),
             ContentNode::Element {
                 code: NodeIndex::from(3_usize),
@@ -2385,7 +2385,9 @@ mod tests
             key: ItemKey::from("b"),
             occurrence: Occurrence::from(0_usize),
         };
-        let typed = Answer::Typed(TypeContent::from_nodes(vec![ContentNode::UnitType]));
+        let typed = Answer::Typed(TypeContent::from_nodes(vec![ContentNode::Product(
+            Vec::new(),
+        )]));
         let mut support = vec![
             Answered::new(b.clone(), Answer::Untyped),
             Answered::new(a.clone(), typed.clone()),

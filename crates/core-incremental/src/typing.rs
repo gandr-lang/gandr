@@ -1328,14 +1328,14 @@ mod tests
         let computation_site = Site::Node(NodeIndex::from(4_usize));
         let type_site = Site::Node(NodeIndex::from(7_usize));
         let comp_type_site = Site::Node(NodeIndex::from(5_usize));
-        let unit_content = || TypeContent::from_nodes(vec![ContentNode::UnitType]);
+        let unit_content = || TypeContent::from_nodes(vec![ContentNode::Product(Vec::new())]);
         let returner_content = || {
             TypeContent::from_nodes(vec![
                 ContentNode::Returner {
                     result: NodeIndex::from(1_usize),
                     effects: gandr_core_term::effect::EffectRow::EMPTY,
                 },
-                ContentNode::UnitType,
+                ContentNode::Product(Vec::new()),
             ])
         };
         let cases = [
