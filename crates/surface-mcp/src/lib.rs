@@ -8,7 +8,8 @@
 //! model's connection reads the documents the editors' connections hold, at
 //! the version they last synchronised. Its tools answer the diagnostics last
 //! published for a document, its outline, the syntax expected at a position
-//! and the type of a declaration; its resources name each open document's
+//! and the type of a declaration, and judge a batch of candidate fills
+//! without changing the document; its resources name each open document's
 //! diagnostics, and a subscription to one hears every publication. Every
 //! tool result also carries what changed since the connection's previous
 //! call, for a host that does not surface subscription updates to its model.

@@ -12,6 +12,7 @@ The gandr Model Context Protocol server: the documents the engine hub holds open
 - [Models read what the editor shows](#models-read-what-the-editor-shows)
 - [Both eras of the protocol](#both-eras-of-the-protocol)
 - [Changes ride on every tool result](#changes-ride-on-every-tool-result)
+- [A trial splices each candidate into the held text](#a-trial-splices-each-candidate-into-the-held-text)
 - [One socket, two faces](#one-socket-two-faces)
 - [The protocol is written here](#the-protocol-is-written-here)
 - [Specification evidence](#specification-evidence)
@@ -21,7 +22,7 @@ The gandr Model Context Protocol server: the documents the engine hub holds open
 
 ## Synopsis
 
-**What.** `gandr-surface-mcp` serves the Model Context Protocol's tools and resources over the engine hub's shared workspace. Five tools: `diagnostics` (the last diagnostics published for an open document), `documents` (every open document and its version), `outline` (its declarations, nested), `expected_syntax` (the syntax the parser expects at a position, as snippets) and `type_of` (the type and documentation of the declaration named at a position). One resource per open document, `gandr://<path>/diagnostics`, readable and subscribable. On Unix the hub hands it every connection whose first byte is `{`; `gandr mcp` relays a model host's standard streams to that hub.
+**What.** `gandr-surface-mcp` serves the Model Context Protocol's tools and resources over the engine hub's shared workspace. Six tools: `diagnostics` (the last diagnostics published for an open document), `documents` (every open document and its version), `outline` (its declarations, nested), `expected_syntax` (the syntax the parser expects at a position, as snippets), `trial` (candidate fills judged without changing the document, best first) and `type_of` (the type and documentation of the declaration named at a position). One resource per open document, `gandr://<path>/diagnostics`, readable and subscribable. On Unix the hub hands it every connection whose first byte is `{`; `gandr mcp` relays a model host's standard streams to that hub.
 
 **Why.** A model writing gandr should see what the author's editor shows, at the version the editor last synchronised, without a second checker that could disagree with the first, and without re-running the pipeline on every read.
 
@@ -37,7 +38,7 @@ The gandr Model Context Protocol server: the documents the engine hub holds open
 ## Provided features
 
 - `Connection`, `MODERN` and `LEGACY`: either era's opening, the tool list, resource listing and reading, both subscription styles and their notifications, and the protocol's error codes. Witnesses: `connection::tests::each_era_opens_and_lists_the_tools`, `connection::tests::an_unsupported_version_names_the_supported_ones`, `connection::tests::resources_name_each_documents_diagnostics`, `connection::tests::subscriptions_hear_only_their_documents`.
-- The five tools and `ToolRefusal`: each answered off the shared workspace, a refusal answered as a tool error the model reads. Witness: `connection::tests::each_tool_answers_through_the_wire`.
+- The six tools and `ToolRefusal`: each answered off the shared workspace, a refusal answered as a tool error the model reads. Witnesses: `connection::tests::each_tool_answers_through_the_wire`, `connection::tests::a_trial_ranks_fills_through_the_wire`.
 - `serve`, on Unix: a model's connection to the hub, notified as editors' synchronisations publish. Witness: `face::tests::an_edit_through_the_hub_notifies_its_subscribers`.
 - `relay`, on Unix: a host's standard streams carried to the hub as lines. Witnesses: `face::tests::a_relay_carries_a_model_session`, `cli::cli::mcp_reads_what_an_editor_holds_open`.
 
@@ -46,7 +47,6 @@ The gandr Model Context Protocol server: the documents the engine hub holds open
 - The goals at a document's holes with their spelled types, once the language server answers them.
 - Normalisation and conversion queries, once the session exposes them.
 - The explanation of a refusal, beside the verbosity levels of the diagnostics renderer.
-- Batched trial of candidate terms at a hole, over the session's trial.
 - Proposals a model makes for the editor to apply.
 - A transport beside the hub's socket: streamable HTTP, and the authorisation it carries.
 
@@ -94,6 +94,14 @@ printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"d
 **Alternatives.** Subscriptions alone reach a model only through a host that forwards them; a separate `changes` tool would have to be called to be useful, which a model does not know to do.
 
 **Reversal.** The field is dropped once the hosts in use forward resource updates to their models.
+
+## A trial splices each candidate into the held text
+
+**Choice.** The `trial` tool takes up to 32 candidate texts and an optional range. With a range — a hole, or a declaration's body — each candidate replaces it in the document's held text, as an editor's ranged change would; without one, each candidate is the whole text. The language server's `Workspace::trial` judges every candidate as a fresh session would, in parallel, and the results come back best first: those judged before those the lowering refused whole, then fewer refused and unsettled declarations, then the candidate's own position. Each result carries the diagnostics a synchronisation to that text would publish. The document, its session and what the editor shows are unchanged.
+
+**Alternatives.** Candidates as whole texts alone would make a model copy the document once per candidate for a fill of a few characters. A target named by a declaration rather than a range would need a resolution step from name to span that the editor's range already gives. No cap would let one call hold the hub's lock for as long as a model cares to send; 32 is past the batch the session's measurements were taken at (8 and 16), and a batch at 16 candidates across the performance cores already costs a fraction of a model turn.
+
+**Reversal.** A model host measured to send larger batches raises the cap, or moves the trial off the hub's lock onto a copy of the session; a face that names holes by their goal resolves the range from the goal.
 
 ## One socket, two faces
 

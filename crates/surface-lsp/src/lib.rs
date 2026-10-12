@@ -108,9 +108,16 @@ pub use crate::hub::relay;
 pub use crate::hub::run_hub;
 #[cfg(unix)]
 pub use crate::hub::socket_for;
+pub use crate::position::Character;
+pub use crate::position::Line;
+pub use crate::position::Position;
+pub use crate::position::Range;
+pub use crate::protocol::ContentChange;
 pub use crate::protocol::Diagnostic;
 pub use crate::protocol::DocumentUri;
 pub use crate::protocol::DocumentVersion;
+pub use crate::recheck::Reached;
+pub use crate::recheck::Tried;
 pub use crate::server::Peer;
 pub use crate::server::Served;
 pub use crate::server::Server;
