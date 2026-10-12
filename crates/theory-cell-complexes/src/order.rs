@@ -74,6 +74,28 @@
 //! `(left index, right index)` in increasing order, because the path order at
 //! one pair reads only pairs with a smaller left index, a smaller right index,
 //! or both. Nothing recurses.
+//!
+//! # Reduction order
+//!
+//! `reduction_cmp` compares node counts, admitted only when the larger side
+//! carries every hole of the smaller at least as often: without that guard a
+//! repeated hole lets substitution reverse the verdict, and an order that
+//! substitution can reverse proves nothing about the instances that rewrite.
+//! Equal sizes are decided by the lexicographic path order over a uniform node
+//! view, with the precedence `cut > K⁻ > f > K > ★` (a cut, a return-side
+//! constructor frame, an operation frame, a constructor, the terminal), then
+//! the symbol's own order, then the arity. Ranking the constructor frame above
+//! the operation frame orients the fusion cell `⟨v | Succ⁻(add(n; α))⟩ ~> ⟨v |
+//! add(n; Succ⁻(α))⟩` in the direction it is written, the direction that
+//! removes the intermediate constructor. `Ordering::Equal` means unorientable,
+//! an honest obstruction completion reports, never a guess.
+//!
+//! The path order is a simplification order, so it cannot orient a rule whose
+//! right-hand side embeds its left: the frame-defining cell `⟨v | K⁻(β)⟩ ~>
+//! ⟨K(v) | β⟩` is that shape, and no precedence orients it forwards. That
+//! cell's orientation comes from the calculus and never passes through this
+//! order, which orients critical pairs only; the order is therefore not a
+//! termination proof for a store holding polarity-derived cells.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;

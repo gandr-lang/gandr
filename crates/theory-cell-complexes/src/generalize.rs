@@ -15,6 +15,40 @@
 //! the members' remaining spines differ or end. Neither recurses, and a
 //! consumer's operation arguments are producer columns, so the consumer walk
 //! calls the producer walk and never the reverse.
+//!
+//! # Anti-unification
+//!
+//! `anti_unify_cmd` is unification's dual: given a family of command-pattern
+//! tuples, it returns the most specific tuple of patterns every member
+//! instantiates, with a fresh metavariable — a point — wherever two members
+//! differ, and each member's subterm there as that member's arm. The walk keeps
+//! a head every member shares and descends below it, so a point stands only
+//! where a disagreement does; and two positions whose subterms agree member by
+//! member stand one point, which is what makes the result least general rather
+//! than merely general. A tuple is generalized jointly, so a disagreement met
+//! in two components is one point across both.
+//!
+//! A producer column is walked by a heap worklist of columns and constructor
+//! builds; a consumer spine is walked from the cut outward, one shared frame at
+//! a time, until the members' remaining spines differ or end, and that suffix
+//! is one consumer point. Two cuts of different polarity have no generalization
+//! in this grammar, which has no command metavariable, and are refused by name,
+//! as are an empty family and members of different lengths. A point's name is
+//! `$g$` and a suffix no member wears; points are listed in the order the walk
+//! first meets them.
+//!
+//! - **Decision.** Anti-unification is a method of `CellAlphabet`, beside
+//!   `unify_cmd`, with `restrict_subst` and `cmd_size` for the consumers that
+//!   read a generalization's points and price it.
+//! - **Alternatives.** A generic anti-unifier above the trait, built from
+//!   positions and splicing: the trait reads and replaces subterms but cannot
+//!   build a pattern from a head and its children, so it would need a
+//!   constructor interface the engines have no other use for. A separate trait:
+//!   a second bound on every engine that prices a family, for one method whose
+//!   law is stated against the trait's own substitution.
+//! - **Reversal.** A consumer that needs generalization modulo a theory —
+//!   associativity, commutativity, binders — moves it to a trait of its own,
+//!   with this syntactic one as its first inhabitant.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;

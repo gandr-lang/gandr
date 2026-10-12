@@ -1,4 +1,46 @@
 //! Sequential certificate composition and its conservative seam-flow gate.
+//!
+//! # Directed composition and identity
+//!
+//! The graph uses distinct recorded cells, not application positions,
+//! multiplicities or substitutions. It restricts each cell's live metadata to
+//! the holes of the **left** recorded join. A forward endpoint emits, a
+//! backward endpoint absorbs, and a mixed endpoint does both. Edges cross
+//! between the two supports only from emitters to absorbers. Missing stored
+//! cells contribute no endpoint.
+//!
+//! This gate is presentation-sensitive. Changing a certificate's representative
+//! can change its support and therefore the verdict, even when replay
+//! identifies the certificates. The admitted graft remains a certificate
+//! invariant. Reversing one unordered pair can also change the verdict because
+//! it changes the selected seam. Pairwise admission is therefore not a
+//! substitute for running the binary gate at each actual fold step.
+//!
+//! The chosen emit-to-absorb criterion is strictly less conservative than a
+//! union-of-variances test: sequential producer-to-consumer seams are admitted
+//! without inventing a reverse edge. The alternative union criterion remains a
+//! test oracle. Reconsider the representation only when a consumer requires a
+//! presentation-invariant gate and supplies the extra data that can decide one;
+//! a normalized label alone is insufficient.
+//!
+//! The graph is built afresh for each query. Keep its gate batch-based:
+//! successive certificate pairs can change both the support and the left-join
+//! hole filter, so they are not insertion-only updates. The dynamic comparison
+//! witness streams each characterized graph in both arrival orders and agrees
+//! with the batch gate; `gandr-theory-dynamic-graphs` is a development
+//! dependency only. Reconsider the gate only for a consumer retaining one
+//! standing graph or accumulating constraints monotonically across calls. No
+//! standing dynamic graph, durable step address, comultiplication or antipode
+//! is part of this crate. Build-local normal-form labels never acquire a
+//! transport type here.
+//!
+//! # Presentation witnesses
+//!
+//! Cell metadata retains both faces of a fused rule. The presentation witnesses
+//! therefore use a replay-equivalent, alpha-renamed representative whose
+//! seam-named support differs, rather than assuming fusion erases mixed
+//! variance. Corpus checks compare semantic verdicts and replay, not an
+//! incidental count of pairs.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;

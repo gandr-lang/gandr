@@ -6,6 +6,30 @@
 //! exercised at all. Each term is one flat table in prefix order, every node
 //! followed by its children's ranges, so no term routes ownership through
 //! itself and no walk over one recurses.
+//!
+//! # Toy alphabet
+//!
+//! Every subterm of a toy term is a command, so `command_positions` lists every
+//! node breadth first, the root first. That is the property the crate exists
+//! for: the sequent alphabet's only command position is the root, so the splice
+//! law below the root, two applications in one term, and an overlap strictly
+//! inside a left-hand side are unreachable over it.
+//!
+//! A term is one `Vec` of nodes in prefix order rather than a tree of boxes,
+//! matching the substrate's own pattern representation: no walk recurses, and a
+//! term of any depth is matched, read, spliced and dropped in a loop. A node's
+//! children are found by skipping subterm ends, which is linear in the term;
+//! the terms an engine suite builds are a few nodes, so no child index is kept.
+//!
+//! The reduction order is size guarded by hole domination: the larger side wins
+//! when it carries every metavariable of the smaller at least as often, and
+//! every other pair, a tie included, is an obstruction. The order is
+//! well-founded and stable under substitution, which is all the trait asks; it
+//! has no tie-break, because the suites need an orientable rule and an
+//! obstruction, not a total order. Every cell may fire anywhere; the firing
+//! discipline is the sequent alphabet's to exercise. Renaming apart primes a
+//! name until it is fresh against the anchor and the other fresh names, so a
+//! cell already apart comes back unchanged.
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;

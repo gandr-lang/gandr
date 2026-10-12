@@ -7,6 +7,36 @@
 //! associativity a caller asserts beside the two groups: a group compares
 //! with itself only in the direction its declared associativity names, and
 //! only when the caller asserts the same associativity.
+//!
+//! # Precedence DAG
+//!
+//! A group's associativity is one of three values, `Assoc::Left`,
+//! `Assoc::Right` and `Assoc::Non`. A lookup of an unknown group returns
+//! `Option<Assoc>`, so `Non` is a value of its own rather than an absent
+//! associativity, which would nest a lookup into `Option<Option<Assoc>>`. A
+//! group relates to itself only by the relation its associativity names, and
+//! only when the caller asserts the same associativity: a left-associative
+//! group is greater than itself under `Assoc::Left`, a right-associative one
+//! less than itself under `Assoc::Right`, a non-associative one equal to itself
+//! under `Assoc::Non`. `comparable` asks only whether two groups are ordered at
+//! all, so it holds for every known group with itself.
+//!
+//! `PrecDag::build` returns `PrecDagError`, which keeps three refusals apart:
+//! `Cycle` with a closed witness naming every group on the cycle, `Graph` for a
+//! specification whose relation fails validation, and `Inconsistent` for an
+//! internal state that contradicts itself. A cycle is never reported with an
+//! empty witness.
+//!
+//! The linear extension is Kahn's order with the smallest ready group taken
+//! first, so it is one fixed order for a given specification, and
+//! `linear_extension` borrows it. Comparisons read the precomputed closure:
+//! each group's row lists, ascending, the groups strictly looser than it, so
+//! `lt` and `gt` are one binary search.
+//!
+//! Construction accepts all 65,536 group identities, but exhausting the
+//! `groups` iterator at that capacity can overflow its 16-bit enumeration
+//! counter when overflow checks are enabled. Capacity construction and complete
+//! iterator consumption are distinct boundaries.
 
 use alloc::collections::BTreeSet;
 use alloc::string::String;

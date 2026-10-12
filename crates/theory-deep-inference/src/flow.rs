@@ -117,6 +117,18 @@
 //! Unoptimized on purpose: one rewrite per recorded step, a linear scan of the
 //! term's addresses per step and a quadratic address lookup inside it. It is
 //! a measurement instrument, not a fast path.
+//!
+//! # The flow projection
+//!
+//! `project_flow` traces every atom occurrence of a leg from the peak or the
+//! event that created it to the event that consumed it or the conclusion,
+//! labelling each vertex with its cell's position-free content address. Flow
+//! equality is decided on a canonical vertex order, refused for a flow whose
+//! vertices the key cannot tell apart, and is sound only under the convexity
+//! discharge the flow was taken under, which every flow carries. Flow equality
+//! is strictly finer than replay equivalence: two replay-equivalent
+//! certificates can carry different flows. The projection has no consumer; it
+//! witnesses the shift quotient and is not certificate identity.
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;

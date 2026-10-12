@@ -14,6 +14,21 @@
 //! The discipline is consulted before matching, so a cell the alphabet
 //! confines to one polarity — the sequent alphabet's η cells — is refused at
 //! the other however well its left-hand side matches.
+//!
+//! # Firing and normalization
+//!
+//! A cell fires at a command position when the alphabet's firing discipline
+//! permits it there and its left-hand side matches the command; the discipline
+//! is asked first, so the sequent alphabet's η cells are refused at the wrong
+//! polarity however well they match. `apply_once` tries positions in the
+//! alphabet's order, outermost first, and cells in store order within a
+//! position, so normalization is deterministic for a fixed store.
+//!
+//! `normalize` stops at a normal form or after its budget, and
+//! `Normalization::exhausted` says which: a spent budget with a redex pending
+//! is reported, never mistaken for a normal form. The budget is the guard
+//! against a store that does not terminate, the same decline-and-report posture
+//! completion takes.
 
 use alloc::vec::Vec;
 

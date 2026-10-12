@@ -14,6 +14,22 @@
 //! as given, compares it structurally, and never interprets it.
 //!
 //! [`SignDesc`]: crate::SignDesc
+//!
+//! # Code equality
+//!
+//! The fragment is first-order so that code equality is decidable, and `Code`
+//! derives total structural equality and hashing over its flat table. Two
+//! descriptions with equal tables are the same description; a grammar change
+//! admitting a higher-order code would break that, which is why the exclusion
+//! is a fragment boundary rather than a deferral. Content addressing is a
+//! consumer's map keyed on `Code`: the crate ships no interner, because a map
+//! over the derived `Eq` and `Hash` is all one needs
+//! (`code::tests::code_is_usable_as_a_hash_map_key`).
+//!
+//! Code equality is not the identity of a translation between descriptions. Two
+//! auto-isomorphisms of `Boolean`, the identity and negation, have equal
+//! boundary codes and different behaviour; the certificate suite keeps that
+//! apart (see § The integration suites at the crate root).
 
 use alloc::boxed::Box;
 use alloc::string::String;

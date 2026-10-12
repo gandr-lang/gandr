@@ -43,6 +43,19 @@
 //! cell-alphabet question, not a case this derivation quietly admits.
 //!
 //! [`check_desc`]: crate::check_desc
+//!
+//! # Circuit rules
+//!
+//! A circuit rule's boundary pair is derived, never written: the source is the
+//! wiring with every redex replaced by its source, the target with every redex
+//! replaced by its target. The declared sphere stays the declaration's, and
+//! `check_desc` compares the derived pair against it, so a mis-glued boundary
+//! is refused at the declaration table. Derivation unfolds each port once per
+//! consumption, so a reconvergent wire is copied into each reading; the
+//! unfolded size is bounded by `CircuitNodeBudget` (default 4,096 nodes per
+//! reading), and a wiring that closes a cycle is refused by the port that
+//! closes it. `derive_boundaries_within` and `derive_boundary_within` take an
+//! explicit budget.
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;

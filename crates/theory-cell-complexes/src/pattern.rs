@@ -35,6 +35,36 @@
 //! consumer; a constructor application's are its arguments; an operation
 //! frame's are its arguments and then its return continuation; a return-side
 //! constructor frame's is its return continuation. The empty path is the root.
+//!
+//! # Pattern representation
+//!
+//! No pattern routes ownership through itself. A producer is one flat table in
+//! reverse pre-order, the root last, every subtree a contiguous range ending at
+//! its own root and carrying its node count, so a child is found by skipping
+//! its elder siblings and a subtree is read or copied as one slice. A consumer
+//! is a spine: its frames listed innermost first, then its end, `★` or a
+//! consumer metavariable; an operation frame's producer arguments are producer
+//! tables of their own. A command is a cut over one producer and one consumer.
+//! Commands do not nest, so a cut is only ever a pattern's root.
+//!
+//! A pattern is flat, its children held as index ranges, and flat per category
+//! — one table per producer, one spine per consumer, the cut over the two —
+//! rather than one table across all three, for three reasons: every view is
+//! total, because a table holds one category and no read checks a node's
+//! category; building `Succ(p)` reuses `p`'s buffer, so constructor application
+//! is amortized constant time; and a consumer is a list, not a tree, so its
+//! natural flat form is the spine. Nothing recurses either way, and
+//! structurally equal patterns have equal tables.
+//!
+//! - **Alternatives.** One table across all categories puts a category check
+//!   and a fallback on every view. A store-wide arena shared by every cell's
+//!   patterns couples each pattern to the store's lifetime and gives equal
+//!   patterns one identity before anything sanctions that identity. Boxed
+//!   children are recursive owned pointers, which the workspace denies: a deep
+//!   pattern overflows the stack on drop.
+//! - **Reversal.** A measured substitution cost from copying tables per rewrite
+//!   moves the representation to a shared arena, with the identity question
+//!   answered first.
 
 use alloc::boxed::Box;
 use alloc::string::String;

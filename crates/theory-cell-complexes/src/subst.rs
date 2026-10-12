@@ -11,6 +11,24 @@
 //! the bindings a walk finds are kept apart, as borrowed subtrees, and copied
 //! into the substitution only once the whole walk succeeds, so a refusal
 //! leaves the substitution as it was.
+//!
+//! # Matching and unification
+//!
+//! Both are explicit worklists over borrowed subtrees of their inputs: no goal
+//! copies a pattern, and no step recurses. Unification resolves triangular
+//! bindings — an image that mentions a metavariable bound after it — by walking
+//! each binding to its end, bounded by the binding count so a cycle is reported
+//! rather than followed, and applies the occurs check before each binding.
+//!
+//! Both are transactional: bindings are staged as borrowed subtrees and copied
+//! into the substitution only when the whole walk succeeds, so a refusal leaves
+//! the substitution as it was. A caller retrying another candidate therefore
+//! need not clone before every attempt. The trait still asks only the weaker
+//! obligation of other alphabets: an inhabitant may extend partially on
+//! refusal, and an engine reads the substitution only after success.
+//!
+//! A metavariable is keyed by its name and its category, so a producer hole and
+//! a consumer hole of one name are two metavariables.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;

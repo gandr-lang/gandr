@@ -19,6 +19,102 @@
 //! replaying what was rebuilt ([`GuardedTemplate::admit`]): a cache entry that
 //! lies about a triple lets a template through, never a member that replay
 //! refuses.
+//!
+//! # The guarded template
+//!
+//! `price_family`, the build-local `TemplateAddress::of` and `ArmAddress::of`
+//! constructors, and `InheritanceCache::lookup`/`record_check` expose the
+//! pricing and cache policy independently of `CellAlphabet`. The separate
+//! `price_family_memoized` accepts exactly positive costs with `c <= s` and
+//! representable `s + T*c < F`; equality, invalid bounds and overflow refuse.
+//! The caller must establish a per-check bound and count every distinct
+//! obligation before replay. This entails both `s < F` and `T*c < F`; the gate
+//! stands beside `price_family`'s floor gate and does not replace it. The
+//! staging producer in `gandr-core-checker::template` supplies its own syntax,
+//! an enforced per-check fuel allowance and ordinary replay. Tracelet
+//! anti-unification prices with `price_family`, and neither it nor its
+//! admission path reads the memoized gate. Neither address equality nor a
+//! cached inheritance verdict authorizes admission.
+//!
+//! The memo-aware staging producer's enforced bound and refusal witnesses are
+//! documented with it, in `gandr_core_checker::template` and its
+//! `staging_templates` example. The bound concerns abstract nodes and replay
+//! fuel, not discovery or complete readmission time. Neither this API nor the
+//! staging producer changes the kernel's admission rules.
+//!
+//! A family of certificates that fire the same cells at the same positions from
+//! peaks differing only below what those cells read is one certificate written
+//! many times. `anti_unify_tracelets` folds it into a `GuardedTemplate`: the
+//! alphabet's least general generalization of the members' peaks and joins,
+//! taken jointly so a point met in both is one point; the shared paths; and at
+//! each point where the members differ an entry holding one arm per distinct
+//! member subterm, keyed by the arm's content address and guarded by its own
+//! nominal atom. A member is not stored. `GuardedTemplate::instantiate`
+//! rebuilds it from its own peak's substitution, choosing each entry's arm by
+//! content, and `GuardedTemplate::admit` replays what was rebuilt. An entry
+//! whose point is absent from the generalized peak cannot be chosen that way,
+//! and the family is refused.
+//!
+//! - **The gate is the cannot-lose criterion.** `s` is the template's size in
+//!   pattern nodes — the generalized peak and join, one node per recorded step,
+//!   every arm's nodes and one guard atom per arm — and `F` the family's plain
+//!   size, every member's peak, join and steps summed. A template is emitted
+//!   only when `s < ⌊F / s⌋`, which gives `s < F`, the compressed form no
+//!   larger than the plain one, and `s · s < F`, the price of checking it
+//!   without memoization, at once. The price is taken before any check, so a
+//!   family that cannot pay costs one anti-unification and no replay. `s` is
+//!   independent of the family's size `k`, because no member is stored: with a
+//!   guard reference per member, `s ≥ k`, so `f ≤ F / k`, a member's mean size,
+//!   which the skeleton in `s` already reaches, and no family would pay.
+//! - **The quadratic dissolves into the distinct-content floor.** Each arm is
+//!   admitted by an inheritance check: the shared paths replayed from the
+//!   generalized peak with that arm in place and every other point a skolem
+//!   constant, against the join with the arm in place. A cell that
+//!   discriminates on an entry finds the skolem constant, or an arm it does not
+//!   fire on, and the check is stuck there, so the check is also the
+//!   discrimination-transparency check. It is memoized per content triple — the
+//!   region's address, the entry, the arm body's address — in an
+//!   `InheritanceCache`, an ordered map that lives for one run, so a family of
+//!   `k` members over `d` arms per entry checks `d` triples per entry and reads
+//!   the other `k − d` lookups per entry from the cache, whatever `k` is.
+//! - **The cache is never trusted; replay is.** `InheritanceCache::record`
+//!   writes any verdict for any triple, and a producer reading a lie emits a
+//!   template it should have refused. Admission does not consult the cache: a
+//!   member covered by the lie is rebuilt and replayed, and refused exactly as
+//!   its own replay refuses it.
+//! - **The flow is the family's identity where arms carry no atom.** The
+//!   template's flow is its carrier's. Over the sequent alphabet, whose only
+//!   atom is the command at the root, every member's flow equals it. Over an
+//!   alphabet whose every node is a command position, a member whose arm has
+//!   more than one node carries more atom occurrences than the template's
+//!   metavariable does, and its flow differs.
+//! - **Alternatives.** A template per member group without a pricing gate loses
+//!   wherever members share little, and the measured classes show most do not
+//!   pay: one varying entry and every member distinct grow `s` with the family.
+//!   A per-member check without the cache keeps the quadratic. Checking an arm
+//!   with the other entries instantiated to one member's arms makes the verdict
+//!   depend on that member, so it cannot be memoized per triple. Generalizing
+//!   the peaks alone, taking each member's join by replay and checking
+//!   discrimination transparency per cell at the recorded positions is the
+//!   nearest alternative; generalizing the joins with the peaks gives the
+//!   inheritance check a pattern to land on without reading a skolemized replay
+//!   back into one, and refuses by name a family whose joins differ where its
+//!   peaks do not, while the replay check subsumes the per-cell one.
+//! - **Limits.** Checking an arm with every other entry a skolem constant is
+//!   conservative: when an entry stands at a position a recorded cell reads —
+//!   which an honest family never has, since its members share every head a
+//!   cell reads — every other entry's check stops there too. The generated
+//!   corpus pays only where it is regular: over the fused certificates of both
+//!   alphabets and the sequent alphabet's completion certificates, families of
+//!   64 members with two small arms per entry are emitted with `s` between 14
+//!   and 32 and `f` between 38 and 46; families of 2 and 8 members, families
+//!   with one entry varying across members, and families whose every member is
+//!   distinct do not pay.
+//! - **Reversal.** A family source whose members share larger arms, or a
+//!   producer that groups members by skeleton across a whole store, can lower
+//!   the size at which the gate pays; a consumer that needs the template
+//!   persisted, or the cache across runs, moves the cache to the memo with its
+//!   own key and invalidation.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;

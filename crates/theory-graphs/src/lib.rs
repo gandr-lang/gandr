@@ -15,8 +15,68 @@
 //! graph enters as an [`EdgeSource`] and every result is in dense node
 //! identities.
 //!
-//! The crate is `no_std` and depends on `core`, `alloc` and petgraph. The
-//! papers it draws on are in its `README.md`, § References.
+//! The crate is `no_std` and depends on `core`, `alloc` and petgraph.
+//!
+//! # Scope
+//!
+//! The algorithm half carries what the grammar reads and nothing else: cycle
+//! evidence and reachability for the precedence DAG, condensation for the
+//! closing-class derivation. The DAG's linear extension is its own Kahn order,
+//! so no general topological sort is exposed. Dominators, shortest paths,
+//! simple-path enumeration, transitive reduction, partition refinement and an
+//! adjacency fingerprint are absent because no consumer reads them; an
+//! algorithm with no reader is maintained surface with no contract a consumer
+//! depends on. The walk index needs no partition refinement: its rows are
+//! canonicalised by key, not by bisimulation.
+//!
+//! The determinism probe — a binary that prints the byte-level projection of
+//! every public result while scratch allocation is perturbed — and the
+//! benchmarks are a lateral, outside this crate. Determinism is held here by
+//! construction and by test: every tie is broken by the smallest dense
+//! identifier, every collection the results are read from is ordered, no hasher
+//! is process-random, and the pinned fingerprints and permuted-insertion tests
+//! fail on any drift.
+//!
+//! Executable `#[spec]` predicates check arithmetic and refusal boundaries,
+//! dense incidence, precedence comparisons, walk shape and canonical-row
+//! invariants. They retain scalar snapshots or borrowed observers rather than
+//! copies of entire inputs. Each nontrivial operation names its same-crate
+//! witnesses and the boundary of their evidence under `# Adequacy`; the
+//! enforcing test lane runs the predicates. Complete closure and canonical
+//! tie-breaking are checked against independent fixtures and generated oracles,
+//! not assumed from the structural predicates.
+//!
+//! Required trait declarations, opaque iterator returns and consuming generic
+//! fingerprint conversions record why their contracts cannot be instrumented
+//! locally without changing a protocol or ownership boundary. Display evidence
+//! observes numeric fields and sink refusal without pinning wording.
+//!
+//! # References
+//!
+//! - David Moon, Andrew Blinn, Thomas J. Porter, and Cyrus Omar. "Syntactic
+//!   Completions with Material Obligations." _Proceedings of the ACM on
+//!   Programming Languages_ 9, OOPSLA2 (October 2025). `doi:10.1145/3763182`;
+//!   preprint `arXiv:2508.16848` — the walk, swing and stance vocabulary, the
+//!   validity and minimality filters and canonical order of § 4.1, and the
+//!   figure-33 fragments the walk suite pins.
+//! - Nils Anders Danielsson and Ulf Norell. "Parsing Mixfix Operators." In
+//!   _Implementation and Application of Functional Languages (IFL 2008)_,
+//!   Lecture Notes in Computer Science 5836, pages 80–99, 2011.
+//!   `doi:10.1007/978-3-642-24452-0_5` — the precedence-graph presentation the
+//!   precedence DAG follows: groups related by a tighter-than order that need
+//!   not be total.
+//! - A. B. Kahn. "Topological Sorting of Large Networks." _Communications of
+//!   the ACM_ 5, 11 (November 1962), pages 558–562. `doi:10.1145/368996.369025`
+//!   — the ready-set topological sort the DAG's linear extension is, with its
+//!   tie-break fixed to the smallest ready group.
+//! - Micha Sharir. "A Strong-Connectivity Algorithm and Its Applications in
+//!   Data Flow Analysis." _Computers & Mathematics with Applications_ 7, 1
+//!   (1981), pages 67–72. `doi:10.1016/0898-1221(81)90008-0` — the two-pass
+//!   strongly-connected-component algorithm petgraph's condensation runs.
+//! - Glenn Fowler, Landon Curt Noll, Kiem-Phong Vo, Donald Eastlake 3rd, and
+//!   Tony Hansen. "The FNV Non-Cryptographic Hash Algorithm." RFC 9923,
+//!   February 2026. `doi:10.17487/RFC9923` — the 64-bit FNV-1a parameters
+//!   `Fnv64` fixes, pinned against the published test vectors.
 
 #![no_std]
 

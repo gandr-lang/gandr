@@ -5,6 +5,42 @@
 //! first failure, which is then the smallest counter-example at the bound.
 //! A failing outcome carries its counter-example, and each condition's
 //! postcondition checks that the counter-example refutes it.
+//!
+//! # What the checks find at the bound
+//!
+//! The suites example runs single maps over the 81 classes of size at most five
+//! and composable pairs and spans over the 31 of size at most four.
+//!
+//! | Condition | Size | Verdict | Cases |
+//! | --------- | ---- | ------- | ----- |
+//! | identities are units in both classes | ≤ 5 | holds | 20554 |
+//! | closure of the class | ≤ 4 | holds | 1006048 |
+//! | closure of the raising maps | ≤ 4 | holds | 6466 |
+//! | closure of the lowering maps | ≤ 4 | holds | 2340 |
+//! | raising ∩ lowering = isomorphisms | ≤ 5 | holds | 20473 |
+//! | degree orders both classes | ≤ 5 | holds | 2898 |
+//! | point-free core is direct | ≤ 5 | holds | 605 |
+//! | latching categories are finite | ≤ 5 | holds | 2197 |
+//! | factorization, unique up to unique isomorphism | ≤ 5 | holds | 20473 |
+//! | rigidity (iv) | ≤ 5 | holds | 20355 |
+//! | dual rigidity (iv′) | ≤ 5 | holds | 30836 |
+//! | lowering maps split | ≤ 5 | holds | 701 |
+//! | pushout along a deletion exists | ≤ 4 | fails | 7 |
+//! | pushed-out map is raising | ≤ 4 | holds | 1925 |
+//!
+//! Every generalized Reedy axiom holds, with its dual rigidity, under a degree
+//! into the naturals. Every map is a point deletion followed by a raising map,
+//! through one middle class and unique up to a unique isomorphism. Between
+//! shapes without points every map raises, so the point-free core is a direct
+//! category. Every non-invertible raising map `G → K` has at most the vertices
+//! of `K` and at most the wires of `K` plus its inner wires, so the latching
+//! category at `K` lies among finitely many shapes; `p ⊔ q → p→q` meets the
+//! wire bound with equality.
+//!
+//! One span has no pushout: the point substituted by the closed chain `p→q`
+//! against the point's deletion. A cocone would have to delete the image of the
+//! point, which holds the two ported vertices `p` and `q`, so there is no
+//! cocone at any size. Where a pushout exists, the pushed-out map is raising.
 
 use alloc::collections::BTreeMap;
 use alloc::vec;

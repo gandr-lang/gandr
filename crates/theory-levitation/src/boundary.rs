@@ -7,6 +7,18 @@
 //! an encoding needs it. The vocabulary is this crate's alone: a consumer
 //! keeps its own names, budgets and verdicts, and nothing here is another
 //! crate's wrapper re-exported.
+//!
+//! # Boundary wrappers
+//!
+//! Every count, index, verdict, text and byte string a signature here crosses
+//! is a transparent wrapper of this crate's own (`ConstructorTag`,
+//! `NominalSerial`, `SurfaceByteOffset`, `MonomialCount`, `TermPositionIndex`,
+//! `PortArgumentCount`, `CircuitNodeBudget`, `GenericEquality`,
+//! `RecursiveStatus`, `ContextTotality`, `DiagnosticMessage`,
+//! `SerializedDescText`, `SerializedValueBytes`, `LeafBytes`, …), converting
+//! with `From` both ways, and `NameRef` is the borrowed name. A consumer keeps
+//! its own budgets and verdicts; a wrapper two crates exchange by value lives
+//! in the lower one, which is this crate for every wrapper listed.
 
 use alloc::boxed::Box;
 use alloc::string::String;

@@ -97,6 +97,16 @@
 //! Unoptimized on purpose: one rewrite per candidate probe per covered
 //! position, plus a quadratic scan for immediate children. It is a measurement
 //! instrument, not a fast path.
+//!
+//! # The footprint relation
+//!
+//! `match_footprint` splits an application's match image into the addresses it
+//! reads and the addresses it writes, and `footprint_independence` licenses two
+//! applications whose writes avoid each other's reads and writes. It sits
+//! beside the shift guard as a measurement: every pair the guard licenses the
+//! polarized test licenses too, and the differential table records where the
+//! polarized reading would license a pair the guard refuses. It has no consumer
+//! and replaces nothing.
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;

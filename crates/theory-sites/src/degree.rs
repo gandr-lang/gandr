@@ -1,4 +1,14 @@
 //! The degree: vertices plus inner wires, into the naturals.
+//!
+//! # The degree
+//!
+//! `Degree::of` counts a shape's vertices, points included, plus its inner
+//! wires: the graphical categories' degree `|Vt| + |Edge_i|`, valued in the
+//! naturals. Isomorphisms preserve it, every other raising map strictly raises
+//! it and every other lowering map strictly lowers it. The contraction `p ⊔ q →
+//! p→q` raises it from two to three by the inner wire it creates; the
+//! substitution `C(1,1) → p→q` from one to three. Vertices plus every wire is
+//! no degree: it keeps `C(1,1) → p→q` at three.
 
 use core::fmt;
 

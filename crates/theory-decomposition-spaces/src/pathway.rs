@@ -40,6 +40,13 @@
 //! what a later continuation would need; this module exposes no entry point
 //! that takes one back, so a declined query is **re-asked with a larger
 //! budget** rather than resumed in place.
+//!
+//! # Partial rounds
+//!
+//! A candidate ceiling reached midway through a round retains that round’s
+//! already admitted normal forms as well as the stopped frontier. The
+//! backward-extension witness checks this against a one-candidate ceiling;
+//! dropping the partial round would lose an accepted pathway.
 
 use alloc::vec::Vec;
 

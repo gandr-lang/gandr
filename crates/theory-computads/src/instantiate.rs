@@ -54,6 +54,59 @@
 //! identification.
 //!
 //! [`ConvexityDischarge::ReCheckRequired`]: gandr_theory_cell_complexes::ConvexityDischarge::ReCheckRequired
+//!
+//! # Instantiation
+//!
+//! A circuit rule is a schema: its body applies rewrite-sorted ports, not
+//! cells, so a two-redex body names no pair of cells for the shift guard, and
+//! asking at the declaration would ask whether every instantiation commutes.
+//! The declaration's elaboration therefore keeps declining a two-redex body a
+//! composite, which defers the question, and `instantiate_two_redex_rule` asks
+//! it at an application. The two positions are read from the body's occurrence
+//! record and never supplied, since a caller naming positions could name
+//! incomparable ones for a nested pair. The bindings are a function from port
+//! to cell, a port presented twice is refused, and two occurrences of one port
+//! resolve through its one binding. The peak is not matched against the sphere;
+//! both orders are fired instead, so a peak that is not an instance is refused
+//! by a step that does not fire. The decisions run in a fixed order —
+//! environment, wiring, occurrence count, bindings, positions and overlap,
+//! convexity, both orders, replay — and the earliest failure is the one
+//! reported.
+//!
+//! The positions, overlap and discharge conjuncts are the shift guard's, and
+//! its refusals are carried verbatim; this crate holds no second overlap
+//! oracle. A granted witness is replayed before it is returned, so a composite
+//! neither order reaches is `CircuitShiftObstruction::CompositeDoesNotReplay`
+//! rather than a recorded identification. The returned `CircuitShift` carries
+//! no replay verdict of its own: a witness that did not replay is never
+//! returned, so the field would be constant.
+//!
+//! # The convexity supply point
+//!
+//! The shift guard's third conjunct asks that each match image stay convex in
+//! the other application's reduct. A store whose left-hand sides are strongly
+//! connected over acyclic targets discharges it once for every pair; a store
+//! that cannot answers `ConvexityDischarge::ReCheckRequired`, and the guard
+//! refuses rather than assumes. The re-check is a directed reachability sweep
+//! over a diagram reading of the peak, and that reading — the embedding
+//! matcher's sweep over a wiring — lives in a crate this one does not depend
+//! on.
+//!
+//! So the re-check is a parameter: `ConvexitySupply` is a trait with its own
+//! warrant and refusal types, asked exactly when the store withholds its
+//! discharge and the cells resolve at incomparable positions with no overlap,
+//! and its answer travels back verbatim as `ConvexityGrant::Rechecked` or
+//! `CircuitShiftObstruction::NotConvex`. A discharged store never asks it.
+//! After a grant both orders are fired and the witness replayed, as on the
+//! discharged route, and the witness's own convexity field still names the
+//! store's withheld discharge.
+//!
+//! The alternatives were a dependency on the embedding matcher's crate, which
+//! would put a diagram representation under every caller of the elaborator
+//! whether or not its store withholds the discharge, and a closure parameter,
+//! which cannot name the warrant and refusal types a caller reads back. The
+//! choice is reversed if the cell alphabet grows a diagram reading of its own:
+//! the re-check then becomes the alphabet's, beside its discharge.
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;

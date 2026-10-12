@@ -155,6 +155,121 @@
 //!   construction-term reading.
 //! - **Decide fan-in.** The spider normal form for diagrams whose wires combine
 //!   is outside the monogamous fragment this view admits.
+//!
+//! # The diagram normal form
+//!
+//! Two presentations of one diagram differ only in how they number wires and
+//! generators. The relation `same_diagram` decides is cospan isomorphism over
+//! the port bijection: a renumbering that preserves every label, arity and
+//! ordered port list and commutes with both interface legs position by
+//! position. `canonicalize` picks one representative per class by renumbering
+//! in the one order a traversal admits:
+//!
+//! 1. The boundary takes the lowest wire numbers, the input leg in order and
+//!    then the output leg, skipping a wire already numbered. An isomorphism
+//!    fixes boundary positions, so numbering by position is invariant.
+//! 2. A cursor walks the numbered wires in order and visits each wire's
+//!    producer, then its consumer. A visited generator takes the next generator
+//!    number and numbers its unnumbered ports, sources in port order and then
+//!    targets. No step chooses.
+//! 3. A component the boundary never reaches has no anchor, so every member is
+//!    tried as its seed and the least linearization wins; the anchorless
+//!    components are then committed in the order of their winners. Both
+//!    minimums range over the diagram's own content, and both read the whole
+//!    linearization, because members sharing a label and an arity tie on their
+//!    first record.
+//!
+//! Two premises carry the procedure. Monogamy makes the walk choice-free and
+//! the wiring a faithful index: a wire with two producers could only be
+//! recorded by losing one. Boundary honesty makes the numbering total, an
+//! isolated wire being numbered only because both legs declare it, and leaves
+//! the producer-before-consumer order unobservable, because when the cursor
+//! reaches a wire at most one of its sides is unvisited. Acyclicity is not a
+//! premise: the traversal stops on its visited sets and is canonical with or
+//! without a cycle.
+//!
+//! A component with a boundary port costs one traversal and an anchorless
+//! component of `k` generators costs `k`; nothing searches, because one
+//! numbered wire forces a generator. A trial is compared against the incumbent
+//! by reading both traversals in place, and records are built once, from the
+//! winner, rather than per trial with every label cloned; the form is the same
+//! either way.
+//!
+//! The tests check the canon against a cospan-isomorphism oracle that searches
+//! generator bijections over every ordered pair of 31 fixtures
+//! (`normal_form::tests::the_canon_agrees_with_the_cospan_isomorphism_oracle`),
+//! and a property renumbers and relists generated diagrams biased toward
+//! anchorless components, port-free generators and isolated wires, where an
+//! order leak would surface
+//! (`tests::normal_form::every_presentation_permutation_canonicalizes_alike`).
+//!
+//! # Edge orientation
+//!
+//! A canonical linearization can cut a diagram at a vertex, a generator and the
+//! pieces its removal leaves (the corolla decomposition), or at an edge, a wire
+//! and its two sides; mixed styles lie between. The canon takes the edge
+//! orientation, as a traversal. Monogamy tells a wire's two sides apart by
+//! direction, so the edge cut chooses nothing, while removing a generator
+//! leaves one piece per port to be sequenced in an order the corolla does not
+//! supply. The order a vertex cut would borrow is the port order the traversal
+//! already consumes, and an interface is a list of wires, so its anchor is
+//! already an edge datum. A traversal also owes no confluence argument, because
+//! no rewriting relation produces the form.
+//!
+//! - **Alternatives.** The corolla decomposition or a mixed style, produced by
+//!   rewriting toward a normal form that then has to be shown confluent; a
+//!   general graph canonicalizer, which searches where monogamy forces.
+//! - **Reversal.** A generator whose ports are not totally ordered, which gives
+//!   the traversal a tie-break of its own and moves the choice toward a mixed
+//!   style.
+//!
+//! # Evidence, not equality
+//!
+//! `same_diagram` answers with evidence on both arms. `DiagramEquality::Same`
+//! carries the shared form with both relabellings, the two halves of the
+//! isomorphism between the inputs; `DiagramEquality::Distinct` carries the
+//! first place the forms part as a `DiagramDivergence`. `Relabelling` has no
+//! public constructor, and `Relabelling::verify` re-derives from the source and
+//! the form that the relabelling is a bijection on wires and on generators,
+//! that each record is its source generator's image (label, then each leg's
+//! arity and ports), and that both legs commute; a defect is a
+//! `RelabellingDefect` naming its locus.
+//!
+//! `same_diagram` compares what no renumbering changes, the wire count, the
+//! generator count and each leg's arity, before canonicalizing either side, so
+//! diagrams that differ there are told apart without a traversal and the
+//! divergence names those counts before any port or record. Canonicalizing both
+//! sides first and comparing each leg's arity and ports together, input leg
+//! then output leg, gives the same verdict; it locates the divergence
+//! differently only for two diagrams that differ both in an input port and in
+//! the output leg's arity, where this order names the arity.
+//!
+//! # What the canon does not decide
+//!
+//! - **The rewriting normal form.** That runs a rule system to completion and
+//!   is a property of the theory; the canon is a property of the representation
+//!   and rewrites nothing.
+//! - **Construction terms.** A circuit also reads as a term built from merger
+//!   and contraction, and a canonical form of those terms is another object at
+//!   another layer. That the two canons agree is neither assumed nor
+//!   established here.
+//! - **Planar equivalence.** Wires here cross freely and the interface is the
+//!   only order; the planar quotient up to exchange moves is a different
+//!   relation.
+//! - **Merging wires.** The spider normal form for diagrams whose wires merge
+//!   lies outside the monogamous fragment.
+//!
+//! `CanonicalDiagram` is a map key, but interning diagrams by content, minting
+//! identities from the key, is refused: a content key is sound only once the
+//! diagram form is shown to agree with the construction-term reading of the
+//! same circuit.
+//!
+//! - **Alternatives.** An interner over the diagram form before that agreement,
+//!   whose identities a later disagreement with the construction-term canon
+//!   would split; an interner keyed on construction terms, which waits on that
+//!   canon.
+//! - **Reversal.** The agreement is established; interning lands with its
+//!   storage reader.
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;

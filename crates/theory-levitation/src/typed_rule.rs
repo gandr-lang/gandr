@@ -15,6 +15,20 @@
 //!
 //! [`FreeTerm`]: crate::FreeTerm
 //! [`check_desc`]: crate::check_desc
+//!
+//! # Decoding into core types
+//!
+//! Decoding is the large elimination from a code over the first-order fragment
+//! into the core value-type universe: `1` to the unit type, a product to a
+//! pair, a sum to a coproduct, a field to its value type with its grade and
+//! attributes erased, and a recursive occurrence at the description's own sort
+//! to the carrier of the type being defined; a whole description decodes to the
+//! coproduct over its constructors. Its target is a core type, so it lives with
+//! the consumer that owns that universe — the core side of the surface's
+//! description route, which lowers `data`, `codata` and `sign` declarations
+//! into this table, checks them with `check_desc`, and decodes them. This crate
+//! provides the seam: `PatternContext::from_field_codes` and `TypedRuleFace`
+//! take the decoded type as their parameter and the decoder as an argument.
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;

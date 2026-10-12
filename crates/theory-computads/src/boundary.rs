@@ -6,6 +6,14 @@
 //! vocabulary is this crate's alone: a wrapper of another crate a signature
 //! here mentions is that crate's, named by a dependent's own manifest, and
 //! nothing is re-exported.
+//!
+//! # Boundary wrappers
+//!
+//! The crate owns the nominal wrappers its own signatures cross: the indices
+//! its reports carry (`DeclinedFaceIndex`, `DeclinedOpIndex`), the counts its
+//! refusals carry (`OperationInputCount`, `ConstructorCount`,
+//! `RedexOccurrenceCount`), and one private verdict. A wrapper of another crate
+//! a signature here mentions is that crate's.
 
 use core::fmt;
 

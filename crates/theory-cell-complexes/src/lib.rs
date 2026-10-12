@@ -24,8 +24,50 @@
 //! whose left-hand side copies a hole.
 //!
 //! The crate is `no_std` and depends on `core`, `alloc` and the shape
-//! vocabulary of `quenchant-shape`. The papers it draws on are in its
-//! `README.md`, § References.
+//! vocabulary of `quenchant-shape`.
+//!
+//! # References
+//!
+//! - Dimitri Ara, Albert Burroni, Yves Guiraud, Philippe Malbos, François
+//!   Métayer, and Samuel Mimram. _Polygraphs: From Rewriting to Higher
+//!   Categories_. London Mathematical Society Lecture Note Series 495,
+//!   Cambridge University Press, March 2025. `doi:10.1017/9781009498968`;
+//!   preprint `arXiv:2312.00429` — cells as generating rewrites between the
+//!   faces of a presentation, the reading `Cell` and `CellStore` are named for.
+//! - Pierre-Louis Curien and Hugo Herbelin. "The Duality of Computation." In
+//!   _Proceedings of the Fifth ACM SIGPLAN International Conference on
+//!   Functional Programming (ICFP '00)_, pages 233–243, September 2000.
+//!   `doi:10.1145/351240.351262` — the command `⟨p | c⟩` of a producer against
+//!   a consumer, and the critical pair of the two binders that a cut's polarity
+//!   resolves.
+//! - Franz Baader and Tobias Nipkow. _Term Rewriting and All That_. Cambridge
+//!   University Press, 1998. `doi:10.1017/CBO9781139172752` — positions,
+//!   matching, syntactic unification with the occurs check, reduction orders
+//!   and stability under substitution, and the lexicographic path order.
+//! - J. A. Robinson. "A Machine-Oriented Logic Based on the Resolution
+//!   Principle." _Journal of the ACM_ 12, 1 (January 1965), pages 23–41.
+//!   `doi:10.1145/321250.321253` — most-general unification, which `unify_cmd`
+//!   computes.
+//! - Gordon D. Plotkin. "A Note on Inductive Generalization." In _Machine
+//!   Intelligence 5_, pages 153–163. Edinburgh University Press, 1970 — the
+//!   least general generalization of a set of terms, which `anti_unify_cmd`
+//!   computes.
+//! - John C. Reynolds. "Transformational Systems and the Algebraic Structure of
+//!   Atomic Formulas." In _Machine Intelligence 5_, pages 135–151. Edinburgh
+//!   University Press, 1970 — the same generalization found independently, as
+//!   the meet of the lattice of terms under instantiation.
+//! - Nachum Dershowitz. "Termination of Rewriting." _Journal of Symbolic
+//!   Computation_ 3, 1–2 (1987), pages 69–116.
+//!   `doi:10.1016/S0747-7171(87)80022-6` — simplification orders and their
+//!   limit: no such order orients a rule whose right-hand side embeds its left,
+//!   the shape of the frame-defining cell.
+//! - Filippo Bonchi, Fabio Gadducci, Aleks Kissinger, Paweł Sobociński, and
+//!   Fabio Zanasi. "String Diagram Rewrite Theory II: Rewriting with Symmetric
+//!   Monoidal Structure." _Mathematical Structures in Computer Science_ 32, 4
+//!   (2022), pages 511–541. `doi:10.1017/S0960129522000317`; preprint
+//!   `arXiv:2104.14686` — convex matching, whose per-pair re-check
+//!   `ConvexityDischarge` names a warrant for skipping, and the
+//!   left-connectedness conditions that warrant is one part of.
 
 #![no_std]
 

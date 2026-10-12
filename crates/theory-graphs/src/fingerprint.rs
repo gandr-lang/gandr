@@ -4,6 +4,28 @@
 //! The parameters are FNV-1a's published 64-bit offset basis and prime, so a
 //! fingerprint depends only on the bytes absorbed: never on a process-seeded
 //! hasher, a compiler version, or the host's byte order.
+//!
+//! # Fingerprints
+//!
+//! `Fnv64` is 64-bit FNV-1a with the published offset basis and prime, and
+//! multi-byte words are absorbed little-endian, so a fingerprint is the same on
+//! every platform. A fingerprint keys a cache and is no proof of equality.
+//!
+//! - `PrecDag::fingerprint` hashes the group count, then per group its name's
+//!   length, its name and its associativity tag (`Non` 0, `Left` 1, `Right` 2),
+//!   then the edge count and each edge as two 16-bit indices, in canonical edge
+//!   order. Reordered or repeated edges agree; a renamed group, a changed
+//!   associativity or a changed relation each move it.
+//! - `WalkIndex::fingerprint` hashes the frame `gandr.walk.v1` and the cap, the
+//!   direct rows under tag `D`, the transitive rows under tag `T`, then under
+//!   tag `M` each label's molds by ordinal, with every symbol written as its
+//!   stable key. Two machines with the same rows have the same fingerprint,
+//!   whatever their insertion order.
+//!
+//! The walk fingerprint witnesses include independently framed empty and
+//! directional machines with asymmetric symbol keys and a molds row. Zero-sized
+//! swing and stance inputs exercise representability and refusal precedence
+//! without allocating billions of elements.
 
 use crate::Fingerprint;
 use crate::FingerprintByte;

@@ -3,6 +3,23 @@
 //! The v1 field order is lhs, rhs, orientation, provenance, metadata and
 //! position. Names retain their spelling; no alpha quotient is taken. The
 //! storage tier owns integer widths, byte framing, hashing and durable IDs.
+//!
+//! # Certificate fields
+//!
+//! `transport::step_fields` borrows a sequent cell and its application
+//! position. It yields structural fields in v1 order: left face, right face,
+//! orientation, provenance, metadata, then position. Faces use pre-order tags,
+//! names and arities. Names retain their spelling; metadata follows first
+//! occurrence. The immutable contractum-use classification is recoverable from
+//! the encoded faces and carries no redundant field.
+//!
+//! The iterator walks flat producer tables and consumer spines without
+//! allocation or recursive calls. Storage owns checked widths, byte framing and
+//! BLAKE3 identities through `gandr_storage_artifact::transport`. This
+//! direction keeps theory independent of storage. A buffered byte image would
+//! allocate per hash; a sink trait would add an abstraction with one
+//! implementation. Reconsider the field boundary when a second alphabet
+//! supplies its canonical encoding.
 
 use anodized::spec;
 use gandr_theory_cell_complexes::Cat;

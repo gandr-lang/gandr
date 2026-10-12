@@ -55,6 +55,136 @@
 //! mixed-polarity command patterns are legitimate internal shapes.
 //!
 //! [`check_desc`]: gandr_theory_levitation::check_desc
+//!
+//! # The supported fragment
+//!
+//! A face `lhs ==> rhs` elaborates when its left-hand side is an operation
+//! application whose arguments are producers — variables and constructors of
+//! producers — and its right-hand side is a variable, a constructor of
+//! producers, a tail operation, or a constructor wrapping an operation through
+//! single-argument constructors. The left-hand side `f(head, rest…)` becomes
+//! `⟨head | f(rest…; $ret)⟩`; the right-hand side sends its value to the same
+//! continuation, a wrapping constructor `K(…)` becoming the return-side frame
+//! `K⁻` on it. Anything else — an operation in producer position, a
+//! several-argument constructor around an operation — is declined with
+//! `ElaborateError::UnsupportedShape` rather than mis-elaborated. The fragment
+//! is the direct one; growing it is a change to this crate's walk, not to the
+//! cell layer.
+//!
+//! # The declaration's polarity
+//!
+//! Every cell a declaration contributes cuts at one polarity: positive for
+//! `data`, negative for `codata`, the polarity the declaration's η law requires
+//! (`EtaKind::required_polarity`). Rule, circuit, frame and η cells read it
+//! from one mapping, so they cannot disagree.
+//!
+//! A `codata` declaration's η cell cuts negative. Cutting every rule cell and
+//! every frame cell positive whatever the declaration leaves that η cell with
+//! no projection route at its cut, so its critical pair cannot be shown to
+//! join. The rule and frame cells of a `codata` declaration therefore take the
+//! η cell's cut: the rule cells cut where the declaration's η law fires, and
+//! the frame cells follow, because a negative rule cell hands its result to a
+//! return-side frame at a negative cut, and a positive frame cell never reduces
+//! it, so leaving the frame cells positive would strand every `codata` rule
+//! that rebuilds a constructor. A frame cell at a positive cut is the cell
+//! layer's own `frame_defining_cell`, and a negative one is that cell with both
+//! faces cut negative;
+//! `a_codata_eta_cell_joins_the_projection_route_at_its_negative_cut` runs the
+//! joinability the choice rests on.
+//!
+//! - **Alternatives.** Positive rule cells, with the `codata` η critical pair
+//!   recorded as not applicable, which leaves a declaration whose η law and
+//!   rules never meet; or a cut each face chooses, which no description states.
+//! - **Reversal.** Descriptions grow per-sort polarities: the cut is then the
+//!   sort's, read from the same mapping.
+//!
+//! # The admission seam and its two refusals
+//!
+//! `elaborate_data_desc` is where a description's cells enter a store, so it is
+//! where admission binds, and it refuses two hole faults apart. A rule whose
+//! left-hand side copies a hole is refused with the cell layer's linearity
+//! diagnostic (`ElaborateError::NonLinear`): a copy on a wire needs a comonoid
+//! the type may not have. Witness:
+//! `tests::a_description_whose_rule_copies_a_hole_is_refused`. A cell that
+//! wears one hole name at both polarities is refused with its own diagnostic
+//! (`ElaborateError::MixedPolarity`, naming the hole): the cell layer reads
+//! such a hole as the dinaturality seam its composition gate needs, which is
+//! right for the cells completion derives, but a description's rule binds its
+//! pattern variables as producers and its result to one reserved continuation,
+//! so a face reaches that seam only by spelling a variable with a name the
+//! elaboration reserves. The copy is decided first, so a cell with both faults
+//! is refused for the copy.
+//!
+//! The two refusals stay distinct because the copy relation the cell layer
+//! checks is per hole name and category, so a two-polarity hole passes it as
+//! linear. The check lives at this seam and nowhere deeper, beside the copy
+//! check, so internal shapes stay constructible.
+//!
+//! - **Alternatives.** Admitting the seam, which lets a misspelled rule become
+//!   a cell that joins a variable to its own continuation; or refusing it
+//!   inside the cell layer's linearity check, which would refuse the seams
+//!   completion derives on purpose.
+//! - **Reversal.** A description form that states a consumer-side pattern
+//!   variable: the seam then becomes a face's own statement, and the refusal
+//!   narrows to the reserved names.
+//!
+//! Frame-defining and η cells are generated rather than read from the
+//! description and carry only reserved holes, each used once, so they enter the
+//! store without passing the seam.
+//!
+//! The seam governs the redex side alone: a rule whose right-hand side
+//! duplicates one hole and drops another is admitted, and the cell's derived
+//! metadata reports its growth and names the duplicated hole. Witness:
+//! `tests::a_duplicating_contractum_is_admitted_and_reported`.
+//!
+//! # The operation gate
+//!
+//! An operation frame `f(p̄; c)` carries one producer-argument list and one
+//! return continuation, so the only arity it holds has one output port fed by
+//! one monomial. An operation declaring no output port, several, or one fed by
+//! zero or several monomials is declined with an `OpElaborateError`, and every
+//! face and circuit rule applying it is declined with
+//! `ElaborateError::UnrepresentableOperation` before it is shaped, rather than
+//! elaborated into a frame that drops the operation's other outputs. Growing
+//! the cell alphabet so those arities are representable is a cell-layer change
+//! and is not taken here.
+//!
+//! Output-arity admission does not supply a matched producer: a zero-input
+//! signature can pass this gate, while its empty operation application is
+//! refused as `ElaborateError::EmptyOperation`.
+//!
+//! # η cells
+//!
+//! A declaration licenses an η law by stating both halves: exactly one
+//! constructor `K`, and an admitted operation `f` carrying the inverse face
+//! `f(K(x)) ==> x`. The law is minted in its contracting direction, `⟨w | f(;
+//! K⁻(β))⟩ ~> ⟨w | β⟩`, whose left-hand side is headed by an operation frame;
+//! the expanding direction is headed by a bare hole, matches every cut of its
+//! polarity, and is never minted. The licence is the face's shape and nothing
+//! looser — each near miss is refused pointwise — and the cell's provenance
+//! carries its kind, so the alphabet refuses it at the other polarity however
+//! well it matches. A declaration licensing none reports which half is missing
+//! (`EtaElaborateError`).
+//!
+//! # Circuit rules
+//!
+//! A circuit rule's cell is its declared sphere, and what licenses it is the
+//! composite its body denotes, so a body that denotes no single whiskered
+//! composite is declined (`ElaborateError::NoCircuitComposite`) before its
+//! sphere is offered anywhere, even when the sphere would elaborate. An
+//! admitted rule then passes the gate a written face passes.
+//! `DescElaboration::circuits` holds one `CircuitElaboration` per rule in
+//! declaration order, the admitted ones carrying their cell and their composite
+//! together, so a rule's outcome is one value rather than an entry in each of
+//! two lists.
+//!
+//! # Reports
+//!
+//! The output is shaped so no absence is a sentinel. A declined operation or
+//! face is an index into its description table paired with its reason; a
+//! circuit rule's outcome is one enum per rule; the η outcome is either the
+//! minted cells or the reason none was. A caller rendering diagnostics reads
+//! each decline against the declared member's own span.
 
 use alloc::vec::Vec;
 use core::fmt;

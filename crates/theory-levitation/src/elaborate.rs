@@ -37,6 +37,16 @@
 //! side. So elaborating a block produces a [`WhiskeredCell`] — a chain of
 //! frame applications around one active cell — against the boundaries
 //! [`derive_boundaries`] already fixes.
+//!
+//! # Elaborating a block
+//!
+//! A rewrite-sorted port binds the interface pair a hole carries; instantiating
+//! it at a redex line unifies its source with the line's input wiring and binds
+//! its target. A block with one redex elaborates to that redex inside its
+//! frames, outermost first; a block with none is the identity rewrite at the
+//! term it builds; a block with two incomparable redexes is declined, and
+//! `redex_occurrences` reports the positions so the cell layer can ask the
+//! interchange question at an application.
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;

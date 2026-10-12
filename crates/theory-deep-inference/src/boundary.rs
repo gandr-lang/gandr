@@ -8,6 +8,15 @@
 //! [`FiringPermission`](gandr_theory_cell_complexes::FiringPermission) and the
 //! engine's [`StepIndependence`](gandr_theory_coherent_resolutions::StepIndependence)
 //! are read from below rather than restated.
+//!
+//! # Boundary wrappers
+//!
+//! The crate owns the nominal wrappers its own signatures cross: counts,
+//! indices and verdicts over events, flows and webs. It reads
+//! `StepIndependence` from the engine and `FiringPermission` and `PositionStep`
+//! from the substrate. A wrapper in the substrate would make every new reader a
+//! substrate change; a wrapper a second crate reads moves to the lowest crate
+//! both depend on.
 
 /// Defines a transparent newtype over one primitive with `From` conversions
 /// both ways.

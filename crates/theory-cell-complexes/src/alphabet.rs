@@ -43,6 +43,54 @@
 //! Terms are identified structurally; certificates of joinability are
 //! identified by replay equivalence, in the layer above. An alphabet
 //! contributes the term plane only.
+//!
+//! # Cell alphabet
+//!
+//! `CellAlphabet` is one deep trait of 24 methods rather than a set of small
+//! ones: an alphabet fixes its pattern grammar (term, metavariable, hole,
+//! position, navigation, splicing, size, order, renaming, skolemization), its
+//! ordered substitution with matching, unification, anti-unification and
+//! restriction, and its cell vocabulary (orientation and provenance tags,
+//! derived metadata, hole flow, firing permission). An engine is written
+//! against the trait and never against the sequent language.
+//!
+//! Reading a subterm at a position returns `Maybe<Cmd,
+//! command_subterm::Absent>`, naming an off-term position apart from one that
+//! addresses no command, and splicing returns `Result<Cmd,
+//! CommandSpliceRefusal>` with the same two refusals; neither collapses a
+//! refusal into an empty option.
+//!
+//! # Convexity warrant
+//!
+//! `ConvexityDischarge` is an alphabet's warrant for skipping the per-pair
+//! convexity re-check a matcher over diagrams would otherwise run. The
+//! discharging variant is `StronglyConnectedOverAcyclicTarget`. It is not named
+//! `LeftConnectedOverAcyclicTarget`, after the phrase "left-connected over an
+//! acyclic target": left-connectedness, as the string-diagram literature uses
+//! it, is three conditions on a whole system — left-linear, monogamous acyclic
+//! rules on both sides, every left-hand side strongly connected — while the
+//! warrant states one condition on each left-hand side plus the target's
+//! acyclicity. This crate admits right-hand repeats, so the second condition
+//! does not hold, and the name says what is checked.
+//!
+//! - **Alternatives.** The phrase from the literature with the precision
+//!   carried by the doc comment alone.
+//! - **Reversal.** A ruling that the literature's phrasing is authoritative
+//!   renames it `LeftConnectedOverAcyclicTarget`.
+//!
+//! # Second inhabitant
+//!
+//! The trait's laws are checked over a second inhabitant, a toy first-order
+//! term language that implements `CellAlphabet` from outside this crate, as
+//! every later alphabet will. Its terms nest commands, so the splice law is
+//! exercised below the root, which the sequent alphabet, whose only command
+//! position is the root, cannot do. It lives in
+//! `gandr-theory-cell-complexes-tools`, a test-only crate that every engine
+//! suite reaches through `[dev-dependencies]`, rather than in this crate's
+//! integration target: one implementation of a 21-method trait is shared, not
+//! copied. The law suite lives there too, so this crate keeps no dev-dependency
+//! on a crate built over it, and the dependency graph stays acyclic in every
+//! edge kind.
 
 use alloc::vec::Vec;
 
