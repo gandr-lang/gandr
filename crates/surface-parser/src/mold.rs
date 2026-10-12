@@ -2174,8 +2174,10 @@ impl<'pbg> Molder<'pbg>
     /// ([`drop_interchangeable`](Self::drop_interchangeable)); a lone survivor
     /// wins without a window, and so does the one opener the token continues
     /// inside its own form when every other survivor is a one-tile form
-    /// ([`continued_opener`](Self::continued_opener)). Each remaining candidate
-    /// is dry-run and its window molded greedily by
+    /// ([`continued_opener`](Self::continued_opener)), and the least of
+    /// survivors that all end a form of one sort and precedence before the
+    /// token ([`complete_alike`](Self::complete_alike)). Each remaining
+    /// candidate is dry-run and its window molded greedily by
     /// [`choose`](Self::choose) (which IS completion aware and prunes its
     /// own ties by the token after each, so the window itself molds well),
     /// and the reading whose window closes with the fewest obligations wins
@@ -2251,9 +2253,12 @@ impl<'pbg> Molder<'pbg>
             return Some(sole);
         }
         // An opener the next token continues inside its own form beats the
-        // one-tile forms the token could only follow from outside them.
+        // one-tile forms the token could only follow from outside them, and of
+        // readings that all end alike before the token the least wins.
         if let Some(labels) = next_labels(tokens, index, source)
-            && let Some(mold) = self.continued_opener(&labels)
+            && let Some(mold) = self
+                .continued_opener(&labels)
+                .or_else(|| self.complete_alike(&labels))
         {
             return Some(mold);
         }
@@ -2491,20 +2496,25 @@ impl<'pbg> Molder<'pbg>
     /// opener's unfinished form against the complete tile and can choose the
     /// tile.
     ///
+    /// An opener that could also end its form at its tile, as a constructor
+    /// pattern's name before its optional arguments, is continued all the
+    /// same: `Some(` reads the parenthesis as its arguments.
+    ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: returns a mold exactly when exactly one opener is not
-    ///   form-last and has a same-form successor labelled with one of `labels`,
-    ///   and every other opener is form-last with no same-form predecessor or
-    ///   successor; the mold returned is that opener.
+    /// - ensures: returns a mold exactly when exactly one opener has a
+    ///   same-form successor labelled with one of `labels`, and every other
+    ///   opener is form-last with no same-form predecessor or successor; the
+    ///   mold returned is that opener.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a type application's name tied with the bare type
     ///   name before `(` and before `,`, beside a second opener `(` continues,
-    ///   and beside a tile with a successor: only the first returns the
-    ///   application; reading a form-last opener as continued, dropping the
-    ///   uniqueness check, or admitting a tile with a successor as complete
+    ///   and beside a tile with a successor, and a constructor pattern's name
+    ///   tied with the bare constructor before `(`: the first and the last
+    ///   return the continued opener; dropping the uniqueness check, admitting
+    ///   a tile with a successor as complete, or refusing a form-last opener
     ///   each changes one case. The corpus and a long application after `-F`
     ///   observe the choice through whole parses.
     /// - witness: `mold::tests::a_continued_opener_beats_a_one_tile_form`
@@ -2512,7 +2522,7 @@ impl<'pbg> Molder<'pbg>
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
     #[spec(ensures: |ret| {
         let pbg = self.pbg;
-        let continued = |mold: MoldId| !bool::from(pbg.mold_is_form_last(mold)) && pbg.mold_successors(mold).iter().any(|&(_, right)| pbg.mold(right).is_ok_and(|def| labels.contains(&CandidateLabel::from(def.label))));
+        let continued = |mold: MoldId| pbg.mold_successors(mold).iter().any(|&(_, right)| pbg.mold(right).is_ok_and(|def| labels.contains(&CandidateLabel::from(def.label))));
         let whole = |mold: MoldId| bool::from(pbg.mold_is_form_last(mold)) && !bool::from(pbg.mold_has_successor(mold)) && !bool::from(pbg.mold_has_predecessor(mold));
         let mut found = self.openers.iter().copied().filter(|&mold| continued(mold));
         let only = found.next().filter(|_| found.next().is_none());
@@ -2526,18 +2536,15 @@ impl<'pbg> Molder<'pbg>
         let pbg = self.pbg;
         let mut continued = None;
         for &mold in &self.openers {
-            let form_last = bool::from(pbg.mold_is_form_last(mold));
-            if !form_last
-                && pbg.mold_successors(mold).iter().any(|&(_, right)| {
-                    pbg.mold(right)
-                        .is_ok_and(|def| labels.contains(&CandidateLabel::from(def.label)))
-                })
-            {
+            if pbg.mold_successors(mold).iter().any(|&(_, right)| {
+                pbg.mold(right)
+                    .is_ok_and(|def| labels.contains(&CandidateLabel::from(def.label)))
+            }) {
                 if continued.replace(mold).is_some() {
                     return None;
                 }
             }
-            else if !form_last
+            else if !bool::from(pbg.mold_is_form_last(mold))
                 || bool::from(pbg.mold_has_successor(mold))
                 || bool::from(pbg.mold_has_predecessor(mold))
             {
@@ -2545,6 +2552,66 @@ impl<'pbg> Molder<'pbg>
             }
         }
         continued
+    }
+
+    /// The least opener in `self.openers` when every opener can end its form
+    /// at its tile, none goes on with the token carrying `labels`, and every
+    /// opener's rule has one sort and one precedence.
+    ///
+    /// Each reading then ends a whole form before the token, and the forms
+    /// stand alike as operands to whatever follows: one sort, one precedence,
+    /// nothing left open. Every window then closes with the same obligations,
+    /// and the exact-tie rule keeps the least opener; this keeps it without
+    /// molding the windows. A constructor pattern's name before `=>` ties its
+    /// two rules this way, as a parenthesized expression's `)` ties its two
+    /// closers.
+    ///
+    /// # Specification
+    /// - requires: `self.openers` ascending.
+    /// - ensures: the first opener exactly when every opener is form-last, has
+    ///   no same-form successor labelled with one of `labels`, and has a rule
+    ///   whose sort and precedence are the first opener's; otherwise none.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a constructor pattern's two rules before `=>` and
+    ///   before `(`, a constructor pattern beside a constructor expression, and
+    ///   a type application's name beside the bare type name: only the first
+    ///   returns the least; ignoring the next token, the sort, or the form-last
+    ///   check each changes one case. The corpus molds to the same trees with
+    ///   the windows the rule skips.
+    /// - witness: `mold::tests::readings_that_end_alike_keep_the_least`
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    #[spec(ensures: |ret| {
+        let pbg = self.pbg;
+        let continued = |mold: MoldId| pbg.mold_successors(mold).iter().any(|&(_, right)| pbg.mold(right).is_ok_and(|def| labels.contains(&CandidateLabel::from(def.label))));
+        let key = |mold: MoldId| pbg.rule_of(mold).ok().map(|rule| (rule.sort(), rule.prec()));
+        ret == self.openers.first().copied().filter(|&least| key(least).is_some() && self.openers.iter().all(|&mold| bool::from(pbg.mold_is_form_last(mold)) && !continued(mold) && key(mold) == key(least)))
+    })]
+    fn complete_alike(
+        &self,
+        labels: &[CandidateLabel<'_>],
+    ) -> Option<MoldId>
+    {
+        let pbg = self.pbg;
+        let &least = self.openers.first()?;
+        let key = |mold: MoldId| {
+            pbg.rule_of(mold)
+                .ok()
+                .map(|rule| (rule.sort(), rule.prec()))
+        };
+        let shared = key(least)?;
+        self.openers
+            .iter()
+            .all(|&mold| {
+                bool::from(pbg.mold_is_form_last(mold))
+                    && key(mold) == Some(shared)
+                    && !pbg.mold_successors(mold).iter().any(|&(_, right)| {
+                        pbg.mold(right)
+                            .is_ok_and(|def| labels.contains(&CandidateLabel::from(def.label)))
+                    })
+            })
+            .then_some(least)
     }
 
     /// Keep, of each class of interchangeable openers in `self.openers`, only
@@ -3408,13 +3475,21 @@ mod tests
         )?;
         // A parameter comma: neither continued by `(` nor a form of its own.
         let parameter_comma = mold_in(&pbg, DEF, COMMA, RightSide::Closed, &[TYPE_IDENTIFIER])?;
+        // `Some(x)` against the bare constructor `Some`: the pattern's name
+        // can also end its form.
+        let (pattern_name, bare_constructor) = constructor_patterns(&pbg)?;
         let parenthesis = [CandidateLabel::from("(")];
         let comma = [CandidateLabel::from(",")];
-        let cases: [(&[MoldId], &[CandidateLabel<'_>], Option<MoldId>); 4] = [
+        let cases: [(&[MoldId], &[CandidateLabel<'_>], Option<MoldId>); 5] = [
             (&[application, bare], &parenthesis, Some(application)),
             (&[application, bare], &comma, None),
             (&[application, declared], &parenthesis, None),
             (&[application, parameter_comma], &parenthesis, None),
+            (
+                &[pattern_name, bare_constructor],
+                &parenthesis,
+                Some(pattern_name),
+            ),
         ];
         for (openers, labels, expected) in cases {
             let mut ascending = openers.to_vec();
@@ -3422,6 +3497,95 @@ mod tests
             molder.openers = ascending;
             assert_eq!(
                 molder.continued_opener(labels),
+                expected,
+                "{openers:?} before {labels:?}"
+            );
+        }
+        Ok(())
+    }
+
+    /// The two molds of a constructor's name in a pattern: the name opening
+    /// `constructor_pattern`, whose arguments are optional, and the whole
+    /// one-tile `constructor.pattern`.
+    ///
+    /// # Specification
+    /// - ensures: the opener, then the one-tile form.
+    /// - fails: the grammar declares no such mold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Either mold is missing.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the tie witnesses read both molds' form membership; a
+    ///   swapped pair or a wrong rule changes which rule they exercise.
+    /// - witness: `mold::tests::readings_that_end_alike_keep_the_least`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(opener, whole)| pbg.rule_of(opener).is_ok_and(|rule| rule.name() == RuleName("constructor_pattern")) && pbg.rule_of(whole).is_ok_and(|rule| rule.name() == RuleName("constructor.pattern"))))]
+    fn constructor_patterns(pbg: &Pbg) -> Result<(MoldId, MoldId), Box<dyn Error>>
+    {
+        let constructor = TileLabel("constructor");
+        let opener = mold_in(
+            pbg,
+            RuleName("constructor_pattern"),
+            constructor,
+            RightSide::Closed,
+            &[TileLabel("(")],
+        )?;
+        let whole = mold_in(
+            pbg,
+            RuleName("constructor.pattern"),
+            constructor,
+            RightSide::Closed,
+            &[],
+        )?;
+        Ok((opener, whole))
+    }
+
+    #[test]
+    fn readings_that_end_alike_keep_the_least() -> Result<(), Box<dyn Error>>
+    {
+        let pbg = built()?;
+        let mut molder = Molder::new(&pbg);
+        let (pattern_name, bare_constructor) = constructor_patterns(&pbg)?;
+        // The constructor in expression position: a form of another sort.
+        let expression = mold_in(
+            &pbg,
+            RuleName("constructor.expression"),
+            TileLabel("constructor"),
+            RightSide::Closed,
+            &[],
+        )?;
+        // `List(T)` against `List`: the application cannot end at its name.
+        let application = mold_in(
+            &pbg,
+            RuleName("type_application"),
+            TYPE_IDENTIFIER,
+            RightSide::Closed,
+            &[TileLabel("(")],
+        )?;
+        let bare = mold_in(
+            &pbg,
+            RuleName("type_identifier"),
+            TYPE_IDENTIFIER,
+            RightSide::Closed,
+            &[],
+        )?;
+        let arrow = [CandidateLabel::from("=>")];
+        let parenthesis = [CandidateLabel::from("(")];
+        let comma = [CandidateLabel::from(",")];
+        let least = pattern_name.min(bare_constructor);
+        let cases: [(&[MoldId], &[CandidateLabel<'_>], Option<MoldId>); 4] = [
+            (&[pattern_name, bare_constructor], &arrow, Some(least)),
+            (&[pattern_name, bare_constructor], &parenthesis, None),
+            (&[bare_constructor, expression], &arrow, None),
+            (&[application, bare], &comma, None),
+        ];
+        for (openers, labels, expected) in cases {
+            let mut ascending = openers.to_vec();
+            ascending.sort_unstable();
+            molder.openers = ascending;
+            assert_eq!(
+                molder.complete_alike(labels),
                 expected,
                 "{openers:?} before {labels:?}"
             );
