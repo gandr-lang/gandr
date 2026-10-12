@@ -31,7 +31,7 @@ path = "tests/lib.rs"
 # the kernel's literals and indices in its edit actions, reads a
 # declaration's produced verdict to decide what it evaluates, and commits the
 # kernel artifact as records into a block store, reading it back through the
-# kernel's decoder.
+# kernel's decoder; the printer spells a checkpoint's type for every face.
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled.
 [dependencies]
@@ -48,6 +48,7 @@ gandr-surface-dispatcher.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-lowering.workspace = true
 gandr-surface-parser.workspace = true
+gandr-surface-pretty.workspace = true
 gandr-surface-syntax.workspace = true
 quenchant-shape.workspace = true
 

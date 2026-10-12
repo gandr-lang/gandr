@@ -18,7 +18,7 @@ The presentation printer: a checked core type or a normal-form value, written in
 
 ## Synopsis
 
-**What.** `present_type` and `present_value` take a `Source` — a store that answers, for one node, the `Former` it carries — a root and a `PageWidth`, and return a `Presentation`: the laid-out text and its `Fidelity`, which says whether every node was written in full. `CoreSource` reads the core arena; a face with a store of its own implements `Source` beside it. The crate uses `core` and `alloc` under `no_std`.
+**What.** `present_type` and `present_value` take a `Source` — a store that answers, for one node, the `Former` it carries — a root and a `PageWidth`, and return a `Presentation`: the laid-out text and its `Fidelity`, which says whether every node was written in full. `CoreSource` reads the core arena and `ContentSource` an incremental checkpoint's content table; a face with a store of its own implements `Source` beside them. The crate uses `core` and `alloc` under `no_std`.
 
 **Why.** A transcript line, a hover and a diagnostic operand each name a type or show a value, and each must say it the same way, in the syntax a reader can type back. One producer of that spelling, laid out by one engine, keeps every face in agreement on both the words and where a line breaks.
 
@@ -38,6 +38,7 @@ The presentation printer: a checked core type or a normal-form value, written in
 - `Presentation`, `Fidelity`: the text, and whether it says the whole node, by the nodes met rather than the characters written. Witnesses: `goldens::tests::fidelity_follows_nodes_not_the_characters_of_a_name`, `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`.
 - `Source`, `Former`, `Name`: the one question the printer asks of its input; a malformed source — a child of the wrong sort, a dangling node, a cycle — is written `?`, never a panic. Witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`.
 - `CoreSource`, `CoreNode`: the core arena as a source, constants and abstract types named from a table indexed by constant.
+- `ContentSource`: an incremental checkpoint's content table as a source, constants and abstract types named by their item keys; an unresolved node, a hole, a mark and an index past the table are written `?`. Witnesses: `content_source::tests::value_ty_covers_every_reachable_former`, `content_source::tests::comp_ty_covers_every_reachable_former`, `content_source::tests::ty_dispatches_on_polarity`, `content_source::tests::fidelity_tracks_unsupported_nodes_not_user_punctuation`, `content_source::tests::types_render_without_debug`, `content_source::tests::a_malformed_table_spells_unknown`.
 - `DEPTH_LIMIT`, `ValueDepth`: the value depth at which the printer writes `<deep>`.
 - `PresentationError`: a layout ceiling reached while building or rendering, or a defect in the walk's own bookkeeping.
 - `PageWidth`, re-exported from `gandr-surface-layout`.
@@ -98,10 +99,10 @@ The goldens live in `tests/golden/`, one `.narrow.txt` at 40 columns and one `.w
 
 ## The input is a source
 
-The printer asks one question of its input, the former at a node, through the `Source` trait, and reads nothing else. `CoreSource` answers it over the core arena; `gandr-surface-repl` answers it over the incremental checker's content tables, beside the face that holds them, so this crate depends on neither the checkpoint store nor the table format.
+The printer asks one question of its input, the former at a node, through the `Source` trait, and reads nothing else. `CoreSource` answers it over the core arena and `ContentSource` over the incremental checker's content tables, the form a checkpoint keeps a signature or a synthesised type in, so every face that reads checkpoints spells their types through one reading.
 
-- **Alternatives.** Taking the core arena alone would make a face holding content tables mint a core arena first, duplicating the checker's own minting and adding the incremental tier to this crate's dependencies.
-- **Reversal.** A second reader needs more than the former per node — a span, an origin for a binder name — at which point the question widens, or the per-node dispatch shows in a profile.
+- **Alternatives.** Taking the core arena alone would make a face holding content tables mint a core arena first, duplicating the checker's own minting. The content-table reading lived beside the REPL, the one face that read checkpoints, which kept the incremental tier out of this crate's dependencies; it moved here when the language server's hover became a second reader, since a copy per face would let two faces spell one type differently. The incremental tier is already in every build that prints a checkpoint's type.
+- **Reversal.** A second reader needs more than the former per node — a span, an origin for a binder name — at which point the question widens, or the per-node dispatch shows in a profile. A build that prints core types but never reads checkpoints, measured paying for the incremental tier, moves `ContentSource` behind a feature.
 
 ## One spelling per former
 

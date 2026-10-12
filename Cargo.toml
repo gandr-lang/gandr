@@ -234,6 +234,7 @@ path = "crates/core-checker"
 # resume, content-addressed checkpoints and the synthesis stream.
 # consumers:
 # - surface-lsp
+# - surface-pretty
 # - surface-repl
 # - surface-session
 # - surface-tui (dev)
@@ -476,7 +477,9 @@ path = "crates/surface-parser"
 # The presentation printer: checked core types and normal-form values laid
 # out at a page width through the layout engine.
 # consumers:
+# - surface-lsp
 # - surface-repl
+# - surface-session
 [workspace.dependencies.gandr-surface-pretty]
 path = "crates/surface-pretty"
 

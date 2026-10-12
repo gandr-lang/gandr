@@ -82,14 +82,47 @@ pub fn symbols(text: SourceText<'_>) -> DocumentSymbols
     };
     let tree = parsed.into_tree();
     let index = LineIndex::new(<&str>::from(text).into());
+    DocumentSymbols(
+        declarations(grammar, roles, &tree, &index)
+            .into_iter()
+            .map(|(_, symbol)| symbol)
+            .collect(),
+    )
+}
+
+/// The declarations of `tree`, each beside the form declaring it.
+///
+/// # Specification
+/// - requires: `tree` was parsed under `grammar`, and `index` built over its
+///   text.
+/// - ensures: the symbols [`symbols`] answers, in its order, each beside the
+///   node of the form that declares it.
+/// - provides: the declarations both the outline and a hover read.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`symbols`], and a hover finds each declaration's
+///   documentation under its own form.
+/// - witness: `outline::tests::declarations_nest_as_symbols`
+/// - witness: `hover::tests::a_declaration_hovers_its_type_and_documentation`
+#[spec(ensures: |ret| ret.iter().enumerate().all(|(position, found)|
+    found.1.holder.is_none_or(|holder| holder < position)))]
+pub fn declarations(
+    grammar: &Pbg,
+    roles: &RoleTable,
+    tree: &SyntaxTree<'_>,
+    index: &LineIndex<'_>,
+) -> Vec<(NodeIndex, DocumentSymbol)>
+{
     // A depth-first walk in source order meets each declaration after the
     // one holding it.
-    let mut found: Vec<DocumentSymbol> = Vec::new();
+    let mut found: Vec<(NodeIndex, DocumentSymbol)> = Vec::new();
     let mut pending: Vec<(NodeIndex, Option<usize>)> = Vec::from([(tree.root(), None)]);
     while let Some((at, holder)) = pending.pop() {
-        let holder = match declared(grammar, roles, &tree, &index, at) {
+        let holder = match declared(grammar, roles, tree, index, at) {
             | Some(symbol) => {
-                found.push(DocumentSymbol { holder, ..symbol });
+                found.push((at, DocumentSymbol { holder, ..symbol }));
                 Some(found.len().saturating_sub(1))
             },
             | None => holder,
@@ -100,7 +133,7 @@ pub fn symbols(text: SourceText<'_>) -> DocumentSymbols
             added.reverse();
         }
     }
-    DocumentSymbols(found)
+    found
 }
 
 /// The symbol the form at `at` declares, when it is a named declaration.

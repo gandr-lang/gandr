@@ -1,6 +1,6 @@
 # gandr-surface-lsp
 
-The gandr language server: diagnostics, semantic tokens, inline completion and the document's outline over the Language Server Protocol, served over any pair of byte streams.
+The gandr language server: diagnostics, semantic tokens, inline completion, the document's outline and hover over the Language Server Protocol, served over any pair of byte streams.
 
 <!-- toc -->
 
@@ -14,28 +14,28 @@ The gandr language server: diagnostics, semantic tokens, inline completion and t
 - [Tokens are the highlighter's roles](#tokens-are-the-highlighters-roles)
 - [Inline completion is the parser's expected syntax](#inline-completion-is-the-parsers-expected-syntax)
 - [The outline is read off the tree](#the-outline-is-read-off-the-tree)
+- [A hover reads the session](#a-hover-reads-the-session)
 - [Positions count UTF-16 code units](#positions-count-utf-16-code-units)
 - [The lifecycle and its error codes](#the-lifecycle-and-its-error-codes)
 - [The transport is written here](#the-transport-is-written-here)
 - [Document URIs](#document-uris)
 - [Coverage of the specification](#coverage-of-the-specification)
 - [Specification evidence](#specification-evidence)
-- [Deferred behavioral floor](#deferred-behavioral-floor)
 - [License](#license)
 
 <!-- tocstop -->
 
 ## Synopsis
 
-**What.** `gandr-surface-lsp` serves a subset of the Language Server Protocol 3.17: the base protocol's framing, the JSON-RPC 2.0 envelope with its standard error codes, the lifecycle from `initialize` to `exit`, incremental document synchronisation, `textDocument/publishDiagnostics` after every synchronisation, `textDocument/semanticTokens/full` and `textDocument/semanticTokens/range`, and `textDocument/documentSymbol`, `textDocument/foldingRange` and `textDocument/selectionRange`; and, from 3.18, `textDocument/inlineCompletion`. `serve` runs one session over any `BufRead` and `Write` pair, logging one timing line per synchronisation to a third `Write`; `Capabilities` displays what `initialize` answers. The driver's `gandr lsp` serves it over standard input and output and logs to standard error.
+**What.** `gandr-surface-lsp` serves a subset of the Language Server Protocol 3.17: the base protocol's framing, the JSON-RPC 2.0 envelope with its standard error codes, the lifecycle from `initialize` to `exit`, incremental document synchronisation, `textDocument/publishDiagnostics` after every synchronisation, `textDocument/semanticTokens/full` and `textDocument/semanticTokens/range`, `textDocument/documentSymbol`, `textDocument/foldingRange` and `textDocument/selectionRange`, and `textDocument/hover`; and, from 3.18, `textDocument/inlineCompletion`. `serve` runs one session over any `BufRead` and `Write` pair, logging one timing line per synchronisation to a third `Write`; `Capabilities` displays what `initialize` answers. The driver's `gandr lsp` serves it over standard input and output and logs to standard error.
 
 **Why.** An editor should show what `gandr check` prints, where it prints it, while the source is written. The server is a face over the pipeline's own outputs, never a second pipeline: its diagnostics are the reports `gandr-surface-diagnostics` renders for the dispatcher's step, and its tokens are the roles `gandr-surface-grammar`'s highlighter classifies, so an editor, a terminal and a test cannot disagree about a refusal or a token.
 
-**How.** Each open document holds a `gandr-surface-session` session under the source root its `file` URI's path classifies as. A synchronisation applies the client's changes to the held text and judges the text in the session, reads the judgement's step through `gandr-surface-diagnostics`' `entries` under `check --goals`, and publishes each report as one diagnostic: its span as the range, its refusal's vocabulary name as the code, its title, primary label and note as the message, its context loci as related information. Then it runs the kernel admission the judgement left. A token request parses the document, takes the highlighter's spans and delta-encodes them under the standard legend. An inline-completion request molds the form the cursor ends and spells what `gandr-surface-parser` expects to close it as a snippet. An outline request parses the document and reads its declarations, its multi-line forms or the forms around a position off the tree. Every position is a UTF-16 position read through `gandr-surface-render-remote`'s `LineIndex`. The server keeps the open documents' text and sessions and one grammar per process.
+**How.** Each open document holds a `gandr-surface-session` session under the source root its `file` URI's path classifies as. A synchronisation applies the client's changes to the held text and judges the text in the session, reads the judgement's step through `gandr-surface-diagnostics`' `entries` under `check --goals`, and publishes each report as one diagnostic: its span as the range, its refusal's vocabulary name as the code, its title, primary label and note as the message, its context loci as related information. Then it runs the kernel admission the judgement left. A token request parses the document, takes the highlighter's spans and delta-encodes them under the standard legend. An inline-completion request molds the form the cursor ends and spells what `gandr-surface-parser` expects to close it as a snippet. An outline request parses the document and reads its declarations, its multi-line forms or the forms around a position off the tree. A hover request finds the declaration whose name the cursor is on and reads its type and documentation off the document's session. Every position is a UTF-16 position read through `gandr-surface-render-remote`'s `LineIndex`. The server keeps the open documents' text and sessions and one grammar per process.
 
 ## References
 
-- Microsoft. "Language Server Protocol Specification 3.17." <https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/> — the base protocol, the lifecycle, document synchronisation, published diagnostics, semantic tokens, document symbols, folding and selection ranges, and the position encodings this server serves.
+- Microsoft. "Language Server Protocol Specification 3.17." <https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/> — the base protocol, the lifecycle, document synchronisation, published diagnostics, semantic tokens, document symbols, folding and selection ranges, hover, and the position encodings this server serves.
 - Microsoft. "Language Server Protocol Specification 3.18." <https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification/> — `textDocument/inlineCompletion`, its snippet `StringValue`, and the snippet syntax a ghost text's tab stops are written in.
 - JSON-RPC Working Group. "JSON-RPC 2.0 Specification." 2010, revised 2013. <https://www.jsonrpc.org/specification> — the envelope, the batch the server refuses, and the reserved error codes it answers with.
 - Matthew Kerwin. "The 'file' URI Scheme." RFC 8089, February 2017. `doi:10.17487/RFC8089` — the URI a document is named by, whose percent-decoded path classifies its source root.
@@ -51,6 +51,7 @@ The gandr language server: diagnostics, semantic tokens, inline completion and t
 - Semantic tokens for the whole document and for a range, and `TOKEN_TYPES` and `TOKEN_MODIFIERS`, the legend. Witnesses: `tokens::tests::every_classified_role_maps_inside_the_legend`, `tokens::tests::the_legend_index_a_role_emits_names_what_that_role_means`, `tokens::tests::a_one_line_keyword_encodes_as_five_integers`, `tokens::tests::a_multiline_span_splits_and_drops_the_terminator`, `server::tests::semantic_tokens_full_answers_a_known_document`, `server::tests::a_range_returns_only_the_tokens_it_covers`, `server::tests::a_range_over_the_whole_document_agrees_with_the_full_stream`, `server::tests::a_token_straddling_the_range_edge_is_returned_whole`, `server::tests::an_inverted_range_yields_no_tokens`, `server::tests::an_empty_range_yields_no_tokens`, `recheck::tests::a_definition_produces_semantic_tokens`, `session::session::corpus_tokens_cover_the_highlighted_bytes`.
 - Inline completion: the material the parser expects to close the innermost form at the cursor, as one snippet whose holes and lexical classes are tab stops; nothing where text follows the cursor on its line or the cursor is in a comment. Witnesses: `inline::tests::ghost_text_closes_the_innermost_form`, `inline::tests::no_ghost_text_where_text_or_a_comment_stands`, `server::tests::inline_completion_answers_the_expected_closer`.
 - The outline: document symbols nesting each declaration inside the one that holds it, folding ranges over multi-line forms, documentation and block comments, and selection ranges growing from the innermost node around a position to the whole document. Witnesses: `outline::tests::declarations_nest_as_symbols`, `outline::tests::multi_line_forms_and_documentation_fold`, `outline::tests::a_selection_grows_from_the_innermost_form`, `server::tests::the_outline_requests_answer_a_known_document`.
+- Hover: a declaration's name hovers its type and its documentation. Witnesses: `hover::tests::a_declaration_hovers_its_type_and_documentation`, `hover::tests::only_a_declared_name_hovers`, `hover::tests::each_member_hovers_its_own_type`, `server::tests::a_hover_answers_a_known_declaration`.
 - Positions in UTF-16 code units, a position past a line's end or past the last line clamped. Witnesses: `position::tests::utf16_counts_an_astral_character_as_two_units`, `position::tests::a_line_past_the_end_clamps`.
 - `Capabilities`: the `initialize` result as one line of JSON. Witnesses: `capabilities::capabilities::advertised_capabilities_name_the_token_legend`, `server::tests::initialize_advertises_the_token_legend`.
 - A `file` URI's percent-decoded path. Witness: `protocol::tests::a_file_uri_names_its_decoded_path`.
@@ -170,6 +171,17 @@ The three outline requests parse the held text under the process's grammar, as a
 
 The alternatives were the lowered module, whose declarations carry names and spans but only for a document that lowers, and the highlighter's spans, which classify a name but say nothing of what encloses it. The choice reverses when a declaration's symbol must say what only lowering knows, its type in the symbol's detail say: the symbol then reads the session's lowered module, the tree still giving its ranges.
 
+## A hover reads the session
+
+A hover request finds the declaration whose name the cursor is on — from the name's first character to just past its last — among the declarations the outline reads off the tree, so a parameter, a use, a keyword or a word in a comment hovers nothing. It answers a fenced `gandr` block with the name and, when the document's session spells it, ` : ` and its type, then the declaration's documentation after a blank line, about the name's range:
+
+- **The type** is the one the session's latest resume gives the declaration, spelled by the session's `type_at` at 80 columns: a signature, a synthesised type or a data declaration's universe, in the one spelling every face writes. The item is the occurrence of the declaration's name it is among the document's earlier non-module declarations, so two modules' members of one name each hover their own type.
+- **The documentation** is what the session's latest accepted lowering filed for the declaring form, read under the form's content identity, which documentation does not reach: `///` lines and a `doc("…")` entry read to one text.
+
+A declaration the session knows neither a type nor documentation for hovers nothing, and so does a document whose grammar did not build.
+
+The alternative was to look the name under the cursor up as a word, wherever it stands, and answer the type of the last declaration it names, which hovers a parameter or a comment with an unrelated declaration's type; and to lower the document again per hover, which pays a lowering for what the session already holds. The occurrence counts the document's declarations as the tree orders them, which is the order the lowering admits them; a declaration the lowering refuses whole takes no item, so a later one of its name reads the next. The choice reverses when the session maps a declaring form to its item directly: the hover then asks for the form's item and stops counting.
+
 ## Positions count UTF-16 code units
 
 The server advertises `positionEncoding: "utf-16"` and counts every range, related location and token in UTF-16 code units through the renderer seam's `LineIndex`, whose rows end at `\n`, `\r\n` and a lone `\r` as the protocol's do. UTF-16 is the encoding every client must support, so it is the one encoding that needs no negotiation and no second projection. This departs from the recorded design, which negotiates UTF-8 with a client that offers it: UTF-8 saves the conversion on an ASCII-heavy source, at the cost of a second projection and a negotiation, each to be tested apart, for a saving no measurement has shown matters beside a whole-document recheck. The choice reverses if a measurement shows the conversion costs a session more than a recheck does; the server then negotiates UTF-8 and the seam gains that column.
@@ -223,9 +235,9 @@ Every feature of the protocol, 3.17 and 3.18, with whether this server serves it
 | document symbols | `textDocument/documentSymbol` | served |
 | folding ranges | `textDocument/foldingRange` | served |
 | selection ranges | `textDocument/selectionRange` | served |
-| hover | `textDocument/hover` | blocked: a type-aware hover reader, which looks up the checked type of the name under the cursor |
-| inlay hints | `textDocument/inlayHint` | blocked: the same reader, for binders whose type is inferred |
-| signature help | `textDocument/signatureHelp` | blocked: the same reader, for the function a call applies |
+| hover | `textDocument/hover` | served |
+| inlay hints | `textDocument/inlayHint` | blocked: a binder's inferred type, which the resume records per item and not per binder |
+| signature help | `textDocument/signatureHelp` | blocked: the declaration a call applies, which needs the use-to-binder map below |
 | completion | `textDocument/completion` | blocked: goals whose types the checker spells |
 | definition, declaration, type definition, implementation | `textDocument/definition`, `declaration`, `typeDefinition`, `implementation` | blocked: the lowering resolves every name but does not expose a use's binder |
 | references, document highlight | `textDocument/references`, `documentHighlight` | blocked: the same use-to-binder map |
@@ -251,19 +263,6 @@ Executable predicates cover UTF-16 projection and errors, token kinds and groupi
 Adequacy separates bounded observations from broader obligations. The overlap witness exhausts ordered spans and all query endpoint pairs in a five-offset domain, preserving input order and rejecting empty intersections. Other witnesses cover Unicode and line endings, framing ceilings, partial writes and flush failures, decoder refusals, lifecycle errors and ignored updates. The corpus observers independently walk the checked-in sources and compare diagnostics, causal labels and token bytes with the dispatcher and renderer; agreement is evidence over that corpus, not a proof for all programs.
 
 Two effects cannot be observed by a useful return-value predicate: `serve` owns opaque generic input/output streams, and `Capabilities::fmt` writes through an opaque formatter. Their explicit exemptions are witnessed by framed sessions, the advertised JSON and a refused-write sink. Semantic diagnostic fields are asserted directly; diagnostic prose is compared with its renderer rather than pinned as English wording.
-
-## Deferred behavioral floor
-
-| Deferred witness | Missing former or reader |
-| ---------------- | ------------------------ |
-| `hover_at_the_origin_is_total` | Type-aware hover reader |
-| `hovering_a_defined_name_reports_its_type` | Type-aware hover reader |
-| `words_inside_comments_and_strings_do_not_hover` | Type-aware hover reader |
-| `a_parameter_does_not_hover_as_an_unrelated_top_level_definition` | Type-aware hover reader |
-| `hovering_an_unknown_name_is_none` | Type-aware hover reader |
-| `the_word_scan_accepts_the_cursor_at_either_edge` | Type-aware hover reader |
-| `an_earlier_redefined_name_hovers_its_own_type` | Type-aware hover reader |
-| `a_redefined_name_hovers_its_latest_type` | Type-aware hover reader |
 
 ## License
 

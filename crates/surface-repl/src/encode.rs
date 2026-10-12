@@ -8,11 +8,7 @@ use alloc::vec::Vec;
 use std::path::Path;
 
 use anodized::spec;
-use gandr_core_incremental::ItemCheckpoint;
-use gandr_core_incremental::NodeIndex;
-use gandr_core_incremental::Reference;
 use gandr_core_incremental::Resume;
-use gandr_core_incremental::Typing;
 use gandr_core_incremental::submitted;
 use gandr_surface_corpus::Outcome;
 use gandr_surface_diagnostics::Class;
@@ -24,6 +20,7 @@ use gandr_surface_dispatcher::Evaluation;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Verb;
+use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Presentation;
 use gandr_surface_render_remote::DiagCard;
 use gandr_surface_render_remote::HlSpan;
@@ -31,33 +28,13 @@ use gandr_surface_render_remote::OutKind;
 use gandr_surface_render_remote::TranscriptBlock;
 use gandr_surface_session::Submission;
 use gandr_surface_session::evaluate;
+use gandr_surface_session::spelled;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::SourceFragment;
 use quenchant_shape::shape::Maybe;
 
 use crate::remote::repair_cards;
-use crate::render::spell;
-
-quenchant_shape::reason_enum! {
-    /// Why a declaration's type cannot be spelled.
-    pub mod spelled {
-        /// The reason no type is spelled.
-        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub enum Absent {
-            /// The session holds no resume to read checkpoints from.
-            Unresumed,
-            /// No checkpoint of the latest resume carries the declaration's
-            /// name.
-            Uncheckpointed,
-            /// The checker refused the item, so it has no type.
-            Refused,
-            /// The item states no signature and synthesised none.
-            Unsigned,
-            /// The printer reached a layout ceiling laying the type out.
-            Unpresentable,
-        }
-    }
-}
+use crate::render::TRANSCRIPT_WIDTH;
 
 /// What each declaration of the accepted revision produced, by name.
 #[repr(transparent)]
@@ -175,95 +152,19 @@ pub struct Encoded
     pub disposition: Disposition,
 }
 
-/// A value classifier or native declaration universe from the latest
-/// checkpoints.
+/// The type the latest checkpoints give the declaration `name`, at the
+/// transcript's width: the session's
+/// [`type_of`](gandr_surface_session::type_of) at [`TRANSCRIPT_WIDTH`]
+/// columns.
 ///
 /// # Specification
-/// - requires: nothing.
-/// - ensures: the last checkpoint whose item key is `name`'s bytes answers: a
-///   checked or owed value by its signature, a synthesised value by its
-///   produced classifier, and a native declaration by its declared universe,
-///   each laid out through [`spell`]; a refused layout is an absence.
-/// - provides: the type a transcript line names a declaration by.
-/// - fails: never; an absence names its reason.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L2 — one-line signatures in three selected strict corpus
-///   sources have their written types; a probe has its synthesized type. L3 —
-///   no resume, an absent name and a refused checkpoint retain distinct absence
-///   reasons. The predicate checks precedence without printing twice.
-/// - witness: `loop::tests::corpus_types_spell_as_their_source_writes_them`
-/// - witness: `loop::tests::the_type_command_answers_without_keeping_the_probe`
-/// - witness: `encode::tests::missing_and_refused_types_keep_their_absence_reasons`
-#[spec(ensures: |ret| match resume {
-    Maybe::Absent(_) => matches!(ret, Maybe::Absent(spelled::Absent::Unresumed)),
-    Maybe::Present(resume) => resume.checkpoints().items().iter().rfind(|checkpoint|
-        matches!(checkpoint.content().reference(), Reference::Item { key, .. }
-            if key.as_ref() == AsRef::<str>::as_ref(&name).as_bytes()))
-        .map_or(matches!(ret, Maybe::Absent(spelled::Absent::Uncheckpointed)), |checkpoint| match *checkpoint.typing() {
-            Typing::Refused(_) => matches!(ret, Maybe::Absent(spelled::Absent::Refused)),
-            Typing::Checked { .. } | Typing::Owed
-                if matches!(checkpoint.content().declaration(), gandr_core_incremental::DeclarationRoots::Value {signature:Maybe::Absent(_),..}) =>
-                matches!(ret, Maybe::Absent(spelled::Absent::Unsigned)),
-            Typing::Data | Typing::Checked { .. } | Typing::Owed | Typing::Synthesised { .. } =>
-                matches!(ret, Maybe::Present(_) | Maybe::Absent(spelled::Absent::Unpresentable)),
-        }),
-})]
+/// trivial.
 fn type_of(
     resume: Maybe<&Resume, submitted::Absent>,
     name: SourceFragment<'_>,
 ) -> Maybe<Presentation, spelled::Absent>
 {
-    let Maybe::Present(resume) = resume
-    else {
-        return Maybe::Absent(spelled::Absent::Unresumed);
-    };
-    let wanted = AsRef::<str>::as_ref(&name).as_bytes();
-    let named = |checkpoint: &&ItemCheckpoint| {
-        matches!(
-            checkpoint.content().reference(),
-            Reference::Item { key, .. } if key.as_ref() == wanted
-        )
-    };
-    let Some(checkpoint) = resume.checkpoints().items().iter().rfind(named)
-    else {
-        return Maybe::Absent(spelled::Absent::Uncheckpointed);
-    };
-    let content = checkpoint.content();
-    let laid_out = |presented: Result<Presentation, _>| {
-        presented.map_or(
-            Maybe::Absent(spelled::Absent::Unpresentable),
-            Maybe::Present,
-        )
-    };
-    match *checkpoint.typing() {
-        | Typing::Data => match *(content.declaration()) {
-            | gandr_core_incremental::DeclarationRoots::Data(ref roots) => {
-                laid_out(spell(content.nodes(), roots.kind))
-            },
-            | gandr_core_incremental::DeclarationRoots::Value { .. } => {
-                Maybe::Absent(spelled::Absent::Unpresentable)
-            },
-        },
-        | Typing::Checked { .. } | Typing::Owed => match *(content.declaration()) {
-            | gandr_core_incremental::DeclarationRoots::Value {
-                signature: Maybe::Present(ref root),
-                ..
-            } => laid_out(spell(content.nodes(), *root)),
-            | gandr_core_incremental::DeclarationRoots::Value {
-                signature: Maybe::Absent(_),
-                ..
-            } => Maybe::Absent(spelled::Absent::Unsigned),
-            | gandr_core_incremental::DeclarationRoots::Data(_) => {
-                Maybe::Absent(spelled::Absent::Unpresentable)
-            },
-        },
-        | Typing::Synthesised { ref produced, .. } => {
-            laid_out(spell(produced.nodes(), NodeIndex::from(0)))
-        },
-        | Typing::Refused(_) => Maybe::Absent(spelled::Absent::Refused),
-    }
+    gandr_surface_session::type_of(resume, name, PageWidth::from(TRANSCRIPT_WIDTH))
 }
 
 /// `name : T`, or the bare name when no type can be spelled.
@@ -532,58 +433,5 @@ pub fn encode_submission(
             lines,
         },
         disposition,
-    }
-}
-
-#[cfg(test)]
-mod tests
-{
-    use gandr_core_incremental::BackendArtifact;
-    use gandr_core_incremental::MemoryCheckpointStore;
-    use gandr_storage_records::InMemoryBlockStore;
-    use gandr_surface_dispatcher::SourceRoot;
-    use gandr_surface_grammar::built_in;
-    use gandr_surface_session::Session;
-    use gandr_surface_syntax::SourceFragment;
-    use gandr_surface_syntax::SourceText;
-    use quenchant_shape::shape::Maybe;
-
-    use super::spelled;
-    use super::type_of;
-
-    /// No resume, an absent name and a refused item have distinct absence
-    /// reasons, while an owed signature retains its declared type.
-    #[test]
-    fn missing_and_refused_types_keep_their_absence_reasons()
-    {
-        let mut session = Session::new(
-            built_in().expect("the grammar builds"),
-            SourceRoot::Strict,
-            MemoryCheckpointStore::default(),
-            InMemoryBlockStore::default(),
-            BackendArtifact::from(b"repl type observer".as_slice()),
-        );
-        assert!(matches!(
-            type_of(session.last(), SourceFragment::from("name")),
-            Maybe::Absent(spelled::Absent::Unresumed)
-        ));
-        let _submitted = session
-            .submit(SourceText::from("def name : String ;"))
-            .expect("the session does not fault");
-        assert!(matches!(
-            type_of(session.last(), SourceFragment::from("missing")),
-            Maybe::Absent(spelled::Absent::Uncheckpointed)
-        ));
-        assert!(
-            matches!(type_of(session.last(), SourceFragment::from("name")),
-            Maybe::Present(ref shown) if shown.as_ref() == "String")
-        );
-        let _submitted = session
-            .submit(SourceText::from("def name : String ;\ndef name = 42 ;"))
-            .expect("the mismatch is a refusal, not an engine fault");
-        assert!(matches!(
-            type_of(session.last(), SourceFragment::from("name")),
-            Maybe::Absent(spelled::Absent::Refused)
-        ));
     }
 }

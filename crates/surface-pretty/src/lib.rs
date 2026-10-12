@@ -14,6 +14,7 @@
 //! | [`Presentation`]              | the laid-out text and whether it says the whole node     |
 //! | [`Source`], [`Former`]        | the one question the printer asks of its input           |
 //! | [`CoreSource`]                | the core arena as a source                               |
+//! | [`ContentSource`]             | a checkpoint's content table as a source                 |
 //! | [`PresentationError`]         | a layout ceiling reached on the way                      |
 //!
 //! # One spelling per former
@@ -38,6 +39,7 @@
 
 extern crate alloc;
 
+mod content_source;
 mod core_source;
 mod error;
 mod former;
@@ -60,6 +62,7 @@ use gandr_surface_layout::limits::BuildMeter;
 use gandr_surface_layout::render::RenderedText;
 use gandr_surface_layout::render::render;
 
+pub use crate::content_source::ContentSource;
 pub use crate::core_source::CoreNode;
 pub use crate::core_source::CoreSource;
 pub use crate::error::PresentationError;

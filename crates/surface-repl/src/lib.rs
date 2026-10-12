@@ -60,7 +60,6 @@ pub use crate::encode::Offer;
 pub use crate::encode::Standings;
 pub use crate::encode::Subject;
 pub use crate::encode::encode_submission;
-pub use crate::encode::spelled;
 pub use crate::highlight::SpanOrder;
 pub use crate::highlight::highlight_source;
 pub use crate::highlight::span_order;

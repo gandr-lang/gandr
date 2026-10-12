@@ -33,10 +33,11 @@ mod capabilities
                     "documentSymbolProvider": true,
                     "foldingRangeProvider": true,
                     "selectionRangeProvider": true,
+                    "hoverProvider": true,
                 },
                 "serverInfo": {"name": "gandr", "version": env!("CARGO_PKG_VERSION")},
             }),
-            "the legend the crate exports, and nothing unserved: no hover, no completion list"
+            "the legend the crate exports, and nothing unserved: no completion list"
         );
     }
     /// A formatter sink refusing every write.

@@ -27,6 +27,7 @@ use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 use serde_json::Value;
 
+use crate::hover::hover;
 use crate::inline::ghost;
 use crate::outline::folds;
 use crate::outline::selections;
@@ -43,7 +44,7 @@ use crate::protocol::DocumentVersion;
 use crate::protocol::InitializeResult;
 use crate::protocol::InlineCompletionItem;
 use crate::protocol::InlineCompletionList;
-use crate::protocol::InlineCompletionParams;
+use crate::protocol::PositionParams;
 use crate::protocol::PublishParams;
 use crate::protocol::RangeParams;
 use crate::protocol::SelectionRangeParams;
@@ -394,6 +395,7 @@ impl Server
     /// - witness: `server::tests::semantic_tokens_full_answers_a_known_document`
     /// - witness: `server::tests::inline_completion_answers_the_expected_closer`
     /// - witness: `server::tests::the_outline_requests_answer_a_known_document`
+    /// - witness: `server::tests::a_hover_answers_a_known_declaration`
     #[spec(
         captures: [phase = self.phase, documents = self.documents.len()],
         ensures: |ret| self.documents.len() == documents && match (phase, method.as_ref()) {
@@ -420,6 +422,12 @@ impl Server
             (Phase::Running, "textDocument/documentSymbol" | "textDocument/foldingRange" | "textDocument/selectionRange") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_), .. } => true,
+                    Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
+                    _ => false,
+                },
+            (Phase::Running, "textDocument/hover") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Nothing | Answer::Hover(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     _ => false,
                 },
@@ -475,7 +483,7 @@ impl Server
                 }
             },
             | (Phase::Running, "textDocument/inlineCompletion") => {
-                match serde_json::from_value::<InlineCompletionParams>(params) {
+                match serde_json::from_value::<PositionParams>(params) {
                     | Ok(params) => {
                         success(id, self.inline(&params.text_document.uri, params.position))
                     },
@@ -510,6 +518,14 @@ impl Server
                             Answer::Selections(selections(text, &params.positions))
                         }),
                     ),
+                    | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            | (Phase::Running, "textDocument/hover") => {
+                match serde_json::from_value::<PositionParams>(params) {
+                    | Ok(params) => {
+                        success(id, self.hover(&params.text_document.uri, params.position))
+                    },
                     | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
@@ -656,7 +672,7 @@ impl Server
         Answer::Tokens(ref tokens) => self.documents.contains_key(uri)
             && tokens.data.as_ref().len().is_multiple_of(5)
             && match window { Window::Within(range) if range.start >= range.end => tokens.data.as_ref().is_empty(), _ => true },
-        Answer::Initialize(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_) => false,
+        Answer::Initialize(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_) | Answer::Hover(_) => false,
     })]
     fn tokens(
         &self,
@@ -703,7 +719,7 @@ impl Server
         Answer::Nothing => !self.documents.contains_key(uri),
         Answer::Inline(ref list) => self.documents.contains_key(uri) && list.items.len() <= 1
             && list.items.iter().all(|item| item.range.start == position && item.range.end == position),
-        Answer::Initialize(_) | Answer::Tokens(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_) => false,
+        Answer::Initialize(_) | Answer::Tokens(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_) | Answer::Hover(_) => false,
     })]
     fn inline(
         &self,
@@ -759,6 +775,44 @@ impl Server
         self.documents.get(uri).map_or(Answer::Nothing, |document| {
             read(SourceText::from(document.text.as_str()))
         })
+    }
+
+    /// What a hover at `position` of the document at `uri` shows.
+    ///
+    /// # Specification
+    /// - requires: nothing; an unknown URI and any position are admitted.
+    /// - ensures: an unknown document, a document whose grammar did not build,
+    ///   and a position [`hover()`] shows nothing at yield Nothing; otherwise
+    ///   the hover it shows, read against the document's session.
+    /// - provides: the answer to `textDocument/hover`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a hover over a held document's declaration, over its
+    ///   keyword and over an unknown document are asserted at their exact wire
+    ///   answers.
+    /// - witness: `server::tests::a_hover_answers_a_known_declaration`
+    #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Hover(_))
+        && (self.documents.contains_key(uri) || matches!(ret, Answer::Nothing)))]
+    fn hover(
+        &self,
+        uri: &DocumentUri,
+        position: Position,
+    ) -> Answer
+    {
+        let Some(document) = self.documents.get(uri)
+        else {
+            return Answer::Nothing;
+        };
+        let Ok(ref session) = document.session
+        else {
+            return Answer::Nothing;
+        };
+        match hover(SourceText::from(document.text.as_str()), session, position) {
+            | Maybe::Present(shown) => Answer::Hover(shown),
+            | Maybe::Absent(_) => Answer::Nothing,
+        }
     }
 }
 
@@ -1122,12 +1176,13 @@ mod tests
                         "inlineCompletionProvider":true,
                         "documentSymbolProvider":true,
                         "foldingRangeProvider":true,
-                        "selectionRangeProvider":true},
+                        "selectionRangeProvider":true,
+                        "hoverProvider":true},
                     "serverInfo":{"name":"gandr","version":""#,
                 env!("CARGO_PKG_VERSION"),
                 r#""}}}]"#
             ))),
-            "the advertised capabilities, whole: no hover, no completion list"
+            "the advertised capabilities, whole: no completion list"
         );
     }
 
@@ -1149,25 +1204,17 @@ mod tests
             )),
             "the known document's tokens: `def`, `f` a declared function, `42`"
         );
-        for (id, method) in [
-            ("3", "textDocument/hover"),
-            ("4", "textDocument/completion"),
-        ] {
-            let request = format!(
-                r#"{{"jsonrpc":"2.0","id":{id},"method":"{method}","params":{{
-                    "textDocument":{{"uri":"file:///tmp/example.gandr"}},
-                    "position":{{"line":0,"character":4}}}}}}"#
-            );
-            let refusal = format!(
-                r#"[{{"jsonrpc":"2.0","id":{id},
-                     "error":{{"code":-32601,"message":"`{method}` is not served"}}}}]"#
-            );
-            assert_eq!(
-                send(&mut server, Json(&request)),
-                wire(Json(&refusal)),
-                "{method} is not advertised, so it is not served"
-            );
-        }
+        let request = r#"{"jsonrpc":"2.0","id":4,"method":"textDocument/completion","params":{
+            "textDocument":{"uri":"file:///tmp/example.gandr"},
+            "position":{"line":0,"character":4}}}"#;
+        assert_eq!(
+            send(&mut server, Json(request)),
+            wire(Json(
+                r#"[{"jsonrpc":"2.0","id":4,
+                     "error":{"code":-32601,"message":"`textDocument/completion` is not served"}}]"#
+            )),
+            "completion is not advertised, so it is not served"
+        );
     }
 
     #[test]
@@ -1269,6 +1316,39 @@ mod tests
                 "{method} about a document the server does not hold answers null"
             );
         }
+    }
+
+    #[test]
+    fn a_hover_answers_a_known_declaration()
+    {
+        let mut server = server_over_the_known_document();
+        let ask = |server: &mut Server, uri: &str, character: u32| {
+            let request = format!(
+                r#"{{"jsonrpc":"2.0","id":5,"method":"textDocument/hover","params":{{
+                    "textDocument":{{"uri":"{uri}"}},
+                    "position":{{"line":0,"character":{character}}}}}}}"#
+            );
+            send(server, Json(&request))
+        };
+        assert_eq!(
+            ask(&mut server, "file:///tmp/example.gandr", 4),
+            wire(Json(
+                r#"[{"jsonrpc":"2.0","id":5,"result":{
+                    "contents":{"kind":"markdown","value":"```gandr\nf : Integer\n```"},
+                    "range":{"start":{"line":0,"character":4},"end":{"line":0,"character":5}}}}]"#
+            )),
+            "on `f`: its synthesised type, about its name"
+        );
+        assert_eq!(
+            ask(&mut server, "file:///tmp/example.gandr", 1),
+            wire(Json(r#"[{"jsonrpc":"2.0","id":5,"result":null}]"#)),
+            "on the keyword: no declaration's name, so null"
+        );
+        assert_eq!(
+            ask(&mut server, "file:///tmp/closed.gandr", 4),
+            wire(Json(r#"[{"jsonrpc":"2.0","id":5,"result":null}]"#)),
+            "a document the server does not hold answers null"
+        );
     }
 
     #[test]
