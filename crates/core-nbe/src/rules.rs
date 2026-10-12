@@ -129,6 +129,13 @@ impl Frozen
     // one per freezing branch on its chain — a handful in practice. Upgrade
     // path: a sorted vector with a binary search when a chain freezes enough
     // constants to show in a profile.
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body scans the side's frozen set for the constant once; the check counts it once"
+        )
+    )]
     #[spec(
         captures: other_length = match side { ConversionSide::Left => self.right.len(), ConversionSide::Right => self.left.len() },
         ensures: match side {

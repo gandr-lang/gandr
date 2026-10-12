@@ -1387,6 +1387,13 @@ impl Store
     ///   again, and both resumptions of a captured force must deliver their own
     ///   values.
     /// - witness: `machine::tests::hand_built_effect_cases_agree`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks every frame above the base once; the check reads each once more"
+        )
+    )]
     #[spec(captures: height = self.frame_height(), ensures: |ret| self.frame_height() == height && (ret.is_err() || self.frames.iter().skip(usize::from(base.height)).all(|entry| !matches!(entry.frame, Frame::Update { .. }))))]
     #[inline]
     pub fn cancel_updates(

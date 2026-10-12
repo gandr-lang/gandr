@@ -845,6 +845,13 @@ impl Resume
     /// - hypothesis: L2 — insertion orders retained and fresh identities;
     ///   deletion makes either stale operand fail independently.
     /// - witness: `checkpoint::tests::revision_handles_track_insertions_and_deletions`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "independent oracle: the check finds both handles in this revision's source-ordered handle list, the one reading of source order that does not go through the order-maintenance structure; a client query on a finished pass, never called inside one"
+        )
+    )]
     #[spec(
         ensures: |ret| match (
             self.handles.iter().position(|&handle| handle == left),
@@ -878,6 +885,13 @@ impl Resume
     ///   deleting an item makes its old handle stale rather than naming its
     ///   neighbour.
     /// - witness: `checkpoint::tests::revision_handles_track_insertions_and_deletions`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "independent oracle: the check finds the handle in this revision's source-ordered handle list, the one reading that does not go through the order-maintenance structure; a client query on a finished pass, never called inside one"
+        )
+    )]
     #[spec(
         ensures: |ret| {
             self.handles
@@ -929,6 +943,13 @@ impl Resume
 /// - hypothesis: L2 — the property suite compares every generated program's
 ///   batch checkpoints against the checker's batch entry, projected.
 /// - witness: `tests::incremental::incremental_equals_from_scratch`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "parity: the body judges every item of the program once; the check compares each item's reference once"
+    )
+)]
 #[spec(
     ensures: |ret| {
         ret.as_ref().is_ok_and(|checked| {
@@ -992,6 +1013,13 @@ pub fn check_program(
 /// - witness: `tests::incremental::type_change_retypes_the_dependent`
 /// - witness: `tests::incremental::a_stale_cached_typing_is_caught`
 /// - witness: `tests::incremental::a_suppressed_invalidation_signal_is_caught`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "parity: the body adopts or judges every edited item once; the check compares each item's reference once"
+    )
+)]
 #[spec(
     captures: [budget = base.checkpoints.budget],
     ensures: |ret| {
@@ -1049,6 +1077,13 @@ pub fn resume(
 /// - witness: `tests::incremental::a_stored_footprint_is_not_an_adoption_input`
 /// - witness: `tests::incremental::a_stale_cached_typing_is_caught`
 /// - witness: `tests::incremental::a_suppressed_invalidation_signal_is_caught`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "parity: the body copies every restored reference and adopts or judges every edited item once; the check compares each item's reference once"
+    )
+)]
 #[spec(
     ensures: |ret| {
         ret.as_ref().is_ok_and(|resumed| {
@@ -1437,6 +1472,13 @@ enum Standing
 ///   predicate checks input identity correspondence and output census shape.
 /// - witness: `tests::incremental::incremental_equals_from_scratch`
 /// - witness: `checkpoint::tests::revision_handles_track_insertions_and_deletions`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "parity: the body encodes every edited item and copies every base reference once; the check reads each handle, base item and edited reference once"
+    )
+)]
 #[spec(
     requires: base_handles.len() == base.items.len()
         && base_handles.iter().zip(&base.items).all(|(&handle, item)| {
@@ -1533,6 +1575,13 @@ where
 /// - witness: `tests::incremental::a_stored_footprint_is_not_an_adoption_input`
 /// - witness: `tests::incremental::an_opaque_footprint_is_never_adopted`
 /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "parity: the body adopts or judges every encoded item once; the check reads each encoding and outcome once"
+    )
+)]
 #[spec(
     requires: encoded.len() == edited.items().len()
         && encoded

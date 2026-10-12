@@ -528,6 +528,13 @@ pub fn check_declaration_supported(
 /// - witness: `module::tests::every_owed_hole_enters_the_ledger_in_order`
 /// - witness: `module::tests::a_refusal_never_enters_the_ledger`
 /// - witness: `module::tests::a_refused_body_keeps_the_judgements_it_was_refused_inside`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "parity: the body judges every declaration and copies the context's lifts and definitions into the report; the check compares each copy once"
+    )
+)]
 #[spec(ensures: |ret| ret.judged.len() == declarations.len()
     && ret.judged.iter().zip(declarations).all(|(judged, declaration)|
         judged.constant == declaration.constant() && judged.origin == declaration.origin())

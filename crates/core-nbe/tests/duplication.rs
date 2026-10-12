@@ -316,6 +316,13 @@ mod duplication
         ///   unclosed scopes and reversed child construction.
         /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
         /// - witness: `duplication::duplication::a_copying_duplicate_is_the_expansion`
+        #[cfg_attr(
+            dylint_lib = "quenchant_dylints",
+            expect(
+                spec_clause_traversal,
+                reason = "test fixture: the generator runs once per generated overlay of a bounded budget, and the check reads its plans, jobs and scopes to state the generation invariant"
+            )
+        )]
         #[spec(
             requires: self.jobs.iter().all(|job| matches!(self.plans.get(job.slot.0), Some(Plan::Pending)) && job.scope.0 < self.scopes.len())
                 && self.plans.iter().enumerate().all(|(index, plan)| !matches!(plan, Plan::Pending) || self.jobs.iter().filter(|job| job.slot.0 == index).count() == 1)
@@ -360,6 +367,13 @@ mod duplication
         ///   families.
         /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
         /// - witness: `duplication::duplication::a_copying_duplicate_is_the_expansion`
+        #[cfg_attr(
+            dylint_lib = "quenchant_dylints",
+            expect(
+                spec_clause_traversal,
+                reason = "test fixture: the generated scope chains are a bounded budget deep, and the check re-reads every scope's parent to state the backward-pointing requirement"
+            )
+        )]
         #[spec(
             requires: scope.0 < self.scopes.len()
                 && self.scopes.iter().enumerate().all(|(index, cell)| cell.is_none_or(|(_, parent)| parent.0 < index)),

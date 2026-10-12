@@ -16,7 +16,8 @@ publish.workspace = true
 # conversion machine emits its derivation through the kernel's decision seam
 # and re-shares its goals through the kernel's check-memo seam.
 # The pinned anodized facade supplies core-only specification helpers;
-# logic/BigInt stays disabled in this no_std library.
+# logic/BigInt stays disabled in this no_std library. The specification
+# combinators bound what a clause reads of the overlay's task stacks.
 [dependencies]
 anodized.workspace = true
 gandr-core-term.workspace = true
@@ -24,6 +25,7 @@ gandr-kernel-check-memo.workspace = true
 gandr-kernel-conversion-trace.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
+gandr-theory-spec-combinators.workspace = true
 tracing = { workspace = true, optional = true }
 
 # The end-to-end tests replay the machine's traces through the kernel.

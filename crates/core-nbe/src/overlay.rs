@@ -994,7 +994,7 @@ impl Overlay
     #[spec(
         captures: [mark = self.watermark(), shape = node.shape()],
         ensures: |ret| {
-         let missing = (match shape.children() { Children::Leaf => [None,None,None], Children::One(a) => [Some(a),None,None], Children::Two(a,b) => [Some(a),Some(b),None], Children::Three(a,b,c) => [Some(a),Some(b),Some(c)] }).into_iter().flatten().find(|&child| !(match child { OverlayId::Value(id) => offset(Index(id.0)).0 < mark.values, OverlayId::Computation(id) => offset(Index(id.0)).0 < mark.computations, OverlayId::ValueType(id) => offset(Index(id.0)).0 < mark.value_types, OverlayId::CompType(id) => offset(Index(id.0)).0 < mark.comp_types }));
+         let missing = crate::spec::listed(shape.children()).find(|&child| !(match child { OverlayId::Value(id) => offset(Index(id.0)).0 < mark.values, OverlayId::Computation(id) => offset(Index(id.0)).0 < mark.computations, OverlayId::ValueType(id) => offset(Index(id.0)).0 < mark.value_types, OverlayId::CompType(id) => offset(Index(id.0)).0 < mark.comp_types }));
          match (missing,ret) {
          (Some(child),Err(OverlayFault::DanglingChild{child:found})) => child == found && self.watermark() == mark,
          (None,Ok(id)) => usize::try_from(id.0).ok() == Some(mark.values) && mark.values.checked_add(1) == Some(self.values.len())
@@ -1043,7 +1043,7 @@ impl Overlay
     #[spec(
         captures: [mark = self.watermark(), shape = node.shape()],
         ensures: |ret| {
-         let missing = (match shape.children() { Children::Leaf => [None,None,None], Children::One(a) => [Some(a),None,None], Children::Two(a,b) => [Some(a),Some(b),None], Children::Three(a,b,c) => [Some(a),Some(b),Some(c)] }).into_iter().flatten().find(|&child| !(match child { OverlayId::Value(id) => offset(Index(id.0)).0 < mark.values, OverlayId::Computation(id) => offset(Index(id.0)).0 < mark.computations, OverlayId::ValueType(id) => offset(Index(id.0)).0 < mark.value_types, OverlayId::CompType(id) => offset(Index(id.0)).0 < mark.comp_types }));
+         let missing = crate::spec::listed(shape.children()).find(|&child| !(match child { OverlayId::Value(id) => offset(Index(id.0)).0 < mark.values, OverlayId::Computation(id) => offset(Index(id.0)).0 < mark.computations, OverlayId::ValueType(id) => offset(Index(id.0)).0 < mark.value_types, OverlayId::CompType(id) => offset(Index(id.0)).0 < mark.comp_types }));
          match (missing,ret) {
          (Some(child),Err(OverlayFault::DanglingChild{child:found})) => child == found && self.watermark() == mark,
          (None,Ok(id)) => usize::try_from(id.0).ok() == Some(mark.computations) && mark.computations.checked_add(1) == Some(self.computations.len())
@@ -1092,7 +1092,7 @@ impl Overlay
     #[spec(
         captures: [mark = self.watermark(), shape = node.shape()],
         ensures: |ret| {
-         let missing = (match shape.children() { Children::Leaf => [None,None,None], Children::One(a) => [Some(a),None,None], Children::Two(a,b) => [Some(a),Some(b),None], Children::Three(a,b,c) => [Some(a),Some(b),Some(c)] }).into_iter().flatten().find(|&child| !(match child { OverlayId::Value(id) => offset(Index(id.0)).0 < mark.values, OverlayId::Computation(id) => offset(Index(id.0)).0 < mark.computations, OverlayId::ValueType(id) => offset(Index(id.0)).0 < mark.value_types, OverlayId::CompType(id) => offset(Index(id.0)).0 < mark.comp_types }));
+         let missing = crate::spec::listed(shape.children()).find(|&child| !(match child { OverlayId::Value(id) => offset(Index(id.0)).0 < mark.values, OverlayId::Computation(id) => offset(Index(id.0)).0 < mark.computations, OverlayId::ValueType(id) => offset(Index(id.0)).0 < mark.value_types, OverlayId::CompType(id) => offset(Index(id.0)).0 < mark.comp_types }));
          match (missing,ret) {
          (Some(child),Err(OverlayFault::DanglingChild{child:found})) => child == found && self.watermark() == mark,
          (None,Ok(id)) => usize::try_from(id.0).ok() == Some(mark.value_types) && mark.value_types.checked_add(1) == Some(self.value_types.len())
@@ -1141,7 +1141,7 @@ impl Overlay
     #[spec(
         captures: [mark = self.watermark(), shape = node.shape()],
         ensures: |ret| {
-         let missing = (match shape.children() { Children::Leaf => [None,None,None], Children::One(a) => [Some(a),None,None], Children::Two(a,b) => [Some(a),Some(b),None], Children::Three(a,b,c) => [Some(a),Some(b),Some(c)] }).into_iter().flatten().find(|&child| !(match child { OverlayId::Value(id) => offset(Index(id.0)).0 < mark.values, OverlayId::Computation(id) => offset(Index(id.0)).0 < mark.computations, OverlayId::ValueType(id) => offset(Index(id.0)).0 < mark.value_types, OverlayId::CompType(id) => offset(Index(id.0)).0 < mark.comp_types }));
+         let missing = crate::spec::listed(shape.children()).find(|&child| !(match child { OverlayId::Value(id) => offset(Index(id.0)).0 < mark.values, OverlayId::Computation(id) => offset(Index(id.0)).0 < mark.computations, OverlayId::ValueType(id) => offset(Index(id.0)).0 < mark.value_types, OverlayId::CompType(id) => offset(Index(id.0)).0 < mark.comp_types }));
          match (missing,ret) {
          (Some(child),Err(OverlayFault::DanglingChild{child:found})) => child == found && self.watermark() == mark,
          (None,Ok(id)) => usize::try_from(id.0).ok() == Some(mark.comp_types) && mark.comp_types.checked_add(1) == Some(self.comp_types.len())
@@ -1544,7 +1544,7 @@ impl Children
     /// - witness: `overlay::tests::mint_refusals_preserve_prefixes_and_name_the_first_missing_child`
     #[spec(
         ensures: |ret| {
-         let first = (match self { Self::Leaf => [None,None,None], Self::One(a) => [Some(a),None,None], Self::Two(a,b) => [Some(a),Some(b),None], Self::Three(a,b,c) => [Some(a),Some(b),Some(c)] }).into_iter().flatten().find(|&child| !(match child { OverlayId::Value(id) => offset(Index(id.0)).0 < overlay.watermark().values, OverlayId::Computation(id) => offset(Index(id.0)).0 < overlay.watermark().computations, OverlayId::ValueType(id) => offset(Index(id.0)).0 < overlay.watermark().value_types, OverlayId::CompType(id) => offset(Index(id.0)).0 < overlay.watermark().comp_types }));
+         let first = crate::spec::listed(self).find(|&child| !(match child { OverlayId::Value(id) => offset(Index(id.0)).0 < overlay.watermark().values, OverlayId::Computation(id) => offset(Index(id.0)).0 < overlay.watermark().computations, OverlayId::ValueType(id) => offset(Index(id.0)).0 < overlay.watermark().value_types, OverlayId::CompType(id) => offset(Index(id.0)).0 < overlay.watermark().comp_types }));
          ret == first.map_or(Ok(()), |child| Err(OverlayFault::DanglingChild{child}))
         }
     )]
@@ -2641,9 +2641,8 @@ impl Erasure<'_>
          },
          Ok(Shape::Shared(sharing)) => ret == Ok(()) && self.results.len() == results && self.steps.get(steps..) == Some(&[Step::Unbind,Step::Enter(sharing.body),Step::Bind,Step::Enter(sharing.leg)]),
          Ok(Shape::Grafted(children)) => ret == Ok(()) && self.results.len() == results
-         && steps.checked_add(1).and_then(|length| length.checked_add(match children { Children::Leaf => 0, Children::One(_) => 1, Children::Two(..) => 2, Children::Three(..) => 3 })) == Some(self.steps.len())
          && self.steps.get(steps) == Some(&Step::Assemble(node))
-         && self.steps.iter().skip(steps.saturating_add(1)).rev().zip((match children { Children::Leaf => [None,None,None], Children::One(a) => [Some(a),None,None], Children::Two(a,b) => [Some(a),Some(b),None], Children::Three(a,b,c) => [Some(a),Some(b),Some(c)] }).into_iter().flatten()).all(|(&task,child)| task == Step::Enter(child)),
+         && bool::from(crate::spec::queued_since(&self.steps, gandr_theory_spec_combinators::Mark::from(steps.saturating_add(1)), children, Step::Enter)),
         }
     )]
     fn enter(

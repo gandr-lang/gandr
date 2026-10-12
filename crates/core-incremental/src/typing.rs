@@ -610,6 +610,13 @@ impl Projection<'_, '_, '_>
     ///   and machine-invariant cases are outside the witnessed domain.
     /// - witness: `typing::tests::each_refusal_projects_its_payload`
     /// - witness: `typing::tests::refusal_payloads_use_item_coordinates_and_type_content`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body projects each type payload of the refusal once; the check projects each once more and compares it"
+        )
+    )]
     #[spec(ensures: |ret| { let (matched_left_value, matched_right_value) = (refusal, &ret);
 if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal::NotADataType(ref projected) = *matched_right_value { *projected == self.layout.resolve(constant) }
  else if let CheckRefusal::DataKindNotUniverse(at) = matched_left_value && let Refusal::DataKindNotUniverse(projected) = *matched_right_value { projected == self.site(ArenaNode::ValueType(at)) }

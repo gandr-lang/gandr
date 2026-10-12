@@ -160,6 +160,13 @@ impl<Id: Copy + Eq + 'static> EffectSig<Id>
     ///   back unchanged.
     /// - witness: `effect::tests::relocation_keeps_names_and_refuses_duplicate_interfaces`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body maps every operation once; the check compares each name once"
+        )
+    )]
     #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|mapped| mapped.name() == self.name() && mapped.operations().map(|op| &op.name).eq(self.operations().map(|op| &op.name))))]
     pub fn try_relocate<To, E, Map>(
         &self,
@@ -296,7 +303,7 @@ impl<Id: Copy + Eq + 'static> EffectSig<Id>
     /// - hypothesis: L3 — opposite payload and reply types distinguish edge
     ///   order.
     /// - witness: `effect::tests::operation_types_survive_substitution_and_import`
-    #[spec(ensures: |ret| ret.as_ref().is_ok_and(|signature| signature.name() == self.name() && signature.operations().len() == self.operations().len()) || ret.is_err())]
+    #[spec(ensures: |ret| ret.as_ref().is_ok_and(|signature| signature.name() == self.name() && signature.0.operations.len() == self.0.operations.len()) || ret.is_err())]
     #[inline]
     pub fn try_map_types<E, Map>(
         &self,
@@ -372,7 +379,7 @@ impl EffectSig
     /// - hypothesis: L3 — equal types allocated twice remain the same
     ///   interface.
     /// - witness: `effect::tests::signature_inclusion_ignores_allocation_identity`
-    #[spec(ensures: |ret| ret != RowInclusion::Included || (self.name() == other.name() && self.operations().len() == other.operations().len()))]
+    #[spec(ensures: |ret| ret != RowInclusion::Included || (self.name() == other.name() && self.0.operations.len() == other.0.operations.len()))]
     #[inline]
     #[must_use]
     pub fn inclusion(
@@ -539,6 +546,13 @@ impl EffectRow
     ///   accumulation.
     /// - witness: `effect::tests::union_is_a_canonical_set_and_without_subtracts`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks the other row's interfaces and copies this row's map on growth; the check compares each interface of both rows with the union once"
+        )
+    )]
     #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|row| self.is_subset(row, arena) == RowInclusion::Included && other.is_subset(row, arena) == RowInclusion::Included))]
     pub fn union(
         &self,
@@ -634,6 +648,13 @@ impl EffectRow
     /// - witness: `effect::tests::subset_is_a_preorder_with_union_as_join`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body compares every demanded interface once; the check compares each once more"
+        )
+    )]
     #[spec(ensures: |ret| (ret == RowInclusion::Included) == self.entries().iter().all(|(name, sig)| other.entries().get(name).is_some_and(|other| sig.inclusion(other, arena) == RowInclusion::Included)))]
     pub fn is_subset(
         &self,
@@ -714,7 +735,7 @@ impl<Id: Copy + Eq + 'static> EffectRow<Id>
     /// - hypothesis: L3 — opposite operation directions distinguish reversed
     ///   payload and reply edges during substitution and cross-arena import.
     /// - witness: `effect::tests::operation_types_survive_substitution_and_import`
-    #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|row| row.signatures().len() == self.signatures().len()))]
+    #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|row| row.entries().len() == self.entries().len()))]
     #[inline]
     pub fn try_map_types<E, Map>(
         &self,
@@ -763,7 +784,7 @@ impl<Id: Copy + Eq + 'static> EffectRow<Id>
     ///   images, and an empty row stays the allocation-free empty row.
     /// - witness: `effect::tests::relocation_keeps_names_and_refuses_duplicate_interfaces`
     #[inline]
-    #[spec(ensures: |ret| ret.as_ref().is_ok_and(|row| row.signatures().len() == self.signatures().len()) || ret.is_err())]
+    #[spec(ensures: |ret| ret.as_ref().is_ok_and(|row| row.entries().len() == self.entries().len()) || ret.is_err())]
     pub fn try_relocate<To, E, Map>(
         &self,
         mut map: Map,

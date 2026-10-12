@@ -237,12 +237,12 @@ enum Orientation
     ensures: |ret| (ret == Decision::Related) == (
         (relation != Relation::Equivalent || subset.len() == superset.len())
             && subset.keys().all(|label| superset.contains_key(label)))
-        && (ret != Decision::Related || pending.iter().skip(before).copied().eq(
+        && (ret != Decision::Related || pending.get(before..).is_some_and(|added| added.iter().copied().eq(
             subset.iter().filter_map(|(label, &sub)| superset.get(label).map(|&sup|
                 match orientation {
                     Orientation::Forward => (sub, sup),
                     Orientation::Reverse => (sup, sub),
-                }))))
+                })))))
 )]
 fn branches(
     subset: &BTreeMap<Label, NodeId>,

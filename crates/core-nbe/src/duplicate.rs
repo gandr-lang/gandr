@@ -1804,7 +1804,7 @@ impl Walk<'_>
     /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
     /// - witness: `duplication::duplication::a_spinal_duplicate_keeps_a_leg_that_is_no_abstraction`
     #[spec(
-        captures: [results = self.results.len(), frames = self.frames.len(), body = self.results.last().copied(), leg = self.results.iter().rev().nth(1).copied(), taken = self.frames.last().copied()],
+        captures: [results = self.results.len(), frames = self.frames.len(), body = self.results.last().copied(), leg = self.results.len().checked_sub(2).and_then(|offset| self.results.get(offset)).copied(), taken = self.frames.last().copied()],
         ensures: |ret| ret.is_err() || (self.results.len().saturating_add(1) == results && self.frames.len().saturating_add(1) == frames && body.zip(leg).zip(taken).is_some_and(|((body, leg), taken)| self.results.last().is_some_and(|shared| self.overlay.shape(*shared) == Ok(Shape::Shared(Sharing { body, leg, arity: ShareArity::from(taken.0) })))))
     )]
     fn close(&mut self) -> Result<(), DuplicationFault>
@@ -2165,7 +2165,7 @@ impl Walk<'_>
     /// - witness: `duplicate::tests::assembly_preserves_formers_payloads_and_child_order`
     /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
     #[spec(
-        captures: [results = self.results.len(), top = [self.results.last().copied(), self.results.iter().rev().nth(1).copied(), self.results.iter().rev().nth(2).copied()]],
+        captures: [results = self.results.len(), top = [self.results.last().copied(), self.results.len().checked_sub(2).and_then(|offset| self.results.get(offset)).copied(), self.results.len().checked_sub(3).and_then(|offset| self.results.get(offset)).copied()]],
         ensures: |ret| ret.map_or(true, |rebuilt| rebuilt != node && core::mem::discriminant(&rebuilt) == core::mem::discriminant(&node) && Under::of(self.overlay, node).is_ok_and(|before| Under::of(self.overlay, rebuilt).is_ok_and(|after| {
             let count = before.listed.into_iter().flatten().count();
             self.results.len().saturating_add(count) == results && after.listed.into_iter().flatten().count() == count && after.listed.into_iter().flatten().zip(before.listed.into_iter().flatten()).enumerate().all(|(index, (new, old))| new.binders == old.binders && count.checked_sub(index).and_then(|remaining| remaining.checked_sub(1)).and_then(|slot| top.get(slot)).copied().flatten() == Some(new.node))

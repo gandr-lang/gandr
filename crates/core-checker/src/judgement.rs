@@ -3393,6 +3393,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   replacement.
     /// - witness: `judgement::tests::bind_unions_effect_rows`
     /// - witness: `judgement::tests::check_mode_bind_subsumes_the_accumulated_row`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body unions the two rows, comparing every shared interface; the check compares each demanded interface with the union once"
+        )
+    )]
     #[spec(ensures: |ret| ret.is_err() || match comp_type_view(self.context.arena(), bound) {
         Ok(CompTypeView::Returner { effects, .. }) if effects.purity() == gandr_core_term::effect::Purity::Pure => ret == Ok(continued),
         Ok(CompTypeView::Returner { effects, .. }) => ret.is_ok_and(|actual| matches!(comp_type_view(self.context.arena(), actual), Ok(CompTypeView::Returner { effects: actual, .. }) if effects.is_subset(actual, self.context.arena()) == gandr_core_term::effect::RowInclusion::Included)),

@@ -490,6 +490,7 @@ dependencies = [
  "gandr-kernel-core",
  "gandr-kernel-strata",
  "gandr-kernel-term",
+ "gandr-theory-spec-combinators",
  "proptest",
  "quenchant-anodized",
  "tracing",

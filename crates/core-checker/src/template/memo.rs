@@ -1082,6 +1082,13 @@ impl Memo
     /// - hypothesis: L2 — after every admitted family the held template's
     ///   proposal is compared with a fresh run's over the edit-pair corpus.
     /// - witness: `template::tests::drafts_equal_fresh_runs_across_the_edit_traces`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body searches the slots for the key once; the check scans them once"
+        )
+    )]
     #[spec(ensures: |output| matches!(output, Maybe::Absent(Unheld::Unseen))
         == self.slots.iter().all(|slot| slot.key != *family.key()))]
     #[inline]
@@ -1113,6 +1120,13 @@ impl Memo
     /// - hypothesis: L2 — a held template whose join is corrupted is refused by
     ///   the kernel, and its family falls to the producer.
     /// - witness: `template::tests::a_kernel_refused_draft_falls_back_to_the_producer`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body searches the slots for the key once; the check reads the key's template through the same search once"
+        )
+    )]
     #[spec(ensures: |()| matches!(self.template(family), Maybe::Present(_)))]
     #[inline]
     pub fn hold(

@@ -339,6 +339,7 @@ mod policy;
 mod readback;
 mod resharing;
 mod rules;
+mod spec;
 pub mod stage;
 mod traced;
 

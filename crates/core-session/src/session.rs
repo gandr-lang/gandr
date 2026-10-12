@@ -281,6 +281,13 @@ impl Session
     /// - witness: `tests::protocols::seat_duality_report_and_handoff`
     /// - witness: `tests::relations::generated_relations_match_finite_oracle`
     /// - witness: `tests::construction::nonzero_root_and_dual_preserve_the_protocol`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body maps every node once; the check compares each once"
+        )
+    )]
     #[spec(ensures: |ret| ret.root == self.root && ret.nodes.len() == self.nodes.len()
         && self.nodes.iter().zip(&ret.nodes).all(|(source, peer)| match (source, peer) {
             (&Node::Send(a, x), &Node::Receive(b, y))

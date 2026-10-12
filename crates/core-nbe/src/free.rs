@@ -130,9 +130,12 @@ where
     /// # Adequacy
     /// - hypothesis: L2 — the finite set model probes present counts and holes
     ///   at zero, interior positions and the ceiling; reversing membership or
-    ///   searching a malformed order changes an answer.
+    ///   searching a malformed order changes an answer. The predicate reads the
+    ///   one slot the ascending order places `count` at, found by a lower-bound
+    ///   partition rather than the body's equality search.
     /// - witness: `free::tests::lowered_union_agrees_with_a_set_model`
-    #[spec(ensures: |ret| matches!(ret, Membership::Held) == self.counts.contains(&count))]
+    #[spec(ensures: |ret| matches!(ret, Membership::Held)
+        == (self.counts.get(self.counts.partition_point(|held| *held < count)) == Some(&count)))]
     pub(crate) fn holds(
         &self,
         count: Count,
@@ -183,6 +186,13 @@ where
     ///   ordered-set union; dropping an old count, retaining a bound count,
     ///   duplicating an overlap or wrapping subtraction changes the set.
     /// - witness: `free::tests::lowered_union_agrees_with_a_set_model`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body merges both sequences once; the check reads the merged set once and searches it once per count of `other`"
+        )
+    )]
     #[spec(
         captures: entry_length = self.counts.len(),
         ensures: self.counts.len() >= entry_length
@@ -321,9 +331,9 @@ impl Free
     ///   or lowering the domain changes the exact free sets.
     /// - witness: `free::tests::binders_lower_only_their_own_intuitionistic_occurrences`
     /// - witness: `free::tests::a_quoted_dependent_arrow_binds_only_its_codomain`
-    #[spec(ensures: child.linear.counts.iter().all(|count| self.linear.counts.contains(count))
+    #[spec(ensures: child.linear.counts.iter().all(|count| self.linear.counts.binary_search(count).is_ok())
         && child.intuitionistic.counts.iter().all(|&index| u32::from(index).checked_sub(binders.0)
-            .is_none_or(|lowered| self.intuitionistic.counts.contains(&DeBruijnIndex::from(lowered)))))]
+            .is_none_or(|lowered| self.intuitionistic.counts.binary_search(&DeBruijnIndex::from(lowered)).is_ok())))]
     fn join_under(
         &mut self,
         child: &Self,

@@ -579,9 +579,11 @@ impl Machine<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — a finished goal whose anchor stayed would take the
     ///   next recovery away from its parent; the oracle property recovers after
-    ///   finished siblings.
+    ///   finished siblings. Anchors are pushed in nesting order, so their frame
+    ///   heights rise toward the top of the stack and the predicate reads only
+    ///   the top anchor.
     /// - witness: `judgement::elaboration::tests::the_strict_judgement_is_the_total_runs_oracle`
-    #[spec(ensures: self.anchors.iter().all(|anchor| anchor.frames < self.frames.len()))]
+    #[spec(ensures: self.anchors.last().is_none_or(|anchor| anchor.frames < self.frames.len()))]
     pub(super) fn settle(&mut self)
     {
         let height = self.frames.len();

@@ -2042,6 +2042,13 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ///   discovery-numbered table.
     /// - witness: `content::tests::a_shared_node_is_listed_once`
     /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: each encoder drains once, writing every node it discovered; the check reads each discovered number once"
+        )
+    )]
     #[spec(ensures: self.queue.is_empty() && self.nodes.len() == self.seen.len()
         && self.seen.values().all(|index| usize::from(*index) < self.nodes.len()))]
     fn drain(&mut self)

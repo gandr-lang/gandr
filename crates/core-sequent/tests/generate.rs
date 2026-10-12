@@ -296,6 +296,13 @@ impl Generator
     ///   own variables. This distinguishes duplicate interning, merged types
     ///   and changed ids.
     /// - witness: `tests::generate::interning_and_shadowed_scopes_preserve_distinct_types`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body searches the interned types for `ty` once; the check searches them once more"
+        )
+    )]
     #[spec(
         captures: [found = self.types.iter().position(|&known| known == ty), count = self.types.len()],
         ensures: |ret| self.types.get(ret.0) == Some(&ty) && ret.0 == found.unwrap_or(count)
@@ -480,6 +487,13 @@ impl Generator
     ///   stopping after the first match. Saturation at an unallocatable scope
     ///   depth is outside this finite witness.
     /// - witness: `tests::generate::interning_and_shadowed_scopes_preserve_distinct_types`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "test fixture: the generated binding table is bounded by the generator's budget, and the check re-reads every binding's parent to state the backward-pointing requirement"
+        )
+    )]
     #[spec(
         requires: (match scope { Scope::Empty => true, Scope::At(BindingId(at)) => self.bindings.get(at).is_some() })
             && self.bindings.iter().enumerate().all(|(at, &(_, outer))| match outer { Scope::Empty => true, Scope::At(BindingId(parent)) => parent < at }),
@@ -715,6 +729,13 @@ impl Generator
     /// - witness: `tests::focus_properties::focusing_is_total_on_generated_computations`
     /// - witness: `tests::differential::l_machine_is_total_and_deterministic`
     /// - witness: `tests::differential::the_l_machine_agrees_with_normalisation_by_evaluation`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body runs every pending task and leaves its results; the check folds each task once and reads each result once"
+        )
+    )]
     #[spec(
         captures: [shape = self.tasks.iter().rev().try_fold((self.values.len(), self.computations.len()), |(values, computations), task| match *task {
             | Task::Value(_, _, _) => values.checked_add(1).map(|count| (count, computations)),

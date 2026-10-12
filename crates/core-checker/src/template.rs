@@ -1570,6 +1570,13 @@ impl Template
     /// - witness: `template::tests::every_member_admits_as_its_plain_replay`
     /// - witness: `template::tests::peak_choices_are_correlated`
     /// - witness: `template::tests::member_selection_and_complete_replay_reject_near_misses`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body binds one arm per entry while matching the peak; the check reads each entry's binding once"
+        )
+    )]
     #[spec(ensures: |output| output.as_ref().ok().is_none_or(|substitution|
         substitution.0.len() == self.entries.len() && self.entries.iter().all(|entry|
             substitution.0.get(&entry.point).is_some_and(|arm| entry.arms.contains_key(arm)))))]
@@ -1657,6 +1664,13 @@ impl Template
     ///   member.
     /// - witness: `template::tests::every_member_admits_as_its_plain_replay`
     /// - witness: `template::tests::member_selection_and_complete_replay_reject_near_misses`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body checks every entry's arm before materializing; the check reads each entry's arm once more"
+        )
+    )]
     #[spec(ensures: |output| output.as_ref().ok().is_none_or(|&(_, step)|
         step.rule == self.rule && self.entries.iter().all(|entry|
             substitution.0.get(&entry.point).is_some_and(|arm| entry.arms.contains_key(arm)))))]

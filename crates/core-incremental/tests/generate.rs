@@ -574,6 +574,13 @@ pub struct Rank(pub usize);
 ///   equality. Thunk/string-only input is absent, not an integer candidate. The
 ///   predicate captures only the selected ordinal and old number.
 /// - witness: `tests::generate::revalue_preserves_metadata_and_classifies_exactly`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "parity: the body counts the integer-bodied statements and selects one in two scans; the check makes the same two scans"
+    )
+)]
 #[spec(
     captures: [selected = 'selected: {
         let count = statements

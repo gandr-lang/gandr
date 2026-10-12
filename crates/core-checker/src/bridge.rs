@@ -903,6 +903,13 @@ impl Readmission
     ///   reference reads; a nominal declaration decoded under its own name.
     /// - witness: `bridge::tests::an_export_names_each_crossed_declaration_at_its_position`
     /// - witness: `native_formers::native_formers::data_declarations_and_refusals_agree_with_kernel`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks every readmitted entry and every admitted declaration once; the check walks the readmitted entries three times"
+        )
+    )]
     #[spec(
         requires: self.readmitted.iter().all(|entry| match entry.outcome {
             | Outcome::Defined { admitted, .. } | Outcome::Assumed { admitted, .. } | Outcome::Data { admitted, .. } => self.admitted.get(usize::from(admitted.position())).is_some(),
@@ -1506,6 +1513,13 @@ impl Positions
     ///   the static operators of one crossing.
     /// - witness: `bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
     /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body merges every crossed definition and operator once; the check reads each once more"
+        )
+    )]
     #[spec(ensures: |ret| operators.iter().all(|(&position, &entry)| {
         self.unfoldings.contains_key(&position) || ret.unfolding(position) == entry
     }) && self.unfoldings.iter().all(|(&position, &body)| {
@@ -2504,12 +2518,14 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///
     /// # Adequacy
     /// - hypothesis: L3 — separated by an operator with parameters and one
-    ///   without, each replayed.
+    ///   without, each replayed. The predicate compares the two tables' sizes:
+    ///   each operator is numbered at a fresh position and an entry is written
+    ///   only at a numbered position, so equal sizes mean every numbered
+    ///   operator has its entry, read without walking either table.
     /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
     /// - witness: `bridge::tests::one_static_definition_at_two_instances_records_two_certificates`
     #[spec(ensures: |ret| ret.is_err()
-        || (self.pending.is_empty()
-            && self.operators.values().all(|position| self.bodies.contains_key(position))))]
+        || (self.pending.is_empty() && self.bodies.len() == self.operators.len()))]
     fn erase_operators(
         &mut self,
         target: &mut TermArena,
