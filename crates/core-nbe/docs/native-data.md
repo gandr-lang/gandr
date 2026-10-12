@@ -1,6 +1,6 @@
 # Native data, records and fixpoints
 
-How `gandr-core-nbe` evaluates nominal constructors, cases and records, and the guarded fixpoint `fix x. M`, and how it reads back and compares them. The crate's [README](../README.md) states the rest of the crate; the kernel's [recursive data page](../../kernel-core/docs/recursive-data.md) states the typing and the replay these decisions are certified against.
+How `gandr-core-nbe` evaluates nominal constructors, cases and records, and the guarded fixpoint `fix x. M`, and how it reads back and compares them. The crate's [README](../README.md) states the rest of the crate; the kernel's [descent module](../../kernel-core/src/check/descent.rs) states the typing and the replay these decisions are certified against.
 
 <!-- toc -->
 - [Constructors, cases and records](#constructors-cases-and-records)

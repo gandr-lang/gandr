@@ -88,10 +88,20 @@ default-features = false
 version = "0.12.16"
 default-features = false
 
-# Executable specifications through the core-only quenchant facade.
+# Executable specifications through the core-only quenchant facade, named
+# `anodized`: import `anodized::spec` and write `#[spec(...)]`; the policy
+# lane denies qualified specification attributes. The backend is the
+# anodized fork, supporting ordinary and const functions and type refinements
+# without `std` or its `logic` feature. Without an instrumentation cfg,
+# predicates are type-checked but not evaluated; with the feature off, strip
+# mode erases specifications and the backend entirely. The fork used
+# directly lacks the facade's backend-free strip mode, and handwritten
+# assertions lack its shared specification representation. Reconsider the
+# facade when the backend or its supported build modes change.
 # features:
 # - anodized: compile the development backend; `--cfg anodized_panic` selects
 #   enforcement for the whole build graph, independently of build profile.
+#   The feature alone never enables enforcement.
 # consumers:
 # - core-checker
 # - core-incremental

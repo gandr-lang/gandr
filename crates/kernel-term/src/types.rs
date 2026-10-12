@@ -35,8 +35,108 @@
 //! being an incompleteness: the dependent former is emitted only where the
 //! codomain is genuinely scoped.
 //!
+//! # Universe families and quotes
+//!
+//! **Choice.** Universes come in two families, one per ground sort:
+//! [`ValueType::Universe`] with [`GroundSort::Value`] classifies value types at
+//! its level, and with [`GroundSort::Computation`] classifies computation
+//! types at its level. Both are value types one level up — a code is a value
+//! whatever family it decodes into. A code is a quote, [`Value::Quote`] of a
+//! value type or [`Value::QuoteComputation`] of a computation type, and a type
+//! is read off a code by the decoding former of its family,
+//! [`ValueType::Element`] or [`CompType::Element`].
+//!
+//! **Decode on mint.** [`TermArena::value_type_element`] over a value quote
+//! returns the quoted type and mints nothing, and
+//! [`TermArena::comp_type_element`] does the same over a computation quote.
+//! The decoding rule `El ⌜A⌝ = A` therefore fires at the one place a decode is
+//! made, so no arena holds the redex, and no artifact either: a table writing a
+//! decode over a quote reads back as the quoted type, and the re-encoding
+//! check refuses it as non-canonical. A decode across the families — a
+//! computation decode of a value quote — is minted as written, for the checker
+//! to refuse as a type mismatch.
+//!
+//! **Alternatives.** One universe over both sorts: a value type and a
+//! computation type are different kinds of thing in call-by-push-value, and a
+//! single universe would need a sort test at every decode. A sort parameter on
+//! the universe is the surface's business: none reaches this crate, so
+//! [`GroundSort`] has exactly the two ground sorts. A decode node the checker
+//! reduces would put a redex in front of every conversion and every walk.
+//!
+//! **Reversal.** A decoding rule that needs a context to fire, which a
+//! constructor cannot see.
+//!
+//! # Static operators
+//!
+//! **Choice.** A type operator is classified by [`ValueType::StaticPi`] and
+//! eliminated by [`Value::StaticApplication`]. The static Pi is
+//! non-dependent: its codomain stands in the ambient context and the former
+//! binds nothing. The kernel has no static lambda. An operator's body is an
+//! elaborator-side definition; what reaches an admitted declaration is its
+//! static normal form, where every application of a defined operator has been
+//! reduced away and a remaining static application is neutral — headed by a
+//! variable or an opaque constant. A δβ-step a certificate replays hands the
+//! kernel the operator's body with its binders stripped (the conversion replay
+//! in `gandr-kernel-core`), so no node in this arena binds a static parameter.
+//!
+//! **Alternatives.** A static lambda former would make every static redex a
+//! kernel concern: the checker would owe a β-rule at values, conversion would
+//! owe it too, and the trusted base would grow by a reduction the elaborator
+//! already performs and certifies. A dependent static Pi: no former indexed by
+//! a code is applied to a static argument at this vocabulary.
+//!
+//! **Reversal.** A static lambda former arrives when a declaration must carry
+//! an operator itself rather than its instances — an operator exported across
+//! a module boundary whose instances the importer forms.
+//!
+//! # N-ary products and sums
+//!
+//! [`ValueType::Product`] and [`ValueType::Sum`] hold a list of parts;
+//! [`Value::Tuple`] holds its components, [`Value::Injection`] names its
+//! summand by position, [`Computation::TupleProjection`] names a tuple's
+//! component by position and returns it, and [`Computation::Case`] holds one
+//! branch per summand. The unit is the product of no parts and the empty
+//! tuple; the empty type is the sum of no summands, and a case of no branches
+//! eliminates it. There is no unit, empty, pair or absurd variant, and no side
+//! alphabet. [`ValueType::unit`], [`ValueType::empty`] and [`Value::unit`]
+//! build the zero-ary nodes; [`Value::components`],
+//! [`ValueType::product_parts`] and [`ValueType::summands`] read the lists.
+//!
+//! **Choice.** One former per shape, counted, so `A × B × C` is not
+//! `(A × B) × C` and the zero-ary cases are the same former at count zero.
+//! **Alternatives.** Binary formers with a unit terminator would encode an
+//! n-ary product as a right-nested chain the checker and the surface would
+//! both re-associate, and two spellings of one type would need a
+//! canonicalization rule. Unit and empty variants beside counted formers
+//! would leave two canonical forms of each. **Reversal.** None planned; a new
+//! arity-dependent former takes a new byte.
+//!
+//! **Tuple projection.** **Choice.** A positional projection, mirroring the
+//! record projection: `TupleProjection(tuple, i)` synthesises `F Aᵢ` from a
+//! tuple of type `A₀ × … × Aₙ` and reduces on a tuple literal to the return of
+//! its `i`-th component. A component at or past the arity is refused as an
+//! absent component. **Alternatives.** A split eliminator binding every
+//! component at once (`split v as (x₀, …, xₙ) in M`) also reads arity zero,
+//! where no component exists to project; it binds n variables in one node
+//! where projection binds none. A split erased to a chain of projections keeps
+//! the kernel to one product eliminator. **Reversal.** A split former arrives
+//! in the kernel if an erased split's projection chain proves costly to check
+//! or replay.
+//!
 //! Children are typed arena ids and the derived relations are shallow, with the
 //! child-id-equality caveat stated once in [`crate::term`].
+//!
+//! [`Value::Quote`]: crate::Value::Quote
+//! [`Value::QuoteComputation`]: crate::Value::QuoteComputation
+//! [`Value::StaticApplication`]: crate::Value::StaticApplication
+//! [`Value::Tuple`]: crate::Value::Tuple
+//! [`Value::Injection`]: crate::Value::Injection
+//! [`Value::unit`]: crate::Value::unit
+//! [`Value::components`]: crate::Value::components
+//! [`Computation::TupleProjection`]: crate::Computation::TupleProjection
+//! [`Computation::Case`]: crate::Computation::Case
+//! [`TermArena::value_type_element`]: crate::TermArena::value_type_element
+//! [`TermArena::comp_type_element`]: crate::TermArena::comp_type_element
 
 use core::fmt;
 

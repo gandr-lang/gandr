@@ -420,7 +420,12 @@ pub(crate) fn case_branch_mismatch(
 /// and dies with the call — so it is not the interning table the conversion
 /// engine is forbidden to grow, and it is not on the memo's plane: the pinned
 /// expansion laws count the checker's goal expansions, which this does not
-/// touch.
+/// touch. It bounds the conversion path rather than decoding, so it sits
+/// outside `gandr-kernel-term`'s amplification budgets: it guards a public
+/// surface, since a direct arena caller is not behind the decoder's
+/// expanded-work gate. Removing it leaves the suite unable to finish rather
+/// than red: the claim is intensional and exponential, and a timeout is
+/// indeterminate rather than a kill.
 ///
 /// # Adequacy
 /// - hypothesis: L1/L2/L3 — root readability, identity and head separation are

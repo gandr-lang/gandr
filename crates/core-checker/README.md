@@ -364,7 +364,7 @@ The alternatives were names on the checker's `Declaration`, which makes the judg
 ## Experimental stage readmission
 
 `stage::compile`, `Program::admit` and `Program::execute` implement
-[certified first-order residual readmission](../kernel-core/docs/staging.md#experimental-stage-readmission).
+[certified first-order residual readmission](../kernel-core/src/stage.rs).
 
 `template` implements [guarded equation families](docs/staging.md).
 

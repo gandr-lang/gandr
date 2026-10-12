@@ -23,7 +23,41 @@ workflow  repository tooling and gates
 One row per directory: the directory and what it is. The package name follows from the directory by the rule above.
 
 ```text
+# Rows sort lexicographically by directory; the dependency order is § Layering.
 crates/
+├── core-checker/                  the checking judgement's four directed faces, the declaration input, the conversion boundary, the obligation ledger, the refusal vocabulary, residual readmission and guarded staging families
+├── core-incremental/              incremental checking: the item seam, the conservative footprint, validated resume, content-addressed checkpoints and the synthesis stream
+├── core-nbe/                      the glued value domain, evaluation, readback, conversion and native path transport; the sharing overlay, its erasure and its measure; strict meta-level staging
+├── core-sequent/                  the command IL a core program is focused into and the two-region store its machine runs in
+├── core-session/                  contractive binary session types, coinductive relation search, endpoint replay and certified recorded-run transport
+├── core-term/                     core syntax with native universe paths and the one unified context
+├── kernel-check-memo/             the check-memo seam a checker consults
+├── kernel-conversion-trace/       the conversion-decision vocabulary and its sink
+├── kernel-core/                   checking, conversion, admission and memoization; Path_U, identity and bridge recursion, higher fields, funext, Flow_U, guarded List observations and session-certificate replay; stage formation and replay
+├── kernel-strata/                 the universe-level oracle with checkable order evidence
+├── kernel-term/                   the term arena, native universe paths, Empty, List and session codes, hypothesis-indexed stage syntax, the sharing format and decode budgets
+├── runtime-compile-host/          feature-gated positive-core images, typed admission, C boundary vocabulary and canonical value rendering
+├── storage-artifact/              kernel artifacts on the record plane and canonical BLAKE3 certificate-step identities
+├── storage-chunker/               content-defined chunk boundaries and their committed parameters
+├── storage-records/               the authenticated ordered-record plane
+├── storage-values/                the content-addressed value plane: typed chunk DAG and content pointers
+├── surface-corpus/                the expectation schemas, the strict and fixture roots, the settle comparison, the runner's report shape, and the language's corpus
+├── surface-diagnostics/           renders what a dispatcher step prints: a refusal, an unsettled declaration and a goal as a located source snippet, the ledger lines as text
+├── surface-dispatcher/            routes a driver invocation; composes parse, lower, check and settle over the sources a verb walks
+├── surface-driver/                the `gandr` driver binary, package `gandr-lang`: `check`, `test`, `run`, `fmt`, `stage`, `lsp`, `serve`, `mcp`, `view`, `repl`, `tui` and the exit codes
+├── surface-format/                the source formatter: a parsed source laid out at a page width, its tokens and comments kept and its meaning checked unchanged
+├── surface-grammar/               the checked precedence-bounded grammar, its mold table and walk index, the built-in surface
+├── surface-layout/                the document-layout engine: the sealed document arena, Pareto resolution with width taint, the plan arena and the first-order render machine
+├── surface-lowering/              the molded tree into core terms: name resolution, the module collection pass, attributes, origins, refusals
+├── surface-lsp/                   the language server: the base protocol over byte streams, diagnostics from the renderer's reports, semantic tokens from the highlighter's roles, and the engine hub that serves one workspace's clients over a Unix socket
+├── surface-mcp/                   the Model Context Protocol server: the hub's open documents, their diagnostics and the language server's queries served to models as tools and resources
+├── surface-parser/                the labeler, molder and resumable melder: source to molded tree with completion obligations
+├── surface-pretty/                the presentation printer: a checked type or a normal-form value in its one surface spelling, laid out at a page width
+├── surface-render-remote/         the renderer seam: highlight and mark spans, diagnostic and goal cards, transcript blocks, the byte-to-position projections, the versioned render-bus frame
+├── surface-repl/                  the read-evaluate loop: the completeness gate, the session loop and its meta-commands, the transcript encoder and its rows, the batch and line-editor faces
+├── surface-session/               the interactive session: each revision lowered, judged, resumed through the incremental checker and checkpointed, with the edit actions from the revision before and the parser's repairs, for the REPL, language server and terminal faces
+├── surface-syntax/                the molded concrete syntax tree and the mold references a grammar and a parser exchange
+├── surface-tui/                   the terminal face: the loop's transcript, an input pane and a status line full-screen, styled by highlight role and line kind
 ├── theory-cell-complexes/         command patterns, matching, the reduction order, the cell alphabet and store
 ├── theory-cell-complexes-tools/   the toy alphabet and the adversary frame engine suites test against (dev only)
 ├── theory-circuit-algebras/       the diagram view, the spine reading of a command pattern, embedding matching with its convexity check, the diagram normal form
@@ -34,59 +68,22 @@ crates/
 ├── theory-dynamic-graphs/         insertion-only topological orders and feasible offset valuations
 ├── theory-graphs/                 the precedence DAG, the walk machine, and the graph algorithms they read
 ├── theory-levitation/             the first-order code universe and the tagged description table, rule faces, circuit rules and their elaboration, bridge arities, the generic programs, host well-formedness, the typed rule face
-├── theory-nominal-automata/        nominal word and tree automata over caller-owned names, literal word membership and name dropping
+├── theory-nominal-automata/       nominal word and tree automata over caller-owned names, literal word membership and name dropping
 ├── theory-orders/                 order maintenance with constant-time comparison
 ├── theory-sites/                  the carrier's shapes as a site with stick-free objects: the morphism class over circuit wirings, its degree, the finite checks of its generalized Reedy structure
 ├── theory-spec-combinators/       the bounded checks a specification clause makes of accumulated state: what a sequence gained since a mark, one push, order around an insertion point
-├── theory-virtual-doctrines/       virtual double categories, reflected judgments and directed laws over replayable rewriting evidence
-├── kernel-strata/                 the universe-level oracle with checkable order evidence
-├── kernel-term/                   the term arena, native universe paths, Empty, List and session codes, hypothesis-indexed stage syntax, the sharing format and decode budgets
-├── kernel-check-memo/             the check-memo seam a checker consults
-├── kernel-conversion-trace/       the conversion-decision vocabulary and its sink
-├── kernel-core/                   checking, conversion, admission and memoization; Path_U, identity and bridge recursion, higher fields, funext, Flow_U, guarded List observations and session-certificate replay; stage formation and replay
-├── core-term/                     core syntax with native universe paths and the one unified context
-├── core-nbe/                      the glued value domain, evaluation, readback, conversion and native path transport; the sharing overlay, its erasure and its measure; strict meta-level staging
-├── core-checker/                  the checking judgement's four directed faces, the declaration input, the conversion boundary, the obligation ledger, the refusal vocabulary, residual readmission and guarded staging families
-├── core-incremental/              incremental checking: the item seam, the conservative footprint, validated resume, content-addressed checkpoints and the synthesis stream
-├── core-sequent/                  the command IL a core program is focused into and the two-region store its machine runs in
-├── core-session/                  contractive binary session types, coinductive relation search, endpoint replay and certified recorded-run transport
-├── storage-chunker/               content-defined chunk boundaries and their committed parameters
-├── storage-records/               the authenticated ordered-record plane
-├── storage-values/                the content-addressed value plane: typed chunk DAG and content pointers
-├── storage-artifact/              kernel artifacts on the record plane and canonical BLAKE3 certificate-step identities
-├── runtime-compile-host/          feature-gated positive-core images, typed admission, C boundary vocabulary and canonical value rendering
-├── surface-syntax/                the molded concrete syntax tree and the mold references a grammar and a parser exchange
-├── surface-render-remote/         the renderer seam: highlight and mark spans, diagnostic and goal cards, transcript blocks, the byte-to-position projections, the versioned render-bus frame
-├── surface-layout/                the document-layout engine: the sealed document arena, Pareto resolution with width taint, the plan arena and the first-order render machine
-├── surface-pretty/                the presentation printer: a checked type or a normal-form value in its one surface spelling, laid out at a page width
-├── surface-grammar/               the checked precedence-bounded grammar, its mold table and walk index, the built-in surface
-├── surface-parser/                the labeler, molder and resumable melder: source to molded tree with completion obligations
-├── surface-format/                the source formatter: a parsed source laid out at a page width, its tokens and comments kept and its meaning checked unchanged
-├── surface-lowering/              the molded tree into core terms: name resolution, the module collection pass, attributes, origins, refusals
-├── surface-corpus/                the expectation schemas, the strict and fixture roots, the settle comparison, the runner's report shape, and the language's corpus
-├── surface-dispatcher/            routes a driver invocation; composes parse, lower, check and settle over the sources a verb walks
-├── surface-diagnostics/           renders what a dispatcher step prints: a refusal, an unsettled declaration and a goal as a located source snippet, the ledger lines as text
-├── surface-session/               the interactive session: each revision lowered, judged, resumed through the incremental checker and checkpointed, with the edit actions from the revision before and the parser's repairs, for the REPL, language server and terminal faces
-├── surface-lsp/                   the language server: the base protocol over byte streams, diagnostics from the renderer's reports, semantic tokens from the highlighter's roles, and the engine hub that serves one workspace's clients over a Unix socket
-├── surface-mcp/                   the Model Context Protocol server: the hub's open documents, their diagnostics and the language server's queries served to models as tools and resources
-├── surface-repl/                  the read-evaluate loop: the completeness gate, the session loop and its meta-commands, the transcript encoder and its rows, the batch and line-editor faces
-├── surface-tui/                   the terminal face: the loop's transcript, an input pane and a status line full-screen, styled by highlight role and line kind
-├── surface-driver/                the `gandr` driver binary, package `gandr-lang`: `check`, `test`, `lsp`, `serve`, `mcp`, `repl`, `tui` and the exit codes
+├── theory-virtual-doctrines/      virtual double categories, reflected judgments and directed laws over replayable rewriting evidence
 ├── workflow-spec-cost/            the `spec-cost` binary: executable specifications ranked by the check time profiled in the slowest enforcing tests
 └── workflow-test-timing/          the `test-timing` binary: nextest priority levels proposed from recent merge-queue runs' JUnit reports
 ```
 
-The policy library and the gate binary are not members: they come from [quenchant](https://github.com/gandr-lang/quenchant) at the revision the root `Cargo.toml` pins.
-
-## Universe identity boundaries
-
-The certified-equivalence type `Path_U` is native term syntax; conversion compares its raw classifier and map syntax, never replay-equivalence or certificate evidence. Transport is computation whose claims the kernel replays. Identity on elements and the bridge mode share a code fold; the higher field, funext and forward-only `Flow_U` are bounded in-memory rule languages. List has a finite native code and guarded, borrowed inhabitants observed only to a supplied budget. Session codes and their identity evidence are native; their directional flows transport recorded runs, not kernel endpoint values.
-
-The decisions and exhaustion semantics live in [kernel-core](kernel-core/README.md#native-universe-paths); every assigned and reserved wire byte is in [kernel-term](kernel-term/README.md#tag-numbering-and-versioning). Frontend checking, cached content, presentation and the command IL each retain their own boundary: none turns stored candidate evidence into authority or introduces source syntax by representing it.
+The policy library and the gate binary are not members: they come from [quenchant](https://github.com/gandr-lang/quenchant) at the revision the root `Cargo.toml` pins. Its `specification_present` lint reports open specification debt as warnings (`check:dylint`); every other policy lint denies.
 
 ## Crate README shape
 
-Every crate's `README.md` follows one order. A section is present when the crate has content for it. A crate-specific section is named plainly by its subject, never by negation or metaphor.
+A crate's `README.md` is its only document: an overview and conceptual entry that links into the crate's `src/lib.rs` `//!` docs and the owning module, where mechanism, invariants, decisions (choice, alternatives, reversal) and specification detail live and `check:doc` builds them. A crate carries no `docs/` directory and no changelog of its own. A behavioural floor or a deferred-row ledger is a tracking issue, linked from the README once; a measurement or a report belongs to neither. `check:markdown` refuses tracked markdown outside `README.md`, `CHANGELOG.md`, `crates/README.md`, `crates/*/README.md` and `contrib/*/README.md`, and a README over its budget: 12 KB for a crate, 6 KB at the root.
+
+Every crate README follows one order. A section is present when the crate has content for it.
 
 1. `# <package>`, followed by one sentence stating what the crate is.
 2. A table of contents linking every section below.
@@ -95,7 +92,7 @@ Every crate's `README.md` follows one order. A section is present when the crate
 5. `## Provided features`: what the crate provides, as items.
 6. `## Expected features`: what the crate requires of its consumer or its environment to be useful, such as a digest function, a store implementation, a spawner, a target requirement or a specification facade's `cfg`. Absent or planned work is not listed here.
 7. `## Examples`: runnable usage and the command that runs the crate's tests.
-8. Crate-specific sections, one per decision or mechanism, each stated as present fact with its reason.
+8. `## Where the detail lives`: the modules whose rustdoc states each mechanism and decision, as a table or one sentence.
 9. `## License`: `Apache-2.0 WITH LLVM-exception`, the workspace licence, whose text is at the repository root.
 
 ## Divergences

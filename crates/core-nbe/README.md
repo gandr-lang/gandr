@@ -328,7 +328,7 @@ Readback, sharing and static-normalization witnesses use one structural tree ora
 
 ## Experimental stage normalization
 
-The strict stage producer has its own page, [docs/staging.md](docs/staging.md): what `stage::normalize` [reduces and leaves residual](docs/staging.md#experimental-stage-normalization), the strict-over-full decision with its reversal condition, the `stage::power` and `stage::double` witnesses and the equation census. The language it produces for is the kernel's [stage universe](../kernel-core/docs/staging.md#experimental-stage-universe); readmission of a residual is in [core-checker](../core-checker/README.md#experimental-stage-readmission), and a whole staged program is checked by its [program entry](../core-checker/docs/staging.md#a-staged-program-checks-on-every-core).
+The strict stage producer has its own page, [docs/staging.md](docs/staging.md): what `stage::normalize` [reduces and leaves residual](docs/staging.md#experimental-stage-normalization), the strict-over-full decision with its reversal condition, the `stage::power` and `stage::double` witnesses and the equation census. The language it produces for is the kernel's [stage universe](../kernel-core/src/stage.rs); readmission of a residual is in [core-checker](../core-checker/README.md#experimental-stage-readmission), and a whole staged program is checked by its [program entry](../core-checker/docs/staging.md#a-staged-program-checks-on-every-core).
 
 ## License
 

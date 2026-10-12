@@ -7,6 +7,56 @@
 //! constructor or the value a function field returns — the `t` of
 //! `t ← (force f) ȳ`. The kernel replays it by one explicit-stack walk over
 //! the body; it searches for nothing.
+//!
+//! # The fixpoint and its evidence
+//!
+//! `fix x. M` checks at every computation type `C`: its body checks at `C`
+//! with `x : U C` bound innermost. Recursion goes through that binder, so a
+//! body never names its own admission position and the admitted prefix stays
+//! the only visible signature table. The evidence is `Partial`, no claim, or
+//! `StructuralDescent`, the claim above. Admission replays the claim and
+//! refuses a failed one as `DescentNotReplayed` carrying its
+//! `DescentRefusal`. A partial fixpoint is admitted at any computation type,
+//! including a loop at `F 1`.
+//!
+//! # The conversion gate
+//!
+//! Conversion replay unfolds a structural-descent fixpoint only where it is
+//! applied to a constructor, `(fix x. M) (c v̄) ⇝ M[thunk (fix x. M)/x] (c v̄)`.
+//! A partial fixpoint at that gate declines as
+//! `ReplayDecline::PartialFixpoint`, so a trace that needs a partial unfolding
+//! is never certified. Two stuck fixpoints compare by their bodies under one
+//! self variable, whatever their evidence.
+//!
+//! # Decision
+//!
+//! **Choice.** Strict positivity and parameter uniformity, checked on the
+//! native declaration, and one guarded fixpoint whose descent claim the kernel
+//! replays (Eduardo Giménez, "Structural recursive definitions in type
+//! theory", ICALP 1998, LNCS 1443, `doi:10.1007/BFb0055070`), rather than a
+//! primitive recursor per declaration. The trusted base gains one former and
+//! one replay check; every eliminator is an ordinary derived declaration that
+//! the kernel re-checks.
+//!
+//! **Alternatives.** A primitive recursor per declaration adds a generated
+//! rule per signature to the trusted base. A description universe decoded at
+//! admission gives up native nominal identity inside the kernel (signatures
+//! as a description theory: Ambrus Kaposi and András Kovács, "Signatures and
+//! Induction Principles for Higher Inductive-Inductive Types", LMCS 16(1),
+//! 2020, `doi:10.23638/LMCS-16(1:10)2020`). A size-based termination checker
+//! needs sized types the kernel does not have.
+//!
+//! **Reversal.** Mutual blocks, indexed families, nested occurrences, or
+//! descent through a non-field such as a measure each need their own formation
+//! or replay rule. A measured recursion arrives as new evidence, not as a
+//! widened structural check.
+//!
+//! # Witnesses
+//!
+//! The `recursive_data` integration suite: recursive blocks are admitted,
+//! occurrences are refused by name, descent evidence replays or is refused by
+//! name, derived eliminators are admitted, a fixpoint computes at a
+//! constructor and replays, and a partial fixpoint declines at its gate.
 
 use alloc::vec::Vec;
 

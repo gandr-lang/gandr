@@ -8,19 +8,7 @@ The kernel's term arena and sharing format: a flat, id-addressed arena, the unif
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
-- [Canonical form by re-encoding](#canonical-form-by-re-encoding)
-- [Amplification budgets](#amplification-budgets)
-- [Admission watermark](#admission-watermark)
-- [Rejection vocabulary](#rejection-vocabulary)
-- [Structured names](#structured-names)
-- [Universe families and quotes](#universe-families-and-quotes)
-- [Static operators](#static-operators)
-- [Nominal data and structural records](#nominal-data-and-structural-records)
-- [N-ary products and sums](#n-ary-products-and-sums)
-- [Tag numbering and versioning](#tag-numbering-and-versioning)
-- [Sharing and compression](#sharing-and-compression)
-- [Specification attributes](#specification-attributes)
-- [Experimental stage syntax](#experimental-stage-syntax)
+- [Where the detail lives](#where-the-detail-lives)
 - [License](#license)
 <!-- tocstop -->
 
@@ -30,7 +18,7 @@ The kernel's term arena and sharing format: a flat, id-addressed arena, the unif
 
 **Why.** A kernel that checks large proofs needs shared subterms to stay shared from the bytes to the checker, or every reference to a shared subterm costs its full size again. Retaining that sharing is also an attack surface: a small artifact can name a DAG whose tree-expanded size is astronomical, so a reader must bound expanded work before anything downstream sees the artifact, without trusting the writer.
 
-**How.** Four decisions interlock. The representation is an arena of `Copy` ids, so a graph of shared ids is representable at all and teardown is a flat vector drop rather than a recursion over term depth. The format is one per-artifact tagged subterm table over all four families in a single index space, maximally shared under structural equality, declaration-segmented, with children referenced only by strictly earlier index in post-order first-completion order. Decode retains sharing, which the arena makes possible: a table entry is an arena id, and decode is arena construction. Because decode retains sharing, a single forward scan over memoized saturating sizes bounds the expanded work before any consumer runs. Owned trees would foreclose the format, which is why the four are decided together.
+**How.** Four decisions interlock — an arena of `Copy` ids, one maximally shared subterm table per artifact, decode that retains sharing, and budgets on expanded work — and [`src/lib.rs`](src/lib.rs) states why none of them can be decided alone.
 
 ## References
 
@@ -39,14 +27,13 @@ The kernel's term arena and sharing format: a flat, id-addressed arena, the unif
 
 ## Provided features
 
-- **A flat arena in four typed id families** (`ValueId`, `ComputationId`, `ValueTypeId`, `CompTypeId`) where a node's children are `Copy` ids. Constructors require children already allocated in the same arena; same-family children precede their parent while the family length fits `u32`. Lookup checks the family index, not arena provenance. Truncation permits index reuse, and minting saturates the returned index at the `u32` ceiling. Derived equality, hashing and debug output are shallow.
-- **The admission watermark** (`ArenaWatermark`): a snapshot of the four family lengths, truncation back to one, and the clamp a rollback needs when staging order differs from admission order. `DeclarationBuilder` ties content minting to it.
-- **The unified subterm table**: `encode` and `decode` over `EncodedArtifact` and `ArtifactImage`, with `DecodedArtifact` holding the arena and its `MarkedDeclaration` sequence. Polarity is recoverable from the tag alone, so a child slot's requirement is a table lookup.
-- **The segment layout** (`SegmentLayout`, `ByteOffset`): where a decode found the header's end and each declaration segment's end, so a consumer storing the segments apart takes the boundaries from the reader rather than from the writer.
-- **Structured names** (`StructuredName`, `NameSegment`): each declaration's name record, a list of segments that `Declaration::named` attaches and the format carries, described in [Structured names](#structured-names).
-- **Canonical form enforced by re-encoding**, described in [Canonical form by re-encoding](#canonical-form-by-re-encoding).
-- **The amplification defence**: `MAX_TABLE_ENTRIES`, `MAX_EXPANDED_TERM_WORK`, `MAX_ARTIFACT_EXPANDED_WORK` and `MAX_DECODED_LEVEL_OFFSET`, enforced during decode, and `DecodeMetrics`, the deterministic measurements the same scan yields for a caller to record.
-- **The node-tag table** (`NODE_TAG_TABLE`): a const protocol input with one row per frozen tag, giving its child arity, its token bound and its two storage-boundary verdicts. A differential pins its arities against the arena's own child relation.
+- **A flat arena in four typed id families** (`ValueId`, `ComputationId`, `ValueTypeId`, `CompTypeId`) where a node's children are `Copy` ids, minted only by constructors over already-allocated children.
+- **The admission watermark** (`ArenaWatermark`) and `DeclarationBuilder`, which ties content minting to it so an abandoned declaration truncates itself.
+- **The unified subterm table**: `encode` and `decode` over `EncodedArtifact` and `ArtifactImage`, with `DecodedArtifact` holding the arena and its `MarkedDeclaration` sequence, and `SegmentLayout` reporting each declaration segment's boundaries.
+- **Structured names** (`StructuredName`, `NameSegment`) on every declaration.
+- **Canonical form enforced by re-encoding**, and **the amplification defence**: `MAX_TABLE_ENTRIES`, `MAX_EXPANDED_TERM_WORK`, `MAX_ARTIFACT_EXPANDED_WORK` and `MAX_DECODED_LEVEL_OFFSET`, with `DecodeMetrics` from the same scan.
+- **The node-tag table** (`NODE_TAG_TABLE`): one row per frozen tag, giving its child arity, its token bound and its two storage-boundary verdicts.
+- **The experimental stage syntax** (`stage::Arena`): an append-only, interned rule-language arena for hypothesis-indexed staging, with no wire format.
 
 ## Expected features
 
@@ -88,172 +75,23 @@ cargo nextest run -p gandr-kernel-term
 RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-kernel-term
 ```
 
-## Canonical form by re-encoding
+## Where the detail lives
 
-The encoder is untrusted and feeds no judgement. The reader enforces canonical form by re-encoding the whole decoded artifact and comparing bytes, and the maximal-sharing encoder is the re-encoder. One mechanism therefore catches a redundant duplicate entry, a mis-ordered table and a dead entry. The re-encoder is itself sharing-aware; a tree-walking re-encoder would turn the canonical check into an amplification vector.
+Mechanism, decisions and specification detail live in the rustdoc beside the code:
 
-Canonical bytes are a function of the declarations' abstract content, never of how they were built or decoded, so two differently shared equal inputs encode identically.
-
-## Amplification budgets
-
-Each budget bounds one axis and is enforced where it is cheapest:
-
-| budget | axis | enforced |
-| ------ | ---- | -------- |
-| `MAX_TABLE_ENTRIES` | distinct graph nodes | as entries accrue |
-| `MAX_EXPANDED_TERM_WORK` | tree work per declaration root | on the forward scan |
-| `MAX_ARTIFACT_EXPANDED_WORK` | tree work over the whole artifact | on the same scan, one extra accumulator |
-| `MAX_DECODED_LEVEL_OFFSET` | a level atom's successor offset | at the level decoder, per atom |
-
-An entry's expanded size is one plus the saturating sum of its children's. Children are strictly earlier, so one forward scan computes every size in linear time. The artifact-total cap exists because many small declaration segments referencing one near-cap root pass the per-declaration cap individually while forcing many times its work together.
-
-The budgets bound work without touching the checker, so they stay outside the trusted base, and they are reader acceptance policy only: they change neither the wire format nor canonicality. The constants are set against the deepest artifact the kernel itself round-trips, the adversarial-depth witness, and clear it with headroom while refusing an obvious billion-laughs artifact by orders of magnitude.
-
-## Admission watermark
-
-A choke point takes an `ArenaWatermark` before staging a declaration and truncates after the verdict, on rejection and on success alike. `DeclarationBuilder` records its own mark and truncates each family to `min(current_len, content_start)` when abandoned. Its mutable arena borrow also permits shrinking and reminting below that mark: abandonment preserves those leading nodes rather than restoring an earlier snapshot. A `Declaration` carries no watermark: decode builds one table for the whole artifact, so a decoded declaration has no meaningful content-start mark.
-
-The mark stores lengths rather than copied nodes, keeping truncation allocation-free. Snapshot restoration would require retaining overwritten content; revisit that choice only if staging must restore arbitrary edits rather than discard an appended suffix. `TermArena::truncate_to` with a stale watermark past a family's end leaves that family unchanged.
-
-## Rejection vocabulary
-
-A decode failure is a format failure and never a typing failure. `DecodeError` is a rejection triple — truncation, an unknown tag at a named `TagSite`, a violated structural invariant at a named `MalformedSite` — plus two by-name refusals for the reserved parts of the format and a version refusal that names the version it met.
-
-`ReservedKind` names the declaration kinds a module layer would export (`ModuleSig`, `ModuleDef`, `FunctorDef`); they are reserved together so graduating one into the kernel never renumbers a shipped format, and a live kind such as the abstract type has no variant. `ReservedSlot` names the slots and sections that must be empty, and the minted-atom table, the one live member, refused when the declarations decoded beside it refute it.
-
-## Structured names
-
-**Choice.** A declaration carries a `StructuredName`: a list of `NameSegment`s, outermost first, written in the segment's name record as a count and then each segment's length-prefixed UTF-8. A segment never holds `.`. `NameSegment::from_text` is the only constructor and refuses the separator, so the encoder's input cannot carry one and the encoder stays total; the decoder rebuilds every segment through the same constructor and refuses a dotted or non-UTF-8 segment as `MalformedSite::NameSegment`. A finisher builds an unnamed declaration, and a producer names it afterwards with `Declaration::named`, so no finisher's signature changed. The name is identity for a reader and is never read by a check: a reference is a `ConstantIndex`, the admission position of what it names, so renaming a sequence leaves every content root and the arena unchanged.
-
-**Alternatives.** One dotted string per declaration would make the namespace's spelling the exported identity, and two different segment lists would collide on one string. Keeping the record reserved and naming declarations in a side table would leave an artifact unreadable without that table. A fallible `encode` refusing the separator would make every caller handle a refusal its input type can rule out.
-
-**Reversal.** If a renamed module must export a byte-identical artifact, the names move to a side table and the record is pinned empty again. If a segment needs to carry `.` — a foreign namespace whose names hold it — the segment gains an escape in its text field, which changes the field's shape and bumps `FORMAT_VERSION`. The record itself is framed in every declaration segment and an unnamed declaration writes a zero count, so naming declarations changes no byte of an unnamed sequence's artifact.
-
-## Universe families and quotes
-
-**Choice.** Universes come in two families, one per ground sort: `ValueType::Universe { sort, level }` with `GroundSort::Value` classifies value types at `level` and with `GroundSort::Computation` classifies computation types at `level`. Both are value types one level up — a code is a value whatever family it decodes into. A code is a quote, `Value::Quote` of a value type or `Value::QuoteComputation` of a computation type, and a type is read off a code by the decoding former of its family, `ValueType::Element` or `CompType::Element`.
-
-**Decode on mint.** `TermArena::value_type_element` over a value quote returns the quoted type and mints nothing, and `comp_type_element` does the same over a computation quote. The decoding rule `El ⌜A⌝ = A` therefore fires at the one place a decode is made, so no arena holds the redex, and no artifact either: a table writing a decode over a quote reads back as the quoted type, and the re-encoding check refuses it as non-canonical. A decode across the families — a computation decode of a value quote — is minted as written, for the checker to refuse as a type mismatch. The alternative, a decode node the checker reduces, would put a redex in front of every conversion and every walk; the reversal condition is a decoding rule that needs a context to fire, which a constructor cannot see.
-
-**Alternatives.** One universe over both sorts was rejected because a value type and a computation type are different kinds of thing in call-by-push-value, and a single universe would need a sort test at every decode. A sort parameter on the universe is the surface's business: no sort parameter reaches this crate, so `GroundSort` has exactly the two ground sorts.
-
-## Static operators
-
-**Choice.** A type operator is classified by `ValueType::StaticPi { domain, codomain }` and eliminated by `Value::StaticApplication(head, argument)`. The static Pi is non-dependent: its codomain stands in the ambient context and the former binds nothing. The kernel has no static lambda. An operator's body is an elaborator-side definition; what reaches an admitted declaration is its static normal form, where every application of a defined operator has been reduced away and a remaining static application is neutral — headed by a variable or an opaque constant. A δβ-step a certificate replays hands the kernel the operator's body with its binders stripped (see the conversion replay in `gandr-kernel-core`), so no node in this arena ever binds a static parameter.
-
-**Alternatives.** A static lambda former would make every static redex a kernel concern: the checker would owe a β-rule at values, conversion would owe it too, and the trusted base would grow by a reduction the elaborator already performs and certifies. A dependent static Pi was not needed: no former indexed by a code is applied to a static argument at this vocabulary.
-
-**Reversal.** A static lambda former arrives when a declaration must carry an operator itself rather than its instances — an operator exported across a module boundary whose instances the importer forms.
-
-## Nominal data and structural records
-
-`DeclarationContent::Data` carries parameter classifiers, constructor field lists and a universe kind. Its `KIND_DATA` byte is `0x06`. A nominal application names the admitted declaration and retains every argument as a value child; a constructor carries its complete classifier, tag and fields. A case carries its scrutinee, a motive binding that scrutinee and ambient branch functions. Record types and values carry fields in strictly increasing UTF-8 label order; projection carries one label and its record value.
-
-These six nodes use counted arities where their children vary. Canonical encoding includes counts, labels and every child, including empty records and nullary constructors. Decoding rejects malformed ordering, lengths and child families; it does not grant typing authority. Ordinary kernel admission checks the reconstructed declaration. `native_formers::native_formers::native_declarations_and_eliminators_survive_canonical_decode` in kernel-core exercises that complete path.
-
-A recursive declaration needs no new framing: a field naming its own family is an ordinary nominal application whose declaration index is the declaration's own position. Admission, not the reader, decides whether that occurrence is strictly positive and uniform. The fixpoint `0x63` carries one evidence byte, `0` for a partial fixpoint and `1` for a structural-descent claim, then one computation child: its body under the self binder. Any other evidence byte is refused as an unknown tag at the evidence site. The byte records a claim that kernel admission replays; decoding it grants nothing. `encode::tests::entry_goldens_pin_every_former_and_child_position` and `decode::tests::decoded_entries_preserve_every_former_and_child_position` pin both bytes.
-
-**Choice.** Native identity and field structure, not atom names or product offsets. New node and declaration-kind bytes extend the closed vocabulary without changing existing byte meanings, so they changed no version. **Reversal.** A changed framing or reassigned meaning requires a version change; mutual blocks, indexed families and further conversion evidence need explicit new readers.
-
-## N-ary products and sums
-
-`ValueType::Product` and `ValueType::Sum` hold a list of parts; `Value::Tuple` holds its components, `Value::Injection` names its summand by position, `Computation::TupleProjection` names a tuple's component by position and returns it, and `Computation::Case` holds one branch per summand. The unit is the product of no parts and the empty tuple; the empty type is the sum of no summands, and a case of no branches eliminates it. There is no unit, empty, pair or absurd variant, and no side alphabet. `ValueType::unit()`, `ValueType::empty()` and `Value::unit()` build the zero-ary nodes; `Value::components`, `ValueType::product_parts` and `ValueType::summands` read the lists.
-
-On the wire, product (`0x03`), sum (`0x04`), tuple (`0x0D`) and case (`0x16`) carry a child count before their children; an injection (`0x0E`) carries its summand as an unsigned varint before its one child. Format version 3 is that change, and the reader refuses version 2. The retired bytes `0x01` (unit type), `0x0B` (unit value), `0x28` (empty type) and `0x29` (absurd) are refused as unassigned, so no artifact spells the unit or the empty type twice. A tuple projection (`0x64`) carries its component as an unsigned varint before its one value child; it fills an unassigned byte, so it holds the version.
-
-**Choice.** One former per shape, counted, so `A × B × C` is not `(A × B) × C` and the zero-ary cases are the same former at count zero. **Alternatives.** Keeping binary formers with a unit terminator would encode an n-ary product as a right-nested chain the checker and the surface would both have to re-associate, and two spellings of one type would need a canonicalization rule. Keeping the unit and empty variants beside counted formers would leave two canonical forms of each. **Reversal.** None planned; a new arity-dependent former would take a new byte.
-
-**Tuple projection.** **Choice.** A positional projection, mirroring the record projection: `TupleProjection(tuple, i)` synthesises `F Aᵢ` from a tuple of type `A₀ × … × Aₙ` and reduces on a tuple literal to the return of its `i`-th component. A component at or past the arity is refused as an absent component. **Alternatives.** A split eliminator binding every component at once (`split v as (x₀, …, xₙ) in M`) also reads arity zero, where no component exists to project; it binds n variables in one node where projection binds none. A split erased to a chain of projections keeps the kernel to one product eliminator. **Reversal.** A split former arrives in the kernel if an erased split's projection chain proves costly to check or replay.
-
-## Tag numbering and versioning
-
-The tag space is one disjoint enumeration over four families. The allocation and reservation table in [`tags`](src/tags.rs) is authoritative; `NODE_TAG_TABLE` supplies the assigned formers and their arities. Native paths have distinct bytes. Higher fields and function identity remain in-memory rule languages, with reserved ranges and no wire nodes.
-
-The original `0x00–0x1F` meanings are frozen, including static operators at `0x1E–0x1F`. The extension and reservation table covers the remaining bytes:
-
-| Byte or range | Meaning | Artifact reader |
-| ------------- | ------- | --------------- |
-| `0x00–0x1F` | Original formers in `NODE_TAG_TABLE`, less the retired unit type `0x01` and unit value `0x0B` | Admitted; the retired bytes refused |
-| `0x20` | Reserved value sharing | Refused |
-| `0x21` | Reserved computation sharing | Refused |
-| `0x22` | Reserved value-type sharing | Refused |
-| `0x23` | Reserved computation-type sharing | Refused |
-| `0x24–0x27` | Held weakening slots | Refused |
-| `0x28` | Retired: the empty value type | Refused |
-| `0x29` | Retired: the absurd computation | Refused |
-| `0x2A` | `Path_U`, two value-code children | Admitted |
-| `0x2B` | Path reflexivity, one code child | Admitted |
-| `0x2C` | Equivalence, evidence and three children | Admitted |
-| `0x2D` | Product path, two path children | Admitted |
-| `0x2E` | Transport, path and input children | Admitted |
-| `0x2F` | Unassigned | Refused |
-| `0x30–0x37` | Higher-field reservation | Refused |
-| `0x38–0x47` | Funext reservation | Refused |
-| `0x48–0x4F` | `Flow_U` reservation | Refused |
-| `0x50` | List code, one element-type child | Admitted |
-| `0x51` | Native List nil, no children | Admitted |
-| `0x52` | Session code, inline finite graph and one payload-type child | Admitted |
-| `0x53–0x59` | Inline send, receive, select, offer, end, Mu and Var opcodes | Graph fields only; refused as native node tags |
-| `0x5A` | Session Path evidence, classifier and payload-proof children | Admitted |
-| `0x5B` | Native List cons, head and tail value children | Admitted |
-| `0x5C` | Pure List fold, element type, result type, list and two branch children | Admitted |
-| `0x5D` | Nominal data application, declaration and counted value arguments | Admitted |
-| `0x5E` | Record type, ordered labels and value-type children | Admitted |
-| `0x5F` | Constructor, classifier, tag and counted value fields | Admitted |
-| `0x60` | Record value, ordered labels and value children | Admitted |
-| `0x61` | Data case, scrutinee, motive and counted branches | Admitted |
-| `0x62` | Record projection, label and value child | Admitted |
-| `0x63` | Fixpoint, evidence byte and one computation child | Admitted |
-| `0x64` | Tuple projection, component and value child | Admitted |
-| `0x65–0xFF` | Unassigned | Refused |
-
-The admitted domain is sparse: the greatest assigned native byte is `0x64`, not a promise to accept every smaller byte. Boundary witnesses admit assigned native tags, refuse inline opcodes and retired bytes as native nodes, and retain the frozen block. The unit and the empty type are zero-count products and sums, and List nil is a zero-child leaf; all three and may be bounded-alias targets; no reservation becomes an alias target by being below the maximum.
-
-The sharing block is reserved: `NODE_SHARE_VALUE`, `NODE_SHARE_COMPUTATION`, `NODE_SHARE_VALUE_TYPE` and `NODE_SHARE_COMP_TYPE` name its per-family bytes, and no entry carries one. A reader meeting one of its bytes refuses it by name at the node site, exactly as it refuses any other unassigned byte. Reserving the block keeps the core vocabulary from growing into it: the core resumes above `SHARING_BLOCK_LAST`, and the block stays contiguous, so a sharing former's family is a subtraction.
-
-Assigning an unassigned tag or kind byte, or filling a reserved slot that is framed from the start, holds `FORMAT_VERSION`: the reader is a closed-vocabulary parser, so an unknown byte is a named refusal rather than a mis-parse. Reassigning a byte or changing a field's shape, order or width bumps it, because an older reader would otherwise parse successfully and wrongly.
-
-`PathUniverse` has two value-code children; reflexivity has one code, product paths have two paths, and transport has a path and input value. `PathEquiv` carries inline portable evidence followed by its classifier, forward map and backward map children. Evidence is source then target: a dialogue count, then each dialogue's decision count and unsigned decision words. Unknown words and oversized negative-premise positions are malformed; decoding never certifies a round trip.
-
-The portable decision alphabet comes from `kernel-conversion-trace`; unit anchors carry no arena identity. Reusing that vocabulary avoids a second replay protocol. The sharing-format witness preserves all decisions, empty dialogues and direction boundaries against independent bytes, and rejects malformed words and truncated prefixes. **Reversal:** introduce a new framing version if the alphabet needs payloads that cannot be encoded without changing existing word meanings.
-
-The List code (`NODE_VT_LIST`, `0x50`) has one value-type child, its element code. Its native introductions are `ListNil` (`0x51`) and `ListCons` (`0x5B`), not Sum encodings or nominal data constructors. `ListFold` (`0x5C`) carries five children in order: ambient element type, ambient result type, list value, nil branch and cons branch. Only the cons branch binds values: head first, folded result second, so the result is index zero. Both branches return the annotated result type. The ordinary sharing format persists this pure fragment; guarded recursive observations remain separate in-memory programs.
-
-Session codes use `NODE_VT_SESSION` (`0x52`). Their inline graph stores a root, node count, and finite nodes tagged send `0x53`, receive `0x54`, select `0x55`, offer `0x56`, end `0x57`, binder `0x58` and variable `0x59`. Graph integers are canonical unsigned varints. A label is its byte count followed by its exact UTF-8 bytes, each encoded as an unsigned varint. Choice maps are in label order. The graph's only native child is one n-ary payload-type product; payload slots index its parts. Internal recursion references finite graph positions, never a native type-arena back edge.
-
-`NODE_V_SESSION_PATH` (`0x5A`) has two native children: its `Path_U` classifier and one tuple of native payload-path values. Inline evidence is a sorted set of source/target state pairs followed by ordered source/target payload-slot obligations. Decoding rejects unknown opcodes, malformed UTF-8, duplicate labels or relation pairs, truncation and noncanonical encodings. Counts consume input before growing allocations; exhausted input is `Truncated`, while the ordinary table and expanded-work budgets retain their typed refusals. Contractivity, scope, relation coverage and payload typing belong to kernel formation. All relation data participates in canonical bytes even when conversion erases derivation pairs.
-
-**Choice.** Inline finite graph data with one native payload-code child preserves the format's fixed child arities and ordinary content sharing without recursive Rust ownership. Separate native constructors would spread finite graph framing across seven additional native cases; a second opaque payload-identity scheme would bypass universe formation. **Reversal.** A distinct protocol universe or a persisted endpoint-value language requires its own formation and elimination rules. These tags encode protocol types and identity evidence, not live channels.
-
-## Sharing and compression
-
-Arena allocation does not intern nodes. Encoding does: child-first entry bytes are content keys shared across declaration segments, so separately allocated equal subgraphs can become one wire entry. Decoding preserves the sharing of the accepted canonical table in an owned, flat arena. Equal ids identify one node; distinct ids do not establish semantic inequality. This format interning is not an evaluation memo or a proof of typing or admission.
-
-Compression is a storage and transport concern. The canonical bytes are the bytes, and no codec sits inside a reader whose rejection vocabulary has to stay clean. The bytes are declaration-segmented and self-delimiting.
-
-## Specification attributes
-
-Clause-bearing items carry executable `#[spec(...)]` predicates or a local `executable: none` explanation, with `# Adequacy` linking their evidence. Checks observe decimal normalization, arena prefix frames, declaration lifecycle and metadata, exact wire fields, borrowed cursor ranges, typed refusals and budget precedence. Const predicates compare inner ordinals without adding a second identity vocabulary. A predicate checks its stated projection on an executed call; it does not turn a transported producer claim into admission evidence.
-
-Encoding requires live, acyclic reachable graphs and an interner used with the unchanged arena it addresses. Enforced predicates reject stale roots. Treating a missing computation or computation type as a unit is not a valid alternative: those families have no unit former. A fallible recovery API would be a separate design, not a fabricated wire fallback. Arena ids carry neither provenance nor a reuse generation; a coincident ordinal alone cannot establish origin.
-
-Literal byte fixtures independently pin every former, payload and child position. Decoder witnesses vary every tag byte, proper prefixes, reference order and polarity, normalization residues and the arithmetic ceilings. Local normalization is not canonical-wire acceptance: decoding also compares the whole artifact with its re-encoding. That agreement check is not an independent format oracle. Budget witnesses use explicit expansion and widened arithmetic; the integration diamond model saturates the final tree size, including the exact `u64::MAX` boundary, rather than saturating a power before subtraction.
-
-The deep-graph witness walks 100,000 thunk-over-returner links to unit and drops the sole decoded owner on a 256 KiB stack. An entry count alone cannot prove depth. This is evidence for that shape and stack bound, not all graph shapes or allocation failures. Formatter effects, non-callable data and policy constants, the consuming builder-discard boundary and an opaque test strategy state their unobservable obligations and witnesses at their definitions.
-
-## Experimental stage syntax
-
-`stage::Arena` is a separate, append-only rule-language arena for
-[hypothesis-indexed staging](../kernel-core/README.md#experimental-stage-universe).
-It holds indexed classifiers, terms and untrusted conversion certificates. Both classifiers and terms are interned by exact syntactic equality after child-liveness checks. Within one arena, equal term ids mean equal constructors, payloads, classifiers and children; ids from different arenas are not comparable. Cloning preserves the complete namespace. This is syntax identity, not conversion authority. De Bruijn substitution uses an explicit worklist and raises replacements under binders; its unchanged-constructor fast path avoids an unnecessary lookup. There is no staging wire format and no allocated wire tag.
-
-Each family interns through an open-addressed, linearly probed table kept at most half full. A slot holds a descriptor's dense position and a 32-bit hash of it; the dense vector owns the descriptors, so a probe confirms every hash match by comparing the descriptor itself, and a collision costs a comparison, never an identity. The hash is an unkeyed fold of the descriptor's derived `Hash`, a function of the descriptor alone. A coordinate is the descriptor's allocation position; the table only finds it. A clone copies each family's descriptor and slot vectors with no per-entry allocation. Positions are 32 bits wide, so allocating past `u32::MAX` descriptors of one family refuses with `Overflow`.
-
-**Choice.** A hand-written table on `core` and `alloc` keeps the trusted base free of non-kernel dependencies, and finds a descriptor in expected constant time where an ordered map compares descriptors along a logarithmic path and allocates per entry when cloned. **Alternatives.** An ordered map (`BTreeMap`) needs no hash premise and bounds every lookup logarithmically; `hashbrown`'s table would replace this one at the cost of a dependency in the trusted base. **Reversal.** The hash is fixed and public, so a producer that chooses colliding descriptors can lengthen probe sequences toward linear time, though it cannot merge two descriptors. A deployment that admits adversarial certificates under a latency bound takes a hash keyed per arena, or the ordered map back.
-
-`Arena::find` answers the same exact lookup without interning: `Maybe::Present(id)` exactly when `alloc` would return the existing `id`, otherwise `interned::Absent::Uninterned`. A reader that must not extend an arena compares against it this way, as a [guarded-admission](../kernel-core/docs/admission.md) row does over a shared binding. The absence type is quenchant-shape's, the workspace's absence vocabulary; it adds no allocation and no `std` dependency to this `no_std` crate.
-
-`Arena::extent` reads the arena's prefix as an `Extent`: its term and classifier counts. `Arena::terms_above` and `Arena::types_above` borrow what was allocated past an extent, in allocation order, and `Arena::truncate_to` drops it with its lookup entries. A removed entry's probe gap closes by shifting later entries of its run backward, so a truncated arena answers every lookup and mints every coordinate as it did when the extent was read. A worker normalizing several sources of one program therefore clones the program arena once, reads each source's segment above the extent it started at, truncates back to the program's extent only when a source arrives out of order and back to where a source started when it fails, rather than cloning the arena per source ([the program entry](../core-checker/docs/staging.md#a-staged-program-checks-on-every-core)).
+| Topic | Module |
+| ----- | ------ |
+| The four decisions, canonical form, sharing and compression, specification attributes | [`src/lib.rs`](src/lib.rs) |
+| The arena, its disciplines and the watermark | [`src/arena.rs`](src/arena.rs) |
+| Declarations, structured names and the builder | [`src/decl.rs`](src/decl.rs) |
+| Universe families, static operators, n-ary products and sums | [`src/types.rs`](src/types.rs) |
+| Nominal data, structural records and fixpoint evidence | [`src/term.rs`](src/term.rs) |
+| The byte table, versioning, universe paths, Lists and session codes | [`src/tags.rs`](src/tags.rs) |
+| The amplification budgets | [`src/budget.rs`](src/budget.rs) |
+| The encoder and its canonical order | [`src/encode.rs`](src/encode.rs) |
+| Decode acceptance and its limits | [`src/decode.rs`](src/decode.rs) |
+| The rejection vocabulary | [`src/error.rs`](src/error.rs) |
+| The stage arena, its lookup table and extents | [`src/stage.rs`](src/stage.rs), [`src/stage/lookup.rs`](src/stage/lookup.rs) |
 
 ## License
 

@@ -48,8 +48,6 @@ max_size = "6KB"
 excludes = [
   "contrib/**",
   "crates/**",
-  # Burn-down.
-  "README.md",
 ]
 
 [rules.readme]
@@ -66,8 +64,6 @@ excludes = [
   "crates/core-nbe/README.md",
   "crates/core-sequent/README.md",
   "crates/core-term/README.md",
-  "crates/kernel-core/README.md",
-  "crates/kernel-term/README.md",
   "crates/storage-artifact/README.md",
   "crates/storage-values/README.md",
   "crates/surface-corpus/README.md",

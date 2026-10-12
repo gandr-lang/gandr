@@ -1,11 +1,29 @@
 //! The stage arena's descriptor lookup: an open-addressed, linearly probed
 //! table from a descriptor's hash to its position in the arena's dense
-//! vector.
+//! vector, kept at most half full.
 //!
 //! The table stores positions and 32-bit hashes, never descriptors: the dense
 //! vector owns them. A hash match is confirmed by comparing the descriptor
 //! itself, so a collision costs a comparison and never an identity, and a
-//! clone of the table is one slice copy.
+//! clone of the table is one slice copy. The hash is an unkeyed fold of the
+//! descriptor's derived `Hash`, a function of the descriptor alone.
+//!
+//! # Decision
+//!
+//! **Choice.** A hand-written table on `core` and `alloc` keeps the trusted
+//! base free of non-kernel dependencies, and finds a descriptor in expected
+//! constant time where an ordered map compares descriptors along a
+//! logarithmic path and allocates per entry when cloned.
+//!
+//! **Alternatives.** An ordered map (`BTreeMap`) needs no hash premise and
+//! bounds every lookup logarithmically; `hashbrown`'s table would replace this
+//! one at the cost of a dependency in the trusted base.
+//!
+//! **Reversal.** The hash is fixed and public, so a producer that chooses
+//! colliding descriptors can lengthen probe sequences toward linear time,
+//! though it cannot merge two descriptors. A deployment that admits
+//! adversarial certificates under a latency bound takes a hash keyed per
+//! arena, or the ordered map back.
 
 use alloc::vec::Vec;
 use core::hash::Hash;

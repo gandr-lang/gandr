@@ -1,6 +1,6 @@
 # Recursive data, fixpoints and derived eliminators
 
-How `gandr-core-checker` refuses an inadmissible self occurrence, checks a fixpoint and replays its claim, and derives the eliminator a recursive declaration is consumed by. The crate's [README](../README.md) states the rest of the crate; the kernel's [recursive data page](../../kernel-core/docs/recursive-data.md) states the rule both checkers enforce.
+How `gandr-core-checker` refuses an inadmissible self occurrence, checks a fixpoint and replays its claim, and derives the eliminator a recursive declaration is consumed by. The crate's [README](../README.md) states the rest of the crate; the kernel's [descent module](../../kernel-core/src/check/descent.rs) states the rule both checkers enforce.
 
 <!-- toc -->
 - [References](#references)

@@ -3,7 +3,52 @@
 //!
 //! `In M` is an ordinary hypothesis. Object classifiers carry `Inner(M)`;
 //! lifting, quotation and splicing never transform a context. This arena has
-//! no wire encoding and confers no typing or conversion authority.
+//! no wire encoding, no allocated wire tag, and confers no typing or
+//! conversion authority: it is the syntax `gandr-kernel-core`'s
+//! hypothesis-indexed staging checks.
+//!
+//! # Syntax identity
+//!
+//! [`Arena`] is append-only and holds indexed classifiers, terms and untrusted
+//! conversion certificates. Classifiers and terms are interned by exact
+//! syntactic equality after child-liveness checks. Within one arena, equal
+//! term ids mean equal constructors, payloads, classifiers and children; ids
+//! from different arenas are not comparable. Cloning preserves the complete
+//! namespace. This is syntax identity, not conversion authority. De Bruijn
+//! substitution uses an explicit worklist and raises replacements under
+//! binders; its unchanged-constructor fast path avoids an unnecessary lookup.
+//!
+//! Each family interns through the open-addressed table in the private
+//! `lookup` module, which records why the table is hand-written. A
+//! coordinate is the descriptor's allocation position; the table only finds
+//! it. A clone copies each family's descriptor and slot vectors with no
+//! per-entry allocation. Positions are 32 bits wide, so allocating past
+//! `u32::MAX` descriptors of one family refuses with [`StageError::Overflow`].
+//!
+//! # Reading without extending
+//!
+//! [`Arena::find`] answers the same exact lookup without interning:
+//! `Maybe::Present(id)` exactly when `alloc` would return the existing `id`,
+//! otherwise `interned::Absent::Uninterned`. A reader that must not extend an
+//! arena compares against it this way, as a guarded-admission row in
+//! `gandr-kernel-core` does over a shared binding. The absence type is
+//! quenchant-shape's, the workspace's absence vocabulary; it adds no
+//! allocation and no `std` dependency to this `no_std` crate.
+//!
+//! # Extents and truncation
+//!
+//! [`Arena::extent`] reads the arena's prefix as an [`Extent`]: its term and
+//! classifier counts. [`Arena::terms_above`] and [`Arena::types_above`] borrow
+//! what was allocated past an extent, in allocation order, and
+//! [`Arena::truncate_to`] drops it with its lookup entries. A removed entry's
+//! probe gap closes by shifting later entries of its run backward, so a
+//! truncated arena answers every lookup and mints every coordinate as it did
+//! when the extent was read. A worker normalizing several sources of one
+//! program therefore clones the program arena once, reads each source's
+//! segment above the extent it started at, and truncates back to the
+//! program's extent only when a source arrives out of order and back to where
+//! a source started when it fails, rather than cloning the arena per source;
+//! `gandr-core-checker`'s staged program entry is that worker.
 
 mod lookup;
 

@@ -6,6 +6,88 @@
 //! redirects is non-productive. Success states only the requested finite depth.
 //! These arena-relative objects neither enter conversion nor admit
 //! declarations.
+//!
+//! # The field
+//!
+//! The module computes `Rel₂(p, q)` by quoting the native fibre of two checked
+//! parallel identities and applying the same identity-mode code fold to their
+//! evidence. No relation clause is duplicated. Neutral fibres retain the named
+//! refusal; the field adds no equality decision on unknown indices.
+//!
+//! A `Codata` program is a flat graph of `Guard` and `Redirect` instructions.
+//! Each guard checks an inhabitant of the current higher fibre; its tail
+//! requests identity of that inhabitant with itself. The same API also
+//! observes any supplied pair of parallel native cells. A guarded cycle
+//! represents arbitrarily many requested diagonal layers without
+//! materializing an infinite structure. A cycle of redirects returns
+//! `NonProductive`. Success is a `Prefix` at exactly the requested positive
+//! `Depth`, not a verdict about an unobserved tail.
+//!
+//! `ObservationBudget` gives each observation an instruction allowance from
+//! `ReplayBudget`. Every redirect and guard consumes one unit; reaching the
+//! allowance before the requested depth returns `DepthBound`. Zero depth
+//! returns `ZeroDepth`. CBPV dialogues and path formation retain their
+//! independent replay ceilings. Native relation checking remains a terminating
+//! structural walk, not part of the instruction count. These bounds state
+//! replay scope, not a global cost theorem.
+//!
+//! # Symmetry
+//!
+//! `symmetry` checks that the source diagonal and inverse fibres have the
+//! same native type. It reindexes diagonal evidence into the path fibre,
+//! observes its higher identity with the supplied path evidence, and
+//! transports the diagonal in that fibre to produce the inverse. It then
+//! checks all four square faces and observes identity between the two
+//! boundary composites. Both Bool injections compute with distinct neutral
+//! Unit payloads and canonical evidence. A neutral proof-index action retains
+//! the transport boundary as `NeutralTransport`; this is not general
+//! dependent elimination.
+//!
+//! # Unfolding an equivalence
+//!
+//! `unfold` consumes two native `Value::PathEquiv` introductions, checks each
+//! through the ordinary closed-value checker and exposes the identity record:
+//!
+//! | Field | Observation |
+//! | ----- | ----------- |
+//! | Forward | Replay both translators at the input; check identity of their returned values and its higher diagonal. |
+//! | Backward | The same observation in the reverse direction. |
+//! | Source coherence | Replay both backward-after-forward composites to the input; observe identity between their reflected diagonal witnesses. |
+//! | Target coherence | The corresponding forward-after-backward coherence. |
+//!
+//! The negation and case-inlined triple-negation certificates satisfy all four
+//! fields at both Bool constructors, while native structural conversion
+//! reports `Distinct`. This is **replay-equivalence as identity, never in
+//! conversion**. The record is an identity type's observation interface: each
+//! point consumes supplied evidence; observing Base samples would not prove a
+//! universal field. Reflexivity and product introductions retain their native
+//! path operations; record unfolding requires `PathEquiv`.
+//!
+//! `Identity::native_evidence` projects native fibre inhabitants only.
+//! Quantified function evidence returns `HigherEvaluationRequired`,
+//! preserving the distinction between a higher-evaluation program and a
+//! native value; suspended diagonals retain `NeutralFiber`. Function consumers
+//! borrow identities and replay their raw evidence.
+//!
+//! # Decision
+//!
+//! **Choice.** A first-order cyclic program makes guards and back edges
+//! inspectable and bounds each replay. **Alternatives.** Eager towers cannot
+//! represent infinite higher data; closures hide productivity obligations and
+//! allocate opaque continuations. The graph stores no checking verdict and
+//! adds no dependency or wire tag. **Reversal.** A native higher identity
+//! language would replace the auxiliary representation only with checked
+//! substitution, reduction and persistence rules. Each observed native fibre
+//! must be representable at the admitted stratum; J and a general dependent
+//! eliminator are not provided.
+//!
+//! # Witnesses
+//!
+//! The witnesses for this module and its native-evidence projection target
+//! removed guards, uncharged redirects, early depth success, forged fibre
+//! evidence, dropped product coordinates, wrong square boundaries,
+//! substituted translator outputs and omitted round-trip coherence, without
+//! claiming a mutation campaign or a metatheorem about infinite coherence.
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeSet;

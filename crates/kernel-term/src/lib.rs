@@ -40,15 +40,63 @@
 //! a tree-walking re-encoder would make the canonical check an amplification
 //! vector rather than a defence.
 //!
+//! Canonical bytes are a function of the declarations' abstract content, never
+//! of how they were built or decoded, so two differently shared equal inputs
+//! encode identically.
+//!
 //! # Sharing and compression
 //!
-//! No interning table and no content-keyed memo of *values* belongs here or
-//! anywhere the kernel can reach. Sharing is **preserved** by the kernel and
-//! never **created**: what a decode hands over is the sharing a consumer sees,
-//! id equality is a positive-only fast path deciding reflexive pairs alone, and
-//! any pass that creates sharing is elaborator-side. Compression is a storage
-//! and transport concern; the canonical bytes remain the bytes, and no codec
-//! belongs inside a reader whose rejection vocabulary has to stay clean.
+//! Arena allocation does not intern nodes. Encoding does: child-first entry
+//! bytes are content keys shared across declaration segments, so separately
+//! allocated equal subgraphs become one wire entry. Decoding preserves the
+//! sharing of the accepted canonical table in an owned, flat arena. Equal ids
+//! identify one node; distinct ids do not establish semantic inequality, and
+//! id equality is a positive-only fast path deciding reflexive pairs alone.
+//! This format interning is neither an evaluation memo nor a proof of typing
+//! or admission, and no content-keyed memo of *values* belongs anywhere the
+//! kernel can reach: a pass that creates sharing for evaluation is
+//! elaborator-side.
+//!
+//! Compression is a storage and transport concern. The canonical bytes are
+//! the bytes, and no codec sits inside a reader whose rejection vocabulary has
+//! to stay clean. The bytes are declaration-segmented and self-delimiting.
+//!
+//! # Specification attributes
+//!
+//! Clause-bearing items carry executable `#[spec(...)]` predicates or a local
+//! `executable: none` explanation, with `# Adequacy` linking their evidence.
+//! Checks observe decimal normalization, arena prefix frames, declaration
+//! lifecycle and metadata, exact wire fields, borrowed cursor ranges, typed
+//! refusals and budget precedence. Const predicates compare inner ordinals
+//! without adding a second identity vocabulary. A predicate checks its stated
+//! projection on an executed call; it does not turn a transported producer
+//! claim into admission evidence.
+//!
+//! Encoding requires live, acyclic reachable graphs and an interner used with
+//! the unchanged arena it addresses; enforced predicates reject stale roots.
+//! Treating a missing computation or computation type as a unit is not a
+//! valid alternative: those families have no unit former, and a fallible
+//! recovery API would be a separate design, not a fabricated wire fallback.
+//! Arena ids carry neither provenance nor a reuse generation, so a coincident
+//! ordinal alone cannot establish origin.
+//!
+//! Literal byte fixtures independently pin every former, payload and child
+//! position. Decoder witnesses vary every tag byte, proper prefixes,
+//! reference order and polarity, normalization residues and the arithmetic
+//! ceilings. Local normalization is not canonical-wire acceptance: decoding
+//! also compares the whole artifact with its re-encoding, and that agreement
+//! check is not an independent format oracle. Budget witnesses use explicit
+//! expansion and widened arithmetic; the integration diamond model saturates
+//! the final tree size, including the exact `u64::MAX` boundary, rather than
+//! saturating a power before subtraction.
+//!
+//! The deep-graph witness (`tests/adversarial_depth.rs`) walks 100,000
+//! thunk-over-returner links to unit and drops the sole decoded owner on a
+//! 256 KiB stack. An entry count alone cannot prove depth; this is evidence
+//! for that shape and stack bound, not all graph shapes or allocation
+//! failures. Formatter effects, non-callable data and policy constants, the
+//! consuming builder-discard boundary and an opaque test strategy state their
+//! unobservable obligations and witnesses at their definitions.
 //!
 //! The papers the crate draws on are in its `README.md`, § References.
 
