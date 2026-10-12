@@ -700,7 +700,7 @@ def broken = missing ;
                                     payload
                                         .split(|character: char| !character.is_ascii_digit())
                                         .filter_map(|digits| digits.parse::<usize>().ok())
-                                        .eq([0_usize, 34_usize, 1_usize, 1_usize])
+                                        .eq([13_usize, 34_usize, 1_usize, 1_usize])
                                 );
                             }
                             Observed::Ledger

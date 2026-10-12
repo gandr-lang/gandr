@@ -1440,6 +1440,11 @@ pub fn collect<'source>(
             decorations.clear();
             continue;
         }
+        if former == Former::Declaration {
+            collector.declaration(child, &decorations)?;
+            decorations.clear();
+            continue;
+        }
         if collector
             .collected
             .descriptions
@@ -1515,7 +1520,7 @@ impl<'source> Collector<'_, 'source>
             | Shape::Form {
                 former: Former::Declaration,
                 ..
-            } => self.declaration(child),
+            } => self.declaration(child, &[]),
             | Shape::Form {
                 former: Former::Module,
                 ..
@@ -1584,10 +1589,10 @@ impl<'source> Collector<'_, 'source>
                 attributed = self.decoration(block, child.node, &mut attributes);
             }
         }
-        self.document(position, child.node, named.span.start(), child.node);
         for &block in decorations {
             self.document(position, block.node, block.span.end(), child.node);
         }
+        self.document(position, child.node, named.span.start(), child.node);
         if let Some(slot) = self.collected.slots.get_mut(usize::from(position)) {
             if slot.introduced_by.node == child.node {
                 slot.signature = Maybe::Present(Half {
@@ -1667,14 +1672,18 @@ impl<'source> Collector<'_, 'source>
         }
     }
 
-    /// Collect one declaration form.
+    /// Collect one declaration form, decorated by the attribute blocks
+    /// `decorations` standing before it.
     ///
     /// # Specification
-    /// - requires: `declaration` is a declaration form.
-    /// - ensures: the form's attributes, name and tail are read in that order;
-    ///   the name is admitted to its slot and the form is owned by it; the
-    ///   first fault of the form is offered to the slot at the form itself, and
-    ///   a form with no fault files its half and its attributes.
+    /// - requires: `declaration` is a declaration form, and each of
+    ///   `decorations` an attribute block standing before it.
+    /// - ensures: the form's attributes, name and tail are read in that order,
+    ///   the decorations' attributes before the form's own; the name is
+    ///   admitted to its slot and the form and its decorations are owned by it;
+    ///   the first fault of the form or a decoration is offered to the slot at
+    ///   the form itself, and a form with no fault files its half and its
+    ///   attributes.
     /// - provides: the per-declaration half of [`collect`].
     /// - fails: when the form has no name: the repair it holds, the form
     ///   standing where the name belongs, or a misplaced tile.
@@ -1710,11 +1719,12 @@ impl<'source> Collector<'_, 'source>
     fn declaration(
         &mut self,
         declaration: Placed,
+        decorations: &[Placed],
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let mut pieces = core::mem::take(&mut self.pieces);
         read_pieces(self.pbg, self.tree, declaration.node, &mut pieces)?;
-        let outcome = self.read_declaration(Container::TopLevel, declaration, &pieces);
+        let outcome = self.read_declaration(Container::TopLevel, declaration, &pieces, decorations);
         self.pieces = pieces;
 
         outcome
@@ -1867,15 +1877,18 @@ impl<'source> Collector<'_, 'source>
         ))
     }
 
-    /// Read one declaration form's pieces into its slot in `container`.
+    /// Read one declaration form's pieces into its slot in `container`,
+    /// decorated by the attribute blocks `decorations` standing before it.
     ///
     /// # Specification
     /// - requires: `pieces` is the reading of the form `declaration`, a
     ///   top-level declaration or a definition member of the module `container`
-    ///   names.
+    ///   names, and each of `decorations` an attribute block standing before
+    ///   it.
     /// - ensures: as [`Self::declaration`], the name admitted in `container`.
     /// - provides: the reading half of [`Self::declaration`] and of a module's
-    ///   definition members, over a borrowed reading.
+    ///   definition members, whose blocks are inside the form, over a borrowed
+    ///   reading.
     /// - fails: as [`Self::declaration`].
     /// - panics: none.
     ///
@@ -1891,6 +1904,7 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `module::tests::a_second_signature_is_refused`
     /// - witness: `module::tests::a_second_definition_is_refused`
     /// - witness: `module::tests::an_attribute_block_decorates_the_declaration_after_it`
+    /// - witness: `module::tests::a_module_member_reads_the_blocks_inside_its_form`
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.structures.len()),
         ensures: |ret| {
@@ -1912,6 +1926,7 @@ impl<'source> Collector<'_, 'source>
         container: Container,
         declaration: Placed,
         pieces: &Pieces,
+        decorations: &[Placed],
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let split = pieces.pieces.iter().position(
@@ -1923,11 +1938,19 @@ impl<'source> Collector<'_, 'source>
             return Err(self.unnamed(pieces, declaration, &header));
         };
         let mut attributes = Vec::new();
-        let attributed = self.read_attributes(
-            Cursor::new(before, declaration.span),
-            declaration.node,
-            &mut attributes,
-        );
+        let mut attributed = Ok(());
+        for &block in decorations {
+            if attributed.is_ok() {
+                attributed = self.decoration(block, declaration.node, &mut attributes);
+            }
+        }
+        if attributed.is_ok() {
+            attributed = self.read_attributes(
+                Cursor::new(before, declaration.span),
+                declaration.node,
+                &mut attributes,
+            );
+        }
         let mut header = Cursor::new(after, declaration.span);
         let _def = header.tile(TileName::DEF);
         let _recursive = header.tile(TileName::REC);
@@ -1938,6 +1961,10 @@ impl<'source> Collector<'_, 'source>
         let name = self.name_of(named);
         let slot = self.admit(container, name, declaration, named);
         self.collected.own(declaration.node, slot);
+        for &block in decorations {
+            self.collected.own(block.node, slot);
+            self.document(slot, block.node, block.span.end(), declaration.node);
+        }
         self.document(slot, declaration.node, named.span.start(), declaration.node);
         let tail = if let Maybe::Present(repaired) = pieces.repair {
             Tail::Refused(repaired.refusal(FormName::DECLARATION))
@@ -3448,7 +3475,7 @@ impl<'source> Collector<'_, 'source>
             .iter()
             .any(|piece| matches!(*piece, Piece::Tile { label, .. } if label == TileName::DEF));
         if defines {
-            if let Err(refusal) = self.read_declaration(container, member, pieces) {
+            if let Err(refusal) = self.read_declaration(container, member, pieces, &[]) {
                 self.fault_at(structure, member, refusal);
             }
             return Ok(());
@@ -5855,6 +5882,7 @@ mod tests
     use gandr_surface_grammar::NamedKind;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::NodeIndex;
+    use gandr_surface_syntax::NodeLabel;
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
 
@@ -6281,6 +6309,62 @@ mod tests
             collected.owner_of(slot.introduced_by.node),
             Maybe::Present(SlotIndex::from(0_usize)),
             "the declaration form belongs to the slot it was filed under"
+        );
+        assert_eq!(
+            slot.introduced_by.span,
+            span(ByteOffset::from(22_usize), ByteOffset::from(33_usize)),
+            "the blocks stand outside the declaration form, so its identity excludes them"
+        );
+        let blocks: Vec<NodeIndex> = tree
+            .children(tree.root())
+            .filter(|&child| child != slot.introduced_by.node)
+            .filter(|&child| {
+                tree.node(child).is_some_and(|node| {
+                    matches!(node.label(), NodeLabel::Meld(_) | NodeLabel::Tile(_))
+                })
+            })
+            .collect();
+        assert_eq!(blocks.len(), 2, "each block is a root form of its own");
+        assert!(
+            blocks
+                .iter()
+                .all(|&block| collected.owner_of(block) == Maybe::Present(SlotIndex::from(0_usize))),
+            "each block belongs to the slot of the declaration it decorates"
+        );
+    }
+
+    #[test]
+    fn a_module_member_reads_the_blocks_inside_its_form()
+    {
+        let pbg = grammar();
+        let tree = parsed(
+            &pbg,
+            SourceText::from("module M { @[ checks ] @[ owes ] def x = 3 ; }"),
+        );
+        let collected = collect(&pbg, &tree, &mut tank()).unwrap();
+        let slot = collected
+            .slots
+            .iter()
+            .find(|slot| slot.name == SurfaceName::from("x"))
+            .unwrap();
+        let names: Vec<SurfaceName<'_>> =
+            slot.attributes.iter().map(|written| written.name).collect();
+
+        assert_eq!(
+            names,
+            [SurfaceName::from("checks"), SurfaceName::from("owes")],
+            "a member's stacked blocks attach in source order"
+        );
+        assert!(
+            slot.attributes
+                .iter()
+                .all(|written| written.decorates == slot.introduced_by.node),
+            "both blocks decorate the member form holding them"
+        );
+        assert_eq!(
+            slot.introduced_by.span,
+            span(ByteOffset::from(11_usize), ByteOffset::from(44_usize)),
+            "a member's blocks are inside its form"
         );
     }
 

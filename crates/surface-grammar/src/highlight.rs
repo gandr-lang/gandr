@@ -1103,7 +1103,7 @@ mod tests
             ("lambda_expression", "(", Some(")"), HlRole::VariableParam),
             ("fork_statement", "(", None, HlRole::VariableParam),
             ("def_value", "@[", Some(":"), HlRole::VariableParam),
-            ("def_value", "@[", Some("("), HlRole::Other),
+            ("attribute_block", "@[", Some("("), HlRole::Other),
             ("data_declaration", "[", None, HlRole::Other),
             ("import_declaration", "as", None, HlRole::VariableDef),
             ("for_expression", "for", None, HlRole::VariableDef),
