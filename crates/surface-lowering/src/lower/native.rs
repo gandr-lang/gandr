@@ -148,6 +148,7 @@ use super::Site;
 use super::Stretch;
 use super::closed;
 use super::exhausted;
+use super::exits;
 use super::lowered;
 use super::parse_literal;
 use super::recursion;
@@ -177,7 +178,7 @@ use crate::resolve::OperandCount;
 use crate::resolve::SurfaceName;
 
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;
 
 quenchant_shape::reason_enum! {
     /// Why a constructor carries no written classifier.
@@ -1157,11 +1158,13 @@ impl<'source> Lowerer<'_, 'source>
     ///   under the site's frame; the written answer is read where a result is
     ///   read, and else the answer the position states is taken; each arm body
     ///   is read as a computation under the case's frame, the tree's anonymous
-    ///   binders and its own variables, and answers what the match does.
+    ///   binders and its own variables, answers what the match does, and takes
+    ///   the paths through the match's position.
     /// - provides: the reading of `case`.
     /// - fails: the wrong-sort refusal outside computation position; the view
     ///   form `case … with` by the view's name; a written answer on a match of
-    ///   no arms, which checks at any type; a pattern the fragment does not
+    ///   no arms, which checks at any type; a written answer on a match whose
+    ///   arms continue a block as joining it; a pattern the fragment does not
     ///   read by its own name; a pattern of the wrong kind for its column as
     ///   the wrong sort; a variable bound twice in one pattern; a
     ///   non-exhaustive match; a match whose tree eliminates native data with
@@ -1179,6 +1182,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_match_without_an_answer_is_unannotated`
     /// - witness: `lower::native::tests::patterns_outside_the_fragment_are_declined_by_name`
     /// - witness: `lower::native::tests::a_match_of_no_arms_eliminates_the_empty_sum`
+    /// - witness: `lower::exits::tests::a_match_continuing_its_block_answers_what_the_block_does`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&(Plan::Case(_) | Plan::EmptyCase(_)))))]
     pub(super) fn case(
         &mut self,
@@ -1227,6 +1231,16 @@ impl<'source> Lowerer<'_, 'source>
             self.read(scrutinee.node, Reading::Value(frame));
             self.plan(site, Plan::EmptyCase(scrutinee.node));
             return Ok(());
+        }
+        if self.joined.contains(&site.at.node)
+            && let Maybe::Present(stated) = written
+        {
+            return Err(LoweringRefusal::OutOfFragment {
+                span: stated.span,
+                form: FormName::CASE,
+                sort: site.reading.sort(),
+                boundary: FragmentBoundary::JoinsBlock,
+            });
         }
         let mut patterns = Written::default();
         let mut rows = Vec::new();
@@ -1297,9 +1311,7 @@ impl<'source> Lowerer<'_, 'source>
             if let Maybe::Present(stated) = answer {
                 let _first = self.answers.insert(body.node, stated);
             }
-            if self.exits.contains(&site.at.node) {
-                let _tail = self.exits.insert(body.node);
-            }
+            self.pass_paths(site.at.node, body.node);
         }
         let index = CaseIndex(self.cases.len());
         self.cases.push(CaseForm {
@@ -2387,7 +2399,8 @@ struct Scrutinised
 /// # Specification
 /// - requires: every child of `test` is minted in `minted` or absent.
 /// - ensures: as [`Lowerer::mint_case`], for one node; nothing when a child,
-///   the arm's body or a needed motive is absent.
+///   the arm's body or a needed motive is absent. A leaf's copy of an exit or
+///   of a bind whose rest is distributed is recorded as its original is.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -2433,13 +2446,18 @@ fn mint_test(
             for outer in 0 .. scrutinised.outer.0 {
                 environment.push(variable(sink.arena, Depth(outer.saturating_add(depth.0))));
             }
-            match gandr_core_term::substitute_environment(
+            let mut carried = Vec::new();
+            match gandr_core_term::substitute_environment_traced(
                 sink.arena,
                 TermId::Computation(body),
                 &environment,
+                &mut carried,
             ) {
-                | TermId::Computation(carried) => Maybe::Present(carried),
-                | _ => Maybe::Absent(lowered::Absent::Unminted),
+                | TermId::Computation(substituted) => {
+                    exits::mark_copies(sink, &carried);
+                    Maybe::Present(substituted)
+                },
+                | TermId::Value(_) => Maybe::Absent(lowered::Absent::Unminted),
             }
         },
         | Test::Data {

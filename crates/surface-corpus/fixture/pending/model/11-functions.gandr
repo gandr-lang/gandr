@@ -4,7 +4,7 @@ def inc(x: Integer) -> -F Integer {
 
 def twice(x: Integer) -> -F Integer {
   run y <- inc(x);
-  inc(y)
+  become inc(y)
 }
 
 twice(40)

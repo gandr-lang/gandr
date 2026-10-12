@@ -33,6 +33,20 @@ def sequenced(n : Nat) -> -F Nat {
 }
 
 @[ refuses("MissingExit") ]
+def nested(n : Nat) -> -F Nat {
+  case n {
+    Zero => return n,
+    Succ(p) => {
+      run q <- case p {
+        Zero => return p,
+        Succ(r) => pure r,
+      } ;
+      pure q
+    },
+  }
+}
+
+@[ refuses("MissingExit") ]
 def thunked : +U (-F Nat) ;
 def thunked = thunk { pure Zero } ;
 

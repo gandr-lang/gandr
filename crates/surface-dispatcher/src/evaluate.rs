@@ -1926,6 +1926,9 @@ def bad : Integer ; def bad = "text" ; def small : Type ; def small = Integer ;"
             "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n\
              def rec down(n : Nat) -> -F Nat {\n  case n {\n    Zero => return n,\n    \
              Succ(p) => become down[<](p)\n  }\n}\n\
+             def rec skim(n : Nat) -> -F Nat {\n  case n {\n    Zero => return n,\n    \
+             Succ(p) => {\n      run _ <- case p { Zero => return p, Succ(r) => pure r } ;\n      \
+             become skim[<](p)\n    }\n  }\n}\n\
              def rec deep(n : Nat) -> -F Nat {\n  case n {\n    Zero => return n,\n    \
              Succ(p) => { run m <- deep[<](p) ; return m }\n  }\n}\n",
         );
@@ -1935,6 +1938,7 @@ def bad : Integer ; def bad = "text" ; def small : Type ; def small = Integer ;"
                 format_args!(
                 "def {name} : Nat ;\ndef {name} = {} ;\n\
                  def {name}_tail : +U (-F Nat) ;\ndef {name}_tail = thunk {{ become down({name}) }} ;\n\
+                 def {name}_exit : +U (-F Nat) ;\ndef {name}_exit = thunk {{ become skim({name}) }} ;\n\
                  def {name}_bound : +U (-F Nat) ;\ndef {name}_bound = thunk {{ become deep({name}) }} ;\n",
                     numeral(depth)
                 ),
@@ -1944,14 +1948,201 @@ def bad : Integer ; def bad = "text" ; def small : Type ; def small = Integer ;"
         let mut program = program(source.as_str());
         let mut peak = |name: &str| peak(&mut program, SurfaceName::from(name));
         let (short_tail, long_tail) = (peak("short_tail"), peak("long_tail"));
+        let (short_exit, long_exit) = (peak("short_exit"), peak("long_exit"));
         let (short_bound, long_bound) = (peak("short_bound"), peak("long_bound"));
         assert_eq!(
             short_tail, long_tail,
             "a `become` loop holds the same continuation however long its input"
         );
+        assert_eq!(
+            short_exit, long_exit,
+            "a `become` loop leaving through an exit under a bound match holds the same \
+             continuation however long its input"
+        );
         assert!(
             usize::from(long_bound) >= usize::from(short_bound).saturating_add(240_usize),
             "a bound recursion holds a frame per step: {short_bound:?} against {long_bound:?}"
+        );
+    }
+
+    /// The source of a function whose exits stand one and two matches deep
+    /// under a bound statement, and of its runs over three inputs.
+    const PICK: &str = "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n\
+         def pick(n : Nat) -> -F Nat {\n  run m <- case n {\n    Zero => return n,\n    \
+         Succ(p) => {\n      run q <- case p { Zero => return n, Succ(r) => pure r } ;\n      \
+         pure q\n    },\n  } ;\n  return Succ(m)\n}\n\
+         def bound(n : Nat) -> -F Nat {\n  run m <- case n -> -F Nat { Zero => pure n, Succ(p) => pure p } ;\n  \
+         return Succ(m)\n}\n\
+         def zero : +U (-F Nat) ;\ndef zero = thunk { become pick(Zero) } ;\n\
+         def one : +U (-F Nat) ;\ndef one = thunk { become pick(Succ(Zero)) } ;\n\
+         def three : +U (-F Nat) ;\ndef three = thunk { become pick(Succ(Succ(Succ(Zero)))) } ;\n";
+
+    #[test]
+    fn a_nested_return_delivers_its_value_from_its_function()
+    {
+        let mut program = program(PICK);
+        for (name, delivered) in [
+            ("zero", "ctor[0]()"),
+            ("one", "ctor[1](ctor[0]())"),
+            ("three", "ctor[1](ctor[1](ctor[0]()))"),
+        ] {
+            let evaluation = run(&mut program, SurfaceName::from(name));
+            assert_eq!(
+                evaluation.to_string(),
+                delivered,
+                "`{name}` delivers what its exit returns: {evaluation:?}"
+            );
+        }
+    }
+
+    /// What the IL reachable from the definition of `name` holds: its
+    /// commands and its consumers.
+    ///
+    /// # Specification
+    /// trivial.
+    fn reached(
+        program: &Program<'_>,
+        name: SurfaceName<'_>,
+    ) -> (
+        Vec<gandr_core_sequent::CommandNode>,
+        Vec<gandr_core_sequent::ConsumerNode>,
+    )
+    {
+        use gandr_core_sequent::CommandNode;
+        use gandr_core_sequent::ConsumerNode;
+        use gandr_core_sequent::ProducerNode;
+
+        /// One node of the walk.
+        enum Node
+        {
+            /// A producer.
+            Producer(gandr_core_sequent::ProducerId),
+            /// A consumer.
+            Consumer(gandr_core_sequent::ConsumerId),
+            /// A command.
+            Command(gandr_core_sequent::CommandId),
+        }
+        let position = program
+            .declarations
+            .iter()
+            .position(|declared| declared.name == name)
+            .expect("the program declares the name");
+        let Some(gandr_core_sequent::Definition::Transparent(root)) =
+            program.definitions.get(ConstantIndex::from(position))
+        else {
+            panic!("`{name}` focuses to a value");
+        };
+        let (mut commands, mut consumers) = (Vec::new(), Vec::new());
+        let mut pending = vec![Node::Producer(root)];
+        while let Some(next) = pending.pop() {
+            match next {
+                | Node::Producer(id) => match program.arena.producer(id) {
+                    | Some(
+                        &(ProducerNode::Thunk { body }
+                        | ProducerNode::Fixpoint { body, .. }
+                        | ProducerNode::Mu { body }),
+                    ) => pending.push(Node::Command(body)),
+                    | Some(&ProducerNode::Cocase { ref arms }) => {
+                        pending.extend(arms.iter().map(|arm| Node::Command(arm.body)));
+                    },
+                    | Some(&ProducerNode::Constructor {
+                        ref producers,
+                        consumers: ref fields,
+                        ..
+                    }) => {
+                        pending.extend(producers.iter().copied().map(Node::Producer));
+                        pending.extend(fields.iter().copied().map(Node::Consumer));
+                    },
+                    | _ => {},
+                },
+                | Node::Consumer(id) => {
+                    let Some(node) = program.arena.consumer(id)
+                    else {
+                        continue;
+                    };
+                    match *node {
+                        | ConsumerNode::MuTilde { body } => pending.push(Node::Command(body)),
+                        | ConsumerNode::Destructor {
+                            ref producers,
+                            consumers: ref fields,
+                            ..
+                        } => {
+                            pending.extend(producers.iter().copied().map(Node::Producer));
+                            pending.extend(fields.iter().copied().map(Node::Consumer));
+                        },
+                        | ConsumerNode::Case { ref arms } => {
+                            pending.extend(arms.iter().map(|arm| Node::Command(arm.body)));
+                        },
+                        | ConsumerNode::DataCase { ref branches, then } => {
+                            pending.extend(branches.iter().copied().map(Node::Producer));
+                            pending.push(Node::Consumer(then));
+                        },
+                        | _ => {},
+                    }
+                    consumers.push(node.clone());
+                },
+                | Node::Command(id) => {
+                    let Some(node) = program.arena.command(id)
+                    else {
+                        continue;
+                    };
+                    if let CommandNode::Cut {
+                        producer, consumer, ..
+                    } = *node
+                    {
+                        pending.extend([Node::Producer(producer), Node::Consumer(consumer)]);
+                    }
+                    commands.push(node.clone());
+                },
+            }
+        }
+
+        (commands, consumers)
+    }
+
+    #[test]
+    fn an_exit_under_nesting_cuts_its_value_against_the_return_continuation()
+    {
+        use gandr_core_sequent::CommandNode;
+        use gandr_core_sequent::ConsumerNode;
+        use gandr_core_sequent::ProducerNode;
+
+        let program = program(PICK);
+        let (commands, consumers) = reached(&program, SurfaceName::from("pick"));
+        assert!(
+            commands
+                .iter()
+                .all(|command| matches!(*command, CommandNode::Cut { .. })),
+            "an exit installs no delimiter, no handler and no resumption: {commands:?}"
+        );
+        assert!(
+            !consumers
+                .iter()
+                .any(|consumer| matches!(*consumer, ConsumerNode::MuTilde { .. })),
+            "no frame stands between an exit and the function's return continuation: \
+             {consumers:?}"
+        );
+        let exits = commands
+            .iter()
+            .filter(|command| {
+                matches!(
+                    **command,
+                    CommandNode::Cut { producer, consumer, .. }
+                        if matches!(program.arena.producer(producer), Some(&(ProducerNode::Variable { .. } | ProducerNode::Constructor { .. })))
+                            && matches!(program.arena.consumer(consumer), Some(&ConsumerNode::Covariable(_)))
+                )
+            })
+            .count();
+        assert_eq!(
+            exits, 3_usize,
+            "each of the three exits is the cut of its value against a covariable"
+        );
+        let (_, bound) = reached(&program, SurfaceName::from("bound"));
+        assert!(
+            bound
+                .iter()
+                .any(|consumer| matches!(*consumer, ConsumerNode::MuTilde { .. })),
+            "a match bound by a statement with no exit continues through a frame: {bound:?}"
         );
     }
 }

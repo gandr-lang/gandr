@@ -318,6 +318,8 @@ pub enum RefusalName
     UnmarkedSelfReference,
     /// A path through a body that ends without `return` or `become`.
     MissingExit,
+    /// Code after a statement every path of which exits.
+    Unreachable,
     /// A work allowance ran out, the lowering's or the checker's.
     BudgetExceeded,
     /// A tree lowered under another grammar than it was molded under.
@@ -379,7 +381,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 65_usize] = [
+    pub const VOCABULARY: [Self; 66_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -420,6 +422,7 @@ impl RefusalName
         Self::NonExhaustiveMatch,
         Self::UnmarkedSelfReference,
         Self::MissingExit,
+        Self::Unreachable,
         Self::BudgetExceeded,
         Self::GrammarMismatch,
         Self::UnknownMold,
@@ -484,6 +487,7 @@ impl RefusalName
         (Self::NonExhaustiveMatch, b"NonExhaustiveMatch") |
         (Self::UnmarkedSelfReference, b"UnmarkedSelfReference") |
         (Self::MissingExit, b"MissingExit") |
+        (Self::Unreachable, b"Unreachable") |
         (Self::BudgetExceeded, b"BudgetExceeded") | (Self::GrammarMismatch,
         b"GrammarMismatch") | (Self::UnknownMold, b"UnknownMold") | (Self::TypeMismatch,
         b"TypeMismatch") | (Self::ShapeMismatch, b"ShapeMismatch") |
@@ -570,6 +574,7 @@ impl RefusalName
             | Self::NonExhaustiveMatch => "NonExhaustiveMatch",
             | Self::UnmarkedSelfReference => "UnmarkedSelfReference",
             | Self::MissingExit => "MissingExit",
+            | Self::Unreachable => "Unreachable",
             | Self::BudgetExceeded => "BudgetExceeded",
             | Self::GrammarMismatch => "GrammarMismatch",
             | Self::UnknownMold => "UnknownMold",
@@ -752,6 +757,8 @@ impl Refusal<'_>
         RefusalName::UnmarkedSelfReference) |
         (Self::Lowering(LoweringRefusal::MissingExit { .. }),
         RefusalName::MissingExit) |
+        (Self::Lowering(LoweringRefusal::Unreachable { .. }),
+        RefusalName::Unreachable) |
         (Self::Lowering(LoweringRefusal::BudgetExceeded { .. }) |
         Self::Checking(CheckRefusal::BudgetExceeded { .. }), RefusalName::BudgetExceeded)
         | (Self::Lowering(LoweringRefusal::GrammarMismatch { .. }),
@@ -896,7 +903,8 @@ impl Refusal<'_>
         RefusalName::LowercaseModuleName) | (LoweringRefusal::NonExhaustiveMatch { .. },
         RefusalName::NonExhaustiveMatch) | (LoweringRefusal::UnmarkedSelfReference { .. },
         RefusalName::UnmarkedSelfReference) | (LoweringRefusal::MissingExit { .. },
-        RefusalName::MissingExit) | (LoweringRefusal::BudgetExceeded { .. },
+        RefusalName::MissingExit) | (LoweringRefusal::Unreachable { .. },
+        RefusalName::Unreachable) | (LoweringRefusal::BudgetExceeded { .. },
         RefusalName::BudgetExceeded) | (LoweringRefusal::GrammarMismatch { .. },
         RefusalName::GrammarMismatch) | (LoweringRefusal::UnknownMold { .. },
         RefusalName::UnknownMold)
@@ -929,6 +937,7 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | LoweringRefusal::NonExhaustiveMatch { .. } => RefusalName::NonExhaustiveMatch,
         | LoweringRefusal::UnmarkedSelfReference { .. } => RefusalName::UnmarkedSelfReference,
         | LoweringRefusal::MissingExit { .. } => RefusalName::MissingExit,
+        | LoweringRefusal::Unreachable { .. } => RefusalName::Unreachable,
         | LoweringRefusal::BudgetExceeded { .. } => RefusalName::BudgetExceeded,
         | LoweringRefusal::GrammarMismatch { .. } => RefusalName::GrammarMismatch,
         | LoweringRefusal::UnknownMold { .. } => RefusalName::UnknownMold,

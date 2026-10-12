@@ -5,7 +5,7 @@ def consume(p: package [ T ] +U[ω] (-F #{ read: +U[ω] (T -> -F Integer), seed:
   run r <- force m;
   run f <- r.read;
   run s <- r.seed;
-  f(s)
+  become f(s)
 }
 
 def int_counter : package [ T ] +U[ω] (-F #{ read: +U[ω] (T -> -F Integer), seed: T });

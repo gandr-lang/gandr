@@ -65,7 +65,7 @@ const MAYBE: &str =
     | [ref left, ref right] => left.constant() < right.constant(),
     | _ => false,
 }))]
-fn lowered<'source>(
+pub(in crate::lower) fn lowered<'source>(
     source: SourceText<'source>,
     arena: &mut CoreArena,
 ) -> LoweredModule<'source>
@@ -97,7 +97,7 @@ fn lowered<'source>(
 ///   which only a well-scoped tree with a well-formed motive is.
 /// - witness: `lower::native::tests::nested_constructor_patterns_compile_to_nested_cases`
 #[spec(ensures: |ret| ret.judged().len() == module.declarations().iter().filter(|declaration| !matches!(declaration.outcome(), DeclarationOutcome::Refused(_))).count())]
-fn judged(
+pub(in crate::lower) fn judged(
     module: &LoweredModule<'_>,
     arena: &mut CoreArena,
 ) -> ModuleReport
@@ -151,7 +151,7 @@ fn judged(
 ///
 /// # Specification
 /// trivial.
-fn assert_accepted(report: &ModuleReport)
+pub(in crate::lower) fn assert_accepted(report: &ModuleReport)
 {
     let accepted = report.judged().iter().all(|judged| {
         matches!(
@@ -174,7 +174,7 @@ fn assert_accepted(report: &ModuleReport)
 /// - hypothesis: L3 — the refusal witnesses read exact refusals here.
 /// - witness: `lower::native::tests::a_non_exhaustive_match_is_refused`
 #[spec(ensures: |ret| module.declarations().iter().any(|declaration| declaration.outcome() == DeclarationOutcome::Refused(ret)))]
-fn refusal_of<'source>(
+pub(in crate::lower) fn refusal_of<'source>(
     module: &LoweredModule<'source>,
     name: SurfaceName<'_>,
 ) -> LoweringRefusal<'source>
@@ -234,7 +234,7 @@ fn outcome_of<'source>(
 /// - hypothesis: L3 — as [`refusal_of`].
 /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
 #[spec(ensures: |ret| matches!(outcome_of(module, name), DeclarationOutcome::Completed { body, .. } | DeclarationOutcome::Bodied { body } if body == ret))]
-fn body_named(
+pub(in crate::lower) fn body_named(
     module: &LoweredModule<'_>,
     name: SurfaceName<'_>,
 ) -> ValueId
@@ -257,7 +257,7 @@ fn body_named(
 /// - hypothesis: L3 — the match witnesses read their tree from here.
 /// - witness: `lower::native::tests::nested_constructor_patterns_compile_to_nested_cases`
 #[spec(ensures: |ret| !matches!(arena.computation(ret), Some(&Computation::Lambda(_))))]
-fn tail_of(
+pub(in crate::lower) fn tail_of(
     arena: &CoreArena,
     body: ValueId,
 ) -> ComputationId

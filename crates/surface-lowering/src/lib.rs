@@ -74,6 +74,35 @@
 //! up, each as a plain loop: no descent, no explicit frame stack, and no depth
 //! a real module can overflow.
 //!
+//! # Early exits leave by a direct cut
+//!
+//! `return v` and `become c` leave the nearest function, lambda or thunk from
+//! wherever a path through its body passes: a nested match, the computation
+//! of a `run`, a block inside an arm. The lowering puts every exit where its
+//! body ends. A statement `x ← M; N` whose `M` holds an exit commutes: the
+//! rest `N` moves into every local end of `M`, the commuting conversion of
+//! call-by-push-value (Levy, *Call-By-Push-Value: A Functional/Imperative
+//! Synthesis*, 2003), and a local end `return w` continues by the beta step
+//! `N[w/x]`. Each exit then stands in tail position, and focusing makes it
+//! the cut `⟨v | k⟩` of its value against the body's own return
+//! continuation `k` — the one `μ` the body binds (Downen and Ariola, *A
+//! tutorial on computational classical logic and the sequent calculus*,
+//! 2018). No handler frame is installed, no resumption is captured, and no
+//! core or kernel former is new: the checker and the kernel read the
+//! commuted body as any other, and a `become` loop leaving early still runs
+//! in constant continuation. The rest is copied once per binder depth it
+//! reaches, the price of having no join point.
+//!
+//! The alternatives were two. An effect per function, its exits performed
+//! and its call handled, was declined because the handler frame breaks the
+//! constant continuation of `become`, every exit captures a stack, and the
+//! kernel admits no handler. A core control binder with a jump to it was
+//! declined because every consumer of the core and the bridge to the kernel
+//! would learn a new former, and the kernel would still need the commuted
+//! form. Reversal: when the lowering fragment reaches handlers, or the core
+//! and the kernel gain join points, an exit lowers to a jump and the rest is
+//! no longer copied.
+//!
 //! # Example
 //!
 //! ```
@@ -108,8 +137,8 @@
 //! # Ok::<(), Box<dyn core::error::Error>>(())
 //! ```
 //!
-//! Each decision, with the alternative it was chosen over and what would
-//! reverse it, is in this crate's `README.md`.
+//! Each of the seven decisions, with the alternative it was chosen over and
+//! what would reverse it, is in this crate's `README.md`.
 
 #![no_std]
 
