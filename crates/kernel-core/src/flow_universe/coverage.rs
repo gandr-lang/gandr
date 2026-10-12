@@ -149,8 +149,10 @@ enum Cover
 /// As `fails`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — repeated Base positions and both sum branches matter.
+/// - hypothesis: L3 — repeated Base positions and both sum branches matter; a
+///   product of three keeps its leaf order with distinct variables.
 /// - witness: `flow_universe::tests::one_way_classes_preserve_leaves`
+/// - witness: `flow_universe::coverage::tests::n_ary_products_cover_with_ordered_leaves`
 /// - witness: `flow_universe::tests::constant_leaf_and_forged_evidence_refuse`
 #[spec(
     captures: before = allowance.0,
@@ -381,4 +383,58 @@ pub(super) fn forward(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::vec;
+    use alloc::vec::Vec;
+
+    use gandr_kernel_term::BaseType;
+    use gandr_kernel_term::TermArena;
+    use gandr_kernel_term::Value;
+
+    use super::Allowance;
+    use super::FlowError;
+    use super::patterns;
+
+    /// A product of three base types covers in one pattern whose leaves keep
+    /// their component order and whose variables stay distinct, first
+    /// component outermost; the empty sum is outside the vocabulary.
+    #[test]
+    fn n_ary_products_cover_with_ordered_leaves()
+    {
+        let mut arena = TermArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let text = arena.value_type_base(BaseType::String);
+        let triple = arena.value_type_product(&[integer, text, integer]);
+        let covered =
+            patterns(&mut arena, triple, &mut Allowance(u64::MAX)).expect("a product covers");
+        let [ref only] = *covered.as_slice()
+        else {
+            panic!("one pattern for a product of base types");
+        };
+        assert_eq!(
+            vec![BaseType::Integer, BaseType::String, BaseType::Integer],
+            only.leaves
+        );
+        let indices = arena
+            .value(only.value)
+            .and_then(Value::components)
+            .expect("a tuple")
+            .iter()
+            .map(|&component| match arena.value(component) {
+                | Some(&Value::Variable(index)) => u32::from(index),
+                | _ => panic!("a base position is a variable"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(vec![2_u32, 1_u32, 0_u32], indices);
+
+        let empty = arena.value_type_empty();
+        assert!(matches!(
+            patterns(&mut arena, empty, &mut Allowance(u64::MAX)),
+            Err(FlowError::UnsupportedType(found)) if found == empty
+        ));
+    }
 }

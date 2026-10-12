@@ -198,10 +198,7 @@ pub fn encode(
             | Node::Var(binder) => CodeNode::Var(State(binder.0)),
         });
     }
-    let mut telescope = arena.value_type_unit();
-    for &code in payloads.0.values().rev() {
-        telescope = arena.value_type_product(code, telescope);
-    }
+    let telescope = arena.value_type_product(&payloads.0.values().copied().collect::<Vec<_>>());
     let graph = Arc::new(Graph {
         nodes,
         root: State(session.root().0),
