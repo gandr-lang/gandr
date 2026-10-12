@@ -21,6 +21,7 @@ The checked precedence-bounded grammar of the gandr surface: rules over a preced
 - [Built-in surface](#built-in-surface)
   - [Lists close on an optional separator](#lists-close-on-an-optional-separator)
   - [An attribute block is a form of its own](#an-attribute-block-is-a-form-of-its-own)
+  - [A data member's `:` after a constructor name has one reading](#a-data-members--after-a-constructor-name-has-one-reading)
 - [Frozen tables](#frozen-tables)
 - [The bridges and the universe are built-in spellings](#the-bridges-and-the-universe-are-built-in-spellings)
 - [Type operators: the static abstraction and the value function space](#type-operators-the-static-abstraction-and-the-value-function-space)
@@ -188,7 +189,7 @@ Each rule's tiles form a graph under adjacency. Every tile in one strongly conne
 
 ## Built-in surface
 
-`built_in` is the gandr surface: 21 precedence groups and 19 tighter-than edges, then the term forms, the type-and-shell forms and the circuit forms. The groups form one expression chain, one pattern chain and one type chain whose union, intersection and lazy-product bands are mutually incomparable between the sum and arrow bands; the item group stands apart from all three. Its pinned shape is 2489 molds, 78 labels projected to more than one mold, and the fingerprint `0x5984_1cfd_3dbe_9111`; a change to any form, group or edge moves the fingerprint, and the test pinning it states the change.
+`built_in` is the gandr surface: 21 precedence groups and 19 tighter-than edges, then the term forms, the type-and-shell forms and the circuit forms. The groups form one expression chain, one pattern chain and one type chain whose union, intersection and lazy-product bands are mutually incomparable between the sum and arrow bands; the item group stands apart from all three. Its pinned shape is 2489 molds, 78 labels projected to more than one mold, and the fingerprint `0x3930_dc67_fa9f_b403`; a change to any form, group or edge moves the fingerprint, and the test pinning it states the change.
 
 ### Lists close on an optional separator
 
@@ -207,6 +208,15 @@ A module member keeps its blocks inside its form, `attributed_module_definition_
 
 - Alternatives: the definition's inline block, with the lookahead window extended past a long block's closer, which runs windows on every attributed definition and keys the definition by its attributes; a longer fixed window, which moves the bound without removing it.
 - Reversal: a consumer that must key a module member by an identity its attributes leave alone moves the member's blocks into a module-member form of their own, as at the top level.
+
+### A data member's `:` after a constructor name has one reading
+
+A `data` member led by a constructor name has two tails: the generator judgment `Ctor : Side (--> Result)?`, the one constructor form, and the declined Haskell-style `Ctor(fields) (: Result)?`, kept admissible so the elaborator's decline names the respelling. The declined tail annotates a result only after its field tuple. Before, its fields were optional on their own, so a fieldless `None : Maybe(a)` read its `:` two ways with the same tiles, and the parser's lookahead window chose between them, inconsistently: the generator for `None : Outer`, the declined tail for `Nil : List(a)`. The two lowerings read the member's tiles alike, so no lowered module changed; eleven corpus `:` tiles now carry the generator's mold, and a corpus parse takes 18% less time (13.22 ms to 10.90 ms, best of 200), with 107 fewer windowed ties.
+
+- Alternatives: a parser rule keeping the generator reading of the tie, which leaves the grammar ambiguous for every other consumer of the mold table; dropping the declined tail's result annotation altogether, which loses the respelling hint for `Ctor(x : A) : T`.
+- Reversal: a stale spelling `Ctor : T` that must be told apart from the generator, which needs a distinct lead rather than a second reading of the same tiles.
+
+The change moved the fingerprint from `0x5984_1cfd_3dbe_9111`.
 
 ## Frozen tables
 

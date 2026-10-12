@@ -221,7 +221,7 @@ fn declarations(
     data.adaptations.push(Adaptation::new(
         RuleName("data_declaration"),
         SurfaceForm("constructor_block_member"),
-        AdaptationReason("parse-and-decline: the Haskell-style constructor member `Ctor(fields?) (: Result)?` stays admissible as the constructor-led member's second tail so a stale declaration reaches the elaborator's decline with the respelling hint instead of a parse repair; the tail discriminates on `(` vs `:` immediately after the constructor name"),
+        AdaptationReason("parse-and-decline: the Haskell-style constructor member `Ctor(fields) (: Result)?`, or a bare `Ctor`, stays admissible as the constructor-led member's second tail so a stale declaration reaches the elaborator's decline with the respelling hint instead of a parse repair; the tail discriminates on `(` vs `:` immediately after the constructor name, and its result annotation follows the field tuple only, since a fieldless `Ctor : Result` is the generator"),
     ));
     data.adaptations.push(Adaptation::new(
         RuleName("data_declaration"),
@@ -653,7 +653,8 @@ fn head_params() -> Regex
 /// The constructor-led tails share the `constructor` tile and discriminate one
 /// tile later: `:` leads the generator judgment, anything else the declined
 /// field-tuple tail — so the choice is locally decidable exactly as the `def`
-/// family's factored tails are.
+/// family's factored tails are. The declined tail annotates a result only after
+/// its field tuple, so no fieldless member reads its `:` a second way.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -663,10 +664,12 @@ fn head_params() -> Regex
 ///
 /// # Adequacy
 /// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
-///   role observations catch changed discriminators, delimiters and hole sorts.
-///   The predicate observes the stated shape; source programs outside the
-///   finite corpus are not exhausted.
+///   role observations catch changed discriminators, delimiters and hole sorts,
+///   and a second `:` successor of the constructor name is refused. The
+///   predicate observes the stated shape; source programs outside the finite
+///   corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::walk::a_data_member_colon_after_a_constructor_name_reads_one_way`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
 #[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "constructor")) && sequence.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_))))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 4)) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 4 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "rule")) && sequence.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)) && sequence.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression))))))]
 fn data_member() -> Regex
@@ -678,15 +681,19 @@ fn data_member() -> Regex
                 // generator judgment `Ctor : Side (--> Result)? [attrs]?` —
                 // THE one constructor-declaration form.
                 seq([t(TileLabel(":")), generator_signature(), opt(attr_slot())]),
-                // declined `Ctor(fields?) (: Result)? [attrs]?`, kept admissible
-                // so the elaborator's decline names the respelling.
+                // declined `Ctor(fields) (: Result)? [attrs]?` and bare `Ctor`,
+                // kept admissible so the elaborator's decline names the
+                // respelling. The result annotation follows the field tuple
+                // only: `Ctor : Result` is the generator without a telescope,
+                // and a fieldless declined tail led by `:` would read the same
+                // tiles a second way.
                 seq([
                     opt(seq([
                         t(TileLabel("(")),
                         comma1(ctor_field()),
                         t(TileLabel(")")),
+                        opt(seq([t(TileLabel(":")), h(Sort::Type)])),
                     ])),
-                    opt(seq([t(TileLabel(":")), h(Sort::Type)])),
                     opt(attr_slot()),
                 ]),
             ]),

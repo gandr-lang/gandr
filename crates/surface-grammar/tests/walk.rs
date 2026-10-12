@@ -42,7 +42,7 @@ use gandr_theory_graphs::WalkChainLength;
 /// The built-in surface's fingerprint: the precedence DAG folded with every
 /// mold and context. Any change to a form, a tile occurrence or a precedence
 /// group moves it; a deliberate change re-pins it and says why.
-const BUILT_IN_FINGERPRINT: u64 = 0x5984_1cfd_3dbe_9111;
+const BUILT_IN_FINGERPRINT: u64 = 0x3930_dc67_fa9f_b403;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
@@ -422,6 +422,41 @@ fn pbg_fingerprint_is_stable_and_folds_precdag() -> Result<(), Box<dyn Error>>
         named.fingerprint(),
         renamed.fingerprint(),
         "the same rules over a renamed group fingerprint differently"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_data_member_colon_after_a_constructor_name_reads_one_way() -> Result<(), Box<dyn Error>>
+{
+    // `None : Maybe(a)` is a generator without a telescope; the declined
+    // Haskell-style tail annotates a result only after its field tuple, so no
+    // second `:` reading follows the constructor name.
+    let pbg = built_in()?;
+    let mut members = 0_usize;
+    for (id, def) in pbg.iter_molds() {
+        if def.label != "constructor"
+            || !pbg
+                .rule_of(id)
+                .is_ok_and(|rule| rule.name() == RuleName("data_declaration"))
+        {
+            continue;
+        }
+        let colons: Vec<MoldId> = pbg
+            .mold_successors(id)
+            .iter()
+            .filter(|&&(_, right)| pbg.mold(right).is_ok_and(|next| next.label == ":"))
+            .map(|&(_, right)| right)
+            .collect();
+        assert!(
+            colons.len() == 1,
+            "constructor mold {id:?} has the `:` successors {colons:?}"
+        );
+        members = members.saturating_add(1);
+    }
+    assert!(
+        members > 0,
+        "the data declaration names its members' constructors"
     );
     Ok(())
 }
