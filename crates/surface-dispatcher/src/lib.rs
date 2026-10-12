@@ -15,7 +15,9 @@
 //! visitor with [`Walk::visit`]. The `run` verb routes to a [`Script`], which
 //! reads its one source when the driver runs it. The `stage` verb routes to a
 //! [`Staging`], which reads nothing: it builds its programs when the driver
-//! runs it.
+//! runs it. The `fmt` verb routes to a [`Formatting`], which reaches its paths
+//! as a walk does, and reads, lays out and rewrites each source as the driver
+//! advances it with [`Formatting::step`].
 //!
 //! # Sources fork; judgement keeps walk order
 //!
@@ -78,6 +80,7 @@ extern crate alloc;
 mod compose;
 mod evaluate;
 mod exercised;
+mod format;
 mod report;
 mod root;
 mod script;
@@ -114,6 +117,10 @@ pub use crate::evaluate::declaration_name;
 pub use crate::evaluate::run_target;
 pub use crate::exercised::Exercised;
 pub use crate::exercised::Row;
+pub use crate::format::FormatFault;
+pub use crate::format::FormatStep;
+pub use crate::format::Formatting;
+pub use crate::format::Rewrite;
 pub use crate::report::Goals;
 pub use crate::report::RunReport;
 pub use crate::report::RunVerdict;
@@ -188,6 +195,18 @@ pub enum Invocation
         /// The threads each program's stages fork onto.
         width: Width,
     },
+    /// `fmt`: lay out the sources under `paths` at a page width.
+    Format
+    {
+        /// The sources and directories of sources to lay out, in order.
+        paths: Vec<PathBuf>,
+        /// The page each source is laid out at.
+        options: gandr_surface_format::FormatOptions,
+        /// What a source whose layout changes becomes.
+        rewrite: Rewrite,
+        /// The threads the sources are laid out on.
+        width: Width,
+    },
 }
 
 /// What an invocation routed to, for the driver to render.
@@ -215,6 +234,8 @@ pub enum Outcome
     Script(Script),
     /// Staging observer programs to check, not yet built.
     Stage(Staging),
+    /// Sources to lay out, not yet read.
+    Format(Formatting),
 }
 
 /// The toolchain-management status, rendered by the driver.
@@ -262,25 +283,27 @@ impl core::fmt::Display for StatusReport
 ///   [`Verb::Check`] with the same goals setting, and `test` to a walk run
 ///   under [`Verb::Test`], each walk over the invocation's paths in order at
 ///   the invocation's width; `run` to a [`Script`] of its path; `stage` to a
-///   [`Staging`] of its programs, in order, at its width. Routing performs no
-///   I/O of its own: a walk or a script reads nothing until it is advanced, a
-///   staging builds nothing until it runs, and building the grammar a walk
-///   parses with is computation. The optional `tracing` feature reports a span
-///   to the caller's subscriber.
+///   [`Staging`] of its programs, in order, at its width; `fmt` to a
+///   [`Formatting`] of its paths, in order, at its page and rewrite. Routing
+///   performs no I/O of its own: a walk, a script or a formatting reads nothing
+///   until it is advanced, a staging builds nothing until it runs, and building
+///   the grammar a walk parses with is computation. The optional `tracing`
+///   feature reports a span to the caller's subscriber.
 /// - provides: the outcome the driver renders.
 /// - fails: never; routing is total over the invocation vocabulary.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — all five invocation variants and both goals policies have
+/// - hypothesis: L3 — all six invocation variants and both goals policies have
 ///   exact outcomes. Missing-path fixtures observe the first routed path and
-///   the script path; they do not enumerate arbitrary path lists or prove the
-///   complete walk order, which has its own witnesses.
+///   the script and formatting paths; they do not enumerate arbitrary path
+///   lists or prove the complete walk order, which has its own witnesses.
 /// - witness: `tests::status_routes_to_the_status_report`
 /// - witness: `tests::check_routes_to_a_walk_under_the_check_verb`
 /// - witness: `tests::the_test_verb_routes_to_a_walk`
 /// - witness: `tests::the_run_verb_routes_to_a_script`
 /// - witness: `tests::the_stage_verb_routes_to_a_staging`
+/// - witness: `tests::the_format_verb_routes_to_a_formatting`
 #[cfg_attr(feature = "tracing", tracing::instrument(skip_all))]
 #[inline]
 #[must_use]
@@ -290,21 +313,29 @@ impl core::fmt::Display for StatusReport
         verb = match &invocation {
             &Invocation::Check { goals, width, .. } => Some((Verb::Check(goals), width)),
             &Invocation::Test { width, .. } => Some((Verb::Test, width)),
-            &Invocation::Status | &Invocation::Run { .. } | &Invocation::Stage { .. } => None,
+            &Invocation::Status | &Invocation::Run { .. } | &Invocation::Stage { .. }
+                | &Invocation::Format { .. } => None,
         },
         staged = match &invocation {
             &Invocation::Stage { ref programs, width } => Some((programs.clone(), width)),
             &Invocation::Status | &Invocation::Check { .. } | &Invocation::Test { .. }
-                | &Invocation::Run { .. } => None,
+                | &Invocation::Run { .. } | &Invocation::Format { .. } => None,
+        },
+        formatted = match &invocation {
+            &Invocation::Format { options, rewrite, width, .. } => Some((options, rewrite, width)),
+            &Invocation::Status | &Invocation::Check { .. } | &Invocation::Test { .. }
+                | &Invocation::Run { .. } | &Invocation::Stage { .. } => None,
         },
     ],
     ensures: |ref ret| match *ret {
         Outcome::Status(_) => status,
         Outcome::Run { verb: routed, width, .. } => Some((routed, width)) == verb,
-        Outcome::Script(_) => !status && verb.is_none() && staged.is_none(),
+        Outcome::Script(_) => !status && verb.is_none() && staged.is_none() && formatted.is_none(),
         Outcome::Stage(ref staging) =>
             staged.as_ref().is_some_and(|&(ref programs, width)|
                 staging.programs() == programs.as_slice() && staging.width() == width),
+        Outcome::Format(ref formatting) =>
+            formatted == Some((formatting.options(), formatting.rewrite(), formatting.width())),
     },
 )]
 pub fn dispatch(invocation: Invocation) -> Outcome
@@ -327,6 +358,12 @@ pub fn dispatch(invocation: Invocation) -> Outcome
         },
         | Invocation::Run { path } => Outcome::Script(Script::new(path)),
         | Invocation::Stage { programs, width } => Outcome::Stage(Staging::new(programs, width)),
+        | Invocation::Format {
+            paths,
+            options,
+            rewrite,
+            width,
+        } => Outcome::Format(Formatting::new(paths, options, rewrite, width)),
     }
 }
 
@@ -485,5 +522,40 @@ mod tests
         };
         assert_eq!(staging.programs(), programs.as_slice());
         assert_eq!(staging.width(), Width::PerformanceCores);
+    }
+
+    /// `fmt` routes to a formatting of its paths, in order, at its page and
+    /// rewrite.
+    #[test]
+    fn the_format_verb_routes_to_a_formatting()
+    {
+        let options = gandr_surface_format::FormatOptions {
+            page: gandr_surface_format::PageWidth::from(40_u32),
+        };
+        let outcome = dispatch(Invocation::Format {
+            paths: vec![
+                PathBuf::from("no/such/first.gandr"),
+                PathBuf::from("no/such/second.gandr"),
+            ],
+            options,
+            rewrite: super::Rewrite::Check,
+            width: Width::PerformanceCores,
+        });
+        let Outcome::Format(mut formatting) = outcome
+        else {
+            panic!("fmt routes to a formatting");
+        };
+        assert_eq!(formatting.options(), options);
+        assert_eq!(formatting.rewrite(), super::Rewrite::Check);
+        assert_eq!(formatting.width(), Width::PerformanceCores);
+        let Maybe::Present(super::FormatStep::Fault { path, .. }) = formatting.step()
+        else {
+            panic!("an absent path faults");
+        };
+        assert_eq!(
+            path,
+            PathBuf::from("no/such/first.gandr"),
+            "the formatting starts at the first path given"
+        );
     }
 }

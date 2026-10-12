@@ -26,6 +26,7 @@ gandr-core-sequent.workspace = true
 gandr-core-term.workspace = true
 gandr-kernel-term.workspace = true
 gandr-surface-corpus.workspace = true
+gandr-surface-format.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-lowering.workspace = true
 gandr-surface-parser.workspace = true

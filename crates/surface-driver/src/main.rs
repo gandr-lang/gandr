@@ -8,19 +8,22 @@
 //! # Exit codes
 //!
 //! - `0`: every declaration settled, or a script's run returned a value, or
-//!   every staged certificate was readmitted; also `--help`, `--version`, a
-//!   bare invocation, `lsp --capabilities`, a language-server session ended by
-//!   `exit` after `shutdown`, a read-evaluate loop that reached the end of its
-//!   input or `:quit`, a terminal face the user left, and `tui --smoke`.
+//!   every staged certificate was readmitted, or every source was laid out;
+//!   also `--help`, `--version`, a bare invocation, `lsp --capabilities`, a
+//!   language-server session ended by `exit` after `shutdown`, a read-evaluate
+//!   loop that reached the end of its input or `:quit`, a terminal face the
+//!   user left, and `tui --smoke`.
 //! - `1`: at least one declaration is unsettled, or a source was not read as
 //!   its root expects; a script's run was blamed on a goal or stopped short of
-//!   a value; the kernel refused a staged certificate; also a language-server
-//!   session ended before `shutdown`.
+//!   a value; the kernel refused a staged certificate; `fmt --check` found a
+//!   source out of layout; also a language-server session ended before
+//!   `shutdown`.
 //! - `2`: an engine fault, an unreadable source or a path naming none, a
 //!   malformed invocation, output the driver could not write, a language-server
 //!   stream that failed, a read-evaluate loop or a terminal face stopped by a
 //!   fault, a terminal face asked for without a terminal, a script that never
-//!   reached the machine, or a staged program that could not be checked.
+//!   reached the machine, a staged program that could not be checked, or a
+//!   source the formatter refused or could not write back.
 
 use core::num::NonZeroUsize;
 use core::ops::ControlFlow;
@@ -35,11 +38,14 @@ use gandr_surface_diagnostics::RenderStyle;
 use gandr_surface_diagnostics::TerminalCapability;
 use gandr_surface_diagnostics::entries;
 use gandr_surface_dispatcher::Evaluation;
+use gandr_surface_dispatcher::FormatStep;
+use gandr_surface_dispatcher::Formatting;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::Invocation;
 use gandr_surface_dispatcher::Outcome;
 use gandr_surface_dispatcher::ProgramSpec;
 use gandr_surface_dispatcher::Ran;
+use gandr_surface_dispatcher::Rewrite;
 use gandr_surface_dispatcher::RunStatus;
 use gandr_surface_dispatcher::RunVerdict;
 use gandr_surface_dispatcher::Script;
@@ -51,6 +57,8 @@ use gandr_surface_dispatcher::Threads;
 use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
+use gandr_surface_format::FormatOptions;
+use gandr_surface_format::PageWidth;
 use gandr_surface_lsp::Capabilities;
 use gandr_surface_lsp::Served;
 use gandr_surface_repl::Ended;
@@ -83,6 +91,9 @@ const UNREACHED: u8 = 2;
 
 /// The exit code of a staged run whose certificate the kernel refused.
 const REFUSED: u8 = 1;
+
+/// The exit code of `fmt --check` over a source out of layout.
+const UNFORMATTED: u8 = 1;
 
 /// gandr language toolchain driver.
 #[derive(Debug, clap::Parser)]
@@ -189,9 +200,31 @@ enum Command
         #[arg(required = true, value_name = "PROGRAM")]
         programs: Vec<ProgramSpec>,
     },
+    /// Lay out the sources under each path at a page width, writing each
+    /// source whose layout changes back over it.
+    ///
+    /// Prints the path of each source whose layout changed. Exits 0 when every
+    /// source was laid out, and 2 when a path cannot be read or written, names
+    /// no source, or holds a source the formatter refuses.
+    Fmt
+    {
+        /// Write nothing; print the path of each source out of layout, and
+        /// exit 1 when there is one.
+        #[arg(long)]
+        check: bool,
+        /// The page width, in columns. Defaults to 100.
+        #[arg(long, value_name = "COLUMNS")]
+        width: Option<u32>,
+        /// The threads the sources are laid out on.
+        #[command(flatten)]
+        jobs: Jobs,
+        /// Source files, and directories searched for `.gandr` sources.
+        #[arg(required = true)]
+        paths: Vec<PathBuf>,
+    },
 }
 
-/// The threads `check`, `test` and `stage` work on.
+/// The threads `check`, `test`, `stage` and `fmt` work on.
 #[derive(Debug, clap::Args)]
 #[repr(transparent)]
 struct Jobs
@@ -250,10 +283,11 @@ enum Screen
 ///   message and exits `2`. A bare invocation prints one status line and exits
 ///   `0`. `check` and `test` walk their paths, print what [`render`] prints,
 ///   and exit `0`, `1` or `2` as the run settled, was unsettled or faulted;
-///   `run` runs its script as [`script`] states. `lsp` serves and `lsp
-///   --capabilities` prints as [`lsp`] and [`capabilities`] state, `repl` runs
-///   as [`repl`] states, and `tui` as [`tui`] states. Output the driver cannot
-///   write is noted on standard error, when that is writable, and exits `2`.
+///   `run` runs its script as [`script`] states, and `fmt` lays out its paths
+///   as [`fmt`] states. `lsp` serves and `lsp --capabilities` prints as [`lsp`]
+///   and [`capabilities`] state, `repl` runs as [`repl`] states, and `tui` as
+///   [`tui`] states. Output the driver cannot write is noted on standard error,
+///   when that is writable, and exits `2`.
 /// - provides: the exit code as the run's verdict. With `tracing`, a
 ///   thread-local subscriber reports dispatch spans to standard error after
 ///   argument parsing.
@@ -281,6 +315,7 @@ enum Screen
 /// - witness: `cli::cli::a_script_that_returns_a_value_leaves_successfully`
 /// - witness: `cli::cli::a_script_that_blames_leaves_with_a_failure_status`
 /// - witness: `cli::cli::an_ill_typed_script_is_refused_by_the_checker`
+/// - witness: `cli::cli::fmt_rewrites_what_check_reports`
 #[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(UNSETTLED) || ret == ExitCode::from(FAULTED))]
 fn main() -> ExitCode
 {
@@ -311,6 +346,24 @@ fn main() -> ExitCode
         | Some(Command::Run { path }) => Invocation::Run { path },
         | Some(Command::Stage { jobs, programs }) => Invocation::Stage {
             programs,
+            width: Width::from(jobs),
+        },
+        | Some(Command::Fmt {
+            check,
+            width,
+            jobs,
+            paths,
+        }) => Invocation::Format {
+            paths,
+            options: width.map_or_else(FormatOptions::default, |columns| FormatOptions {
+                page: PageWidth::from(columns),
+            }),
+            rewrite: if check {
+                Rewrite::Check
+            }
+            else {
+                Rewrite::InPlace
+            },
             width: Width::from(jobs),
         },
         | Some(Command::Lsp {
@@ -571,7 +624,7 @@ fn usage(error: &clap::Error) -> ExitCode
 ///   report and its verdict close standard output, and the exit code is the
 ///   verdict's. A script follows [`script`]: its value goes to standard output,
 ///   its diagnostics to standard error and its run status chooses the exit. A
-///   staging follows [`stage`].
+///   staging follows [`stage`], and a formatting [`fmt`].
 /// - provides: the one renderer every verb that reports through the dispatcher
 ///   shares.
 /// - fails: the first write error on either stream.
@@ -592,6 +645,7 @@ fn usage(error: &clap::Error) -> ExitCode
 /// - witness: `cli::cli::an_unreadable_path_exits_two`
 /// - witness: `cli::cli::a_failed_diagnostic_stream_stops_later_output`
 /// - witness: `cli::cli::every_width_stages_the_serial_run`
+/// - witness: `cli::cli::fmt_rewrites_what_check_reports`
 #[spec(captures: [status = matches!(outcome, Outcome::Status(_))],
     ensures: |ref ret| ret.as_ref().map_or(true, |exit|
         (*exit == ExitCode::SUCCESS || *exit == ExitCode::from(UNSETTLED) || *exit == ExitCode::from(FAULTED))
@@ -610,7 +664,78 @@ fn render(
         | Outcome::Run { verb, walk, width } => run(verb, walk, width, stdout, stderr),
         | Outcome::Script(mut runnable) => script(&mut runnable, stdout, stderr),
         | Outcome::Stage(staging) => stage(staging, stdout, stderr),
+        | Outcome::Format(formatting) => fmt(formatting, stdout, stderr),
     }
+}
+
+/// Lay out `formatting`'s sources, printing the path of each whose layout
+/// changed, and choose the exit code.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each source whose layout changed is its path, as one line on
+///   standard output, in walk order: written back under `fmt`, untouched under
+///   `fmt --check`. A source already in layout prints nothing. Each path that
+///   cannot be read or written back, names no source, or holds a source the
+///   formatter refuses is `gandr: <path>: <fault>` on standard error, and the
+///   formatting continues past it. The exit is two when any path faulted;
+///   otherwise one under `fmt --check` when any source is out of layout, and
+///   zero. Every byte written, every source rewritten and the exit are the same
+///   at every width.
+/// - provides: `gandr fmt` and `gandr fmt --check`.
+/// - fails: the first write error on either stream, printing nothing after it;
+///   at one thread no source after it is laid out, and at a wider one every
+///   source already has been.
+/// - panics: none.
+///
+/// # Errors
+/// The [`std::io::Error`] of the first write that failed.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a source out of layout, one in layout and a missing path
+///   under `fmt --check`, then `fmt`, then `fmt --check` again, observe each
+///   stream, each exit, and the source's bytes after each run. Fault precedence
+///   over a change, the check writing nothing and a second check passing are
+///   each distinguished. Formatter refusals and unwritable sources are outside
+///   these fixtures.
+/// - witness: `cli::cli::fmt_rewrites_what_check_reports`
+#[spec(captures: [checking = formatting.rewrite() == Rewrite::Check],
+    ensures: |ref ret| ret.as_ref().map_or(true, |exit|
+        *exit == ExitCode::SUCCESS || *exit == ExitCode::from(FAULTED)
+            || (checking && *exit == ExitCode::from(UNFORMATTED))))]
+fn fmt(
+    formatting: Formatting,
+    stdout: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
+) -> std::io::Result<ExitCode>
+{
+    let rewrite = formatting.rewrite();
+    let (mut changed, mut faulted) = (false, false);
+    let visited = formatting.visit(|step| {
+        let written = match step {
+            | FormatStep::Unchanged { .. } => Ok(()),
+            | FormatStep::Changed { path } => {
+                changed = true;
+                writeln!(stdout, "{}", path.display())
+            },
+            | FormatStep::Fault { path, fault } => {
+                faulted = true;
+                writeln!(stderr, "gandr: {}: {fault}", path.display())
+            },
+        };
+        match written {
+            | Ok(()) => ControlFlow::Continue(()),
+            | Err(error) => ControlFlow::Break(error),
+        }
+    });
+    if let ControlFlow::Break(error) = visited {
+        return Err(error);
+    }
+    Ok(match (faulted, changed, rewrite) {
+        | (true, ..) => ExitCode::from(FAULTED),
+        | (false, true, Rewrite::Check) => ExitCode::from(UNFORMATTED),
+        | (false, false, _) | (false, true, Rewrite::InPlace) => ExitCode::SUCCESS,
+    })
 }
 
 /// Check `staging`'s programs, printing one line per program, then the run's

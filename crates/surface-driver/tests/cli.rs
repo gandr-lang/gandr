@@ -504,6 +504,62 @@ mod cli
     }
 
     #[test]
+    fn fmt_rewrites_what_check_reports()
+    {
+        let scratch = Scratch::new(Path::new("fmt"));
+        let loose = scratch.file(
+            Path::new("loose.gandr"),
+            Text::from("def  answer =  42 ;\n"),
+        );
+        let tidy = scratch.file(Path::new("tidy.gandr"), Text::from("def copy = 1 ;\n"));
+        let absent = scratch.0.join("absent.gandr");
+        let fmt = Path::new("fmt");
+        let check = Path::new("--check");
+
+        let checked = ran(gandr(&[fmt, check, &loose, &tidy]));
+        assert_eq!(code(&checked), Code(1_i32), "{}", stderr(&checked));
+        assert_eq!(stdout(&checked), format!("{}\n", loose.display()));
+        let serial = ran(gandr(&[fmt, check, Path::new("--jobs=1"), &loose, &tidy]));
+        assert_eq!(
+            (code(&serial), serial.stdout.as_slice()),
+            (code(&checked), checked.stdout.as_slice()),
+            "one thread prints what the default width prints"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&loose).expect("the source is readable"),
+            "def  answer =  42 ;\n",
+            "the check writes nothing"
+        );
+
+        let faulted = ran(gandr(&[fmt, check, &loose, &absent]));
+        assert_eq!(code(&faulted), Code(2_i32), "a fault outranks a change");
+        assert!(
+            stderr(&faulted).starts_with(&format!("gandr: {}: ", absent.display())),
+            "{}",
+            stderr(&faulted)
+        );
+
+        let rewritten = ran(gandr(&[fmt, &loose, &tidy]));
+        assert_eq!(code(&rewritten), Code(0_i32), "{}", stderr(&rewritten));
+        assert_eq!(stdout(&rewritten), format!("{}\n", loose.display()));
+        assert_eq!(
+            std::fs::read_to_string(&loose).expect("the source is readable"),
+            "def answer = 42 ;\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&tidy).expect("the source is readable"),
+            "def copy = 1 ;\n"
+        );
+
+        let again = ran(gandr(&[fmt, check, &scratch.0]));
+        assert_eq!(code(&again), Code(0_i32), "{}", stdout(&again));
+        assert!(
+            stdout(&again).is_empty(),
+            "a formatted tree reports nothing"
+        );
+    }
+
+    #[test]
     fn every_width_prints_the_serial_run()
     {
         let scratch = Scratch::new(Path::new("widths"));
