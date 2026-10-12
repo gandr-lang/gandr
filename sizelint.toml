@@ -59,11 +59,6 @@ includes = ["contrib/*/README.md", "crates/*/README.md", "crates/README.md"]
 max_size = "12KB"
 excludes = [
   # Burn-down.
-  "crates/core-checker/README.md",
-  "crates/core-incremental/README.md",
-  "crates/core-nbe/README.md",
-  "crates/core-sequent/README.md",
-  "crates/core-term/README.md",
   "crates/storage-artifact/README.md",
   "crates/storage-values/README.md",
   "crates/surface-corpus/README.md",

@@ -17,6 +17,67 @@
 //! unshared one surfaces there as a refused trace, never as a verdict the
 //! kernel accepted. The erase-and-clone stance installs here with any sink,
 //! and evaluates through the reference pipeline.
+//!
+//! # Closed-configuration sharing
+//!
+//! Under the spinal stance, `TracedDuplication` evaluates a root through its
+//! own duplicate: it duplicates the root, erases the duplicate keeping each
+//! share's erased leg, and hands those legs to the machine. The first
+//! evaluation of a leg in one **configuration** — one binding at each of its
+//! free indices, in both zones — is remembered, and every later occurrence read
+//! in that configuration takes it; a leg read under another binding is
+//! evaluated again, and a leg with an index the environment does not bind is
+//! never remembered. Erasure copies a leg's indices unshifted, so a free index
+//! names, at each occurrence, the binder it reaches from there, and one
+//! evaluation serves two occurrences exactly when those binders hold the same
+//! entries. A rib is the case the stance is for: it does not read the binder
+//! its abstraction duplicates, so its evaluation is shared across every
+//! application of one closure. The memo lives for one evaluation; readback and
+//! `decide` stay unshared. The duplicate is scratch, and the overlay is
+//! truncated back to its entry watermark whatever the outcome.
+//!
+//! Sharing stays inside the weak-head machine, where configurations are closed
+//! and the confluence and normalisation results for sharing reductions apply,
+//! so a schedule choice can cost a spurious decline, never a wrong
+//! certification. Alternatives: shifting a leg's indices per occurrence, which
+//! mints a copy per occurrence under a binder and changes erasure's reading
+//! (see `overlay`); and sharing open configurations on the strength of results
+//! stated over simply-typed systems, which type no fragment of this language.
+//! Reversal: a confluence result for open terms under strong reduction covers
+//! the core's formers, and sharing extends past the weak-head machine.
+//!
+//! # Certifying path
+//!
+//! A spinal run exists only with a trace sink attached.
+//! `DuplicationPolicy::new(DuplicationStance::Spinal)` keeps refusing with
+//! `PolicyRefusal::StanceGated`; `TracedDuplication::install` takes the sink
+//! the conversions decided under the stance record into, and refuses the spinal
+//! stance with `PolicyRefusal::Untraced` when that sink retains nothing, which
+//! `TraceSink::ACTIVITY` states at compile time. The installation owns every
+//! duplication, evaluation and `decide` run under the stance, and the policy it
+//! holds never leaves it, so a verdict over a domain value the spinal stance
+//! shaped carries the derivation the kernel replays by construction rather than
+//! by a caller's care. The erase-and-clone stance installs with any sink and
+//! evaluates through the reference.
+//!
+//! Replay does not depend on the stance: the kernel re-executes the decisions
+//! over its own unshared terms, sequentially, and never reads the overlay, so a
+//! spinal verdict is certified exactly when its trace replays, and a shared
+//! evaluation that answered differently from the unshared one surfaces as a
+//! refused trace rather than as an accepted verdict. This crate's tests compose
+//! the two through the kernel's replay, a development dependency: the kernel
+//! agrees with every spinal catalogue and ladder verdict, and when the
+//! height-weighted schedule spends its budget on a divergence the fair schedule
+//! steps around, the run declines with no derivation and the kernel declines
+//! with it, never reading the decline as a refutation.
+//!
+//! Alternatives: caller discipline — `new` admits the stance and the crate
+//! documentation tells callers to replay — which leaves an uncertified verdict
+//! one call away; and replay inside this crate, a production edge from the
+//! untrusted machine onto the trusted base that every call pays. Reversal:
+//! `gandr-core-checker` composes the conversion machine with the kernel's
+//! replay at its conversion boundary, as the only such composition; the
+//! certifying constructor then moves behind it.
 
 use anodized::spec;
 use gandr_core_term::CoreArena;

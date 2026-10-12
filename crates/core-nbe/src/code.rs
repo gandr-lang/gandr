@@ -29,6 +29,114 @@
 //! The rigidity criterion is the one the kernel's replay applies to a shared
 //! comparison, so an answer of [`CodeComparison::Apart`] is one the kernel
 //! separates in its own terms.
+//!
+//! # Codes
+//!
+//! A quote `⌜A⌝` carries a type, and a type has no weak head: nothing in it
+//! reduces until something reads it. Evaluation therefore suspends the whole
+//! quote over the environment its codes read, as `DomainValue::Code` over a
+//! value closure, flexible because the closure is. Readback rebuilds the quoted
+//! type former by former: a leaf holding no code is spliced as it stands, a
+//! decode's code is evaluated in the quote's environment and read back, and a
+//! dependent arrow opens a fresh variable for its codomain the way a lambda's
+//! body is opened. Under `ReadbackMode::Unfolding` a code constant therefore
+//! unfolds, and a decode of the quote it unfolds to is decoded on mint, so a
+//! code reads back in normal form.
+//!
+//! Conversion compares two codes whole, in two passes. α-equality walks both
+//! types in lockstep, matching a bound variable by the binder it names and
+//! reading a free one through its quote's environment. Rigidity separates two
+//! α-distinct codes only when neither holds a constant with a body, a stuck
+//! elimination, or a value no code reads as. The search-free steps read every
+//! constant as one that could unfold, and defer; the machine reads the
+//! definitions, closes an equal or a rigidly apart pair as one
+//! `ComparedShared`, and declines anything else with
+//! `DeclineReason::UndecidedCodes`. The kernel's replay closes a shared
+//! comparison as equal when the sides are α-equal and separates it only when
+//! both are rigid, so an answer here is one the kernel re-derives on its own
+//! terms.
+//!
+//! The lockstep walk gives paired binders one identity and retains each side’s
+//! outer chain separately. Its binder counter uses the arena’s index width: a
+//! fixed 32-bit counter could alias different binders while a wider link vector
+//! still grew. The vector’s size bound precedes the counter’s ceiling.
+//! `code::tests::binder_numbers_stay_distinct_across_the_u32_boundary`
+//! witnesses distinct inner binders and the preserved outer binder across that
+//! boundary.
+//!
+//! Alternatives: a domain of types with weak-head formers, compared by the rule
+//! table, which is type-level reduction this language does not have and a
+//! second domain the replay would need a reading of; and codes compared by
+//! identity alone, which refutes two quotes of one type written twice.
+//! Reversal: a type former that reduces, such as a large elimination, needs
+//! types evaluated; codes then become weak heads the rule table decomposes, and
+//! the decline goes.
+//!
+//! The walk fires the decoding rule `gandr-core-term` and the kernel fire on
+//! mint, `El ⌜A⌝` is `A`, at a decode whose code resolves to a quote through an
+//! environment, where no mint saw it. An operator's body entered at a quoted
+//! argument reads such a decode, and the same body minted instantiated holds
+//! the quoted type itself, decoded when it was minted; with the rule, the
+//! closure the machine evaluated and the reduct the checker minted compare
+//! alike, which is the comparison a certificate for one static step makes.
+//! Alternatives: leaving the decode in place, which separates every static
+//! redex from its instantiated reduct, so no static step certifies; and
+//! decoding at evaluation, which gives types a weak head for this one rule.
+//! Reversal: as for codes, a type former that reduces, at which point the
+//! decode is one step of the rule table.
+//!
+//! The duplication walk refuses a quote graft by name,
+//! `DuplicationFault::Quote`: no producer shares inside a type, so the overlay
+//! carries quotes for erasure alone. Reversal: a producer that shares across a
+//! type, which makes the type families ribs of the walk.
+//!
+//! # Static operators
+//!
+//! A static lambda evaluates to `DomainValue::StaticLambda`, a value closure
+//! over the lambda node itself, flexible because the closure is. A static
+//! application evaluates its head and its argument, then fires static beta when
+//! the head is a static lambda: it extends the closure's environment by the
+//! argument and enters the body. Over a neutral it grows the spine by
+//! `Elimination::StaticApply`; over anything else it refuses with
+//! `EvalFault::AppliedNonOperator`. A family applied to its arguments is
+//! therefore one neutral whose spine records them, and the cached word folds
+//! the spine in order, so `F(A)` and `F(A, B)` and `G(A)` separate by head
+//! index and arity before any comparison runs.
+//!
+//! Readback under `ReadbackMode::Unfolding` reads back static normal form. A
+//! static lambda opens a fresh variable for its body, as a lambda does. A
+//! neutral whose head unfolds to an operator has its leading static
+//! applications re-applied to the forced body, and the fold resumes after them.
+//! No static redex survives readback in that mode. `ReadbackMode::ZeroUnfold`
+//! keeps the term face, redexes included, because it is the mode that hands
+//! back what the source wrote.
+//!
+//! Static normalization is confluent: the evaluator's environment machine,
+//! normal-order substitution and applicative-order substitution reach one
+//! normal form on every simply kinded term the property generates. Static beta
+//! is the β of the simply typed λ-calculus over codes, so it is strongly
+//! normalizing and confluent, and the machine's fuel only bounds a definition
+//! that unfolds into itself.
+//!
+//! Conversion compares two static lambdas through the code walk, matching their
+//! binders by level. A static lambda against a neutral defers in the
+//! search-free steps and declines with `DeclineReason::UndecidedCodes` in the
+//! machine. The machine never η-expands an operator, and the code walk never
+//! declares an operator rigidly apart, because η could relate it to a stuck
+//! operator the rigidity reading cannot see through.
+//!
+//! Alternatives:
+//!
+//! - static beta in the arena's constructors, which reduces before the
+//!   definitions are known and hides the unfolding the checker certifies;
+//! - a separate normalizer for codes, which duplicates the environment machine
+//!   and its fuel;
+//! - η for operators, which needs a static-Pi-typed comparison the untyped
+//!   machine does not have.
+//!
+//! Reversal: a measured family where the decline at a lambda against a neutral
+//! costs a refusal a typed η would have answered. Conversion then becomes typed
+//! at static Pis.
 
 use alloc::vec::Vec;
 

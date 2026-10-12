@@ -165,7 +165,7 @@ The alternatives were a crate of its own and the dispatcher. It sits here becaus
 
 ## Native prelude recognition
 
-`Recognition::default()` seeds `SeedTable::prelude()` in the outermost scope. The rows come from [the core table](../core-term/README.md#native-prelude), including namespace prefixes such as `int` and `prim`. A caller constructing `Recognition::new` supplies its seed tables explicitly and in order: later entries and tables shadow earlier ones. Source declarations and binders are resolved before a bare prelude name; the existing shadow policy still reports or rejects a source shadow.
+`Recognition::default()` seeds `SeedTable::prelude()` in the outermost scope. The rows come from [the core table](../core-term/src/primitive.rs), including namespace prefixes such as `int` and `prim`. A caller constructing `Recognition::new` supplies its seed tables explicitly and in order: later entries and tables shadow earlier ones. Source declarations and binders are resolved before a bare prelude name; the existing shadow policy still reports or rejects a source shadow.
 
 The table also owns `+`, binary and unary `-`, `*`, `==`, `!=`, `<`, `<=`, `>`, `>=`, `&&` and `||`. Operators lower to saturated native computations. Like ordinary calls, they take value operands: sequence computed operands through explicit block bindings. For example, `def answer : +U (-F Integer) ; def answer = thunk { 20 + 22 } ;` runs to `42`. A named native function can be passed or partially applied using the ordinary thunk and lambda rules. `Bool` names the canonical `Unit + Unit` classifier of comparisons and boolean operations: left is true, right is false.
 

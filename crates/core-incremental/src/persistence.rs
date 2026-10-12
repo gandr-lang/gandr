@@ -19,6 +19,23 @@
 //! refuses removal. Loading checks the header, the address, the length and the
 //! payload's digest before it decodes, and decoding refuses a payload that is
 //! not the canonical spelling of what it parses to.
+//!
+//! A capped level cannot replace a readable record. The file record is a header
+//! — magic, version, address, backend, length and payload digest — then the
+//! payload; the temporary takes a fresh random name, and the store never opens
+//! a file it did not create. The store is atomic, not durable: it does not
+//! synchronise to the device. `CheckpointStore` is the seam where the storage
+//! value plane takes over from the file store, persisting checkpoint sets as
+//! values with the storage tier's own integrity and retention.
+//!
+//! # Decisions
+//!
+//! | Decision | Alternatives | Reversal |
+//! | -------- | ------------ | -------- |
+//! | A crate-local canonical binary encoding with a canonicality check | a serialisation framework, which would add a dependency and admit several spellings of one value | the storage tier hosts session checkpoints |
+//! | Check the decoder’s level bound before checkpoint encoding | publish records that cannot reload; unbounded decoding; decode an extra copy before storing | level reconstruction no longer requires one successor per offset and the decoder can safely admit the full range |
+//! | BLAKE3 through the workspace `blake3` entry, the digest the storage tier uses | the storage tier's digest wrapper, which a `core` crate cannot depend on under the layering; a second hash function | the digest moves to a layer below both |
+//! | Exclusive temporary, then rename | write in place; a fixed temporary name, which a squatter or a concurrent store could hijack | a consumer needs durability, which adds a sync before and after the rename |
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;

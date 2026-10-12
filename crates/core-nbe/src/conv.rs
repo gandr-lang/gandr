@@ -33,6 +33,48 @@
 //! rather than in their expansion. Nothing is evaluated and nothing recurses,
 //! so the walk is total on any depth; it reads core nodes only for literal
 //! payloads.
+//!
+//! # Conversion steps 1 through 3
+//!
+//! Conversion's first three steps answer without searching, and each falls
+//! through to the next only when it does not answer. **Step 1, identity**: one
+//! id is one value, and so are two nodes whose term faces name one source term,
+//! which catches sharing the source had and evaluation expanded — the
+//! early-success rule `conv? β β′ → T if β = β′` read on the term face as well
+//! as on the id. **Step 2, the guard**: two rigid cached words with different
+//! hashes settle the pair distinct in constant time. **Step 3, structural
+//! comparison**, over a heap worklist with head-mismatch fast-fail:
+//! Courant–Leroy's `var-1`, `var-2`, `var-3` and `const` rules over neutrals,
+//! with steps 1 and 2 run again at every pair the walk reaches.
+//!
+//! Domain validation precedes identity: an id removed by arena truncation is
+//! `ConversionFault::Domain(DomainFault::Dangling)` even when both sides carry
+//! it. A live self-comparison remains `Identical`. The structural walk applies
+//! the same boundary to neutral and closure ids. Witnesses:
+//! `conv::tests::identical_truncated_values_are_refused`,
+//! `conv::tests::identical_truncated_computations_are_refused`,
+//! `conv::tests::identical_truncated_neutrals_and_closures_are_refused`.
+//!
+//! The answer has three values because the steps never unfold and never open a
+//! binder. A pair whose answer depends on either is `Settlement::Deferred`:
+//! `Deferral::Unfolding` when a neutral's head has a body that may unfold into
+//! the other side, `Deferral::Binder` when two closures suspend different
+//! bodies or a closure meets a neutral an η-equation may relate it to, and
+//! `Deferral::Indeterminate` when either side stands on a hole or a mark, which
+//! a fill may make anything. A mismatch beneath an unfoldable head, or in a
+//! closure's environment, defers rather than separates, because the unfolded
+//! body or the opened closure may never read what differed; beneath a rigid
+//! head it separates. A distinct answer is therefore sound relative to β, δ and
+//! the η-equations a later step adds.
+//!
+//! The walk keeps the pairs it has met, per call, and skips a repeat, so two
+//! graphs that share structure cost their distinct pairs rather than their
+//! expansion. The set holds pairs only and dies with the call; it decides
+//! nothing about which part of a value is copied, which is what keeps it clear
+//! of the duplication parameter. Nothing is evaluated and nothing recurses, so
+//! the walk is total on any depth and takes no fuel. Step 4, unfolding, is the
+//! conversion machine's, with heights as scheduling shares; steps 5 and 6,
+//! case-progress gating and speculation, are not built.
 
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;

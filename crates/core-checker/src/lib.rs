@@ -157,9 +157,73 @@
 //! ```sh
 //! RUSTFLAGS="--cfg anodized_panic" cargo test -p gandr-core-checker
 //! ```
-
+//!
+//! # References
+//!
+//! - Paul Blain Levy. "Call-by-Push-Value: A Subsuming Paradigm." _Typed Lambda
+//!   Calculi and Applications (TLCA 1999)_, LNCS 1581, Springer (1999). <https://doi.org/10.1007/3-540-48959-2_17>
+//!   — the value and computation sorts, the thunk and returner shifts `U` and
+//!   `F`, and the arrow as a computation type, which fix every rule's premises.
+//! - Jana Dunfield and Neel Krishnaswami. "Bidirectional Typing." _ACM
+//!   Computing Surveys_ 54(5) (2021). <https://doi.org/10.1145/3450952> — the
+//!   discipline the rules follow: introductions check, eliminations synthesise,
+//!   and the subsumption rule is the one place a synthesised type meets an
+//!   expected one.
+//! - Zanzi Mihejevs and Jules Hedges. "Canonical bidirectional typechecking."
+//!   arXiv:2512.07511 (2025). <https://arxiv.org/abs/2512.07511> — the
+//!   checkable/synthesisable split read as a polarity duality whose seams are
+//!   the shifts, the background for confining type comparison to the change of
+//!   direction.
+//! - Cyrus Omar, Ian Voysey, Michael Hilton, Jonathan Aldrich and Matthew A.
+//!   Hammer. "Hazelnut: A Bidirectionally Typed Structure Editor Calculus."
+//!   _POPL 2017_. <https://doi.org/10.1145/3009837.3009900> — holes with the
+//!   unknown type, consistency in place of equality around it, the matched-type
+//!   operations, and mark erasure.
+//! - Cyrus Omar, Ian Voysey, Ravi Chugh and Matthew A. Hammer. "Live Functional
+//!   Programming with Typed Holes." _Proceedings of the ACM on Programming Languages_
+//!   3 (POPL), 2019. <https://doi.org/10.1145/3290327> — evaluation around
+//!   holes to indeterminate results, which `gandr-core-nbe` performs on the
+//!   terms this judgement types.
+//! - Yongwei Yuan et al. "Live Pattern Matching with Typed Holes." _Proceedings
+//!   of the ACM on Programming Languages_ 7 (OOPSLA1), 2023. <https://doi.org/10.1145/3586048>
+//!   — exhaustiveness and irredundancy decided only when every filling of the
+//!   pattern holes agrees.
+//! - Eric Zhao et al. "Total Type Error Localization and Recovery with Holes."
+//!   _Proceedings of the ACM on Programming Languages_ 8 (POPL), 2024.
+//!   <https://doi.org/10.1145/3632910> — the marked lambda calculus: every term
+//!   elaborates, each error a mark where it stands.
+//! - Luc Maranget. "Warnings for pattern matching." _Journal of Functional
+//!   Programming_ 17(3) (2007). <https://doi.org/10.1017/S0956796807006223> —
+//!   the usefulness relation both coverage questions reduce to.
+//! - Pierre-Marie Pédrot and Nicolas Tabareau. "The Fire Triangle: How to Mix
+//!   Substitution, Dependent Elimination, and Effects." _Proceedings of the ACM
+//!   on Programming Languages_ 4 (POPL), 2020. `doi:10.1145/3371126` — ∂CBPV: a
+//!   universe of value types and a universe of computation types, both
+//!   classified in the value sort, dependency on values only, and the bind
+//!   whose type may not mention its binder.
+//! - Josselin Poiret, Gaëtan Gilbert, Kenji Maillard, Pierre-Marie Pédrot,
+//!   Matthieu Sozeau, Nicolas Tabareau and Éric Tanter. "All Your Base Are
+//!   Belong to Us: Sort Polymorphism for Proof Assistants." _Proceedings of the
+//!   ACM on Programming Languages_ 9 (POPL), 2025. `doi:10.1145/3704912` — the
+//!   sort carried apart from the level, so a universe names both and a sort
+//!   parameter is a separate question this crate refuses by name.
+//! - Nathanaëlle Courant and Xavier Leroy. "A Lazy, Concurrent Convertibility
+//!   Checker." _Proceedings of the ACM on Programming Languages_ 10 (POPL),
+//!   Article 53, January 2026. `doi:10.1145/3776695` — §9's trace of the
+//!   checker's decisions rechecked sequentially, which is how every unfolding
+//!   the judgement takes reaches the kernel.
+//! - N. G. de Bruijn. "Lambda calculus notation with nameless dummies."
+//!   _Indagationes Mathematicae_ 75(5) (1972).
+//!   <https://doi.org/10.1016/1385-7258(72)90034-0> — the binder indices a
+//!   variable is resolved by.
+//! - Henk Barendregt and Freek Wiedijk. "The challenge of computer
+//!   mathematics." _Philosophical Transactions of the Royal Society A_
+//!   363(1835) (2005). <https://doi.org/10.1098/rsta.2005.1650> — the de Bruijn
+//!   criterion: a result is trusted when a small independent checker re-derives
+//!   it, the posture of the kernel bridge.
+//!
 //! Each decision, with the alternative it was chosen over and what would
-//! reverse it, is in this crate's `README.md`.
+//! reverse it, is stated in the documentation of the module it governs.
 
 #![no_std]
 

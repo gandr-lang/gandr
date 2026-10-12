@@ -42,18 +42,71 @@
 //! the form: the judgement never guesses a type an introduction did not
 //! carry.
 //!
+//! Constructors, nominal cases, and record and tuple projections synthesise; a
+//! record is answered in both directions, as `judgement::native` states. The
+//! direction is a crate-local type declared as the judgement's direction, and
+//! the `mode_dispatch_wildcard` lint from the workspace's policy library
+//! refuses any match on it, or on a parameter declared to carry the expected
+//! type, that answers a case through a fallback arm, so a rule added in one
+//! direction and forgotten in the other does not compile. The alternatives were
+//! a mode register with a type-directed default; the same constraint as a
+//! review convention; and a workflow gate matching source text, which cannot
+//! tell a match on a direction from any other match. The choice reverses when
+//! the judgement is restated so that a term's syntactic class is itself a type,
+//! at which point the arm the lint looks for cannot be written.
+//!
+//! The bind is answered in both directions because its type is its body's: a
+//! bind fixed to synthesis would refuse every block that ends in a return,
+//! which only checks, and a bind fixed to checking would refuse a block
+//! standing where a type is wanted from it, as the head of an application. The
+//! refusal of a bare return as a statement reverses when a statement can state
+//! its returner, by an annotation or a metavariable, and the bound computation
+//! then checks against it.
+//!
+//! The pair is answered in both directions for the same reason at its
+//! components: a pair fixed to checking would refuse every unsigned definition
+//! of a pair, and one fixed to synthesis would refuse a pair holding a thunk,
+//! which only checks. The alternative was the checking-only pair of a
+//! bidirectional system without products in synthesis position; it reverses
+//! with the dependent pair, whose second factor reads its first component, and
+//! which then checks only.
+//!
 //! # Static operators
 //!
-//! A static application past its head's static Pis is refused as
-//! [`CheckRefusal::FamilyArity`], naming both counts; an argument whose
-//! classifier does not cross to its domain as
+//! A static lambda checks against a static Pi, its body against the codomain
+//! beneath a binder of the domain. A static application is judged as a spine:
+//! its root head synthesises, and each argument, first to last, checks against
+//! the domain of the next static Pi the head's type opens, so the application
+//! has the last codomain. A spine longer than the head's static Pis is
+//! [`CheckRefusal::FamilyArity`], naming the Pis opened and the arguments
+//! given; an argument whose classifier does not cross to its domain is
 //! [`CheckRefusal::FamilyArgumentClassifier`], naming its position and both
-//! classifiers, so a sort or level mismatch reads as the family's. A static
-//! lambda, or a static definition, handed to a static parameter normalizes
-//! away before the kernel sees it; handed to a dynamic one it would be a value
-//! the kernel types, which no kernel former is, so it is refused as
-//! [`CheckRefusal::StaticLambdaArgument`]. An opaque operator is a value the
-//! kernel types, and passes.
+//! classifiers, so a universe of the wrong sort or level reads as a mistake in
+//! the family's use, not an anonymous mismatch. A saturated instance of a
+//! static definition unfolds as a code constant does, one certified δβ-step at
+//! a time, and two rigid instances convert when their heads and arguments do.
+//! The alternatives were the plain `TypeMismatch` at the argument, which loses
+//! which argument of which family failed, and a classifier check at formation
+//! only, which misses an application whose head is a variable.
+//!
+//! A static lambda is not a value the kernel types: the kernel's terms have no
+//! static lambda, and every static application reduces before the kernel sees
+//! it. So a static lambda, a static definition, or an instance of one short of
+//! saturation, handed to a static parameter, normalizes away with the
+//! application that receives it; handed to a dynamic application — a
+//! computation applied at a value whose type is a static Pi — it would survive
+//! into the kernel's terms, and it is refused as
+//! [`CheckRefusal::StaticLambdaArgument`] at the argument. An opaque operator,
+//! the one a hole owes, is rigid and crosses as a kernel constant, so it
+//! passes. `a_static_lambda_at_a_static_parameter_normalizes_away` and
+//! `a_static_lambda_at_a_dynamic_parameter_is_refused_by_name` assert the two
+//! sides. The alternatives were defunctionalising each static lambda into a
+//! kernel constant at its use, which hands the kernel an operator it can only
+//! treat as opaque and certifies nothing about it, and a static lambda in the
+//! kernel, which widens the trusted base by a binder and its β-rule for terms
+//! that normalize away anyway. The refusal reverses if the kernel gains static
+//! abstraction, at which point a static lambda crosses at a dynamic parameter
+//! as itself.
 //!
 //! # Types are read at their weak head
 //!
@@ -82,9 +135,10 @@
 //!
 //! The machine keeps no memo: a subterm reached twice is judged twice. The
 //! fragment's terms are what a lowering produced from source text, whose
-//! sharing is the author's repetition, and the allowance bounds the rest. A
-//! memo keyed by node and context is the upgrade when a producer starts
-//! sharing aggressively.
+//! sharing is the author's repetition, and the allowance bounds the rest. The
+//! alternative is a check memo keyed by node and context, the seam
+//! `gandr-kernel-check-memo` provides; it becomes worth its bookkeeping when a
+//! producer starts sharing aggressively, which an elaborator's output will.
 //!
 //! # A hole and a mark are judged without their contents
 //!
@@ -102,10 +156,144 @@
 //! or a native case over the unknown type is refused, and a total elaboration
 //! marks it.
 //!
+//! Consistency is not transitive, and nothing here composes it: each crossing
+//! compares one synthesised type with one expected type. The alternatives were
+//! a fresh metavariable per hole, which needs a solver the fragment does not
+//! have, and consistency with runtime casts, which the kernel would have to
+//! trust; the unknown type never reaches the kernel, whose bridge refuses it.
+//! The choice reverses when an inference feature needs a hole's type to drive a
+//! solution: the hole then gets a metavariable with provenance, and the unknown
+//! type becomes its unsolved state.
+//!
+//! The unknown type forms at the lowest level: a judgement that asks its
+//! universe gets the value universe at level zero. Each limit on what the
+//! unknown type can do — a transport, a native data case or a record projection
+//! over it, a hole beneath an index's root — reverses with the consumer that
+//! needs it: a typed transport, data case or projection over an unfinished
+//! scrutinee. Witnesses:
+//! `judgement::tests::a_hole_synthesises_the_unknown_type_and_checks_against_any`,
+//! `judgement::tests::an_introduction_against_the_unknown_type_checks_its_parts`,
+//! `conversion::tests::the_unknown_type_is_consistent_beside_a_differing_former`
+//! and `view::tests::the_unknown_type_and_the_decode_of_a_hole_view_alike`.
+//!
 //! # A refusal leaves the context as it found it
 //!
 //! A refused run closes every binder it opened before it returns, so the
 //! next judgement in the same context starts where this one did.
+//!
+//! # The dependent arrow, and the bind that is not
+//!
+//! A lambda checked against a dependent arrow opens the binder and checks its
+//! body against the codomain as written; one checked against a plain arrow
+//! shifts the codomain past the new binder. An application of a dependent arrow
+//! synthesises the codomain instantiated at the argument — at the argument as
+//! the recorded lift wrote it when the argument crossed a value bridge one
+//! universe up — so the type the caller sees names the type the caller passed.
+//!
+//! A bind is not dependent. Its continuation is judged under a binder of the
+//! returned value, and when the bind synthesises, the continuation's type is
+//! strengthened out from under that binder; a type that mentions the bound
+//! value is `DependentBind`. A returned value is a computation's result, and a
+//! type that names it would depend on an effect having run, which is the
+//! substitution the fire triangle forbids alongside dependent elimination
+//! (Pédrot and Tabareau, POPL 2020, doi:10.1145/3371126). The alternatives were
+//! a dependent bind, sound only for a thunkable continuation, and dependency on
+//! computations, which needs the linearity discipline the core does not have.
+//! Either reverses only with that discipline.
+//!
+//! # A split only checks
+//!
+//! A split's scrutinee synthesises a product of exactly the split's arity, the
+//! unit for a split of none, and its body checks against the expected type
+//! under one binder per component, component zero outermost, each typed by its
+//! component shifted past the binders before it; the expected type is shifted
+//! past all of them. A split of another arity or of anything but a product is a
+//! `ShapeMismatch` wanting a product, at the scrutinee. A split in synthesis
+//! position is `NotSynthesisable`, the checking form `CheckingForm::Split`: its
+//! body's type may read the components it binds, and strengthening them out is
+//! the bind's rule, not this one.
+//! `judgement::tests::a_split_binds_every_component_of_its_product` asserts
+//! each arm.
+//!
+//! # Effects and control
+//!
+//! A perform checks its payload and synthesises its reply under its singleton
+//! interface row. A handler covers that interface exactly once and checks every
+//! branch against its answer, retaining residual effects. Shared interface
+//! names require invariant operation types. Effectful bind needs a returner
+//! continuation; pure bind may continue with a lambda.
+//!
+//! Stack Apply instantiates a dependent codomain; Bind unions rows and
+//! strengthens its result, refusing escaping type codes as `DependentStack`;
+//! Project selects a lazy-pair component. Reset supplies Shift's answer,
+//! weakened through intervening binders. Stack literals, handlers, resets,
+//! shifts and lazy pairs check rather than synthesise. A handler's subject and
+//! a Bind frame's body synthesise, so a bare `return` there is refused as a
+//! checking form. Returner rows and stacks subsume by the variance `conversion`
+//! states.
+//!
+//! Against the unknown type, a stack literal runs its frames over unknown
+//! endpoints, a lazy pair checks both components against unknowns, and a List
+//! reads an unknown element. A handler checked against the unknown answer reads
+//! it through the matched returner: the residual is absorbed and each
+//! resumption consumes the reply under the empty row. A resumption of a hole
+//! infers the unknown type, so a hole in stack position stays local.
+//!
+//! **Choice.** Bidirectional rules and named refusals, not answer-type
+//! inference or a row solver. **Reversal.** An explicit answer-polymorphic
+//! contract. Control formers and nonempty rows never become assumed
+//! declarations at pure readmission:
+//! `bridge::tests::effectful_declarations_are_refused_by_name_at_the_pure_boundary`.
+//!
+//! Witnesses in `judgement::tests`: `pure_bind_into_lambda_is_unchanged`,
+//! `effectful_bind_into_lambda_is_shape_mismatch`, `bind_unions_effect_rows`,
+//! `check_mode_bind_subsumes_the_accumulated_row`,
+//! `check_mode_bind_accepts_a_contained_row`,
+//! `host_operations_check_payloads_and_retain_effects`,
+//! `handlers_discharge_only_their_own_interface`,
+//! `handle_against_a_non_returner_is_stuck`,
+//! `handle_of_a_non_returner_scrutinee_is_a_shape_mismatch`,
+//! `empty_signature_handler_finishes_after_the_return_clause`,
+//! `handle_against_unknown_answer`,
+//! `control_rules_preserve_rows_scopes_and_shapes`,
+//! `reset_answers_are_weakened_through_intervening_binders`,
+//! `a_stack_bind_cannot_export_its_local_type_code`,
+//! `stack_bind_accumulates_input_and_body_rows`,
+//! `reify_empty_stack_is_identity`, `reify_delivered_answer_subsumes_up`,
+//! `reify_delivered_answer_cannot_drop_a_row`,
+//! `reify_against_non_stack_type_is_stuck`,
+//! `reify_interior_bind_frame_threads_the_accumulated_row`,
+//! `resume_of_a_non_stack_is_a_shape_mismatch`,
+//! `resume_delivering_a_row_cannot_drop_it`,
+//! `resume_delivered_answer_subsumes_up`, `resume_of_a_hole_infers_unknown`,
+//! `reset_is_transparent_on_the_type`,
+//! `shift_binds_the_continuation_at_the_captured_type` and
+//! `an_introduction_against_the_unknown_type_checks_its_parts`.
+//!
+//! # Native universe paths
+//!
+//! `PathUniverse`, `PathRefl`, `PathEquiv`, `PathProduct` and `Transport` are
+//! programmatic core forms. `Path_U` is a type of certified equivalences, not
+//! equality decided by running its maps. Endpoint codes must be closed
+//! first-order quotes; map types are opposite CBPV arrows. `PathCode`
+//! classifies a malformed endpoint as malformed source. The judgement checks
+//! shape and typing but does not certify round-trip evidence: export remaps
+//! every native child and carries candidate dialogues unchanged to ordinary
+//! kernel admission.
+//!
+//! `bridge::tests::native_path_module_round_trips` exports all five forms,
+//! persists and imports four declarations, then replays imported product
+//! transport. The surface parser has no path syntax. Element identity, the
+//! bridge mode, higher fields, funext, `Flow_U` and guarded List inhabitants
+//! stay at their kernel rule-language boundaries.
+//!
+//! **Choice.** Preserve untrusted native evidence across the export boundary
+//! instead of treating successful frontend checking as certification.
+//! `CheckBudget` bounds the frontend machine; the kernel's formation and
+//! replay allowances stay separate, and their exhaustion is not a negative
+//! equality verdict. **Reversal.** Broader endpoint codes or a source notation
+//! must acquire their own typing and kernel replay rules before this boundary
+//! widens.
 
 use alloc::vec::Vec;
 

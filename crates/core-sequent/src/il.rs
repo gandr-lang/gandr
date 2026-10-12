@@ -33,6 +33,42 @@
 //! by construction. [`CommandArena::watermark`] and
 //! [`CommandArena::truncate_to`] drop exactly the nodes minted after a mark,
 //! which is how a refused multi-node build leaves the arena as it found it.
+//!
+//! # Covariables are indices
+//!
+//! A covariable is a `CovariableIndex` counting covariable binders outward, in
+//! an index space separate from the producer variables' `(zone,
+//! DeBruijnIndex)`. A `μα`, a thunk's body and a copattern arm's consumer
+//! arguments bind covariables; a `μ̃x`, a pattern arm's fields and a copattern
+//! arm's producer arguments bind producer variables. Nothing mints a name:
+//! α-equivalent IL is identical IL, a translation needs no counter threaded
+//! through it, and two runs over equal input build identical arenas. The
+//! producer index space is the core's own, so a core variable crosses into the
+//! IL unchanged.
+//!
+//! The alternatives were named covariables drawn from a fresh-name supply,
+//! every translation threading a counter and every comparison working modulo
+//! renaming, and a counter newtype standing in for a name, which keeps the
+//! supply and only types it. The choice reverses if a consumer of the IL needs
+//! to address a covariable by identity across terms, which no reader of a
+//! command does.
+//!
+//! # Children before parents
+//!
+//! Every `mint_*` call checks that each child it is given resolves in the arena
+//! before appending, so each node's children were minted strictly before it,
+//! across all three families, and the arena is acyclic by construction. A
+//! `SequentWatermark` records the three family lengths; truncating to it keeps
+//! exactly the nodes minted before it, and since those name only earlier nodes,
+//! truncation never leaves a dangling child inside the arena. A build that
+//! mints several nodes and then refuses truncates to the mark it took on entry,
+//! so a refusal leaves the arena as it found it.
+//!
+//! The alternatives were unchecked minting, which admits a forward reference
+//! and with it a cycle every walk would then need a depth limit against, and a
+//! staging buffer committed at the end of a build, which copies every node
+//! twice. The choice reverses if a measured build shows the per-child check
+//! dominating minting.
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;

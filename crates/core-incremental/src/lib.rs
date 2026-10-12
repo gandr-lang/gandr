@@ -80,8 +80,66 @@
 //! assert_eq!(edited.adoptions(), [Adoption::Judged, Adoption::Adopted]);
 //! ```
 //!
+//! # Specification evidence
+//!
+//! Item-level `#[spec]` predicates check observable boundaries and transitions.
+//! Each `# Adequacy` section names its witness and bounds the claim; a data
+//! declaration, abstract protocol or unsupported opaque return states why it
+//! has no executable predicate. Generated differential cases support a
+//! finite-domain claim, not a proof over every program.
+//!
+//! | Evidence | Witness surface | Boundary |
+//! | -------- | --------------- | -------- |
+//! | Batch equivalence and real adoption | the differential suite, `tests/incremental.rs` | faithful records, named edits, generated single edits and edit chains; forged records expose the trust premise |
+//! | Edit and lowering semantics | `tests/common.rs` and `tests/generate.rs` | forward and shadowed names, maximal literals, missing indices, clamped insertion, coordinated rename and modular integer selection |
+//! | Type-position dependencies | `footprint` and the guards in `checkpoint` | quoted abstract types, recorded-answer types, cycles and opaque readers |
+//! | Canonical representation | `content` and `codec` | all supported node sorts, graph discovery, payloads, malformed tags, lengths and canonicality |
+//! | Store failure atomicity | `persistence` and `tests/defects.rs` | dangling ids and capped levels preserve stored records; filesystem cleanup remains best effort |
+//! | Reachability and work | `tests/defects.rs` | deterministic value-only-edit census, shadowing termination and exact work counts for chains of 250 through 2,000 items; zero-length chains are empty |
+//! | Session and stream transitions | `session` and `stream` | retained state on failure, item ordering, liveness and terminal events |
+//!
+//! The content vocabulary includes sorted universes, quotes, decodes, static
+//! operators and native paths. A static Pi seats as a value type; static
+//! lambdas, applications and quotes are terms, not seatable types. The native
+//! content format in `content` binds that vocabulary and its refusal payloads;
+//! another magic is rejected rather than interpreted under different tags.
+//! Native primitives, modules and packages are outside this crate’s vocabulary.
+//!
+//! # Consumer
+//!
+//! The first consumer is `gandr-surface-session`: it lowers each submission,
+//! hands the program to `IncrementalSession`, and reports the resume beside the
+//! dispatcher's composition of the same text.
+//!
+//! # References
+//!
+//! - Thomas J. Porter, Marisa Kirisame, Ivan Wei, Pavel Panchekha, and Cyrus
+//!   Omar. "Incremental Bidirectional Typing via Order Maintenance."
+//!   _Proceedings of the ACM on Programming Languages_ 9, OOPSLA2 (October
+//!   2025), pages 1865–1892. `doi:10.1145/3763117`; preprint `arXiv:2504.08946`
+//!   — incremental typing over an order-maintenance structure, the setting this
+//!   crate's item order serves.
+//! - Paul F. Dietz and Daniel D. Sleator. "Two Algorithms for Maintaining Order
+//!   in a List." In _Proceedings of the Nineteenth Annual ACM Symposium on
+//!   Theory of Computing (STOC '87)_, pages 365–372, 1987.
+//!   `doi:10.1145/28395.28434` — the order-maintenance problem the handles live
+//!   in.
+//! - Andrey Mokhov, Neil Mitchell, and Simon Peyton Jones. "Build Systems à la
+//!   Carte." _Proceedings of the ACM on Programming Languages_ 2, ICFP (2018),
+//!   Article 79. `doi:10.1145/3236774` — verifying traces: a result is reused
+//!   when the recorded values of what it read still match, which is what a
+//!   checkpoint's support is.
+//! - Michael L. Fredman. "On Computing the Length of Longest Increasing
+//!   Subsequences." _Discrete Mathematics_ 11, 1 (1975), pages 29–35.
+//!   `doi:10.1016/0012-365X(75)90103-X` — the patience-sorting bound the handle
+//!   splice runs in.
+//! - Jack O'Connor, Jean-Philippe Aumasson, Samuel Neves, and Zooko
+//!   Wilcox-O'Hearn. "BLAKE3: One Function, Fast Everywhere." 2020.
+//!   <https://github.com/BLAKE3-team/BLAKE3-specs> — the digest behind memo
+//!   identities and content addresses.
+//!
 //! Each decision, with the alternative it was chosen over and what would
-//! reverse it, is in this crate's `README.md`.
+//! reverse it, is stated in the documentation of the module it governs.
 
 extern crate alloc;
 

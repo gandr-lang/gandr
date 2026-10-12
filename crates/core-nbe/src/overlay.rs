@@ -55,6 +55,105 @@
 //! it reaches twice. The result is the unshared pipeline's input: no share
 //! survives, and the pipeline walks each occurrence of the leg's id as a copy.
 //! A refused erasure truncates the core arena back to where it found it.
+//!
+//! # Sharing overlay
+//!
+//! An `Overlay` is sharing syntax over the core language and holds no policy:
+//! which part of a shared leg a duplication copies is
+//! `DuplicationPolicy::copies`'s answer, asked by the walk that duplicates. It
+//! keeps one flat vector per core family — values, computations, value types,
+//! computation types — so an id's type names its family and its polarity, and
+//! teardown is four flat vector drops. A node is one of four kinds and nothing
+//! else: **opaque**, a core node held by id; **bound**, one occurrence of a
+//! shared leg, named by its distance — how many shares lie between it and its
+//! own — and its position among that share's occurrences; **shared**, `body[x₀
+//! … xₙ₋₁ ← leg]`, a body holding exactly `arity` occurrences of one leg of any
+//! family, standing in its body's family; and **grafted**, one core former over
+//! overlay children, with one graft arm per core former. A node is minted only
+//! over children the overlay holds, so every child is older than its parent and
+//! the overlay is acyclic across families.
+//!
+//! `Overlay::validate` walks one root in preorder on a heap task stack, with a
+//! frame per share whose body it is inside. A leg stands outside its own
+//! share's scope, so an occurrence in a leg counts from the shares around that
+//! share. An occurrence closes when its distance names an open frame whose leg
+//! is of the occurrence's family, at that frame's next position and below its
+//! arity; a share closes when its arity is non-zero and its body reaches it
+//! exactly. A position is therefore the occurrence's preorder rank among its
+//! share's, never a free choice.
+//!
+//! Sharing is explicit or absent: a node reached twice from one root is
+//! refused. Every node then has one parent, so a walk enters each node once,
+//! and an overlay whose expansion doubles per link validates in its own size
+//! rather than its expansion. Alternatives: admitting implicit reuse and
+//! walking it as a tree, which costs the expansion the overlay exists to
+//! remove; a graft as a template term with seam placeholders, which adds a seam
+//! syntax with its own spelling, order and linearity rules to say what one
+//! former per graft says; and named occurrences, which need a fresh-name supply
+//! and a capture check. Reversal: a producer that cannot name its shares — one
+//! that hash-conses after the fact — needs reuse admitted, and the walks a
+//! visited table in place of the reached-once rule.
+//!
+//! # Erasure
+//!
+//! `erase_value`, `erase_computation`, `erase_value_type` and `erase_comp_type`
+//! take an overlay root and the core arena its opaque nodes name, validate, and
+//! mint the core term the root stands for: each graft one core node after its
+//! children, left to right; each opaque node its core id as it stands; each
+//! share's leg once, before its body, and every occurrence that one id. They
+//! take no policy, so the output is a fact about the overlay alone, and it is
+//! the unshared pipeline's input: no share survives, and evaluation walks each
+//! occurrence of the leg's id as a copy, which is
+//! `DuplicationStance::EraseAndClone` and the reference every finer stance
+//! replays against. A refusal is named — `EraseFault::Refused` with the
+//! validation refusal, or `EraseFault::UnresolvedOpaque` for a core id the
+//! arena does not hold — and the core arena is truncated back to its entry
+//! watermark, so erasure is total: an erased term or no change.
+//!
+//! Opaque ids must resolve in the core arena as it stood on entry. The
+//! validation walk observes reachable opaque leaves before any graft is minted,
+//! so an earlier graft cannot turn a missing opaque id into a different term at
+//! the same index. A structural validation refusal still takes precedence over
+//! an opaque-id failure, and unreachable nodes do not affect the root. No
+//! second graph walk or arena copy is needed. Witnesses:
+//! `overlay::tests::opaque_erasure_does_not_resurrect_a_missing_core_id` and
+//! `overlay::tests::structural_refusals_precede_opaque_preflight_failures`.
+//!
+//! Because the minting order is fixed, "byte for byte" has a definite meaning:
+//! the erased arena equals, under the core arena's own equality, the arena a
+//! hand-built unshared term mints when built in the same order. The deep
+//! evaluation, readback and teardown cases are each built twice, by hand and as
+//! an overlay, and compared that way, then run through the unshared pipeline to
+//! equal domain arenas, core arenas and results.
+//!
+//! Indices are copied, never shifted: a leg's free index names, at each
+//! occurrence, the binder it reaches from there, the reading a core DAG gives a
+//! node reached twice. Alternatives: cloning the leg at every occurrence, which
+//! makes the output exponential in a chain of shares; and shifting the leg's
+//! indices by the binders between its share and each occurrence, which mints a
+//! copy per occurrence under a binder and changes the reading from the core
+//! DAG's. Reversal: a producer that places shares outside the binders their
+//! legs read, and needs substitution's reading, makes erasure shift and stop
+//! being node for node.
+//!
+//! # Not provided
+//!
+//! - **The μ-distributor arm.** He's calculus distributes a stack-capturing
+//!   abstraction in the λ-distributor's shape: the constructor frozen in place,
+//!   the body's copies made as one tuple sharing the body. No core former binds
+//!   into `Zone::Linear`, so a duplication never meets a stack capture and an
+//!   arm would have no input a test could reach; building it against a
+//!   hand-opened linear context would test a configuration no term reaches.
+//!   Reversal: a core former binds into `Zone::Linear`; the walk then gains the
+//!   arm in that shape, asking the linear zone's one-shot discipline before it
+//!   copies a capture rather than deciding that again.
+//! - **The spinal granularity stance.** `GranularityStance::Spinal` stays
+//!   refused with `PolicyRefusal::GranularityGated` (see `policy`): duplication
+//!   decides what one evaluation shares, while the granularity decides how
+//!   finely the conversion machine shares its channels, and the second waits on
+//!   evidence the first produces. Reversal: with the spinal duplication
+//!   differential green, a measurement shows the skeleton's channels
+//!   re-evaluating a shared partial application.
 
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;

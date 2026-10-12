@@ -21,10 +21,19 @@
 //! it synthesises the unknown type and owes nothing to the ledger. The run
 //! continues past a refusal because every declaration is judged on its own.
 //!
+//! An owed declaration's verdict carries its [`ObligationEntry`], so a caller
+//! judging one declaration needs no ledger. A declaration with neither half is
+//! refused rather than owed, or one missing signature would travel silently
+//! through the module.
+//!
 //! # Every declaration gets a verdict
 //!
 //! [`check_module`] judges every declaration, in the order given, and a
 //! refused one does not stop the run: the report is total over the module.
+//!
+//! A declaration reports its first refusal. Every error of a term in one pass
+//! is the total elaboration's, at the term's grain; the module report keeps the
+//! strict verdicts.
 //!
 //! # An accepted body is a definition
 //!
@@ -34,6 +43,26 @@
 //! bridges recorded beside the verdicts, so the kernel bridge writes each one
 //! where it stands.
 //!
+//! The definition is elaborated: when the declared type is a value universe
+//! above the body's own level, the definition is the body lifted to the
+//! declared universe, so `El(T, l)` unfolds to a code at the level it is
+//! decoded at, and weak-head reading never has to insert a lift itself. The
+//! kernel admits the same lifted body, so the two sides unfold one constant to
+//! one term. [`CheckingContext::adopt`] admits an earlier verdict's body the
+//! same way, so an incremental run unfolds what a batch run would. An adopted
+//! body becomes a definition only with a supplied formed signature; an untyped
+//! adopted body stays unavailable to synthesis and rigid to unfolding. The
+//! definition table accepts strictly increasing positions: a repeated or lower
+//! position leaves every held body intact rather than replacing or erasing it.
+//!
+//! The alternatives were defining the constant as the body as written, which
+//! makes a decode at the declared level unfold to a code at a smaller one and
+//! forces a lift into every unfolding, and unfolding only within the
+//! declaration that made the definition, which makes a type alias unusable from
+//! the next declaration. The choice reverses with transparency control: an
+//! opaque definition then stays rigid by request, and the support log grows a
+//! read per unfolding.
+//!
 //! # A refused body keeps the judgements it was refused inside
 //!
 //! [`check_module`] traces each body the judgement refused, at the point of the
@@ -42,6 +71,20 @@
 //! refusal stood inside, outermost first. They are the refusal's nested
 //! reasons. [`check_declaration`] judges strictly and traces nothing, so an
 //! incremental caller re-judging one declaration pays for no trail.
+//!
+//! A term judged twice in a row — checked, then synthesised to cross a bridge —
+//! is entered once, at its outer judgement, and a judgement synthesised rather
+//! than checked carries no type. The alternatives were keeping the anchors in
+//! every strict run, which charges each accepted judgement for a trail it never
+//! reads, and handing the refusal's pending frames back, which names rules
+//! rather than terms: most frames carry no enclosing node, so a face could not
+//! locate them. The choice reverses for a face that needs the rule each
+//! judgement was in, as well as its term — "the argument of this application"
+//! rather than "this" — which pairs each anchor with the frame awaiting it.
+//! Witnesses:
+//! `judgement::elaboration::tests::a_traced_run_keeps_the_judgements_a_refusal_stood_in`
+//! and
+//! `module::tests::a_refused_body_keeps_the_judgements_it_was_refused_inside`.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;

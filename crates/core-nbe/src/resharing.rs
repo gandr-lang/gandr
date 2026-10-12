@@ -38,6 +38,75 @@
 //! rather than inheriting that entry's edges, so the edges a revision validates
 //! grow with the derivation's distinct goals rather than with the square of
 //! its depth.
+//!
+//! # Process re-sharing in the machine
+//!
+//! Courant and Leroy observe (§6.3) that convertibility processes are
+//! duplicated wherever evaluations are shared: a pair whose two components are
+//! one node decomposes into two goals over one pair, and on a recursive
+//! function the copies multiply at every level. `decide` therefore looks every
+//! goal it starts fresh — the root and each premise of a decomposition — up in
+//! a `CheckMemo` before starting it, and a pending hit waits on the process
+//! already comparing that pair. An answered hit reuses its result: a
+//! decomposition polls immediately when a recalled refutation can settle it or
+//! no pending child remains to wake it. A delayed decomposition whose premises
+//! have already agreed therefore completes instead of reporting a false cycle.
+//! Witness: `machine::tests::completed_premises_wake_a_later_decomposition`.
+//! Choice alternatives are not re-shared, because they carry frozen constants
+//! and an unfolding chain that are part of their input.
+//!
+//! **The key.** A `GoalSupport` is a fresh goal's whole input: its two sides,
+//! as weak heads in hand or as closures opened under the fresh variable, and
+//! the binder level. Agreement is identity of sides and level, and the digest
+//! is folded from content — a rigid side's guard, a flexible neutral's polarity
+//! and head, the level — so agreeing supports share a bucket and a collision
+//! costs one comparison. Two goals over equal content under distinct ids miss
+//! rather than meet, which costs a recomputation and never an answer.
+//! Alternatives: content agreement, which would need structural equality over
+//! flexible nodes — the comparison the machine exists to make — and
+//! hash-consing the domain arena, which moves the decision into every mint.
+//! Reversal: a measured family whose duplicated goals arrive under distinct
+//! ids.
+//!
+//! Constructing a goal support resolves both sides, including closures to be
+//! opened. Equal ids do not make a missing closure valid: truncating either
+//! closure yields `ConversionFault::Domain(DomainFault::Dangling)`. The
+//! boundary is witnessed by
+//! `resharing::tests::opened_support_refuses_truncated_closures`;
+//! `resharing::tests::support_identity_and_digest_survive_forcing_without_conflating_inputs`
+//! pins the separate identity agreement and content digest as a neutral is
+//! forced.
+//!
+//! **The edges.** Each entry records what its answer was read from: the
+//! definitions its own derivation unfolded, including through its alternatives,
+//! and the entries it rests on, each named by one edge rather than by
+//! inheriting that entry's edges. They are what a revision of the definitions
+//! validates before reusing the entry, so the run reports their count by
+//! verdict, and the measure is edges validated per revision rather than hit
+//! rate: a key that gave every entry an edge to every definition below it would
+//! be quadratic in the derivation's depth while every hit stayed correct. An
+//! acceptance is keyed on its winning derivation, which alone decides it; a
+//! refusal is keyed on the union over the alternatives of the choices it
+//! refutes through, because every alternative had to fail, while a refuted
+//! decomposition rests on its negative premise alone, its other premises being
+//! conjuncts rather than alternatives. Alternatives: the union for both
+//! directions, which pays the refusal side's density on acceptances the winning
+//! derivation already decides; and gating the memo on a proof that acceptances
+//! keyed this way stay sound under revision, which is research the machine need
+//! not wait for, because a wrong key degrades to a miss and the differential
+//! below catches a key that moves a verdict. Reversal: a measurement where the
+//! refusal side's edges swallow the memo's payoff, or a soundness argument that
+//! changes the key's shape.
+//!
+//! **One run, one memo.** The memo's outcomes are process ids, so `decide`
+//! builds it empty for each run; nothing persists. `NullMemo` starts every goal
+//! afresh and compiles the memo interaction away, so the memoless machine is
+//! the same function at another type parameter, and the zero-drift differential
+//! runs both on every catalogue pair and asserts one verdict. Re-sharing can
+//! close a wait cycle — a goal whose premise is the goal itself — that the
+//! memoless machine would unroll until its budget; a run whose queue empties
+//! with the root still pending has only such cycles left, and declines with
+//! `DeclineReason::Cycle`.
 
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;

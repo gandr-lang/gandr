@@ -54,6 +54,48 @@
 //! the faces return beside their result. The count is how a test observes that
 //! a check converted where it should and nowhere else, without reaching into
 //! the walk.
+//!
+//! # Why three bridges
+//!
+//! Nothing else in the crate can reach [`convert`], so the three sites are a
+//! visibility fact rather than a count someone asserts. The count saturates at
+//! its maximum. The fixture `def f : U (Integer → F Integer) = thunk { λx.
+//! (force g) x }`, with `g` of the same type, crosses the value and computation
+//! bridges once each and reports two.
+//!
+//! The alternatives were rebuilding and comparing a synthesised type at every
+//! rule, which spreads type comparison over dozens of sites, and a counting
+//! lint, which needs a whole-crate pass and a declared expected number where a
+//! visibility rule needs neither. The decode bridge is the third site because a
+//! decode's code is a term whose type is a universe, and formation, which runs
+//! in the judgement's machine, is where that term is checked. The choice
+//! reverses when a former brings a cover merge — a sum elimination whose
+//! branches synthesise — at which point the merge joins the module and the
+//! projection's expected values change with it.
+//!
+//! # Why smallness is a lift
+//!
+//! A computation code checked one level up is `LevelMismatch`, and a universe
+//! offered at the other sort is `SortMismatch`. A lift the author writes is
+//! accepted only when it raises; one that does not is the unadmitted
+//! `TypeLift`. The alternatives were full cumulativity as subtyping, which the
+//! kernel would have to rediscover at every comparison instead of checking one
+//! lift at a recorded site, and no cumulativity, which makes every small type
+//! unusable at a larger universe without an annotation the author cannot write
+//! in the surface. The choice reverses if the kernel gains cumulativity of its
+//! own, at which point the recorded lift is redundant and the bridge stops
+//! writing it.
+//!
+//! # Variance
+//!
+//! A returner's row is covariant: `F A` stands where `F^ε A` is expected, never
+//! the reverse. Operation payload and reply types are invariant. A stack
+//! `Stack(B, C)` is contravariant in what it consumes and covariant in what it
+//! delivers: it stands where `Stack(B′, C′)` is expected when `B′ ⊑ B` and `C ⊑
+//! C′`. Witnesses:
+//! `conversion::tests::returner_rows_are_covariant_but_signature_types_are_invariant`,
+//! `conversion::tests::stack_is_contravariant_in_b_covariant_in_c_positive` and
+//! `conversion::tests::stack_variance_negative`.
 
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;

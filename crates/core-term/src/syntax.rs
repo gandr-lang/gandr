@@ -36,6 +36,216 @@
 //! depth. The derived equality is child-id equality rather than structural
 //! equality: two structurally equal subterms need not share an id, so every use
 //! site either compares inline leaf payloads or resolves ids explicitly.
+//!
+//! # Kernel alphabet and core grammar
+//!
+//! Levels, base types, literals, sum sides, de Bruijn indices, admission
+//! positions and subterm-table entry indices come from `gandr-kernel-strata`
+//! and `gandr-kernel-term`. The two languages therefore agree on what a literal
+//! or a level is, and erasing a core term to a kernel term remaps ids without
+//! translating payloads; the erasure itself is not in this crate. The node
+//! enums, the arena and the context are this crate's own, so an
+//! elaboration-only former enters the core grammar without widening the closed
+//! vocabulary the kernel represents.
+//!
+//! ### Effect rows
+//!
+//! Returner rows are covariant; a shared interface must agree on every
+//! operation name and on its invariant payload and reply types. Operation types
+//! belong to the returner's binder scope: formation, substitution, import and
+//! readback traverse them just as they traverse the result type. A bind
+//! accumulates the bound computation's row, including in checking mode.
+//! Nonempty rows do not cross into a kernel artifact: readmission reports
+//! `UnadmittedFormer::EffectRow`.
+//!
+//! **Choice.** Canonically ordered, shared interface maps keep pure rows
+//! allocation-free and make interface conflicts explicit. An operation carries
+//! types, not merely a name, so no ambient registry can change its meaning
+//! after checking. Open row variables would support row-polymorphic
+//! abstractions but require a solver; revisit when such an abstraction is part
+//! of the language contract.
+//!
+//! Witnesses: `effect::tests::operation_types_survive_substitution_and_import`,
+//! `effect::tests::relocation_keeps_names_and_refuses_duplicate_interfaces`,
+//! `effect::host::tests::host_interfaces_pin_names_payloads_and_replies`,
+//! `formation::tests::effect_operation_types_participate_in_formation_levels_and_scope`,
+//! `judgement::tests::check_mode_bind_subsumes_the_accumulated_row` and
+//! `bridge::tests::effectful_declarations_are_refused_by_name_at_the_pure_boundary`.
+//! The row laws `empty_is_the_bottom`,
+//! `subset_is_a_preorder_with_union_as_join`,
+//! `union_is_a_canonical_set_and_without_subtracts` and
+//! `signature_resolves_operations_by_name` run in `effect::tests`.
+//!
+//! ### Control syntax
+//!
+//! `Stack(C, D)` classifies a first-class continuation from computation `C` to
+//! `D`; `Reify` records its flat frames in execution order. Apply frames carry
+//! values, Bind frames carry independent one-binder computation bodies, and
+//! Project frames select a lazy pair. `With(C, D)` classifies a lazy
+//! computation pair, distinct from an eager value product.
+//!
+//! `Perform` and `Handle` carry inline interfaces. A handler return branch
+//! binds the returned value; each operation clause binds payload then
+//! resumption (`#0` is the resumption). `Shift` binds its captured stack.
+//! Interface annotations remain in the ambient scope. Import, substitution and
+//! portable content preserve these boundaries. Execution belongs to
+//! `gandr-core-sequent`'s machine, not to type conversion or kernel replay.
+//!
+//! **Choice.** Flat frames preserve independent scopes and make multi-shot
+//! resumption explicit. A nested encoding would put later frame operands under
+//! earlier binders; host closures would hide frame structure from capture and
+//! readback. Revisit only if the language deliberately changes stack scoping or
+//! continuation multiplicity.
+//!
+//! Witnesses: `control::tests::stack_literals_preserve_binder_scope`,
+//! `control::tests::stack_types_rebuild_both_computation_children`,
+//! `control::tests::effect_interfaces_and_clauses_rewrite_in_their_own_scopes`,
+//! `control::tests::lazy_pairs_keep_their_components_and_projection_side`,
+//! `tests::focus_properties::hand_built_control_cases_cover_every_former` and
+//! `check::tests::control_scopes_are_local_to_each_body`.
+//!
+//! # Nominal data and structural records
+//!
+//! A `DataSignature` owns a parameter telescope, constructor field lists in tag
+//! order and a positive universe bound. `ValueType::Data` retains the
+//! declaration identity and term-valued arguments; `Value::Constructor` retains
+//! its full classifier, tag and ordered fields. Parameter classifiers bind
+//! their predecessors. Constructor fields see all parameters but do not bind
+//! one another. A `DataCase` motive binds one scrutinee; its branches are
+//! functions in the ambient context. Iterative rewrites preserve these distinct
+//! scopes.
+//!
+//! Record types and values use ordered field maps. Labels identify fields, not
+//! offsets, and `RecordProjection` is a computation returning the selected
+//! value. `TupleProjection` is its positional counterpart over a tuple, naming
+//! a `Component` by index. All native children participate in syntax equality,
+//! rewriting and ownership; arities are not limited to three.
+//!
+//! **Choice.** Dedicated native forms rather than abstract atoms or a
+//! structural sum/product encoding. Typed code parameters and value indices
+//! share term-valued slots; the checker keeps every slot invariant.
+//! **Reversal.** Certified definitional index conversion requires its own
+//! evidence reader. The checker and kernel boundary is stated by
+//! `gandr-core-checker`, and its parity floor is tracked in
+//! [#199](https://github.com/gandr-lang/gandr/issues/199).
+//!
+//! A field may name its own declaration's family: the syntax is an ordinary
+//! `ValueType::Data` at the declaration's own position, and whether that
+//! occurrence is admissible is the checker's question, not the arena's.
+//! `Computation::Fixpoint { body, evidence }` is `fix x. M`: its body stands
+//! under one intuitionistic binder, the self thunk, so binder rewrites, shifts
+//! and substitutions treat it as they treat a lambda. `FixpointEvidence` is the
+//! kernel's own, `Partial` or `StructuralDescent`; the arena records the claim
+//! and grants nothing, and syntax equality distinguishes the two claims.
+//!
+//! # N-ary products and sums
+//!
+//! `ValueType::Product` and `ValueType::Sum` hold their components and summands
+//! as an ordered list. The unit type is the empty product, `ValueType::unit()`;
+//! no separate unit former exists. Syntax equality, rewriting, import and every
+//! walk compare and visit the list in order, so a product of three components
+//! is a node of its own, not a nest of binary products.
+//!
+//! Their introductions and eliminator follow: `Value::Tuple` holds its
+//! components in order, with the unit value as the empty tuple,
+//! `Value::unit()`; `Value::Injection` names its summand by a `Summand`
+//! position rather than a side; and `Computation::Case` holds one branch per
+//! summand, in summand order. A tuple of `n` components inhabits an
+//! `n`-component product and a case splits a sum of as many summands as it has
+//! branches. The kernel's products and sums are n-ary too, so the checker
+//! admits every arity: a tuple checks against a product of as many components,
+//! an injection against a sum with its summand, and a case against a sum of as
+//! many summands as it has branches; the empty sum is the empty type, its case
+//! of no branches the absurd elimination. Matching the unknown type answers one
+//! unknown type for every component (`hole::Components::Unknown`).
+//!
+//! `Computation::Split { scrutinee, arity, body }` eliminates a product by
+//! binding every component at once: the body stands under one intuitionistic
+//! binder per component, component zero outermost and the last innermost, so a
+//! split of `n` components reads its last at index zero. The arity is stated
+//! rather than read off the scrutinee's type, so that a split of no components
+//! is well scoped on its own and types its scrutinee as the unit: it discards a
+//! unit value without a projection to name. Syntax equality compares the arity
+//! before the children, and `Binders::deeper_by` moves a walk under the body's
+//! binders.
+//!
+//! **Choice.** A motive-less, check-only split with an explicit arity, the
+//! n-ary form of the prototype's binary split, beside the positional
+//! projection. **Alternatives.** Projection alone, which cannot type the
+//! discard of a unit, there being no component to project; a split reading its
+//! arity from the scrutinee's type, which leaves the empty split's scope
+//! undetermined before checking. **Reversal.** If dependent products arrive,
+//! the split gains a motive under the scrutinee binder, as the nominal case
+//! has.
+//!
+//! **Choice.** One n-ary former per connective, with the unit as its empty
+//! instance, rather than a binary former, a separate unit and nesting for wider
+//! shapes. Nesting fixes an association the source never wrote and makes the
+//! unit a special case of every walk. **Alternatives.** A binary former with a
+//! distinct unit, the current kernel shape, which keeps every walk two-child
+//! but leaves arity to an encoding; a record-only encoding, which loses the
+//! positional reading. **Reversal.** If n-ary values and the n-way case cannot
+//! be checked without per-arity rules that nesting avoids, return to binary
+//! formers and spell wider shapes by nesting.
+//!
+//! # Native universe paths
+//!
+//! `PathUniverse(a, b)` is the classifier `Path_U a b`; reflexivity,
+//! equivalence and product values introduce native paths, and `Transport`
+//! eliminates them. Certificates share the kernel’s portable `PathEvidence`
+//! vocabulary. Arena identity and content hashing retain evidence;
+//! `equal_certificate_syntax` compares raw classifier and map syntax while
+//! erasing evidence only. Computationally equivalent maps do not thereby
+//! identify certificates. Binder rewrites traverse classifier codes and
+//! translator bodies without reducing those maps.
+//!
+//! **Choice.** Native syntax in the ordinary arena, rather than a second path
+//! arena with different traversal and ownership rules. Core syntax itself
+//! grants no admission authority: the checker validates the closed endpoint
+//! fragment and the kernel replays candidates. Element-identity, higher-field,
+//! bridge-mode and `Flow_U` programs remain separate kernel APIs. **Reversal.**
+//! Extending the code fragment requires corresponding formation, admission and
+//! replay rules, not a syntax-only permission.
+//!
+//! # Static operators
+//!
+//! A type operator such as `\A. A * A` is a code-level function: it takes codes
+//! and returns a code, and it is gone before runtime. The core spells it with
+//! three value-family formers. `ValueType::StaticPi { domain, codomain }`
+//! classifies operators; `Value::StaticLambda` abstracts over one
+//! intuitionistic binder; `Value::StaticApplication` applies an operator to a
+//! code. All three are values because codes are values (§ Universe families):
+//! an operator is a code that awaits codes, so it lives where codes live, and
+//! an application is a code too. It decodes through `ValueType::Element` or
+//! `CompType::Element` like any other code.
+//!
+//! The static Pi is non-dependent: its codomain stands in the ambient context,
+//! as `CompType::Arrow`'s does, not under a binder. Its domain and codomain are
+//! themselves static classifiers: universes, or static Pis over them. That is
+//! the simply kinded discipline of System Fω, enough for a family such as `Type
+//! -> Type[-]` and for a relative monad's carrier. Dependency at the type level
+//! would make classifiers mention codes, and with them the kernel's conversion
+//! would have to compare open codes.
+//!
+//! A static application whose head is a static lambda is a redex, and the arena
+//! represents it. Arena constructors do not reduce it. Static beta belongs to
+//! the normalizer in `gandr-core-nbe`, which reads back static normal forms,
+//! and `instantiate_value` is the one substitution step a certificate replays.
+//! Keeping the redex representable means the elaborator can write a family's
+//! use as it stands in the source, and the checker can name each unfolding it
+//! performs.
+//!
+//! Alternatives:
+//!
+//! - a separate static-term language with its own arena family, which
+//!   duplicates every walk, every binder machine and every content codec;
+//! - type operators as computation-family functions over thunked codes, which
+//!   puts code-level reduction under effects;
+//! - reduce on mint, as decode does, which would hide the redex the certificate
+//!   names and would need substitution inside the arena.
+//!
+//! Reversal: a family whose classifier must mention a code, at which point the
+//! static Pi gains a binder and the kernel's conversion gains open codes.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;

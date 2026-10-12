@@ -89,6 +89,31 @@
 //! budget, spends one unit per task it pops, and hands the remainder to each
 //! evaluation it drives so the two share one budget rather than each holding
 //! its own.
+//!
+//! # Readback modes
+//!
+//! `ReadbackMode::ZeroUnfold` prefers the term face: a node whose face is
+//! `TermFace::Source` hands back that core id and mints nothing, and no
+//! unfolding is forced, so an `Unfolding::Unforced` body is still unforced when
+//! readback returns. `ReadbackMode::Unfolding` ignores the term face, rebuilds
+//! every node in canonical binder form so two results compare by structure, and
+//! spends every unfolding, forcing an unforced one from the run's
+//! `LoweredChain` first. The mode is a nominal input rather than a flag,
+//! because the wrong mode yields a different term. At `depth` open binders in
+//! its zone a level `l` is the index `depth - l - 1`; both subtractions are
+//! checked, and a level outside the opened binders is refused by name. A
+//! missing domain reference surfaces as `ReadbackFault::Domain`. Reading quoted
+//! formers also consults core nodes: a missing quoted type or quote body is
+//! `ReadbackFault::MachineInvariant`, while a failure from a driven evaluation
+//! remains `ReadbackFault::Eval`.
+//!
+//! One budget covers the readback tasks and every evaluation they drive. A
+//! force completed before a later refusal remains cached in the domain;
+//! truncating the core arena does not undo it. Budget witnesses therefore start
+//! each attempt from the same domain state, so a failed attempt cannot
+//! subsidize its successor. The measured minimum succeeds independently and one
+//! less refuses. Witness:
+//! `readback::tests::budget_search_does_not_reuse_forcing_from_failed_attempts`.
 
 use alloc::vec::Vec;
 

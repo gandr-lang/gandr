@@ -59,6 +59,71 @@
 //! overlay family holds before minting anything. A sharing stance mints at most
 //! the expansion and two nodes per rib, and a family that runs out of ids
 //! refuses at the mint.
+//!
+//! # Duplication walk
+//!
+//! `duplicate_value` and `duplicate_computation` validate a root, then rebuild
+//! everything it reaches into fresh nodes appended to the same overlay, asking
+//! `DuplicationPolicy::copies`, share by share, what to do with each part of
+//! the leg. A leg that is no abstraction is one rib: copied, the share is
+//! **inlined**, its leg walked afresh at each occurrence and the share gone;
+//! shared, the share is **kept**, its leg rebuilt once and every occurrence
+//! pointing at it. A leg that is an abstraction — a lambda, or a thunk over one
+//! — has a **spine**, the paths from its binder down to the binder's
+//! occurrences, and **ribs**, the maximal subterms of its body that do not read
+//! the binder. Both parts copied, the share is inlined; the spine shared, it is
+//! kept; the spine copied and the ribs shared, it is **distributed**: each rib
+//! becomes the leg of a new share standing where the abstraction's share stood,
+//! and each occurrence of the abstraction becomes a copy of its spine whose
+//! ribs are occurrences of those shares. That is the λ-distributor of He's
+//! atomic calculus in the overlay's terms, with the distributor itself never
+//! minted: its cursor — the frame of its first rib share and the ribs found so
+//! far — lives on the walk's heap task stack, beside the output frames and the
+//! covers of the shares inside a leg the walk reads in scope.
+//!
+//! Erasure reads a leg's indices where each occurrence stands, so a subterm
+//! moved into a share's leg reads, at its own position, what it read before. A
+//! subterm is a rib when its expansion does not read the binder — the binder's
+//! index, counted from where the subterm stands, is not among its free indices,
+//! an occurrence of an outer share reading its leg's and an opaque node its
+//! core term's — and when no occurrence inside it names a share opened inside
+//! the abstraction's leg, whose frame would not enclose the rib's new share.
+//! Ribs are sought through the body and through the bodies of the shares nested
+//! in it; a nested share's leg is read where its occurrences stand, so the
+//! binder's index there is no single number, and that leg travels with the
+//! spine. New rib shares are not distributed again in the same walk. When the
+//! policy copies every rib the output is the root's whole expansion, so the
+//! walk measures the root first and refuses, before minting anything, an
+//! expansion past the ids an overlay family holds as
+//! `DuplicationFault::ExpansionPastIds` and one past the measure's counter as
+//! `DuplicationFault::Measure`. A sharing stance mints at most the expansion
+//! and two nodes per rib, and every refusal leaves the overlay at its entry
+//! watermark.
+//!
+//! An abstraction prefix contains only a grafted thunk or lambda. The walk
+//! checks that classification before queueing children, so a nullary graft in a
+//! prefix mode is refused with `DuplicationFault::MachineInvariant` rather than
+//! silently rebuilt or skipped. Witness:
+//! `duplicate::tests::nullary_grafts_cannot_stand_in_an_abstraction_prefix`.
+//!
+//! The walk runs once over the whole root, before evaluation, and shares every
+//! maximal rib, a leaf or a variable included. It does not enter where a shared
+//! abstraction is forced into a redex: an environment machine re-evaluates an
+//! abstraction's body at every application, so what a walk at the redex would
+//! buy — a rib evaluated once across applications — is bought by lifting each
+//! rib into a leg of its own once and letting the evaluator remember a leg's
+//! evaluation (see `traced`); a walk at every β would rebuild one spine per
+//! application for no sharing the evaluator does not already have.
+//! Alternatives: a cache keyed on core node ids inside the machines, which
+//! makes the sharing decision behind the parameter's back (see `eval`); a node
+//! kind for distributors, which turns a reduction artifact into overlay surface
+//! that every producer would emit and validation would check; and the walk per
+//! redex, which rebuilds the spine at each application. Reversal: a measurement
+//! shows no deep case where the spinal stance evaluates in fewer steps than the
+//! reference at equal results, and the walk goes while the stance stays gated;
+//! a workload where leaf ribs cost more steps than they save copies the ribs
+//! below a size with the spine; a stance that must decide per application moves
+//! the walk to the redex.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;

@@ -27,6 +27,16 @@
 //! Entries are domain value ids, so an environment is two flat vectors of
 //! `Copy` ids and capturing one is a vector clone rather than a graph walk.
 //!
+//! # Closure spaces
+//!
+//! `ValueClosure` suspends a source value or a virtual
+//! value-type/computation-type quote, without allocating synthetic source
+//! syntax during evaluation. `CompClosure::body` retains source syntax or
+//! native transport and argument-application continuations. Both spaces capture
+//! the two-zone `Environment`; entering a closure extends that environment and
+//! evaluates its body. Entries are `Copy` ids, so capturing an environment
+//! clones two flat vectors.
+//!
 //! [the domain]: crate::domain
 
 use alloc::vec::Vec;

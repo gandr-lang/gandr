@@ -28,6 +28,38 @@
 //! Checked lookup rejects an out-of-bounds slot, not a foreign origin. A later
 //! allocation can reuse a truncated slot, so the caller must discard ids and
 //! edges to removed nodes rather than treating an id as a permanent identity.
+//!
+//! # Quotes and decode-on-mint
+//!
+//! `Value::Quote` names a value type as a code and `Value::QuoteComputation` a
+//! computation type; `ValueType::Element` and `CompType::Element` read a code
+//! back as the type it names. `CoreArena::value_type_element` and
+//! `CoreArena::comp_type_element` decode on mint: given a quote of the matching
+//! family as the code, they return the quoted type itself rather than minting a
+//! decode of it, so `El(⌜A⌝)` and `A` are one id and no conversion ever meets
+//! the redex. The level a decode carries is the code's universe level, and a
+//! decode of a quote ignores it: the quoted type has its own.
+//!
+//! Alternatives: a decode node kept over a quote and the β-rule left to
+//! conversion, which every comparison of a type then pays and the kernel would
+//! have to fire too. Reversal: a decode whose quote is only known after
+//! substitution still meets the rule, so a machine that substitutes a quote for
+//! a code variable re-mints the decode through the same constructor
+//! (`instantiate_comp_type` does).
+//!
+//! # Arena ownership
+//!
+//! A constructor records child ids supplied by its caller. Keeping those
+//! children live in the same arena, within the representable family-index
+//! limit, makes a same-family child strictly earlier than its parent;
+//! cross-family acyclicity follows from minting order rather than numeric
+//! comparison. The ids carry neither arena identity nor allocation generation.
+//! A lookup checks the current family bounds, not provenance: truncation
+//! removes nodes, but later allocation can reuse their indices. The caller
+//! therefore discards ids to removed nodes. `CoreArena::watermark` snapshots
+//! the four family lengths and `CoreArena::truncate_to` drops later nodes
+//! without growing a family when given a stale larger mark. Each walk over
+//! arena edges belongs to the consumer that needs it.
 
 use alloc::vec::Vec;
 

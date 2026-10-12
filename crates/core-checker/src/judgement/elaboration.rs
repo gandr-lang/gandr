@@ -23,6 +23,9 @@
 //! wrong former is marked, not its operand. Formation goals are never anchors:
 //! a malformed type marks the term whose rule asked for it.
 //!
+//! A rule refusing on its own frame marks the elimination where the marked
+//! lambda calculus marks the operand.
+//!
 //! # A term that cannot synthesise is checked against the unknown type
 //!
 //! An introduction in synthesis position is marked and then checked against
@@ -35,6 +38,17 @@
 //! so it marks nothing exactly when the strict judgement accepts, and its
 //! first mark carries the strict refusal. A mark stands on a node, so a node
 //! shared by two positions is marked at both.
+//!
+//! A property test drives both runs over the free term generator. Total
+//! elaboration is an entry beside the strict faces: `check_module` reports the
+//! strict verdicts. The alternative was a marking `check_module`, which changes
+//! every caller's verdicts; it is chosen when an editor face needs the marked
+//! declarations in the module report. Witnesses:
+//! `judgement::elaboration::tests::a_total_run_marks_where_a_strict_run_refuses`,
+//! `judgement::elaboration::tests::a_term_that_cannot_synthesise_is_checked_against_the_unknown_type`,
+//! `judgement::elaboration::tests::an_unfilled_hole_elaborates_to_a_type_and_evaluates_indeterminate`
+//! and
+//! `judgement::elaboration::tests::the_strict_judgement_is_the_total_runs_oracle`.
 //!
 //! # A traced run keeps the judgements a refusal stood in
 //!

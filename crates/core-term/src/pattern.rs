@@ -32,6 +32,21 @@
 //! translation once a consumer needs nested patterns to survive into the core
 //! term rather than being compiled away, at which point this table is its
 //! arms' vocabulary.
+//!
+//! # Patterns with holes
+//!
+//! The core calculus eliminates by case, data case and projection, and has no
+//! match. `pattern::Patterns` is the vocabulary a match's arms are written in —
+//! wildcard, binder, unit, literal, pair, injection, constructor and the
+//! pattern hole — minted part before whole into a flat table, so every walk is
+//! a loop over ids. A pattern hole is neither a wildcard nor an absurd pattern:
+//! a fill may make it either, so a question about a match with one has an
+//! answer only when every filling gives the same one (Yuan et al., OOPSLA
+//! 2023). `BranchStatus` is that answer for one branch: satisfied, refuted, or
+//! possibly. Live matching in `gandr-core-nbe` and coverage (Maranget, JFP
+//! 2007) in `gandr-core-checker` read the same table. A core match former
+//! becomes worth its kernel translation once a consumer needs nested patterns
+//! to survive into the core term rather than being compiled away.
 
 use alloc::vec::Vec;
 

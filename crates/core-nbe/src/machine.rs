@@ -61,6 +61,147 @@
 //! edges each entry records are the `resharing` module's. The null memo starts
 //! every goal afresh, so the memoless machine is the same function at a
 //! different type parameter, and the two are compared verdict for verdict.
+//!
+//! # Conversion machine
+//!
+//! `decide` is step 4: the lazy concurrent search of Courant and Leroy, as a
+//! flat arena of processes, a wait map and a duplicate-free run queue. A
+//! **goal** compares two weak heads and applies one rule per turn; a
+//! **channel** evaluates one weak head, one slice of a resumable evaluation per
+//! turn, so a diverging evaluation yields to the comparisons beside it. A goal
+//! names the channels and children it waits on by id, and each process lists
+//! its waiters; nothing recurses and nothing holds a reference to another
+//! process. A process runs only while something needs it: when a combinator
+//! answers early, the processes it no longer waits on lose that need,
+//! transitively, and stop being scheduled.
+//!
+//! The root first runs steps 1 to 3. An identical or structurally equal pair is
+//! convertible and a guard-separated pair is not, each emitted as one
+//! `ComparedShared` with no process started. A structural separation and a
+//! deferral start the machine, because a separation found deep in the
+//! structural walk is one the replay would have to find again, while the
+//! machine's derivation names the premise it rests on.
+//!
+//! The rule table reads the two heads. A defined head the goal has not frozen
+//! against a former unfolds: `Unfold` and the side's `ReduceLeft` or
+//! `ReduceRight`, then the unfolding channel's answer stands where the head
+//! stood. Two defined heads are a choice point, run as concurrent goals and
+//! combined as §6.1 says. The same constant over spines of one length runs the
+//! shortcut — `ConstShortcut`, then the arguments compared pairwise — beside
+//! the unfolding of the right with the left constant frozen and the unfolding
+//! of the left, biased: a convertible answer from any alternative wins, and
+//! otherwise the last, authoritative alternative decides. Two different
+//! constants drop the shortcut. A constant frozen on one side against itself
+//! unfrozen runs the shortcut or the unfolding of the unfrozen side, either
+//! answering. A frozen constant may no longer unfold in that branch, so each
+//! later unfolding of it happens in one branch only; a frozen branch can refute
+//! two convertible terms, which is why its refutation is never authoritative.
+//! Rigid heads decompose: one head over spines of one shape compares the
+//! arguments, and anything else refutes.
+//!
+//! η applies only in the two cases §6.2 shows safe and profitable. A lambda
+//! against a rigid or frozen neutral expands the neutral: `EtaExpand` names the
+//! fresh variable at the goal's depth, the neutral is applied to it and the
+//! lambda's body opened under it. A lambda against a defined neutral is a
+//! choice: freeze the constant and expand, beside the authoritative unfolding.
+//! A thunk against a thunk or a stuck value forces both sides. Alternatives: η
+//! at every lambda against any neutral, which expands before an unfolding that
+//! would have answered and duplicates work the choice shares; and no η, which
+//! refutes two η-convertible functions. Reversal: a measured family where the
+//! frozen expansion consistently loses to the unfolding beside it, which would
+//! drop the second case.
+//!
+//! A refuted decomposition records `NegativeSubgoal` with the position of the
+//! first premise in subgoal order that refuted, and its derivation is that
+//! premise’s alone. An agreeing decomposition records `Decompose` followed by
+//! its premises in order, unless the search-free structural comparison can
+//! close the entire parent with one `ComparedShared`. The explicit delimiter
+//! prevents a child’s shared comparison from being consumed as the parent’s
+//! answer. A `ConstShortcut` already names its decomposition. The winning
+//! derivation is emitted in preorder, once under each occurrence of a shared
+//! derivation. `machine::tests::native_records_cases_and_traces_agree`
+//! exercises multi-field positive and negative dialogues through independent
+//! kernel replay.
+//!
+//! # Native universe paths
+//!
+//! Closed reflexivity and equivalence certificates retain their raw source
+//! syntax. Product paths evaluate their children and keep a source face only
+//! when both children still denote the original children. Certificate
+//! conversion erases evidence but does not normalize maps. Transport applies
+//! the forward map, returns its input for reflexivity, or sequences component
+//! transports for a pair. Neutral paths and neutral product inputs remain
+//! eliminations on a spine.
+//!
+//! Readback reconstructs suspended product sequencing with the correct binder
+//! depth in both modes. `native_transport_sequences_product_components`
+//! distinguishes all four canonical/neutral component combinations;
+//! `native_certificate_conversion_retains_map_syntax` distinguishes
+//! computational map equality from certificate identity. The engine supplies
+//! CBPV dialogues to the kernel’s identity-by-code, higher-field, funext and
+//! `Flow_U` consumers; it grants none of those rule languages an admission
+//! receipt. Evaluation and readback exhaust `Fuel`; conversion exhausts
+//! `StepBudget`. Exhaustion declines rather than proving either equality or
+//! inequality.
+//!
+//! **Choice.** Ordinary CBPV evaluation and explicit continuations, not Rust
+//! translator closures or a second evaluator. Certificate evidence is excluded
+//! from conversion, while raw classifier and translator syntax remains
+//! observable. **Reversal.** A larger code or elimination fragment must first
+//! define the kernel rules that replay these computations.
+//!
+//! # Termination
+//!
+//! No termination result covers the machine: a definition may unfold to itself,
+//! and an evaluation may run Ω. The unbounded loop is the run queue's driver,
+//! not any one evaluation — each slice of an evaluation is bounded by its fuel,
+//! while the driver issues unfoldings, slices and alternatives without end — so
+//! the driver is what the two mechanisms bound, and each `# Termination` block
+//! in the machine names the loop it audits.
+//!
+//! **Cycle detection** comes first. Every goal carries, per side, the chain of
+//! unfoldings that side has made since the goal's last decomposition: a
+//! choice's alternatives inherit it, and a decomposition's premises start
+//! empty. An unfolding records its definition and the spine it unfolds under,
+//! compared by the ids the spine's eliminations name; a goal about to make an
+//! unfolding its side's chain already holds declines with
+//! `DeclineReason::Cycle`, because unfolding again can only return to where it
+//! stands. The channel tables make the key meaningful: one body is evaluated
+//! once per run, so a definition that unfolds back to itself meets the very
+//! neutral it started from rather than a freshly minted copy. Alternatives: the
+//! definition's name alone, which declines a terminating comparison that
+//! unfolds one function twice at different arguments, such as `id (id x)`
+//! against `x`; and the neutral's node id, which is fresh whenever a side is
+//! re-evaluated. Reversal: a cycle that reaches the budget in practice because
+//! its spine is re-minted every round would add a structural spine key; a
+//! terminating comparison the key declines would narrow it.
+//!
+//! **The step budget** is the backstop. A run charges one step per table read
+//! and per move, one per alternative a choice starts, and every evaluation step
+//! a channel runs: the reductions, forced steps and branchings of Courant and
+//! Leroy's `r + f + b` proof-size decomposition, over which their bound on the
+//! machine's running time is stated. A still-pending root declines with
+//! `DeclineReason::Budget` when charged steps exceed `StepBudget` or the
+//! representable counter ceiling. A root answer obtained on that turn takes
+//! precedence; the reported `StepCount` saturates without disabling the
+//! backstop. Witness:
+//! `machine::tests::step_counter_overflow_cannot_disable_the_budget_backstop`.
+//! Alternatives: a budget alone, which turns every terminating comparison
+//! longer than the budget into a refusal and catches a one-step cycle only
+//! after spending all of it; and a budget over evaluation fuel only, which
+//! never stops a run whose goals branch without evaluating. Reversal: a
+//! measured family whose cost is dominated by something these steps do not
+//! count.
+//!
+//! A decline is the third value of Kleene's logic in every combinator: a
+//! refutation outranks it in a decomposition, an agreement outranks it in a
+//! choice, and a choice whose authoritative alternative declined still waits
+//! for the others before declining. A decline is never a verdict on the terms:
+//! the caller may retry with a larger budget or a different schedule, and the
+//! kernel never certifies one. A decomposition with no premises agrees; an
+//! empty choice is instead `ConversionFault::MachineInvariant`, never a vacuous
+//! refutation. Witness:
+//! `machine::tests::empty_choices_refuse_instead_of_producing_a_refutation`.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::VecDeque;

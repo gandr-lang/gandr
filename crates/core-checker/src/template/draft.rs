@@ -30,6 +30,21 @@
 //! points whose columns agree, or a predecessor whose column equals a point's
 //! refuses the draft. Every check here is untrusted: the kernel decides the
 //! schema and every member's row.
+//!
+//! A new body tries the arms from the guard after the last one selected at its
+//! point, so members that arrive in the order the template numbered its arms
+//! compare one arm each. The memo holds a produced template compacted to the
+//! nodes its sides and arms reach. An admitted draft that imports nothing and
+//! leaves every node reachable keeps the held graph and renumbers its arms in
+//! place; one that leaves a node unreachable, by dropping an arm or by a
+//! rebase, is compacted again.
+//!
+//! The proposal is emitted canonically: nodes and classifiers in post-order
+//! from the two sides and the arms, each child and classifier component before
+//! its parent, unreachable content dropped, so a draft whose generalization is
+//! the producer's emits the producer's proposal exactly. The producer's price
+//! is applied to the drafted `s` and `F`, computed from each point's
+//! occurrences in the sides without instantiating a member.
 
 use alloc::borrow::Cow;
 use alloc::collections::btree_map;

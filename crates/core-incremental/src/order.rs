@@ -12,6 +12,21 @@
 //! naming the same item across edits elsewhere, and compares two handles'
 //! order in constant time. Reuse is decided by content, never by handle: the
 //! handle is identity for the consumer, not evidence for the checker.
+//!
+//! # Handles, not indices
+//!
+//! Each item holds a handle into an order-maintenance structure whose order is
+//! source order. A revision splices it: a longest run of surviving items whose
+//! base order the edit preserved keeps its handles (patience sorting, so a move
+//! costs the moved item's handle alone), every other item takes a fresh handle
+//! after its predecessor, and the rest are removed. Handles are identity for
+//! consumers — an editor's cursor, a stream reader's bookmark — and never
+//! evidence for the checker: reuse is decided by content.
+//!
+//! | Decision | Alternatives | Reversal |
+//! | -------- | ------------ | -------- |
+//! | Identity by content, recalled through the shared memo | positional identity; identity by name | the front end supplies stable item ids that survive every edit |
+//! | Keep handles on a longest preserved run | greedy keep-in-order, which loses every handle after a move to the front; a longest common subsequence over contents, quadratic | a consumer needs handles to follow moved items, which needs move detection in the front end |
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;

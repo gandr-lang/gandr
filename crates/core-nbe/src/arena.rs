@@ -64,6 +64,16 @@
 //! makes its parent's word [`Guard::Flexible`], the direction that decides
 //! nothing: the dangling child surfaces where it is read.
 //!
+//! # Per-run arena
+//!
+//! A `DomainArena` belongs to one run: nothing is persisted or shared between
+//! runs. Six id families — values, computations, neutrals, both closure spaces
+//! and levels — are minted only over children already minted. Cached words sit
+//! beside their node families; levels and native fields occupy flat side
+//! tables. `DomainArena::truncate_to` restores every family, cache and
+//! field-span watermark. Teardown drops these flat vectors without following
+//! recursive ownership.
+//!
 //! [term face]: crate::domain::TermFace
 //! [`CoreArena`]: gandr_core_term::CoreArena
 

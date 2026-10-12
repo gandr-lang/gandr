@@ -30,6 +30,38 @@
 //! `Hash` implementations, whose equality is the conversion equality for both.
 //! The word is computed and compared within one run; nothing claims it is
 //! stable across hosts or builds.
+//!
+//! # The cached word
+//!
+//! Every value, computation and neutral is minted with a `Guard`:
+//! `Guard::Rigid` carrying an FNV-1a `ContentHash` of the node's kind, payload
+//! and children's words, or `Guard::Flexible`. A node is flexible when a
+//! closure or a head with a body to unfold sits inside it; a dangling child at
+//! mint makes its parent flexible, the direction that decides nothing. For two
+//! rigid nodes conversion is structural equality on the hashed content, so
+//! differing hashes separate them; equal hashes decide nothing, because a hash
+//! may collide. Literal payloads and lift levels enter the hash through their
+//! `Hash` implementations, whose equality is the conversion equality for both;
+//! a term face never enters it, because two faces over one content are one
+//! value.
+//!
+//! The word carries the hash and the rigidity bit and nothing else.
+//! Alternatives: the hole and metavariable bits, a loose-variable range and an
+//! approximate depth that a Lean-style word packs. Each is uniformly trivial
+//! here — a neutral headed by a hole or a mark carries a closure and is
+//! flexible, so it decides nothing until filled, which is all a hole bit would
+//! say; levels make α-equivalence identity; and every node a binder could make
+//! loose is a closure, which is flexible and never hashed. Reversal: a guard
+//! asked to decide under a binder adds the range.
+//!
+//! The fold is ten lines over `core::hash::Hasher` rather than a crate.
+//! Alternatives: `rustc-hash`, whose algorithm changed across major versions
+//! and which would hold conversion machinery outside the workspace; `fnv`,
+//! unreleased since 2020; `foldhash`, seeded per instance with no stable
+//! output; and the workspace's `blake3`, a 256-bit cryptographic digest where a
+//! collision costs only a fall-through to step 3. Reversal: a word that crosses
+//! a run boundary, or needs an output stable across builds, takes a maintained
+//! crate with that guarantee.
 
 use core::hash::Hash;
 use core::hash::Hasher;

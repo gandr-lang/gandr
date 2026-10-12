@@ -28,8 +28,38 @@
 //! against independent per-equation DAGs, not optimal cross-member
 //! deduplication and not a persistence or decoding API.
 //!
-//! The crate's staging page records the measurement dependencies, alternatives
-//! and conditions for changing them alongside the observed family costs.
+//! The example measures strict powers at exponents zero through eight, a second
+//! iterator with step `p -> <~x * ~p * ~x>` at inputs two and three, and
+//! separately labelled repeated cancellation controls. Its witnesses cover
+//! strict prices, source correlation, refusal variants, cold and warm caches,
+//! poisoned-cache admission, independent image reconstruction and
+//! ownership-scope release. Finite witnesses establish neither universal
+//! soundness nor a wall-clock bound. Full readmission repeats ordinary replay
+//! after projection, so a byte saving is not a replay speedup.
+//!
+//! The byte observer uses default-off Serde and dev-only `serde_json`. Debug
+//! text and node counts do not measure encoded bytes; a binary codec answers a
+//! different size question. Revisit JSON when an interchange specification
+//! selects a format. Dev-only `allocation-counter` uses a synchronous
+//! thread-local System wrapper without runtime dependencies; DHAT adds
+//! backtrace and serialization machinery, and `stats_alloc` lacks the required
+//! high-water observation. Revisit allocation counting for multithreaded
+//! workloads, an applicable advisory or maintenance loss. Measurement scopes
+//! are non-nested and fallible rather than unwinding. An allocator stays an
+//! environment variable of the measured process, such as `MallocNanoZone=0` on
+//! Darwin, never a library default.
+//!
+//! Every pooled verdict and counter of the admission observer is checked
+//! against an independently executed serial receipt. Workers borrow one
+//! immutable schema and one immutable binding per family and own their row
+//! buffers; the observer is the only place a thread pool, a queue or a pool
+//! width appears, and the library spawns no thread. Run the tests beside the
+//! example, plain and enforcing:
+//!
+//! ```sh
+//! cargo nextest run -p gandr-core-checker -p gandr-theory-deep-inference
+//! RUSTFLAGS="--cfg anodized_panic" CARGO_TARGET_DIR=target/enforcing cargo nextest run -p gandr-core-checker -p gandr-theory-deep-inference
+//! ```
 
 extern crate alloc;
 

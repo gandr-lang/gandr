@@ -28,6 +28,37 @@
 //! the region to it; an update frame dropped by a shrink declines its cell
 //! back to [`MemoState::Unforced`], so an abandoned forcing leaves no black
 //! hole behind.
+//!
+//! # Two regions
+//!
+//! The heap region holds what outlives the frame that created it: values, memo
+//! cells and environment bindings, all append-only and addressed, so sharing is
+//! address sharing and a closure captures its environment by one address. The
+//! frame region holds the continuation as frames, in pushing order, each under
+//! a fresh `FrameSerial`. A `ContinuationMark` is a height together with the
+//! serial of the frame directly below it: binding a covariable binds a mark,
+//! and returning through one shrinks the region to it. A mark whose height has
+//! since been popped and re-pushed names a different serial and is refused with
+//! `StoreFault::StaleMark`. An update frame dropped by a shrink is a forcing
+//! abandoned mid-way, and its cell is declined back to unforced, so no black
+//! hole outlives the forcing that opened it.
+//!
+//! The alternatives were continuations as heap-allocated closures, which makes
+//! every frame an allocation and leaves nothing for an effect handler to walk,
+//! and a single stack holding values and frames together, which ties a value's
+//! lifetime to a frame's. The choice reverses if a measured run shows the
+//! serial check on every return to dominate, at which point marks of a
+//! well-bracketed fragment can skip it.
+//!
+//! # The store owns the cell protocol
+//!
+//! A memo cell moves from `Unforced` to `InProgress` through
+//! `Store::begin_force`, then to `Forced` through `Store::write_back` or back
+//! to `Unforced` through `Store::decline`. Every other write returns
+//! `StoreFault::CellNotInProgress` without changing the cell. The store
+//! enforces the protocol under arbitrary traces, not merely those one machine
+//! produces. Removing that check is justified only by measured cost and a
+//! replacement API that makes illegal transitions unrepresentable.
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;

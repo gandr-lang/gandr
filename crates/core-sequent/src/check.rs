@@ -19,6 +19,25 @@
 //! On success it answers the command's free variables and covariables, as
 //! indices counted from the command itself, so scope is checked by the caller
 //! asking for a closed command. The walk is a loop over an explicit stack.
+//!
+//! # The typed-IL check
+//!
+//! `check_command` walks a command and every node below it and refuses, by
+//! name, an address the arena does not hold; a constructor or destructor whose
+//! producer or consumer children contradict the counts its head declares; a
+//! match or copattern object answering one head twice; a `μ` standing where
+//! only a value may; and a cut whose producer or consumer observes the other
+//! polarity. Constructors, literals, thunks, recursive thunks, matches, nominal
+//! matches and force frames are positive, copattern objects and application
+//! frames negative, and variables, constants, `μ`, covariables, `μ̃` and `★`
+//! take the cut's polarity. On success it answers the command's free variables
+//! and covariables, counted from the command, so a caller asks for a closed
+//! command by asking for an empty `FreeSet`.
+//!
+//! The arena is acyclic by construction, so the walk is a loop with no depth
+//! limit. The alternative was a full two-sided type check, which needs the
+//! source types the IL does not carry; the check covers what is decidable from
+//! a command alone. The choice reverses if the IL comes to carry types.
 
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;

@@ -49,6 +49,33 @@
 //! which is never evaluated: its body is the part of the program no judgement
 //! accepted. Both read as indeterminate rather than rigid, because what they
 //! stand for is not yet decided.
+//!
+//! # Term face and unfolding face
+//!
+//! Readback chooses a face and conversion forces one, so both faces are part of
+//! one domain type. The **term face** caches the core term a node came from and
+//! keeps it while nothing inside reduced; once anything reduces the face is
+//! `TermFace::Reduced`, because a stale source id is a wrong readback rather
+//! than a slow one. The **unfolding face** keeps a neutral's neutral form
+//! beside its unfolded form: `Unfolding::Rigid` for a head with no body to
+//! unfold, `Unfolding::Unforced` carrying a manifest definition's body content
+//! id, and `Unfolding::Forced` once the evaluated body is recorded with
+//! `DomainArena::force_neutral`, by an unfolding readback or by the caller.
+//! Forcing adds the second reading and never replaces the first, so conversion
+//! can compare neutral forms and fall back to unfolding.
+//!
+//! # Neutrals and spines
+//!
+//! A stuck value and a stuck computation share a head and differ in what is
+//! stacked on it. The one value eliminator is static application, so a neutral
+//! in value position carries a spine of static applications only, and one in
+//! computation position carries the applications, binds and cases that could
+//! not fire, after any static prefix its head took first. `Neutral` is one node
+//! kind; `DomainArena::value_neutral` refuses a value-position neutral whose
+//! spine eliminates a computation, and `DomainArena::neutral_node` refuses an
+//! unfolding face on a head that has no definition behind it. A module
+//! reference is a rigid head like any opaque constant, with no eliminator of
+//! its own.
 
 use alloc::vec::Vec;
 

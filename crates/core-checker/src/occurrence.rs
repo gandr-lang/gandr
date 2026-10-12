@@ -7,6 +7,14 @@
 //! `U (Π ȳ. F (T ps))` — and always at the parameter variables in telescope
 //! order. Every other occurrence is refused by name, and a reference to a
 //! later position is a reference outside the block.
+//!
+//! Both checkers run this walk before a data declaration forms and refuse by
+//! the same names: `NegativeOccurrence`, `NestedOccurrence`, `IndexOccurrence`,
+//! `NonUniformOccurrence` and `CrossBlockReference`, each carrying the kernel's
+//! `OccurrenceSite` and each classified as malformed source. A declaration the
+//! checker admits, the kernel admits on readmission; one it refuses never
+//! reaches the bridge. Witness:
+//! `recursive_data::recursive_data::occurrences_are_refused_by_name_in_both_checkers`.
 
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;

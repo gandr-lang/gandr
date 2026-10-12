@@ -23,6 +23,33 @@
 //! form is assembled from steps each of which replays. Comparing two quotes
 //! whole after unfolding inside them would ask the machine to decide codes it
 //! declines to look into.
+//!
+//! # Path endpoints compare structurally
+//!
+//! Types embed terms in decode codes and in native path endpoints. Path
+//! endpoints are closed first-order quoted codes, and their decoded types
+//! compare structurally; elsewhere the type walk compares shared trees with a
+//! worklist and accepts equal ids without revisiting them. Accepted code
+//! definitions therefore take part in type conversion without a second reducer
+//! in the checker.
+//!
+//! # Why one step per certificate
+//!
+//! The machine compares quotes whole and declines a pair of codes when anything
+//! inside them could still unfold, so a whole comparison of `⌜U El(Num)⌝`
+//! against `⌜U Integer⌝` would be refused where the stepwise one succeeds, and
+//! a certificate of one δ-step is exactly what the kernel's replay re-derives
+//! by its own unfolding rule. A static step is certified the same way — one
+//! saturated instance of a static definition against its δβ-reduct, one static
+//! lambda's redex against its β-reduct — and the walk compares the rest former
+//! by former, a rigid instance by its head and its arguments.
+//!
+//! The alternatives were keeping the comparison structural and refusing code
+//! constants with bodies, which leaves `def Num : Type = Integer` unusable in a
+//! type, and a reducer local to the checker beside the machine, a second
+//! conversion the kernel oracle exists to rule out. The choice reverses when
+//! the machine decides codes under quotes, at which point the walk hands the
+//! machine each code pair whole and a comparison carries one certificate.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;

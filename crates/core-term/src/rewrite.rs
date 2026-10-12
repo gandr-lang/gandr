@@ -42,6 +42,27 @@
 //! every free index at once by the entry an evaluation environment holds for
 //! it, which is how a suspended body is read back in the context it is
 //! displayed in.
+//!
+//! # Binder machines
+//!
+//! A dependent arrow's codomain stands under one binder, so the checker shifts
+//! and instantiates types. `shift_value_type` and `shift_comp_type` raise the
+//! free indices of the intuitionistic zone at or past a cutoff;
+//! `instantiate_comp_type` substitutes a value for the innermost index and
+//! lowers the rest; `strengthen_comp_type` lowers a type out of one binder or
+//! refuses with `strengthening::Absent::MentionsBinder` when the type mentions
+//! it. Each runs on a heap task stack, never recursing, and memoizes per node
+//! and binder depth, so a shared subterm is rewritten once per depth it is
+//! reached at. A replacement carried under a binder is shifted once per depth
+//! and recorded, so substitution avoids capture without renaming anything. The
+//! linear zone is left alone: no former in the vocabulary binds into it.
+//!
+//! Alternatives: recursive rewrites, which the workspace's recursion lint
+//! forbids and which a deep type would overflow; and explicit substitutions
+//! held lazily in the arena, which every reader would then have to push
+//! through. Reversal: a measured family whose cost is dominated by the eager
+//! rewrite, which would hold substitutions as closures the way the normalizer
+//! already does.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;

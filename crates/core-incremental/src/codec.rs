@@ -17,6 +17,20 @@
 //! is also checked to be numbered by discovery from its roots, which writing
 //! it again would not reveal. Counts read from the input never size an
 //! allocation: a corrupted count fails at the end of the input instead.
+//!
+//! # One canonical encoding
+//!
+//! A checkpoint set encodes to one byte string: magic, allowance, then each
+//! item’s content, footprint, support and typing, with sets ascending and
+//! tables in discovery order. Content producers establish the table invariants;
+//! the decoder checks them. Before framing, a borrowed pass refuses any level
+//! atom whose offset reaches 4,096, in the content, support or typing. The
+//! decoder enforces the same bound because it reconstructs each offset with
+//! that many successors. It also refuses truncated, malformed and trailing
+//! bytes, and any payload that parses but is not the canonical spelling of its
+//! value. After the level check, encoding names the sort of its first
+//! unresolved id (`UnsupportedPersistence::Dangling`); opaque content has no
+//! spelling.
 
 use alloc::collections::BTreeSet;
 use alloc::string::String;

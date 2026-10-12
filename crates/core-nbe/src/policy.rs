@@ -39,6 +39,64 @@
 //! uncertified strategy is precisely the inversion the trace-before-strategy
 //! ordering forbids, so the refusal is the ordering made mechanical rather than
 //! a note in a design document.
+//!
+//! # Scheduling share
+//!
+//! A definitional height is a prior about which side of a conversion is cheaper
+//! to unfold. As a gate on which reductions run it can foreclose the short
+//! proof; as a share it changes only how fast each process runs.
+//! `SchedulingPolicy::share` returns a strictly positive `Share` for every
+//! height under every stance, so no stance starves a process.
+//! `SchedulingStance::UniformFair` is the default;
+//! `SchedulingStance::HeightWeighted` weights shallow goals ahead of deep ones
+//! without stopping the deep ones. The conversion machine reads a share as a
+//! period: a process takes one turn per `share` visits of the run queue, a goal
+//! at the share of the taller defined head it compares and a channel at the
+//! share of the definition it evaluates, so under the weighted stance a deeper
+//! process advances more slowly and never stops. Never stopping is not
+//! finishing within a budget: a refutation sixteen unfoldings deep beside a
+//! shallow divergence answers within a 2,000-step budget under the fair stance,
+//! and under the weighted one spends the same budget on the divergence and
+//! declines; the kernel's replay declines with it rather than reading the
+//! decline as either verdict.
+//!
+//! # Duplication stance
+//!
+//! `DuplicationPolicy::copies` answers, per part of a shared value, whether a
+//! duplication copies it. `DuplicationStance::EraseAndClone` copies everything
+//! and is the unshared reference output every other stance replays against.
+//! `DuplicationStance::Spinal` copies the binder-to-occurrence spine and shares
+//! the ribs. `DuplicationPolicy::new` refuses it with
+//! `PolicyRefusal::StanceGated`, so `duplicate_value`, `eval_overlay_value` and
+//! their siblings, which take a policy from `new` or `default`, run only the
+//! reference; the stance installs only through `TracedDuplication`, bound to a
+//! sink that records (see `traced`). The results that would certify the stance
+//! on their own are stated over simply-typed systems that type no fragment of
+//! this language, so a spinal verdict is certified by the kernel's replay of
+//! its trace instead.
+//!
+//! # Granularity stance
+//!
+//! `GranularityPolicy` says how finely the conversion machine shares the
+//! evaluations its goals demand. `GranularityStance::Skeleton`, the default,
+//! mints one evaluation channel per distinct definition body, keyed by the
+//! body's subterm-table entry index in a dense side vector, so two unfoldings
+//! of one body — of one definition, or of two the table gave one body — read
+//! one evaluation. Re-applying a neutral's spine to that body, entering a thunk
+//! and opening a binder under a fresh variable are each one channel per
+//! neutral, closure, or closure and level. `GranularityStance::Spinal` would
+//! mint channels along spines as well, sharing partial applications between
+//! unfoldings; `GranularityPolicy::new` refuses it with
+//! `PolicyRefusal::GranularityGated`, because a finer sharing changes which
+//! evaluations a derivation reads, and it installs only once a replayed trace
+//! certifies its runs.
+//!
+//! Alternatives: no parameter, with the skeleton hard-wired, which leaves the
+//! finer stance no seam to arrive through; and one channel per neutral with no
+//! body sharing, which evaluates a body once per distinct spine and loses the
+//! table's own deduplication. Reversal: when certified spinal runs show the
+//! parameter costs more than the sharing it buys, the parameter goes and the
+//! skeleton is the machine's only shape.
 
 use anodized::spec;
 use gandr_core_term::DefinitionHeight;

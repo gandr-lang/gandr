@@ -12,6 +12,20 @@
 //! acceptance the kernel does not repeat is reported as [`Outcome::Rejected`]
 //! rather than trusted.
 //!
+//! The judgement and the bridge both sit outside the trusted base. The property
+//! `every_fixture_the_checker_accepts_is_readmitted` asks the kernel to repeat
+//! every acceptance over the checker's own fixture set, and
+//! `every_checked_function_definition_is_readmitted` over generated function
+//! definitions in the shape a lowered function tail takes: a thunked chain of
+//! lambdas over a chain of binds, declared at `U` over the arrows into a
+//! returner. The verdict carries the body it judged, so the bridge reads the
+//! report alone and never pairs a verdict with a declaration it could disagree
+//! with. The alternative was a second checker over the core vocabulary, which
+//! doubles what must be trusted instead of reducing it to the kernel. The
+//! choice reverses only in scope: a former whose erasure needs machinery the
+//! bridge lacks — the binding of a sealed atom, a level parameter — lands as
+//! its own change with its own witnesses, and the oracle stays.
+//!
 //! # Erasure is an id remapping
 //!
 //! The core vocabulary reuses the kernel's leaves — literals, base types, de
@@ -25,6 +39,14 @@
 //! through the same views the judgement does, and refuses every other former
 //! by name. Each distinct node is erased once per declaration, so the kernel
 //! sees the sharing the producer built and no more.
+//!
+//! The bridge builds the position map from the admissions themselves, the only
+//! map that cannot disagree with the environment it indexes. The alternative to
+//! remapping was keeping module positions verbatim and admitting a placeholder
+//! axiom for each declaration that did not cross, which puts assumptions in the
+//! audit that the ledger never owed. The choice reverses when declarations are
+//! admitted into an environment shared across modules, where the environment
+//! assigns positions and the map becomes its own.
 //!
 //! # A lift the judgement recorded is written where it stands
 //!
@@ -49,6 +71,32 @@
 //! [`Refusal::CertificateDeclined`], and the environment is left as it was.
 //! The replayed verdicts travel on each [`Readmitted`].
 //!
+//! Only the argument position unfolds: a constant elsewhere in a term, a code
+//! alias's own body among them, crosses as the constant, so the certificate for
+//! an alias of an alias still compares the constant it names. A declined
+//! certificate is `Refusal::CertificateDeclined { unfolded, reason }`, which
+//! keeps the kernel's `ReplayDecline` and stays an engine fault; a
+//! certification that produces no dialogue records
+//! `ReplayDecline::EngineDeclined`. The kernel admits a code constant's lifted,
+//! elaborated body, read back to normal form, so the constant it unfolds is the
+//! constant the judgement unfolded.
+//! `every_checked_universe_declaration_is_readmitted` and
+//! `every_readmission_certificate_replays` ask this of generated modules of
+//! universe declarations, codes, aliases and lifts;
+//! `a_code_constant_argument_unfolds_at_export` asks it of a polymorphic
+//! identity instantiated at a code alias.
+//!
+//! The alternatives were giving the kernel cumulativity and static δ-reduction
+//! in its own conversion, which widens the trusted base for what a replayed
+//! trace already certifies; trusting the normaliser's readback unreplayed,
+//! which leaves the exported declaration related to its source by an unchecked
+//! step; and unfolding every constant in term position, which rewrites a code
+//! alias's body to its target so that the alias's certificate compares the
+//! wrong pair. The certificate records one step for the reason the judgement's
+//! does; one trace per code replaces the steps when the machine decides codes
+//! under quotes, and the argument unfolding goes when the kernel's conversion
+//! unfolds what it admitted.
+//!
 //! # A static operator crosses as its static normal form
 //!
 //! The kernel has no static lambda and reduces no static application, so the
@@ -72,6 +120,30 @@
 //! at the constant it admitted, closed on the two normal forms, because the
 //! body it admitted is already normal.
 //!
+//! A hole of static Pi type is an opaque operator and crosses as an axiom. One
+//! certificate is kept per distinct instance a declaration meets, keyed by what
+//! the step unfolded and the content digest of the kernel's image of its redex:
+//! the same instance written twice is replayed once, and one definition at two
+//! instances is replayed twice.
+//! `one_static_definition_at_two_instances_records_two_certificates` and
+//! `every_checked_static_declaration_is_readmitted` assert it, the second over
+//! the relative monad's operators written with and without the static spelling;
+//! `a_static_lambda_crosses_only_as_a_closed_operator` asserts both arms of the
+//! open-lambda refusal. The definition's normal body and the normaliser's trace
+//! differ because the trace walks the unnormalized body and names operators the
+//! normal form no longer holds.
+//!
+//! Each step is certified and replayed on its own, by rules the kernel already
+//! has, because the machine produces no trace under a quote. The alternatives
+//! were static reduction in the kernel's conversion, which widens the trusted
+//! base for what a replayed step certifies; a certificate per occurrence rather
+//! than per instance, which replays one derivation once per mention; and
+//! refusing static definitions at the bridge, which leaves every declaration
+//! that names one uncrossed. The per-step certificates give way to one trace
+//! per code when the machine decides codes under quotes; the open-lambda
+//! refusal lifts with lambda lifting over the binders the lambda reaches, which
+//! numbers it as an operator closed over them.
+//!
 //! # An uncompleted signature enters as an axiom
 //!
 //! An owed hole is a declaration with a type and no body, which is exactly the
@@ -81,6 +153,14 @@
 //! not form — crosses as nothing. An axiom's constant is rigid: no decode of
 //! it unfolds.
 //!
+//! The kernel reports the assumption in the audit of the hole and of every
+//! declaration that reads it. A hole here owes a formed type, so the kernel can
+//! assume it; a hole in synthesis position has no type to assume, and the
+//! judgement has refused it already. The alternatives were refusing a module
+//! until its ledger is empty, which withholds the kernel's verdict on every
+//! complete declaration until the last hole is filled, and a placeholder term
+//! in the hole, which the kernel would check as if the author had written it.
+//!
 //! # A mark crosses as nothing
 //!
 //! A refused declaration carries its refusal as its mark, and the bridge offers
@@ -88,6 +168,12 @@
 //! the judgement did not, and not its signature as an axiom, which would put an
 //! assumption in the artifact's audit that the ledger never owed. A later
 //! declaration reading it is [`Refusal::Withheld`], located at the reference.
+//!
+//! A reader of a marked declaration is withheld even when it checked against
+//! that declaration's stated contract. The alternative was offering a marked
+//! declaration's signature as an axiom so its dependents cross, which makes the
+//! audit disagree with the ledger; the choice reverses only together with the
+//! audit's.
 //!
 //! # A term hole is refused where it stands, and a mark is erased
 //!
@@ -103,6 +189,17 @@
 //! kernel's own input invariant is unchanged; it never sees a hole, a mark or
 //! the unknown type.
 //!
+//! The differential witness
+//! `a_hole_is_refused_where_it_stands_and_its_filling_is_admitted` shows, in
+//! one artifact, the refusal, the same declaration with its hole filled
+//! admitted as a definition, a mark around a good body admitted, and a mark
+//! around a bad one rejected by the kernel. The alternative was an axiom per
+//! term hole, abstracted over the hole's context, so a declaration with a hole
+//! would cross and its audit would name the assumption; it is chosen when an
+//! artifact must cross before its holes are filled. A term mark is not a
+//! refused declaration, whose outcome is [`Outcome::Marked`] and which crosses
+//! as nothing.
+//!
 //! # The audit exposes source and runtime assumptions
 //!
 //! The kernel's audit names every axiom a declaration transitively rests on.
@@ -111,6 +208,20 @@
 //! typed opaque axioms; their dependents retain those assumptions in the audit.
 //! The kernel checks the native signatures but executes no host arithmetic.
 //!
+//! [`ArtifactAudit`] unions the kernel's reports over the source module, an
+//! axiom's own position included. Without native operations its axioms are
+//! exactly the positions the owed holes took, and it is empty exactly when the
+//! ledger is; with native operations it also records their typed runtime
+//! assumptions, even when no source hole is owed. The union adds no kernel-side
+//! audit mechanism and never hides a native assumption, so sealedness and
+//! runtime trust are separate observations. The alternatives were gating
+//! readmission on an empty ledger, which hides the kernel's verdict on complete
+//! declarations behind incomplete ones, and an artifact audit inside the
+//! kernel, which widens the trusted surface for a fold any caller can compute.
+//! The choice reverses when a publishing or dependency boundary arrives: a
+//! module offered to another then needs its audit empty, and that boundary
+//! gates on this report.
+//!
 //! # The bridge owns its staging, so it owns the rollback
 //!
 //! Each declaration is erased into a staging session the bridge opened, and a
@@ -118,12 +229,63 @@
 //! is truncated by the kernel's choke point. A declaration that does not cross
 //! leaves the environment as it found it.
 //!
+//! `a_refused_declaration_leaves_the_environment_unchanged` asserts it by the
+//! kernel arena's watermark against the same module without the refused
+//! declaration. The alternative was leaving partially erased content in the
+//! arena as unreachable nodes, which every later reader of the arena would have
+//! to step over; there is no reversal while staging has an explicit discard.
+//!
 //! # One machine, no recursion
 //!
 //! Erasure is a machine of goals and frames over an explicit stack. A node is
 //! open while its frame waits, so a node that is its own descendant —
 //! constructible only from ids of another arena — is refused instead of erased
 //! forever.
+//!
+//! Erasure charges no allowance: each distinct node is erased once and refused
+//! if revisited while open, so a run is bounded by the arena it reads. The
+//! alternative was charging the judgement's `CheckBudget`, which bounds work
+//! the memo bounds already; the choice reverses if erasure ever erases one node
+//! under two contexts, as a level instantiation would.
+//!
+//! # A split crosses as its projection binds
+//!
+//! The kernel has no split. Erasure mints the split's reduct into the core
+//! arena and erases it in the split's place: one bind per component, component
+//! zero outermost, each of the projection of the scrutinee shifted past the
+//! binds before it, ending in the body, so the body reads the components at the
+//! indices the split gave them and a split of no components crosses as its
+//! body. The kernel then judges the projections and binds by its own rules.
+//! `native_formers::native_formers::a_split_crosses_as_its_projection_binds`
+//! crosses a split of a variable pair, which a wrong shift would project from
+//! its first component, a split of a closed triple and a split of the unit.
+//!
+//! The alternatives were a kernel split, which widens the trusted base by a
+//! binder former the projection already expresses, and refusing the split at
+//! the bridge, which leaves every program that discards a unit uncrossed. A
+//! split of a neutral compares in the normaliser by its arity and bodies, and
+//! those verdicts are not replayed: the kernel never sees a split, only the
+//! binds it judges itself. The choice reverses if the kernel gains a split of
+//! its own.
+//!
+//! # The export carries the producer's names
+//!
+//! [`Readmission::export`] encodes the environment the kernel built: each
+//! declaration that crossed, in kernel admission order, marked checked and
+//! carrying the `StructuredName` the producer gives its module position. The
+//! bridge keeps each declaration as it staged it, because the kernel's
+//! environment exposes an admitted declaration's audit and not its content, and
+//! names it only when it is written out. A flattened structure member is
+//! therefore exported as one declaration named by its segments, a declaration
+//! that did not cross is not in the artifact, and every reference in it is
+//! still the kernel position its target took; the name is never read.
+//!
+//! The alternatives were names on the checker's `Declaration`, which makes the
+//! judgement carry a surface fact it never reads, and a name table beside the
+//! artifact, which leaves the exported members nameless to anything reading the
+//! artifact alone. The choice reverses if a renamed module must export a
+//! byte-identical artifact; the names then move to that side table and the
+//! export writes none.
 //!
 //! [`Staging::axiom`]: gandr_kernel_core::Staging::axiom
 

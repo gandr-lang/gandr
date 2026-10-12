@@ -34,6 +34,126 @@
 //! fresh cell, a copattern object or a `μ` closes over the environment, and a
 //! constant unfolds its [`Definition`] once per machine, a cycle among
 //! definitions stopping the run. Every walk is a loop over an explicit stack.
+//!
+//! # Ordinary continuations are marks
+//!
+//! `Machine::run` is a loop over one control state — run a cut, deliver a value
+//! to a consumer, return a value to a mark, pop the top frame — each iteration
+//! one transition against the caller's `StepCount`:
+//!
+//! ```text
+//! run ⟨μα.s |ε c⟩ ρ      load c, bind α to its mark, run s      (not at ε = − against a μ̃)
+//! run ⟨p |ε c⟩ ρ         evaluate p, deliver it to c
+//! deliver v α            return v to α's mark       deliver v ★        return v to the base
+//! deliver v μ̃x.s         run s with x bound to v    deliver v case     run v's arm, fields bound
+//! deliver v D(ā; c)      load c, observe v by D     return v m         shrink to m, pop
+//! deliver c_i(v̄) datacase(b̄; c)                     load c, push apply(v_j) for each field, force b_i
+//! ```
+//!
+//! Loading a consumer pushes the frames it denotes: a chain of destructor
+//! frames over a covariable or `★` first shrinks the region to that base, and
+//! one over a `μ̃` or a match pushes onto the current top. A covariable binds
+//! the mark of the continuation it names, so returning through it is a shrink
+//! to that mark, and a mark whose frame has since been popped and replaced is
+//! refused as stale by the store. Forcing a thunk follows its cell: a forced
+//! cell returns its cached value, an opened one pushes an update frame under
+//! the body's return point, a re-entrant one runs the body inline; a recursive
+//! thunk does the same with itself bound innermost. A `μ` against a `μ̃` at a
+//! negative cut is suspended and bound, the call-by-name side of the critical
+//! pair; everywhere else the `μ` runs first. Producers evaluate within a
+//! transition — a constructor over its evaluated fields, a thunk or a recursive
+//! thunk with a fresh cell, a copattern object or a `μ` closed over the
+//! environment — and a constant unfolds its definition once per machine, a
+//! cycle among definitions stopping the run as `Stuck::CyclicConstant`.
+//!
+//! Ordinary covariables use marks into the one frame region; values and
+//! environments use shared heap addresses, and the caller supplies the step
+//! budget. First-class capture copies only the delimited frame segment into an
+//! immutable heap stack. Copying every ordinary continuation would add work
+//! where no capture occurs; opaque continuation closures would prevent
+//! structural handler dispatch. Revisit that split only if measured capture
+//! workloads justify another shared frame representation.
+//!
+//! # Fixpoints
+//!
+//! A core fixpoint `fix x. M` focuses to a recursive thunk, `fix{x; force(α) ⇒
+//! 𝓕⟦M⟧α}`: a thunk whose body binds one producer, the thunk itself, innermost,
+//! besides its return point. The machine allocates it with a memo cell like any
+//! thunk and forces it by the same cell protocol, binding the forced value
+//! itself as `x`, so a self reference is an address in the environment and the
+//! heap stays acyclic and append-only. The cell caches what forcing the
+//! fixpoint returns — for a recursive function, the function — which no
+//! argument changes, and a body that forces itself before returning re-enters
+//! the cell and loops until the budget runs out. A nominal match `case_D v
+//! {b̄}` delivers `c_i(v̄)` to `datacase(b̄; c)` by loading `c`, pushing one
+//! application frame per field, the first on top, and forcing `b_i`: the core's
+//! case-β, `b_i` applied to `v̄`.
+//!
+//! The machine unfolds a fixpoint when it is forced; `core-nbe` unfolds one
+//! when it is applied to a canonical argument. The two strategies agree on a
+//! closed first-order answer, and the differential compares them over Nat, List
+//! and a Tree with a function field. **Choice.** A recursive thunk, rather than
+//! a refusal, which leaves every recursive program without a runner.
+//! **Alternatives.** Unrolling the fixpoint a bounded number of times hands the
+//! machine a term that diverges from the core at the bound. A cyclic
+//! environment — `x` bound to a closure over the environment that binds it —
+//! breaks the append-only heap the readback walks in address order.
+//! Self-application through a recursive type needs types the IL does not carry.
+//! A nominal match's branches as pattern arms binding the fields would strip
+//! each branch's `λ`s, which is not total: a branch is any computation of the
+//! function type. **Reversal.** A fixpoint whose value depends on the argument
+//! it is applied at — a fixpoint at a computation type other than a function,
+//! read lazily — would need the cell bypassed; the core admits none.
+//!
+//! # Effects and delimited control
+//!
+//! Effect requests carry an inline signature, an operation name and a live
+//! payload. The nearest delimiter decides dispatch: a matching handler captures
+//! its own frame and the intervening continuation; a nonmatching handler or a
+//! reset offers the request to the host rather than searching an outer handler.
+//! Matching uses both interface and operation names, so unrelated interfaces
+//! cannot intercept each other's equally named operations. A shift captures
+//! through the nearest reachable reset; a handler is a barrier, not a reset.
+//!
+//! Captured stacks are immutable frame slices over shared heap addresses.
+//! Resume copies the frames onto the ambient continuation, making capture
+//! multishot and deep handling explicit. Local returns inside delimiters fall
+//! through the reinstalled stack instead of retaining stale absolute marks.
+//! Memo updates crossed by capture or a host offer are declined: effectful
+//! forcing cannot cache a context-dependent reply. Pure forcing keeps the cell
+//! protocol.
+//!
+//! `Machine::run_with_host` offers only unclaimed operations. `HostValues`
+//! permits inspection, allocation and structural readback without exposing
+//! continuation mutation. A reply resumes the original stack once, `Abort`
+//! terminates without resuming, and `Decline` retains `Stuck::PerformNoHandler`
+//! at the request. The adapter owns external effects, reply typing and policy;
+//! the machine performs no host I/O itself. Shared heap replies preserve thunk
+//! and continuation identity without refocusing a copied source term.
+//!
+//! Literal stacks retain independent frame scopes and read back exactly;
+//! captured delimiter frames have no literal-stack spelling and return
+//! `ReadbackRefusal::NonLiteralStack`, never an invented value. Lazy pairs use
+//! two projection copatterns and evaluate only the selected branch.
+//!
+//! **Choice.** Qualified interface-and-operation dispatch prevents equal
+//! operation names from crossing distinct interfaces. The alternative,
+//! operation-name-only matching, cannot preserve inline interface identity.
+//! Multi-shot captures keep immutable frame sequences and shared heap addresses
+//! rather than cloning payload values. Revisit multiplicity only if the type
+//! system makes resumptions explicitly one-shot; revisit unqualified dispatch
+//! only with globally unique operation identities.
+//!
+//! Witnesses: `machine::tests::hand_built_effect_cases_agree`,
+//! `machine::tests::hand_built_shift_cases_agree`, the eight `host_seam_*`
+//! tests,
+//! `machine::tests::handler_resumption_under_projection_uses_the_ambient_continuation_once`,
+//! `machine::tests::the_assert_handler_runs_combinator_assertions`,
+//! `machine::tests::the_assert_handler_reports_a_failure`,
+//! `machine::tests::a_mock_exec_handler_replaces_a_real_command`, and
+//! `machine::tests::literal_stacks_close_flat_frame_scopes_and_resume_in_order`.
+//! These directed outcomes cover runtime control independently of the pure NBE
+//! oracle, which refuses effect and control instructions by former.
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;

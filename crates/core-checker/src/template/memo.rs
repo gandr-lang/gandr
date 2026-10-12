@@ -17,6 +17,65 @@
 //! the memo drafts while its own acceptance clears its own. A family declined
 //! six times in a row, by its key or by the memo, drafts on the seventh, so no
 //! estimate freezes.
+//!
+//! The key is the rule and the shallow source shape; the program is not part of
+//! it, so the caller carries one memo, like one inheritance cache, from program
+//! to program. `Memo::admit_family` answers the kernel's schema, the proposal's
+//! origin, what the drafter did, and the time drafting, production and the
+//! kernel each spent. `Memo::admit_families` admits one harvest's families
+//! through the caller's `Fork`: it plans every family in harvest order against
+//! the controller as it stood before the harvest, admits each against the slot
+//! its key holds, and folds the time samples back in harvest order, so under a
+//! clock that never advances its reports equal admitting the families one by
+//! one. Why the slots are disjoint, and what that gives up, is in `staging`.
+//!
+//! # The kernel is the only judge
+//!
+//! A drafted schema and every member's row go through `Schema::check`,
+//! `Schema::bind` and `Substitution::admit` as a produced one does. Under the
+//! memoized price, an admitted draft still falls back when one of the kernel's
+//! inheritance replays spent more than `c = s`, the allowance the producer
+//! would have enforced (`Schema::largest_replay`). A draft the kernel refuses,
+//! a member the walk misses, or a withdrawn draft sends the family to the
+//! producer. When the producer or consumer reports `SchemaWorkBound`, the held
+//! template drafts exactly the members it still matches, without widening or
+//! rebase, and the kernel admits that subfamily as `FamilyAdmission::Partial`;
+//! the remaining members replay plainly, and the smaller template stays held.
+//!
+//! # The controller weighs time
+//!
+//! Per key the controller keeps the producer's last time `P`, the last accepted
+//! and refused drafts' times `D_a` and `D_r`, and an acceptance average with
+//! weight 0.08 on each new family. The expected saving per drafted family is
+//! `a(P - D_a) - (1 - a)D_r`, positive above `a* = D_r / (P - D_a + D_r)`; a
+//! key drafts while its acceptance exceeds that, or while any of its times is
+//! unmeasured, and never while `D_a >= P`. Across the memo the same break-even
+//! is computed from averaged shares `D_a / P` and `D_r / P`, and below it the
+//! memo stops drafting. The probe duty is one in seven. A widening that adds
+//! `f` arms is withdrawn when `f c >= P` for the memo's averaged import cost
+//! per arm `c`. Times come from a caller-supplied `Clock`; a clock that never
+//! advances makes every draft free and drafts every family that has a template.
+//! Production timing includes the bounded schema-allowance probe, so the
+//! controller learns the cost of the path that runs rather than fixed benchmark
+//! rates. The stopped-clock edit traces compare each admitted draft's canonical
+//! proposal with a fresh run's, byte for byte.
+//!
+//! The alternatives were these:
+//!
+//! - *Import the members into a clone of the template's graph and generalize.*
+//!   Importing is the producer's largest cost, so that draft costs more than
+//!   the producer it replaces. Reversal: an import cheaper than the walk.
+//! - *Exact drafts only.* They miss every family that gains an arm, which
+//!   appending exponents or inputs always does. Reversal: none while arms grow.
+//! - *Weigh the cap before the walk, as `D_exact + f c < P`.* The walk binds
+//!   new bodies as it meets them, so `f` is known only once the walk is spent,
+//!   and only the import remains to weigh. Reversal: a walk that counts new
+//!   bodies before it binds them.
+//! - *A node-count cost model instead of time.* It is deterministic but does
+//!   not track what drafting and production cost on a host. Reversal: a count
+//!   that predicts both times.
+//! - *Hold the memo in the incremental session.* No session drives staging.
+//!   Reversal: when one does, it holds the memo as it holds the cache.
 
 use alloc::borrow::Cow;
 use core::time::Duration;

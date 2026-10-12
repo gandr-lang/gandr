@@ -23,6 +23,87 @@
 //!
 //! Every allowance is per job and every fold runs in source or harvest order,
 //! so the result is the same at every width.
+//!
+//! `Checked` carries the merged arena, a certificate and a `Readmission` per
+//! source, the families and a report per family, and the time each stage took.
+//! Every value but the time is the serial check's, at every width and under
+//! every fork: the witnesses check under forks that run jobs last first from
+//! fresh state, that keep one state across half the jobs, and that meet every
+//! job on one state in reverse, and compare report for report and term for
+//! term. `ProgramError` names the first source, in order, whose normalization,
+//! merge or harvest failed; a refused readmission or family is reported beside
+//! the others, not failed.
+//!
+//! # Decisions
+//!
+//! **Each worker keeps its snapshot while its sources arrive in order.** A
+//! source below one the clone holds starts afresh at the program's extent
+//! through `Arena::truncate_to`, and a failed source truncates back to where it
+//! began. A segment carries its worker, the extent it started at, the
+//! classifiers and terms it appended, the certificate in the worker's
+//! coordinates and its grouping. Keeping the clone, rather than truncating it
+//! after every source, sends the merge only what its worker had not minted and
+//! speeds serial normalization, because a kept clone answers a repeated term
+//! from its own table. The merged arena and certificates are unchanged: the
+//! reference, one arena normalizing every source in order, keeps all of its
+//! syntax too. The choice reverses if a normalization's result comes to depend
+//! on the syntax already in its arena, which the merged-arena witness compares
+//! against, or if a worker's clone outgrows its memory.
+//!
+//! **The harvest groups where the certificate was made.** `template::Grouping`
+//! groups one certificate's equations by family key — the rule and the shallow
+//! source shape — and keeps no coordinate, so the worker that normalized the
+//! certificate groups it, and the calling thread only appends each step, in
+//! certificate order, to the family its key names. The families equal grouping
+//! the program's concatenated equations at once, first occurrence and member
+//! order kept. Grouping after the merge on the calling thread, as
+//! `template::harvest` does over one arena, costs several times the joined
+//! harvest. The choice reverses if a family key comes to read the merged
+//! coordinates.
+//!
+//! **The merge interns through the program's arena.** The merge runs on the
+//! calling thread in source order, so every coordinate is the one one-arena
+//! normalization gives. Each worker has a placement: the merged coordinate of
+//! every classifier and term its clone holds above the program's extent. A
+//! classifier or term is placed — its children and classifier read through the
+//! placement — and interned with `Arena::alloc_type` or `Arena::alloc`, whose
+//! table finds a held descriptor by hash and confirms it by comparison, so only
+//! a miss is appended and a collision never merges two terms. The certificate
+//! is remapped in place and taken from its segment, and the spent segments'
+//! buffers, allocated on the workers, are freed beside the readmissions rather
+//! than on the merge. The alternatives were these:
+//!
+//! - *An exact content key: a digest per worker term and a table from digest to
+//!   merged terms, a hit compared in place.* It was to be kept only if it saved
+//!   5 % of the check's wall against the arena's interning on both measured
+//!   hosts, and it did not: its digests cost the workers more than the merge
+//!   saves, and a kept clone already sends the merge only what its worker had
+//!   not minted. Reversal: a table that saves 5 % of the wall at the shipped
+//!   width on both hosts.
+//! - *A key of child digests, trusted without a comparison.* A 64-bit collision
+//!   between child digests would merge two distinct terms, and no certificate
+//!   may rest on that. Reversal: none.
+//!
+//! **Families fork through disjoint memo slots.** The memo plans every family
+//! in harvest order — the slot its key holds and whether the controller drafts
+//! it — then admits each family against its own slot on the fork, with a fresh
+//! inheritance cache and allowance per family and a drafter and row buffer per
+//! worker, and folds the families' time samples into the controller in harvest
+//! order afterwards. Keys are unique within one harvest, so no two families
+//! share a slot. The alternative was a memo per worker, merged in harvest
+//! order: it clones every held template into every worker and needs a rule for
+//! a key two workers both learned, for no gain while keys are unique. Every
+//! draft decision reads the controller as it stood before the program, where
+//! admitting the families one by one lets an earlier family's sample move a
+//! later family's decision; the probe duty counts declines in plan order. Under
+//! a clock that never advances the two agree exactly over the edit traces the
+//! memo is measured on. The choice reverses for a program whose families share
+//! a key.
+//!
+//! **Readmission per certificate.** Each worker clones the merged arena once,
+//! replays a certificate from a fresh allowance and truncates the clone back
+//! after it, so no replay sees another's syntax. The readmissions and the
+//! family admissions are the two halves of one `Fork::join`.
 
 mod merge;
 mod segment;

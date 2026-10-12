@@ -54,6 +54,92 @@
 //! draft as it judges the producer's proposal; a draft it refuses, or one the
 //! walk or the price withdraws, sends the family to the producer. A controller
 //! weighs each key's draft and producer times and drafts only while that pays.
+//!
+//! # Analysis
+//!
+//! A target-only point refuses production. A join point outside the first and
+//! last members' peak stays outside the family's: adding members only splits
+//! agreement, so the family's join disagrees at or above that point, by a
+//! column that is neither a peak point nor one below a peak point. The argument
+//! is the private `probe` function's documentation, and its specification
+//! checks the implication against the full generalization. A family refused
+//! from the two members costs members only, since no size was measured; a point
+//! outside the whole family's peak still refuses it, with every size. Every
+//! other verdict, cost and price is the full generalization's. Analysis first
+//! checks that every member's sides are arena terms, so a member the probe
+//! skips fails as its import would.
+//!
+//! The first and last members are the extremes of producer order, and on the
+//! observer's harvested programs they decide more of the families refused for a
+//! point outside the peak than the first two members do. A probe in its own
+//! graph would import its two members again for every family it leaves open.
+//! Reusing the import places the last member's new content before the middle
+//! members', so a continuing family's node coordinates follow that order.
+//! Verdicts, sizes and prices depend on content, not coordinates; serialized
+//! images number nodes and arms in coordinate order, so a continuing family's
+//! image bytes can differ by a few digits from an import in member order.
+//! Revisit the member choice if producer order stops placing the most different
+//! members at the ends; the implication holds for any pair.
+//!
+//! A repeated member adds no node, so coordinates, images, verdicts, sizes and
+//! prices equal those of a generalization over every member; every member keeps
+//! its guard row, and `F` still charges every member. The alternative was
+//! splitting a family by member across a fork. Members nest one another's
+//! content, so every chunk re-imports most of the family, and joining the
+//! chunks' graphs costs about what the serial import does; the split lost to
+//! the serial analysis at every width measured, over every member and over
+//! distinct members alike. Revisit a split when families stop nesting their
+//! members' content or the distinct analysis stops being dominated by import.
+//!
+//! # Production and its price
+//!
+//! `template::analyze` constructs an untrusted candidate. `Candidate::produce`
+//! applies the selected strict price and schema allowance before replaying
+//! producer inheritance obligations. Each distinct region/entry/body triple is
+//! checked once per cache, with every other point rigid. The region is the rule
+//! and the generalized sides' content, never the producer's identity, so a
+//! cache carried across programs reuses every verdict an earlier program
+//! recorded; a cached verdict licenses nothing, since admission replays.
+//! Classifier content belongs to the cache key. A ground family owes one check.
+//! A failed or unfinished check never becomes a positive cached verdict.
+//!
+//! | Charge | Definition |
+//! | ------ | ---------- |
+//! | `F` | Every member's unfolded source and target nodes, plus one decision per member |
+//! | `s` | Generalized sides, one shared decision, every distinct arm's nodes and one guard per arm |
+//! | `T` | Distinct inheritance triples, or one for a ground family |
+//! | `c` | Per-check kernel-fuel allowance, conservatively set to `s` |
+//!
+//! `PriceGate::Unmemoized` requires `s < floor(F / s)`. `PriceGate::Memoized`
+//! requires representable `s + T*c < F` and enforces `c` on each cold check.
+//! Equality, overflow, a target-only point, failed inheritance or an exhausted
+//! check allowance leave the family plain. Caller-budget exhaustion is a typed
+//! error. No warm-cache discount changes the cold price. These are abstract
+//! node and fuel charges; discovery, materialization and subsequent member
+//! admission are outside that bound.
+//!
+//! Before any inheritance-cache lookup, the producer emits its canonical
+//! proposal and probes `Schema::check` under the kernel's full proposal-byte
+//! allowance. `SchemaWorkBound` becomes `Production::SchemaWorkBound`, without
+//! spending the caller's producer-replay budget. The probe is independently
+//! capped and outside the prices above. Other kernel refusals are consumer
+//! judgements; the producer holds no admission authority.
+//!
+//! `Template::admit` selects guards from the source, materializes one equation
+//! and replays it through the kernel's rules, so a poisoned cache cannot bypass
+//! replay. `template::readmit` also compares projected targets and replays the
+//! complete original certificate with its endpoint typing, connectivity and
+//! congruence premises intact. The template retains no member list; the
+//! complete-readmission API receives the enclosing plain certificate.
+//!
+//! The alternatives are independent member replay, which avoids discovery and
+//! projection costs, and exact cross-member deduplication, which shares
+//! identical rather than near-identical equations. For the schema allowance, a
+//! second producer-side accounting formula would drift as the checker changes,
+//! so the producer uses the bounded kernel check itself; the consumer still
+//! checks its untrusted proposal independently. Revisit that probe if its
+//! measured cost outweighs the inheritance work it avoids; neither a byte
+//! saving nor a warm cache licenses relaxing either allowance.
 
 mod admission;
 mod draft;

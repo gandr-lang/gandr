@@ -12,6 +12,14 @@
 //! the item there and that item's occurrence among the items of its key.
 //! Positions may skip: a declaration the front end refused is not offered,
 //! and a constant naming its position resolves to [`Reference::Unoccupied`].
+//!
+//! # References, not positions
+//!
+//! An admission position is an artefact of one revision. Every position an item
+//! mentions is read as the `Reference` it resolves to — the key of the item at
+//! that position and how many items of that key precede it — or `Unoccupied`.
+//! Two revisions agree on what an item reads exactly when they agree on
+//! references.
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;

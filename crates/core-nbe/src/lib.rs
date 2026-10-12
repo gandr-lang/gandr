@@ -48,9 +48,273 @@
 //!   unblocked, and [`match_pattern`] and [`select_arm`] classify a match's
 //!   arms in three values against a scrutinee that may hold a hole.
 //!
-//! The design, and what a caller must guarantee, is stated in this crate's
-//! `README.md`, § Synopsis and § Expected features, and in the sections they
-//! link.
+//! What a caller must guarantee is listed in this crate's `README.md`, §
+//! Expected features; each module's documentation states its mechanism and its
+//! decisions.
+//!
+//! # Provided items
+//!
+//! - `eval_value` and `eval_computation`: weak-head evaluation, refusing with
+//!   `EvalFault`; `eval_value_within` and `eval_comp_within` evaluate in an
+//!   environment supplied by the caller and return the remaining fuel. This
+//!   lets operator bodies and selected pattern arms run at retained bindings
+//!   without minting an application.
+//! - `readback_value` and `readback_computation` under
+//!   `ReadbackMode::ZeroUnfold` or `ReadbackMode::Unfolding`, refusing with
+//!   `ReadbackFault`.
+//! - Native list values and pure right folds: evaluation reduces cells
+//!   iteratively, while a neutral list retains its nil closure and two-binder
+//!   cell closure. Readback preserves annotations and captured variables;
+//!   conversion compares both branch scopes, with kernel-replayed equality and
+//!   refutations. Witness:
+//!   `machine::tests::neutral_list_fold_conversion_replays_both_branch_scopes`.
+//! - `DomainArena` with `DomainValueId`, `DomainCompId`, `NeutralId`,
+//!   `ValueClosureId` and `CompClosureId`: checked constructors and lookups,
+//!   `force_neutral`, and `RunWatermark` with `DomainArena::truncate_to`.
+//! - The glued vocabulary: `DomainValue`, `DomainComp`, `Neutral`,
+//!   `NeutralHead`, `Elimination`, `TermFace`, `CompTermFace`, `Unfolding` and
+//!   `Glued`.
+//! - `ValueClosure`, `CompClosure` and the two-zone `Environment` they close
+//!   over.
+//! - `SchedulingPolicy` with its `Share`, and `DuplicationPolicy` with
+//!   `DuplicationPolicy::copies`.
+//! - `GranularityPolicy` with its `GranularityStance`: how finely the
+//!   conversion machine shares evaluations, `Skeleton` by default and `Spinal`
+//!   refused with `PolicyRefusal::GranularityGated`.
+//! - `Definitions`: the lowered chain, the definitional environment and the
+//!   scope a run reads unfoldings through, and `Fuel`, the run's budget.
+//! - `LoweredChain`: a definition chain with every body lowered into the run's
+//!   core arena in one pass, so `ReadbackMode::Unfolding` forces any body the
+//!   chain holds — evaluating its lowering closed and recording it with
+//!   `force_neutral` — and `ReadbackFault::UnloweredBody` is reachable only for
+//!   a body no entry names. `LoweredChain::define` appends one definition whose
+//!   body is already lowered, in place, and equals the extended chain lowered
+//!   whole.
+//! - `convert_values` and `convert_computations`: conversion steps 1 through 3,
+//!   answering a `Settlement` — `Identical` from step 1, `GuardedApart` from
+//!   step 2, `StructurallyEqual`, `StructurallyApart` or `Deferred` with its
+//!   `Deferral` from step 3 — projected by `Settlement::verdict` to a
+//!   three-valued `Convertibility`, refusing with `ConversionFault`. Each step
+//!   answers a case the previous one does not, and a pair needing an unfolding
+//!   or an opened binder is deferred, never separated.
+//! - `decide`: the conversion machine over a `Problem` under `MachineSettings`,
+//!   generic over the check memo it re-shares goals through, answering a
+//!   `MachineReport` with its `MachineVerdict`, `ProcessCount`,
+//!   `DerivationCount`, `StepCount` and `SupportEdges`, and emitting the
+//!   winning derivation in preorder through a `TraceSink<TraceNode>`; refusing
+//!   with `ConversionFault`. Positive leaves carry explicit shared-comparison
+//!   evidence so nested component proofs retain their boundaries. The
+//!   search-free steps answer first with no process started; otherwise goals
+//!   and evaluation channels run fairly over one run queue until the root
+//!   answers or the run declines — `DeclineReason::Cycle` when a goal would
+//!   unfold a definition over a spine already unfolded on its chain or the
+//!   needed goals all wait on one another through a re-shared goal,
+//!   `DeclineReason::Budget` when the run spends its `StepBudget`. Every rule
+//!   arm is exercised, both verdicts and both declines, a refutation naming its
+//!   negative premise and outranking a decline, one channel per distinct
+//!   definition body, a null sink that keeps no derivation while reaching the
+//!   recording sink's verdict, and a null memo that reaches the live memo's
+//!   verdict. Every recorded derivation replays through `gandr-kernel-core`'s
+//!   `replay` to the machine's verdict, a trace claiming the other verdict or
+//!   naming the wrong side is refused, and a run an unlucky schedule declines
+//!   stays declined through the kernel.
+//! - `GoalSupport`, the key a goal started fresh is re-shared on — its
+//!   `SupportSides` and binder level, agreeing by identity, digested from
+//!   content on the one `ResharingPlane` — with `ResharingMemo` the engine
+//!   path's memo over it and `ProcessId` its outcome; and `SupportEdges`, the
+//!   `EdgeCount` of definitions and entries the run's memo entries rest on,
+//!   acceptances on their winning derivation and refusals on the union over
+//!   their branches. A decomposition whose premises name one pair starts one
+//!   goal, so a family the memoless run expands exponentially runs linearly,
+//!   and the edges grow with the distinct goals.
+//! - `Guard`, the cached word minted with every value, computation and neutral
+//!   and read through `DomainArena::value_guard`, `comp_guard` and
+//!   `neutral_guard`; `Guard::settles` answers `GuardAnswer::Apart` only for
+//!   two rigid words whose `ContentHash`es differ.
+//! - `Overlay`, the sharing overlay: one flat family per core family behind
+//!   `OverlayValueId`, `OverlayCompId`, `OverlayValueTypeId` and
+//!   `OverlayCompTypeId`, each node one of the closed set opaque, bound, shared
+//!   and grafted (`ValueNode`, `CompNode`, `ValueTypeNode`, `CompTypeNode` over
+//!   `Bound`, `Sharing` and the four graft formers); minted only over children
+//!   it holds, refusing with `OverlayFault`; released by `OverlayWatermark`
+//!   with `Overlay::truncate_to`.
+//! - `Overlay::validate`: a heap worklist over one root that refuses, by an
+//!   `OverlayRefusal` naming the node, an open node set, an occurrence of
+//!   another family than its leg, an occurrence out of preorder or past its
+//!   share's arity, a share its body under-fills or that stands for nothing, a
+//!   node reached twice and a root the overlay does not hold.
+//! - `erase_value`, `erase_computation`, `erase_value_type` and
+//!   `erase_comp_type`: total, policy-free erasure from an overlay root back to
+//!   the unshared core term, refusing with `EraseFault` and leaving the core
+//!   arena as it found it. The erased arena equals node for node the one a
+//!   hand-built unshared term mints, and the unshared pipeline evaluates and
+//!   reads back both to equal domain arenas, core arenas and results on every
+//!   deep case.
+//! - `SharingMeasure::of`: He's measure over one validated overlay root in one
+//!   post-order walk on the heap — `ShareCount`, `OccurrenceCount`,
+//!   `ShareDepth`, `NodeCount` and `ExpansionSize`, the last the size of the
+//!   unshared term the root stands for — refusing with `MeasureFault`: a
+//!   validation refusal unchanged, or a sum past a 64-bit counter named by its
+//!   `MeasuredQuantity` and its node. The expansion size equals the erased
+//!   term's size walked as a tree over every closed sketch of up to nine nodes
+//!   and every deep case.
+//! - `eval_overlay_value` and `eval_overlay_computation`: the overlay
+//!   evaluator's reference — erase the root, then run the unshared machine over
+//!   the erasure in the empty environment — minting into the core and domain
+//!   arenas, node for node, what erasure followed by the unshared pipeline
+//!   mints, with the same result and the same unspent fuel; refusing with
+//!   `OverlayEvalFault`, erasure's refusal leaving the core arena as it found
+//!   it.
+//! - `duplicate_value` and `duplicate_computation`: an overlay root rebuilt
+//!   under a `DuplicationPolicy` into fresh nodes of the same overlay in one
+//!   heap walk — a copied leg inlined, a shared leg kept, and under the spinal
+//!   stance an abstraction's share distributed over its ribs — the output
+//!   validating and erasing to the input's tree, the input untouched; refusing
+//!   with `DuplicationFault` and leaving the overlay at its entry watermark,
+//!   the copying stance priced by the measure before it mints.
+//! - `TracedDuplication`: a duplication stance installed with the trace sink
+//!   its conversions record into, the only route to
+//!   `DuplicationStance::Spinal`. `TracedDuplication::install` refuses the
+//!   spinal stance over a sink that retains nothing with
+//!   `PolicyRefusal::Untraced`, and `DuplicationPolicy::new` still refuses it
+//!   with `PolicyRefusal::StanceGated`. The installation duplicates, evaluates
+//!   an overlay root — the erase-and-clone stance through the reference, the
+//!   spinal stance through its own duplicate with each leg's evaluation shared
+//!   per configuration, refusing with `OverlayEvalFault::Duplication` — and
+//!   runs `decide` into its sink. The kernel replays every spinal catalogue and
+//!   ladder trace and agrees with each verdict; an unlucky spinal schedule
+//!   declines and the kernel declines with it; every deep case evaluates and
+//!   reads back under the spinal stance to the tree its erasure gives; and the
+//!   evaluator's step count shows a rib evaluated once across the applications
+//!   of its abstraction, a rib full laziness could not float out included, and
+//!   an open leg evaluated per occurrence.
+//! - `fill_and_resume`, `match_pattern`, `select_arm`, `Matched`, `Selection`,
+//!   `ArmIndex`, `LiveFault` and `MatchFault`, with `NeutralHead::Hole`,
+//!   `NeutralHead::Mark`, `Suspended` and the indeterminate deferral and
+//!   decline: live evaluation, whose module documentation lists the witnesses.
+//!
+//! # References
+//!
+//! - Nathanaëlle Courant and Xavier Leroy. "A Lazy, Concurrent Convertibility
+//!   Checker." _Proceedings of the ACM on Programming Languages_ 10 (POPL),
+//!   Article 53, January 2026. `doi:10.1145/3776695` — laziness recovered by
+//!   scheduling rather than by representation, the non-uniform-share conjecture
+//!   that motivates the scheduling parameter without fixing its default, the
+//!   early-success, `var-1`, `var-2`, `var-3` and `const` rules conversion's
+//!   first three steps implement, and the concurrent machine of §5 with the
+//!   frozen constants and biased choice of §6.1 and the two η cases of §6.2
+//!   that `decide` runs.
+//! - Nathanaëlle Courant. _Towards an Efficient and Formally-Verified
+//!   Convertibility Checker_. Doctoral thesis, Université Paris Cité, September
+//!   2024. `hal:tel-04884688`, chapter 12 — the complexity analysis whose
+//!   exponent is the size of the smallest proof, the axis a duplication stance
+//!   moves.
+//! - Thibaut Balabonski. "Weak Optimality, and the Meaning of Sharing."
+//!   _Proceedings of the 18th ACM SIGPLAN International Conference on
+//!   Functional Programming (ICFP 2013)_, pages 263–274, September 2013.
+//!   `doi:10.1145/2500365.2500606` — spinal and ordinary full laziness are both
+//!   β-optimal for weak reduction, so the spinal stance pays only under strong
+//!   reduction and stays a measured choice.
+//! - Fanny He. _The Atomic Lambda-Mu Calculus_. Doctoral thesis, University of Bath,
+//!   2018. `https://researchportal.bath.ac.uk/en/studentTheses/the-atomic-lambda-mu-calculus`
+//!   — the strong-normalisation measure for sharing reductions that
+//!   `SharingMeasure` reads over the overlay.
+//! - Paul Blain Levy. _Call-By-Push-Value: A Functional/Imperative Synthesis_.
+//!   Semantics Structures in Computation 2, Kluwer Academic Publishers, 2003.
+//!   `isbn:978-1-4020-1730-8`, `doi:10.1007/978-94-007-0954-6` — the polarity
+//!   split the domain's value and computation halves follow.
+//! - Henk P. Barendregt. _The Lambda Calculus: Its Syntax and Semantics_.
+//!   Revised edition, North-Holland, 1984. `isbn:978-0-444-87508-2` —
+//!   confluence of β and the normal-order and applicative-order strategies the
+//!   static normalization property compares against.
+//!
+//! # Optional tracing
+//!
+//! Enable `tracing` to observe evaluation and readback boundaries. The feature
+//! preserves `no_std` and activates no subscriber or output backend. Fuel
+//! checks and semantic errors remain ordinary code, independent of
+//! instrumentation.
+//!
+//! | Boundary | Level | Fields |
+//! | -------- | ----- | ------ |
+//! | `eval_value`, `eval_computation` | INFO | Initial `fuel` |
+//! | `eval_comp_within` | DEBUG | Initial `fuel`, including evaluations driven by readback |
+//! | `readback_value`, `readback_computation` | INFO | Initial `fuel` and `unfolding` mode |
+//! | Evaluation or readback fuel exhaustion | WARN | A fixed message inside the active span |
+//!
+//! The caller owns filtering, the subscriber and the output destination.
+//! `tracing::instrument` uses `skip_all`: no arguments, terms, environments,
+//! arena contents or result payloads are recorded, and no argument gains a
+//! `Debug` bound. The crate's `Debug` implementations stay unconditional. These
+//! are diagnostic spans, not the conversion decision vocabulary or a replay
+//! certificate.
+//!
+//! The choice is `tracing` 0.1.44 with only `attributes`, optional and off by
+//! default. Its structured spans retain the relation between readback and
+//! nested evaluation without an async runtime. Flat `log` events lose that
+//! nesting; a custom observer would duplicate a standard diagnostics interface.
+//! Revisit for a security advisory affecting the selected version, loss of
+//! maintenance, or a consumer requiring a different diagnostic model. The
+//! feature does not change scheduling, duplication or reduction decisions.
+//!
+//! # What stays in kernel-core
+//!
+//! `gandr-kernel-core` keeps its own conversion: identity and structural
+//! equality over kernel types and the codes they carry, in the kernel's own
+//! arena, two-valued, failing closed to distinct. It stays separate because it
+//! is trusted and this pipeline is not. The kernel compares kernel syntax with
+//! nothing to unfold and no closures, and it accepts nothing it cannot recheck.
+//! This pipeline compares glued domain values, holds neutrals with bodies and
+//! closures over environments, answers three ways, and carries a guard table
+//! the kernel admits into nothing; its answers reach the kernel only as a
+//! conversion trace, which the kernel's `replay` re-derives over kernel terms,
+//! firing every reduction itself. Sharing code would put the domain inside the
+//! trusted base or make the kernel depend on an untrusted engine, and the two
+//! walks share no node type. What is shared is what both must agree on:
+//! canonical level equality, the `Eq` of `gandr-kernel-strata`'s `Level`, and
+//! the per-call discipline of a set of met pairs.
+//!
+//! # Specification attributes
+//!
+//! Each nontrivial item states its contract in `# Specification` and names its
+//! valid-input domain, observable boundaries and test witnesses in `#
+//! Adequacy`. Executable `#[spec(...)]` predicates cover arena membership,
+//! scope and binder boundaries, scheduler transitions, result precedence,
+//! sharing laws and rollback. Both ordinary and `anodized_panic` test modes
+//! exercise the same witnesses; predicates complement rather than replace
+//! independent structural, cost and kernel-replay observations. Entry captures
+//! retain scalar metadata, not copied arenas or replayed evaluations.
+//!
+//! Conversion validates a domain id before taking the identity shortcut.
+//! Invalid operands and exhausted binder space refuse without opening an
+//! invalid environment; a spent-step overflow remains a budget backstop.
+//! Completed memo premises wake later decompositions, and opaque overlay leaves
+//! must resolve in the core arena at erasure entry, before any graft is minted.
+//! The boundary witnesses distinguish each refusal from its neighboring
+//! successful case.
+//!
+//! Native classifier comparison resolves both endpoint pairs before appending
+//! either obligation, so a missing target refuses without a partial queue or an
+//! enforcement panic. A malformed replayed transport returns `MachineInvariant`
+//! instead of violating a stack precondition. Both boundaries retain their
+//! regression witnesses.
+//!
+//! The generic hash constructor has no executable predicate: an arbitrary
+//! `Hash` implementation may be effectful, so hashing it again is not an
+//! independent observer. Fixed FNV vectors witness the fold instead. The
+//! `SharingMeasure` declaration records its four laws in prose because the
+//! facade's feature set cannot attach a data-item predicate; its constructors
+//! enforce those laws.
+//!
+//! Readback, sharing and static-normalization witnesses use one structural tree
+//! oracle. Its static-term and quoted-type boundaries are witnessed by
+//! `readback_terms::readback_terms::the_comparator_reads_static_formers` and
+//! `readback_terms::readback_terms::the_comparator_descends_into_quoted_type_families`;
+//! the latter also refuses identical quotes with missing type children.
+//! `readback_terms::readback_terms::native_tree_comparison_preserves_endpoints_maps_and_evidence`
+//! separates native endpoint order, translator syntax and evidence payloads
+//! across distinct arenas. The substitution oracle separately witnesses
+//! outermost versus innermost redex selection and ordered-sibling preservation.
 
 #![no_std]
 

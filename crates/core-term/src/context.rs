@@ -32,6 +32,27 @@
 //! iterative, so no second face can unwind it differently, and the failure
 //! state *is* the specification: it is asserted rather than described.
 //!
+//! # Zone-qualified variables
+//!
+//! `Value::Variable` carries a `Zone` beside its index, because each zone
+//! counts binders in its own index space and an index alone names no binder.
+//! `Γ` admits weakening and contraction: an occurrence spends nothing. `Σ` is
+//! linear: an occurrence consumes its slot, a second occurrence is refused with
+//! `ContextError::LinearSlotConsumed`, and closing a scope whose slot is
+//! unspent is refused with `ContextError::LinearSlotUnconsumed`. The linear
+//! zone is the type-level form of "a control capture cannot be naively
+//! duplicated". No former in the vocabulary binds into `Σ`; a context opened
+//! with `Zone::Linear` reaches it directly, and the tests exercise both
+//! refusals there.
+//!
+//! # Failure state
+//!
+//! A failing context operation leaves the context at the failure point: a
+//! refused occurrence spends nothing, and a refused close leaves the binder in
+//! place. That state is the specification, and the tests assert it after every
+//! refusal. The context has one implementation, iterative, so no second face
+//! can unwind it differently.
+//!
 //! [`Value::Variable`]: crate::Value::Variable
 
 use alloc::vec::Vec;
