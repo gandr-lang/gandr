@@ -2643,6 +2643,204 @@ pub fn substitute_environment(
     node_term(substituted, subject)
 }
 
+/// A node a rewrite minted, beside the node of its subject it rewrote.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: both ids name nodes of one family.
+/// - provides: what a caller keeping metadata per node, a source origin say,
+///   copies from the node it held to the node a rewrite put in its place.
+/// - executable: none — the pair holds no arena to check either id against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a substitution under a binder reports the lambda, the
+///   return and the variable it rewrote and none of the nodes it kept.
+/// - witness: `rewrite::tests::a_traced_substitution_reports_every_node_it_rewrote`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Carried
+{
+    /// A value of the subject and the value standing for it.
+    Value(ValueId, ValueId),
+    /// A computation of the subject and the computation standing for it.
+    Computation(ComputationId, ComputationId),
+    /// A value type of the subject and the value type standing for it.
+    ValueType(ValueTypeId, ValueTypeId),
+    /// A computation type of the subject and the computation type standing
+    /// for it.
+    CompType(CompTypeId, CompTypeId),
+}
+
+/// [`substitute_environment`], reporting every node it rewrote beside the
+/// node it rewrote it from.
+///
+/// # Specification
+/// - requires: as [`substitute_environment`].
+/// - ensures: the result [`substitute_environment`] answers; `carried` gains
+///   one pair per node of the subject reached at a depth where the rewrite
+///   changed it, and per entry carried under a binder, in ascending order of
+///   the node rewritten, so a node reached at two depths is reported twice; a
+///   node the rewrite kept is never reported, and an empty environment mints
+///   and reports nothing.
+/// - provides: the substitution for a caller that keeps a table beside the
+///   arena, which a rewritten node inherits from the node it stands for.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a lambda over a pair of its own index and a free index
+///   beside a closed constant reports exactly the variable, the pair, the
+///   return and the lambda; an empty environment reports nothing.
+/// - witness: `rewrite::tests::a_traced_substitution_reports_every_node_it_rewrote`
+#[spec(captures: entry = (arena.watermark(), carried.len()), ensures: |ret| core::mem::discriminant(&ret) == core::mem::discriminant(&subject)
+    && carried.len() >= entry.1
+    && (!environment.is_empty() || (ret == subject && arena.watermark() == entry.0 && carried.len() == entry.1)))]
+#[inline]
+#[must_use]
+pub fn substitute_environment_traced(
+    arena: &mut CoreArena,
+    subject: TermId,
+    environment: &[ValueId],
+    carried: &mut Vec<Carried>,
+) -> TermId
+{
+    if environment.is_empty() {
+        return subject;
+    }
+    let mut engine = Engine::new(arena);
+    engine.environment = environment.to_vec();
+    let substituted = engine.run(term_node(subject), Binders::NONE, Rewrite::Environment);
+    report(&engine.memo, carried);
+    node_term(substituted, subject)
+}
+
+/// Raise every free intuitionistic index of `subject` past its innermost
+/// `scope` binders by `amount`, reporting every node it rewrote beside the
+/// node it rewrote it from.
+///
+/// # Specification
+/// - requires: `subject` is live in `arena`.
+/// - ensures: `subject` with every free index counting past its innermost
+///   `scope` binders raised by `amount` and every index below kept; `carried`
+///   gains one pair per node the shift changed, as
+///   [`substitute_environment_traced`] reports them; `subject` itself, nothing
+///   minted and nothing reported when `amount` is none.
+/// - provides: carrying a computation under binders placed between its own
+///   innermost `scope` binders and the rest of its context, for a caller that
+///   keeps a table beside the arena.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a lambda over its own index, an index below the scope and
+///   one past it raises only the last, and reports the variable, the triple,
+///   the return and the lambda; no amount mints and reports nothing.
+/// - witness: `rewrite::tests::a_traced_shift_raises_only_past_its_scope`
+#[spec(captures: entry = (arena.watermark(), carried.len()), ensures: |ret| carried.len() >= entry.1
+    && (amount != Binders::NONE || (ret == subject && arena.watermark() == entry.0 && carried.len() == entry.1)))]
+#[inline]
+#[must_use]
+pub fn shift_computation_under_traced(
+    arena: &mut CoreArena,
+    subject: ComputationId,
+    scope: Binders,
+    amount: Binders,
+    carried: &mut Vec<Carried>,
+) -> ComputationId
+{
+    if amount == Binders::NONE {
+        return subject;
+    }
+    let mut engine = Engine::new(arena);
+    let shifted = engine.run(Node::Computation(subject), scope, Rewrite::Shift(amount));
+    report(&engine.memo, carried);
+    match shifted {
+        | Node::Computation(id) => id,
+        | Node::Value(_) | Node::ValueType(_) | Node::CompType(_) => subject,
+    }
+}
+
+/// Instantiate the binder of `body` at `argument`, reporting every node it
+/// rewrote beside the node it rewrote it from.
+///
+/// # Specification
+/// - requires: `body` is a computation of `arena` scoped beneath one binder in
+///   some context `Γ`, and `argument` a value of `arena` in `Γ`.
+/// - ensures: as [`instantiate_value`], for a computation: every occurrence of
+///   the binder replaced by the argument carried under the binders it crosses
+///   and every index outside it lowered by one; `carried` gains one pair per
+///   node the substitution changed, as [`substitute_environment_traced`]
+///   reports them.
+/// - provides: the beta step `x ← return v; N ≡ N[v/x]` for a caller that keeps
+///   a table beside the arena.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a lambda over its own index, the binder and an index past
+///   it replaces the binder by the argument carried under the lambda, lowers
+///   the outer index, and reports exactly the rewritten nodes.
+/// - witness: `rewrite::tests::a_traced_instantiation_replaces_its_binder`
+#[spec(captures: before = carried.len(), ensures: |ret| carried.len() >= before && (ret == body || arena.computation(ret).is_some()))]
+#[inline]
+#[must_use]
+pub fn instantiate_computation_traced(
+    arena: &mut CoreArena,
+    body: ComputationId,
+    argument: ValueId,
+    carried: &mut Vec<Carried>,
+) -> ComputationId
+{
+    let mut engine = Engine::new(arena);
+    let instantiated = engine.run(
+        Node::Computation(body),
+        Binders::NONE,
+        Rewrite::Substitute(argument),
+    );
+    report(&engine.memo, carried);
+    match instantiated {
+        | Node::Computation(id) => id,
+        | Node::Value(_) | Node::ValueType(_) | Node::CompType(_) => body,
+    }
+}
+
+/// Report every rewrite `memo` holds that changed its node.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `carried` gains one pair per entry of `memo` whose result is
+///   another node of its own family, in the memo's order.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`substitute_environment_traced`].
+/// - witness: `rewrite::tests::a_traced_substitution_reports_every_node_it_rewrote`
+#[spec(captures: before = carried.len(), ensures: carried.len() >= before && carried.len() <= before.saturating_add(memo.len()))]
+fn report(
+    memo: &BTreeMap<(Node, Binders, Rewrite), Node>,
+    carried: &mut Vec<Carried>,
+)
+{
+    carried.extend(
+        memo.iter()
+            .filter_map(|(&(from, _depth, _rewrite), &to)| match (from, to) {
+                | (Node::Value(held), Node::Value(written)) if held != written => {
+                    Some(Carried::Value(held, written))
+                },
+                | (Node::Computation(held), Node::Computation(written)) if held != written => {
+                    Some(Carried::Computation(held, written))
+                },
+                | (Node::ValueType(held), Node::ValueType(written)) if held != written => {
+                    Some(Carried::ValueType(held, written))
+                },
+                | (Node::CompType(held), Node::CompType(written)) if held != written => {
+                    Some(Carried::CompType(held, written))
+                },
+                | _ => None,
+            }),
+    );
+}
+
 #[cfg(test)]
 mod tests
 {
@@ -2675,6 +2873,7 @@ mod tests
     use quenchant_shape::shape::Maybe;
 
     use super::Binders;
+    use super::Carried;
     use super::fill_hole;
     use super::instantiate_comp_type;
     use super::instantiate_value;
@@ -2683,6 +2882,7 @@ mod tests
     use super::strengthen_comp_type;
     use super::strengthening;
     use super::substitute_environment;
+    use super::substitute_environment_traced;
     use super::wrap_marks;
     use crate::arena::CompTypeId;
     use crate::arena::CoreArena;
@@ -4459,6 +4659,205 @@ mod tests
             mark,
             arena.watermark(),
             "an empty environment mints nothing"
+        );
+    }
+
+    #[test]
+    fn a_traced_substitution_reports_every_node_it_rewrote()
+    {
+        let mut arena = CoreArena::new();
+        let entry = variable(&mut arena, DeBruijnIndex::from(4_u32));
+        let closed = arena.value_constant(ConstantIndex::from(5_usize));
+        let [bound, free] =
+            [0_u32, 1].map(|index| variable(&mut arena, DeBruijnIndex::from(index)));
+        let triple = arena.value_tuple(&[bound, free, closed]);
+        let returned = arena.computation_return(triple);
+        let lambda = arena.computation_lambda(returned);
+        let mut carried = Vec::new();
+        let TermId::Computation(substituted) = substitute_environment_traced(
+            &mut arena,
+            TermId::Computation(lambda),
+            &[entry],
+            &mut carried,
+        )
+        else {
+            panic!("a substitution keeps the subject's family");
+        };
+        let Some(&Computation::Lambda(body)) = arena.computation(substituted)
+        else {
+            panic!("a substituted lambda");
+        };
+        let Some(&Computation::Return(value)) = arena.computation(body)
+        else {
+            panic!("a substituted return");
+        };
+        let Some(&[kept, shifted, constant]) = arena.value(value).and_then(Value::components)
+        else {
+            panic!("a substituted triple");
+        };
+        assert_eq!(kept, bound, "the lambda's own index is kept");
+        assert_eq!(constant, closed, "a closed value is kept");
+        assert_eq!(
+            arena.value(shifted),
+            Some(&Value::Variable {
+                zone: Zone::Intuitionistic,
+                index: DeBruijnIndex::from(5_u32),
+            }),
+            "the entry is carried under the lambda"
+        );
+        carried.sort_unstable();
+        let mut expected = vec![
+            Carried::Value(entry, shifted),
+            Carried::Value(free, shifted),
+            Carried::Value(triple, value),
+            Carried::Computation(returned, body),
+            Carried::Computation(lambda, substituted),
+        ];
+        expected.sort_unstable();
+        assert_eq!(
+            carried, expected,
+            "every rewritten node is reported beside its source, and no kept one"
+        );
+        let mark = arena.watermark();
+        let mut none = Vec::new();
+        assert_eq!(
+            substitute_environment_traced(&mut arena, TermId::Computation(lambda), &[], &mut none),
+            TermId::Computation(lambda)
+        );
+        assert!(
+            none.is_empty() && mark == arena.watermark(),
+            "an empty environment mints and reports nothing"
+        );
+    }
+
+    #[test]
+    fn a_traced_shift_raises_only_past_its_scope()
+    {
+        let mut arena = CoreArena::new();
+        let [own, kept, past] =
+            [0_u32, 1, 2].map(|index| variable(&mut arena, DeBruijnIndex::from(index)));
+        let triple = arena.value_tuple(&[own, kept, past]);
+        let returned = arena.computation_return(triple);
+        let lambda = arena.computation_lambda(returned);
+        let mut carried = Vec::new();
+        let shifted = super::shift_computation_under_traced(
+            &mut arena,
+            lambda,
+            Binders::ONE,
+            Binders::from(2_u32),
+            &mut carried,
+        );
+        let Some(&Computation::Lambda(body)) = arena.computation(shifted)
+        else {
+            panic!("a shifted lambda");
+        };
+        let Some(&Computation::Return(value)) = arena.computation(body)
+        else {
+            panic!("a shifted return");
+        };
+        let Some(&[first, second, raised]) = arena.value(value).and_then(Value::components)
+        else {
+            panic!("a shifted triple");
+        };
+        assert_eq!(
+            (first, second),
+            (own, kept),
+            "the lambda's own index and the one inside the scope stand"
+        );
+        assert_eq!(
+            arena.value(raised),
+            Some(&Value::Variable {
+                zone: Zone::Intuitionistic,
+                index: DeBruijnIndex::from(4_u32),
+            }),
+            "an index past the scope is raised by the amount"
+        );
+        carried.sort_unstable();
+        let mut expected = vec![
+            Carried::Value(past, raised),
+            Carried::Value(triple, value),
+            Carried::Computation(returned, body),
+            Carried::Computation(lambda, shifted),
+        ];
+        expected.sort_unstable();
+        assert_eq!(
+            carried, expected,
+            "exactly the rewritten nodes are reported"
+        );
+        let mark = arena.watermark();
+        let mut none = Vec::new();
+        assert_eq!(
+            super::shift_computation_under_traced(
+                &mut arena,
+                lambda,
+                Binders::ONE,
+                Binders::NONE,
+                &mut none
+            ),
+            lambda
+        );
+        assert!(
+            none.is_empty() && mark == arena.watermark(),
+            "no amount mints and reports nothing"
+        );
+    }
+
+    #[test]
+    fn a_traced_instantiation_replaces_its_binder()
+    {
+        let mut arena = CoreArena::new();
+        let argument = variable(&mut arena, DeBruijnIndex::from(3_u32));
+        let [own, binder, outer] =
+            [0_u32, 1, 2].map(|index| variable(&mut arena, DeBruijnIndex::from(index)));
+        let triple = arena.value_tuple(&[own, binder, outer]);
+        let returned = arena.computation_return(triple);
+        let lambda = arena.computation_lambda(returned);
+        let mut carried = Vec::new();
+        let instantiated =
+            super::instantiate_computation_traced(&mut arena, lambda, argument, &mut carried);
+        let Some(&Computation::Lambda(body)) = arena.computation(instantiated)
+        else {
+            panic!("an instantiated lambda");
+        };
+        let Some(&Computation::Return(value)) = arena.computation(body)
+        else {
+            panic!("an instantiated return");
+        };
+        let Some(&[kept, placed, lowered]) = arena.value(value).and_then(Value::components)
+        else {
+            panic!("an instantiated triple");
+        };
+        let index_of = |arena: &CoreArena, id| match arena.value(id) {
+            | Some(&Value::Variable {
+                zone: Zone::Intuitionistic,
+                index,
+            }) => Some(u32::from(index)),
+            | Some(_) | None => None,
+        };
+        assert_eq!(kept, own, "the lambda's own index stands");
+        assert_eq!(
+            index_of(&arena, placed),
+            Some(4),
+            "the binder is the argument, carried under the lambda"
+        );
+        assert_eq!(
+            index_of(&arena, lowered),
+            Some(1),
+            "an index past the binder is lowered by one"
+        );
+        carried.sort_unstable();
+        let mut expected = vec![
+            Carried::Value(argument, placed),
+            Carried::Value(binder, placed),
+            Carried::Value(outer, lowered),
+            Carried::Value(triple, value),
+            Carried::Computation(returned, body),
+            Carried::Computation(lambda, instantiated),
+        ];
+        expected.sort_unstable();
+        assert_eq!(
+            carried, expected,
+            "exactly the rewritten nodes are reported"
         );
     }
 }

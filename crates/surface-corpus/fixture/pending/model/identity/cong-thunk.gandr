@@ -4,9 +4,9 @@ def double(x: Integer) -> -F Integer {
 
 def cong_double = thunk {
   fn(p: Path(Integer, 4, 4)) {
-    walk(p,
-      fn(x, y, q) { Path(?, thunk { double(x) }, thunk { double(y) }) },
-      fn(x) { return here(thunk { double(x) }) })
+    become walk(p,
+      fn(x, y, q) { return Path(?, thunk { become double(x) }, thunk { become double(y) }) },
+      fn(x) { return here(thunk { become double(x) }) })
   }
 };
 

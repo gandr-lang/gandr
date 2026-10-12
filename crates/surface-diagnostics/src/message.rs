@@ -182,8 +182,12 @@ fn lowered(
                 ),
                 | FragmentBoundary::NotInTail => write!(
                     f,
-                    "a {form} leaves a function only where its body ends; early exits are not \
-                     supported yet"
+                    "a {form} leaves only the body of a function, a lambda or a thunk, and \
+                     cannot stand here"
+                ),
+                | FragmentBoundary::JoinsBlock => f.write_str(
+                    "an arm of this match exits, so its other arms continue the block and answer \
+                     what the block answers; remove the written answer",
                 ),
                 | FragmentBoundary::EmptyList => f.write_str(
                     "`()` is an empty list, never the unit; write the unit value as `unit` and \
@@ -272,6 +276,9 @@ fn lowered(
         ),
         | LoweringRefusal::MissingExit { .. } => {
             f.write_str("this body ends without `return` or `become`")
+        },
+        | LoweringRefusal::Unreachable { .. } => {
+            f.write_str("this code never runs: every path before it leaves the body")
         },
         | LoweringRefusal::BudgetExceeded { budget } => write!(
             f,
@@ -602,6 +609,7 @@ mod tests
             LoweringRefusal::NonExhaustiveMatch { span },
             LoweringRefusal::UnmarkedSelfReference { span, name },
             LoweringRefusal::MissingExit { span },
+            LoweringRefusal::Unreachable { span },
             LoweringRefusal::BudgetExceeded {
                 budget: 0_usize.into(),
             },

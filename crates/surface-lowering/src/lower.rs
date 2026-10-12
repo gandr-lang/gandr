@@ -194,6 +194,8 @@ use crate::resolve::type_former;
 
 mod description;
 
+mod exits;
+
 mod native;
 
 quenchant_shape::reason_enum! {
@@ -718,7 +720,7 @@ enum Family
 /// # Adequacy
 /// - hypothesis: L3 — an exit, a match passing its end to its arms and a
 ///   returner ending a body distinguish the three.
-/// - witness: `lower::tests::an_exit_lowers_where_the_body_ends_and_nowhere_else`
+/// - witness: `lower::tests::an_exit_lowers_where_a_path_passes_and_nowhere_else`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum Ending
 {
@@ -746,7 +748,7 @@ enum Ending
 /// # Adequacy
 /// - hypothesis: L3 — exits settle, a match ending in exits settles, and a
 ///   returner or a call ending a body is refused at itself.
-/// - witness: `lower::tests::an_exit_lowers_where_the_body_ends_and_nowhere_else`
+/// - witness: `lower::tests::an_exit_lowers_where_a_path_passes_and_nowhere_else`
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become => ret == Ending::Exit,
     Former::Block | Former::Case | Former::Parenthesized | Former::Lambda | Former::Hole => ret == Ending::Passes,
@@ -1033,7 +1035,9 @@ enum StatementBinding
 /// - requires: coordinates, when present, are interpreted in their originating
 ///   run.
 /// - ensures: The origin position supplies the bind’s origin while the bound
-///   position supplies its computation.
+///   position supplies its computation; the rest says whether the block after
+///   the statement is bound once or continues every local end of the
+///   computation.
 /// - provides: One source-ordered block binding.
 /// - fails: none as a data value; interpretation belongs to its consumers.
 /// - panics: none as a data value.
@@ -1046,6 +1050,7 @@ enum StatementBinding
 /// - witness: `lower::tests::a_block_binds_each_statement_over_the_next`
 /// - witness: `lower::tests::a_discarded_statement_splits_its_unit`
 /// - witness: `lower::tests::every_minted_node_has_an_origin`
+/// - witness: `lower::exits::tests::a_bound_match_continues_its_block_at_each_local_arm`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct Statement
 {
@@ -1056,6 +1061,8 @@ struct Statement
     bound: NodeIndex,
     /// Whether the rest of the block names the value or discards it.
     binding: StatementBinding,
+    /// Where the rest of the block goes.
+    rest: exits::Rest,
 }
 
 /// A block: its statements, in source order, and its last computation.
@@ -1784,13 +1791,30 @@ struct Lowerer<'run, 'source>
     /// type.
     classifiers: BTreeMap<NodeIndex, NodeIndex>,
     /// The type each computation position answers, where a function's result
-    /// or a match's answer states it.
+    /// or a match's answer states it, or the block a statement's local ends
+    /// continue answers.
     answers: BTreeMap<NodeIndex, native::Answer>,
-    /// The computation positions a function exit may stand at: the last
+    /// What every node's paths do with the body it stands in, surveyed before
+    /// the classification reads it.
+    leaves: Vec<exits::Leaves>,
+    /// The computation positions where a path through a body ends: the last
     /// computation of a function's, a lambda's or a thunk's body, and what
     /// stands in tail position of one — a block's last computation, a match's
-    /// arm, a grouping's operand.
+    /// arm, a grouping's operand. A form there that is not an exit is a
+    /// missing one.
     exits: BTreeSet<NodeIndex>,
+    /// The computation positions a path through a body passes, where an exit
+    /// may stand: every position where a path ends, and every statement's
+    /// computation in a block on a path, with what stands in tail position of
+    /// one.
+    exitable: BTreeSet<NodeIndex>,
+    /// The computation positions whose local ends continue a block: the
+    /// computation of a statement that holds an exit, and what stands in tail
+    /// position of one.
+    joined: BTreeSet<NodeIndex>,
+    /// The exits read: every `return` and `become`, whose minted computation
+    /// the commuting keeps where it stands.
+    leaving: BTreeSet<NodeIndex>,
     /// Each block's last computation written as a statement, `c ;` before the
     /// closing brace, with the statement's span: admitted only as an exit.
     stated: BTreeMap<NodeIndex, ByteSpan>,
@@ -1811,7 +1835,8 @@ struct Lowerer<'run, 'source>
     descents: BTreeMap<NodeIndex, native::Descent>,
 }
 
-/// Where the mint sweep writes: the arena and the origin table.
+/// Where the mint sweep writes: the arena and the origin table, with the
+/// computations the commuting of early exits reads.
 ///
 /// # Specification
 /// - requires: The arena and origin table belong to the current minting run;
@@ -1831,12 +1856,19 @@ struct Lowerer<'run, 'source>
 /// - witness: `lower::tests::every_minted_node_has_an_origin`
 /// - witness: `lower::tests::a_value_head_is_forced_and_marked_inserted`
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
+/// - witness: `lower::exits::tests::an_exit_under_nesting_leaves_its_function`
 struct Sink<'run>
 {
     /// The arena the core nodes are minted into.
     arena: &'run mut CoreArena,
     /// The table every minted node's origin is recorded in.
     origins: &'run mut OriginTable,
+    /// Every computation an exit minted, and each copy a match leaf made of
+    /// one.
+    exits: BTreeSet<ComputationId>,
+    /// Every bind whose rest is distributed to its computation's local ends,
+    /// and each copy a match leaf made of one, with its statement's origin.
+    distributed: BTreeMap<ComputationId, Origin>,
 }
 
 /// Lower one module into `arena`, declaring its names over `outermost`.
@@ -2050,12 +2082,15 @@ pub fn lower_module<'source>(
     let mut lowerer = Lowerer::new(pbg, tree, collected, fuel, outermost);
     lowerer.declare();
     lowerer.seed()?;
+    lowerer.survey()?;
     lowerer.classify()?;
     lowerer.propagate_manifests();
     let mut origins = OriginTable::new();
     let mut sink = Sink {
         arena,
         origins: &mut origins,
+        exits: BTreeSet::new(),
+        distributed: BTreeMap::new(),
     };
     lowerer.mint(&mut sink)?;
     lowerer.mint_data(&mut sink);
@@ -2173,6 +2208,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         payload.resize(count, InPayload(false));
         let mut scopes = Vec::new();
         scopes.resize(count, Maybe::Absent(scoped::Absent::Unscoped));
+        let mut leaves = Vec::new();
+        leaves.resize(count, exits::Leaves::Never);
 
         Self {
             pbg,
@@ -2197,7 +2234,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             scratch: Pieces::new(),
             classifiers: BTreeMap::new(),
             answers: BTreeMap::new(),
+            leaves,
             exits: BTreeSet::new(),
+            exitable: BTreeSet::new(),
+            joined: BTreeSet::new(),
+            leaving: BTreeSet::new(),
             stated: BTreeMap::new(),
             cases: Vec::new(),
             signatures: BTreeMap::new(),
@@ -2955,7 +2996,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_repaired_declaration_is_refused`
     /// - witness: `lower::tests::a_lambda_in_value_position_is_refused`
     /// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
-    /// - witness: `lower::tests::an_exit_lowers_where_the_body_ends_and_nowhere_else`
+    /// - witness: `lower::tests::an_exit_lowers_where_a_path_passes_and_nowhere_else`
     #[spec(
         ensures: |ret| {
             if let Maybe::Present(repaired) = pieces.repair {
@@ -3629,9 +3670,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if let Some(&answer) = self.answers.get(&site.at.node) {
             let _passed = self.answers.insert(inner.node, answer);
         }
-        if self.exits.contains(&site.at.node) {
-            let _tail = self.exits.insert(inner.node);
-        }
+        self.pass_paths(site.at.node, inner.node);
 
         self.plan(site, Plan::Transparent(inner.node));
 
@@ -3707,10 +3746,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: `site` is a thunk in term position.
     /// - ensures: a thunk standing as a value reads its block in its own frame
-    ///   and is planned over it.
+    ///   as a body a path runs through, and is planned over it.
     /// - provides: the value former that suspends a computation.
     /// - fails: yields the wrong-sort refusal outside value position, the
-    ///   unadmitted refusal for a grade, and the block's own refusal.
+    ///   unadmitted refusal for a grade, the block's own refusal, and the
+    ///   unreachable refusal for statements after one every path of which
+    ///   exits.
     /// - panics: none.
     ///
     /// # Errors
@@ -3739,7 +3780,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return Err(site.folded(FormName::GRADE, FragmentBoundary::Unadmitted));
         }
         let body = self.block(site, &mut cursor, frame)?;
-        let _tail = self.exits.insert(body.last);
+        self.open_body(
+            site,
+            body,
+            Maybe::Absent(native::answered::Absent::Unstated),
+        )?;
 
         self.plan(site, Plan::Thunk(body));
 
@@ -3751,13 +3796,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: `site` is a lambda in term position.
     /// - ensures: a lambda standing as a computation binds its one parameter in
-    ///   a frame extending its own, reads its block under that frame, and is
-    ///   planned over it.
+    ///   a frame extending its own, reads its block under that frame as a body
+    ///   a path runs through, and is planned over it.
     /// - provides: the binder of the fragment.
     /// - fails: yields the wrong-sort refusal outside computation position; the
     ///   unadmitted refusal for a type abstraction or a typed parameter; the
     ///   arity refusal for any parameter count but one; the block's own
-    ///   refusal.
+    ///   refusal; and the unreachable refusal for statements after one every
+    ///   path of which exits.
     /// - panics: none.
     ///
     /// # Errors
@@ -3790,7 +3836,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.note_binder(binder, name)?;
         let extended = self.scope.extend(frame, name);
         let body = self.block(site, &mut cursor, Frame::Inner(extended))?;
-        let _tail = self.exits.insert(body.last);
+        self.open_body(
+            site,
+            body,
+            Maybe::Absent(native::answered::Absent::Unstated),
+        )?;
 
         self.plan(site, Plan::Lambda(body));
 
@@ -3803,12 +3853,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: `site` is a block in term position.
     /// - ensures: a block standing as a computation reads its statements and
     ///   its last computation as a thunk's or a lambda's block does, under its
-    ///   own frame, passes the answer its position states to its last
-    ///   computation, and is planned over them.
+    ///   own frame, passes the answer its position states and the paths through
+    ///   its position to its last computation, runs the paths on to its
+    ///   statements when a path passes it, and is planned over them.
     /// - provides: sequencing where one computation is read, a match arm's body
     ///   among them.
-    /// - fails: yields the wrong-sort refusal outside computation position and
-    ///   the block's own refusal.
+    /// - fails: yields the wrong-sort refusal outside computation position, the
+    ///   block's own refusal, and the unreachable refusal for statements after
+    ///   one every path of which exits.
     /// - panics: none.
     ///
     /// # Errors
@@ -3832,11 +3884,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         let frame = self.require(site, Produced::Computation)?;
         let body = self.block(site, &mut cursor, frame)?;
-        if let Some(&answer) = self.answers.get(&site.at.node) {
-            let _passed = self.answers.insert(body.last, answer);
-        }
-        if self.exits.contains(&site.at.node) {
-            let _tail = self.exits.insert(body.last);
+        let answer = match self.answers.get(&site.at.node) {
+            | Some(&answer) => {
+                let _passed = self.answers.insert(body.last, answer);
+                Maybe::Present(answer)
+            },
+            | None => Maybe::Absent(native::answered::Absent::Unstated),
+        };
+        self.pass_paths(site.at.node, body.last);
+        if self.exitable.contains(&site.at.node) {
+            self.paths_through(site, body, answer)?;
         }
 
         self.plan(site, Plan::Block(body));
@@ -3857,15 +3914,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   it, and records the parameters before it as the ones every recursive
     ///   call passes unchanged; the result, when written, is read at the result
     ///   position under the last parameter's frame, as the block is, and
-    ///   recorded as the answer of the block's last computation; the form is
-    ///   planned as the function's declared type and body.
+    ///   recorded as the answer of the block's last computation and of every
+    ///   statement whose local ends continue the block; the block is read as a
+    ///   body a path runs through; the form is planned as the function's
+    ///   declared type and body.
     /// - provides: the function tail, lowered once at the declaration form for
     ///   both halves it writes.
     /// - fails: yields the unadmitted refusal for a parameter spelled as a type
     ///   or a type variable, and, as a recursive tail, for one with no
     ///   parameter to descend on; a fault naming the function form for a
-    ///   parameter list, a type or a result out of shape; and the block's own
-    ///   refusal.
+    ///   parameter list, a type or a result out of shape; the block's own
+    ///   refusal; and the unreachable refusal for statements after one every
+    ///   path of which exits.
     /// - panics: none.
     ///
     /// # Errors
@@ -4010,12 +4070,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Maybe::Absent(_) => Maybe::Absent(stated::Absent::Unstated),
         };
         let block = self.block(function, &mut cursor, frame)?;
-        let _tail = self.exits.insert(block.last);
-        if let Maybe::Present(node) = result {
-            let _first = self
-                .answers
-                .insert(block.last, native::Answer { node, frame });
-        }
+        let answer = match result {
+            | Maybe::Present(node) => {
+                let answer = native::Answer { node, frame };
+                let _first = self.answers.insert(block.last, answer);
+                Maybe::Present(answer)
+            },
+            | Maybe::Absent(_) => Maybe::Absent(native::answered::Absent::Unstated),
+        };
+        self.open_body(function, block, answer)?;
 
         self.plan(
             site,
@@ -4128,6 +4191,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             origin: discarded.node,
                             bound: discarded.node,
                             binding: StatementBinding::Discarded,
+                            rest: exits::Rest::Bound,
                         });
                         frame = Frame::Inner(self.scope.extend(frame, SurfaceName::from("")));
                         continue;
@@ -4244,6 +4308,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             origin: run.node,
             bound: bound.node,
             binding: StatementBinding::Named,
+            rest: exits::Rest::Bound,
         });
 
         Ok(Frame::Inner(self.scope.extend(frame, name)))
@@ -4330,13 +4395,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   whose keyword tile is `keyword`.
     /// - ensures: the form standing as a computation reads its one operand as a
     ///   value in its own frame and is planned over it; a return is planned as
-    ///   the returner, which leaves the function because it stands where the
-    ///   function's body ends.
+    ///   the returner and recorded as an exit, which leaves the function
+    ///   because the commuting puts every exit where the function's body ends.
     /// - provides: the computation formers over a value, and the exit that
     ///   leaves a function with a value.
     /// - fails: yields the wrong-sort refusal outside computation position, the
-    ///   not-in-tail refusal for a return that does not stand in tail position
-    ///   of a function's, a lambda's or a thunk's body, and the hole's own
+    ///   not-in-tail refusal for a return that stands where no path through a
+    ///   function's, a lambda's or a thunk's body passes, and the hole's own
     ///   refusal.
     /// - panics: none.
     ///
@@ -4346,11 +4411,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — force and return plan their own former over a value
     ///   operand, and an author-written force is not marked as inserted; a
-    ///   return in tail position lowers as the returner and one inside a bound
-    ///   computation is refused.
+    ///   return on a path lowers as the returner and one in a call's head is
+    ///   refused.
     /// - witness: `lower::tests::force_and_application_lower_over_their_children`
     /// - witness: `lower::tests::an_author_written_force_is_not_marked_inserted`
-    /// - witness: `lower::tests::an_exit_lowers_where_the_body_ends_and_nowhere_else`
+    /// - witness: `lower::tests::an_exit_lowers_where_a_path_passes_and_nowhere_else`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -4361,7 +4426,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     },
                     | Some(&Plan::Return(operand)) => {
                         keyword != TileName::FORCE
-                            && (keyword != TileName::RETURN || self.exits.contains(&site.at.node))
+                            && (keyword != TileName::RETURN
+                                || (self.exitable.contains(&site.at.node)
+                                    && self.leaving.contains(&site.at.node)))
                             && self.reading(operand) == Reading::Value(site.reading.frame())
                     },
                     | _ => false,
@@ -4376,8 +4443,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let frame = self.require(site, Produced::Computation)?;
-        if keyword == TileName::RETURN && !self.exits.contains(&site.at.node) {
-            return Err(site.out(FragmentBoundary::NotInTail));
+        if keyword == TileName::RETURN {
+            if !self.exitable.contains(&site.at.node) {
+                return Err(site.out(FragmentBoundary::NotInTail));
+            }
+            let _exit = self.leaving.insert(site.at.node);
         }
         let _keyword = cursor.tile(keyword);
         let operand = site.one(cursor.operands())?;
@@ -4399,31 +4469,34 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// - requires: `site` is a `become` in term position.
-    /// - ensures: the form standing as a computation in tail position of a
-    ///   function's, a lambda's or a thunk's body reads its one operand as a
-    ///   computation in its own frame, the answer its position states passed
-    ///   on, and adopts it: the operand runs under the caller's continuation,
-    ///   so the exit adds the guarantee, not a frame. The operand is not itself
-    ///   where the body ends: `become` is the exit, so the operand needs none
-    ///   and admits none.
+    /// - ensures: the form standing as a computation where a path through a
+    ///   function's, a lambda's or a thunk's body passes reads its one operand
+    ///   as a computation in its own frame, the answer its position states
+    ///   passed on, is recorded as an exit and adopts the operand: the operand
+    ///   runs under the caller's continuation, so the exit adds the guarantee,
+    ///   not a frame. The operand is not itself where the body ends: `become`
+    ///   is the exit, so the operand needs none; a path passes it, so an exit
+    ///   inside it leaves the function too.
     /// - provides: the exit that leaves a function by running a computation.
     /// - fails: yields the wrong-sort refusal outside computation position, the
-    ///   not-in-tail refusal for a `become` that does not stand in tail
-    ///   position, and the hole's own refusal.
+    ///   not-in-tail refusal for a `become` where no path passes, and the
+    ///   hole's own refusal.
     /// - panics: none.
     ///
     /// # Errors
     /// The form's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a `become` ending a body lowers as its operand and
-    ///   one inside a bound computation is refused.
-    /// - witness: `lower::tests::an_exit_lowers_where_the_body_ends_and_nowhere_else`
+    /// - hypothesis: L3 — a `become` ending a body lowers as its operand, one
+    ///   in a bound computation leaves the function, and one in a call's head
+    ///   is refused.
+    /// - witness: `lower::tests::an_exit_lowers_where_a_path_passes_and_nowhere_else`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Transparent(operand))
-                    if self.exits.contains(&site.at.node) && !self.exits.contains(&operand)
+                    if self.exitable.contains(&site.at.node) && self.leaving.contains(&site.at.node)
+                        && !self.exits.contains(&operand) && self.exitable.contains(&operand)
                         && self.reading(operand) == Reading::Computation(site.reading.frame()))
         },
     )]
@@ -4434,9 +4507,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let frame = self.require(site, Produced::Computation)?;
-        if !self.exits.contains(&site.at.node) {
+        if !self.exitable.contains(&site.at.node) {
             return Err(site.out(FragmentBoundary::NotInTail));
         }
+        let _exit = self.leaving.insert(site.at.node);
         let _keyword = cursor.tile(TileName::BECOME);
         let operand = site.one(cursor.operands())?;
         exhausted(site, &cursor)?;
@@ -4444,6 +4518,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if let Some(&answer) = self.answers.get(&site.at.node) {
             let _passed = self.answers.insert(operand.node, answer);
         }
+        let _path = self.exitable.insert(operand.node);
         self.plan(site, Plan::Transparent(operand.node));
 
         Ok(())
@@ -6358,6 +6433,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             .unwrap_or(Bridge::Bare);
         let minted = self.mint_plan(plan, sink, origin);
         let bridged = sink.bridge(minted, bridge, origin);
+        if self.leaving.contains(&position)
+            && let Maybe::Present(Lowered::Computation(exit)) = bridged
+        {
+            let _first = sink.exits.insert(exit);
+        }
         if let Some(held) = self.lowered.get_mut(usize::from(position)) {
             *held = bridged;
         }
@@ -7136,7 +7216,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 let id = sink.arena.value_static_lambda(under);
                 sink.value(id, origin)
             }),
-            | Plan::Thunk(body) => self.mint_block(body, sink).map(|suspended| {
+            | Plan::Thunk(body) => self.mint_body(body, sink, origin).map(|suspended| {
                 let id = sink.arena.value_thunk(suspended);
                 sink.value(id, origin)
             }),
@@ -7148,7 +7228,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 let id = sink.arena.computation_force(forced);
                 sink.computation(id, origin)
             }),
-            | Plan::Lambda(body) => self.mint_block(body, sink).map(|under| {
+            | Plan::Lambda(body) => self.mint_body(body, sink, origin).map(|under| {
                 let id = sink.arena.computation_lambda(under);
                 sink.computation(id, origin)
             }),
@@ -7267,6 +7347,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
             let id = sink.arena.computation_bind(bound, chain);
             sink.origins.record_computation(id, origin);
+            if statement.rest == exits::Rest::Distributed {
+                let _first = sink.distributed.insert(id, origin);
+            }
             chain = id;
         }
 
@@ -7401,7 +7484,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 return Maybe::Absent(reason);
             }
         }
-        let mut body = match self.mint_block(function.block, sink) {
+        let mut body = match self.mint_body(function.block, sink, origin) {
             | Maybe::Present(block) => block,
             | Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
@@ -10909,13 +10992,14 @@ mod tests
     }
 
     #[test]
-    fn an_exit_lowers_where_the_body_ends_and_nowhere_else()
+    fn an_exit_lowers_where_a_path_passes_and_nowhere_else()
     {
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
                 "def g = 3 ; def a = thunk { return g } ; def b = thunk { become (force a) } ; \
-                 def c = thunk { { return 4 } } ; def d = thunk { return 5 ; } ;",
+                 def c = thunk { { return 4 } } ; def d = thunk { return 5 ; } ; \
+                 def e = thunk { become return 6 } ;",
             ),
             &mut arena,
         );
@@ -10956,36 +11040,43 @@ mod tests
             ),
             "an exit written as the block's closing statement ends the body"
         );
+        assert!(
+            matches!(
+                arena.computation(suspended(5_usize)),
+                Some(&Computation::Return(_))
+            ),
+            "`become` passes its body's end to the exit it runs"
+        );
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
-        for (source, start, end, kind) in [
+        let refused = refusal(SourceText::from("def a = thunk { become (return 1)(2) } ;"));
+        assert!(
+            matches!(
+                refused,
+                LoweringRefusal::OutOfFragment { span, form, boundary: FragmentBoundary::NotInTail, .. }
+                    if span == at(24, 32) && form == FormName::from(NamedKind("return_expression"))
+            ),
+            "an exit at a call's head, where no path passes, is refused at itself: {refused:?}"
+        );
+        for (source, start, end) in [
             (
                 "def a = thunk { run y <- return 1 ; return y } ;",
-                25_usize,
-                33_usize,
-                "return_expression",
+                36_usize,
+                44_usize,
             ),
             (
                 "def a = thunk { run y <- become pure 1 ; return y } ;",
-                25_usize,
-                38_usize,
-                "become_expression",
-            ),
-            (
-                "def a = thunk { become return 1 } ;",
-                23_usize,
-                31_usize,
-                "return_expression",
+                41_usize,
+                49_usize,
             ),
         ] {
             let refused = refusal(SourceText::from(source));
-            assert!(
-                matches!(
-                    refused,
-                    LoweringRefusal::OutOfFragment { span, form, boundary: FragmentBoundary::NotInTail, .. }
-                        if span == at(start, end) && form == FormName::from(NamedKind(kind))
-                ),
-                "an exit outside tail position of a body is refused at itself: `{source}` \
-                 gave {refused:?}"
+            assert_eq!(
+                refused,
+                LoweringRefusal::Unreachable {
+                    span: at(start, end)
+                },
+                "the rest of a block after a statement that always exits is unreachable: \
+                 `{source}`"
             );
         }
     }

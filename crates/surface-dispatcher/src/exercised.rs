@@ -665,6 +665,7 @@ fn lowering_row(
                 | FragmentBoundary::Unannotated
                 | FragmentBoundary::NonUniform
                 | FragmentBoundary::NotInTail
+                | FragmentBoundary::JoinsBlock
                 | FragmentBoundary::EmptyList,
             ..
         }
@@ -688,6 +689,7 @@ fn lowering_row(
         | LoweringRefusal::NonExhaustiveMatch { .. }
         | LoweringRefusal::UnmarkedSelfReference { .. }
         | LoweringRefusal::MissingExit { .. }
+        | LoweringRefusal::Unreachable { .. }
         | LoweringRefusal::BudgetExceeded { .. }
         | LoweringRefusal::GrammarMismatch { .. }
         | LoweringRefusal::UnknownMold { .. } => {},

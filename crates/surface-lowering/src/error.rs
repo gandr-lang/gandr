@@ -131,8 +131,8 @@ impl fmt::Display for FragmentSort
 /// # Specification
 /// - requires: the producer identifies the boundary crossed by the source form.
 /// - ensures: reserved, unadmitted, wrong-sort, wrong-arity, indexed,
-///   unannotated and non-uniform reports remain distinct; an arity report
-///   carries the number of operands offered.
+///   unannotated, non-uniform, not-in-tail, joins-block and empty-list reports
+///   remain distinct; an arity report carries the number of operands offered.
 /// - provides: why a parsed form has no representation at this position.
 /// - fails: not applicable to the report itself.
 /// - panics: none.
@@ -150,6 +150,8 @@ impl fmt::Display for FragmentSort
 /// - witness: `lower::tests::a_lambda_in_value_position_is_refused`
 /// - witness: `lower::tests::a_form_offered_the_wrong_operand_count_is_refused`
 /// - witness: `lower::tests::the_empty_parentheses_are_never_the_unit`
+/// - witness: `lower::tests::an_exit_lowers_where_a_path_passes_and_nowhere_else`
+/// - witness: `lower::exits::tests::a_match_continuing_its_block_answers_what_the_block_does`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum FragmentBoundary
 {
@@ -176,9 +178,14 @@ pub enum FragmentBoundary
     /// the last parameter descends.
     NonUniform,
     /// The form is a function exit, `return` or `become`, standing where no
-    /// function's, lambda's or thunk's body ends: an early exit, which the
-    /// fragment does not read yet.
+    /// path through a function's, a lambda's or a thunk's body passes: a
+    /// call's head, an operand, or outside any body.
     NotInTail,
+    /// The form is a match written with an answer, `case e -> T { … }`,
+    /// whose arms continue the block after the statement it is bound by,
+    /// because one of them exits: each arm then answers what the block
+    /// answers, so the written answer is not the match's.
+    JoinsBlock,
     /// The form is the empty parentheses `()` standing as a value or a type:
     /// an empty list, which is never the unit.
     EmptyList,
@@ -210,7 +217,12 @@ impl fmt::Display for FragmentBoundary
                  stands; only the last parameter descends",
             ),
             | Self::NotInTail => f.write_str(
-                "stands where no function body ends; an exit leaves only from tail position",
+                "stands where no path through a function, a lambda or a thunk body passes; an \
+                 exit leaves only from such a path",
+            ),
+            | Self::JoinsBlock => f.write_str(
+                "has arms that continue the block after it, which answer what the block \
+                 answers, so a written answer is not read",
             ),
             | Self::EmptyList => f.write_str(
                 "is spelled `()`, an empty list and never the unit: the unit value is `unit` and \
@@ -610,6 +622,15 @@ pub enum LoweringRefusal<'source>
         span: ByteSpan,
     },
 
+    /// The rest of a block after a statement whose every path exits: no path
+    /// reaches it.
+    Unreachable
+    {
+        /// The bytes from the first statement no path reaches to the block's
+        /// last computation.
+        span: ByteSpan,
+    },
+
     /// The lowering's work allowance ran out.
     BudgetExceeded
     {
@@ -745,6 +766,9 @@ impl fmt::Display for LoweringRefusal<'_>
                 "the body's path ends without an exit; a path through a body ends in `return` \
                  or `become`",
             ),
+            | Self::Unreachable { .. } => f.write_str(
+                "no path reaches this code: every path through the statement before it exits",
+            ),
             | Self::BudgetExceeded { budget } => {
                 write!(f, "the lowering outran its allowance of {budget} steps")
             },
@@ -824,6 +848,7 @@ impl LoweringRefusal<'_>
             | Self::NonExhaustiveMatch { span }
             | Self::UnmarkedSelfReference { span, .. }
             | Self::MissingExit { span }
+            | Self::Unreachable { span }
             | Self::UnknownMold { span, .. } => Maybe::Present(span),
             | Self::BudgetExceeded { .. } | Self::GrammarMismatch { .. } => {
                 Maybe::Absent(refusal_span::Absent::Run)
@@ -861,7 +886,7 @@ mod tests
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the current 23-variant fixture has no repeated variant tag;
+    /// - ensures: the current 25-variant fixture has no repeated variant tag;
     ///   source-bearing variants carry separately observable rejected spans.
     /// - provides: a finite domain for the exact span projection witness.
     /// - fails: never.
@@ -882,7 +907,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 24_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 25_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -999,6 +1024,9 @@ mod tests
                 span: s(43_usize, 44_usize),
                 name: SurfaceName::from("gone"),
             },
+            LoweringRefusal::Unreachable {
+                span: s(45_usize, 46_usize),
+            },
         ]
     }
 
@@ -1034,6 +1062,7 @@ mod tests
             s(38_usize, 39_usize),
             s(41_usize, 42_usize),
             s(43_usize, 44_usize),
+            s(45_usize, 46_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {
