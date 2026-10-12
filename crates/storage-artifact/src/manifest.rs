@@ -473,6 +473,13 @@ impl ArtifactManifest
     /// - witness: `manifest::tests::the_manifest_round_trips_through_decode`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body copies the commitment and root identity into the image once; the check compares each byte once"
+        )
+    )]
     #[spec(ensures: |ret| ret.as_ref().iter().copied().eq(
         MANIFEST_DOMAIN.iter().copied()
             .chain(u16::from(self.manifest_version).to_le_bytes())
@@ -596,6 +603,13 @@ impl ArtifactManifest
     ///   resistance nor exhausts pairs of manifests.
     /// - witness: `manifest::tests::the_identity_is_blake3_of_the_canonical_bytes`
     /// - witness: `manifest::tests::any_field_perturbation_changes_the_identity`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check hashes the manifest's fields once, as the body hashes its encoded image once"
+        )
+    )]
     #[spec(ensures: |ret| {
         let mut hasher = blake3::Hasher::new();
         hasher.update(MANIFEST_DOMAIN);

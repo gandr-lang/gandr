@@ -836,6 +836,13 @@ fn value_id_at(
 ///   decoding. An arena snapshot detects accidental reminting.
 /// - witness: `decode::tests::declaration_assembly_preserves_claims_and_consumes_names`
 /// - witness: `encode::tests::declaration_sequences_match_literal_segment_fixtures`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "parity: the body resolves every metadata record's roots once; the check resolves each once more"
+    )
+)]
 #[spec(
     requires: metas.iter().all(|meta| value_type_id_at(&table.nodes, meta.root_declared).is_some()
         && match meta.kind {

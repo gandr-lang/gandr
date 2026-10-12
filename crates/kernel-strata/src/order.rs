@@ -512,6 +512,13 @@ impl Level
     /// - witness: `order::tests::var_is_strictly_below_its_successor`
     /// - witness: `order::tests::distinct_variables_are_incomparable`
     /// - witness: `order::tests::constant_dominated_by_atom_offset`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check validates the evidence the body's comparison produced, one more pass over both levels' atoms"
+        )
+    )]
     #[spec(ensures: |ret| match ret.as_ref() {
         Ok(witness) => witness.strict() == Strictness::NON_STRICT
             && validate_witness(self, other, witness).is_ok(),
@@ -553,6 +560,13 @@ impl Level
     /// - witness: `level_oracle::level_oracle::prop_lt_agrees_with_semantic_reference`
     /// - witness: `level_oracle::level_oracle::prop_lt_equals_succ_leq`
     /// - witness: `order::tests::lt_is_irreflexive`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check compares both levels' atoms directly and through one non-strict comparison, as the body's comparison walks them"
+        )
+    )]
     #[spec(ensures: |ret| ret.is_ok() == (
         self.atoms().all(|(variable, offset)| other.offset_of(variable).is_some_and(|bound| {
             u128::from(offset).checked_add(1).is_some_and(|shifted| shifted <= u128::from(bound))
@@ -589,6 +603,13 @@ impl Level
     /// - witness: `level_oracle::level_oracle::prop_leq_agrees_with_semantic_reference`
     /// - witness: `order::tests::zero_is_leq_everything`
     /// - witness: `order::tests::distinct_variables_are_incomparable`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check repeats the body's one comparison"
+        )
+    )]
     #[spec(ensures: |ret| bool::from(ret) == self.leq_with_evidence(other).is_ok())]
     #[inline]
     #[must_use]
@@ -616,6 +637,13 @@ impl Level
     /// - witness: `level_oracle::level_oracle::prop_lt_agrees_with_semantic_reference`
     /// - witness: `order::tests::leq_is_reflexive_and_lt_is_irreflexive_on_atoms`
     /// - witness: `order::tests::var_is_strictly_below_its_successor`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check repeats the body's one comparison"
+        )
+    )]
     #[spec(ensures: |ret| bool::from(ret) == self.lt_with_evidence(other).is_ok())]
     #[inline]
     #[must_use]

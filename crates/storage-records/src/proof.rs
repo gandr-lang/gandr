@@ -501,6 +501,13 @@ impl MembershipProof
     /// - witness: `tests::membership::a_key_of_a_single_leaf_tree_proves`
     /// - witness: `tests::membership::every_key_of_a_tree_proves`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body decodes and authenticates every carried node; the check rehashes each once"
+        )
+    )]
     #[spec(ensures: |ret| ret.is_err() || (
         self.envelope.root() == *expected_root
             && self.envelope.kind() == ProofKind::Membership
@@ -758,6 +765,13 @@ impl NonMembershipProof
     /// - witness: `tests::absence::an_empty_tree_proves_absence`
     /// - witness: `tests::absence::a_key_absent_from_a_single_leaf_tree_proves`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body decodes and authenticates every carried node; the check rehashes each once"
+        )
+    )]
     #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|evidence| {
         self.envelope.root() == *expected_root
             && self.envelope.kind() == ProofKind::NonMembership
@@ -1032,6 +1046,13 @@ impl RangeProof
     /// - witness: `tests::range::generated_ranges_prove_and_verify`
     /// - witness: `tests::range::a_range_over_a_single_leaf_tree_proves`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body decodes and authenticates every carried node and copies the records it returns; the check rehashes each node and compares each record once"
+        )
+    )]
     #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|records| {
         self.envelope.root() == *expected_root
             && self.envelope.kind() == ProofKind::Range

@@ -302,12 +302,14 @@ impl LeafNode
     /// # Adequacy
     /// - hypothesis: L1 on empty and forty-record leaves; absence and the
     ///   literal least key distinguish an invented empty-leaf key or selection
-    ///   of the last record.
+    ///   of the last record. The decoder checks once that a leaf's keys ascend
+    ///   strictly, so the predicate reads the first key and its successor.
     /// - witness: `node::tests::leaves_round_trip`
     /// - witness: `node::tests::an_empty_leaf_round_trips`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret == self.records.iter().map(Record::key).min())]
+    #[spec(ensures: |ret| ret == self.records.first().map(Record::key)
+        && self.records.get(1).is_none_or(|second| ret.is_some_and(|first| first < second.key())))]
     pub fn first_key(&self) -> Option<RecordKey<'_>>
     {
         self.records.first().map(Record::key)
@@ -454,6 +456,13 @@ impl InternalNode
     /// - witness: `node::tests::child_selection_picks_the_last_separator_at_or_below_the_key`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check repeats the body's one selection over the node's children"
+        )
+    )]
     #[spec(ensures: |ret| ret == select_child(self.children.as_ref(), key))]
     pub fn child_for_key(
         &self,

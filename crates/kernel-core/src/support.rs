@@ -500,6 +500,13 @@ impl MemoKey for NodeSupport
     /// - witness: `support::tests::a_binder_reading_node_splits_on_its_slice`
     /// - witness: `support::tests::a_binder_reading_node_collapses_where_its_slice_agrees`
     /// - witness: `support::tests::a_digest_collision_cannot_decide_support_agreement`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body compares the two encodings byte for byte, as the check does"
+        )
+    )]
     #[spec(ensures: |ret| matches!(ret, ContentAgreement::Agree)
         == (self.plane == other.plane && self.encoding == other.encoding))]
     #[inline]

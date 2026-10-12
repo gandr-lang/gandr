@@ -232,6 +232,10 @@ where
     /// - executable: none — the trait does not hold the implementation's
     ///   storage; a declaration attribute changes required methods.
     ///
+    /// # Clause cost
+    /// - bound: reads a count the implementation keeps beside its storage; no
+    ///   entry is read.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — empty, freshly recorded, replaced and discarded
     ///   entries distinguish a count of supports from attempts or buckets by
@@ -253,6 +257,10 @@ where
     /// - panics: none.
     /// - executable: none — partitioned storage belongs to the implementation;
     ///   a declaration attribute changes the required implementor API.
+    ///
+    /// # Clause cost
+    /// - bound: reads the count the implementation keeps for `plane`, one
+    ///   lookup among the planes; no entry is read.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — two planes with different entry counts separate a
@@ -565,6 +573,13 @@ where
     /// - witness: `memo::tests::remembering_an_agreeing_support_replaces_rather_than_accumulates`
     /// - witness: `memo::tests::replacement_inside_a_collision_bucket_preserves_its_neighbour`
     /// - witness: `memo::tests::ceiling_refuses_insertion_but_allows_replacement`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check recalls the support from its digest's bucket once, as the body searches that bucket"
+        )
+    )]
     #[spec(
         captures: [entry_count = self.entry_count(), entry_buckets = self.buckets.len(),
             was_held = self.recall(&support).is_some()],

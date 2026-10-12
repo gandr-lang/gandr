@@ -461,6 +461,13 @@ impl MemoKey for RewriteSupport
     ///   content equality from bucket equality.
     /// - witness: `rewrite::tests::two_rewrites_of_one_subject_are_two_supports`
     /// - witness: `rewrite::tests::rewrite_agreement_ignores_colliding_digest_buckets`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body compares the two encodings byte for byte, as the check does"
+        )
+    )]
     #[spec(ensures: |ret| matches!(ret, ContentAgreement::Agree)
         == (self.plane == other.plane && self.encoding == other.encoding))]
     #[inline]

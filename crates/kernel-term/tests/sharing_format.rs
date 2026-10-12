@@ -718,6 +718,13 @@ mod sharing_format
         /// - witness: `sharing_format::sharing_format::a_self_or_forward_child_reference_is_refused`
         /// - witness: `sharing_format::sharing_format::a_reserved_declaration_kind_is_refused_distinctly`
         /// - witness: `sharing_format::sharing_format::an_occupied_reserved_slot_is_refused_by_name`
+        #[cfg_attr(
+            dylint_lib = "quenchant_dylints",
+            expect(
+                spec_clause_traversal,
+                reason = "parity: the body writes every name and entry once; the check reads each back once"
+            )
+        )]
         #[spec(
             ensures: |ret| ret.0.get(0 .. 2).and_then(|header| { let segment_start = 0_usize;
                  let names_count = u64::try_from(self.name.len()).unwrap_or(u64::MAX);

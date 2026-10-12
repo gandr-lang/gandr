@@ -124,6 +124,10 @@ pub trait BlockStore
     /// ceiling.
     /// [`RecordTreeError::ArithmeticOverflow`] — a count exceeds a width.
     ///
+    /// # Clause cost
+    /// - bound: reads the one node stored under `hash`: one lookup, then one
+    ///   hash and one decode of that node's bytes; no other node is read.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 loads through the concrete store compare complete
     ///   bytes, report the requested absent identity, and refuse backing bytes

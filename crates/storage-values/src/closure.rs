@@ -320,12 +320,14 @@ impl<'store> Scan<'store>
     /// - hypothesis: L3 on three literal records observes each position and
     ///   unit charge; an exhausted budget refuses before consuming the first
     ///   record. This separates missed advancement, uncharged work and mutation
-    ///   despite a refused charge.
+    ///   despite a refused charge. The predicate asks that the cursor borrow
+    ///   `rest` itself, which reads two pointers rather than the bytes.
     /// - witness: `closure::tests::scan_transitions_preserve_counts_and_budget_refusals`
     #[spec(captures: [entry = u64::from(*spent), position = self.position],
         ensures: |ret| ret.is_err()
             || (entry.checked_add(1_u64) == Some(u64::from(*spent))
-                && position.next() == Ok(self.position) && self.remaining == rest
+                && position.next() == Ok(self.position)
+                && core::ptr::eq(core::ptr::from_ref(self.remaining.as_ref()), core::ptr::from_ref(rest.as_ref()))
                 && *spent <= MAX_DECODE_WORK))]
     fn advance(
         &mut self,

@@ -692,7 +692,14 @@ impl Schema
     /// # Adequacy
     /// - hypothesis: L3 — poisoned rows distinguish each independent premise.
     /// - witness: `admission::tests::schema_and_instance_refusals`
-    #[spec(ensures: |ret| ret.is_err() || (classifiers == self.classifiers()
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body compares the classifiers unless they are the schema's own, refills `selected` with one slot per point and walks the choices; the check reads each once"
+        )
+    )]
+    #[spec(ensures: |ret| ret.is_err() || ((core::ptr::eq(core::ptr::from_ref(classifiers), core::ptr::from_ref(self.classifiers())) || classifiers == self.classifiers())
         && selected.len() == self.proposal.arms.len()
         && choices.iter().all(|choice| selected.get(choice.point.0) == Some(&Selected::Chosen(choice.guard)))
         && selected.iter().zip(&self.proposal.arms).all(|(slot, arms)|

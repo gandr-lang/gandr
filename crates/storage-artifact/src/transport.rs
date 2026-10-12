@@ -216,6 +216,13 @@ impl StepIdEncoder
         clippy::big_endian_bytes,
         reason = "the v1 transport format pins big-endian u64 fields"
     )]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "bounded: the hasher holds one chunk buffer and at most 54 chaining values; the check clones and finalizes that fixed state and hashes the same eight bytes the body does"
+        )
+    )]
     #[spec(captures: expected = { let mut hash = self.hasher.clone(); hash.update(&value.0.to_be_bytes()); hash.finalize() }, ensures: self.hasher.finalize() == expected)]
     pub fn put_u64(
         &mut self,
@@ -238,6 +245,13 @@ impl StepIdEncoder
     #[expect(
         clippy::big_endian_bytes,
         reason = "the v1 byte length prefix is big-endian"
+    )]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check hashes the field's bytes once, as the body does, over a clone of the hasher's fixed state"
+        )
     )]
     #[spec(captures: expected = { let mut hash = self.hasher.clone(); hash.update(&value.length.0.to_be_bytes()); hash.update(value.bytes); hash.finalize() }, ensures: self.hasher.finalize() == expected)]
     pub fn put_bytes(
@@ -262,6 +276,13 @@ impl StepIdEncoder
     /// - witness: `transport::tests::the_identity_is_blake3_of_the_framed_preimage`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check finalizes the hasher once, as the body does"
+        )
+    )]
     #[spec(captures: expected = *self.hasher.finalize().as_bytes(), ensures: |output| output.0 == expected)]
     pub fn finish(self) -> TransportStepId
     {

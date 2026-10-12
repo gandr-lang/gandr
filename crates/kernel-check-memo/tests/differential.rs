@@ -773,6 +773,13 @@ impl MemoKey for Support
     ///   digest, not collision freedom for arbitrary inputs.
     /// - witness: `differential::tests::digest_and_agreement_boundaries`
     /// - witness: `differential::tests::arena_and_framing_boundaries`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check folds the content twice, as the body does"
+        )
+    )]
     #[spec(ensures: |ret| ret.high() == fold(self.plane, &self.content, DigestWord::from(HIGH_BASIS))
         && ret.low() == fold(self.plane, &self.content, DigestWord::from(LOW_BASIS)))]
     fn digest(&self) -> ContentDigest
@@ -800,6 +807,13 @@ impl MemoKey for Support
     ///   Relocation leaves the relation unchanged because indices are absent.
     /// - witness: `differential::tests::digest_and_agreement_boundaries`
     /// - witness: `differential::tests::arena_and_framing_boundaries`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body compares the two contents byte for byte, as the check does"
+        )
+    )]
     #[spec(ensures: |ret| matches!(ret, ContentAgreement::Agree)
         == (self.plane == other.plane && self.content == other.content))]
     fn agreement(

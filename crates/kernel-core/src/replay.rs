@@ -686,11 +686,14 @@ impl Frozen
     ///
     /// # Adequacy
     /// - hypothesis: L3: freezing either side changes only that side of a
-    ///   defined head; freezing an opaque head cannot make it unfoldable.
+    ///   defined head; freezing an opaque head cannot make it unfoldable. A
+    ///   freeze appends, so the predicate reads the side's length and its last
+    ///   constant rather than searching it.
     /// - witness: `replay::tests::frozen_heads_are_side_local_and_opacity_takes_precedence`
     #[spec(
-        captures: other_count = self.side(opposite(side)).len(),
-        ensures: self.side(side).contains(&constant)
+        captures: [own_count = self.side(side).len(), other_count = self.side(opposite(side)).len()],
+        ensures: self.side(side).len() == own_count.saturating_add(1)
+            && self.side(side).last() == Some(&constant)
             && self.side(opposite(side)).len() == other_count,
     )]
     fn freeze(
