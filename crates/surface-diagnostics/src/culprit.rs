@@ -89,6 +89,7 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
 {
     Culprit(match refusal {
         | LoweringRefusal::UnresolvedName { .. } => "not found in this scope",
+        | LoweringRefusal::UnresolvedDocLink { .. } => "links to no declared name",
         | LoweringRefusal::UnresolvedTypeHead { .. } => "no type head of this name and arity",
         | LoweringRefusal::DuplicateSignature { .. }
         | LoweringRefusal::DuplicateDefinition { .. }

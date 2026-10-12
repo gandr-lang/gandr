@@ -982,6 +982,40 @@ enum Gap
     Blank,
 }
 
+/// Which neighbours a piece of layout may belong to.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Reach
+{
+    /// A comment: the form before it on its line, or the form after it.
+    Either,
+    /// Documentation: the form after it only, since it describes what follows.
+    Leading,
+}
+
+/// The attribute whose entries are documentation.
+const DOC_ATTRIBUTE: &str = "doc";
+
+/// The tile opening an attribute block.
+const ATTRIBUTE_OPEN: &str = "@[";
+
+/// The tile closing an attribute block.
+const ATTRIBUTE_CLOSE: &str = "]";
+
+/// The tile opening an attribute's payload.
+const PAYLOAD_OPEN: &str = "(";
+
+/// The tile closing an attribute's payload.
+const PAYLOAD_CLOSE: &str = ")";
+
+/// The tile separating the entries of an attribute block.
+const SEPARATOR: &str = ",";
+
+/// The named kind of a string literal, the one payload documentation takes.
+const STRING_FORM: &str = "string";
+
+/// The opening of a documentation line, `///`, not followed by a fourth `/`.
+const DOC_LINE: &str = "///";
+
 /// Where a folded digest stands in its log's [`FoldedDigests`] table, one
 /// past the index, so a slot that names no digest costs no more than one
 /// that names one.
@@ -2974,7 +3008,8 @@ impl<'pbg> MeldState<'pbg>
     ///
     /// # Specification
     /// - ensures: replaces the form span, including an absorbed left operand,
-    ///   with one operand named by its opening mold; source is unchanged.
+    ///   with one operand named by its opening mold, its documentation grouped
+    ///   as [`documented`](Self::documented) groups it; source is unchanged.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -3034,7 +3069,8 @@ impl<'pbg> MeldState<'pbg>
             return;
         };
         let span = SourceSpan::new(SourceOffset::from(span_start), SourceOffset::from(span_end));
-        let meld = self.emit_interior(NodeLabel::Meld(mold), span, children);
+        let (label, children) = self.documented(mold, children);
+        let meld = self.emit_interior(label, span, children);
         self.replace_range(
             StackRange::new(StackIndex::from(low), StackIndex::from(high_exclusive)),
             Cell {
@@ -3045,6 +3081,287 @@ impl<'pbg> MeldState<'pbg>
                 role: Role::Operand,
             },
         );
+    }
+
+    /// Group the documentation among a closing form's `children`, and name the
+    /// form it leaves.
+    ///
+    /// # Specification
+    /// - requires: `children` are the form's children in source order and
+    ///   `mold` is the mold of the tile that opened it.
+    /// - ensures: every range [`doc_entries`](Self::doc_entries) finds becomes
+    ///   one [`NodeLabel::Doc`] interior over exactly those children, in place;
+    ///   no other child moves. A form whose children are one such range is
+    ///   documentation itself, its children unchanged. Any other form is a
+    ///   [`NodeLabel::Meld`]: named by `mold` when its first child is not
+    ///   documentation, and otherwise by the mold of its first tile outside
+    ///   documentation, so a declaration opened by a documentation block is
+    ///   named as it is without one.
+    /// - provides: documentation that reaches no digest, whichever spelling
+    ///   wrote it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `doc` entries alone, first, last and between other
+    ///   attributes, in a block of their own before a definition and before a
+    ///   data declaration, each leave the declaration's digest equal to the one
+    ///   it has without them. Grouping a separator twice, keeping the opening
+    ///   mold or losing a child changes a digest or the reconstructed source.
+    /// - witness: `meld::tests::documentation_reaches_no_digest`
+    #[spec(captures: before = children.len(), ensures: |ret| ret.1.len() <= before && ret.1.is_empty() != (before > 0))]
+    fn documented(
+        &mut self,
+        mold: MoldId,
+        children: Vec<EmitId>,
+    ) -> (NodeLabel, Vec<EmitId>)
+    {
+        let mut relabels: Vec<(EmitId, EmitId)> = Vec::new();
+        let entries = self.doc_entries(&children, &mut relabels);
+        if entries.is_empty() {
+            return (NodeLabel::Meld(mold), children);
+        }
+        if let [(first, last)] = *entries.as_slice()
+            && children.first() == Some(&first)
+            && children.last() == Some(&last)
+        {
+            return (NodeLabel::Doc, children);
+        }
+        for (target, template) in relabels {
+            let Some(taken) = self.label_of(template)
+            else {
+                continue;
+            };
+            if let Some(&mut EmitOp::Token { ref mut label, .. }) = usize::try_from(target.0)
+                .ok()
+                .and_then(|position| self.emit.get_mut(position))
+            {
+                *label = taken;
+            }
+        }
+        let mut grouped: Vec<EmitId> = Vec::with_capacity(children.len());
+        let mut held: Vec<EmitId> = Vec::new();
+        let mut pending = entries.iter().copied().peekable();
+        for child in children {
+            let Some(&(first, last)) = pending.peek()
+            else {
+                grouped.push(child);
+                continue;
+            };
+            if child != first && held.is_empty() {
+                grouped.push(child);
+                continue;
+            }
+            held.push(child);
+            if child == last {
+                let _taken = pending.next();
+                let span = SourceSpan::new(self.emit_span(first).start, self.emit_span(last).end);
+                let doc = self.emit_interior(NodeLabel::Doc, span, core::mem::take(&mut held));
+                grouped.push(doc);
+            }
+        }
+        grouped.append(&mut held);
+        let opened_by_documentation = grouped
+            .first()
+            .is_some_and(|&child| self.label_of(child) == Some(NodeLabel::Doc));
+        let named = if opened_by_documentation {
+            grouped
+                .iter()
+                .find_map(|&child| match self.emit_op(child) {
+                    | Some(&EmitOp::Token {
+                        label: NodeLabel::Tile(tile),
+                        ..
+                    }) => Some(tile),
+                    | Some(_) | None => None,
+                })
+                .unwrap_or(mold)
+        }
+        else {
+            mold
+        };
+
+        (NodeLabel::Meld(named), grouped)
+    }
+
+    /// The `doc("…")` entries of the attribute blocks among `children`, each as
+    /// the first and last child of the range that groups it, and in `relabels`
+    /// each tile that must take another tile's label for the block left to
+    /// read as one written without them.
+    ///
+    /// # Specification
+    /// - requires: `children` are a form's children in source order.
+    /// - ensures: an attribute block is a `@[` tile, entries separated by `,`
+    ///   tiles, an optional trailing `,` and a `]` tile, each entry a name tile
+    ///   and optionally a `(` tile, the payload and the first `)` tile after
+    ///   it; a run that is not one is no block. A documentation entry is named
+    ///   `doc` and has exactly one payload child, a string form. A block of
+    ///   documentation entries alone answers one range from its `@[` to its
+    ///   `]`. In any other block each documentation entry answers its own
+    ///   range, which takes the separator after the entry when the entry
+    ///   precedes the block's first other entry and the separator before it
+    ///   otherwise, so no separator is taken twice and the block left reads as
+    ///   one written without the entry. The first other entry then stands
+    ///   first, where the grammar molds an entry's tiles apart from a later
+    ///   entry's, so its name, `(` and `)` tiles are pushed onto `relabels`
+    ///   beside the first documentation entry's, whose labels they take. Ranges
+    ///   are disjoint and in source order.
+    /// - provides: the syntactic recognition of documentation written as an
+    ///   attribute, which the lowering then reads.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`documented`](Self::documented); an empty
+    ///   payload, a payload of another form and a block missing its `]` group
+    ///   nothing.
+    /// - witness: `meld::tests::documentation_reaches_no_digest`
+    /// - witness: `meld::tests::a_malformed_doc_entry_stays_an_attribute`
+    #[spec(captures: before = relabels.len(), ensures: |ret| ret.iter().all(|&(first, last)| children.contains(&first) && children.contains(&last)) && relabels.iter().skip(before).all(|&(target, template)| children.contains(&target) && children.contains(&template)))]
+    fn doc_entries(
+        &self,
+        children: &[EmitId],
+        relabels: &mut Vec<(EmitId, EmitId)>,
+    ) -> Vec<(EmitId, EmitId)>
+    {
+        let source = self.source.as_str();
+        let tile = |position: usize| match children.get(position).and_then(|&id| self.emit_op(id)) {
+            | Some(&EmitOp::Token {
+                label: NodeLabel::Tile(_),
+                start,
+                end,
+            }) => source.get(
+                usize::try_from(start).unwrap_or(usize::MAX)
+                    .. usize::try_from(end).unwrap_or(usize::MAX),
+            ),
+            | Some(_) | None => None,
+        };
+        let string = |position: usize| {
+            matches!(
+                children.get(position).and_then(|&id| self.emit_op(id)),
+                Some(&EmitOp::Interior { label: NodeLabel::Meld(form), .. })
+                    if self.pbg.named_kind(form).is_ok_and(|kind| kind.0 == STRING_FORM)
+            )
+        };
+        let child = |position: usize| children.get(position).copied();
+        let mut ranges: Vec<(EmitId, EmitId)> = Vec::new();
+        // Each entry of the block being read: its first and last position and
+        // whether it is documentation.
+        let mut entries: Vec<(usize, usize, bool)> = Vec::new();
+        let mut at = 0_usize;
+        while at < children.len() {
+            if tile(at) != Some(ATTRIBUTE_OPEN) {
+                at = at.saturating_add(1);
+                continue;
+            }
+            let open = at;
+            entries.clear();
+            let mut next = open.saturating_add(1);
+            let close = loop {
+                let Some(name) = tile(next)
+                else {
+                    break None;
+                };
+                let mut last = next;
+                let mut documentation = false;
+                if tile(next.saturating_add(1)) == Some(PAYLOAD_OPEN) {
+                    let payload = next.saturating_add(2);
+                    let Some(shut) = (payload .. children.len())
+                        .find(|&position| tile(position) == Some(PAYLOAD_CLOSE))
+                    else {
+                        break None;
+                    };
+                    documentation = name == DOC_ATTRIBUTE
+                        && shut == payload.saturating_add(1)
+                        && string(payload);
+                    last = shut;
+                }
+                entries.push((next, last, documentation));
+                let after = last.saturating_add(1);
+                match tile(after) {
+                    | Some(SEPARATOR) if tile(after.saturating_add(1)) == Some(ATTRIBUTE_CLOSE) => {
+                        break Some(after.saturating_add(1));
+                    },
+                    | Some(SEPARATOR) => next = after.saturating_add(1),
+                    | Some(ATTRIBUTE_CLOSE) => break Some(after),
+                    | Some(_) | None => break None,
+                }
+            };
+            let Some(close) = close
+            else {
+                at = open.saturating_add(1);
+                continue;
+            };
+            at = close.saturating_add(1);
+            let Some(anchor) = entries
+                .iter()
+                .position(|&(_, _, documentation)| !documentation)
+            else {
+                if let (Some(first), Some(last)) = (child(open), child(close)) {
+                    ranges.push((first, last));
+                }
+                continue;
+            };
+            if let (Some(&(template_name, template_close, _)), Some(&(name, close, _))) =
+                (entries.first(), entries.get(anchor))
+                && anchor > 0
+            {
+                let mut pairs = alloc::vec![(name, template_name)];
+                if close > name {
+                    pairs.push((name.saturating_add(1), template_name.saturating_add(1)));
+                    pairs.push((close, template_close));
+                }
+                for (target, template) in pairs {
+                    if let (Some(target), Some(template)) = (child(target), child(template)) {
+                        relabels.push((target, template));
+                    }
+                }
+            }
+            let mut previous_last = open;
+            for (index, &(first, last, documentation)) in entries.iter().enumerate() {
+                if documentation {
+                    let (from, to) = if index < anchor {
+                        (first, last.saturating_add(1))
+                    }
+                    else {
+                        (previous_last.saturating_add(1), last)
+                    };
+                    if let (Some(from), Some(to)) = (child(from), child(to)) {
+                        ranges.push((from, to));
+                    }
+                }
+                previous_last = last;
+            }
+        }
+
+        ranges
+    }
+
+    /// The emission `id` names, if the log holds it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn emit_op(
+        &self,
+        id: EmitId,
+    ) -> Option<&EmitOp>
+    {
+        let index = usize::try_from(id.0).ok()?;
+        self.emit.get(index)
+    }
+
+    /// The label of the emission `id` names, if the log holds it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn label_of(
+        &self,
+        id: EmitId,
+    ) -> Option<NodeLabel>
+    {
+        match self.emit_op(id) {
+            | Some(&(EmitOp::Token { label, .. } | EmitOp::Interior { label, .. })) => Some(label),
+            | None => None,
+        }
     }
 
     /// Return the start index of the form whose frontier is at `end_index`,
@@ -4674,17 +4991,24 @@ impl<'pbg> MeldState<'pbg>
     }
 
     /// Move each comment among `root`'s children into the node that owns it,
-    /// as [`comment_owner`](Self::comment_owner) decides.
+    /// as [`comment_owner`](Self::comment_owner) decides, after grouping each
+    /// run of documentation lines into one [`NodeLabel::Doc`] interior.
     ///
     /// # Specification
     /// - requires: `root` is the interior [`wrap_root`](Self::wrap_root) just
     ///   emitted, whose children are in source order.
-    /// - ensures: every emission stays the child of exactly one interior; a
-    ///   comment owned by a node other than the root leaves the root's children
-    ///   and joins its owner's at its source position; whitespace, shebangs and
-    ///   the root's own comments stay where they were. No span, label or digest
-    ///   changes, since layout never reaches a digest.
-    /// - provides: the comment placement every tree reader inherits.
+    /// - ensures: every emission stays the child of exactly one interior. A run
+    ///   of `///` lines, each separated from the next by whitespace holding one
+    ///   line break, becomes one documentation interior over the lines and the
+    ///   whitespace between them; it, and every documentation interior standing
+    ///   at the root, belongs to the form after it, as a leading comment does.
+    ///   A comment owned by a node other than the root leaves the root's
+    ///   children and joins its owner's at its source position; whitespace,
+    ///   shebangs and the root's own comments and documentation stay at the
+    ///   root, in source order. No digest changes, since neither layout nor
+    ///   documentation reaches one.
+    /// - provides: the comment and documentation placement every tree reader
+    ///   inherits.
     /// - fails: never.
     /// - panics: none.
     /// - intension: one pass over the root's children, descending only into the
@@ -4693,57 +5017,111 @@ impl<'pbg> MeldState<'pbg>
     /// # Adequacy
     /// - hypothesis: L3 — a leading, a trailing, a dangling and a standalone
     ///   comment are asserted under their owners, with reconstruction and every
-    ///   digest unchanged over the corpus. Leaving a comment at the root,
-    ///   inserting it out of order or losing it changes an owner or the
-    ///   reconstructed source.
+    ///   digest unchanged over the corpus; a run of documentation lines is one
+    ///   interior under the form after it, and a blank line ends a run. Leaving
+    ///   a comment at the root, inserting it out of order, joining lines across
+    ///   a blank line or losing one changes an owner or the reconstructed
+    ///   source.
     /// - witness: `meld::tests::each_comment_is_owned_by_the_node_it_describes`
+    /// - witness: `meld::tests::documentation_reaches_no_digest`
     /// - witness: `tests::acceptance::comments_reach_no_digest_and_lose_no_byte`
-    #[spec(captures: before = self.emit.iter().map(|op| match *op { EmitOp::Token { .. } => 0, EmitOp::Interior { ref children, .. } => children.len() }).sum::<usize>(),
-        ensures: |_| self.emit.iter().map(|op| match *op { EmitOp::Token { .. } => 0, EmitOp::Interior { ref children, .. } => children.len() }).sum::<usize>() == before)]
+    #[spec(captures: before = (self.emit.iter().map(|op| match *op { EmitOp::Token { .. } => 0, EmitOp::Interior { ref children, .. } => children.len() }).sum::<usize>(), self.emit.len()),
+        ensures: |_| self.emit.iter().map(|op| match *op { EmitOp::Token { .. } => 0, EmitOp::Interior { ref children, .. } => children.len() }).sum::<usize>() == before.0.saturating_add(self.emit.len().saturating_sub(before.1)))]
     fn attach_comments(
         &mut self,
         root: EmitId,
     )
     {
-        let source = self.source.as_str();
-        let text = |span: SourceSpan| {
-            let start = usize::try_from(span.start.0).unwrap_or(usize::MAX);
-            let end = usize::try_from(span.end.0).unwrap_or(usize::MAX);
-            source.get(start .. end).unwrap_or_default()
-        };
-        let is_comment = |id: EmitId| {
-            let written = text(self.emit_span(id));
-            written.starts_with("//") || written.starts_with("/*")
-        };
-        if !self.spaces.iter().any(|&space| is_comment(space)) {
-            return;
-        }
         let mut layout: Vec<EmitId> = Vec::new();
         let mut top: Vec<EmitId> = Vec::new();
+        let mut standing: Vec<EmitId> = Vec::new();
         for &child in self.emit_children(root) {
-            match usize::try_from(child.0)
-                .ok()
-                .and_then(|index| self.emit.get(index))
-            {
-                | Some(&EmitOp::Token {
-                    label: NodeLabel::Space,
-                    ..
-                }) => layout.push(child),
+            match self.label_of(child) {
+                | Some(NodeLabel::Space) => layout.push(child),
+                | Some(NodeLabel::Doc) => standing.push(child),
                 | Some(_) | None => top.push(child),
             }
         }
-        let mut moves: Vec<(EmitId, EmitId)> = Vec::new();
-        for &comment in &layout {
-            if !is_comment(comment) {
+        let written = |id: EmitId| {
+            let span = self.emit_span(id);
+            let start = usize::try_from(span.start.0).unwrap_or(usize::MAX);
+            let end = usize::try_from(span.end.0).unwrap_or(usize::MAX);
+            self.source.get(start .. end).unwrap_or_default()
+        };
+        let is_comment = |id: EmitId| {
+            let text = written(id);
+            text.starts_with("//") || text.starts_with("/*")
+        };
+        let is_doc_line = |id: EmitId| {
+            written(id)
+                .strip_prefix(DOC_LINE)
+                .is_some_and(|rest| !rest.starts_with('/'))
+        };
+        if standing.is_empty() && !layout.iter().any(|&space| is_comment(space)) {
+            return;
+        }
+        let mut runs: Vec<Vec<EmitId>> = Vec::new();
+        let mut index = 0_usize;
+        while let Some(&space) = layout.get(index) {
+            index = index.saturating_add(1);
+            if !is_doc_line(space) {
                 continue;
             }
-            let owner = self.comment_owner(root, &top, &layout, comment);
-            if owner != root {
-                moves.push((owner, comment));
+            let mut run = alloc::vec![space];
+            while let (Some(&between), Some(&line)) =
+                (layout.get(index), layout.get(index.saturating_add(1)))
+            {
+                let joined = run
+                    .last()
+                    .is_some_and(|&last| self.emit_span(last).end == self.emit_span(between).start)
+                    && self.emit_span(between).end == self.emit_span(line).start
+                    && written(between).trim().is_empty()
+                    && written(between).matches('\n').count() == 1
+                    && is_doc_line(line);
+                if !joined {
+                    break;
+                }
+                run.push(between);
+                run.push(line);
+                index = index.saturating_add(2);
             }
+            runs.push(run);
         }
-        for &(owner, comment) in &moves {
-            let at = self.emit_start(comment);
+        let lone: Vec<EmitId> = layout
+            .iter()
+            .copied()
+            .filter(|&space| is_comment(space) && !is_doc_line(space))
+            .collect();
+        let mut units: Vec<(EmitId, Reach)> = Vec::new();
+        let mut leaving: Vec<EmitId> = Vec::new();
+        for run in runs {
+            let (Some(&first), Some(&last)) = (run.first(), run.last())
+            else {
+                continue;
+            };
+            let span = SourceSpan::new(self.emit_span(first).start, self.emit_span(last).end);
+            leaving.extend_from_slice(&run);
+            let doc = self.emit_interior(NodeLabel::Doc, span, run);
+            units.push((doc, Reach::Leading));
+        }
+        units.extend(standing.iter().map(|&doc| (doc, Reach::Leading)));
+        units.extend(lone.iter().map(|&comment| (comment, Reach::Either)));
+        let moves: Vec<(EmitId, EmitId)> = units
+            .iter()
+            .map(|&(unit, reach)| (self.comment_owner(root, &top, &layout, unit, reach), unit))
+            .collect();
+        leaving.extend(moves.iter().map(|&(_, unit)| unit));
+        leaving.sort_unstable();
+        if let Some(&mut EmitOp::Interior {
+            ref mut children, ..
+        }) = usize::try_from(root.0)
+            .ok()
+            .and_then(|position| self.emit.get_mut(position))
+        {
+            children.retain(|child| leaving.binary_search(child).is_err());
+        }
+        for &(owner, unit) in &moves {
+            let at = self.emit_start(unit);
             let position = self
                 .emit_children(owner)
                 .partition_point(|&child| self.emit_start(child) <= at);
@@ -4751,42 +5129,34 @@ impl<'pbg> MeldState<'pbg>
                 ref mut children, ..
             }) = usize::try_from(owner.0)
                 .ok()
-                .and_then(|index| self.emit.get_mut(index))
+                .and_then(|slot| self.emit.get_mut(slot))
             {
-                children.insert(position, comment);
+                children.insert(position, unit);
             }
-        }
-        let mut moved: Vec<EmitId> = moves.into_iter().map(|(_, comment)| comment).collect();
-        moved.sort_unstable();
-        if let Some(&mut EmitOp::Interior {
-            ref mut children, ..
-        }) = usize::try_from(root.0)
-            .ok()
-            .and_then(|index| self.emit.get_mut(index))
-        {
-            children.retain(|child| moved.binary_search(child).is_err());
         }
     }
 
     /// The node that owns `comment`: the form it is written against, or the
     /// innermost form enclosing it.
     ///
-    /// `top` holds `root`'s children other than layout and `layout` its
-    /// layout, each in source order.
+    /// `top` holds `root`'s children other than layout and documentation, and
+    /// `layout` its layout, each in source order.
     ///
     /// # Specification
-    /// - requires: `top` and `layout` partition `root`'s children in source
-    ///   order.
+    /// - requires: `top` and `layout` are drawn from `root`'s children in
+    ///   source order.
     /// - ensures: with the enclosing node the innermost interior whose span
     ///   contains the comment (the root when none does), and its neighbours the
     ///   children of that node that end before the comment and start after it:
-    ///   the neighbour before when nothing but spaces separates it from the
-    ///   comment on its line (trailing); otherwise the neighbour after when no
-    ///   blank line separates the comment from it (leading); otherwise the
-    ///   enclosing node, which also owns a comment in an empty block or bracket
-    ///   (dangling) and one set apart by a blank line (standalone). A neighbour
-    ///   that is a leaf holds no children, so the enclosing node owns a comment
-    ///   written against a leaf.
+    ///   under [`Reach::Either`], the neighbour before when nothing but spaces
+    ///   separates it from the comment on its line (trailing); otherwise the
+    ///   neighbour after when no blank line separates the comment from it
+    ///   (leading); otherwise the enclosing node, which also owns a comment in
+    ///   an empty block or bracket (dangling) and one set apart by a blank line
+    ///   (standalone). Under [`Reach::Leading`] the trailing case is never
+    ///   taken. A neighbour that is a leaf holds no children and documentation
+    ///   documents no comment, so the enclosing node owns a comment written
+    ///   against either.
     /// - provides: the owner [`attach_comments`](Self::attach_comments) moves a
     ///   comment to.
     /// - fails: never.
@@ -4794,10 +5164,12 @@ impl<'pbg> MeldState<'pbg>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the four cases and a comment beside a leaf are each
-    ///   asserted at their owner. Reading the neighbour on the wrong side,
+    ///   asserted at their owner, and documentation after a form on its line
+    ///   goes to the form after it. Reading the neighbour on the wrong side,
     ///   treating a blank line as a line break or attaching to a leaf changes
     ///   an owner.
     /// - witness: `meld::tests::each_comment_is_owned_by_the_node_it_describes`
+    /// - witness: `meld::tests::documentation_reaches_no_digest`
     #[spec(ensures: |ret| ret == root || matches!(usize::try_from(ret.0).ok().and_then(|index| self.emit.get(index)), Some(EmitOp::Interior { .. })))]
     fn comment_owner(
         &self,
@@ -4805,6 +5177,7 @@ impl<'pbg> MeldState<'pbg>
         top: &[EmitId],
         layout: &[EmitId],
         comment: EmitId,
+        reach: Reach,
     ) -> EmitId
     {
         let span = self.emit_span(comment);
@@ -4850,14 +5223,15 @@ impl<'pbg> MeldState<'pbg>
             seen
         };
         let owner = |neighbour: EmitId| {
-            if is_interior(neighbour) {
+            if is_interior(neighbour) && self.label_of(neighbour) != Some(NodeLabel::Doc) {
                 neighbour
             }
             else {
                 enclosing
             }
         };
-        if let Some(&before) = next.checked_sub(1).and_then(|index| siblings.get(index))
+        if reach == Reach::Either
+            && let Some(&before) = next.checked_sub(1).and_then(|index| siblings.get(index))
             && gap(self.emit_span(before).end, span.start) == Gap::Inline
         {
             return owner(before);
@@ -4874,7 +5248,9 @@ impl<'pbg> MeldState<'pbg>
     /// and finish at `root`.
     ///
     /// Every leaf is staged before any interior, so an interior may own a leaf
-    /// logged after it, as a comment its owner was reduced before is; an
+    /// logged after it, as a comment its owner was reduced before is. Every
+    /// interior over leaves alone is staged next, so an interior may own one
+    /// logged after it, as the documentation the commit groups is; any other
     /// interior owns only interiors logged before it.
     ///
     /// # Specification
@@ -4884,22 +5260,24 @@ impl<'pbg> MeldState<'pbg>
     ///   reachable from it is a node of the tree; an entry with a folded digest
     ///   is staged under it, every other is folded by the builder.
     /// - fails: the builder refuses a node, or the log names an id outside
-    ///   itself or an interior not yet logged.
+    ///   itself or an interior over other interiors not yet logged.
     /// - panics: none.
     ///
     /// # Errors
     /// - [`MeldError::Build`] when the tree builder refuses a node.
     /// - [`MeldError::Corrupt`] when the log names an id outside itself or an
-    ///   interior not yet logged.
+    ///   interior over other interiors not yet logged.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — child order deliberately differing from source order,
     ///   a forward child, an invalid root and an inverted span expose the
     ///   borrowed source and precise build/corruption errors; a comment logged
-    ///   after its owner reaches the tree under it. Sorting edges, accepting a
-    ///   forward interior or losing span validation changes the tree or error.
+    ///   after its owner reaches the tree under it, as documentation grouped
+    ///   after its owner does. Sorting edges, accepting a forward interior or
+    ///   losing span validation changes the tree or error.
     /// - witness: `meld::tests::emission_preserves_byte_spans_child_order_and_errors`
     /// - witness: `meld::tests::each_comment_is_owned_by_the_node_it_describes`
+    /// - witness: `meld::tests::documentation_reaches_no_digest`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |tree| tree.source() == source && tree.grammar() == self.pbg.fingerprint() && tree.node(tree.root()).is_some()))]
     fn build_tree<'source>(
         &self,
@@ -4926,31 +5304,42 @@ impl<'pbg> MeldState<'pbg>
             }
         }
         let mut child_nodes: Vec<StagedId> = Vec::new();
-        for (position, op) in self.emit.iter().enumerate() {
-            let EmitOp::Interior {
-                label,
-                start,
-                end,
-                ref children,
-            } = *op
-            else {
-                continue;
-            };
-            child_nodes.clear();
-            for child in children {
-                let index = usize::try_from(child.0).map_err(|_error| MeldError::Corrupt)?;
-                let mapped = mapping
-                    .get(index)
-                    .copied()
-                    .flatten()
-                    .ok_or(MeldError::Corrupt)?;
-                child_nodes.push(mapped);
-            }
-            let span =
-                SourceSpan::new(SourceOffset::from(start), SourceOffset::from(end)).byte_span()?;
-            let node = Self::stage(&mut builder, folded(position), label, span, &child_nodes)?;
-            if let Some(slot) = mapping.get_mut(position) {
-                *slot = Some(node);
+        let over_leaves = |children: &[EmitId]| {
+            children
+                .iter()
+                .all(|&child| matches!(self.emit_op(child), Some(&EmitOp::Token { .. })))
+        };
+        for leaves_only in [true, false] {
+            for (position, op) in self.emit.iter().enumerate() {
+                let EmitOp::Interior {
+                    label,
+                    start,
+                    end,
+                    ref children,
+                } = *op
+                else {
+                    continue;
+                };
+                let staged = mapping.get(position).copied().flatten().is_some();
+                if staged || (leaves_only && !over_leaves(children)) {
+                    continue;
+                }
+                child_nodes.clear();
+                for child in children {
+                    let index = usize::try_from(child.0).map_err(|_error| MeldError::Corrupt)?;
+                    let mapped = mapping
+                        .get(index)
+                        .copied()
+                        .flatten()
+                        .ok_or(MeldError::Corrupt)?;
+                    child_nodes.push(mapped);
+                }
+                let span = SourceSpan::new(SourceOffset::from(start), SourceOffset::from(end))
+                    .byte_span()?;
+                let node = Self::stage(&mut builder, folded(position), label, span, &child_nodes)?;
+                if let Some(slot) = mapping.get_mut(position) {
+                    *slot = Some(node);
+                }
             }
         }
         let root_index = usize::try_from(root.0).map_err(|_error| MeldError::Corrupt)?;
@@ -6902,7 +7291,7 @@ impl Reader<'_>
 /// - witness: `meld::tests::checkpoint_compound_records_preserve_payloads`
 #[spec(captures: before = (reader.pos, reader.bytes.as_ref().get(reader.pos).copied()), ensures: |ret| reader.pos >= before.0
     && ret.as_ref().map_or_else(|error| before.1.map_or_else(|| *error == CheckpointError::Truncated, |tag| tag <= 1 || *error == CheckpointError::BadTag { tag }), |op| before.1 == Some(match *op { EmitOp::Token { .. } => 0, EmitOp::Interior { .. } => 1 })
-    && reader.pos == before.0.saturating_add(match *op { EmitOp::Token { label, .. } => (match label { NodeLabel::Wald | NodeLabel::Space => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) => 5, NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => 4 }).saturating_add(9), EmitOp::Interior { label, ref children, .. } => (match label { NodeLabel::Wald | NodeLabel::Space => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) => 5, NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => 4 }).saturating_add(17).saturating_add(children.len().saturating_mul(4)) })))]
+    && reader.pos == before.0.saturating_add(match *op { EmitOp::Token { label, .. } => (match label { NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) => 5, NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => 4 }).saturating_add(9), EmitOp::Interior { label, ref children, .. } => (match label { NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) => 5, NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => 4 }).saturating_add(17).saturating_add(children.len().saturating_mul(4)) })))]
 fn read_emit_op(reader: &mut Reader<'_>) -> Result<EmitOp, CheckpointError>
 {
     let wire_tag = reader.u8()?;
@@ -6954,7 +7343,7 @@ fn read_emit_op(reader: &mut Reader<'_>) -> Result<EmitOp, CheckpointError>
 ///   golden record.
 /// - witness: `meld::tests::checkpoint_compound_records_preserve_payloads`
 #[spec(captures: before = writer.bytes.len(), ensures: |_| writer.bytes.get(before) == Some(&match *op { EmitOp::Token { .. } => 0, EmitOp::Interior { .. } => 1 })
-    && writer.bytes.len() == before.saturating_add(match *op { EmitOp::Token { label, .. } => (match label { NodeLabel::Wald | NodeLabel::Space => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) => 5, NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => 4 }).saturating_add(9), EmitOp::Interior { label, ref children, .. } => (match label { NodeLabel::Wald | NodeLabel::Space => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) => 5, NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => 4 }).saturating_add(17).saturating_add(children.len().saturating_mul(4)) }))]
+    && writer.bytes.len() == before.saturating_add(match *op { EmitOp::Token { label, .. } => (match label { NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) => 5, NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => 4 }).saturating_add(9), EmitOp::Interior { label, ref children, .. } => (match label { NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) => 5, NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => 4 }).saturating_add(17).saturating_add(children.len().saturating_mul(4)) }))]
 fn write_emit_op(
     writer: &mut Writer,
     op: &EmitOp,
@@ -7003,7 +7392,7 @@ fn write_emit_op(
 ///   typed errors. Wrong payload order, over-consumption or acceptance of
 ///   unknown tags changes these observations.
 /// - witness: `meld::tests::checkpoint_compound_records_preserve_payloads`
-#[spec(captures: before = (reader.pos, reader.bytes.as_ref().get(reader.pos).copied()), ensures: |ret| reader.pos >= before.0 && ret.as_ref().map_or_else(|error| before.1.map_or_else(|| *error == CheckpointError::Truncated, |tag| (1 ..= 6).contains(&tag) || *error == CheckpointError::BadTag { tag }), |label| before.1 == Some(u8::from(label.tag())) && reader.pos == before.0.saturating_add(match *label { NodeLabel::Wald | NodeLabel::Space => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) => 5, NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => 4 })))]
+#[spec(captures: before = (reader.pos, reader.bytes.as_ref().get(reader.pos).copied()), ensures: |ret| reader.pos >= before.0 && ret.as_ref().map_or_else(|error| before.1.map_or_else(|| *error == CheckpointError::Truncated, |tag| (1 ..= 7).contains(&tag) || *error == CheckpointError::BadTag { tag }), |label| before.1 == Some(u8::from(label.tag())) && reader.pos == before.0.saturating_add(match *label { NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) => 5, NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => 4 })))]
 fn read_label(reader: &mut Reader<'_>) -> Result<NodeLabel, CheckpointError>
 {
     let wire_tag = reader.u8()?;
@@ -7030,6 +7419,7 @@ fn read_label(reader: &mut Reader<'_>) -> Result<NodeLabel, CheckpointError>
             Ok(NodeLabel::GhostClose { sort, class })
         },
         | 0x06 => Ok(NodeLabel::Space),
+        | 0x07 => Ok(NodeLabel::Doc),
         | tag => Err(CheckpointError::BadTag { tag }),
     }
 }
@@ -7047,7 +7437,7 @@ fn read_label(reader: &mut Reader<'_>) -> Result<NodeLabel, CheckpointError>
 ///   Swapping a tag, losing payload bytes or writing an extra payload changes
 ///   the wire form and cursor.
 /// - witness: `meld::tests::checkpoint_compound_records_preserve_payloads`
-#[spec(captures: before = writer.bytes.len(), ensures: |_| writer.bytes.get(before) == Some(&u8::from(label.tag())) && writer.bytes.len() == before.saturating_add(match label { NodeLabel::Wald | NodeLabel::Space => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) => 5, NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => 4 }))]
+#[spec(captures: before = writer.bytes.len(), ensures: |_| writer.bytes.get(before) == Some(&u8::from(label.tag())) && writer.bytes.len() == before.saturating_add(match label { NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) => 5, NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => 4 }))]
 fn write_label(
     writer: &mut Writer,
     label: NodeLabel,
@@ -7055,7 +7445,7 @@ fn write_label(
 {
     writer.u8(WireByte::from(u8::from(label.tag())));
     match label {
-        | NodeLabel::Wald | NodeLabel::Space => {},
+        | NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => {},
         | NodeLabel::Meld(mold) | NodeLabel::Tile(mold) => {
             writer.u32(WireU32::from(u32::from(mold)));
         },
@@ -7717,6 +8107,7 @@ mod tests
         let labels: &[(NodeLabel, &[u8])] = &[
             (NodeLabel::Wald, &[1]),
             (NodeLabel::Space, &[6]),
+            (NodeLabel::Doc, &[7]),
             (NodeLabel::Meld(MoldId::from(0x0123_4567)), &[
                 2, 0x67, 0x45, 0x23, 1,
             ]),
@@ -7763,7 +8154,7 @@ mod tests
             }
         }
         for tag in 0_u8 ..= u8::MAX {
-            if !(1 ..= 6).contains(&tag) {
+            if !(1 ..= 7).contains(&tag) {
                 let bytes = [tag];
                 let mut reader = super::Reader {
                     bytes: CheckpointBytesRef::from(bytes.as_slice()),
@@ -9131,6 +9522,7 @@ mod tests
                 shape: GroutShape::Postfix,
             },
             NodeLabel::Space,
+            NodeLabel::Doc,
         ] {
             let mut writer = super::Writer { bytes: Vec::new() };
             super::write_label(&mut writer, other);
@@ -9987,6 +10379,123 @@ mod tests
                 owner_of(comment),
                 "`{comment}` is {case}"
             );
+        }
+        Ok(())
+    }
+
+    /// Documentation is grouped into `Doc` nodes that no digest reads: the
+    /// `///` and `doc` spellings, their mixtures and their order beside other
+    /// attributes key one declaration, and only the remaining attributes move
+    /// its digest.
+    #[test]
+    fn documentation_reaches_no_digest() -> Result<(), Box<dyn Error>>
+    {
+        let pbg = built_in()?;
+        let digest = |source: &'static str| -> Result<_, Box<dyn Error>> {
+            let tree = crate::parse::parse(&pbg, SourceText::from(source))?.into_tree();
+            assert_eq!(crate::testing::reconstruct(&tree), source);
+            Ok(root_digest(&tree))
+        };
+        let groups: [&[&'static str]; 4] = [
+            &[
+                "def x = 1;\n",
+                "@[ doc(\"x\") ] def x = 1;\n",
+                "/// x\ndef x = 1;\n",
+                "/// x\n/// y\n@[ doc(\"z\") ]\ndef x = 1;\n",
+            ],
+            &[
+                "@[ checks ] def x = 1;\n",
+                "@[ doc(\"x\"), checks ] def x = 1;\n",
+                "@[ checks, doc(\"x\") ] def x = 1;\n",
+                "@[ doc(\"x\") ] @[ checks ] def x = 1;\n",
+                "@[ checks ] @[ doc(\"x\") ] def x = 1;\n",
+                "@[ checks ]\n/// x\ndef x = 1;\n",
+            ],
+            &[
+                "data D : Type { A : D; }\n",
+                "@[ doc(\"x\") ] data D : Type { A : D; }\n",
+                "/// x\ndata D : Type { A : D; }\n",
+            ],
+            &[
+                "@[ checks ] data D : Type { A : D; }\n",
+                "@[ doc(\"x\"), checks ] data D : Type { A : D; }\n",
+            ],
+        ];
+        let mut keys = Vec::new();
+        for group in groups {
+            let mut spellings = group.iter();
+            let first = digest(spellings.next().copied().ok_or("a group has a spelling")?)?;
+            for &source in spellings {
+                assert_eq!(digest(source)?, first, "`{source}` keys as its group");
+            }
+            assert!(
+                !keys.contains(&first),
+                "a remaining attribute moves the key"
+            );
+            keys.push(first);
+        }
+        Ok(())
+    }
+
+    /// A `///` run is one `Doc` node owned by the form after it: a blank line
+    /// ends the run, and a run after a form on its own line still describes
+    /// the next one.
+    #[test]
+    fn a_doc_run_documents_the_form_below_it() -> Result<(), Box<dyn Error>>
+    {
+        let pbg = built_in()?;
+        let source = "/// a\n\n/// b\n/// c\ndef x = 1; /// d\ndef y = 2;\n";
+        let tree = crate::parse::parse(&pbg, SourceText::from(source))?.into_tree();
+        assert_eq!(crate::testing::reconstruct(&tree), source);
+        let text = |position| -> String {
+            tree.fragment(position)
+                .map_or_else(String::new, |text| <&str>::from(text).to_owned())
+        };
+        let docs: Vec<(String, String)> = tree
+            .positions()
+            .filter(|&position| label(&tree, position) == Some(NodeLabel::Doc))
+            .map(|position| {
+                let owner = tree
+                    .positions()
+                    .find(|&parent| children(&tree, parent).contains(&position))
+                    .map_or_else(String::new, |parent| match label(&tree, parent) {
+                        | Some(NodeLabel::Wald) => "the root".to_owned(),
+                        | _ => text(parent),
+                    });
+                (text(position), owner)
+            })
+            .collect();
+        assert_eq!(docs, [
+            ("/// a".to_owned(), "the root".to_owned()),
+            ("/// b\n/// c".to_owned(), "def x = 1;".to_owned()),
+            ("/// d".to_owned(), "def y = 2;".to_owned()),
+        ]);
+        Ok(())
+    }
+
+    /// Only a `doc` entry with one string payload is documentation; any other
+    /// `doc` stays an attribute for lowering to refuse, and keys its form.
+    #[test]
+    fn a_malformed_doc_entry_stays_an_attribute() -> Result<(), Box<dyn Error>>
+    {
+        let pbg = built_in()?;
+        let parsed = |source: &'static str| -> Result<_, Box<dyn Error>> {
+            Ok(crate::parse::parse(&pbg, SourceText::from(source))?.into_tree())
+        };
+        let bare = root_digest(&parsed("def x = 1;\n")?);
+        for source in [
+            "@[ doc ] def x = 1;\n",
+            "@[ doc() ] def x = 1;\n",
+            "@[ doc(1) ] def x = 1;\n",
+            "@[ doc(\"x\", \"y\") ] def x = 1;\n",
+        ] {
+            let tree = parsed(source)?;
+            assert!(
+                tree.positions()
+                    .all(|position| label(&tree, position) != Some(NodeLabel::Doc)),
+                "`{source}` holds no documentation"
+            );
+            assert_ne!(root_digest(&tree), bare, "`{source}` keys its form");
         }
         Ok(())
     }

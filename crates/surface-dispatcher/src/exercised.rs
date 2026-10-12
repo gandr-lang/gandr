@@ -664,6 +664,7 @@ fn lowering_row(
                 | FragmentBoundary::NonUniform,
             ..
         }
+        | LoweringRefusal::UnresolvedDocLink { .. }
         | LoweringRefusal::GradedBridge { .. }
         | LoweringRefusal::DuplicateSignature { .. }
         | LoweringRefusal::DuplicateDefinition { .. }

@@ -124,6 +124,8 @@ use crate::attribute::payload;
 use crate::attribute::payload_form;
 use crate::attribute::payload_verdict;
 use crate::classify::FailureClass;
+use crate::doc::Documentation;
+use crate::doc::read_doc;
 use crate::error::FormFault;
 use crate::error::FragmentBoundary;
 use crate::error::FragmentSort;
@@ -1941,6 +1943,7 @@ pub fn lower_module<'source>(
     lowerer.mint_descriptions(&mut sink)?;
     let mut attributes = AttributeTable::new();
     lowerer.attribute(&mut attributes)?;
+    let documentation = lowerer.document()?;
     let declarations = lowerer.assemble(&mut origins);
     let structures = lowerer.structures();
     let Lowerer {
@@ -1965,7 +1968,8 @@ pub fn lower_module<'source>(
             diagnostics: collected.description_diagnostics,
         },
         collected.cells,
-    ))
+    )
+    .with_documentation(documentation))
 }
 
 impl<'run, 'source> Lowerer<'run, 'source>
@@ -2275,6 +2279,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 signature: Maybe::Absent(declaration_half::Absent::Unwritten),
                 definition: Maybe::Absent(declaration_half::Absent::Unwritten),
                 attributes: Vec::new(),
+                docs: Vec::new(),
                 refusal: Maybe::Absent(slot_refusal::Absent::Unrefused),
             };
             slot.refuse(declared_by.node, LoweringRefusal::ShadowedBuiltin {
@@ -7511,6 +7516,122 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
+    /// Read every declaration's documentation and check its links.
+    ///
+    /// # Specification
+    /// - requires: the mint sweep has run, so every declaration form's digest
+    ///   is final.
+    /// - ensures: every piece of documentation of every declaration, refused or
+    ///   not, is read and filed under the content identity of the form it
+    ///   documents, pieces in source order; each link to a name the module
+    ///   neither declares nor recognises refuses its declaration at the link,
+    ///   as a misspelt attribute does. Every slot's documentation list is
+    ///   drained.
+    /// - provides: the documentation table of the lowered module.
+    /// - fails: [`LoweringRefusal::BudgetExceeded`] and
+    ///   [`LoweringRefusal::UnknownMold`] abort the pass; every other refusal
+    ///   is offered to the declaration the documentation belongs to.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::BudgetExceeded`] and
+    /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — both spellings file one text under one digest, a link
+    ///   to a later declaration resolves, and a link to a missing name refuses
+    ///   its declaration at the link's span.
+    /// - witness: `lower::tests::documentation_is_filed_under_the_declaration_digest`
+    /// - witness: `lower::tests::a_link_to_a_missing_name_is_refused_at_the_link`
+    #[spec(
+        captures: before = self.collected.slots.len(),
+        ensures: |ret| {
+            self.collected.slots.len() == before
+                && ret
+                    .as_ref()
+                    .err()
+                    .is_none_or(|refusal| refusal.classify() == FailureClass::EngineFault)
+                && (ret.is_err() || self.collected.slots.iter().all(|slot| slot.docs.is_empty()))
+        },
+    )]
+    fn document(
+        &mut self
+    ) -> Result<BTreeMap<NodeDigest, Documentation<'source>>, LoweringRefusal<'source>>
+    {
+        let mut filed: BTreeMap<NodeDigest, Documentation<'source>> = BTreeMap::new();
+        let mut slots = core::mem::take(&mut self.collected.slots);
+        let outcome = self.document_slots(&mut slots, &mut filed);
+        self.collected.slots = slots;
+
+        outcome.map(|()| filed)
+    }
+
+    /// Read and file the documentation of every slot in `slots` into `filed`.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::document`], over the slots taken out of the
+    ///   collection.
+    /// - ensures: as [`Self::document`]; each piece spends one step.
+    /// - provides: the slot walk of [`Self::document`].
+    /// - fails: as [`Self::document`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::document`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::document`].
+    /// - witness: `lower::tests::documentation_is_filed_under_the_declaration_digest`
+    /// - witness: `lower::tests::a_link_to_a_missing_name_is_refused_at_the_link`
+    #[spec(
+        captures: before = self.fuel.remaining,
+        ensures: |ret| self.fuel.remaining <= before
+            && (ret.is_err() || slots.iter().all(|slot| slot.docs.is_empty())),
+    )]
+    fn document_slots(
+        &mut self,
+        slots: &mut [DeclarationSlot<'source>],
+        filed: &mut BTreeMap<NodeDigest, Documentation<'source>>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        for slot in slots.iter_mut() {
+            for written in core::mem::take(&mut slot.docs) {
+                self.fuel.spend()?;
+                let documentation = filed.entry(self.digest_at(written.documents)).or_default();
+                let before = documentation.links().len();
+                if let Err(refusal) = read_doc(self.pbg, self.tree, written.at.node, documentation)
+                {
+                    if refusal.classify() == FailureClass::EngineFault {
+                        return Err(refusal);
+                    }
+                    slot.refuse(written.at.node, refusal);
+                    continue;
+                }
+                for link in documentation.links().get(before ..).unwrap_or_default() {
+                    let name = link.name();
+                    let spelled: &str = name.as_ref();
+                    let path =
+                        NamePath::from(spelled.split('.').map(Segment::from).collect::<Vec<_>>());
+                    let declared =
+                        matches!(
+                            self.recognition.resolve_path(&path),
+                            PathResolution::Complete(_)
+                        ) || self.collected.by_name.keys().any(|&(_, held)| held == name)
+                            || self.collected.modules.keys().any(|&(_, held)| held == name)
+                            || self.collected.constructors.contains_key(&name);
+                    if !declared {
+                        slot.refuse(written.at.node, LoweringRefusal::UnresolvedDocLink {
+                            span: link.span(),
+                            name,
+                        });
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     /// Read one written attribute into an entry, or into the refusal it earns.
     ///
     /// # Specification
@@ -8942,7 +9063,7 @@ const fn is_value_form(former: Former) -> ValueForm
         }
     },
 )]
-fn parse_literal(
+pub fn parse_literal(
     former: Former,
     text: SourceFragment<'_>,
 ) -> Maybe<Literal, literal::Absent>
@@ -11939,6 +12060,82 @@ mod tests
             arena.value(payload),
             Some(&Value::Literal(integer(SourceFragment::from("1")))),
             "the payload is the lowered value"
+        );
+    }
+
+    #[test]
+    fn documentation_is_filed_under_the_declaration_digest()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "/// Squares, as [cube] cubes.\n/// Twice.\ndef square = 1 ;\n@[ doc(\"Cubes.\") ] def cube = 2 ;\n/// A colour.\ndata Color : Type { Red : Color; }\ndef plain = 3 ;",
+            ),
+            &mut arena,
+        );
+        let [ref square, ref cube, ref color, ref plain] = *module.declarations()
+        else {
+            panic!("four names are declared");
+        };
+        let key = |declaration: &crate::module::LoweredDeclaration<'_>| {
+            let Maybe::Present(key) = declaration.definition()
+            else {
+                panic!("the name has a definition");
+            };
+            key
+        };
+        let text = |key| match module.documentation(key) {
+            | Maybe::Present(found) => Some(String::from(found.text().as_ref())),
+            | Maybe::Absent(_) => None,
+        };
+
+        assert_eq!(
+            text(key(square)).as_deref(),
+            Some("Squares, as [cube] cubes.\nTwice."),
+            "a `///` run is one text, its link to a later declaration resolving"
+        );
+        assert!(!matches!(square.outcome(), DeclarationOutcome::Refused(_)));
+        assert_eq!(text(key(cube)).as_deref(), Some("Cubes."));
+        assert_eq!(text(key(color)).as_deref(), Some("A colour."));
+        assert_eq!(text(key(plain)), None, "an undocumented form has none");
+        let mut bare_arena = CoreArena::new();
+        let bare = lowered(SourceText::from("def square = 1 ;"), &mut bare_arena);
+        let [ref undocumented] = *bare.declarations()
+        else {
+            panic!("one name is declared");
+        };
+        assert_eq!(
+            key(undocumented),
+            key(square),
+            "documentation leaves the declaration's identity alone"
+        );
+    }
+
+    #[test]
+    fn a_link_to_a_missing_name_is_refused_at_the_link()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from("/// See [gone].\ndef a = 1 ;\n@[ doc(\"Or [`a`].\") ] def b = 2 ;"),
+            &mut arena,
+        );
+        let [ref stale, ref linked] = *module.declarations()
+        else {
+            panic!("two names are declared");
+        };
+
+        assert_eq!(
+            stale.outcome(),
+            DeclarationOutcome::Refused(LoweringRefusal::UnresolvedDocLink {
+                span: at(9_usize, 13_usize),
+                name: SurfaceName::from("gone"),
+            }),
+            "the refusal stands at the link's name"
+        );
+        assert!(
+            !matches!(linked.outcome(), DeclarationOutcome::Refused(_)),
+            "a link to a declared name resolves"
         );
     }
 

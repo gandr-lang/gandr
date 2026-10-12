@@ -433,7 +433,7 @@ impl RoleTable
                         Layout::Directive => Some(HlRole::Directive),
                         Layout::Whitespace => None,
                     }),
-                    NodeLabel::Wald | NodeLabel::Meld(_) | NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => Ok(None),
+                    NodeLabel::Wald | NodeLabel::Meld(_) | NodeLabel::Doc | NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => Ok(None),
                 };
                 role.is_ok_and(|role| role.is_none_or(|role| {
                     expected_count = expected_count.saturating_add(1);
@@ -480,6 +480,7 @@ impl RoleTable
                 },
                 | NodeLabel::Wald
                 | NodeLabel::Meld(_)
+                | NodeLabel::Doc
                 | NodeLabel::Grout { .. }
                 | NodeLabel::GhostClose { .. } => continue,
             };

@@ -72,6 +72,7 @@ impl LoweringRefusal<'_>
             | Self::GrammarMismatch { .. }
             | Self::UnknownMold { .. } => matches!(ret, FailureClass::EngineFault),
             | Self::UnresolvedName { .. }
+            | Self::UnresolvedDocLink { .. }
             | Self::UnresolvedTypeHead { .. }
             | Self::DuplicateSignature { .. }
             | Self::DuplicateDefinition { .. }
@@ -99,6 +100,7 @@ impl LoweringRefusal<'_>
     {
         match *self {
             | Self::UnresolvedName { .. }
+            | Self::UnresolvedDocLink { .. }
             | Self::UnresolvedTypeHead { .. }
             | Self::DuplicateSignature { .. }
             | Self::DuplicateDefinition { .. }
@@ -180,7 +182,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 23_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 24_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -293,6 +295,10 @@ mod tests
                 span: empty,
                 name: SurfaceName::from("length"),
             },
+            LoweringRefusal::UnresolvedDocLink {
+                span: empty,
+                name: SurfaceName::from("gone"),
+            },
         ]
     }
 
@@ -321,6 +327,7 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::Unrepresentable,
+            FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
         ];

@@ -89,9 +89,10 @@ impl From<Significance> for bool
 /// What one node of a molded tree is.
 ///
 /// The vocabulary is the parser's material, closed: the tree records what was
-/// molded, what was inserted, and what was layout. Which form a molded node
-/// realises is the grammar's answer for its [`MoldId`], read under the
-/// [`GrammarFingerprint`](crate::GrammarFingerprint) the tree records.
+/// molded, what was inserted, what was layout and what documents a form. Which
+/// form a molded node realises is the grammar's answer for its [`MoldId`], read
+/// under the [`GrammarFingerprint`](crate::GrammarFingerprint) the tree
+/// records.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum NodeLabel
 {
@@ -127,6 +128,13 @@ pub enum NodeLabel
     },
     /// Layout: whitespace, a comment, or a shebang line.
     Space,
+    /// Documentation: a run of `///` lines or one `doc("…")` attribute entry,
+    /// grouped under the form it documents.
+    ///
+    /// An interior, like a form, so the material it groups stays in the tree;
+    /// insignificant, like layout, so editing documentation leaves the
+    /// documented form's identity and every ancestor's unchanged.
+    Doc,
 }
 
 impl NodeLabel
@@ -142,7 +150,9 @@ impl NodeLabel
     ) -> crate::ConstEquality
     {
         if match (self, other) {
-            | (Self::Wald, Self::Wald) | (Self::Space, Self::Space) => true,
+            | (Self::Wald, Self::Wald) | (Self::Space, Self::Space) | (Self::Doc, Self::Doc) => {
+                true
+            },
             | (Self::Meld(a), Self::Meld(b)) | (Self::Tile(a), Self::Tile(b)) => {
                 matches!(a.const_eq(b), crate::ConstEquality::Equal)
             },
@@ -199,6 +209,7 @@ impl NodeLabel
     #[spec(ensures: |ret| ret.0 == match self {
         Self::Wald => 1_u8, Self::Meld(_) => 2_u8, Self::Tile(_) => 3_u8,
         Self::Grout { .. } => 4_u8, Self::GhostClose { .. } => 5_u8, Self::Space => 6_u8,
+        Self::Doc => 7_u8,
     })]
     #[inline]
     #[must_use]
@@ -211,6 +222,7 @@ impl NodeLabel
             | Self::Grout { .. } => 0x04_u8,
             | Self::GhostClose { .. } => 0x05_u8,
             | Self::Space => 0x06_u8,
+            | Self::Doc => 0x07_u8,
         })
     }
 
@@ -220,11 +232,11 @@ impl NodeLabel
     /// # Specification
     /// - requires: nothing; the function is total over the vocabulary.
     /// - ensures: every leaf label answers affirmatively — a tile, grout, a
-    ///   minted close and layout — and the two interior labels, a form and the
-    ///   root, answer negatively: a leaf's text is what the source wrote there
-    ///   (empty for inserted grout and a minted close, the token's bytes for
-    ///   grout over an unmolded token), and an interior node's text is its
-    ///   children's.
+    ///   minted close and layout — and the three interior labels, a form, the
+    ///   root and documentation, answer negatively: a leaf's text is what the
+    ///   source wrote there (empty for inserted grout and a minted close, the
+    ///   token's bytes for grout over an unmolded token), and an interior
+    ///   node's text is its children's.
     /// - provides: the text half of a node's digest preimage.
     /// - fails: never.
     /// - panics: none.
@@ -239,30 +251,32 @@ impl NodeLabel
     #[must_use]
     pub const fn carries_text(self) -> CarriesText
     {
-        CarriesText(!matches!(self, Self::Wald | Self::Meld(_)))
+        CarriesText(!matches!(self, Self::Wald | Self::Meld(_) | Self::Doc))
     }
 
     /// Whether a parent's digest folds a node with this label.
     ///
     /// # Specification
     /// - requires: nothing; the function is total over the vocabulary.
-    /// - ensures: every variant but [`NodeLabel::Space`] answers affirmatively.
+    /// - ensures: every variant but [`NodeLabel::Space`] and [`NodeLabel::Doc`]
+    ///   answers affirmatively.
     /// - provides: the filter a builder applies to a node's children before
-    ///   folding their digests, so layout never reaches an ancestor's identity.
+    ///   folding their digests, so neither layout nor documentation reaches an
+    ///   ancestor's identity.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the vocabulary is a finite class, enumerated
     ///   exhaustively with each variant's exact answer asserted; changing the
-    ///   boundary between layout and content flips an observed answer.
-    /// - witness: `label::tests::only_layout_is_insignificant`
-    #[spec(ensures: |ret| ret.0 != matches!(self, Self::Space))]
+    ///   boundary between content and the rest flips an observed answer.
+    /// - witness: `label::tests::only_layout_and_documentation_are_insignificant`
+    #[spec(ensures: |ret| ret.0 != matches!(self, Self::Space | Self::Doc))]
     #[inline]
     #[must_use]
     pub const fn significance(self) -> Significance
     {
-        Significance(!matches!(self, Self::Space))
+        Significance(!matches!(self, Self::Space | Self::Doc))
     }
 }
 
@@ -282,7 +296,7 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    fn every_variant() -> [NodeLabel; 6_usize]
+    fn every_variant() -> [NodeLabel; 7_usize]
     {
         [
             NodeLabel::Wald,
@@ -297,13 +311,16 @@ mod tests
                 class: ClosingClass::Brace,
             },
             NodeLabel::Space,
+            NodeLabel::Doc,
         ]
     }
 
     #[test]
     fn every_digest_tag_is_pinned()
     {
-        let expected = [0x01_u8, 0x02_u8, 0x03_u8, 0x04_u8, 0x05_u8, 0x06_u8];
+        let expected = [
+            0x01_u8, 0x02_u8, 0x03_u8, 0x04_u8, 0x05_u8, 0x06_u8, 0x07_u8,
+        ];
         for (label, tag) in every_variant().into_iter().zip(expected) {
             assert_eq!(
                 label.tag(),
@@ -338,7 +355,7 @@ mod tests
     #[test]
     fn only_leaves_carry_text()
     {
-        let expected = [false, false, true, true, true, true];
+        let expected = [false, false, true, true, true, true, false];
         for (label, carries) in every_variant().into_iter().zip(expected) {
             assert_eq!(
                 label.carries_text(),
@@ -349,14 +366,14 @@ mod tests
     }
 
     #[test]
-    fn only_layout_is_insignificant()
+    fn only_layout_and_documentation_are_insignificant()
     {
-        let expected = [true, true, true, true, true, false];
+        let expected = [true, true, true, true, true, false, false];
         for (label, significant) in every_variant().into_iter().zip(expected) {
             assert_eq!(
                 label.significance(),
                 Significance(significant),
-                "every label but layout reaches its parent's digest"
+                "every label but layout and documentation reaches its parent's digest"
             );
         }
     }

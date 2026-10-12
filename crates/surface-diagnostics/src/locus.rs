@@ -291,6 +291,7 @@ impl Annotations
                 })
             },
             | LoweringRefusal::UnresolvedName { .. }
+            | LoweringRefusal::UnresolvedDocLink { .. }
             | LoweringRefusal::UnresolvedTypeHead { .. }
             | LoweringRefusal::ShadowedBuiltin { .. }
             | LoweringRefusal::OutOfFragment { .. }

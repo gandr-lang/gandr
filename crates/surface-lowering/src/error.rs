@@ -355,6 +355,15 @@ pub enum LoweringRefusal<'source>
         name: SurfaceName<'source>,
     },
 
+    /// A documentation link to a name the module does not declare.
+    UnresolvedDocLink
+    {
+        /// The bytes the linked name covers.
+        span: ByteSpan,
+        /// The name as the link wrote it.
+        name: SurfaceName<'source>,
+    },
+
     /// A type head no table entry answers at the arity it was written with.
     UnresolvedTypeHead
     {
@@ -622,6 +631,12 @@ impl fmt::Display for LoweringRefusal<'_>
             | Self::UnresolvedName { name, .. } => {
                 write!(f, "no declaration or binder answers `{name}`")
             },
+            | Self::UnresolvedDocLink { name, .. } => {
+                write!(
+                    f,
+                    "the documentation links to `{name}`, which nothing declares"
+                )
+            },
             | Self::UnresolvedTypeHead { name, arity, .. } => {
                 write!(f, "no type head answers `{name}` {arity}")
             },
@@ -759,6 +774,7 @@ impl LoweringRefusal<'_>
     {
         match *self {
             | Self::UnresolvedName { span, .. }
+            | Self::UnresolvedDocLink { span, .. }
             | Self::UnresolvedTypeHead { span, .. }
             | Self::DuplicateSignature { span, .. }
             | Self::DuplicateDefinition { span, .. }
@@ -837,7 +853,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 23_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 24_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -950,6 +966,10 @@ mod tests
                 span: s(41_usize, 42_usize),
                 name: SurfaceName::from("length"),
             },
+            LoweringRefusal::UnresolvedDocLink {
+                span: s(43_usize, 44_usize),
+                name: SurfaceName::from("gone"),
+            },
         ]
     }
 
@@ -984,6 +1004,7 @@ mod tests
             s(36_usize, 37_usize),
             s(38_usize, 39_usize),
             s(41_usize, 42_usize),
+            s(43_usize, 44_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {

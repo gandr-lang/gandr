@@ -272,6 +272,8 @@ pub enum RefusalName
     PathCode,
     /// A term name no binder or earlier declaration answers.
     UnresolvedName,
+    /// A documentation link to a name nothing declares.
+    UnresolvedDocLink,
     /// A type head no table entry answers.
     UnresolvedTypeHead,
     /// A second signature for one name.
@@ -373,7 +375,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 62_usize] = [
+    pub const VOCABULARY: [Self; 63_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -391,6 +393,7 @@ impl RefusalName
         Self::DescentNotReplayed,
         Self::PathCode,
         Self::UnresolvedName,
+        Self::UnresolvedDocLink,
         Self::UnresolvedTypeHead,
         Self::DuplicateSignature,
         Self::DuplicateDefinition,
@@ -459,6 +462,7 @@ impl RefusalName
         ensures: |ret| {
     matches!(
         (self, ret.0.as_bytes()), (Self::UnresolvedName, b"UnresolvedName") |
+        (Self::UnresolvedDocLink, b"UnresolvedDocLink") |
         (Self::UnresolvedTypeHead, b"UnresolvedTypeHead") | (Self::DuplicateSignature,
         b"DuplicateSignature") | (Self::DuplicateDefinition, b"DuplicateDefinition") |
         (Self::DuplicateImportAlias, b"DuplicateImportAlias") | (Self::ShadowedBuiltin,
@@ -534,6 +538,7 @@ impl RefusalName
             | Self::DependentStack => "DependentStack",
             | Self::EffectSignatureConflict => "EffectSignatureConflict",
             | Self::UnresolvedName => "UnresolvedName",
+            | Self::UnresolvedDocLink => "UnresolvedDocLink",
             | Self::UnresolvedTypeHead => "UnresolvedTypeHead",
             | Self::DuplicateSignature => "DuplicateSignature",
             | Self::DuplicateDefinition => "DuplicateDefinition",
@@ -697,6 +702,8 @@ impl Refusal<'_>
     matches!(
         (* self, ret), (Self::Lowering(LoweringRefusal::UnresolvedName { .. }),
         RefusalName::UnresolvedName) |
+        (Self::Lowering(LoweringRefusal::UnresolvedDocLink { .. }),
+        RefusalName::UnresolvedDocLink) |
         (Self::Lowering(LoweringRefusal::UnresolvedTypeHead { .. }),
         RefusalName::UnresolvedTypeHead) |
         (Self::Lowering(LoweringRefusal::DuplicateSignature { .. }),
@@ -854,7 +861,8 @@ impl Refusal<'_>
     ensures: |ret| {
     matches!(
         (refusal, ret), (LoweringRefusal::UnresolvedName { .. },
-        RefusalName::UnresolvedName) | (LoweringRefusal::UnresolvedTypeHead { .. },
+        RefusalName::UnresolvedName) | (LoweringRefusal::UnresolvedDocLink { .. },
+        RefusalName::UnresolvedDocLink) | (LoweringRefusal::UnresolvedTypeHead { .. },
         RefusalName::UnresolvedTypeHead) | (LoweringRefusal::DuplicateSignature { .. },
         RefusalName::DuplicateSignature) | (LoweringRefusal::DuplicateDefinition { .. },
         RefusalName::DuplicateDefinition) | (LoweringRefusal::DuplicateImportAlias { ..
@@ -885,6 +893,7 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
 {
     match refusal {
         | LoweringRefusal::UnresolvedName { .. } => RefusalName::UnresolvedName,
+        | LoweringRefusal::UnresolvedDocLink { .. } => RefusalName::UnresolvedDocLink,
         | LoweringRefusal::UnresolvedTypeHead { .. } => RefusalName::UnresolvedTypeHead,
         | LoweringRefusal::DuplicateSignature { .. } => RefusalName::DuplicateSignature,
         | LoweringRefusal::DuplicateDefinition { .. } => RefusalName::DuplicateDefinition,

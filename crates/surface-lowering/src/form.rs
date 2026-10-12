@@ -803,7 +803,9 @@ pub enum Shape
     },
     /// Material the parser inserted.
     Repair(Repair),
-    /// Layout: whitespace, a comment, or a shebang line.
+    /// Material the term does not read: layout (whitespace, a comment, a
+    /// shebang line) or the documentation the parser grouped under the form it
+    /// documents, which the attribute pass reads apart.
     Layout,
 }
 
@@ -813,7 +815,7 @@ pub enum Shape
 /// - requires: nothing; the supplied grammar interprets the node's mold.
 /// - ensures: the root reads as [`Shape::Root`], a form or tile as the form its
 ///   mold's named kind names, grout and a minted close as the repair they stand
-///   for, and layout as [`Shape::Layout`].
+///   for, and layout and documentation as [`Shape::Layout`].
 /// - provides: the one total reading of a node label every pass dispatches on.
 /// - fails: [`LoweringRefusal::UnknownMold`] when the mold is absent from the
 ///   supplied table, including malformed hand-built labels. A recorded grammar
@@ -824,7 +826,7 @@ pub enum Shape
 /// [`LoweringRefusal::UnknownMold`] for a mold `pbg` does not hold.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — all six label classes are observed as exact shapes,
+/// - hypothesis: L3 — all seven label classes are observed as exact shapes,
 ///   including a ghost close and an unknown mold with its exact location.
 ///   Parsed forms also exercise grammar-relative named-kind dispatch; no claim
 ///   authenticates which grammar originally produced an arbitrary node.
@@ -833,7 +835,7 @@ pub enum Shape
 #[spec(
     ensures: |ret| match node.label() {
         | NodeLabel::Wald => ret == Ok(Shape::Root),
-        | NodeLabel::Space => ret == Ok(Shape::Layout),
+        | NodeLabel::Space | NodeLabel::Doc => ret == Ok(Shape::Layout),
         | NodeLabel::Grout { shape, .. } => ret == Ok(Shape::Repair(Repair::Grout(shape))),
         | NodeLabel::GhostClose { class, .. } => {
             ret == Ok(Shape::Repair(Repair::GhostClose(class)))
@@ -870,7 +872,7 @@ pub fn shape_of<'source>(
         },
         | NodeLabel::Grout { shape, .. } => Ok(Shape::Repair(Repair::Grout(shape))),
         | NodeLabel::GhostClose { class, .. } => Ok(Shape::Repair(Repair::GhostClose(class))),
-        | NodeLabel::Space => Ok(Shape::Layout),
+        | NodeLabel::Space | NodeLabel::Doc => Ok(Shape::Layout),
     }
 }
 
@@ -1232,14 +1234,14 @@ impl Default for Pieces
 /// - ensures: `read` is refilled from nothing: a one-tile form reads as itself,
 ///   its one own tile; a form of several tiles reads each child tile of its own
 ///   rule as an own tile and every other written child as an operand, in child
-///   order; the root reads every written child as an operand; layout is dropped
-///   everywhere, and the first grout or minted close among the children is
-///   reported beside the pieces rather than read as one. When that first repair
-///   is a minted close of a form of several tiles and a form inside it holds a
-///   repair too, the deepest such repair — the first in source order among
-///   equals — is reported instead, naming the form that holds it: the outer
-///   close follows from the inner form's. Reading layout or a repair node
-///   itself leaves both fields empty.
+///   order; the root reads every written child as an operand; layout and
+///   documentation are dropped everywhere, and the first grout or minted close
+///   among the children is reported beside the pieces rather than read as one.
+///   When that first repair is a minted close of a form of several tiles and a
+///   form inside it holds a repair too, the deepest such repair — the first in
+///   source order among equals — is reported instead, naming the form that
+///   holds it: the outer close follows from the inner form's. Reading layout,
+///   documentation or a repair node itself leaves both fields empty.
 /// - provides: the one reading of a form's children every reader takes, so the
 ///   own-tile test is decided in one place, over one buffer reused from form to
 ///   form.
@@ -1281,7 +1283,10 @@ impl Default for Pieces
         if *at == Placed::of(position, node)
             && pbg.mold(mold).is_ok_and(|held| held.label == label.0))
                 },
-                | NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } | NodeLabel::Space => {
+                | NodeLabel::Grout { .. }
+                | NodeLabel::GhostClose { .. }
+                | NodeLabel::Space
+                | NodeLabel::Doc => {
                     read.pieces.is_empty()
                         && read.repair == Maybe::Absent(repair::Absent::Unrepaired)
                 },
@@ -1290,6 +1295,7 @@ impl Default for Pieces
                         let held = tree.node(child)?;
                         match held.label() {
                             | NodeLabel::Space
+                            | NodeLabel::Doc
                             | NodeLabel::Grout { .. }
                             | NodeLabel::GhostClose { .. } => None,
                             | _ => Some(Placed::of(child, held)),
@@ -1373,7 +1379,10 @@ pub fn read_pieces<'source>(
         },
         | NodeLabel::Meld(mold) => Holder::Rule(rule_name(pbg, node, mold)?),
         | NodeLabel::Wald => Holder::Root,
-        | NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } | NodeLabel::Space => {
+        | NodeLabel::Grout { .. }
+        | NodeLabel::GhostClose { .. }
+        | NodeLabel::Space
+        | NodeLabel::Doc => {
             return Ok(());
         },
     };
@@ -1384,7 +1393,7 @@ pub fn read_pieces<'source>(
         };
         let placed = Placed::of(child, held);
         let piece = match held.label() {
-            | NodeLabel::Space => continue,
+            | NodeLabel::Space | NodeLabel::Doc => continue,
             | NodeLabel::Grout { shape, .. } => {
                 note_repair(read, placed, Repair::Grout(shape));
                 continue;
@@ -1478,7 +1487,9 @@ fn nested_repair<'source>(
                     forms.push((child, depth.saturating_add(1_usize)));
                     continue;
                 },
-                | NodeLabel::Wald | NodeLabel::Tile(_) | NodeLabel::Space => continue,
+                | NodeLabel::Wald | NodeLabel::Tile(_) | NodeLabel::Space | NodeLabel::Doc => {
+                    continue;
+                },
             };
             let span = held.span();
             let deeper = match deepest {
@@ -2764,6 +2775,8 @@ mod tests
             at(4_usize, 5_usize),
         );
         let layout = made.raw(super::NodeLabel::Space, at(5_usize, 6_usize), &[]);
+        let documented = made.raw(super::NodeLabel::Space, at(5_usize, 6_usize), &[]);
+        let documentation = made.raw(super::NodeLabel::Doc, at(5_usize, 6_usize), &[documented]);
         let grout = made.raw(
             super::NodeLabel::Grout {
                 sort: gandr_surface_syntax::GroutSort::from(0_u16),
@@ -2786,6 +2799,7 @@ mod tests
             declaration,
             number,
             layout,
+            documentation,
             grout,
             ghost,
             unknown,
@@ -2803,6 +2817,7 @@ mod tests
                 name: FormName::from(NamedKind("number")),
                 former: Former::Number,
             }),
+            Ok(super::Shape::Layout),
             Ok(super::Shape::Layout),
             Ok(super::Shape::Repair(Repair::Grout(GroutShape::Infix))),
             Ok(super::Shape::Repair(Repair::GhostClose(
