@@ -218,7 +218,6 @@ default-features = false
 # - none: the fixed-seed state needs neither `std` nor a random seed
 # consumers:
 # - surface-grammar
-# - surface-syntax
 [workspace.dependencies.foldhash]
 version = "0.2.0"
 default-features = false

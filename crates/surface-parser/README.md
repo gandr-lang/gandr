@@ -32,7 +32,6 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
 - [Repair stops at the declaration boundary](#repair-stops-at-the-declaration-boundary)
 - [Forms as units](#forms-as-units)
   - [A molded form outlives its revision](#a-molded-form-outlives-its-revision)
-  - [A molded form keeps its digests](#a-molded-form-keeps-its-digests)
 - [No recursion over input](#no-recursion-over-input)
 - [The corpus every molding is checked against](#the-corpus-every-molding-is-checked-against)
 - [Grammar contracts witnessed by a parse](#grammar-contracts-witnessed-by-a-parse)
@@ -69,7 +68,7 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
 - `Oblig`, `ObligationInstance`, `Delta`, `DeltaEmptyStatus`, `ObligClassIndex`, `ObligationCount` and `OBLIG_CLASS_COUNT`: the completion-obligation taxonomy and its minimization order. Witnesses: `oblig::tests::severity_ladder_is_low_to_high`, `oblig::tests::higher_severity_class_dominates_the_order`, `oblig::tests::minimization_never_prefers_ambiguous_prec`.
 - `parse`, `ParseResult` and `ParseCleanStatus`: the batch entry point. Witnesses: `tests::acceptance::corpus_molds_to_zero_obligations`, `parse::tests::parse_is_lossless_and_hash_stable`, `parse::tests::arbitrary_source_parses_totally`.
 - `parse_by_form`, `FormSplit`, `FormJoin`, `FormUnit`, `UnitBase`, `UnitSeam` and `SeamBreak`: one source parsed by its top-level forms, each form molded apart from a form-boundary checkpoint and joined into the whole parse. Witnesses: `parse::tests::form_split_parses_as_the_whole_source`, `parse::tests::a_source_splits_before_each_declaration_head`, `parse::tests::arbitrary_source_parses_by_form_as_whole`.
-- `FormUnit::park`, `FormUnit::resume`, `ParkedUnit`, `FormSplit::identity` and `FormIdentity`: a molded form kept apart from the source it was molded in, with the digests of its emissions, and taken up into another revision whose run spells the same identity. Witnesses: `parse::tests::a_parked_unit_joins_as_the_unit_it_parked`, `parse::tests::an_equal_identity_molds_an_equal_unit`, `parse::tests::hostile_edits_reuse_only_equal_units`, `meld::tests::a_parked_unit_keeps_whether_it_reached_its_stand_in`, `mold::tests::a_run_reads_eight_significant_tokens_past_its_end`.
+- `FormUnit::park`, `FormUnit::resume`, `ParkedUnit`, `FormSplit::identity` and `FormIdentity`: a molded form kept apart from the source it was molded in, and taken up into another revision whose run spells the same identity. Witnesses: `parse::tests::a_parked_unit_joins_as_the_unit_it_parked`, `parse::tests::an_equal_identity_molds_an_equal_unit`, `parse::tests::hostile_edits_reuse_only_equal_units`, `meld::tests::a_parked_unit_keeps_whether_it_reached_its_stand_in`, `mold::tests::a_run_reads_eight_significant_tokens_past_its_end`.
 
 ## Expected features
 
@@ -215,7 +214,7 @@ The alternatives were closing the tail at its first operand, which reads `forall
 
 ## The tree the melder commits
 
-`commit` replays the emission log into a `gandr-surface-syntax` `TreeBuilder`. A completed form is a `NodeLabel::Meld` named by the mold of the tile that opened it; an operator form is named by its operator's mold; a written tile is a `NodeLabel::Tile` with its mold. A missing operand is convex grout of the slot's sort; a missing closer is a `NodeLabel::GhostClose` when the grammar says every completion of the form ends at one family of closer, and postfix grout otherwise. A token no candidate molds is convex `Item` grout covering that token's bytes, so the tree stays lossless and the bytes reach the node's digest. Layout is a `NodeLabel::Space` leaf. The form a node realises is the grammar's answer for its mold (`Pbg::named_kind`), so this crate restates no list of forms.
+`commit` replays the emission log into a `gandr-surface-syntax` `TreeBuilder`. A completed form is a `NodeLabel::Meld` named by the mold of the tile that opened it; an operator form is named by its operator's mold; a written tile is a `NodeLabel::Tile` with its mold. A missing operand is convex grout of the slot's sort; a missing closer is a `NodeLabel::GhostClose` when the grammar says every completion of the form ends at one family of closer, and postfix grout otherwise. A token no candidate molds is convex `Item` grout covering that token's bytes, so the tree stays lossless and the bytes reach its form's digest. Layout is a `NodeLabel::Space` leaf. The form a node realises is the grammar's answer for its mold (`Pbg::named_kind`), so this crate restates no list of forms.
 
 ### A comment belongs to the node it describes
 
@@ -234,7 +233,7 @@ The consumers that read a form's children were audited for forms holding layout.
 
 ### Documentation is a node no digest reads
 
-Documentation is written two ways, a run of `///` lines and a `doc("…")` attribute entry, and both become one `NodeLabel::Doc` interior holding the material it was written with. `Doc` is insignificant, like `NodeLabel::Space`: no digest folds it, so documenting a declaration, rewording its documentation or moving between the spellings re-keys nothing, and the leaves still spell the source.
+Documentation is written two ways, a run of `///` lines and a `doc("…")` attribute entry, and both become one `NodeLabel::Doc` interior holding the material it was written with. `Doc` is insignificant, like `NodeLabel::Space`: no digest reads it, so documenting a declaration, rewording its documentation or moving between the spellings re-keys nothing, and the leaves still spell the source.
 
 - **An entry.** When a form closes, each attribute entry that is exactly `doc` with one string literal for its payload is grouped with its separating comma into a `Doc`: an entry before the block's first other entry takes the comma after it, a later one the comma before it. A block holding only such entries is grouped whole, `@[` and `]` included, and stands for its form as a `Doc`. An entry that becomes the block's first takes the tile labels of the entry grouped away before it, since a tile's mold depends on its position in the block, and a form whose first child became a `Doc` is named by the mold of its first remaining tile. `doc`, `doc()`, `doc(1)` and `doc("a", "b")` stay attributes, for the lowering to refuse.
 - **A run.** At commit, `///` lines separated only by one line break each (a `////` line is an ordinary comment) are grouped into a `Doc` with the whitespace between them. A run documents the form below it, never the one before it, even when it starts on that form's last line; a blank line between a run and the form below leaves it at the root.
@@ -291,15 +290,6 @@ A `FormUnit` borrows the split it was molded in. `FormUnit::park` keeps what the
 
 - Alternatives: a digest of the same window is a fixed-width key at the cost of a hash per form and a collision bound; keying by the run's text alone would serve a unit whose lookahead now reads different tokens.
 - Reversal: a molder whose lookahead grows past eight significant tokens widens the window with it; a store persisted across processes keys by a digest of the identity.
-
-### A molded form keeps its digests
-
-A node's digest folds its label, its own text and its significant children's digests, never its offset, so a node a form unit emitted has one digest wherever the unit is joined. `Molder::mold_unit` folds the digests of a unit's emissions where the unit is molded, on whichever thread molds it, and `FormUnit::park` keeps them beside the checkpoint; the join appends them with the emissions, and the commit stages each folded emission with `TreeBuilder::node_with_digest`. The commit hashes only what the join emitted itself: the collapse across the seams, the root, and any run re-molded onto the state because its seam broke. The enforcing build folds every supplied digest again and compares, so a digest that is not the fold refuses the call. An edit's commit hashes the forms the edit molded, and a whole revision hashes its forms in parallel.
-
-A leaf's digest reads only its label and its text, so the fold looks a leaf up by that spelling among the unit's leaves before it hashes, and a form's repeated layout, keywords, punctuation and names share one digest. A unit keeps a table of the digests it folded and, per emission, a four-byte slot naming its entry; the join appends the table and shifts the slots past the state's own. On the generated two-thousand-form module the parked units with the store's text and labeling are 1.8× the lowered revision, where a digest per emission, thirty-three bytes each, put them past 2×.
-
-- Alternatives: a table of digests keyed by emission content across units costs a key hash per node, about what it saves; a builder that adopts a finished subtree whole needs a tree laid out by form, which the level-order arena is not; a digest per emission costs no lookup and 33 bytes where a slot costs 4.
-- Reversal: a digest whose preimage read a node's position or its parent would be wrong wherever a unit lands; the commit would fold every emission again, as it did before.
 
 ## No recursion over input
 

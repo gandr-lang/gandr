@@ -1,66 +1,66 @@
-//! The content-derived node identity, [`NodeDigest`], and the preimage it is
+//! The content-derived form identity, [`NodeDigest`], and the preimage it is
 //! computed over.
 //!
 //! # Two identities, and why the distinction is load-bearing
 //!
-//! A node has an arena position and a content digest, and they answer different
-//! questions. The position addresses a node *inside one tree*: it is an offset
-//! into that tree's node vector and it means nothing anywhere else, because the
-//! next parse of an edited source lays the same declaration out at a different
-//! offset. The digest addresses a node *across* trees, runs and processes: it
-//! is a function of the node's label and its content and of nothing else, so
-//! the same declaration parsed from two files, in two processes, on two
-//! machines, carries the same digest.
+//! A node has an arena position and a cross-tree key, and they answer
+//! different questions. The position addresses a node *inside one tree*: it is
+//! an offset into that tree's node vector and it means nothing anywhere else,
+//! because the next parse of an edited source lays the same declaration out at
+//! a different offset. The key addresses a node *across* trees, runs and
+//! processes: it is the digest of the top-level form holding the node and the
+//! node's rank in that form, a function of the form's labels and content and
+//! of nothing else, so the same declaration parsed from two files, in two
+//! processes, on two machines, carries the same key.
 //!
-//! A diagnostic that carries both resolves fast inside the tree in hand and
-//! survives the tree. A side table keyed by a position is invalidated by an
-//! edit anywhere earlier in the file; a side table keyed by a digest is
-//! invalidated only by an edit to the thing it is about, which is why a table
-//! that outlives one parse keys on the digest alone.
+//! A side table keyed by a position is invalidated by an edit anywhere earlier
+//! in the file; a side table keyed by a key is invalidated only by an edit to
+//! the form it is about, which is why a table that outlives one parse keys on
+//! the key alone.
 //!
 //! # What the preimage excludes
 //!
-//! Spans are not hashed. A node's digest must not change when the same text
-//! moves, or the cross-tree half of the identity would decay into a
-//! position under another name. Neither are the arena positions of the
-//! children: a node folds its children's *digests*, so the fold is itself
-//! position-free. Layout children are not folded at all, so reformatting a
-//! node leaves its identity unchanged.
+//! Spans are not hashed. A form's digest must not change when the same text
+//! moves, or the cross-tree identity would decay into a position under another
+//! name. Layout and documentation are not serialized at all, so reformatting or
+//! re-documenting a form leaves its identity unchanged.
 //!
 //! # What the preimage includes, and in what shape
 //!
-//! The domain string, the label's pinned tag, the label's payload, the
-//! significant child count, the node's own text when its label carries text,
-//! and the significant children's digests in order. Every variable-width field
-//! is preceded by its length at a fixed width, so two sibling texts cannot run
-//! together into a third reading: `ab` beside `c` and `a` beside `bc` have
-//! different preimages, not one shared one.
+//! A form's preimage is its domain string, then each significant node of the
+//! form in preorder: the label's pinned tag, the label's payload, the
+//! significant child count, and, when the label carries text, the text's
+//! length and the text. Every variable-width field is preceded by its length at
+//! a fixed width and every node by its child count, so the bytes read back to
+//! one tree: two sibling texts cannot run together into a third reading, and a
+//! node cannot pass for its sibling's child. A tree's preimage is its own
+//! domain, the root's label read the same way with the form count as its child
+//! count, and the forms' digests in order.
+
+use alloc::vec::Vec;
 
 use crate::label::NodeLabel;
 use crate::mold::ClosingClass;
 use crate::mold::GroutShape;
 use crate::span::SourceFragment;
+use crate::tree::ChildCount;
 
 /// Byte width of a node identity, fixed by the hash family.
 pub const NODE_DIGEST_LEN: usize = 32_usize;
 
-/// The domain every node digest is computed under.
+/// The domain every form digest is computed under.
 ///
 /// The version suffix is part of the domain rather than a field beside it: a
-/// change to the preimage layout is a change of identity for every node, and
+/// change to the preimage layout is a change of identity for every form, and
 /// the two generations must not be comparable.
-const NODE_DOMAIN: &[u8] = b"gandr.surface-syntax.node.v2";
+const FORM_DOMAIN: &[u8] = b"gandr.surface-syntax.form.v1";
 
-/// The widest fixed-width head a preimage opens with: the domain, the tag, a
-/// four-byte payload, the child count and the text length.
-const HEAD_CAPACITY: usize = NODE_DOMAIN.len() + 1 + 4 + 8 + 8;
+/// The domain every tree digest is computed under, apart from the forms' so a
+/// tree of one form is never its form.
+const TREE_DOMAIN: &[u8] = b"gandr.surface-syntax.tree.v1";
 
-/// The longest preimage hashed from the stack: four BLAKE3 blocks, which hold
-/// a leaf's head and up to two hundred bytes of text, or an interior's head
-/// and up to six children. A longer one goes through the incremental hasher.
-const INLINE_PREIMAGE: usize = 256;
-
-/// The content identity of one node: a digest of its label and its content.
+/// The content identity of one top-level form or one whole tree: a digest of
+/// its labels and its content.
 ///
 /// # Specification
 /// - requires: nothing; the type is a carrier and admits any byte array.
@@ -81,36 +81,6 @@ const INLINE_PREIMAGE: usize = 256;
 #[repr(transparent)]
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct NodeDigest([u8; NODE_DIGEST_LEN]);
-
-impl NodeDigest
-{
-    /// Compare represented values during constant evaluation.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    pub(crate) const fn const_eq(
-        self,
-        other: Self,
-    ) -> crate::ConstEquality
-    {
-        let mut left = self.0.as_slice();
-        let mut right = other.0.as_slice();
-        let mut same = true;
-        while let (Some((a, rest_a)), Some((b, rest_b))) = (left.split_first(), right.split_first())
-        {
-            same = same && *a == *b;
-            left = rest_a;
-            right = rest_b;
-        }
-        if same {
-            crate::ConstEquality::Equal
-        }
-        else {
-            crate::ConstEquality::Unequal
-        }
-    }
-}
 
 impl From<[u8; NODE_DIGEST_LEN]> for NodeDigest
 {
@@ -223,145 +193,143 @@ impl core::fmt::Debug for NodeDigest
     }
 }
 
-/// The content identity of a node labelled `label` spanning `text` over the
-/// significant `children`.
+/// A preimage under construction: a domain, then nodes and digests.
+///
+/// One buffer serves every form of a tree, cleared as each opens, so a tree
+/// allocates for its longest form and hashes each form in one call.
 ///
 /// # Specification
-/// - requires: `text` is the fragment the node's span covers, and `children`
-///   holds the digests of its immediate children whose labels are significant,
-///   in the order the node carries them.
-/// - ensures: equal `(label, folded text, children)` triples give equal
-///   digests, where the label contributes its tag and its payload — a mold id,
-///   or a grout's sort and shape, or a minted close's sort and family — and the
-///   folded text is `text` exactly when the label carries text and is absent
-///   otherwise; the digest is independent of where in a source the node sits,
-///   and of the arena the node will be laid out into.
-/// - provides: the only hashing entry point, for the builder and for a parser
-///   that folds a subtree apart from it
-///   ([`TreeBuilder::node_with_digest`](crate::TreeBuilder::node_with_digest)),
-///   so no node identity is computed outside the domain or with a differently
-///   shaped preimage.
-/// - fails: never.
-/// - panics: none.
-/// - executable: none — source provenance is not carried by these arguments,
-///   and position-independent identity is a relation between calls. Repeating
-///   the same hash in a postcondition supplies no independent observation.
-///
-/// Counts and lengths enter the preimage at a fixed eight-byte width so the
-/// digest does not depend on the pointer width of the machine that computed it.
-/// A value above that width saturates at its ceiling — about eighteen
-/// quintillion children or bytes, far above what any source produces — so the
-/// saturation is a documented ceiling rather than a reachable path.
-///
-/// A preimage of at most [`INLINE_PREIMAGE`] bytes is assembled on the stack
-/// and hashed in one call; a longer one is fed to the incremental hasher
-/// field by field. Both hash the same bytes.
-///
-/// # Adequacy
-/// - hypothesis: L2 — one node's digest is pinned against an external
-///   hexadecimal golden, so any change to the domain, the tag placement, the
-///   payload, the count width or the field order moves it; interiors of every
-///   width up to sixteen children and leaves whose text crosses the stack
-///   buffer are compared with the layout fed field by field, so a field lost at
-///   the buffer's edge on either path moves one side; the L3 residue is the set
-///   of collisions a fold could admit, separated by two labels over identical
-///   children, by two payloads of one variant, by two sibling texts of equal
-///   total length split differently, by reversed child order, and by an
-///   interior label whose text differs.
-/// - witness: `digest::tests::a_pinned_leaf_digest_is_stable`
-/// - witness: `digest::tests::a_preimage_hashes_alike_on_either_side_of_the_stack_buffer`
-/// - witness: `digest::tests::two_labels_over_the_same_children_differ`
-/// - witness: `digest::tests::every_payload_reaches_the_digest`
-/// - witness: `digest::tests::sibling_texts_do_not_run_together`
-/// - witness: `digest::tests::child_order_changes_the_digest`
-/// - witness: `digest::tests::an_interior_label_ignores_its_own_text`
-#[inline]
-#[must_use]
-pub fn digest_of(
-    label: NodeLabel,
-    text: SourceFragment<'_>,
-    children: &[NodeDigest],
-) -> NodeDigest
+/// - ensures: the buffer holds the bytes written since the last opening.
+/// - executable: none — the buffer is the state; each writer states what it
+///   appends.
+#[repr(transparent)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Preimage(Vec<u8>);
+
+impl Preimage
 {
-    // The fixed-width head: the domain, the tag, the payload, the child count
-    // and, for a label that carries text, the text's length.
-    let carries = bool::from(label.carries_text());
-    let text = if carries {
-        <&str>::from(text).as_bytes()
-    }
-    else {
-        &[]
-    };
-    let mut head = [0_u8; HEAD_CAPACITY];
-    let mut head_len = 0_usize;
+    /// Start a form's preimage.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn open_form(&mut self)
     {
-        let mut put = |bytes: &[u8]| {
-            let end = head_len.saturating_add(bytes.len());
-            if let Some(slot) = head.get_mut(head_len .. end) {
-                slot.copy_from_slice(bytes);
-                head_len = end;
-            }
-        };
-        put(NODE_DOMAIN);
-        put(&[u8::from(label.tag())]);
+        self.0.clear();
+        self.0.extend_from_slice(FORM_DOMAIN);
+    }
+
+    /// Start a tree's preimage.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn open_tree(&mut self)
+    {
+        self.0.clear();
+        self.0.extend_from_slice(TREE_DOMAIN);
+    }
+
+    /// Append a node labelled `label` over `text` with `children` significant
+    /// children.
+    ///
+    /// Counts and lengths enter at a fixed four-byte width, so a digest does
+    /// not depend on the pointer width of the machine that computed it. A
+    /// value above that width saturates at its ceiling, four gibibytes of text
+    /// or four billion children, past the offsets a parser emits, so the
+    /// saturation is a documented ceiling rather than a reachable path.
+    ///
+    /// # Specification
+    /// - requires: `text` is the fragment the node covers.
+    /// - ensures: appends the label's tag and payload — a mold id, or a grout's
+    ///   sort and shape, or a minted close's sort and family — then the child
+    ///   count, then the text's length and the text exactly when the label
+    ///   carries text.
+    /// - panics: none.
+    /// - executable: none — the appended bytes are the body; restating them
+    ///   observes nothing independent.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a form's digest is pinned against an external golden
+    ///   and against the layout spelled field by field; the L3 residue is the
+    ///   set of collisions a serialization could admit, separated by two
+    ///   labels, two payloads of one variant, sibling texts split differently,
+    ///   reversed children, a node moved under its sibling, and an interior
+    ///   label whose text differs.
+    /// - witness: `digest::tests::a_pinned_form_digest_is_stable`
+    /// - witness: `digest::tests::a_form_hashes_its_layout_field_by_field`
+    /// - witness: `digest::tests::two_labels_over_the_same_children_differ`
+    /// - witness: `digest::tests::every_payload_reaches_the_digest`
+    /// - witness: `digest::tests::sibling_texts_do_not_run_together`
+    /// - witness: `digest::tests::child_order_changes_the_digest`
+    /// - witness: `digest::tests::nesting_changes_the_digest`
+    /// - witness: `digest::tests::an_interior_label_ignores_its_own_text`
+    pub fn node(
+        &mut self,
+        label: NodeLabel,
+        text: SourceFragment<'_>,
+        children: ChildCount,
+    )
+    {
+        let bytes = &mut self.0;
+        bytes.push(u8::from(label.tag()));
         match label {
             | NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => {},
             | NodeLabel::Meld(mold) | NodeLabel::Tile(mold) => {
-                put(&u32::from(mold).to_le_bytes());
+                bytes.extend_from_slice(&u32::from(mold).to_le_bytes());
             },
             | NodeLabel::Grout { sort, shape } => {
-                put(&u16::from(sort).to_le_bytes());
-                put(&[match shape {
+                bytes.extend_from_slice(&u16::from(sort).to_le_bytes());
+                bytes.push(match shape {
                     | GroutShape::Convex => 0x01_u8,
                     | GroutShape::Prefix => 0x02_u8,
                     | GroutShape::Postfix => 0x03_u8,
                     | GroutShape::Infix => 0x04_u8,
-                }]);
+                });
             },
             | NodeLabel::GhostClose { sort, class } => {
-                put(&u16::from(sort).to_le_bytes());
-                put(&[match class {
+                bytes.extend_from_slice(&u16::from(sort).to_le_bytes());
+                bytes.push(match class {
                     | ClosingClass::Paren => 0x01_u8,
                     | ClosingClass::Bracket => 0x02_u8,
                     | ClosingClass::Brace => 0x03_u8,
-                }]);
+                });
             },
         }
-        put(&u64::try_from(children.len())
-            .unwrap_or(u64::MAX)
-            .to_le_bytes());
-        if carries {
-            put(&u64::try_from(text.len()).unwrap_or(u64::MAX).to_le_bytes());
+        bytes.extend_from_slice(
+            &u32::try_from(usize::from(children))
+                .unwrap_or(u32::MAX)
+                .to_le_bytes(),
+        );
+        if bool::from(label.carries_text()) {
+            let text = <&str>::from(text).as_bytes();
+            bytes.extend_from_slice(&u32::try_from(text.len()).unwrap_or(u32::MAX).to_le_bytes());
+            bytes.extend_from_slice(text);
         }
     }
-    // The whole preimage in one stack buffer when it fits, hashed in one
-    // call; past the buffer, the same bytes through the incremental hasher.
-    let head = head.get(.. head_len).unwrap_or_default();
-    let total = head_len
-        .saturating_add(text.len())
-        .saturating_add(NODE_DIGEST_LEN.saturating_mul(children.len()));
-    let mut inline = [0_u8; INLINE_PREIMAGE];
-    if let Some(preimage) = inline.get_mut(.. total) {
-        let pieces = [head, text]
-            .into_iter()
-            .chain(children.iter().map(AsRef::as_ref));
-        let mut at = 0_usize;
-        for piece in pieces {
-            let end = at.saturating_add(piece.len());
-            if let Some(slot) = preimage.get_mut(at .. end) {
-                slot.copy_from_slice(piece);
-            }
-            at = end;
-        }
-        return NodeDigest(*blake3::hash(preimage).as_bytes());
+
+    /// Append a form's digest to a tree's preimage.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn digest(
+        &mut self,
+        digest: NodeDigest,
+    )
+    {
+        self.0.extend_from_slice(digest.as_ref());
     }
-    let mut hasher = blake3::Hasher::new();
-    let _head = hasher.update(head);
-    let _text = hasher.update(text);
-    for child in children {
-        let _child = hasher.update(child.as_ref());
+
+    /// The digest of the bytes written since the last opening.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn hash(&self) -> NodeDigest
+    {
+        NodeDigest(*blake3::hash(&self.0).as_bytes())
     }
-    NodeDigest(*hasher.finalize().as_bytes())
 }
 
 #[cfg(test)]
@@ -371,61 +339,63 @@ mod tests
 
     use super::NODE_DIGEST_LEN;
     use super::NodeDigest;
-    use super::digest_of;
+    use super::Preimage;
     use crate::label::NodeLabel;
     use crate::mold::ClosingClass;
     use crate::mold::GroutShape;
     use crate::mold::GroutSort;
     use crate::mold::MoldId;
     use crate::span::SourceFragment;
+    use crate::tree::ChildCount;
 
-    /// The digest of a childless node labelled `label` whose fragment is
-    /// `text`.
+    /// The digest of a form whose significant nodes, in preorder, are
+    /// `nodes`: each a label, its text and its significant child count.
     ///
     /// # Specification
-    /// - requires: `text` is the fragment the node covers, under the same
-    ///   reading [`digest_of`] asks of it.
-    /// - ensures: the digest of `label` over `text` with no children.
-    /// - provides: the childless case every rendering and collision fixture
-    ///   below is written against.
+    /// - requires: `nodes` is a preorder whose counts describe one tree.
+    /// - ensures: the digest the tree's layout takes for that form.
     /// - panics: none.
-    /// - executable: none — fragment provenance is not carried by the input; an
-    ///   equality check would repeat the hashing operation it purports to check
-    ///   rather than supply an independent observation.
+    /// - executable: none — the serialization is the body under test.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — the childless digest is checked against an external
-    ///   golden; L3 text-folding boundaries separate interior and leaf labels
-    ///   with equal versus changed fragments.
-    /// - witness: `digest::tests::a_pinned_leaf_digest_is_stable`
-    /// - witness: `digest::tests::an_interior_label_ignores_its_own_text`
+    /// - hypothesis: L2 — pinned against an external golden.
+    /// - witness: `digest::tests::a_pinned_form_digest_is_stable`
+    fn form(nodes: &[(NodeLabel, SourceFragment<'_>, ChildCount)]) -> NodeDigest
+    {
+        let mut preimage = Preimage::default();
+        preimage.open_form();
+        for &(label, text, children) in nodes {
+            preimage.node(label, text, children);
+        }
+        preimage.hash()
+    }
+
+    /// [`form`] over nodes spelled as a label, a string and a count.
+    macro_rules! spelled {
+        ($(($label:expr, $text:expr, $children:expr)),* $(,)?) => {
+            form(&[$(($label, SourceFragment::from($text), ChildCount::from($children))),*])
+        };
+    }
+
+    /// The digest of a form that is one childless node.
+    ///
+    /// # Specification
+    /// trivial.
     fn leaf(
         label: NodeLabel,
         text: SourceFragment<'_>,
     ) -> NodeDigest
     {
-        digest_of(label, text, &[])
+        spelled![(label, text, ChildCount::from(0_usize))]
     }
 
-    /// A tile of `mold` whose fragment is `text`.
+    /// A tile of the first mold.
     ///
     /// # Specification
     /// trivial.
-    fn tile(
-        mold: MoldId,
-        text: SourceFragment<'_>,
-    ) -> NodeDigest
+    fn word() -> NodeLabel
     {
-        leaf(NodeLabel::Tile(mold), text)
-    }
-
-    /// A tile of the first mold whose fragment is `text`.
-    ///
-    /// # Specification
-    /// trivial.
-    fn word(text: SourceFragment<'_>) -> NodeDigest
-    {
-        tile(MoldId::from(1_u32), text)
+        NodeLabel::Tile(MoldId::from(1_u32))
     }
 
     #[test]
@@ -459,9 +429,9 @@ mod tests
     }
 
     #[test]
-    fn a_pinned_leaf_digest_is_stable()
+    fn a_pinned_form_digest_is_stable()
     {
-        // The golden is external: it is `b3sum` over the fifty-four preimage
+        // The golden is external: it is `b3sum` over the forty-six preimage
         // bytes this layout specifies — the domain string, the tag `0x03`, the
         // little-endian mold id seven, a little-endian child count of zero, a
         // little-endian text length of five, and `value` — computed outside
@@ -471,75 +441,72 @@ mod tests
         assert_eq!(
             format!(
                 "{}",
-                tile(MoldId::from(7_u32), SourceFragment::from("value"))
+                leaf(
+                    NodeLabel::Tile(MoldId::from(7_u32)),
+                    SourceFragment::from("value")
+                )
             ),
-            "7951888b97e227bb76a1ca6bd9736ed8fb7be0ecb4369a5b4bdb11f43ec9b0b4",
+            "98dcd54a74a087a8bcb01c2c5a74de642faaac7b702038638489779481e80da1",
             "the preimage layout is pinned against an external golden"
         );
     }
 
     #[test]
-    fn a_preimage_hashes_alike_on_either_side_of_the_stack_buffer()
+    fn a_form_hashes_its_layout_field_by_field()
     {
-        // The layout assembled here field by field, through the incremental
-        // hasher, against `digest_of` for interiors from no children to well
-        // past the stack buffer and for leaves whose text crosses it: a
-        // field dropped, duplicated or misplaced at the buffer's edge, on
-        // either path, moves one side only.
-        let spelled = |tag: u8, payload: &[u8], children: &[NodeDigest], text: Option<&[u8]>| {
-            let mut hasher = blake3::Hasher::new();
-            let _head = hasher
-                .update(super::NODE_DOMAIN)
-                .update(&[tag])
-                .update(payload);
-            let count = u64::try_from(children.len()).unwrap_or(u64::MAX);
-            let _count = hasher.update(&count.to_le_bytes());
-            if let Some(text) = text {
-                let length = u64::try_from(text.len()).unwrap_or(u64::MAX);
-                let _text = hasher.update(&length.to_le_bytes()).update(text);
-            }
-            for child in children {
-                let _child = hasher.update(child.as_ref());
-            }
-            NodeDigest::from(*hasher.finalize().as_bytes())
-        };
+        // A form of an interior over two tiles, spelled here field by field
+        // through the incremental hasher: a field dropped, duplicated or
+        // misplaced moves one side only.
         let mold = MoldId::from(9_u32);
         let meld = u8::from(NodeLabel::Meld(mold).tag());
-        let children = [word(SourceFragment::from("x")); 16];
-        for width in 0 ..= children.len() {
-            let children = children.get(.. width).unwrap_or_default();
-            assert_eq!(
-                digest_of(NodeLabel::Meld(mold), SourceFragment::from(""), children),
-                spelled(meld, &9_u32.to_le_bytes(), children, None),
-                "an interior of {width} children"
-            );
-        }
-        let tile_tag = u8::from(NodeLabel::Tile(mold).tag());
-        let text = "t".repeat(400);
-        for length in [0_usize, 1, 150, 200, 210, 250, 400] {
-            let text = text.get(.. length).unwrap_or_default();
-            assert_eq!(
-                tile(mold, SourceFragment::from(text)),
-                spelled(tile_tag, &9_u32.to_le_bytes(), &[], Some(text.as_bytes())),
-                "a leaf of {length} bytes"
-            );
-        }
+        let tile = u8::from(word().tag());
+        let text = "t".repeat(300);
+        let mut hasher = blake3::Hasher::new();
+        let _spelled = hasher
+            .update(b"gandr.surface-syntax.form.v1")
+            .update(&[meld])
+            .update(&9_u32.to_le_bytes())
+            .update(&2_u32.to_le_bytes())
+            .update(&[tile])
+            .update(&1_u32.to_le_bytes())
+            .update(&0_u32.to_le_bytes())
+            .update(&1_u32.to_le_bytes())
+            .update(b"f")
+            .update(&[tile])
+            .update(&1_u32.to_le_bytes())
+            .update(&0_u32.to_le_bytes())
+            .update(&300_u32.to_le_bytes())
+            .update(text.as_bytes());
+        assert_eq!(
+            spelled![
+                (NodeLabel::Meld(mold), "", 2),
+                (word(), "f", 0),
+                (word(), text.as_str(), 0),
+            ],
+            NodeDigest::from(*hasher.finalize().as_bytes()),
+        );
     }
 
     #[test]
     fn two_labels_over_the_same_children_differ()
     {
-        let child = word(SourceFragment::from("x"));
-        let empty = SourceFragment::from("");
-
         assert_ne!(
-            digest_of(NodeLabel::Meld(MoldId::from(2_u32)), empty, &[child]),
-            digest_of(NodeLabel::Wald, empty, &[child]),
+            spelled![
+                (NodeLabel::Meld(MoldId::from(2_u32)), "", 1),
+                (word(), "x", 0)
+            ],
+            spelled![(NodeLabel::Wald, "", 1), (word(), "x", 0)],
             "the label tag separates two forms over identical children"
         );
         assert_ne!(
-            leaf(NodeLabel::Meld(MoldId::from(2_u32)), empty),
-            leaf(NodeLabel::Tile(MoldId::from(2_u32)), empty),
+            leaf(
+                NodeLabel::Meld(MoldId::from(2_u32)),
+                SourceFragment::from("")
+            ),
+            leaf(
+                NodeLabel::Tile(MoldId::from(2_u32)),
+                SourceFragment::from("")
+            ),
             "a form and a tile of one mold are distinct nodes"
         );
     }
@@ -547,15 +514,26 @@ mod tests
     #[test]
     fn every_payload_reaches_the_digest()
     {
-        let empty = SourceFragment::from("");
         assert_ne!(
-            leaf(NodeLabel::Meld(MoldId::from(2_u32)), empty),
-            leaf(NodeLabel::Meld(MoldId::from(3_u32)), empty),
+            leaf(
+                NodeLabel::Meld(MoldId::from(2_u32)),
+                SourceFragment::from("")
+            ),
+            leaf(
+                NodeLabel::Meld(MoldId::from(3_u32)),
+                SourceFragment::from("")
+            ),
             "a form's mold reaches its digest"
         );
         assert_ne!(
-            tile(MoldId::from(2_u32), SourceFragment::from("x")),
-            tile(MoldId::from(3_u32), SourceFragment::from("x")),
+            leaf(
+                NodeLabel::Tile(MoldId::from(2_u32)),
+                SourceFragment::from("x")
+            ),
+            leaf(
+                NodeLabel::Tile(MoldId::from(3_u32)),
+                SourceFragment::from("x")
+            ),
             "a tile's mold reaches its digest beside its text"
         );
         let grout = |sort: u16, shape: GroutShape| {
@@ -564,7 +542,7 @@ mod tests
                     sort: GroutSort::from(sort),
                     shape,
                 },
-                empty,
+                SourceFragment::from(""),
             )
         };
         assert_ne!(
@@ -595,7 +573,7 @@ mod tests
                     sort: GroutSort::from(sort),
                     class,
                 },
-                empty,
+                SourceFragment::from(""),
             )
         };
         assert_ne!(
@@ -624,20 +602,10 @@ mod tests
     #[test]
     fn sibling_texts_do_not_run_together()
     {
-        let empty = SourceFragment::from("");
-        let split_early = [
-            word(SourceFragment::from("ab")),
-            word(SourceFragment::from("c")),
-        ];
-        let split_late = [
-            word(SourceFragment::from("a")),
-            word(SourceFragment::from("bc")),
-        ];
-        let form = NodeLabel::Meld(MoldId::from(5_u32));
-
+        let interior = NodeLabel::Meld(MoldId::from(5_u32));
         assert_ne!(
-            digest_of(form, empty, &split_early),
-            digest_of(form, empty, &split_late),
+            spelled![(interior, "", 2), (word(), "ab", 0), (word(), "c", 0)],
+            spelled![(interior, "", 2), (word(), "a", 0), (word(), "bc", 0)],
             "a length-prefixed text cannot be re-split across its siblings"
         );
     }
@@ -645,25 +613,46 @@ mod tests
     #[test]
     fn child_order_changes_the_digest()
     {
-        let empty = SourceFragment::from("");
-        let first = word(SourceFragment::from("f"));
-        let second = word(SourceFragment::from("x"));
-        let form = NodeLabel::Meld(MoldId::from(5_u32));
-
+        let interior = NodeLabel::Meld(MoldId::from(5_u32));
         assert_ne!(
-            digest_of(form, empty, &[first, second]),
-            digest_of(form, empty, &[second, first]),
-            "the fold is ordered, so an applied argument is not its own head"
+            spelled![(interior, "", 2), (word(), "f", 0), (word(), "x", 0)],
+            spelled![(interior, "", 2), (word(), "x", 0), (word(), "f", 0)],
+            "the serialization is ordered, so an applied argument is not its own head"
+        );
+    }
+
+    #[test]
+    fn nesting_changes_the_digest()
+    {
+        // `f (x y)` and `(f x) y` spell the same tiles in the same order; the
+        // child counts are what tell the two trees apart.
+        let interior = NodeLabel::Meld(MoldId::from(5_u32));
+        assert_ne!(
+            spelled![
+                (interior, "", 2),
+                (word(), "f", 0),
+                (interior, "", 2),
+                (word(), "x", 0),
+                (word(), "y", 0),
+            ],
+            spelled![
+                (interior, "", 2),
+                (interior, "", 2),
+                (word(), "f", 0),
+                (word(), "x", 0),
+                (word(), "y", 0),
+            ],
+            "a node cannot pass for its sibling's child"
         );
     }
 
     #[test]
     fn an_interior_label_ignores_its_own_text()
     {
-        let form = NodeLabel::Meld(MoldId::from(5_u32));
+        let interior = NodeLabel::Meld(MoldId::from(5_u32));
         assert_eq!(
-            leaf(form, SourceFragment::from("def a = b ;")),
-            leaf(form, SourceFragment::from("")),
+            leaf(interior, SourceFragment::from("def a = b ;")),
+            leaf(interior, SourceFragment::from("")),
             "an interior label's identity does not read the bytes it spans"
         );
         assert_eq!(
@@ -672,30 +661,17 @@ mod tests
             "the root's identity does not read the bytes it spans"
         );
         assert_ne!(
-            word(SourceFragment::from("a")),
-            word(SourceFragment::from("b")),
+            leaf(word(), SourceFragment::from("a")),
+            leaf(word(), SourceFragment::from("b")),
             "a tile's identity is exactly its mold and its text"
         );
+        let grout = NodeLabel::Grout {
+            sort: GroutSort::from(1_u16),
+            shape: GroutShape::Convex,
+        };
         assert_ne!(
-            leaf(NodeLabel::Space, SourceFragment::from(" ")),
-            leaf(NodeLabel::Space, SourceFragment::from("  ")),
-            "layout carries its own text"
-        );
-        assert_ne!(
-            leaf(
-                NodeLabel::Grout {
-                    sort: GroutSort::from(1_u16),
-                    shape: GroutShape::Convex,
-                },
-                SourceFragment::from("~"),
-            ),
-            leaf(
-                NodeLabel::Grout {
-                    sort: GroutSort::from(1_u16),
-                    shape: GroutShape::Convex,
-                },
-                SourceFragment::from("^"),
-            ),
+            leaf(grout, SourceFragment::from("~")),
+            leaf(grout, SourceFragment::from("^")),
             "grout over an unmolded token carries that token's bytes"
         );
     }
