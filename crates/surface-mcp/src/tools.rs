@@ -15,6 +15,9 @@ use gandr_surface_lsp::Body;
 use gandr_surface_lsp::ContentChange;
 use gandr_surface_lsp::DocumentUri;
 use gandr_surface_lsp::DocumentVersion;
+use gandr_surface_lsp::Proposal;
+use gandr_surface_lsp::ProposalRefusal;
+use gandr_surface_lsp::Range;
 use gandr_surface_lsp::Reached;
 use gandr_surface_lsp::Workspace;
 use serde_json::Value;
@@ -118,6 +121,39 @@ fn trial_schema() -> Value
     })
 }
 
+/// The schema of the proposal tool: a document's URI and version, the range
+/// a fill replaces, the fill and what it does.
+///
+/// # Specification
+/// trivial.
+fn propose_schema() -> Value
+{
+    let position = json!({
+        "type": "object",
+        "properties": {
+            "line": { "type": "integer", "minimum": 0_u8 },
+            "character": { "type": "integer", "minimum": 0_u8 },
+        },
+        "required": ["line", "character"],
+    });
+    json!({
+        "type": "object",
+        "properties": {
+            "uri": { "type": "string", "description": "The document's URI, as the editor opened it" },
+            "version": { "type": "integer", "description": "The document's version the fill was made against" },
+            "range": {
+                "type": "object",
+                "description": "The span the fill replaces, in zero-based lines and UTF-16 code units",
+                "properties": { "start": position, "end": position },
+                "required": ["start", "end"],
+            },
+            "text": { "type": "string", "description": "The fill" },
+            "explanation": { "type": "string", "description": "What the fill does, shown on hover" },
+        },
+        "required": ["uri", "version", "range", "text"],
+    })
+}
+
 /// Every tool, in name order.
 ///
 /// # Specification
@@ -164,6 +200,17 @@ pub fn list() -> Vec<Value>
             "inputSchema": document_schema(),
         }),
         json!({
+            "name": "propose",
+            "title": "Propose a fill to the editor",
+            "description": "Offer a fill of a range of an open document to its editors. gandr judges the \
+                            document with the fill applied; a fill that leaves no error, or fewer errors \
+                            than the document has, is kept and shown in the editor as ghost text, a code \
+                            lens, a code action and, with an explanation, a hover note, until the document \
+                            is next edited. A fill that does not check is answered with its diagnostics and \
+                            never shown. `version` is the document's version the fill was made against.",
+            "inputSchema": propose_schema(),
+        }),
+        json!({
             "name": "trial",
             "title": "Try candidate fills",
             "description": "Judge candidate edits of an open document without changing it, best first: each \
@@ -203,7 +250,7 @@ pub fn list() -> Vec<Value>
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(Value::is_object))]
 #[inline]
 pub fn call(
-    workspace: &Workspace,
+    workspace: &mut Workspace,
     name: Option<&Value>,
     arguments: &Value,
 ) -> Result<Value, ToolRefusal>
@@ -267,6 +314,7 @@ pub fn call(
             json!({ "hover": hover })
         },
         | "trial" => json!({ "trials": tried(workspace, &uri, arguments)? }),
+        | "propose" => proposed(workspace, &uri, arguments)?,
         | _ => return Err(ToolRefusal(alloc::format!("no tool is named `{name}`"))),
     };
     let mut answered = json!({ "uri": uri, "version": version });
@@ -294,6 +342,72 @@ fn held(
         .published(&uri)
         .ok_or_else(|| ToolRefusal(alloc::format!("`{named}` is not open in the hub")))?;
     Ok((uri, version))
+}
+
+/// What keeping the proposal `arguments` names over the document at `uri`
+/// came to, as JSON.
+///
+/// # Specification
+/// - requires: nothing; any arguments are admitted.
+/// - ensures: a proposal that checks is kept, answered `kept: true` with its
+///   trial's diagnostics; one that does not is answered `kept: false` with the
+///   reason and its trial's diagnostics, and nothing is kept. A version that is
+///   not the document's, a document the hub does not hold, and a version, range
+///   or text that cannot be read are refused.
+/// - provides: the `propose` tool.
+/// - fails: as above, with the reason in the refusal.
+/// - panics: none.
+///
+/// # Errors
+/// [`ToolRefusal`] for unreadable arguments, a stale version or a document
+/// the hub does not hold.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a checking fill is kept and read back through the
+///   editor's lens, a failing one is answered with its diagnostics, and a stale
+///   one is refused.
+/// - witness: `connection::tests::a_proposal_reaches_the_editor_once_it_checks`
+#[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|answer|
+    answer.get("kept").is_some_and(Value::is_boolean)))]
+fn proposed(
+    workspace: &mut Workspace,
+    uri: &DocumentUri,
+    arguments: &Value,
+) -> Result<Value, ToolRefusal>
+{
+    let version = arguments
+        .get("version")
+        .cloned()
+        .and_then(|version| serde_json::from_value::<DocumentVersion>(version).ok())
+        .ok_or_else(|| ToolRefusal(String::from("`version` must be the document's version")))?;
+    let range = arguments
+        .get("range")
+        .cloned()
+        .and_then(|range| serde_json::from_value::<Range>(range).ok())
+        .ok_or_else(|| ToolRefusal(String::from("`range` must be a range")))?;
+    let text = arguments
+        .get("text")
+        .and_then(Value::as_str)
+        .map(String::from)
+        .ok_or_else(|| ToolRefusal(String::from("`text` must be a text")))?;
+    let explanation = arguments
+        .get("explanation")
+        .and_then(Value::as_str)
+        .map(String::from);
+    let proposal = Proposal {
+        range,
+        text,
+        explanation,
+    };
+    match workspace.propose(uri, version, proposal) {
+        | Ok(diagnostics) => Ok(json!({ "kept": true, "diagnostics": diagnostics })),
+        | Err(ProposalRefusal::Unchecked { diagnostics }) => Ok(json!({
+            "kept": false,
+            "reason": ProposalRefusal::Unchecked { diagnostics: Vec::new() }.to_string(),
+            "diagnostics": diagnostics,
+        })),
+        | Err(refusal) => Err(ToolRefusal(refusal.to_string())),
+    }
 }
 
 /// The trial of the candidates `arguments` names over the document at `uri`,

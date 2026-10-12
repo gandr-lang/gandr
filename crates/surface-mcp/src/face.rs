@@ -125,7 +125,7 @@ pub fn serve(
                 | Event::Closed => break,
                 | Event::Line(line) if line.trim().is_empty() => continue,
                 | Event::Line(line) => match serde_json::from_str::<Value>(&line) {
-                    | Ok(message) => connection.handle(&lock(workspace), &message),
+                    | Ok(message) => connection.handle(&mut lock(workspace), &message),
                     | Err(_) => Vec::from([Connection::unreadable()]),
                 },
                 | Event::Changed(uri) => connection.changed(&uri),

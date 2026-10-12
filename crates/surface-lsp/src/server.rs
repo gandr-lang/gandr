@@ -37,6 +37,13 @@ use crate::outline::selections;
 use crate::outline::symbols;
 use crate::position::Position;
 use crate::position::Range;
+use crate::proposal::Proposal;
+use crate::proposal::ProposalRefusal;
+use crate::proposal::actions;
+use crate::proposal::check;
+use crate::proposal::ghosts;
+use crate::proposal::lenses;
+use crate::proposal::notes;
 use crate::protocol::Answer;
 use crate::protocol::ContentChange;
 use crate::protocol::Diagnostic;
@@ -45,9 +52,11 @@ use crate::protocol::DidOpenParams;
 use crate::protocol::DocumentParams;
 use crate::protocol::DocumentUri;
 use crate::protocol::DocumentVersion;
+use crate::protocol::Hover;
 use crate::protocol::InitializeResult;
 use crate::protocol::InlineCompletionItem;
 use crate::protocol::InlineCompletionList;
+use crate::protocol::MarkupContent;
 use crate::protocol::PositionParams;
 use crate::protocol::PublishParams;
 use crate::protocol::RangeParams;
@@ -112,6 +121,8 @@ struct Document
     session: DocumentSession,
     /// The diagnostics last published at its version.
     published: Vec<Diagnostic>,
+    /// The checked proposals kept for its version, in the order kept.
+    proposals: Vec<Proposal>,
 }
 
 /// How a session ended.
@@ -388,6 +399,69 @@ impl Workspace
             document.version,
             crate::recheck::trial(uri, &document.session, &candidates),
         ))
+    }
+
+    /// Keep `proposal`, a model's fill of a range of the document at `uri`
+    /// made against `version`, once it checks.
+    ///
+    /// # Specification
+    /// - requires: nothing; any proposal is admissible input.
+    /// - ensures: a document no connection holds, or one whose version is not
+    ///   `version`, refuses the proposal and keeps nothing. Otherwise the
+    ///   document with the fill applied is tried as [`Self::trial`] tries a
+    ///   change; a fill that passes [`check`] against the published diagnostics
+    ///   is kept beside the document, after those kept before, and its trial's
+    ///   diagnostics answered; one that does not is refused with them. The
+    ///   document's text, session and published diagnostics are unchanged.
+    /// - provides: the one way a model's output reaches an editor.
+    /// - fails: as above, with the reason in the refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`ProposalRefusal`] for a document not held, a stale version, or a
+    /// fill that does not check.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fill settling a hole is kept, a fill leaving the
+    ///   refusal and a fill refused whole are refused, a stale version is
+    ///   refused, and the next edit withdraws what was kept.
+    /// - witness: `server::tests::a_proposal_is_kept_only_once_it_checks`
+    #[spec(
+        captures: kept = self.documents.get(uri).map_or(0_usize, |document| document.proposals.len()),
+        ensures: |ret| self.documents.get(uri).map_or(0_usize, |document| document.proposals.len())
+            == kept.saturating_add(usize::from(ret.is_ok())),
+    )]
+    #[inline]
+    pub fn propose(
+        &mut self,
+        uri: &DocumentUri,
+        version: DocumentVersion,
+        proposal: Proposal,
+    ) -> Result<Vec<Diagnostic>, ProposalRefusal>
+    {
+        let held = self
+            .documents
+            .get(uri)
+            .ok_or(ProposalRefusal::NotHeld)?
+            .version;
+        if held != version {
+            return Err(ProposalRefusal::Stale { held });
+        }
+        let change = ContentChange {
+            range: Some(proposal.range),
+            text: proposal.text.clone(),
+        };
+        let tried = self
+            .trial(uri, core::slice::from_ref(&change))
+            .and_then(|(_version, mut tried)| tried.pop())
+            .ok_or(ProposalRefusal::NotHeld)?;
+        let document = self
+            .documents
+            .get_mut(uri)
+            .ok_or(ProposalRefusal::NotHeld)?;
+        let diagnostics = check(tried, &document.published)?;
+        document.proposals.push(proposal);
+        Ok(diagnostics)
     }
 
     /// The response a running connection gives the request `request`, read
@@ -749,6 +823,7 @@ impl Server
     /// - witness: `server::tests::inline_completion_answers_the_expected_closer`
     /// - witness: `server::tests::the_outline_requests_answer_a_known_document`
     /// - witness: `server::tests::a_hover_answers_a_known_declaration`
+    /// - witness: `server::tests::kept_proposals_reach_every_editor_surface`
     /// - witness: `server::tests::formatting_answers_the_edits_that_lay_a_document_out`
     #[spec(
         captures: phase = self.phase,
@@ -782,6 +857,12 @@ impl Server
             (Phase::Running, "textDocument/hover") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Hover(_), .. } => true,
+                    Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
+                    _ => false,
+                },
+            (Phase::Running, "textDocument/codeLens" | "textDocument/codeAction") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Nothing | Answer::Lenses(_) | Answer::Actions(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     _ => false,
                 },
@@ -891,6 +972,38 @@ impl Server
                     | Ok(params) => success(
                         id,
                         workspace.hover(&params.text_document.uri, params.position),
+                    ),
+                    | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            | (Phase::Running, "textDocument/codeLens") => {
+                match serde_json::from_value::<DocumentParams>(params) {
+                    | Ok(params) => success(
+                        id,
+                        workspace
+                            .documents
+                            .get(&params.text_document.uri)
+                            .map_or(Answer::Nothing, |document| {
+                                Answer::Lenses(lenses(&document.proposals))
+                            }),
+                    ),
+                    | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            | (Phase::Running, "textDocument/codeAction") => {
+                match serde_json::from_value::<RangeParams>(params) {
+                    | Ok(params) => success(
+                        id,
+                        workspace.documents.get(&params.text_document.uri).map_or(
+                            Answer::Nothing,
+                            |document| {
+                                Answer::Actions(actions(
+                                    &params.text_document.uri,
+                                    &document.proposals,
+                                    params.range,
+                                ))
+                            },
+                        ),
                     ),
                     | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
@@ -1005,9 +1118,11 @@ impl Server
                         text: String::new(),
                         session: open(&uri),
                         published: Vec::new(),
+                        proposals: Vec::new(),
                     });
                 document.version = text_document.version;
                 document.text = text_document.text;
+                document.proposals.clear();
                 let outcome = synchronised(&uri, document);
                 let _first = workspace.holders.entry(uri).or_default().insert(self.peer);
                 for message in &outcome.messages {
@@ -1028,6 +1143,7 @@ impl Server
                     return Outcome::quiet();
                 };
                 document.version = text_document.version;
+                document.proposals.clear();
                 for change in content_changes {
                     apply(&mut document.text, change);
                 }
@@ -1086,7 +1202,8 @@ impl Workspace
         Answer::Tokens(ref tokens) => self.documents.contains_key(uri)
             && tokens.data.as_ref().len().is_multiple_of(5)
             && match window { Window::Within(range) if range.start >= range.end => tokens.data.as_ref().is_empty(), _ => true },
-        Answer::Initialize(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_) | Answer::Hover(_) | Answer::Edits(_) => false,
+        Answer::Initialize(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
+            | Answer::Hover(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Actions(_) => false,
     })]
     fn tokens(
         &self,
@@ -1117,9 +1234,11 @@ impl Workspace
     /// # Specification
     /// - requires: nothing; an unknown URI and any position are admitted.
     /// - ensures: an unknown document yields Nothing; a held document yields
-    ///   one item when [`ghost()`] shows ghost text at the position's byte, its
-    ///   snippet inserted at the empty range at `position`, and no item when it
-    ///   shows none or the grammar did not build.
+    ///   first the ghost text of each kept proposal whose range holds the
+    ///   position, replacing that range, then one item when [`ghost()`] shows
+    ///   ghost text at the position's byte, its snippet inserted at the empty
+    ///   range at `position`, and none when it shows none or the grammar did
+    ///   not build.
     /// - provides: the answer to `textDocument/inlineCompletion`.
     /// - fails: never.
     /// - panics: none.
@@ -1127,13 +1246,17 @@ impl Workspace
     /// # Adequacy
     /// - hypothesis: L3 — a known document after an open bracket, the same
     ///   document where nothing is owed, and an unknown document distinguish
-    ///   the item, the empty list and null through exact wire answers.
+    ///   the item, the empty list and null through exact wire answers; a cursor
+    ///   inside a kept proposal sees it first.
     /// - witness: `server::tests::inline_completion_answers_the_expected_closer`
+    /// - witness: `server::tests::kept_proposals_reach_every_editor_surface`
     #[spec(ensures: |ret| match ret {
         Answer::Nothing => !self.documents.contains_key(uri),
-        Answer::Inline(ref list) => self.documents.contains_key(uri) && list.items.len() <= 1
-            && list.items.iter().all(|item| item.range.start == position && item.range.end == position),
-        Answer::Initialize(_) | Answer::Tokens(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_) | Answer::Hover(_) | Answer::Edits(_) => false,
+        Answer::Inline(ref list) => self.documents.get(uri).is_some_and(|document|
+            list.items.len() <= document.proposals.len().saturating_add(1))
+            && list.items.iter().all(|item| item.range.start <= position && position <= item.range.end),
+        Answer::Initialize(_) | Answer::Tokens(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
+            | Answer::Hover(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Actions(_) => false,
     })]
     fn inline(
         &self,
@@ -1148,8 +1271,11 @@ impl Workspace
         let text = document.text.as_str();
         let index = LineIndex::new(text.into());
         let at = position.byte(&index);
-        let items = match grammar().map(|grammar| ghost(grammar, SourceText::from(text), at)) {
-            | Ok(Maybe::Present(snippet)) => vec![InlineCompletionItem {
+        let mut items = ghosts(&document.proposals, position);
+        if let Ok(Maybe::Present(snippet)) =
+            grammar().map(|grammar| ghost(grammar, SourceText::from(text), at))
+        {
+            items.push(InlineCompletionItem {
                 insert_text: StringValue {
                     kind: "snippet",
                     value: String::from(snippet),
@@ -1158,9 +1284,8 @@ impl Workspace
                     start: position,
                     end: position,
                 },
-            }],
-            | Ok(Maybe::Absent(_)) | Err(_) => Vec::new(),
-        };
+            });
+        }
         Answer::Inline(InlineCompletionList { items })
     }
 
@@ -1195,9 +1320,12 @@ impl Workspace
     ///
     /// # Specification
     /// - requires: nothing; an unknown URI and any position are admitted.
-    /// - ensures: an unknown document, a document whose grammar did not build,
-    ///   and a position [`hover()`] shows nothing at yield Nothing; otherwise
-    ///   the hover it shows, read against the document's session.
+    /// - ensures: an unknown document yields Nothing; otherwise the hover
+    ///   [`hover()`] shows read against the document's session, followed by the
+    ///   notes of the kept proposals whose range holds the position and explain
+    ///   themselves, or those notes alone over the first one's range when the
+    ///   session shows nothing there or the grammar did not build. Nothing when
+    ///   neither shows anything.
     /// - provides: the answer to `textDocument/hover`.
     /// - fails: never.
     /// - panics: none.
@@ -1205,8 +1333,9 @@ impl Workspace
     /// # Adequacy
     /// - hypothesis: L3 — a hover over a held document's declaration, over its
     ///   keyword and over an unknown document are asserted at their exact wire
-    ///   answers.
+    ///   answers; one inside an explained proposal carries its note.
     /// - witness: `server::tests::a_hover_answers_a_known_declaration`
+    /// - witness: `server::tests::kept_proposals_reach_every_editor_surface`
     #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Hover(_))
         && (self.documents.contains_key(uri) || matches!(ret, Answer::Nothing)))]
     fn hover(
@@ -1219,13 +1348,25 @@ impl Workspace
         else {
             return Answer::Nothing;
         };
-        let Ok(ref session) = document.session
-        else {
-            return Answer::Nothing;
+        let shown = match document.session {
+            | Ok(ref session) => hover(SourceText::from(document.text.as_str()), session, position),
+            | Err(_) => Maybe::Absent(crate::hover::hovered::Absent::Unparsed),
         };
-        match hover(SourceText::from(document.text.as_str()), session, position) {
-            | Maybe::Present(shown) => Answer::Hover(shown),
-            | Maybe::Absent(_) => Answer::Nothing,
+        match (shown, notes(&document.proposals, position)) {
+            | (Maybe::Present(mut shown), Some((_range, notes))) => {
+                shown.contents.value.push_str("\n\n---\n\n");
+                shown.contents.value.push_str(&notes);
+                Answer::Hover(shown)
+            },
+            | (Maybe::Present(shown), None) => Answer::Hover(shown),
+            | (Maybe::Absent(_), Some((range, notes))) => Answer::Hover(Hover {
+                contents: MarkupContent {
+                    kind: "markdown",
+                    value: notes,
+                },
+                range,
+            }),
+            | (Maybe::Absent(_), None) => Answer::Nothing,
         }
     }
 
@@ -1444,8 +1585,12 @@ mod tests
     use super::Served;
     use super::Server;
     use super::Workspace;
+    use crate::position::Character;
+    use crate::position::Line;
     use crate::position::Position;
     use crate::position::Range;
+    use crate::proposal::Proposal;
+    use crate::proposal::ProposalRefusal;
     use crate::protocol::ContentChange;
     use crate::rpc::Outgoing;
     use crate::server::Logged;
@@ -1692,7 +1837,9 @@ mod tests
                         "selectionRangeProvider":true,
                         "hoverProvider":true,
                         "documentFormattingProvider":true,
-                        "documentRangeFormattingProvider":true},
+                        "documentRangeFormattingProvider":true,
+                        "codeLensProvider":{"resolveProvider":false},
+                        "codeActionProvider":true},
                     "serverInfo":{"name":"gandr","version":""#,
                 env!("CARGO_PKG_VERSION"),
                 r#""}}}]"#
@@ -2686,6 +2833,271 @@ mod tests
                 .map(|document| document.text.as_str()),
             Some(text),
             "the held text is unchanged"
+        );
+    }
+
+    /// The range of `line`, from `start` to `end`, on one line.
+    ///
+    /// # Specification
+    /// trivial.
+    fn on_line(
+        line: crate::position::Line,
+        start: crate::position::Character,
+        end: crate::position::Character,
+    ) -> Range
+    {
+        let at = |character| Position { line, character };
+        Range {
+            start: at(start),
+            end: at(end),
+        }
+    }
+
+    /// A proposal filling `range` with `text`, explained by `explanation`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fill(
+        range: Range,
+        text: Json<'_>,
+        explanation: Option<Json<'_>>,
+    ) -> Proposal
+    {
+        Proposal {
+            range,
+            text: String::from(text.0),
+            explanation: explanation.map(|Json(explanation)| String::from(explanation)),
+        }
+    }
+
+    /// What `workspace` answers the request `method` with `params` about the
+    /// shared document.
+    ///
+    /// # Specification
+    /// trivial.
+    fn asked(
+        workspace: &Workspace,
+        method: Json<'_>,
+        params: Json<'_>,
+    ) -> Value
+    {
+        let (Json(method), Json(params)) = (method, params);
+        workspace
+            .query(&Body::from(
+                format!(
+                    r#"{{"jsonrpc":"2.0","id":1,"method":"{method}","params":{{"textDocument":{{"uri":"file:///tmp/shared.gandr"}}{params}}}}}"#
+                )
+                .into_bytes(),
+            ))
+            .get("result")
+            .cloned()
+            .unwrap_or(Value::Null)
+    }
+
+    #[test]
+    fn a_proposal_is_kept_only_once_it_checks()
+    {
+        let (mut workspace, [(mut first, _first_inbox), (_second, _second_inbox)]) =
+            two_connections();
+        let uri = crate::protocol::DocumentUri::from("file:///tmp/shared.gandr");
+        let hole = on_line(
+            Line::from(1_u32),
+            Character::from(8_u32),
+            Character::from(15_u32),
+        );
+        let version = |workspace: &Workspace| {
+            workspace
+                .documents
+                .get(&uri)
+                .map(|document| document.version)
+                .expect("the document is held")
+        };
+        assert_eq!(
+            workspace.propose(
+                &uri,
+                serde_json::from_value(serde_json::json!(4_i32)).expect("a version"),
+                fill(hole, Json("42"), None)
+            ),
+            Err(ProposalRefusal::NotHeld)
+        );
+        drop(first.handle(
+            &mut workspace,
+            &shared(
+                Json("textDocument/didOpen"),
+                Json(r#","version":4,"text":"def f : Integer ;\ndef f = missing ;\n"}"#),
+            ),
+        ));
+        let held = version(&workspace);
+        let stale = serde_json::from_value(serde_json::json!(3_i32)).expect("a version");
+        assert_eq!(
+            workspace.propose(&uri, stale, fill(hole, Json("42"), None)),
+            Err(ProposalRefusal::Stale { held })
+        );
+        assert!(
+            matches!(
+                workspace.propose(&uri, held, fill(hole, Json("\"one\""), None)),
+                Err(ProposalRefusal::Unchecked { ref diagnostics }) if diagnostics.len() == 1
+            ),
+            "a fill leaving a refusal is not kept"
+        );
+        assert!(
+            matches!(
+                workspace.propose(&uri, held, fill(hole, Json("1 ;\nret 3"), None)),
+                Err(ProposalRefusal::Unchecked { .. })
+            ),
+            "a fill the lowering refuses whole is not kept"
+        );
+        assert_eq!(
+            workspace.propose(&uri, held, fill(hole, Json("42"), None)),
+            Ok(Vec::new()),
+            "a fill that settles the document is kept"
+        );
+        let kept = |workspace: &Workspace| {
+            workspace
+                .documents
+                .get(&uri)
+                .map(|document| document.proposals.clone())
+        };
+        assert_eq!(kept(&workspace), Some(vec![fill(hole, Json("42"), None)]));
+        assert_eq!(
+            workspace
+                .published(&uri)
+                .map(|(_, diagnostics)| diagnostics.len()),
+            Some(1_usize),
+            "what the editor shows is unchanged"
+        );
+        drop(first.handle(
+            &mut workspace,
+            &shared(
+                Json("textDocument/didChange"),
+                Json(r#","version":5},"contentChanges":[{"text":"def f : Integer ;\ndef f = missing ;\n"}]"#),
+            ),
+        ));
+        assert_eq!(
+            kept(&workspace),
+            Some(Vec::new()),
+            "the next edit withdraws what was kept"
+        );
+    }
+
+    #[test]
+    fn kept_proposals_reach_every_editor_surface()
+    {
+        let (mut workspace, [(mut first, _first_inbox), (_second, _second_inbox)]) =
+            two_connections();
+        let uri = crate::protocol::DocumentUri::from("file:///tmp/shared.gandr");
+        drop(first.handle(
+            &mut workspace,
+            &shared(
+                Json("textDocument/didOpen"),
+                Json(
+                    r#","version":1,"text":"def f : Integer ;\ndef f = missing ;\ndef g : Integer ;\ndef g = absent ;\n"}"#,
+                ),
+            ),
+        ));
+        let held = workspace
+            .documents
+            .get(&uri)
+            .map(|document| document.version)
+            .expect("the document is held");
+        let (f, g) = (
+            on_line(
+                Line::from(1_u32),
+                Character::from(8_u32),
+                Character::from(15_u32),
+            ),
+            on_line(
+                Line::from(3_u32),
+                Character::from(8_u32),
+                Character::from(14_u32),
+            ),
+        );
+        for proposal in [
+            fill(f, Json("42"), Some(Json("the answer"))),
+            fill(f, Json("7"), None),
+            fill(g, Json("1"), None),
+        ] {
+            assert!(
+                workspace.propose(&uri, held, proposal).is_ok(),
+                "a fill repairing one refusal of two is kept"
+            );
+        }
+        let inside = r#","position":{"line":1,"character":10}"#;
+        let ghosts = asked(
+            &workspace,
+            Json("textDocument/inlineCompletion"),
+            Json(inside),
+        );
+        assert_eq!(
+            ghosts.pointer("/items/0"),
+            Some(
+                &serde_json::json!({ "insertText": { "kind": "snippet", "value": "42" },
+                "range": { "start": { "line": 1_u32, "character": 8_u32 }, "end": { "line": 1_u32, "character": 15_u32 } } })
+            ),
+            "the cursor's proposals come first"
+        );
+        assert_eq!(
+            ghosts.pointer("/items/1/insertText/value"),
+            Some(&serde_json::json!("7"))
+        );
+        let outside = asked(
+            &workspace,
+            Json("textDocument/inlineCompletion"),
+            Json(r#","position":{"line":0,"character":0}"#),
+        );
+        assert!(
+            outside
+                .pointer("/items")
+                .and_then(Value::as_array)
+                .is_some_and(|items| items.iter().all(
+                    |item| item.pointer("/range/start/line") == Some(&serde_json::json!(0_u32))
+                )),
+            "a cursor outside every proposal sees none: {outside}"
+        );
+        let lenses = asked(&workspace, Json("textDocument/codeLens"), Json(""));
+        assert_eq!(
+            lenses.as_array().map(|lenses| lenses
+                .iter()
+                .map(|lens| lens.pointer("/command/title").cloned())
+                .collect::<Vec<_>>()),
+            Some(vec![
+                Some(serde_json::json!("2 checked fills")),
+                Some(serde_json::json!("1 checked fill"))
+            ])
+        );
+        let actions = asked(
+            &workspace,
+            Json("textDocument/codeAction"),
+            Json(
+                r#","range":{"start":{"line":1,"character":9},"end":{"line":1,"character":9}},"context":{"diagnostics":[]}"#,
+            ),
+        );
+        assert_eq!(
+            actions.pointer("/0/edit/changes/file:~1~1~1tmp~1shared.gandr/0"),
+            Some(
+                &serde_json::json!({ "range": { "start": { "line": 1_u32, "character": 8_u32 },
+                "end": { "line": 1_u32, "character": 15_u32 } }, "newText": "42" })
+            )
+        );
+        assert_eq!(actions.as_array().map(Vec::len), Some(2_usize));
+        assert_eq!(
+            asked(
+                &workspace,
+                Json("textDocument/codeAction"),
+                Json(
+                    r#","range":{"start":{"line":0,"character":0},"end":{"line":0,"character":3}},"context":{"diagnostics":[]}"#
+                ),
+            ),
+            serde_json::json!([]),
+            "a range elsewhere is offered nothing"
+        );
+        let hovered = asked(&workspace, Json("textDocument/hover"), Json(inside));
+        assert!(
+            hovered
+                .pointer("/contents/value")
+                .and_then(Value::as_str)
+                .is_some_and(|value| value.contains("**Checked fill** `42`: the answer")),
+            "{hovered}"
         );
     }
 }

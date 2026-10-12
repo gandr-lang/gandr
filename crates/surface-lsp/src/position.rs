@@ -145,7 +145,7 @@ impl Position
 }
 
 /// A range in a document, half-open, as the wire carries it.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct Range
 {
     /// The position of the first character covered.

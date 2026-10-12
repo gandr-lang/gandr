@@ -6,6 +6,7 @@
 //! a client sends is ignored, as the protocol requires of a field a server
 //! does not know.
 
+use alloc::collections::BTreeMap;
 use core::fmt;
 use core::mem;
 use std::path::PathBuf;
@@ -266,8 +267,9 @@ impl InitializeResult
     ///   over the whole document and over a range, under the legend of
     ///   [`TOKEN_TYPES`] and [`TOKEN_MODIFIERS`]; inline completion; document
     ///   symbols, folding ranges and selection ranges; hover; formatting over
-    ///   the whole document and over a range; the server named `gandr` at this
-    ///   crate's version. Nothing else: no completion list.
+    ///   the whole document and over a range; code lenses, resolved in the
+    ///   answer, and code actions; the server named `gandr` at this crate's
+    ///   version. Nothing else: no completion list.
     /// - provides: the one capabilities answer, written by `initialize` and by
     ///   the driver's `gandr lsp --capabilities` alike.
     /// - fails: never.
@@ -291,7 +293,9 @@ impl InitializeResult
             && ret.capabilities.selection_range_provider.0
             && ret.capabilities.hover_provider.0
             && ret.capabilities.document_formatting_provider.0
-            && ret.capabilities.document_range_formatting_provider.0)]
+            && ret.capabilities.document_range_formatting_provider.0
+            && ret.capabilities.code_action_provider.0
+            && !ret.capabilities.code_lens_provider.resolve_provider)]
     #[inline]
     #[must_use]
     pub const fn advertised() -> Self
@@ -318,6 +322,10 @@ impl InitializeResult
                 hover_provider: Provider::ANSWERED,
                 document_formatting_provider: Provider::ANSWERED,
                 document_range_formatting_provider: Provider::ANSWERED,
+                code_lens_provider: CodeLensOptions {
+                    resolve_provider: false,
+                },
+                code_action_provider: Provider::ANSWERED,
             },
             server_info: ServerInfo {
                 name: SOURCE,
@@ -352,6 +360,10 @@ pub struct ServerCapabilities
     pub document_formatting_provider: Provider,
     /// Formatting a range is answered.
     pub document_range_formatting_provider: Provider,
+    /// Code lenses are answered, each resolved in the answer.
+    pub code_lens_provider: CodeLensOptions,
+    /// Code actions are answered.
+    pub code_action_provider: Provider,
 }
 
 /// Whether a request is answered, advertised as a provider with no options.
@@ -447,6 +459,10 @@ pub enum Answer
     /// What a formatting request answers for an open document: the edits that
     /// lay it out, in document order.
     Edits(Vec<TextEdit>),
+    /// What a code-lens request answers for an open document.
+    Lenses(Vec<CodeLens>),
+    /// What a code-action request answers over a range of an open document.
+    Actions(Vec<CodeAction>),
     /// `null`: what `shutdown` answers, a request about a document that is not
     /// open, and a hover over nothing the server knows.
     Nothing,
@@ -658,6 +674,58 @@ pub struct TextEdit
     pub range: Range,
     /// The text replacing it.
     pub new_text: String,
+}
+
+/// A command a lens or an action names: its title, and the client command it
+/// runs, empty for one that runs nothing.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct Command
+{
+    /// The text shown.
+    pub title: String,
+    /// The client command run when it is chosen.
+    pub command: &'static str,
+}
+
+/// A code lens: a command shown above a range.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct CodeLens
+{
+    /// The range the lens is about.
+    pub range: Range,
+    /// What it shows.
+    pub command: Command,
+}
+
+/// A code action: an edit the client offers to apply.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct CodeAction
+{
+    /// The text shown.
+    pub title: String,
+    /// Its kind, `quickfix`.
+    pub kind: &'static str,
+    /// The edit it applies.
+    pub edit: WorkspaceEdit,
+}
+
+/// Edits to several documents, by URI.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[repr(transparent)]
+pub struct WorkspaceEdit
+{
+    /// Each document's edits, in document order.
+    pub changes: BTreeMap<DocumentUri, Vec<TextEdit>>,
+}
+
+/// The code-lens provider, as advertised.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct CodeLensOptions
+{
+    /// Whether a lens is resolved by a second request: never.
+    pub resolve_provider: bool,
 }
 
 /// Text in a markup the client renders.
