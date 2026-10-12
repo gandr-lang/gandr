@@ -12,6 +12,7 @@ The concrete syntax tree of the gandr surface language: a molded node vocabulary
 - [Molded labels](#molded-labels)
 - [Layout in the tree](#layout-in-the-tree)
 - [Arena position and content digest](#arena-position-and-content-digest)
+- [Node keys](#node-keys)
 - [Digest preimage](#digest-preimage)
   - [A preimage is hashed in one call](#a-preimage-is-hashed-in-one-call)
   - [A builder hashes each leaf once](#a-builder-hashes-each-leaf-once)
@@ -43,6 +44,7 @@ The concrete syntax tree of the gandr surface language: a molded node vocabulary
 - `SyntaxTree`, `Node` and `NodeIndex`: the level-order arena with checked lookups, `children`, `positions`, `fragment` and the recorded `grammar`.
 - `TreeBuilder` and `StagedId`: bottom-up staging under a grammar fingerprint and the layout `TreeBuilder::finish` produces; `TreeBuilder::node_with_digest` stages a node under a digest folded apart from the builder, which the enforcing build folds again and compares. Witnesses: `build::tests::a_supplied_digest_stages_the_folded_node`, `build::tests::a_supplied_digest_is_refused_as_node_refuses`.
 - `NodeDigest`, `NODE_DIGEST_LEN` and `digest_of`: the 32-byte content identity, rendered as lowercase hexadecimal, and the one fold that computes it.
+- `NodeKey`, `FormRank`, `SyntaxTree::key`, `SyntaxTree::forms` and `SyntaxTree::digest`: a significant node's cross-tree key — its top-level form's digest and its preorder rank in that form — the forms, and the whole tree's digest. Witnesses: `build::tests::keys_rank_a_forms_nodes_in_preorder`, `build::tests::keys_survive_layout_and_another_forms_edit`.
 - `SourceText`, `SourceFragment`, `ByteSpan`, `ByteOffset` and `ByteLength`: byte-addressed source positions.
 - `SyntaxError`: every refusal, with the offset, span or staged node it names.
 - `MoldId`, `GroutSort`, `GroutShape`, `GrammarFingerprint`, `ClosingClass` and `DelimSpelling`: the references a grammar and a parser exchange — a mold's position in its grammar's table, the sort a hole stands for, the sides a piece of grout faces, the fingerprint naming the table, and the bracket family a delimiter opens or closes. Witnesses: `mold::tests::openers_and_closers_pair_by_family`, `mold::tests::a_host_index_past_the_id_width_is_refused`.
@@ -51,7 +53,7 @@ The concrete syntax tree of the gandr surface language: a molded node vocabulary
 
 - **Atomic compare-exchange.** Builder identities come from a process-wide atomic counter, so the crate requires `target_has_atomic = "ptr"`. Every hosted target and every embedded target with a compare-exchange instruction qualifies; building for a load/store-only core fails with an explanatory `compile_error!`.
 - **A grammar that resolves molds.** A `MoldId` means something only under the grammar whose fingerprint the tree records. The consumer reads the form a node realises from that grammar (in this workspace, `gandr-surface-grammar`'s `Pbg::named_kind`), and compares fingerprints before it reads.
-- **Distinct declarations.** A digest is a content identity, not an occurrence identity: two declarations with identical content have one digest. A consumer keying a table on digests owes the argument that its keys are distinct; in the surface language a declaration's digest folds its name, so a module that refuses a name bound twice supplies it.
+- **Distinct declarations.** A digest is a content identity, not an occurrence identity: two top-level forms with identical content have one digest, and so equal keys at equal ranks. A consumer keying a table on keys owes the argument that its keys are distinct; in the surface language a declaration's form folds its name, so a module that refuses a name bound twice supplies it. Two nodes in one form always have distinct keys.
 - **The specification facade's `cfg`.** `#[spec(...)]` clauses are checked at runtime only when the whole build graph is compiled with `--cfg anodized_panic`.
 
 ## Examples
@@ -128,6 +130,14 @@ Every token the source wrote is a node, layout included, so the leaves read in s
 ## Arena position and content digest
 
 `NodeIndex` addresses a node inside one tree and nowhere else: it is an offset into that tree's node vector, and the next parse of an edited source lays the same declaration out elsewhere. `NodeDigest` addresses a node across trees, runs and processes: it is a function of the node's label, its own text when its label carries text, and its significant children's digests, so the same declaration parsed from two files on two machines carries one identity. A side table keyed by position is invalidated by an edit anywhere earlier in the file; one keyed by digest only by an edit to the thing it is about. A diagnostic that carries both resolves fast in the tree in hand and survives it.
+
+## Node keys
+
+A table that outlives one parse files a node under its `NodeKey`: the digest of the top-level form holding it — a significant child of the root — and its rank among that form's significant nodes in preorder, the form's own root ranked zero. Layout, documentation and what they hold take no rank and have no key, and neither does the root; the whole tree's identity is `SyntaxTree::digest`. An edit to another form, to layout or to documentation leaves a key alone; an edit inside the form changes the form's digest and so every key under it, which is the set a consumer derives again when that form is lowered again. `TreeBuilder::finish` ranks the forms once, so `SyntaxTree::key` answers without a walk.
+
+- Choice: the form's digest and a rank. Only top-level forms need an identity at commit; a node inside one is found by its position in the form.
+- Alternatives: the node's own digest, which needs a digest at every node and cannot tell apart two equal nodes in one form; an arena position, which an edit anywhere earlier in the file invalidates.
+- Reversal: a consumer that needs a node's identity apart from its form's — reuse of a sub-form's work across a move — needs a digest of the node itself.
 
 ## Digest preimage
 

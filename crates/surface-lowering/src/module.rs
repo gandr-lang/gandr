@@ -85,8 +85,8 @@ use gandr_kernel_term::StructuredName;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
-use gandr_surface_syntax::NodeDigest;
 use gandr_surface_syntax::NodeIndex;
+use gandr_surface_syntax::NodeKey;
 use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SyntaxTree;
@@ -689,7 +689,7 @@ pub struct Half
 /// # Adequacy
 /// - hypothesis: L3 — a concrete payload remains attached to its declaration
 ///   and span.
-/// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_digest`
+/// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_key`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Payload
 {
@@ -716,7 +716,7 @@ pub enum Payload
 /// - hypothesis: L3 — adjacent attribute blocks retain their order and concrete
 ///   payloads retain their own syntax.
 /// - witness: `module::tests::an_attribute_block_decorates_the_declaration_after_it`
-/// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_digest`
+/// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_key`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct WrittenAttribute<'source>
 {
@@ -2063,7 +2063,7 @@ impl<'source> Collector<'_, 'source>
     ///   declaration owner; malformed or duplicate attributes remain located by
     ///   lowering.
     /// - witness: `module::tests::an_attribute_block_decorates_the_declaration_after_it`
-    /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_digest`
+    /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_key`
     #[spec(
         captures: before = attributes.len(),
         ensures: attributes.len() >= before
@@ -2108,7 +2108,7 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a block with a payload and stacked marker blocks
     ///   attach to the same declaration, preserving their source order.
     /// - witness: `module::tests::an_attribute_block_decorates_the_declaration_after_it`
-    /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_digest`
+    /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_key`
     #[spec(
         captures: before = attributes.len(),
         ensures: attributes.len() >= before
@@ -2156,7 +2156,7 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — bare marker and integer-payload records retain the
     ///   owning declaration, exact spelling and covering source span.
     /// - witness: `module::tests::an_attribute_block_decorates_the_declaration_after_it`
-    /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_digest`
+    /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_key`
     #[spec(
         ensures: |ret| {
             ret.as_ref().map_or(true, |entry| {
@@ -2592,7 +2592,7 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — documentation before a definition, before a data
     ///   declaration and in its own block reach the declaration, while a
     ///   comment of `///` lines inside a data body does not.
-    /// - witness: `lower::tests::documentation_is_filed_under_the_declaration_digest`
+    /// - witness: `lower::tests::documentation_is_filed_under_the_declaration_key`
     #[spec(
         captures: before_docs = self.collected.slots.get(slot.0).map_or(0, |entry| entry.docs.len()),
         ensures: self.collected.slots.get(slot.0).is_none_or(|entry| entry.docs.len() >= before_docs),
@@ -5073,10 +5073,10 @@ pub struct DeclarationParts<'source>
     pub span: ByteSpan,
     /// The opaque handle a checker echoes back in place of that span.
     pub origin: OriginToken,
-    /// The content identity of this name's signature form.
-    pub signature: Maybe<NodeDigest, declaration_half::Absent>,
-    /// The content identity of this name's definition form.
-    pub definition: Maybe<NodeDigest, declaration_half::Absent>,
+    /// The cross-tree key of this name's signature form.
+    pub signature: Maybe<NodeKey, declaration_half::Absent>,
+    /// The cross-tree key of this name's definition form.
+    pub definition: Maybe<NodeKey, declaration_half::Absent>,
     /// What the name's declarations amount to.
     pub outcome: DeclarationOutcome<'source>,
 }
@@ -5191,24 +5191,24 @@ impl<'source> LoweredDeclaration<'source>
         self.parts.origin
     }
 
-    /// The content identity of this name's signature form, the key its
-    /// attributes are filed under.
+    /// The cross-tree key of this name's signature form, which its attributes
+    /// are filed under.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    pub const fn signature(&self) -> Maybe<NodeDigest, declaration_half::Absent>
+    pub const fn signature(&self) -> Maybe<NodeKey, declaration_half::Absent>
     {
         self.parts.signature
     }
 
-    /// The content identity of this name's definition form, the key its
-    /// attributes are filed under.
+    /// The cross-tree key of this name's definition form, which its attributes
+    /// are filed under.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    pub const fn definition(&self) -> Maybe<NodeDigest, declaration_half::Absent>
+    pub const fn definition(&self) -> Maybe<NodeKey, declaration_half::Absent>
     {
         self.parts.definition
     }
@@ -5464,9 +5464,9 @@ pub struct LoweredModule<'source>
     structures: Vec<LoweredStructure<'source>>,
     /// The attribute side table, keyed by declaration content identity.
     attributes: AttributeTable,
-    /// Each documented declaration form's documentation, keyed by its content
-    /// identity.
-    documentation: BTreeMap<NodeDigest, Documentation<'source>>,
+    /// Each documented declaration form's documentation, keyed by its
+    /// cross-tree key.
+    documentation: BTreeMap<NodeKey, Documentation<'source>>,
     /// Every minted core node's origin, and the declarations' own.
     origins: OriginTable,
     /// The imports, in source order, with their aliases bound.
@@ -5534,7 +5534,7 @@ impl<'source> LoweredModule<'source>
     #[must_use]
     pub fn with_documentation(
         mut self,
-        documentation: BTreeMap<NodeDigest, Documentation<'source>>,
+        documentation: BTreeMap<NodeKey, Documentation<'source>>,
     ) -> Self
     {
         self.documentation = documentation;
@@ -5794,15 +5794,13 @@ impl<'source> LoweredModule<'source>
         &self.attributes
     }
 
-    /// The documentation of the declaration form whose content identity is
-    /// `key`.
+    /// The documentation of the declaration form whose key is `key`.
     ///
     /// # Specification
-    /// - requires: nothing — any digest is admissible input.
+    /// - requires: nothing — any key is admissible input.
     /// - ensures: the documentation filed under `key`, or the undocumented
-    ///   absence when nothing was. A form's identity excludes its
-    ///   documentation, so the key is the same whichever spelling, if any, the
-    ///   documentation took.
+    ///   absence when nothing was. A key excludes documentation, so it is the
+    ///   same whichever spelling, if any, the documentation took.
     /// - provides: the read face hover and rendering consumers read.
     /// - fails: never.
     /// - panics: none.
@@ -5810,7 +5808,7 @@ impl<'source> LoweredModule<'source>
     /// # Adequacy
     /// - hypothesis: L3 — a documented and an undocumented declaration are
     ///   separated by presence and the exact text.
-    /// - witness: `lower::tests::documentation_is_filed_under_the_declaration_digest`
+    /// - witness: `lower::tests::documentation_is_filed_under_the_declaration_key`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(found) => self.documentation.get(&key) == Some(found),
         | Maybe::Absent(_) => !self.documentation.contains_key(&key),
@@ -5818,7 +5816,7 @@ impl<'source> LoweredModule<'source>
     #[inline]
     pub fn documentation(
         &self,
-        key: NodeDigest,
+        key: NodeKey,
     ) -> Maybe<&Documentation<'source>, crate::doc::documentation::Absent>
     {
         self.documentation.get(&key).map_or(
@@ -5827,13 +5825,13 @@ impl<'source> LoweredModule<'source>
         )
     }
 
-    /// Every declaration form's documentation, by the form's content identity.
+    /// Every declaration form's documentation, by the form's cross-tree key.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn documentations(&self) -> &BTreeMap<NodeDigest, Documentation<'source>>
+    pub const fn documentations(&self) -> &BTreeMap<NodeKey, Documentation<'source>>
     {
         &self.documentation
     }

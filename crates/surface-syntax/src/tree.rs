@@ -40,6 +40,8 @@ use alloc::vec::Vec;
 use anodized::spec;
 
 use crate::digest::NodeDigest;
+use crate::key::FormRank;
+use crate::key::NodeKey;
 use crate::label::NodeLabel;
 use crate::mold::GrammarFingerprint;
 use crate::span::ByteSpan;
@@ -444,6 +446,13 @@ pub struct SyntaxTree<'source>
     grammar: GrammarFingerprint,
     /// The nodes, in level order: parents before children, siblings adjacent.
     nodes: Vec<Node>,
+    /// The positions of the root's significant children, the top-level forms,
+    /// in source order.
+    forms: Vec<NodeIndex>,
+    /// Per position, the position of the form holding the node and its rank
+    /// there; nothing for the root and for layout, documentation and what
+    /// they hold.
+    ranks: Vec<Option<(NodeIndex, FormRank)>>,
 }
 
 impl<'source> SyntaxTree<'source>
@@ -496,17 +505,93 @@ impl<'source> SyntaxTree<'source>
         valid
     })]
     #[inline]
-    pub(crate) const fn from_layout(
+    pub(crate) fn from_layout(
         source: SourceText<'source>,
         grammar: GrammarFingerprint,
         nodes: Vec<Node>,
     ) -> Self
     {
+        let (forms, ranks) = rank_forms(&nodes);
         Self {
             source,
             grammar,
             nodes,
+            forms,
+            ranks,
         }
+    }
+
+    /// The content digest of the whole tree: its root's.
+    ///
+    /// # Specification
+    /// - requires: nothing; the tree need not hold any node.
+    /// - ensures: the root's digest, or nothing for an empty tree.
+    /// - provides: the identity a reparse is compared by, which neither layout
+    ///   nor documentation reaches.
+    /// - fails: yields nothing for an empty tree.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two builds of one source agree, an empty layout
+    ///   yields nothing.
+    /// - witness: `build::tests::two_builds_of_one_source_agree_digest_by_digest`
+    /// - witness: `tree::tests::an_empty_layout_has_no_resolvable_positions`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret == self.nodes.first().map(Node::digest))]
+    pub fn digest(&self) -> Option<NodeDigest>
+    {
+        self.nodes.first().map(Node::digest)
+    }
+
+    /// The positions of the top-level forms: the root's significant
+    /// children, in source order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn forms(&self) -> &[NodeIndex]
+    {
+        self.forms.as_slice()
+    }
+
+    /// The cross-tree key of the node at `position`: its top-level form's
+    /// digest and its preorder rank among that form's significant nodes.
+    ///
+    /// # Specification
+    /// - requires: nothing — a position this tree does not hold is admissible
+    ///   input.
+    /// - ensures: for a significant node inside a top-level form, the form's
+    ///   digest and the node's rank, the form's own root ranked zero; nothing
+    ///   for the root, for layout and documentation and the nodes they hold,
+    ///   and for a position the tree does not hold.
+    /// - provides: the key a table that outlives one parse files a node under,
+    ///   which an edit to another form, layout or documentation leaves alone.
+    /// - fails: yields nothing where the node has no key.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a two-form source keys each form's root at rank zero
+    ///   and its nested nodes in preorder; a layout edit and an edit to the
+    ///   other form keep a key, an edit inside the form changes it, and the
+    ///   root and layout have none.
+    /// - witness: `build::tests::keys_rank_a_forms_nodes_in_preorder`
+    /// - witness: `build::tests::keys_survive_layout_and_another_forms_edit`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.is_none_or(|key| self.ranks.get(position.0).copied().flatten()
+        .and_then(|(form, rank)| self.node(form).map(|node| (node.digest(), rank)))
+        == Some((key.form(), key.rank()))))]
+    pub fn key(
+        &self,
+        position: NodeIndex,
+    ) -> Option<NodeKey>
+    {
+        let (form, rank) = self.ranks.get(position.0).copied().flatten()?;
+        let root = self.node(form)?;
+
+        Some(NodeKey::new(root.digest(), rank))
     }
 
     /// The text every span in this tree is read against.
@@ -716,6 +801,75 @@ impl<'source> SyntaxTree<'source>
     }
 }
 
+/// The top-level forms of a level-order `nodes`, and each node's form
+/// position and preorder rank among that form's significant nodes.
+///
+/// # Specification
+/// - requires: `nodes` is empty or a level-order layout, as
+///   [`SyntaxTree::from_layout`] asks.
+/// - ensures: the forms are the root's significant children in order; a
+///   significant node reachable from a form through significant nodes only
+///   holds that form's position and its preorder rank, the form's root first;
+///   every other position holds nothing.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// Each node is pushed at most once: the layout is a tree, and the walk
+/// descends from each form's root along child ranges only.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`SyntaxTree::key`].
+/// - witness: `build::tests::keys_rank_a_forms_nodes_in_preorder`
+#[spec(ensures: |ret| ret.1.len() == nodes.len()
+    && ret.0.iter().all(|&form| {
+        ret.1.get(form.0).copied().flatten() == Some((form, FormRank::default()))
+    }))]
+fn rank_forms(nodes: &[Node]) -> (Vec<NodeIndex>, Vec<Option<(NodeIndex, FormRank)>>)
+{
+    let mut forms = Vec::new();
+    let mut ranks = Vec::new();
+    ranks.resize(nodes.len(), None);
+    let Some(root) = nodes.first()
+    else {
+        return (forms, ranks);
+    };
+    let significant = |position: usize| {
+        nodes
+            .get(position)
+            .is_some_and(|node| bool::from(node.label.significance()))
+    };
+    let mut pending: Vec<usize> = Vec::new();
+    let first = root.first_child.0;
+    for position in first .. first.saturating_add(root.child_count.0) {
+        if !significant(position) {
+            continue;
+        }
+        let form = NodeIndex(position);
+        forms.push(form);
+        let mut rank = 0_u32;
+        pending.push(position);
+        while let Some(at) = pending.pop() {
+            let Some(node) = nodes.get(at)
+            else {
+                continue;
+            };
+            if let Some(slot) = ranks.get_mut(at) {
+                *slot = Some((form, FormRank::from(rank)));
+            }
+            rank = rank.saturating_add(1_u32);
+            let start = node.first_child.0;
+            pending.extend(
+                (start .. start.saturating_add(node.child_count.0))
+                    .rev()
+                    .filter(|&child| significant(child)),
+            );
+        }
+    }
+
+    (forms, ranks)
+}
+
 #[cfg(test)]
 mod tests
 {
@@ -767,6 +921,9 @@ mod tests
         assert_eq!(tree.positions().next(), None);
         assert_eq!(tree.children(tree.root()).next(), None);
         assert_eq!(tree.fragment(tree.root()), None);
+        assert_eq!(tree.digest(), None);
+        assert!(tree.forms().is_empty());
+        assert_eq!(tree.key(tree.root()), None);
     }
 
     #[test]

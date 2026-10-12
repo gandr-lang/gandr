@@ -108,9 +108,10 @@ use gandr_kernel_term::Sign;
 use gandr_kernel_term::StringLiteral;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_syntax::ByteSpan;
-use gandr_surface_syntax::Node;
+use gandr_surface_syntax::FormRank;
 use gandr_surface_syntax::NodeDigest;
 use gandr_surface_syntax::NodeIndex;
+use gandr_surface_syntax::NodeKey;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
@@ -1526,7 +1527,7 @@ struct Fractional(bool);
 /// # Adequacy
 /// - hypothesis: L3 — an otherwise refused declaration retains its valid
 ///   attribute payload, and invalid attributes still receive their diagnostics.
-/// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_digest`
+/// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_key`
 /// - witness: `lower::tests::the_attribute_diagnostics_fire_on_a_refused_declaration`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -1731,7 +1732,7 @@ impl Site
 /// - witness: `lower::tests::a_refused_declaration_leaves_the_others_lowered`
 /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
 /// - witness: `lower::tests::every_minted_node_has_an_origin`
-/// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_digest`
+/// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_key`
 struct Lowerer<'run, 'source>
 {
     /// The grammar the tree was molded under.
@@ -1951,8 +1952,8 @@ struct Sink<'run>
 /// - witness: `lower::tests::a_non_value_payload_is_refused`
 /// - witness: `lower::tests::a_payload_of_the_wrong_form_is_refused`
 /// - witness: `lower::tests::a_marker_given_a_payload_is_refused`
-/// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_digest`
-/// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_digest`
+/// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_key`
+/// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_key`
 /// - witness: `lower::tests::the_attribute_diagnostics_fire_on_a_refused_declaration`
 /// - witness: `lower::tests::every_minted_node_has_an_origin`
 /// - witness: `lower::tests::a_refused_declaration_leaves_the_others_lowered`
@@ -1981,9 +1982,7 @@ struct Sink<'run>
                         match module.origins().declaration(declaration.origin()) {
                             | Maybe::Present(origin) => {
                                 origin.span() == declaration.span()
-                                    && tree
-                                        .node(origin.node())
-                                        .is_some_and(|node| node.digest() == origin.digest())
+                                    && tree.node(origin.node()).is_some()
                             },
                             | Maybe::Absent(_) => false,
                         }
@@ -2110,7 +2109,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   declarations, nested modules and attributed refusals without leaking
     ///   prior node state.
     /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
-    /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_digest`
+    /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_key`
     /// - witness: `modules::modules::deeply_nested_modules_lower_and_resolve_at_every_depth`
     #[spec(
         ensures: |ret| {
@@ -2486,7 +2485,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   manifest types and attribute payloads retain their own roots,
     ///   including attributes of refused declarations.
     /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
-    /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_digest`
+    /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_key`
     /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
     #[spec(
         captures: before = (self.readings.len(), self.payload.len(), self.scopes.len()),
@@ -2581,7 +2580,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   classification table.
     /// - witness: `lower::tests::only_the_value_forms_can_stand_as_a_payload`
     /// - witness: `lower::tests::a_non_value_payload_is_refused`
-    /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_digest`
+    /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_key`
     #[spec(
         ensures: |ret| {
             ret == self.tree.node(payload.node).map_or(
@@ -2699,7 +2698,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   declaration, including payloads lowered after their declaration is
     ///   refused.
     /// - witness: `lower::tests::a_refused_declaration_leaves_the_others_lowered`
-    /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_digest`
+    /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_key`
     #[spec(
         captures: before = (
             self.collected.owner.len(),
@@ -2797,7 +2796,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a refused declaration still mints its attribute
     ///   payload without minting the refused signature or body.
-    /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_digest`
+    /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_key`
     /// - witness: `lower::tests::the_attribute_diagnostics_fire_on_a_refused_declaration`
     #[spec(
         captures: before = (self.payload.len(), self.in_payload(position)),
@@ -2839,7 +2838,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — refused declarations keep payload interpretation
     ///   separate from their signature and body.
-    /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_digest`
+    /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_key`
     #[spec(
         ensures: |ret| {
             ret.0
@@ -6305,7 +6304,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   untouched but still permits its attribute payloads to mint; consumed
     ///   plans are not minted twice when a manifest and the full traversal both
     ///   reach them.
-    /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_digest`
+    /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_key`
     /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
     /// - witness: `lower::tests::every_minted_node_has_an_origin`
     #[spec(
@@ -6368,8 +6367,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: a live syntax node yields its own position, digest and span
-    ///   as written provenance; a missing node is unminted.
+    /// - ensures: a live syntax node yields its own position and span as
+    ///   written provenance; a missing node is unminted.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -6384,7 +6383,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 .tree
                 .node(position)
                 .map_or(Maybe::Absent(lowered::Absent::Unminted), |node| {
-                    Maybe::Present(Origin::new(position, node.digest(), node.span()))
+                    Maybe::Present(Origin::new(position, node.span()))
                 })
         },
     )]
@@ -6396,7 +6395,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.tree
             .node(position)
             .map_or(Maybe::Absent(lowered::Absent::Unminted), |node| {
-                Maybe::Present(Origin::new(position, node.digest(), node.span()))
+                Maybe::Present(Origin::new(position, node.span()))
             })
     }
 
@@ -7825,7 +7824,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — attributes are drained and filed even for a refused
     ///   declaration, while a failing schema is retained as a declaration
     ///   refusal.
-    /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_digest`
+    /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_key`
     /// - witness: `lower::tests::the_attribute_diagnostics_fire_on_a_refused_declaration`
     #[spec(
         captures: before = self.collected.slots.len(),
@@ -7870,9 +7869,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — each written attribute spends one step, successful
-    ///   entries append under their declaration digest, and schema errors do
-    ///   not prevent other declarations from lowering.
-    /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_digest`
+    ///   entries append under their declaration key, and schema errors do not
+    ///   prevent other declarations from lowering.
+    /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_key`
     /// - witness: `lower::tests::the_attribute_diagnostics_fire_on_a_refused_declaration`
     /// - witness: `lower::tests::a_refused_declaration_leaves_the_others_lowered`
     #[spec(
@@ -7905,7 +7904,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.fuel.spend()?;
                 match self.read_attribute(&written, &mut seen) {
                     | Ok(Filing::Filed(entry)) => {
-                        table.file(self.digest_at(written.decorates), entry);
+                        table.file(self.key_at(written.decorates), entry);
                     },
                     | Ok(Filing::Unlowered) => {},
                     | Err(refusal) => {
@@ -7924,8 +7923,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// Read every declaration's documentation and check its links.
     ///
     /// # Specification
-    /// - requires: the mint sweep has run, so every declaration form's digest
-    ///   is final.
+    /// - requires: the mint sweep has run, so every declaration form's key is
+    ///   final.
     /// - ensures: every piece of documentation of every declaration, refused or
     ///   not, is read and filed under the content identity of the form it
     ///   documents, pieces in source order; each link to a name the module
@@ -7943,10 +7942,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// [`LoweringRefusal::UnknownMold`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — both spellings file one text under one digest, a link
-    ///   to a later declaration resolves, and a link to a missing name refuses
-    ///   its declaration at the link's span.
-    /// - witness: `lower::tests::documentation_is_filed_under_the_declaration_digest`
+    /// - hypothesis: L3 — both spellings file one text under one key, a link to
+    ///   a later declaration resolves, and a link to a missing name refuses its
+    ///   declaration at the link's span.
+    /// - witness: `lower::tests::documentation_is_filed_under_the_declaration_key`
     /// - witness: `lower::tests::a_link_to_a_missing_name_is_refused_at_the_link`
     #[spec(
         captures: before = self.collected.slots.len(),
@@ -7961,9 +7960,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     )]
     fn document(
         &mut self
-    ) -> Result<BTreeMap<NodeDigest, Documentation<'source>>, LoweringRefusal<'source>>
+    ) -> Result<BTreeMap<NodeKey, Documentation<'source>>, LoweringRefusal<'source>>
     {
-        let mut filed: BTreeMap<NodeDigest, Documentation<'source>> = BTreeMap::new();
+        let mut filed: BTreeMap<NodeKey, Documentation<'source>> = BTreeMap::new();
         let mut slots = core::mem::take(&mut self.collected.slots);
         let outcome = self.document_slots(&mut slots, &mut filed);
         self.collected.slots = slots;
@@ -7986,7 +7985,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::document`].
-    /// - witness: `lower::tests::documentation_is_filed_under_the_declaration_digest`
+    /// - witness: `lower::tests::documentation_is_filed_under_the_declaration_key`
     /// - witness: `lower::tests::a_link_to_a_missing_name_is_refused_at_the_link`
     #[spec(
         captures: before = self.fuel.remaining,
@@ -7996,13 +7995,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     fn document_slots(
         &mut self,
         slots: &mut [DeclarationSlot<'source>],
-        filed: &mut BTreeMap<NodeDigest, Documentation<'source>>,
+        filed: &mut BTreeMap<NodeKey, Documentation<'source>>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         for slot in slots.iter_mut() {
             for written in core::mem::take(&mut slot.docs) {
                 self.fuel.spend()?;
-                let documentation = filed.entry(self.digest_at(written.documents)).or_default();
+                let documentation = filed.entry(self.key_at(written.documents)).or_default();
                 let before = documentation.links().len();
                 if let Err(refusal) = read_doc(self.pbg, self.tree, written.at.node, documentation)
                 {
@@ -8065,7 +8064,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::an_attribute_written_twice_for_one_name_is_refused`
     /// - witness: `lower::tests::an_unknown_attribute_is_refused_with_its_suggestion`
     /// - witness: `lower::tests::a_payload_of_the_wrong_form_is_refused`
-    /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_digest`
+    /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_key`
     #[spec(
         captures: before = seen.len(),
         ensures: |ret| match ret.as_ref() {
@@ -8221,38 +8220,38 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(payload_form(former))
     }
 
-    /// The content identity of the node at `position`.
+    /// The cross-tree key of the node at `position`: its top-level form's
+    /// digest and its rank there.
     ///
     /// # Specification
     /// - requires: positions are interpreted in this source tree.
-    /// - ensures: a live node yields its digest; an absent node yields the
-    ///   all-zero digest.
-    /// - provides: declaration keys for attribute filing and origin records.
-    /// - fails: the fallback does not distinguish absence from an equal digest.
+    /// - ensures: a node with a key yields it; any other position yields the
+    ///   all-zero key.
+    /// - provides: declaration keys for attribute and documentation filing.
+    /// - fails: the fallback does not distinguish a keyless position from an
+    ///   equal key.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — filed attributes use the decorated declaration
-    ///   digest, including declarations already refused for an unrelated source
-    ///   error.
-    /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_digest`
-    /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_digest`
+    /// - hypothesis: L3 — filed attributes use the decorated declaration's key,
+    ///   including declarations already refused for an unrelated source error.
+    /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_key`
+    /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_key`
     #[spec(
         ensures: |ret| {
-            ret == self
-                .tree
-                .node(position)
-                .map_or_else(|| NodeDigest::from([0_u8; 32_usize]), Node::digest)
+            ret == self.tree.key(position).unwrap_or_else(|| {
+                NodeKey::new(NodeDigest::from([0_u8; 32_usize]), FormRank::default())
+            })
         },
     )]
-    fn digest_at(
+    fn key_at(
         &self,
         position: NodeIndex,
-    ) -> NodeDigest
+    ) -> NodeKey
     {
-        self.tree
-            .node(position)
-            .map_or_else(|| NodeDigest::from([0_u8; 32_usize]), Node::digest)
+        self.tree.key(position).unwrap_or_else(|| {
+            NodeKey::new(NodeDigest::from([0_u8; 32_usize]), FormRank::default())
+        })
     }
 
     /// Assemble one declaration per slot, in admission order.
@@ -8314,13 +8313,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
                                 slot.constant,
                                 slot.introduced_by.span,
                                 slot.signature
-                                    .map(|half| self.digest_at(half.declaration.node)),
+                                    .map(|half| self.key_at(half.declaration.node)),
                                 slot.definition
-                                    .map(|half| self.digest_at(half.declaration.node)),
+                                    .map(|half| self.key_at(half.declaration.node)),
                                 outcome,
                                 Maybe::Present(Origin::new(
                                     slot.introduced_by.node,
-                                    self.digest_at(slot.introduced_by.node),
                                     slot.introduced_by.span,
                                 )),
                             )),
@@ -8340,11 +8338,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 continue;
             };
             let introduced = slot.introduced_by;
-            let origin = origins.record_declaration(Origin::new(
-                introduced.node,
-                self.digest_at(introduced.node),
-                introduced.span,
-            ));
+            let origin = origins.record_declaration(Origin::new(introduced.node, introduced.span));
             declarations.push(LoweredDeclaration::from(DeclarationParts {
                 name: slot.name,
                 container: slot.container,
@@ -8354,10 +8348,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 origin,
                 signature: slot
                     .signature
-                    .map(|half| self.digest_at(half.declaration.node)),
+                    .map(|half| self.key_at(half.declaration.node)),
                 definition: slot
                     .definition
-                    .map(|half| self.digest_at(half.declaration.node)),
+                    .map(|half| self.key_at(half.declaration.node)),
                 outcome,
             }));
         }
@@ -8715,11 +8709,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
 ///   `read_attribute` states the executable filing and state-update relation.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — valid entries are filed under the declaration digest,
-///   while a refused declaration can still retain an independently valid
-///   payload.
-/// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_digest`
-/// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_digest`
+/// - hypothesis: L3 — valid entries are filed under the declaration key, while
+///   a refused declaration can still retain an independently valid payload.
+/// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_key`
+/// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_key`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Filing
 {
@@ -12720,7 +12713,7 @@ mod tests
     }
 
     #[test]
-    fn an_attribute_is_filed_under_its_declaration_digest()
+    fn an_attribute_is_filed_under_its_declaration_key()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         let mut arena = CoreArena::new();
@@ -12758,7 +12751,7 @@ mod tests
     }
 
     #[test]
-    fn documentation_is_filed_under_the_declaration_digest()
+    fn documentation_is_filed_under_the_declaration_key()
     {
         let mut arena = CoreArena::new();
         let module = lowered(
@@ -12834,7 +12827,7 @@ mod tests
     }
 
     #[test]
-    fn a_refused_declarations_attributes_are_filed_under_its_digest()
+    fn a_refused_declarations_attributes_are_filed_under_its_key()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         let mut arena = CoreArena::new();
@@ -12867,7 +12860,7 @@ mod tests
         let (Maybe::Present(definition), Maybe::Present(signature)) =
             (defined.definition(), signed.signature())
         else {
-            panic!("each refused name keeps the digest of the form it wrote");
+            panic!("each refused name keeps the key of the form it wrote");
         };
         let [ref refuses] = *module.attributes().entries(definition)
         else {

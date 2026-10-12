@@ -1166,6 +1166,132 @@ mod tests
         tree.children(position).collect()
     }
 
+    /// Build `def a = ? ; def b = ? ;` over `source`, the two forms separated
+    /// by layout: `Wald [ definition [ word, word ], space, definition [ word,
+    /// word ] ]`.
+    ///
+    /// # Specification
+    /// - requires: `source` is two eleven-byte definitions separated by layout.
+    /// - ensures: the finished tree of that shape, with two forms.
+    /// - panics: when a span is refused against `source`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — sources differing in layout, in one form's value or
+    ///   in the other's keep or change exactly the keys under the edited form.
+    /// - witness: `build::tests::keys_rank_a_forms_nodes_in_preorder`
+    /// - witness: `build::tests::keys_survive_layout_and_another_forms_edit`
+    #[spec(ensures: |ret| ret.forms().len() == 2_usize)]
+    fn two_forms(source: SourceText<'_>) -> SyntaxTree<'_>
+    {
+        let mut builder = TreeBuilder::new(source, grammar()).unwrap();
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let second = <&str>::from(source).len().saturating_sub(11_usize);
+        let mut form = |start: usize| {
+            let name = builder
+                .node(
+                    word(),
+                    at(start.saturating_add(4), start.saturating_add(5)),
+                    &[],
+                )
+                .unwrap();
+            let value = builder
+                .node(
+                    word(),
+                    at(start.saturating_add(8), start.saturating_add(9)),
+                    &[],
+                )
+                .unwrap();
+            builder
+                .node(definition(), at(start, start.saturating_add(11)), &[
+                    name, value,
+                ])
+                .unwrap()
+        };
+        let first_form = form(0);
+        let second_form = form(second);
+        let layout = builder.node(NodeLabel::Space, at(11, second), &[]).unwrap();
+        let root = builder
+            .node(NodeLabel::Wald, at(0, second.saturating_add(11)), &[
+                first_form,
+                layout,
+                second_form,
+            ])
+            .unwrap();
+
+        builder.finish(root).unwrap()
+    }
+
+    /// The keys of every node of `tree` whose fragment is `text`, in level
+    /// order.
+    ///
+    /// # Specification
+    /// trivial.
+    fn keys_of(
+        tree: &SyntaxTree<'_>,
+        text: SourceFragment<'_>,
+    ) -> Vec<Option<crate::NodeKey>>
+    {
+        tree.positions()
+            .filter(|&position| {
+                tree.fragment(position)
+                    .is_some_and(|fragment| <&str>::from(fragment) == <&str>::from(text))
+            })
+            .map(|position| tree.key(position))
+            .collect()
+    }
+
+    #[test]
+    fn keys_rank_a_forms_nodes_in_preorder()
+    {
+        let tree = two_forms(SourceText::from("def a = x ; def b = y ;"));
+        let forms = tree.forms();
+        assert_eq!(forms.len(), 2, "layout is not a form");
+        let digest = |position: NodeIndex| tree.node(position).map(Node::digest).unwrap();
+        let first = digest(forms[0]);
+        let second = digest(forms[1]);
+        let key = |form, rank: u32| Some(crate::NodeKey::new(form, crate::FormRank::from(rank)));
+        assert_eq!(tree.key(forms[0]), key(first, 0));
+        assert_eq!(tree.key(forms[1]), key(second, 0));
+        assert_eq!(keys_of(&tree, SourceFragment::from("a")), [key(first, 1)]);
+        assert_eq!(keys_of(&tree, SourceFragment::from("x")), [key(first, 2)]);
+        assert_eq!(keys_of(&tree, SourceFragment::from("b")), [key(second, 1)]);
+        assert_eq!(keys_of(&tree, SourceFragment::from("y")), [key(second, 2)]);
+        assert_eq!(
+            keys_of(&tree, SourceFragment::from(" ")),
+            [None],
+            "layout takes no key"
+        );
+        assert_eq!(tree.key(tree.root()), None, "the root is no form's node");
+        assert_eq!(tree.key(NodeIndex::from(99_usize)), None);
+        assert_eq!(tree.digest(), tree.node(tree.root()).map(Node::digest));
+    }
+
+    #[test]
+    fn keys_survive_layout_and_another_forms_edit()
+    {
+        let base = two_forms(SourceText::from("def a = x ; def b = y ;"));
+        let respaced = two_forms(SourceText::from("def a = x ;   def b = z ;"));
+        assert_eq!(
+            keys_of(&base, SourceFragment::from("x")),
+            keys_of(&respaced, SourceFragment::from("x")),
+            "layout and an edit to the other form keep the key"
+        );
+        assert_ne!(
+            keys_of(&base, SourceFragment::from("b")),
+            keys_of(&respaced, SourceFragment::from("b")),
+            "an edit inside the form moves every key under it"
+        );
+        let edited = two_forms(SourceText::from("def a = w ; def b = y ;"));
+        assert_eq!(
+            keys_of(&base, SourceFragment::from("b")),
+            keys_of(&edited, SourceFragment::from("b"))
+        );
+        assert_ne!(
+            keys_of(&base, SourceFragment::from("a")),
+            keys_of(&edited, SourceFragment::from("a"))
+        );
+    }
+
     #[test]
     fn formatters_preserve_staged_identity()
     {

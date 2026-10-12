@@ -1364,7 +1364,6 @@ mod tests
     use gandr_surface_lowering::OriginTable;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::ByteSpan;
-    use gandr_surface_syntax::NodeDigest;
     use gandr_surface_syntax::NodeIndex;
     use quenchant_shape::shape::Maybe;
 
@@ -1390,13 +1389,8 @@ mod tests
             )
             .expect("ordered fixture spans")
         });
-        let recorded: [Origin; 8_usize] = core::array::from_fn(|index| {
-            Origin::new(
-                NodeIndex::from(index),
-                NodeDigest::from([0_u8; 32_usize]),
-                spans[index],
-            )
-        });
+        let recorded: [Origin; 8_usize] =
+            core::array::from_fn(|index| Origin::new(NodeIndex::from(index), spans[index]));
         let mut arena = CoreArena::new();
         let values = [arena.value_unit(), arena.value_unit()];
         let computations = [
@@ -1472,13 +1466,8 @@ mod tests
             )
             .expect("ordered fixture spans")
         });
-        let recorded: [Origin; 3_usize] = core::array::from_fn(|index| {
-            Origin::new(
-                NodeIndex::from(index),
-                NodeDigest::from([0_u8; 32_usize]),
-                spans[index],
-            )
-        });
+        let recorded: [Origin; 3_usize] =
+            core::array::from_fn(|index| Origin::new(NodeIndex::from(index), spans[index]));
         let mut arena = CoreArena::new();
         let value = arena.value_unit();
         let computation = arena.computation_return(value);

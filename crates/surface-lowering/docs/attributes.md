@@ -19,7 +19,7 @@ An admitted attribute is filed under the content identity of the declaration for
 
 The alternative was folding a definition's blocks into its form, which keys the definition by its attributes and, with the standalone block a data declaration takes, ties the two readings of every `@[` until the token after `]`. Two top-level declarations written alike share an identity and so one entry list; both declare one name, so the second is refused as a duplicate. Reversal: when two declarations written alike must keep separate entries, the key gains the declaration's position.
 
-An attribute is filed whatever its declaration's outcome: a refused declaration still has its tree and its digest, and an expectation about a refusal — `refuses` — can only be read off the declaration that refused. Its payload is minted for the same reason, the one part of a refused declaration that lowers. A declaration form whose own tiles fault records no half, and its attributes are not filed.
+An attribute is filed whatever its declaration's outcome: a refused declaration still has its tree and its key, and an expectation about a refusal — `refuses` — can only be read off the declaration that refused. Its payload is minted for the same reason, the one part of a refused declaration that lowers. A declaration form whose own tiles fault records no half, and its attributes are not filed.
 
 The alternative was to file attributes for unrefused declarations only. It was declined because it leaves every lowering refusal unexpectable: a fixture stating the refusal it expects would be read as stating nothing. Reversal: none while an attribute can state an expectation about its declaration's refusal.
 
