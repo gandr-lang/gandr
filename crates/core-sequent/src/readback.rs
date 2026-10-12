@@ -409,7 +409,7 @@ impl<'run> Reading<'run>
     /// As the failure clause states.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — exact literal, opaque, unit, pair, injection and lift
+    /// - hypothesis: L3 — exact literal, opaque, tuple, injection and lift
     ///   nodes distinguish changed payloads, head tags and field order; invalid
     ///   arity and a dependency read too early have exact refusals. L2 — thunk,
     ///   recursive-thunk and datatype-constructor readings compare with the
@@ -429,13 +429,12 @@ impl<'run> Reading<'run>
                 | HeapValue::Literal(ref literal) => matches!(*node, gandr_core_term::Value::Literal(ref found) if found == literal),
                 | HeapValue::Opaque(constant) => *node == gandr_core_term::Value::Constant(constant),
                 | HeapValue::Constructed { ref tag, ref fields } => match (tag, fields.as_ref()) {
-                    | (&ConstructorTag::Unit, &[]) => node.components().is_some_and(<[gandr_core_term::ValueId]>::is_empty),
                     | (&ConstructorTag::ListNil, &[]) => *node == gandr_core_term::Value::ListNil,
                     | (&ConstructorTag::ListCons, &[head, tail]) => matches!(*node, gandr_core_term::Value::ListCons(h, t) if self.read.get(&head) == Some(&h) && self.read.get(&tail) == Some(&t)),
-                    | (&ConstructorTag::Pair, &[first, second]) => matches!(node.components(), Some(&[left, right])
-                        if self.read.get(&first) == Some(&left) && self.read.get(&second) == Some(&right)),
-                    | (&ConstructorTag::Injection(side), &[body]) => matches!(*node, gandr_core_term::Value::Injection(found, value)
-                        if gandr_core_term::Summand::from(side) == found && self.read.get(&body) == Some(&value)),
+                    | (&ConstructorTag::Tuple(arity), fields) => fields.len() == usize::from(arity)
+                        && node.components().is_some_and(|values| fields.iter().map(|field| self.read.get(field)).eq(values.iter().map(Some))),
+                    | (&ConstructorTag::Injection(summand), &[body]) => matches!(*node, gandr_core_term::Value::Injection(found, value)
+                        if summand == found && self.read.get(&body) == Some(&value)),
                     | (&ConstructorTag::Lift(ref level), &[body]) => matches!(*node, gandr_core_term::Value::Lift { ref target, body: value }
                         if target == level && self.read.get(&body) == Some(&value)),
                     | (&ConstructorTag::Data { tag, arity }, fields) => fields.len() == usize::from(arity)
@@ -493,21 +492,24 @@ impl<'run> Reading<'run>
                 ref tag,
                 ref fields,
             } => match (tag, fields.as_ref()) {
-                | (&ConstructorTag::Unit, &[]) => Ok(self.core.value_unit()),
                 | (&ConstructorTag::ListNil, &[]) => Ok(self.core.value_list_nil()),
                 | (&ConstructorTag::ListCons, &[head, tail]) => {
                     let head = self.lookup(head)?;
                     let tail = self.lookup(tail)?;
                     Ok(self.core.value_list_cons(head, tail))
                 },
-                | (&ConstructorTag::Pair, &[first, second]) => {
-                    let first = self.lookup(first)?;
-                    let second = self.lookup(second)?;
-                    Ok(self.core.value_tuple(&[first, second]))
+                | (&ConstructorTag::Tuple(arity), components)
+                    if components.len() == usize::from(arity) =>
+                {
+                    let components = components
+                        .iter()
+                        .map(|&component| self.lookup(component))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Ok(self.core.value_tuple(&components))
                 },
-                | (&ConstructorTag::Injection(side), &[body]) => {
+                | (&ConstructorTag::Injection(summand), &[body]) => {
                     let body = self.lookup(body)?;
-                    Ok(self.core.value_injection(side.into(), body))
+                    Ok(self.core.value_injection(summand, body))
                 },
                 | (&ConstructorTag::Lift(ref level), &[body]) => {
                     let body = self.lookup(body)?;
@@ -604,6 +606,7 @@ mod tests
     use gandr_theory_cell_complexes::Polarity;
 
     use super::*;
+    use crate::boundary::ProducerArity;
     use crate::il::ConsumerNode;
     use crate::il::CopatternArm;
     use crate::il::DestructorTag;
@@ -618,7 +621,7 @@ mod tests
         let literal = Literal::Text(StringLiteral::new("payload".into()));
         let unit = store
             .allocate(HeapValue::Constructed {
-                tag: ConstructorTag::Unit,
+                tag: ConstructorTag::Tuple(ProducerArity::ZERO),
                 fields: Box::from([]),
             })
             .expect("room");
@@ -630,13 +633,13 @@ mod tests
             .expect("room");
         let pair = store
             .allocate(HeapValue::Constructed {
-                tag: ConstructorTag::Pair,
+                tag: ConstructorTag::Tuple(ProducerArity::TWO),
                 fields: Box::from([text, opaque]),
             })
             .expect("room");
         let injection = store
             .allocate(HeapValue::Constructed {
-                tag: ConstructorTag::Injection(Side::Right),
+                tag: ConstructorTag::Injection(Side::Right.into()),
                 fields: Box::from([unit]),
             })
             .expect("room");
@@ -648,13 +651,13 @@ mod tests
             .expect("room");
         let branch = store
             .allocate(HeapValue::Constructed {
-                tag: ConstructorTag::Pair,
+                tag: ConstructorTag::Tuple(ProducerArity::TWO),
                 fields: Box::from([pair, lift]),
             })
             .expect("room");
         let root = store
             .allocate(HeapValue::Constructed {
-                tag: ConstructorTag::Pair,
+                tag: ConstructorTag::Tuple(ProducerArity::TWO),
                 fields: Box::from([branch, branch]),
             })
             .expect("room");
@@ -698,7 +701,7 @@ mod tests
         let mut store = Store::new();
         let outer = store
             .allocate(HeapValue::Constructed {
-                tag: ConstructorTag::Unit,
+                tag: ConstructorTag::Tuple(ProducerArity::ZERO),
                 fields: Box::from([]),
             })
             .expect("room");
@@ -734,7 +737,7 @@ mod tests
         let mut arena = CommandArena::new();
         let producer = arena
             .mint_producer(ProducerNode::Constructor {
-                tag: ConstructorTag::Unit,
+                tag: ConstructorTag::Tuple(ProducerArity::ZERO),
                 producers: Box::from([]),
                 consumers: Box::from([]),
             })
@@ -757,7 +760,7 @@ mod tests
         let mut store = Store::new();
         let unit = store
             .allocate(HeapValue::Constructed {
-                tag: ConstructorTag::Unit,
+                tag: ConstructorTag::Tuple(ProducerArity::ZERO),
                 fields: Box::from([]),
             })
             .expect("room");
@@ -766,7 +769,7 @@ mod tests
             .expect("room");
         let malformed = store
             .allocate(HeapValue::Constructed {
-                tag: ConstructorTag::Pair,
+                tag: ConstructorTag::Tuple(ProducerArity::TWO),
                 fields: Box::from([unit, opaque, unit]),
             })
             .expect("room");
@@ -845,7 +848,7 @@ mod tests
         let future = HeapValueId::from(1_u32);
         let parent = store
             .allocate(HeapValue::Constructed {
-                tag: ConstructorTag::Pair,
+                tag: ConstructorTag::Tuple(ProducerArity::TWO),
                 fields: Box::from([future, future]),
             })
             .expect("room");

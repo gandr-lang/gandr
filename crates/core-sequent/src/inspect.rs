@@ -203,6 +203,7 @@ mod tests
     use gandr_core_term::CoreArena;
 
     use super::*;
+    use crate::boundary::ProducerArity;
     use crate::focus::focus_computation;
 
     /// Focusing `return ()` yields one node per family and one command of
@@ -293,7 +294,7 @@ mod tests
         );
         let unit = arena
             .mint_producer(ProducerNode::Constructor {
-                tag: ConstructorTag::Unit,
+                tag: ConstructorTag::Tuple(ProducerArity::ZERO),
                 producers: Box::from([]),
                 consumers: Box::from([]),
             })

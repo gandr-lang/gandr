@@ -26,6 +26,7 @@ use gandr_kernel_term::Side;
 use gandr_kernel_term::Sign;
 use gandr_theory_cell_complexes::Polarity;
 
+use crate::boundary::ProducerArity;
 use crate::il::CommandArena;
 use crate::il::CommandId;
 use crate::il::CommandNode;
@@ -422,7 +423,7 @@ fn command(
         | ProducerNode::Primitive { primitive, .. } => matches!(ret.first(), Some(Piece::Text(Token(name))) if *name == primitive.name().as_ref()),
         | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Literal(_) => matches!(ret.as_slice(), &[Piece::Owned(_)]),
         | ProducerNode::Constructor { ref tag, ref producers, ref consumers } =>
-            if *tag == ConstructorTag::Unit && producers.is_empty() && consumers.is_empty() {
+            if *tag == ConstructorTag::Tuple(ProducerArity::ZERO) && producers.is_empty() && consumers.is_empty() {
                 matches!(ret.as_slice(), &[Piece::Text(Token("()"))])
             } else { matches!(ret.first(), Some(&Piece::Text(Token(name))) if name == constructor_name(tag).0) },
         | ProducerNode::Thunk { body } => matches!(ret.as_slice(), &[Piece::Text(Token("{force(α) ⇒ ")), Piece::Command(found, _), Piece::Text(Token("}"))] if body == found),
@@ -489,15 +490,15 @@ fn producer(
             ref producers,
             ref consumers,
         } => {
-            if *tag == ConstructorTag::Unit && producers.is_empty() && consumers.is_empty() {
+            if *tag == ConstructorTag::Tuple(ProducerArity::ZERO)
+                && producers.is_empty()
+                && consumers.is_empty()
+            {
                 return alloc::vec![text!("()")];
             }
             let mut pieces = applied(constructor_name(tag), producers, consumers, depth);
-            if let ConstructorTag::Data { tag: ordinal, .. } = *tag {
-                pieces.insert(
-                    1,
-                    Piece::Owned(alloc::format!("[{}]", usize::from(ordinal))),
-                );
+            if let Some(position) = qualifier(tag) {
+                pieces.insert(1, position);
             }
             pieces
         },
@@ -702,42 +703,71 @@ fn applied(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: unit, pair, inl, inr, lift or ctor for the corresponding
-///   constructor.
+/// - ensures: unit for the empty tuple, pair for a tuple of two, tuple for any
+///   other; inl and inr for the first two summands, inj past them; nil, cons,
+///   lift or ctor for the corresponding constructor.
 /// - provides: the fixed head spelling, independent of a lift's level; a
-///   datatype constructor's ordinal is written after it by the caller.
+///   datatype constructor's ordinal and a summand past the second are written
+///   after it by the caller.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the finite constructor vocabulary is observed through
 ///   exact application renderings, including a malformed unit application
-///   rather than its nullary abbreviation. This distinguishes swapped labels;
-///   no round-trip or parser compatibility is claimed.
+///   rather than its nullary abbreviation and a tuple and an injection past the
+///   binary ones. This distinguishes swapped labels; no round-trip or parser
+///   compatibility is claimed.
 /// - witness: `pretty::tests::renders_structural_heads`
 /// - witness: `pretty::tests::renders_datatype_heads_nominal_matches_and_recursive_thunks`
 /// - witness: `pretty::tests::depth_limits_and_dangling_nodes_are_distinct`
 /// - witness: `pretty::tests::structural_rendering_preserves_fields_arms_and_separators`
 #[spec(ensures: |ret| match *tag {
-    | ConstructorTag::Unit => matches!(ret.0.as_bytes(), b"unit"),
-    | ConstructorTag::Pair => matches!(ret.0.as_bytes(), b"pair"),
+    | ConstructorTag::Tuple(ProducerArity::ZERO) => matches!(ret.0.as_bytes(), b"unit"),
+    | ConstructorTag::Tuple(ProducerArity::TWO) => matches!(ret.0.as_bytes(), b"pair"),
+    | ConstructorTag::Tuple(_) => matches!(ret.0.as_bytes(), b"tuple"),
     | ConstructorTag::ListNil => matches!(ret.0.as_bytes(), b"nil"),
     | ConstructorTag::ListCons => matches!(ret.0.as_bytes(), b"cons"),
-    | ConstructorTag::Injection(Side::Left) => matches!(ret.0.as_bytes(), b"inl"),
-    | ConstructorTag::Injection(Side::Right) => matches!(ret.0.as_bytes(), b"inr"),
+    | ConstructorTag::Injection(summand) => match usize::from(summand) {
+        | 0 => matches!(ret.0.as_bytes(), b"inl"),
+        | 1 => matches!(ret.0.as_bytes(), b"inr"),
+        | _ => matches!(ret.0.as_bytes(), b"inj"),
+    },
     | ConstructorTag::Lift(_) => matches!(ret.0.as_bytes(), b"lift"),
     | ConstructorTag::Data { .. } => matches!(ret.0.as_bytes(), b"ctor"),
 })]
-const fn constructor_name(tag: &ConstructorTag) -> Token
+fn constructor_name(tag: &ConstructorTag) -> Token
 {
     match *tag {
-        | ConstructorTag::Unit => Token("unit"),
-        | ConstructorTag::Pair => Token("pair"),
+        | ConstructorTag::Tuple(ProducerArity::ZERO) => Token("unit"),
+        | ConstructorTag::Tuple(ProducerArity::TWO) => Token("pair"),
+        | ConstructorTag::Tuple(_) => Token("tuple"),
         | ConstructorTag::ListNil => Token("nil"),
         | ConstructorTag::ListCons => Token("cons"),
-        | ConstructorTag::Injection(Side::Left) => Token("inl"),
-        | ConstructorTag::Injection(Side::Right) => Token("inr"),
+        | ConstructorTag::Injection(summand) => match usize::from(summand) {
+            | 0 => Token("inl"),
+            | 1 => Token("inr"),
+            | _ => Token("inj"),
+        },
         | ConstructorTag::Lift(_) => Token("lift"),
         | ConstructorTag::Data { .. } => Token("ctor"),
+    }
+}
+
+/// The position a head's name is qualified by: a datatype constructor's
+/// ordinal, and a summand past the second.
+///
+/// # Specification
+/// trivial.
+fn qualifier(tag: &ConstructorTag) -> Option<Piece<'static>>
+{
+    match *tag {
+        | ConstructorTag::Data { tag: ordinal, .. } => {
+            Some(Piece::Owned(alloc::format!("[{}]", usize::from(ordinal))))
+        },
+        | ConstructorTag::Injection(summand) if usize::from(summand) > 1 => {
+            Some(Piece::Owned(alloc::format!("[{}]", usize::from(summand))))
+        },
+        | _ => None,
     }
 }
 
@@ -746,26 +776,33 @@ const fn constructor_name(tag: &ConstructorTag) -> Token
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the constructor's pattern spelling with one unnamed x per
-///   producer field, followed by the arm separator; a datatype constructor
-///   writes its ordinal.
+///   producer field, followed by the arm separator; a datatype constructor and
+///   a summand past the second write their position.
 /// - provides: the binder notation in a match.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — every pattern-head kind has an exact rendered arm,
-///   covering zero, one and two binders and a datatype ordinal. These
-///   distinguish exchanged labels and the wrong binder count within the current
-///   vocabulary.
+///   covering zero, one, two and three binders, a datatype ordinal and a third
+///   summand. These distinguish exchanged labels and the wrong binder count
+///   within the current vocabulary.
 /// - witness: `pretty::tests::renders_structural_heads`
 /// - witness: `pretty::tests::renders_datatype_heads_nominal_matches_and_recursive_thunks`
 /// - witness: `pretty::tests::structural_rendering_preserves_fields_arms_and_separators`
 #[spec(ensures: |ref ret| match (tag, ret) {
-    | (&ConstructorTag::Unit, &Piece::Text(Token(text))) => text == "() ⇒ ",
-    | (&ConstructorTag::Pair, &Piece::Text(Token(text))) => text == "pair(x, x) ⇒ ",
+    | (&ConstructorTag::Tuple(ProducerArity::ZERO), &Piece::Text(Token(text))) => text == "() ⇒ ",
+    | (&ConstructorTag::Tuple(ProducerArity::TWO), &Piece::Text(Token(text))) => text == "pair(x, x) ⇒ ",
+    | (&ConstructorTag::Tuple(arity), &Piece::Owned(ref text)) =>
+        text.starts_with("tuple(") && text.matches('x').count() == usize::from(arity),
     | (&ConstructorTag::ListNil, &Piece::Text(Token(text))) => text == "nil ⇒ ",
     | (&ConstructorTag::ListCons, &Piece::Text(Token(text))) => text == "cons(x, x) ⇒ ",
-    | (&ConstructorTag::Injection(Side::Left), &Piece::Text(Token(text))) => text == "inl(x) ⇒ ",
-    | (&ConstructorTag::Injection(Side::Right), &Piece::Text(Token(text))) => text == "inr(x) ⇒ ",
+    | (&ConstructorTag::Injection(summand), &Piece::Text(Token(text))) => match usize::from(summand) {
+        | 0 => text == "inl(x) ⇒ ",
+        | 1 => text == "inr(x) ⇒ ",
+        | _ => false,
+    },
+    | (&ConstructorTag::Injection(summand), &Piece::Owned(ref text)) =>
+        *text == alloc::format!("inj[{}](x) ⇒ ", usize::from(summand)),
     | (&ConstructorTag::Lift(_), &Piece::Text(Token(text))) => text == "lift(x) ⇒ ",
     | (&ConstructorTag::Data { tag: ordinal, arity }, &Piece::Owned(ref text)) =>
         text.starts_with(&alloc::format!("ctor[{}](", usize::from(ordinal)))
@@ -775,12 +812,19 @@ const fn constructor_name(tag: &ConstructorTag) -> Token
 fn pattern(tag: &ConstructorTag) -> Piece<'static>
 {
     match *tag {
-        | ConstructorTag::Unit => text!("() ⇒ "),
-        | ConstructorTag::Pair => text!("pair(x, x) ⇒ "),
+        | ConstructorTag::Tuple(ProducerArity::ZERO) => text!("() ⇒ "),
+        | ConstructorTag::Tuple(ProducerArity::TWO) => text!("pair(x, x) ⇒ "),
+        | ConstructorTag::Tuple(arity) => {
+            let binders = alloc::vec!["x"; usize::from(arity)].join(", ");
+            Piece::Owned(alloc::format!("tuple({binders}) ⇒ "))
+        },
         | ConstructorTag::ListNil => text!("nil ⇒ "),
         | ConstructorTag::ListCons => text!("cons(x, x) ⇒ "),
-        | ConstructorTag::Injection(Side::Left) => text!("inl(x) ⇒ "),
-        | ConstructorTag::Injection(Side::Right) => text!("inr(x) ⇒ "),
+        | ConstructorTag::Injection(summand) => match usize::from(summand) {
+            | 0 => text!("inl(x) ⇒ "),
+            | 1 => text!("inr(x) ⇒ "),
+            | position => Piece::Owned(alloc::format!("inj[{position}](x) ⇒ ")),
+        },
         | ConstructorTag::Lift(_) => text!("lift(x) ⇒ "),
         | ConstructorTag::Data {
             tag: ordinal,
@@ -855,6 +899,7 @@ mod tests
     use gandr_kernel_strata::Level;
     use gandr_kernel_term::IntegerLiteral;
     use gandr_kernel_term::Magnitude;
+    use gandr_kernel_term::Summand;
 
     use super::*;
     use crate::boundary::ProducerArity;
@@ -869,7 +914,7 @@ mod tests
         let mut arena = CommandArena::new();
         let unit = arena
             .mint_producer(ProducerNode::Constructor {
-                tag: ConstructorTag::Unit,
+                tag: ConstructorTag::Tuple(ProducerArity::ZERO),
                 producers: Box::from([]),
                 consumers: Box::from([]),
             })
@@ -941,14 +986,14 @@ mod tests
             .expect("a leaf mints");
         let pair = arena
             .mint_producer(ProducerNode::Constructor {
-                tag: ConstructorTag::Pair,
+                tag: ConstructorTag::Tuple(ProducerArity::TWO),
                 producers: Box::from([integer, string]),
                 consumers: Box::from([]),
             })
             .expect("fields resolve");
         let right = arena
             .mint_producer(ProducerNode::Constructor {
-                tag: ConstructorTag::Injection(Side::Right),
+                tag: ConstructorTag::Injection(Side::Right.into()),
                 producers: Box::from([pair]),
                 consumers: Box::from([]),
             })
@@ -964,6 +1009,26 @@ mod tests
             "lift(inr(pair(-42, \"a\\\"b\")))",
             render_producer(&arena, lifted),
             "the constructors and literals"
+        );
+
+        let triple = arena
+            .mint_producer(ProducerNode::Constructor {
+                tag: ConstructorTag::Tuple(ProducerArity::from(3_usize)),
+                producers: Box::from([integer, string, integer]),
+                consumers: Box::from([]),
+            })
+            .expect("fields resolve");
+        let third = arena
+            .mint_producer(ProducerNode::Constructor {
+                tag: ConstructorTag::Injection(Summand::from(2_usize)),
+                producers: Box::from([triple]),
+                consumers: Box::from([]),
+            })
+            .expect("fields resolve");
+        assert_eq!(
+            "inj[2](tuple(-42, \"a\\\"b\", -42))",
+            render_producer(&arena, third),
+            "a tuple and an injection past the binary ones"
         );
 
         let top = arena
@@ -1002,11 +1067,19 @@ mod tests
             .mint_consumer(ConsumerNode::Case {
                 arms: Box::from([
                     PatternArm {
-                        constructor: ConstructorTag::Injection(Side::Left),
+                        constructor: ConstructorTag::Injection(Side::Left.into()),
                         body: returned,
                     },
                     PatternArm {
-                        constructor: ConstructorTag::Injection(Side::Right),
+                        constructor: ConstructorTag::Injection(Side::Right.into()),
+                        body: returned,
+                    },
+                    PatternArm {
+                        constructor: ConstructorTag::Injection(Summand::from(2_usize)),
+                        body: returned,
+                    },
+                    PatternArm {
+                        constructor: ConstructorTag::Tuple(ProducerArity::from(3_usize)),
                         body: returned,
                     },
                 ]),
@@ -1025,7 +1098,7 @@ mod tests
             .mint_cut(Polarity::Positive, capture, top)
             .expect("children resolve");
         assert_eq!(
-            "⟨{force(α) ⇒ ⟨c3 |+ ★⟩} |+ case {inl(x) ⇒ ⟨c3 |+ ★⟩ | inr(x) ⇒ ⟨c3 |+ ★⟩}⟩",
+            "⟨{force(α) ⇒ ⟨c3 |+ ★⟩} |+ case {inl(x) ⇒ ⟨c3 |+ ★⟩ | inr(x) ⇒ ⟨c3 |+ ★⟩ | inj[2](x) ⇒ ⟨c3 |+ ★⟩ | tuple(x, x, x) ⇒ ⟨c3 |+ ★⟩}⟩",
             render_command(&arena, matched),
             "the thunk and the match"
         );
@@ -1150,7 +1223,7 @@ mod tests
         let mut arena = CommandArena::new();
         let unit = arena
             .mint_producer(ProducerNode::Constructor {
-                tag: ConstructorTag::Unit,
+                tag: ConstructorTag::Tuple(ProducerArity::ZERO),
                 producers: Box::from([]),
                 consumers: Box::from([]),
             })
@@ -1185,7 +1258,7 @@ mod tests
         for depth in 1_usize ..= limit.saturating_add(1) {
             nested = arena
                 .mint_producer(ProducerNode::Constructor {
-                    tag: ConstructorTag::Injection(Side::Left),
+                    tag: ConstructorTag::Injection(Side::Left.into()),
                     producers: Box::from([nested]),
                     consumers: Box::from([]),
                 })
@@ -1201,14 +1274,14 @@ mod tests
         let mut broken = CommandArena::new();
         let leaf = broken
             .mint_producer(ProducerNode::Constructor {
-                tag: ConstructorTag::Unit,
+                tag: ConstructorTag::Tuple(ProducerArity::ZERO),
                 producers: Box::from([]),
                 consumers: Box::from([]),
             })
             .expect("leaf");
         let pair = broken
             .mint_producer(ProducerNode::Constructor {
-                tag: ConstructorTag::Pair,
+                tag: ConstructorTag::Tuple(ProducerArity::TWO),
                 producers: Box::from([leaf, leaf]),
                 consumers: Box::from([]),
             })
@@ -1220,7 +1293,7 @@ mod tests
         let mut prefix = CommandArena::new();
         let one = prefix
             .mint_producer(ProducerNode::Constructor {
-                tag: ConstructorTag::Unit,
+                tag: ConstructorTag::Tuple(ProducerArity::ZERO),
                 producers: Box::from([]),
                 consumers: Box::from([]),
             })
@@ -1241,7 +1314,7 @@ mod tests
         let mut arena = CommandArena::new();
         let unit = arena
             .mint_producer(ProducerNode::Constructor {
-                tag: ConstructorTag::Unit,
+                tag: ConstructorTag::Tuple(ProducerArity::ZERO),
                 producers: Box::from([]),
                 consumers: Box::from([]),
             })
@@ -1276,7 +1349,7 @@ mod tests
         ] {
             let producer = arena
                 .mint_producer(ProducerNode::Constructor {
-                    tag: ConstructorTag::Pair,
+                    tag: ConstructorTag::Tuple(ProducerArity::TWO),
                     producers: Box::from(producers),
                     consumers: Box::from(consumers),
                 })
@@ -1285,7 +1358,7 @@ mod tests
         }
         let applied_unit = arena
             .mint_producer(ProducerNode::Constructor {
-                tag: ConstructorTag::Unit,
+                tag: ConstructorTag::Tuple(ProducerArity::ZERO),
                 producers: Box::from([unit]),
                 consumers: Box::from([]),
             })
@@ -1295,8 +1368,14 @@ mod tests
             .mint_cut(Polarity::Positive, unit, top)
             .expect("children resolve");
         for (constructor, expected) in [
-            (ConstructorTag::Unit, "case {() ⇒ ⟨() |+ ★⟩}"),
-            (ConstructorTag::Pair, "case {pair(x, x) ⇒ ⟨() |+ ★⟩}"),
+            (
+                ConstructorTag::Tuple(ProducerArity::ZERO),
+                "case {() ⇒ ⟨() |+ ★⟩}",
+            ),
+            (
+                ConstructorTag::Tuple(ProducerArity::TWO),
+                "case {pair(x, x) ⇒ ⟨() |+ ★⟩}",
+            ),
             (
                 ConstructorTag::Lift(Level::zero()),
                 "case {lift(x) ⇒ ⟨() |+ ★⟩}",

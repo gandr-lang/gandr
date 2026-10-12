@@ -41,6 +41,7 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::Side;
+use gandr_kernel_term::Summand;
 use proptest::prelude::*;
 
 use crate::compare::Agreement;
@@ -59,7 +60,7 @@ enum Stop
     AppliedNonFunction,
     /// A force met a value that is not a thunk.
     ForcedNonThunk,
-    /// A case met a value that is not an injection.
+    /// A case met a value that is not an injection it has an arm for.
     CasedNonInjection,
     /// A nominal match met a value that is not a constructor it has a branch
     /// for.
@@ -337,8 +338,10 @@ fn normalised(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the common semantic stop for each wrong-head elimination and
-///   unbound variable, without conflating the five classes; a non-constructor
-///   and a constructor without a branch are the one nominal stop.
+///   unbound variable, without conflating the five classes; a non-injection and
+///   an injection without an arm are the one structural stop, as a
+///   non-constructor and a constructor without a branch are the one nominal
+///   stop.
 /// - provides: the normalizer side of the shared refusal vocabulary.
 /// - panics: for fuel, dangling-term, domain or machine-invariant faults, or a
 ///   non-returning bind outside the supported fixtures.
@@ -354,7 +357,7 @@ fn normalised(
 #[spec(ensures: |ret| match fault {
     | EvalFault::AppliedNonFunction => ret == Stop::AppliedNonFunction,
     | EvalFault::ForcedNonThunk => ret == Stop::ForcedNonThunk,
-    | EvalFault::CasedNonInjection => ret == Stop::CasedNonInjection,
+    | EvalFault::CasedNonInjection | EvalFault::UnknownSummand { .. } => ret == Stop::CasedNonInjection,
     | EvalFault::CasedNonConstructor | EvalFault::UnknownConstructor { .. } => ret == Stop::UnmatchedConstructor,
     | EvalFault::UnboundVariable { .. } => ret == Stop::UnboundVariable,
     | _ => false,
@@ -364,10 +367,12 @@ fn normaliser_stop(fault: EvalFault) -> Stop
     match fault {
         | EvalFault::AppliedNonFunction => Stop::AppliedNonFunction,
         | EvalFault::ForcedNonThunk => Stop::ForcedNonThunk,
-        | EvalFault::CasedNonInjection => Stop::CasedNonInjection,
-        | EvalFault::CasedNonConstructor
-        | EvalFault::UnknownConstructor { .. }
-        | EvalFault::UnknownSummand { .. } => Stop::UnmatchedConstructor,
+        | EvalFault::CasedNonInjection | EvalFault::UnknownSummand { .. } => {
+            Stop::CasedNonInjection
+        },
+        | EvalFault::CasedNonConstructor | EvalFault::UnknownConstructor { .. } => {
+            Stop::UnmatchedConstructor
+        },
         | EvalFault::UnboundVariable { .. } => Stop::UnboundVariable,
         | EvalFault::TransportedNonPath
         | EvalFault::ProjectedNonRecord
@@ -636,8 +641,9 @@ fn thunks_compare_structurally_through_readback()
 }
 
 /// The pure spine: returns of first-order data, bind, force, a thunk forced
-/// twice, β and a curried application, case on both injections, and three
-/// ill-typed redexes that stop both evaluators at the same elimination.
+/// twice, β and a curried application, case on both injections and on a
+/// third, and four ill-typed redexes that stop both evaluators at the same
+/// elimination.
 #[test]
 fn hand_built_pure_spine_cases_agree()
 {
@@ -715,6 +721,32 @@ fn hand_built_pure_spine_cases_agree()
             let on_right = returning(core, |core| variable(core, Index(0)));
             core.computation_case(scrutinee, &[on_left, on_right])
         }),
+        case(
+            Label("case on a third summand of a triple"),
+            Expected::Exactly,
+            |core| {
+                let one = integer(core, Integer(1_i32));
+                let two = integer(core, Integer(2_i32));
+                let three = integer(core, Integer(3_i32));
+                let triple = core.value_tuple(&[one, two, three]);
+                let scrutinee = core.value_injection(Summand::from(2_usize), triple);
+                let on_first = returning(core, |core| integer(core, Integer(0_i32)));
+                let on_second = returning(core, |core| integer(core, Integer(0_i32)));
+                let on_third = returning(core, |core| variable(core, Index(0)));
+                core.computation_case(scrutinee, &[on_first, on_second, on_third])
+            },
+        ),
+        case(
+            Label("a summand past the arms"),
+            Expected::Stops(Stop::CasedNonInjection),
+            |core| {
+                let unit = core.value_unit();
+                let scrutinee = core.value_injection(Summand::from(2_usize), unit);
+                let on_left = returning(core, CoreArena::value_unit);
+                let on_right = returning(core, CoreArena::value_unit);
+                core.computation_case(scrutinee, &[on_left, on_right])
+            },
+        ),
         case(
             Label("a returner applied"),
             Expected::Stops(Stop::AppliedNonFunction),

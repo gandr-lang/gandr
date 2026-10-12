@@ -85,7 +85,7 @@ use gandr_theory_cell_complexes::Polarity;
 
 let mut arena = CommandArena::new();
 let unit = arena.mint_producer(ProducerNode::Constructor {
-    tag: ConstructorTag::Unit,
+    tag: ConstructorTag::Tuple(ProducerArity::ZERO),
     producers: Box::from([]),
     consumers: Box::from([]),
 })?;
@@ -150,7 +150,7 @@ The alternatives were unchecked minting, which admits a forward reference and wi
 Focusing translates a computation `M` under a continuation `c` into a command, `𝓕⟦M⟧c`, and a value `v` into a producer, `𝓥⟦v⟧`:
 
 ```text
-𝓥⟦x⟧ = x        𝓥⟦thunk M⟧ = {force(α) ⇒ 𝓕⟦M⟧α}        𝓥⟦()⟧, 𝓥⟦(v, w)⟧, 𝓥⟦inj v⟧, 𝓥⟦lift v⟧ = the constructor
+𝓥⟦x⟧ = x        𝓥⟦thunk M⟧ = {force(α) ⇒ 𝓕⟦M⟧α}        𝓥⟦(v̄)⟧, 𝓥⟦inj_i v⟧, 𝓥⟦lift v⟧ = the constructor
 𝓥⟦c_i(v̄)⟧ = ctor[i](𝓥⟦v̄⟧)
 
 𝓕⟦return v⟧c        = ⟨𝓥⟦v⟧ |+ c⟩
@@ -159,7 +159,7 @@ Focusing translates a computation `M` under a continuation `c` into a command, `
 𝓕⟦λ. M⟧c            = ⟨cocase {apply(x; α) ⇒ 𝓕⟦M⟧α} |− c⟩
 𝓕⟦x ← M; N⟧c        = 𝓕⟦M⟧(μ̃x. 𝓕⟦N⟧c)                         c a tail
                     = ⟨μα. 𝓕⟦M⟧(μ̃x. 𝓕⟦N⟧α) |ε c⟩                otherwise
-𝓕⟦case v {l, r}⟧c   = ⟨𝓥⟦v⟧ |+ case {inl(x) ⇒ 𝓕⟦l⟧c | inr(x) ⇒ 𝓕⟦r⟧c}⟩   c a tail
+𝓕⟦case v {b̄}⟧c     = ⟨𝓥⟦v⟧ |+ case {inj_i(x) ⇒ 𝓕⟦b_i⟧c, …}⟩       c a tail
                     = ⟨μα. ⟨𝓥⟦v⟧ |+ case {… 𝓕⟦·⟧α …}⟩ |ε c⟩        otherwise
 𝓕⟦case_D v {b̄}⟧c   = ⟨𝓥⟦v⟧ |+ datacase({force(α) ⇒ 𝓕⟦b_i⟧α}, …; c)⟩
 𝓕⟦fix x. M⟧c        = ⟨fix{x; force(α) ⇒ 𝓕⟦M⟧α} |+ force(c)⟩
@@ -168,6 +168,8 @@ Focusing translates a computation `M` under a continuation `c` into a command, `
 A tail is a covariable or `★`. A bind and a case open a producer binder, and a continuation that is not a tail — a frame, a `μ̃` — carries producers whose indices would have to shift under it; so such a continuation is named once with a `μ`, at the polarity of what it observes, and the binder sees only the tail `α0`. A nominal match opens no binder of its own: each branch is a thunk of the function over the fields the core writes, and the match's continuation `c` is carried once, beside the branches, so it is neither shifted nor named. Every continuation that crosses a binder is then a tail, nothing is shifted or copied, every focused covariable is index `0`, and two focusings of one term build identical arenas. A core value is never a `μ`, so every frame argument and constructor field of an image is a value. `Provenance` records, for each command focusing creates, the core former it was created for. A refused translation truncates the arena and the provenance table to the marks it took on entry.
 
 Passing a continuation unchanged under a binder is sound for named covariables but not for indexed producer operands. Shifting its producers under every binder would copy a frame subtree at each crossing. Naming it once instead costs one extra cut and one bound mark for a non-tail bind or case. Revisit if measurement shows that cut costs more than a shift memoized per frame.
+
+Tuples, injections and sum cases are n-ary, as in the core: a tuple is one `Tuple(n)` head with `n` fields, so the empty tuple is the unit; an injection is `Injection(i)` for the summand `i`; and a case carries one arm per summand, in summand order, so a case of no arms is the empty sum's eliminator. The alternative was a binary IL with nested pairs and injections, which focusing could reach by re-associating the core's n-ary formers, at the cost of a readback that cannot tell `(a, (b, c))` from `(a, b, c)`. The pretty printer spells the binary heads as before — `unit`, `pair`, `inl`, `inr` — and the others `tuple` and `inj[i]`. Revisit if a consumer of the IL needs a fixed set of heads.
 
 ## A code has no producer
 
