@@ -39,4 +39,6 @@ mod pattern_holes;
 #[cfg(test)]
 mod session;
 #[cfg(test)]
+mod trial;
+#[cfg(test)]
 mod written;

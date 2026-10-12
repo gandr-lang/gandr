@@ -44,10 +44,16 @@
 
 use alloc::collections::BTreeMap;
 use core::fmt;
+use core::num::NonZeroUsize;
+use core::sync::atomic::AtomicUsize;
+use core::sync::atomic::Ordering;
 use std::path::Path;
+use std::sync::OnceLock;
+use std::thread;
 
 use anodized::spec;
 use gandr_core_checker::CheckBudget;
+use gandr_core_checker::ObligationCount;
 use gandr_core_checker::Verdict;
 use gandr_core_checker::bridge::Readmitted;
 use gandr_core_incremental::BackendArtifact;
@@ -66,6 +72,7 @@ use gandr_core_incremental::address_of;
 use gandr_core_incremental::restore;
 use gandr_core_incremental::restored;
 use gandr_core_incremental::submitted;
+use gandr_core_term::FailureClass;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DecodedArtifact;
 use gandr_kernel_term::EncodedArtifact;
@@ -92,6 +99,7 @@ use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::judge;
 use gandr_surface_dispatcher::lower_parsed;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_lowering::DeclarationCount;
 use gandr_surface_lowering::DocumentationText;
 use gandr_surface_lowering::ImportIndex;
 use gandr_surface_lowering::ImportUri;
@@ -121,6 +129,9 @@ quenchant_shape::reason_enum! {
             /// The lowering refused the revision as a whole, so it offered no
             /// items to resume over.
             RefusedWhole,
+            /// The revision was tried, not submitted: the incremental checker
+            /// did not resume over it and the session kept nothing of it.
+            Tried,
         }
     }
 }
@@ -911,6 +922,99 @@ pub fn evaluate<'text>(
     }
 }
 
+/// A candidate's position among the candidates a trial was given.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CandidateIndex(usize);
+
+impl From<usize> for CandidateIndex
+{
+    /// The candidate at `index`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(index: usize) -> Self
+    {
+        Self(index)
+    }
+}
+
+impl From<CandidateIndex> for usize
+{
+    /// The position `index` names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(index: CandidateIndex) -> Self
+    {
+        index.0
+    }
+}
+
+/// One candidate revision as a trial judged it, beside its position among the
+/// candidates.
+///
+/// # Specification
+/// - requires: constructed by [`Session::trial`].
+/// - ensures: the outcome is what [`Session::judge`] gives the candidate's text
+///   in a session that has accepted nothing, except that it carries no resume
+///   and no edits ([`resumed::Absent::Tried`]).
+/// - panics: none.
+/// - executable: none — this data type has no call boundary; the trial carries
+///   the executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — candidates that settle, owe a goal, refuse a declaration
+///   and are refused whole are each reported as a fresh session judges them.
+/// - witness: `tests::trial::each_candidate_is_judged_as_a_fresh_session_judges_it`
+#[derive(Clone, Debug)]
+pub struct Trial<'text>
+{
+    /// The candidate's position among those the trial was given.
+    candidate: CandidateIndex,
+    /// What the candidate became.
+    outcome: Result<Submission<'text>, SessionFault<'text>>,
+}
+
+impl<'text> Trial<'text>
+{
+    /// The candidate's position among those the trial was given.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn candidate(&self) -> CandidateIndex
+    {
+        self.candidate
+    }
+
+    /// What the candidate became.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn outcome(&self) -> &Result<Submission<'text>, SessionFault<'text>>
+    {
+        &self.outcome
+    }
+
+    /// What the candidate became, owned.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// The engine fault that stopped the candidate.
+    #[inline]
+    pub fn into_outcome(self) -> Result<Submission<'text>, SessionFault<'text>>
+    {
+        self.outcome
+    }
+}
+
 /// Why a session could not take a revision, or could not reopen over one: an
 /// engine fault, never a verdict about the revision.
 ///
@@ -1626,6 +1730,115 @@ impl<Store, Blocks> Session<Store, Blocks>
         })
     }
 
+    /// Judge each of `candidates` — whole texts of the session's source, each
+    /// a revision the caller might submit — without submitting any, and rank
+    /// what they became.
+    ///
+    /// # Specification
+    /// - requires: each candidate is the whole text of the session's source.
+    /// - ensures: one trial per candidate. Each candidate is parsed through the
+    ///   form store without changing it ([`FormStore::parse_held`]), lowered,
+    ///   and judged and settled by the dispatcher's [`judge`], so its
+    ///   composition, standing and completion obligations are those
+    ///   [`judge`](Self::judge) gives the same text in a session that has
+    ///   accepted nothing; it carries no resume and no edits
+    ///   ([`resumed::Absent::Tried`]) and no kernel checkpoint
+    ///   ([`admitted::Absent::Pending`], or [`admitted::Absent::RefusedWhole`]
+    ///   for a revision refused as a whole). The trials are ranked: a
+    ///   composition the lowering read before one it refused whole, and both
+    ///   before a fault; then fewer refused declarations, so a wrong fill ranks
+    ///   below one that leaves a goal; then fewer unsettled declarations, fewer
+    ///   owed obligations and fewer parse repairs; then the candidates' own
+    ///   order. The session is unchanged: its form store, resume, snapshot,
+    ///   imports, documentation, lowering count and admission are as they were.
+    /// - provides: the batch a solving loop checks its drafts in — a model's
+    ///   fills for a hole, a body's rewrites — with the latest accepted state
+    ///   left for the edit that wins.
+    /// - fails: never as a whole; a candidate's engine fault is its own trial's
+    ///   [`SessionFault::Compose`]. The admission-order fault only the
+    ///   incremental checker's item source raises is not reached, since a trial
+    ///   offers it nothing.
+    /// - panics: only by propagating a judging thread's panic.
+    /// - economy: the candidates are judged on as many threads as the session's
+    ///   width answers, never more than the candidates, the calling thread
+    ///   among them, each thread taking the next candidate no thread has taken;
+    ///   a lone candidate molds on the session's threads instead. Each
+    ///   candidate reuses every form the store holds; nothing is copied out of
+    ///   the session.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — candidates that settle, owe a goal, refuse a
+    ///   declaration, are refused whole and repeat one another are each judged
+    ///   as a fresh session judges them and ranked in that order, at one thread
+    ///   and at several; the session's next submission resumes, molds and diffs
+    ///   as if no trial had run.
+    /// - witness: `tests::trial::each_candidate_is_judged_as_a_fresh_session_judges_it`
+    /// - witness: `tests::trial::a_trial_leaves_the_session_as_it_was`
+    #[spec(
+        captures: before = (usize::from(self.lowerings), self.snapshot.clone()),
+        ensures: |ret| ret.len() == candidates.len()
+            && usize::from(self.lowerings) == before.0
+            && self.snapshot == before.1
+            && ret.iter().all(|trial| trial.outcome.as_ref().is_err()
+                || trial.outcome.as_ref().is_ok_and(|submission|
+                    candidates.get(usize::from(trial.candidate)) == Some(&submission.text)
+                    && matches!(submission.resumed, Maybe::Absent(resumed::Absent::Tried))))
+            && ret.windows(2).all(|pair| match *pair {
+                [ref earlier, ref later] => trial_rank(earlier) <= trial_rank(later),
+                _ => false,
+            }),
+    )]
+    #[inline]
+    #[must_use]
+    pub fn trial<'text>(
+        &self,
+        candidates: &[SourceText<'text>],
+    ) -> Vec<Trial<'text>>
+    {
+        let (grammar, forms, root) = (&self.grammar, &self.forms, self.root);
+        let threads = usize::from(NonZeroUsize::from(self.threads)).min(candidates.len());
+        let molding = if candidates.len() == 1 {
+            self.threads
+        }
+        else {
+            Threads::ONE
+        };
+        let slots: Vec<OnceLock<Result<Submission<'text>, SessionFault<'text>>>> =
+            candidates.iter().map(|_| OnceLock::new()).collect();
+        let next = AtomicUsize::new(0);
+        let work = || {
+            loop {
+                let index = next.fetch_add(1, Ordering::Relaxed);
+                let (Some(&candidate), Some(slot)) = (candidates.get(index), slots.get(index))
+                else {
+                    break;
+                };
+                let _first = slot.set(try_candidate(grammar, forms, root, candidate, molding));
+            }
+        };
+        thread::scope(|scope| {
+            for _ in 1 .. threads {
+                if thread::Builder::new().spawn_scoped(scope, work).is_err() {
+                    break;
+                }
+            }
+            work();
+        });
+        let mut trials: Vec<Trial<'text>> = slots
+            .into_iter()
+            .zip(candidates)
+            .enumerate()
+            .map(|(index, (slot, &candidate))| Trial {
+                candidate: CandidateIndex(index),
+                outcome: slot
+                    .into_inner()
+                    .unwrap_or_else(|| try_candidate(grammar, forms, root, candidate, molding)),
+            })
+            .collect();
+        trials.sort_by_cached_key(trial_rank);
+        trials
+    }
+
     /// Run the admission the latest judgement left: offer its accepted
     /// declarations to the kernel, export what crossed and commit the export
     /// into the block store.
@@ -1940,6 +2153,163 @@ where
         | Err(refusal) => KernelCheckpoint::Failed(refusal),
     }
 }
+
+/// One candidate of a trial, judged against the session's grammar, form store
+/// and root and kept nowhere.
+///
+/// # Specification
+/// - requires: `forms` is the session's form store and `root` its root.
+/// - ensures: `candidate` is parsed through `forms` without changing it, on
+///   `threads` threads, lowered under a count of its own, and judged and
+///   settled by the dispatcher's [`judge`]; the submission carries the
+///   composition, standing and completion obligations [`Session::judge`] gives
+///   the text in a session that has accepted nothing, no resume and no edits
+///   ([`resumed::Absent::Tried`]), and no kernel checkpoint.
+/// - fails: [`SessionFault::Compose`] when the parse or the lowering faults or
+///   the settle comparison refuses the verdicts, the kernel disagreement taking
+///   the settle fault's place as in [`Session::judge`].
+/// - panics: only by propagating a molding thread's panic.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the trial's witnesses judge each candidate against a
+///   fresh session's judgement of it.
+/// - witness: `tests::trial::each_candidate_is_judged_as_a_fresh_session_judges_it`
+#[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|submission|
+    submission.root == root && submission.text == candidate
+        && submission.standing == Standing::of(root, &submission.composed)
+        && matches!(submission.resumed, Maybe::Absent(resumed::Absent::Tried))
+        && matches!(submission.edits, Maybe::Absent(resumed::Absent::Tried))
+        && matches!(submission.kernel, Maybe::Absent(_))))]
+fn try_candidate<'text>(
+    grammar: &Pbg,
+    forms: &FormStore,
+    root: SourceRoot,
+    candidate: SourceText<'text>,
+    threads: Threads,
+) -> Result<Submission<'text>, SessionFault<'text>>
+{
+    let (parsed, census) = forms
+        .parse_held(grammar, candidate, threads)
+        .map_err(|fault| SessionFault::Compose(ComposeFault::Parse(fault)))?;
+    let lowering = lower_parsed(grammar, parsed, &mut LoweringCount::default())
+        .map_err(SessionFault::Compose)?;
+    let mut obligations = lowering.obligations().to_vec();
+    obligations.sort_by_key(|obligation| obligation.span);
+    let (composed, kernel) = match lowering.into_lowered() {
+        | Lowered::Refused(refusal) => (
+            Composed::Refused(refusal),
+            Maybe::Absent(admitted::Absent::RefusedWhole),
+        ),
+        | Lowered::Module { module, arena } => {
+            let (settled, admission) = judge(root.corpus_root(), module, arena).into_parts();
+            let composed = settled.map_err(|fault| {
+                SessionFault::Compose(match admission.admit() {
+                    | Ok(_) => ComposeFault::Settle(fault),
+                    | Err(disagreement) => ComposeFault::Readmission(disagreement),
+                })
+            })?;
+            (composed, Maybe::Absent(admitted::Absent::Pending))
+        },
+    };
+    Ok(Submission {
+        root,
+        text: candidate,
+        standing: Standing::of(root, &composed),
+        composed,
+        resumed: Maybe::Absent(resumed::Absent::Tried),
+        edits: Maybe::Absent(resumed::Absent::Tried),
+        kernel,
+        obligations,
+        forms: census,
+    })
+}
+
+/// Where a trial ranks among a trial's candidates: lower is better.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct TrialRank
+{
+    /// Whether the candidate was judged, refused whole or faulted.
+    reached: Reached,
+    /// The declarations refused.
+    refused: DeclarationCount,
+    /// The declarations left unsettled.
+    unsettled: DeclarationCount,
+    /// The obligations the verdicts owe.
+    owed: ObligationCount,
+    /// The parse's repairs.
+    repairs: ObligationCount,
+    /// The candidate's own position.
+    candidate: CandidateIndex,
+}
+
+/// How far a candidate got, best first.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum Reached
+{
+    /// The lowering read it and its declarations were judged.
+    Judged,
+    /// The lowering refused it as a whole.
+    RefusedWhole,
+    /// An engine fault stopped it.
+    Faulted,
+}
+
+/// Where `trial` ranks.
+///
+/// # Specification
+/// trivial.
+fn trial_rank(trial: &Trial<'_>) -> TrialRank
+{
+    let (reached, refused, unsettled, owed, repairs) = match trial.outcome {
+        | Err(_) => (
+            Reached::Faulted,
+            0_usize,
+            DeclarationCount::default(),
+            ObligationCount::default(),
+            0_usize,
+        ),
+        | Ok(ref submission) => match submission.composed {
+            | Composed::Refused(_) => (
+                Reached::RefusedWhole,
+                0_usize,
+                DeclarationCount::default(),
+                ObligationCount::default(),
+                submission.obligations.len(),
+            ),
+            | Composed::Settled { ref report, .. } => {
+                let tally = report.tally();
+                (
+                    Reached::Judged,
+                    FAILURE_CLASSES.into_iter().fold(0_usize, |sum, class| {
+                        sum.saturating_add(usize::from(tally.refusals().count(class)))
+                    }),
+                    tally.declarations().unsettled(),
+                    tally.ledger(),
+                    submission.obligations.len(),
+                )
+            },
+        },
+    };
+    TrialRank {
+        reached,
+        refused: DeclarationCount::from(refused),
+        unsettled,
+        owed,
+        repairs: ObligationCount::from(repairs),
+        candidate: trial.candidate,
+    }
+}
+
+/// Every failure class a refused declaration is counted under.
+const FAILURE_CLASSES: [FailureClass; 4] = [
+    FailureClass::UserAbsence,
+    FailureClass::Unrepresentable,
+    FailureClass::MalformedSource,
+    FailureClass::EngineFault,
+];
 
 /// The reason a restore's absence gives a reopened session.
 ///
