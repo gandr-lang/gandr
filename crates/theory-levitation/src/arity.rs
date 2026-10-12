@@ -141,15 +141,55 @@ impl BridgeArity
     where
         In: Into<Box<[SortRef]>>,
     {
+        Self::tupled(inputs, [output])
+    }
+
+    /// A many-output arity whose every output port is fed by one monomial,
+    /// the product of every input port: the product layer alone, an
+    /// operation `f(a, b, …) --> (q, r, …)` returning a named result tuple
+    /// with no aggregation.
+    ///
+    /// # Specification
+    /// - ensures: `|I| = |B|`, every `factors[i] = |A|`, `source` is `0, 1, …`
+    ///   repeated once per monomial, `dest = [0, 1, …]`; the arity composes for
+    ///   any ports, and each output port is fed by exactly one monomial.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero, one and two outputs over two inputs pin the
+    ///   repeated source run, the identity destination and the per-output
+    ///   factor count; a shared monomial, a dropped repetition or a shifted
+    ///   destination changes the maps.
+    /// - witness: `arity::tests::a_tupled_arity_feeds_each_output_one_monomial`
+    /// - witness: `arity::tests::single_output_builds_a_composing_arity`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ref arity| {
+        let factors = u32::try_from(arity.inputs.len()).unwrap_or(u32::MAX);
+        arity.factors.len() == arity.outputs.len()
+            && arity.factors.iter().all(|&count| count == factors)
+            && arity.source.chunks(arity.inputs.len().max(1)).all(|run| run.iter().copied().eq(0 .. factors))
+            && arity.dest.iter().copied().eq(0 .. u32::try_from(arity.outputs.len()).unwrap_or(u32::MAX))
+    })]
+    pub fn tupled<In, Ou>(
+        inputs: In,
+        outputs: Ou,
+    ) -> Self
+    where
+        In: Into<Box<[SortRef]>>,
+        Ou: Into<Box<[SortRef]>>,
+    {
         let inputs = inputs.into();
+        let outputs = outputs.into();
         let factor_count = u32::try_from(inputs.len()).unwrap_or(u32::MAX);
-        let source: Box<[u32]> = (0 .. factor_count).collect();
+        let monomials = u32::try_from(outputs.len()).unwrap_or(u32::MAX);
+        let source: Box<[u32]> = (0 .. monomials).flat_map(|_| 0 .. factor_count).collect();
         Self {
             inputs,
-            factors: Box::from([factor_count]),
+            factors: alloc::vec![factor_count; outputs.len()].into_boxed_slice(),
             source,
-            dest: Box::from([0_u32]),
-            outputs: Box::from([output]),
+            dest: (0 .. monomials).collect(),
+            outputs,
         }
     }
 
@@ -187,6 +227,25 @@ mod tests
             assert_eq!(arity.dest.as_ref(), [0_u32]);
             assert_eq!(arity.inputs.as_ref(), inputs);
             assert_eq!(arity.outputs.as_ref(), [output]);
+        }
+    }
+
+    #[test]
+    fn a_tupled_arity_feeds_each_output_one_monomial()
+    {
+        let inputs = [SortRef::new("m", "Nat"), SortRef::new("n", "Nat")];
+        let outputs = [SortRef::new("q", "Nat"), SortRef::new("r", "Nat")];
+        for (count, factors, source, dest) in [
+            (0_usize, &[][..], &[][..], &[][..]),
+            (1, &[2_u32][..], &[0_u32, 1][..], &[0_u32][..]),
+            (2, &[2_u32, 2][..], &[0_u32, 1, 0, 1][..], &[0_u32, 1][..]),
+        ] {
+            let arity = BridgeArity::tupled(inputs.clone(), &outputs[.. count]);
+            assert_eq!(MonomialCount::from(count), arity.monomials());
+            assert_eq!(arity.factors.as_ref(), factors);
+            assert_eq!(arity.source.as_ref(), source);
+            assert_eq!(arity.dest.as_ref(), dest);
+            assert_eq!(arity.outputs.as_ref(), &outputs[.. count]);
         }
     }
 }

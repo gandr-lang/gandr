@@ -6,6 +6,7 @@ use gandr_surface_syntax::SourceText;
 use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellCount;
 use gandr_theory_cell_complexes::CellProvenance;
+use gandr_theory_cell_complexes::ContinuationCount;
 use gandr_theory_levitation::CircuitElaborationError;
 use quenchant_shape::shape::Maybe;
 
@@ -84,9 +85,9 @@ fn a_declared_single_output_operation_lets_its_rule_become_a_cell()
 }
 
 #[test]
-fn a_many_out_operation_is_a_well_formed_description_and_an_unrepresentable_cell()
+fn a_many_out_operation_rule_becomes_a_cell_with_a_continuation_per_output()
 {
-    let source = "data NatDiv : Type { Zero : NatDiv; oper divmod(m : NatDiv, n : NatDiv) -> (q : NatDiv, r : NatDiv); }";
+    let source = "data NatDiv : Type { Zero : NatDiv; oper divmod(m : NatDiv, n : NatDiv) -> (q : NatDiv, r : NatDiv); rule divmod(m, Zero) ==> (Zero, m); }";
     let descriptions = descriptions(source);
     assert_eq!(descriptions.diagnostics, []);
     assert_eq!(
@@ -97,39 +98,36 @@ fn a_many_out_operation_is_a_well_formed_description_and_an_unrepresentable_cell
         2
     );
     let cells = elaborate_desc_cells(&descriptions.declarations);
-    let [ref diagnostic] = *cells.diagnostics.as_slice()
+    assert_eq!(cells.diagnostics, []);
+    let store = &cells.declarations[0].store;
+    assert_eq!(store.len(), CellCount::from(2_usize));
+    let rule = cell(store, CellId::from(1_usize));
+    assert_eq!(rule.provenance(), CellProvenance::SurfaceRule);
+    let gandr_theory_cell_complexes::ConsView::Op { op, rets, .. } = rule.lhs().consumer().view()
     else {
-        panic!("one declined operation")
+        panic!("the rule cuts against the operation frame")
     };
-    assert_eq!(
-        diagnostic.fault,
-        CellFault::Operation(OpElaborateError::ManyOutput)
-    );
-    assert_eq!(
-        source.get(usize::from(diagnostic.span.start()) .. usize::from(diagnostic.span.end())),
-        Some("oper divmod(m : NatDiv, n : NatDiv) -> (q : NatDiv, r : NatDiv)")
-    );
-    assert_eq!(cells.declarations[0].store.len(), CellCount::from(1_usize));
+    assert_eq!(op.as_ref(), "divmod");
+    assert_eq!(rets.len(), 2, "one return continuation per output port");
 }
 
 #[test]
-fn a_rule_over_a_many_out_operation_is_declined_rather_than_narrowed()
+fn a_rule_returning_fewer_results_than_outputs_is_refused_rather_than_narrowed()
 {
     let source = "data NatDiv2 : Type { Zero : NatDiv2; oper divmod(m : NatDiv2, n : NatDiv2) -> (q : NatDiv2, r : NatDiv2); rule divmod(Zero, n) ==> Zero; }";
     let descriptions = descriptions(source);
     assert_eq!(descriptions.diagnostics, []);
     let cells = elaborate_desc_cells(&descriptions.declarations);
-    let [ref operation, ref rule] = *cells.diagnostics.as_slice()
+    let [ref rule] = *cells.diagnostics.as_slice()
     else {
-        panic!("operation and dependent rule both decline")
+        panic!("the rule alone declines: {:?}", cells.diagnostics)
     };
     assert_eq!(
-        operation.fault,
-        CellFault::Operation(OpElaborateError::ManyOutput)
-    );
-    assert_eq!(
         rule.fault,
-        CellFault::Rule(ElaborateError::UnrepresentableOperation)
+        CellFault::Rule(ElaborateError::ResultArity {
+            outputs: ContinuationCount::from(2_usize),
+            results: ContinuationCount::ONE,
+        })
     );
     assert_eq!(
         source.get(usize::from(rule.span.start()) .. usize::from(rule.span.end())),
@@ -276,42 +274,32 @@ fn ordinary_lowering_executes_the_cell_gate_and_preserves_later_values()
         Recognition::default(),
     )
     .unwrap();
-    let [ref operation, ref rule] = *module.cells().diagnostics.as_slice()
+    let [ref rule] = *module.cells().diagnostics.as_slice()
     else {
-        panic!("both cell refusals reached ordinary lowering")
+        panic!("the cell refusal reached ordinary lowering")
     };
     assert_eq!(
-        operation.fault,
-        CellFault::Operation(OpElaborateError::ManyOutput)
-    );
-    assert_eq!(
         rule.fault,
-        CellFault::Rule(ElaborateError::UnrepresentableOperation)
+        CellFault::Rule(ElaborateError::ResultArity {
+            outputs: ContinuationCount::from(2_usize),
+            results: ContinuationCount::ONE,
+        })
     );
     assert_eq!(
         module.cells().declarations[0].store.len(),
         CellCount::from(2_usize)
     );
-    assert_eq!(module.declarations().len(), 4);
-    for (declaration, expected) in module
-        .declarations()
-        .iter()
-        .zip(["Flag", "Flag", "Flag", "later"])
-    {
+    assert_eq!(module.declarations().len(), 3);
+    for (declaration, expected) in module.declarations().iter().zip(["Flag", "Flag", "later"]) {
         assert_eq!(declaration.name().as_ref(), expected);
     }
     assert!(matches!(
         module.declarations()[0].outcome(),
         crate::DeclarationOutcome::Data(_)
     ));
-    for (declaration, diagnostic) in module.declarations()[1 .. 3]
-        .iter()
-        .zip(&module.cells().diagnostics)
-    {
-        assert_eq!(declaration.span(), diagnostic.span);
-        assert!(matches!(
-            declaration.outcome(),
-            crate::DeclarationOutcome::Refused(_)
-        ));
-    }
+    assert_eq!(module.declarations()[1].span(), rule.span);
+    assert!(matches!(
+        module.declarations()[1].outcome(),
+        crate::DeclarationOutcome::Refused(_)
+    ));
 }

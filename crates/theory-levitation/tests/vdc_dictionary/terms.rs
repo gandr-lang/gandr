@@ -84,11 +84,14 @@ enum Application
     Ctor,
     /// An operation application.
     Op,
+    /// A results tuple, whose head carries no name.
+    Results,
 }
 
 impl Application
 {
-    /// The application of this kind over the given head and arguments.
+    /// The application of this kind over the given head and arguments; a
+    /// results tuple ignores the head.
     ///
     /// # Specification
     /// trivial.
@@ -101,6 +104,7 @@ impl Application
         match self {
             | Self::Ctor => FreeTerm::ctor(name, args),
             | Self::Op => FreeTerm::op(name, args),
+            | Self::Results => FreeTerm::results(args),
         }
     }
 }
@@ -180,7 +184,8 @@ fn schedule<'term>(
 #[spec(ensures: |ref rebuilt| match (term.to_node().view(), rebuilt.to_node().view()) {
     | (TermView::Var(_), _) => true,
     | (TermView::Ctor { args: before, .. }, TermView::Ctor { args: after, .. })
-    | (TermView::Op { args: before, .. }, TermView::Op { args: after, .. }) => before.count() == after.count(),
+    | (TermView::Op { args: before, .. }, TermView::Op { args: after, .. })
+    | (TermView::Results { args: before }, TermView::Results { args: after }) => before.count() == after.count(),
     | _ => false,
 })]
 pub fn rebuild<V, H>(
@@ -203,6 +208,9 @@ where
                 },
                 | TermView::Op { name, args } => {
                     schedule(&mut work, Application::Op, on_head(name), args);
+                },
+                | TermView::Results { args } => {
+                    schedule(&mut work, Application::Results, Name::from(""), args);
                 },
             },
             | Rebuild::Assemble {
@@ -303,6 +311,7 @@ pub fn match_pattern(
         | (TermView::Var(name), _) => out.get(name).is_some_and(|image| image.to_node() == ground),
         | (TermView::Ctor { name: left, args: left_args }, TermView::Ctor { name: right, args: right_args })
         | (TermView::Op { name: left, args: left_args }, TermView::Op { name: right, args: right_args }) => left == right && left_args.count() == right_args.count(),
+        | (TermView::Results { args: left_args }, TermView::Results { args: right_args }) => left_args.count() == right_args.count(),
         | _ => false,
     }))]
 fn match_node(
@@ -345,6 +354,10 @@ fn match_node(
                     args: ground_args,
                 },
             ) if pattern_name == ground_name => (pattern_args, ground_args),
+            | (
+                TermView::Results { args: pattern_args },
+                TermView::Results { args: ground_args },
+            ) => (pattern_args, ground_args),
             | _ => return PatternMatch::from(false),
         };
         let (pattern_args, ground_args) = aligned;
@@ -374,7 +387,7 @@ fn match_node(
 /// - witness: `tests::vdc_dictionary::terms::tests::positions_and_replacement_preserve_the_spine`
 #[spec(ensures: |ref found| *found == position.iter().try_fold(term.to_node(), |node, index| {
     match node.view() {
-        | TermView::Ctor { mut args, .. } | TermView::Op { mut args, .. } => args.nth(usize::from(*index)),
+        | TermView::Ctor { mut args, .. } | TermView::Op { mut args, .. } | TermView::Results { mut args } => args.nth(usize::from(*index)),
         | TermView::Var(_) => None,
     }
 }).map_or(Maybe::Absent(position::Absent::OffTerm), Maybe::Present))]
@@ -386,9 +399,9 @@ pub fn subterm_at<'term>(
     let mut cursor = term.to_node();
     for &index in position {
         let next = match cursor.view() {
-            | TermView::Ctor { mut args, .. } | TermView::Op { mut args, .. } => {
-                args.nth(usize::from(index))
-            },
+            | TermView::Ctor { mut args, .. }
+            | TermView::Op { mut args, .. }
+            | TermView::Results { mut args } => args.nth(usize::from(index)),
             | TermView::Var(_) => None,
         };
         let Some(next) = next
@@ -440,8 +453,9 @@ pub fn replace_at(
     let mut spine: Vec<(Application, Name, Vec<FreeTerm>, TermPositionIndex)> = Vec::new();
     for &index in position {
         let (application, name, args) = match cursor.view() {
-            | TermView::Ctor { name, args } => (Application::Ctor, name, args),
-            | TermView::Op { name, args } => (Application::Op, name, args),
+            | TermView::Ctor { name, args } => (Application::Ctor, name.clone(), args),
+            | TermView::Op { name, args } => (Application::Op, name.clone(), args),
+            | TermView::Results { args } => (Application::Results, Name::from(""), args),
             | TermView::Var(_) => return Maybe::Absent(position::Absent::OffTerm),
         };
         let args: Vec<TermNode<'_>> = args.collect();
@@ -451,7 +465,7 @@ pub fn replace_at(
         };
         spine.push((
             application,
-            name.clone(),
+            name,
             args.into_iter().map(TermNode::to_term).collect(),
             index,
         ));

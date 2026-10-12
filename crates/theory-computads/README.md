@@ -21,8 +21,8 @@ The elaborator seam of the cell-rewriting stack: a levitated description's rules
 
 ## Provided features
 
-- `elaborate_data_desc`, `DescElaboration`, `OpFrame`, `OpElaborateError`, `CircuitElaboration`: a whole description into one store, the operation gate first, every decline reported.
-- `elaborate_rule`, `ElaborateError`: one face into one cell at the declaration's polarity.
+- `elaborate_data_desc`, `DescElaboration`, `OpFrame`, `OpElaborateError`, `CircuitElaboration`: a whole description into one store, the operation gate first, every decline reported; a many-out operation's frame carries one return continuation per output port.
+- `elaborate_rule`, `ElaborateError`: one face into one cell at the declaration's polarity; a results tuple leaves by one delivery frame, and a result count other than the output count is refused.
 - Every cell a declaration contributes — frame, rule, circuit and η — cuts at the polarity its η law requires, and a `codata` declaration's η critical pair joins.
 - The admission seam's two refusals, `ElaborateError::NonLinear` and `ElaborateError::MixedPolarity` with `MixedPolarityHole`, distinct in variant and diagnostic, the copy decided first.
 - `EtaElaboration`, `EtaElaborateError`: the η cells a declaration licenses, at its polarity, or the missing half of the licence.

@@ -4,8 +4,8 @@
 //! # Matching is sub-diagram embedding
 //!
 //! The substrate's one-sided matcher and two-sided unifier are written against
-//! a pattern language whose consumer side is a linear spine. A circuit pattern
-//! is neither a spine nor a tree: it may have several roots, reconverge, and
+//! a pattern language whose consumer side is a tree of frames. A circuit
+//! pattern need not be a tree: it may have several roots, reconverge, and
 //! hold components with no wire between them. Matching one is therefore a
 //! sub-diagram embedding problem. An [`Embedding`] is a monomorphism of
 //! diagrams: injective on generators and on wires, and label-, arity-,

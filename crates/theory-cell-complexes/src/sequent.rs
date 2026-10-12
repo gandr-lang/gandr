@@ -53,6 +53,7 @@ use crate::cell::CellStore;
 use crate::order::reduction_cmp;
 use crate::pattern::Cat;
 use crate::pattern::CmdPat;
+use crate::pattern::ConsHead;
 use crate::pattern::ConsPat;
 use crate::pattern::HoleName;
 use crate::pattern::MetaVar;
@@ -559,6 +560,66 @@ pub fn frame_defining_cell(ctor: &Sym) -> Cell<SequentAlphabet>
     )
 }
 
+/// Whether a left-hand side read as a diagram is strongly connected.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct InputsReachOutputs(bool);
+
+/// Whether every input port of `lhs` reaches every output port of it.
+///
+/// Read as a diagram, a producer metavariable is an input port and a consumer
+/// metavariable an output port; an operation frame is a box from the wire
+/// arriving at it and its arguments to its continuations, a return-side frame
+/// a box from the arriving wire to its one continuation, and `★` a box with
+/// no output. The cut's producer therefore reaches every consumer
+/// metavariable, and a metavariable among an operation frame's arguments
+/// reaches exactly the consumer metavariables below that frame.
+///
+/// # Specification
+/// - ensures: positive exactly when every operation frame carrying a
+///   metavariable among its arguments has every consumer metavariable of the
+///   consumer below it; vacuously positive when the consumer has none.
+/// - panics: none.
+/// - intension: one pass over the consumer table, children first, keeping the
+///   consumer metavariables each completed subtree holds on a stack.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a chain, a root fork with arguments, an argument above a
+///   fork, an argument below a fork and a fork of ground continuations separate
+///   the verdicts. Counting `★` as an output, or reading an argument as
+///   reaching its siblings' continuations, changes one of them.
+/// - witness: `sequent::tests::the_discharge_follows_where_each_argument_sits`
+#[spec(ensures: |output| output.0 || lhs.consumer().to_ref().metavars().any(|var| var.cat() == Cat::Consumer))]
+fn lhs_reaches_every_output(lhs: &CmdPat) -> InputsReachOutputs
+{
+    let cons = lhs.consumer().to_ref();
+    let outputs = cons
+        .heads()
+        .filter(|head| matches!(**head, ConsHead::Meta(_)))
+        .count();
+    // The consumer metavariables of the completed subtrees not yet claimed by
+    // a frame, the most recent last.
+    let mut completed: Vec<usize> = Vec::new();
+    for head in cons.heads() {
+        let first = completed
+            .len()
+            .saturating_sub(usize::from(head.continuations()));
+        let below = completed.drain(first ..).fold(
+            usize::from(matches!(*head, ConsHead::Meta(_))),
+            usize::saturating_add,
+        );
+        let inputs = head
+            .args()
+            .iter()
+            .any(|arg| arg.to_ref().metavars().next().is_some());
+        if inputs && below != outputs {
+            return InputsReachOutputs(false);
+        }
+        completed.push(below);
+    }
+    InputsReachOutputs(true)
+}
+
 /// The reserved skolem constant for a metavariable.
 ///
 /// # Specification
@@ -891,25 +952,37 @@ impl CellAlphabet for SequentAlphabet
     ///
     /// # Specification
     /// - ensures: [`ConvexityDischarge::StronglyConnectedOverAcyclicTarget`]
-    ///   for every store. The store is not consulted, and that is the finding
-    ///   rather than a shortcut: every left-hand side this alphabet can express
-    ///   is one cut whose consumer half is a linear spine with a single end, so
-    ///   strong connectedness is forced by the grammar, and targets are
-    ///   command-pattern trees, hence acyclic. An alphabet with multi-output or
-    ///   disconnected left-hand sides breaks the argument and answers
-    ///   [`ConvexityDischarge::ReCheckRequired`].
+    ///   exactly when every left-hand side in `store` is strongly connected, as
+    ///   [`lhs_reaches_every_output`] decides;
+    ///   [`ConvexityDischarge::ReCheckRequired`] otherwise. Targets are
+    ///   command-pattern trees, hence acyclic, so connectedness is the whole
+    ///   condition. A store without many-continuation frames always earns the
+    ///   discharge, because a single-continuation consumer is one chain of
+    ///   frames to one end; so does a store whose many-output faces are the
+    ///   elaborator's `⟨p | f(q̄; α₁, …, αₙ)⟩`, whose one frame is the root.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — empty and populated stores retain the structural
-    ///   grammar discharge. A store-dependent or weakened verdict changes the
-    ///   observation.
+    /// - hypothesis: L3 — empty and populated single-output stores, a store of
+    ///   root-forked many-output faces and a store holding one face whose
+    ///   argument sits below a fork separate the two verdicts. A
+    ///   store-independent or weakened verdict changes the observation.
     /// - witness: `alphabet::tests::position_and_metadata_observations_obey_the_alphabet_laws`
+    /// - witness: `sequent::tests::the_discharge_follows_where_each_argument_sits`
     #[inline]
-    #[spec(ensures: |output| output == ConvexityDischarge::StronglyConnectedOverAcyclicTarget)]
-    fn convexity_discharge(_store: &CellStore<Self>) -> ConvexityDischarge
+    #[spec(ensures: |output| (output == ConvexityDischarge::StronglyConnectedOverAcyclicTarget)
+        == store.iter().all(|(_, cell)| lhs_reaches_every_output(cell.lhs()).0))]
+    fn convexity_discharge(store: &CellStore<Self>) -> ConvexityDischarge
     {
-        ConvexityDischarge::StronglyConnectedOverAcyclicTarget
+        if store
+            .iter()
+            .all(|(_, cell)| lhs_reaches_every_output(cell.lhs()).0)
+        {
+            ConvexityDischarge::StronglyConnectedOverAcyclicTarget
+        }
+        else {
+            ConvexityDischarge::ReCheckRequired
+        }
     }
 
     /// The command subterm at `pos`.
@@ -1231,6 +1304,67 @@ mod tests
     use super::*;
     use crate::boundary::CellCount;
     use crate::cell::cell_lookup;
+
+    #[test]
+    fn the_discharge_follows_where_each_argument_sits()
+    {
+        let n = || ProdPat::meta("n");
+        let alpha = || ConsPat::meta("alpha");
+        let beta = || ConsPat::meta("beta");
+        let cases = [
+            (ConsPat::op("add", [n()], alpha()), true, "a chain"),
+            (
+                ConsPat::operation("divmod", [n()], [alpha(), beta()]),
+                true,
+                "a root fork with an argument",
+            ),
+            (
+                ConsPat::op("f", [n()], ConsPat::operation("g", [], [alpha(), beta()])),
+                true,
+                "an argument above a fork",
+            ),
+            (
+                ConsPat::operation("f", [], [ConsPat::op("g", [n()], alpha()), beta()]),
+                false,
+                "an argument below one branch of a fork",
+            ),
+            (
+                ConsPat::operation("f", [], [ConsPat::op("g", [n()], alpha()), ConsPat::top()]),
+                true,
+                "the terminal is no output port",
+            ),
+            (
+                ConsPat::operation("f", [n()], [ConsPat::top(), ConsPat::top()]),
+                true,
+                "no output port at all",
+            ),
+        ];
+        for (cons, connected, case) in cases {
+            let lhs = CmdPat::cut(Polarity::Positive, ProdPat::meta("x"), cons);
+            assert_eq!(
+                InputsReachOutputs(connected),
+                lhs_reaches_every_output(&lhs),
+                "{case}"
+            );
+            let mut store = CellStore::new();
+            store.insert(Cell::new(
+                lhs.clone(),
+                lhs,
+                Orientation::PolarityDerived,
+                CellProvenance::SurfaceRule,
+            ));
+            assert_eq!(
+                if connected {
+                    ConvexityDischarge::StronglyConnectedOverAcyclicTarget
+                }
+                else {
+                    ConvexityDischarge::ReCheckRequired
+                },
+                SequentAlphabet::convexity_discharge(&store),
+                "{case}"
+            );
+        }
+    }
 
     #[test]
     fn metadata_order_and_growth_include_empty_and_rhs_only_holes()

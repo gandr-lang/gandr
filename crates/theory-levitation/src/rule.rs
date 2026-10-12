@@ -39,6 +39,8 @@ enum TermHead
     Ctor(Name, ArgumentCount),
     /// An operation application over its argument count.
     Op(Name, ArgumentCount),
+    /// A results tuple over its component count.
+    Results(ArgumentCount),
 }
 
 impl Head for TermHead
@@ -52,7 +54,7 @@ impl Head for TermHead
     {
         match *self {
             | Self::Var(_) => ArgumentCount::from(0_usize),
-            | Self::Ctor(_, arity) | Self::Op(_, arity) => arity,
+            | Self::Ctor(_, arity) | Self::Op(_, arity) | Self::Results(arity) => arity,
         }
     }
 }
@@ -60,6 +62,9 @@ impl Head for TermHead
 /// A term in the free monad `D⋆(V)` over the description functor with
 /// variables `V`: a variable, a constructor application, or an operation
 /// application.
+///
+/// At the root of a rule's right-hand side, a term may also be the results
+/// tuple a many-out operation's rule returns ([`FreeTerm::results`]).
 ///
 /// Held as one flat table, so a term of any depth is built, compared, walked
 /// and dropped without recursion.
@@ -121,6 +126,29 @@ impl FreeTerm
         Self(Tree::node(TermHead::Op(name.into(), arity), args))
     }
 
+    /// A results tuple `(t₀, …, tₙ)`: one term per output port of the
+    /// operation the rule's left-hand side applies, in port order.
+    ///
+    /// A many-out operation `(m, n) --> (q, r)` returns its results together,
+    /// so its rule's right-hand side is a tuple of them, the product layer of
+    /// its arity. The tuple stands only at the root of a right-hand side, and
+    /// [`check_desc`](crate::check_desc) refuses it anywhere else; whether its
+    /// width is the operation's output count is the cell elaboration's
+    /// question, which has the operation's arity in hand.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn results<A>(components: A) -> Self
+    where
+        A: IntoIterator<Item = Self>,
+    {
+        let components: Vec<Tree<TermHead>> = components.into_iter().map(|arg| arg.0).collect();
+        let arity = ArgumentCount::from(components.len());
+        Self(Tree::node(TermHead::Results(arity), components))
+    }
+
     /// The term as a borrowed node.
     ///
     /// # Specification
@@ -175,7 +203,8 @@ impl FreeTerm
     ///
     /// # Specification
     /// - ensures: each applied constructor or operation is yielded once, root
-    ///   first and children left to right; variables contribute no name.
+    ///   first and children left to right; variables and results tuples
+    ///   contribute no name.
     /// - panics: none.
     /// - executable: none — the backend cannot instrument this opaque iterator
     ///   return type, and its full sequence has only a consuming observer.
@@ -189,8 +218,33 @@ impl FreeTerm
     pub(crate) fn applied_symbols(&self) -> impl Iterator<Item = &Name>
     {
         self.0.to_ref().preorder().filter_map(|head| match *head {
-            | TermHead::Var(_) => None,
+            | TermHead::Var(_) | TermHead::Results(_) => None,
             | TermHead::Ctor(ref name, _) | TermHead::Op(ref name, _) => Some(name),
+        })
+    }
+
+    /// The width of each results tuple in the term, in pre-order: the root's
+    /// first when the root is one.
+    ///
+    /// # Specification
+    /// - ensures: one item per results-tuple node, root first and children left
+    ///   to right.
+    /// - panics: none.
+    /// - executable: none — the backend cannot instrument this opaque iterator
+    ///   return type.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a term with no tuple, a tuple at its root and a tuple
+    ///   nested under an application are observed through the misplaced-tuple
+    ///   diagnostics they earn; skipping the root or a nested tuple changes
+    ///   them.
+    /// - witness: `wellformed::tests::a_results_tuple_stands_only_at_a_right_hand_root`
+    #[inline]
+    pub(crate) fn results_widths(&self) -> impl Iterator<Item = ArgumentCount>
+    {
+        self.0.to_ref().preorder().filter_map(|head| match *head {
+            | TermHead::Results(width) => Some(width),
+            | TermHead::Var(_) | TermHead::Ctor(..) | TermHead::Op(..) => None,
         })
     }
 
@@ -222,7 +276,9 @@ impl FreeTerm
     {
         Self(self.0.to_ref().replace_leaves(|head| match *head {
             | TermHead::Var(ref name) => image(name).map(|replacement| replacement.0),
-            | TermHead::Ctor(..) | TermHead::Op(..) => Maybe::Absent(leaf_image::Absent::Kept),
+            | TermHead::Ctor(..) | TermHead::Op(..) | TermHead::Results(_) => {
+                Maybe::Absent(leaf_image::Absent::Kept)
+            },
         }))
     }
 }
@@ -230,7 +286,8 @@ impl FreeTerm
 impl fmt::Display for FreeTerm
 {
     /// Writes the term in the inspection notation: a variable or a nullary
-    /// application as its name, an application as `name(arg, …)`.
+    /// application as its name, an application as `name(arg, …)`, a results
+    /// tuple as `(arg, …)`.
     ///
     /// # Specification
     /// - ensures: deterministic text; a constructor and an operation
@@ -263,12 +320,13 @@ impl fmt::Display for FreeTerm
         let mut rendered: Vec<String> = Vec::new();
         for head in self.0.heads() {
             let (name, arity) = match *head {
-                | TermHead::Var(ref name) => (name, 0_usize),
+                | TermHead::Var(ref name) => (Some(name), 0_usize),
                 | TermHead::Ctor(ref name, arity) | TermHead::Op(ref name, arity) => {
-                    (name, usize::from(arity))
+                    (Some(name), usize::from(arity))
                 },
+                | TermHead::Results(arity) => (None, usize::from(arity)),
             };
-            if arity == 0 {
+            if let (Some(name), 0) = (name, arity) {
                 rendered.push(name.to_string());
                 continue;
             }
@@ -276,7 +334,8 @@ impl fmt::Display for FreeTerm
             for _ in 0 .. arity {
                 args.push(rendered.pop().unwrap_or_default());
             }
-            rendered.push(format!("{name}({})", args.join(", ")));
+            let head = name.map_or_else(String::new, alloc::string::ToString::to_string);
+            rendered.push(format!("{head}({})", args.join(", ")));
         }
         f.write_str(&rendered.pop().unwrap_or_default())
     }
@@ -307,6 +366,9 @@ impl<'term> TermNode<'term>
                 name,
                 args: TermArgs(self.0.children()),
             },
+            | TermHead::Results(_) => TermView::Results {
+                args: TermArgs(self.0.children()),
+            },
         }
     }
 
@@ -329,7 +391,7 @@ impl<'term> TermNode<'term>
     {
         self.0.preorder().filter_map(|head| match *head {
             | TermHead::Var(ref name) => Some(name),
-            | TermHead::Ctor(..) | TermHead::Op(..) => None,
+            | TermHead::Ctor(..) | TermHead::Op(..) | TermHead::Results(_) => None,
         })
     }
 
@@ -365,6 +427,13 @@ pub enum TermView<'term>
         /// The operation's name.
         name: &'term Name,
         /// The arguments, left to right.
+        args: TermArgs<'term>,
+    },
+    /// A results tuple, the root of a many-out operation rule's right-hand
+    /// side.
+    Results
+    {
+        /// The components, in output-port order.
         args: TermArgs<'term>,
     },
 }

@@ -96,6 +96,11 @@
 //!   `arXiv:2104.14686` — convex matching, and two disjoint matches that
 //!   interfere through each other's convexity: the conjunct the supply point
 //!   re-checks.
+//! - David I. Spivak, Richard Garner, and Aaron David Fairbanks. "Functorial
+//!   Aggregation." _Journal of Pure and Applied Algebra_ 229 (2025); preprint
+//!   `arXiv:2111.10968` — the bridge-diagram arity `Σ_t ∘ Π_π ∘ Δ_s` whose
+//!   product layer an operation frame's continuations carry, one per output
+//!   port.
 
 #![no_std]
 

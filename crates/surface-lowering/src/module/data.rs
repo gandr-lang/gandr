@@ -10,20 +10,33 @@
 //! declined by its own name. The operation and rule members a data block
 //! parses — `oper`, `rule` and the retired `op` — are passed over: the
 //! description route reads them into cells and holds each member's refusal at
-//! its own span, so the family's generators stay native.
+//! its own span, so the family's generators stay native. An `oper` member's
+//! name is kept, and once the family is read each operation whose rules
+//! compile is admitted as a declaration of its own (`crate::operation`).
 
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::ConstructorTag;
+use gandr_kernel_term::ConstantIndex;
 use gandr_surface_syntax::NodeIndex;
+use gandr_theory_levitation::DeclPolarity;
+use gandr_theory_levitation::Name;
+use gandr_theory_levitation::TermView;
 use quenchant_shape::shape::Maybe;
 
 use super::Collector;
 use super::Container;
+use super::DeclarationSlot;
+use super::Half;
+use super::Operand;
+use super::Role;
 use super::Tail;
+use super::declaration_half;
 use super::extra_operand;
 use super::misplaced_in;
 use super::one_in;
+use super::slot_refusal;
 use crate::error::FormFault;
 use crate::error::FragmentBoundary;
 use crate::error::FragmentSort;
@@ -40,6 +53,10 @@ use crate::form::read_pieces;
 use crate::form::shape_of;
 use crate::module::SlotIndex;
 use crate::module::WrittenAttribute;
+use crate::operation::RouteConstructor;
+use crate::operation::RouteTable;
+use crate::operation::Width;
+use crate::operation::plan_operation;
 
 quenchant_shape::reason_enum! {
     /// Why a data declaration states no universe.
@@ -120,6 +137,9 @@ pub struct DataForm
     pub kind: Maybe<Placed, data_kind::Absent>,
     /// The generators, in tag order.
     pub generators: Vec<GeneratorForm>,
+    /// The name tile of each `oper` member, in source order: the operations
+    /// the description route reads and the module may call.
+    pub operations: Vec<Placed>,
 }
 
 /// A constructor, as a term or a pattern naming it resolves it.
@@ -479,6 +499,7 @@ impl<'source> Collector<'_, 'source>
             return Err(misplaced_in(FormName::DATA, cursor.here()));
         }
         let mut generators = Vec::new();
+        let mut operations = Vec::new();
         loop {
             match cursor.read() {
                 | Maybe::Present(Piece::Tile { label, .. }) if label == TileName::BRACE_CLOSE => {
@@ -487,10 +508,15 @@ impl<'source> Collector<'_, 'source>
                 | Maybe::Present(Piece::Tile { label, at }) if label == TileName::CONSTRUCTOR => {
                     generators.push(self.generator(at, cursor, &parameters)?);
                 },
+                | Maybe::Present(Piece::Tile { label, .. }) if label == TileName::OPER => {
+                    if let Maybe::Present(named) = cursor.tile(TileName::IDENTIFIER) {
+                        operations.push(named);
+                    }
+                    pass_over_member(cursor);
+                    continue;
+                },
                 | Maybe::Present(Piece::Tile { label, .. })
-                    if label == TileName::OP
-                        || label == TileName::OPER
-                        || label == TileName::RULE =>
+                    if label == TileName::OP || label == TileName::RULE =>
                 {
                     pass_over_member(cursor);
                     continue;
@@ -516,6 +542,7 @@ impl<'source> Collector<'_, 'source>
             parameters,
             kind,
             generators,
+            operations,
         })
     }
 
@@ -665,6 +692,193 @@ impl<'source> Collector<'_, 'source>
         }
 
         Ok(())
+    }
+
+    /// Plan each operation the data declaration at `declaration` writes, and
+    /// admit each one that runs as a declaration of its own.
+    ///
+    /// # Specification
+    /// - requires: the declaration was collected by [`Self::data`].
+    /// - ensures: one [`Role::Operation`] slot per operation with a route, in
+    ///   source order after the family's slots, each with its plan and, when no
+    ///   earlier operation took its name, its name; an operation without a
+    ///   route, a parameterised family and a refused declaration change
+    ///   nothing.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a two-output operation over a helper is admitted with
+    ///   its helper, an operation missing a constructor is not, and an
+    ///   operation calling a later one is not.
+    /// - witness: `operation::tests::a_many_out_operation_lowers_to_a_function_the_checker_accepts`
+    /// - witness: `operation::tests::an_operation_whose_rules_miss_a_constructor_is_not_callable`
+    /// - witness: `operation::tests::an_operation_calling_a_later_one_is_not_callable`
+    #[spec(
+        captures: before = (self.collected.slots.len(), self.collected.operations.len()),
+        ensures: self.collected.slots.len().saturating_sub(before.0)
+            == self.collected.operations.len().saturating_sub(before.1)
+            && self.collected.slots.iter().skip(before.0).all(|slot| slot.role == Role::Operation),
+    )]
+    pub(super) fn route_operations(
+        &mut self,
+        declaration: Placed,
+    )
+    {
+        let mut routed = Vec::new();
+        {
+            let collected = &self.collected;
+            let Some(form) = collected
+                .data
+                .iter()
+                .find(|form| form.declaration.node == declaration.node)
+            else {
+                return;
+            };
+            let (Some(described), Some(cells)) = (
+                collected.descriptions.get(&declaration.node),
+                collected
+                    .cells
+                    .declarations
+                    .iter()
+                    .find(|cells| cells.at.node == declaration.node),
+            )
+            else {
+                return;
+            };
+            if !form.parameters.is_empty() || described.description.polarity != DeclPolarity::Data {
+                return;
+            }
+            let mut table = self.route_table();
+            for &named in &form.operations {
+                let name = self.name_of(named);
+                let Some((position, operation)) = described
+                    .description
+                    .opers
+                    .iter()
+                    .enumerate()
+                    .find(|&(_, operation)| operation.name.as_ref() == name.as_ref())
+                else {
+                    continue;
+                };
+                if table.callees.contains_key(&operation.name)
+                    || collected.operation_names.contains_key(&name)
+                    || !cells
+                        .operations
+                        .iter()
+                        .any(|frame| frame.op.as_ref() == name.as_ref())
+                {
+                    continue;
+                }
+                let mut faces = Vec::new();
+                let mut declined = false;
+                for (rule, face) in described.description.rules.iter().enumerate() {
+                    if matches!(face.lhs.view(), TermView::Op { name: head, .. } if *head == operation.name)
+                    {
+                        declined |= cells
+                            .declined_faces
+                            .iter()
+                            .any(|&index| usize::from(index) == rule);
+                        faces.push(face);
+                    }
+                }
+                if declined {
+                    continue;
+                }
+                let Ok(plan) = plan_operation(operation, &faces, &table)
+                else {
+                    continue;
+                };
+                let constant =
+                    ConstantIndex::from(collected.slots.len().saturating_add(routed.len()));
+                let _fresh = table.callees.insert(operation.name.clone(), constant);
+                let span = described
+                    .operation_spans
+                    .get(position)
+                    .copied()
+                    .unwrap_or(named.span);
+                routed.push((name, named, span, plan));
+            }
+        }
+        for (name, named, span, plan) in routed {
+            let minted = SlotIndex(self.collected.slots.len());
+            self.collected.slots.push(DeclarationSlot {
+                name,
+                container: Container::TopLevel,
+                role: Role::Operation,
+                constant: ConstantIndex::from(minted.0),
+                introduced_by: Placed {
+                    node: declaration.node,
+                    span,
+                },
+                named,
+                signature: Maybe::Absent(declaration_half::Absent::Unwritten),
+                definition: Maybe::Present(Half {
+                    declaration,
+                    operand: Operand::Operation,
+                }),
+                attributes: Vec::new(),
+                docs: Vec::new(),
+                refusal: Maybe::Absent(slot_refusal::Absent::Unrefused),
+            });
+            let _plan = self.collected.operations.insert(minted, plan);
+            let _name = self.collected.operation_names.insert(name, minted);
+        }
+    }
+
+    /// What the module's families offer an operation's rules so far: every
+    /// unparameterised family with its constructors, and the operations
+    /// already planned.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one family entry per unparameterised data form, its
+    ///   constructors in tag order, and each planned operation's constant by
+    ///   name.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::route_operations`].
+    /// - witness: `operation::tests::a_many_out_operation_lowers_to_a_function_the_checker_accepts`
+    #[spec(ensures: |ret| ret.families.len() <= self.collected.data.len() && ret.callees.len() == self.collected.operation_names.len())]
+    fn route_table(&self) -> RouteTable
+    {
+        let mut table = RouteTable::default();
+        for form in &self.collected.data {
+            let Some(slot) = self.collected.slots.get(form.slot.0)
+            else {
+                continue;
+            };
+            if !form.parameters.is_empty() {
+                continue;
+            }
+            let family = slot.constant;
+            let _fresh = table
+                .families
+                .insert(Name::from(slot.name.as_ref()), family);
+            let mut generators = Vec::with_capacity(form.generators.len());
+            for (tag, generator) in form.generators.iter().enumerate() {
+                let fields = Width::from(generator.fields.len());
+                generators.push(fields);
+                let _constructor = table.constructors.insert(
+                    Name::from(self.name_of(generator.named).as_ref()),
+                    RouteConstructor {
+                        family,
+                        tag: ConstructorTag::from(tag),
+                        fields,
+                    },
+                );
+            }
+            let _generators = table.generators.insert(family, generators);
+        }
+        for (name, &slot) in &self.collected.operation_names {
+            if let Some(entry) = self.collected.slots.get(slot.0) {
+                let _callee = table
+                    .callees
+                    .insert(Name::from(name.as_ref()), entry.constant);
+            }
+        }
+
+        table
     }
 }
 

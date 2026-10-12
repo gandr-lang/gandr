@@ -391,6 +391,9 @@ pub enum Role
     /// signature component raised, or owns a manifest type component's type,
     /// and yields a declaration only when it holds a refusal.
     Held,
+    /// An operation a `data` family declares and the module can call: entered
+    /// in no namespace, its body compiled from its rules.
+    Operation,
 }
 
 /// One member of a module's body, or one component it exports.
@@ -640,6 +643,9 @@ pub enum Operand
     /// The data declaration `data T … { … }` at this position of the
     /// collection's data list, lowered at the declaration form itself.
     Data(usize),
+    /// An operation of the data declaration that wrote this half, its body
+    /// compiled from its rules by the plan the collection keeps for its slot.
+    Operation,
 }
 
 /// One half of a declared name: the declaration form that wrote it and what
@@ -923,6 +929,11 @@ pub struct Collected<'source>
     pub data: Vec<DataForm>,
     /// Every constructor a data declaration declares, by name.
     pub constructors: BTreeMap<SurfaceName<'source>, Constructor>,
+    /// Each callable operation's plan, by its slot.
+    pub operations: BTreeMap<SlotIndex, crate::operation::OperationPlan>,
+    /// Each callable operation's slot, by name: operations are declared at
+    /// the top level only.
+    pub operation_names: BTreeMap<SurfaceName<'source>, SlotIndex>,
 }
 
 impl<'source> Collected<'source>
@@ -1417,6 +1428,8 @@ pub fn collect<'source>(
             imports: ModuleImports::new(),
             data: Vec::new(),
             constructors: BTreeMap::new(),
+            operations: BTreeMap::new(),
+            operation_names: BTreeMap::new(),
         },
         pieces: Pieces::new(),
     };
@@ -1437,6 +1450,7 @@ pub fn collect<'source>(
         if former == Former::Data {
             collector.data(child, &decorations)?;
             collector.hold_described_refusals(child);
+            collector.route_operations(child);
             decorations.clear();
             continue;
         }

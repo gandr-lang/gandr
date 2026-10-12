@@ -1027,6 +1027,9 @@ enum StatementBinding
     /// `c ;` discards it, splitting it as the unit under a binder no name
     /// reaches.
     Discarded,
+    /// `run (x, y, …) <- c ;` splits the tuple it returns, under a binder no
+    /// name reaches, into one named binder per component.
+    Split(gandr_core_term::ComponentCount),
 }
 
 /// One `run x <- c ;` or `c ;` statement of a block.
@@ -1219,6 +1222,18 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// No enclosing binder and no earlier declaration is named so.
             Unresolved,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a `run` statement's binder splits no tuple.
+    pub mod untupled {
+        /// The binder is a name, a wildcard or another pattern.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The binder is not a tuple pattern.
+            OtherPattern,
         }
     }
 }
@@ -1833,6 +1848,8 @@ struct Lowerer<'run, 'source>
     /// Each recursive call, by its head: the instantiation whose claim checks
     /// it.
     descents: BTreeMap<NodeIndex, native::Descent>,
+    /// Each callable operation's minted type and body, by slot.
+    operated: BTreeMap<SlotIndex, (ValueTypeId, ValueId)>,
 }
 
 /// Where the mint sweep writes: the arena and the origin table, with the
@@ -2095,6 +2112,7 @@ pub fn lower_module<'source>(
     lowerer.mint(&mut sink)?;
     lowerer.mint_data(&mut sink);
     lowerer.mint_descriptions(&mut sink)?;
+    lowerer.mint_operations(&mut sink);
     let mut attributes = AttributeTable::new();
     lowerer.attribute(&mut attributes)?;
     let documentation = lowerer.document()?;
@@ -2246,6 +2264,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             data: Vec::new(),
             recursions: BTreeMap::new(),
             descents: BTreeMap::new(),
+            operated: BTreeMap::new(),
         }
     }
 
@@ -2596,7 +2615,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     | Operand::Function => {
                         seeds.push((half.declaration.node, Reading::Function));
                     },
-                    | Operand::Member(_) | Operand::Data(_) => {},
+                    | Operand::Member(_) | Operand::Data(_) | Operand::Operation => {},
                 }
             }
             for written in &slot.attributes {
@@ -3243,7 +3262,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   declaration strictly earlier, with its admission position and its
     ///   signature's written type; the data declaration `site` belongs to,
     ///   untyped, for its own name: a family's self reference, whose positivity
-    ///   the checker judges; the unresolved absence when nothing answers.
+    ///   the checker judges; else a callable operation admitted strictly
+    ///   earlier, untyped; the unresolved absence when nothing answers.
     /// - provides: the one resolution term names, capitalised names and type
     ///   heads share.
     /// - fails: [`LoweringRefusal::UnmarkedSelfReference`] for the name a
@@ -3354,6 +3374,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
             let Container::Module(module) = container
             else {
+                if let Some(&target) = self.collected.operation_names.get(&name)
+                    && target < own
+                    && let Some(entry) = self.collected.slots.get(usize::from(target))
+                {
+                    return Ok(Maybe::Present(Resolved::Declaration {
+                        constant: entry.constant,
+                        declared: Maybe::Absent(binder_type::Absent::Untyped),
+                    }));
+                }
                 return Ok(Maybe::Absent(named::Absent::Unresolved));
             };
             container = self
@@ -4259,7 +4288,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
     }
 
-    /// Read one `run x <- c ;` statement, its `run` tile already read.
+    /// Read one `run p <- c ;` statement, its `run` tile already read.
     ///
     /// # Specification
     /// - requires: `cursor` stands just past the statement's `run` tile `run`;
@@ -4267,11 +4296,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - ensures: the statement's computation is read under `frame` and the
     ///   statement recorded with its `run` tile; the frame binding the
     ///   statement's name over `frame`, which the rest of the block reads
-    ///   under, is returned.
+    ///   under, is returned. A tuple pattern `(x, y, …)` binds the returned
+    ///   tuple under a nameless binder and each component's name over it, in
+    ///   order, and the statement is recorded as that split.
     /// - provides: the one statement the fragment reads.
     /// - fails: yields the unadmitted refusal for an annotated binder and for a
-    ///   binder pattern other than a name, and a fault naming the bind
-    ///   statement for a hole or a tile out of shape.
+    ///   binder pattern other than a name, a wildcard or a tuple of those, and
+    ///   a fault naming the bind statement for a hole or a tile out of shape.
     /// - panics: none.
     ///
     /// # Errors
@@ -4279,9 +4310,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — each run statement reads its bound computation in the
-    ///   previous frame and introduces its name only for subsequent
-    ///   computations.
+    ///   previous frame and introduces its names only for subsequent
+    ///   computations; a two-component tuple binds both names in order, so a
+    ///   swapped binding reads the other component.
     /// - witness: `lower::tests::a_block_binds_each_statement_over_the_next`
+    /// - witness: `lower::tests::a_tuple_binder_splits_the_returned_tuple_in_order`
     #[spec(
         captures: before = self.statements.len(),
         ensures: |ret| match ret {
@@ -4289,7 +4322,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.statements.len() == before.saturating_add(1_usize)
                     && self.statements.last().is_some_and(|last| {
                         last.origin == run.node
-                            && last.binding == StatementBinding::Named
+                            && matches!(last.binding, StatementBinding::Named | StatementBinding::Split(_))
                             && self.reading(last.bound) == Reading::Computation(frame)
                     })
             },
@@ -4321,6 +4354,28 @@ impl<'run, 'source> Lowerer<'run, 'source>
         closed(statement, cursor, TileName::BIND)?;
         let bound = statement.one(cursor.operands())?;
         closed(statement, cursor, TileName::SEMICOLON)?;
+        if let Maybe::Present(components) = self.tuple_binders(statement, binder)? {
+            let mut names = Vec::with_capacity(components.len());
+            for &component in &components {
+                let name = self.binder_name(statement, component)?;
+                self.note_binder(component, name)?;
+                names.push(name);
+            }
+            self.read(bound.node, Reading::Computation(frame));
+            self.statements.push(Statement {
+                origin: run.node,
+                bound: bound.node,
+                binding: StatementBinding::Split(gandr_core_term::ComponentCount::from(
+                    names.len(),
+                )),
+                rest: exits::Rest::Bound,
+            });
+            let mut inner = self.scope.extend(frame, SurfaceName::from(""));
+            for name in names {
+                inner = self.scope.extend(Frame::Inner(inner), name);
+            }
+            return Ok(Frame::Inner(inner));
+        }
         let name = self.binder_name(statement, binder)?;
         self.note_binder(binder, name)?;
         self.read(bound.node, Reading::Computation(frame));
@@ -4332,6 +4387,69 @@ impl<'run, 'source> Lowerer<'run, 'source>
         });
 
         Ok(Frame::Inner(self.scope.extend(frame, name)))
+    }
+
+    /// The component patterns of a tuple pattern standing as a `run`
+    /// statement's binder, in order.
+    ///
+    /// # Specification
+    /// - requires: `binder` is the pattern operand of the statement at
+    ///   `statement`.
+    /// - ensures: each component operand of a tuple pattern, in order; absent
+    ///   for any other pattern.
+    /// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold, and a
+    ///   fault naming the bind statement for a repaired pattern or a tile out
+    ///   of place among the components.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The pattern's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a two-component tuple binds both names in order, and
+    ///   a name pattern reads as no tuple.
+    /// - witness: `lower::tests::a_tuple_binder_splits_the_returned_tuple_in_order`
+    /// - witness: `lower::tests::a_block_binds_each_statement_over_the_next`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |components| match *components { Maybe::Present(ref parts) => parts.len() >= 2, Maybe::Absent(_) => true }))]
+    fn tuple_binders(
+        &self,
+        statement: Site,
+        binder: Placed,
+    ) -> Result<Maybe<Vec<Placed>, untupled::Absent>, LoweringRefusal<'source>>
+    {
+        let Some(node) = self.tree.node(binder.node)
+        else {
+            return Ok(Maybe::Absent(untupled::Absent::OtherPattern));
+        };
+        let Shape::Form { name, .. } = shape_of(self.pbg, node)?
+        else {
+            return Ok(Maybe::Absent(untupled::Absent::OtherPattern));
+        };
+        if name != FormName::TUPLE_PATTERN {
+            return Ok(Maybe::Absent(untupled::Absent::OtherPattern));
+        }
+        let mut pieces = Pieces::new();
+        read_pieces(self.pbg, self.tree, binder.node, &mut pieces)?;
+        if let Maybe::Present(repaired) = pieces.repair {
+            return Err(repaired.refusal(FormName::TUPLE_PATTERN));
+        }
+        let mut cursor = Cursor::new(&pieces.pieces, binder.span);
+        closed(statement, &mut cursor, TileName::PAREN_OPEN)?;
+        let mut components = Vec::new();
+        loop {
+            components.push(statement.one(cursor.operands())?);
+            if let Maybe::Present(_) = cursor.tile(TileName::COMMA)
+                && let Maybe::Absent(_) = cursor.at(TileName::PAREN_CLOSE)
+            {
+                continue;
+            }
+            closed(statement, &mut cursor, TileName::PAREN_CLOSE)?;
+            break;
+        }
+        if components.len() < 2 {
+            return Err(statement.fault(binder.span, FormFault::MisplacedTile));
+        }
+        Ok(Maybe::Present(components))
     }
 
     /// The name a `run` statement's pattern binds.
@@ -7366,16 +7484,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
             else {
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
-            if statement.binding == StatementBinding::Discarded {
-                let unit = sink
+            let split = match statement.binding {
+                | StatementBinding::Named => None,
+                | StatementBinding::Discarded => Some(gandr_core_term::ComponentCount::default()),
+                | StatementBinding::Split(arity) => Some(arity),
+            };
+            if let Some(arity) = split {
+                let tuple = sink
                     .arena
                     .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-                sink.origins.record_value(unit, origin);
-                let split = sink.arena.computation_split(
-                    unit,
-                    gandr_core_term::ComponentCount::default(),
-                    chain,
-                );
+                sink.origins.record_value(tuple, origin);
+                let split = sink.arena.computation_split(tuple, arity, chain);
                 sink.origins.record_computation(split, origin);
                 chain = split;
             }
@@ -8399,6 +8518,39 @@ impl<'run, 'source> Lowerer<'run, 'source>
         })
     }
 
+    /// Mint each callable operation's type and body from its plan.
+    ///
+    /// # Specification
+    /// - requires: the collection planned the operations.
+    /// - ensures: one minted type and body per planned operation whose slot
+    ///   holds no refusal, every node with the operation's origin.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a planned operation lowers to a completed declaration
+    ///   the checker accepts and the machine runs.
+    /// - witness: `operation::tests::a_many_out_operation_lowers_to_a_function_the_checker_accepts`
+    /// - witness: `operation::tests::a_call_reaches_the_operation_before_a_builtin_of_its_name`
+    #[spec(ensures: self.operated.keys().all(|slot| self.collected.operations.contains_key(slot)))]
+    fn mint_operations(
+        &mut self,
+        sink: &mut Sink<'_>,
+    )
+    {
+        for (&slot, plan) in &self.collected.operations {
+            let Some(entry) = self.collected.slots.get(usize::from(slot))
+            else {
+                continue;
+            };
+            if let Maybe::Present(_) = entry.refusal {
+                continue;
+            }
+            let origin = Origin::new(entry.named.node, entry.named.span);
+            let minted = crate::operation::mint_operation(plan, sink.arena, sink.origins, origin);
+            let _first = self.operated.insert(slot, minted);
+        }
+    }
+
     /// Assemble one declaration per slot, in admission order.
     ///
     /// # Specification
@@ -8547,6 +8699,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             else if let Some(&index) = self.described.get(&position) {
                 ret == Maybe::Present(DeclarationOutcome::Data(index))
             }
+            else if let Maybe::Present(Half { operand: Operand::Operation, .. }) = slot.definition {
+                ret == self.operated.get(&position).map_or(Maybe::Absent(lowered::Absent::Unminted), |&(declared_type, body)| Maybe::Present(DeclarationOutcome::Completed { declared_type, body }))
+            }
             else if matches!(slot.definition, Maybe::Present(Half { operand: Operand::Member(target), .. }) if self.collected.slots.get(usize::from(target)).is_some_and(|member| matches!(member.refusal, Maybe::Present(_))))
             {
                 ret == Maybe::Absent(lowered::Absent::Unminted)
@@ -8556,7 +8711,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     | Maybe::Present(half) => match half.operand {
                         | Operand::Written(written) => self.value_type_at(written.node),
                         | Operand::Function => self.signature_at(half.declaration.node),
-                        | Operand::Member(_) | Operand::Data(_) => Maybe::Absent(lowered::Absent::Unminted),
+                        | Operand::Member(_) | Operand::Data(_) | Operand::Operation => Maybe::Absent(lowered::Absent::Unminted),
                     },
                     | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
                 };
@@ -8569,7 +8724,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             .get(&position)
                             .copied()
                             .map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
-                        | Operand::Data(_) => Maybe::Absent(lowered::Absent::Unminted),
+                        | Operand::Data(_) | Operand::Operation => Maybe::Absent(lowered::Absent::Unminted),
                     },
                     | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
                 };
@@ -8620,6 +8775,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return Maybe::Present(DeclarationOutcome::Data(index));
         }
         if let Maybe::Present(Half {
+            operand: Operand::Operation,
+            ..
+        }) = slot.definition
+        {
+            return self.operated.get(&position).map_or(
+                Maybe::Absent(lowered::Absent::Unminted),
+                |&(declared_type, body)| {
+                    Maybe::Present(DeclarationOutcome::Completed {
+                        declared_type,
+                        body,
+                    })
+                },
+            );
+        }
+        if let Maybe::Present(Half {
             operand: Operand::Member(target),
             ..
         }) = slot.definition
@@ -8635,7 +8805,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Maybe::Present(half) => match half.operand {
                 | Operand::Written(written) => self.value_type_at(written.node),
                 | Operand::Function => self.signature_at(half.declaration.node),
-                | Operand::Member(_) | Operand::Data(_) => Maybe::Absent(lowered::Absent::Unminted),
+                | Operand::Member(_) | Operand::Data(_) | Operand::Operation => {
+                    Maybe::Absent(lowered::Absent::Unminted)
+                },
             },
             | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
         };
@@ -8648,7 +8820,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     .get(&position)
                     .copied()
                     .map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
-                | Operand::Data(_) => Maybe::Absent(lowered::Absent::Unminted),
+                | Operand::Data(_) | Operand::Operation => Maybe::Absent(lowered::Absent::Unminted),
             },
             | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
         };
@@ -11459,6 +11631,61 @@ mod tests
         assert!(
             matches!(arena.computation(last), Some(&Computation::Return(value)) if arena.value(value) == Some(&variable(1_u32))),
             "a wildcard binds at any type, with no split, and a name before it is read past it"
+        );
+    }
+
+    /// `run (q, r) <- c ;` binds the tuple under a binder no name reaches and
+    /// splits it, the first component outermost, so `q` is read one index
+    /// further out than `r`.
+    #[test]
+    fn a_tuple_binder_splits_the_returned_tuple_in_order()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from("def a = thunk { run (q, r) <- pure (1, 2) ; return (r, q) } ;"),
+            &mut arena,
+        );
+        let Some(&Value::Thunk(suspended)) = arena.value(body_of(outcomes(&module)[0]))
+        else {
+            panic!("the thunk lowers to a thunk value");
+        };
+        let Some(&Computation::Bind(_, split)) = arena.computation(suspended)
+        else {
+            panic!("the statement binds over the rest of the block");
+        };
+        let Some(&Computation::Split {
+            scrutinee,
+            arity,
+            body,
+        }) = arena.computation(split)
+        else {
+            panic!("the bound tuple is split");
+        };
+        let variable = |index: u32| Value::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(index),
+        };
+        assert_eq!(arity, gandr_core_term::ComponentCount::from(2_usize));
+        assert_eq!(arena.value(scrutinee), Some(&variable(0_u32)));
+        let Some(&Computation::Return(returned)) = arena.computation(body)
+        else {
+            panic!("the block's last computation returns");
+        };
+        let Some(returned) = arena.value(returned)
+        else {
+            panic!("the returned value is minted");
+        };
+        let Value::Tuple(ref components) = *returned
+        else {
+            panic!("a pair is returned");
+        };
+        assert_eq!(
+            components
+                .iter()
+                .map(|&component| arena.value(component).cloned())
+                .collect::<Vec<_>>(),
+            [Some(variable(0_u32)), Some(variable(1_u32))],
+            "`r` is the innermost binder and `q` the one outside it"
         );
     }
 

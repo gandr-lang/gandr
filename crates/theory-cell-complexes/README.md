@@ -21,7 +21,7 @@ The cell-shape substrate of gandr's rewriting stack: flat command patterns, matc
 
 ## Provided features
 
-- `CmdPat`, `ProdPat`, `ConsPat`, `MetaVar`, `Sym`, `HoleName`, `Cat` and the borrowed views `ProdRef`, `ConsRef`, `ProdView`, `ConsView`, `ProdArgs`, `OpArgs`: the pattern language over flat tables, with sizes, groundness and metavariables in a fixed order, none of it recursive.
+- `CmdPat`, `ProdPat`, `ConsPat`, `ConsHead`, `ContinuationCount`, `MetaVar`, `Sym`, `HoleName`, `Cat` and the borrowed views `ProdRef`, `ConsRef`, `ProdView`, `ConsView`, `ProdArgs`, `OpArgs`, `Continuations`: the pattern language over flat tables, with sizes, groundness and metavariables in a fixed order, none of it recursive.
 - `Pos`, `Node`, `NodeRef`, `subterm_at`, `splice_at`, `splice_cmd`, `SpliceRefusal`: positions as child-index paths, reading and splicing at them, and a splice of the wrong category refused by name.
 - `Subst`, `match_cmd`, `unify_cmd`, `BindingRefusal`: an ordered substitution, one-sided matching and most-general unification with the occurs check, both transactional, and `Subst::restricted`, a substitution cut down to named metavariables.
 - `anti_unify_cmd`, `Generalization`, `GeneralizationPoint`, `GeneralizationArm`, `anti_unification::Absent`: the least general generalization of a family of command-pattern tuples, with one point per distinct disagreement and one arm per member at each, and its three refusals by name.

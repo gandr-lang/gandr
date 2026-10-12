@@ -33,6 +33,8 @@ pub enum CircuitWiringError
 {
     /// A term application supplies no wire; its applied head is retained.
     ArgumentIsNotAPort(Name),
+    /// A results tuple supplies no wire: it stands only at a rule's root.
+    ResultsAreNotAPort,
     /// The diagram constructor refused the actual incidence structure.
     NotAWiring(WiringObstruction),
 }
@@ -52,6 +54,9 @@ impl core::fmt::Display for CircuitWiringError
         match *self {
             | Self::ArgumentIsNotAPort(ref head) => {
                 write!(f, "the argument headed by `{head}` is a term, not a wire")
+            },
+            | Self::ResultsAreNotAPort => {
+                f.write_str("a results tuple is not a wire; it stands only at a rule's root")
             },
             | Self::NotAWiring(ref obstruction) => {
                 write!(f, "the circuit body is not a wiring: {obstruction}")
@@ -104,7 +109,7 @@ impl core::error::Error for CircuitEmbedError
 /// # Specification
 /// - requires: no additional precondition.
 /// - ensures: every admitted node becomes one generator, preserving the
-///   argument order, output, head name and head role.
+///   argument order, the outputs in port order, head name and head role.
 /// - fails: a non-variable argument or the diagram constructor's obstruction.
 /// - panics: none.
 ///
@@ -134,17 +139,22 @@ pub fn circuit_wiring(body: &CircuitBody) -> Result<Wiring, CircuitWiringError>
                 | TermView::Ctor { name, .. } | TermView::Op { name, .. } => {
                     return Err(CircuitWiringError::ArgumentIsNotAPort(name.clone()));
                 },
+                | TermView::Results { .. } => return Err(CircuitWiringError::ResultsAreNotAPort),
             };
             let wire = intern(port, &mut index);
             read.insert(wire);
             sources.push(wire);
         }
-        let target = intern(node.out(), &mut index);
-        bound.insert(target);
+        let targets: Vec<Wire> = node
+            .outs()
+            .iter()
+            .map(|out| intern(out, &mut index))
+            .collect();
+        bound.extend(targets.iter().copied());
         generators.push(Generator::new(
             GeneratorLabel::new(node_head(node).as_ref(), node_sort(node)),
             sources,
-            alloc::vec![target],
+            targets,
         ));
     }
     let count = WireCount::from(index.len());
