@@ -9,6 +9,7 @@ The renderer for what one step of the dispatcher's walk prints: each refusal, ea
 - [Examples](#examples)
 - [What a report shows](#what-a-report-shows)
 - [The message is the user's; the title is the producer's](#the-message-is-the-users-the-title-is-the-producers)
+- [The verbosity chooses what to show, never what the report holds](#the-verbosity-chooses-what-to-show-never-what-the-report-holds)
 - [The label says what the locus is](#the-label-says-what-the-locus-is)
 - [A label names the types its refusal compares](#a-label-names-the-types-its-refusal-compares)
 - [A refusal names the judgements it stood inside](#a-refusal-names-the-judgements-it-stood-inside)
@@ -40,6 +41,7 @@ The renderer for what one step of the dispatcher's walk prints: each refusal, ea
 | Classification and loci | Producer classes and origin families remain distinct. Witness: `locus::tests::refusal_locations_keep_origin_families_and_missing_nodes_distinct`. |
 | Metadata | Refusal identifiers, title payloads, labelled context, the types a refusal compares and its nested reasons are available independently. Witnesses: `diagnostics::diagnostics::a_report_preserves_refusal_identity_and_title_payloads`, `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`, `diagnostics::diagnostics::a_mismatch_label_spells_both_types`, `diagnostics::diagnostics::a_refusal_names_the_judgements_it_stood_inside`. |
 | Rendering | Refusal, unsettled and goal layouts, and a refusal with nested reasons, have consumer-visible golden witnesses; pathless sources and duplicate-signature context have location assertions. |
+| Verbosity | One refusal is pinned at every level, the JSON image parsed back. Witness: `diagnostics::diagnostics::one_refusal_renders_at_every_verbosity`; ledger lines at the JSON level: `diagnostics::diagnostics::each_verb_prints_its_entries`. |
 | Styling | Both terminal capabilities have exact style observations; forced styling preserves plain glyphs after removing backend SGR controls. Witness: `diagnostics::diagnostics::forced_styling_colors_actual_facade_annotations`. |
 
 ## Expected features
@@ -51,8 +53,8 @@ The renderer for what one step of the dispatcher's walk prints: each refusal, ea
 ## Examples
 
 ```rust
-use gandr_surface_diagnostics::Entry;
 use gandr_surface_diagnostics::RenderStyle;
+use gandr_surface_diagnostics::Verbosity;
 use gandr_surface_diagnostics::entries;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::Verb;
@@ -63,10 +65,7 @@ let verb = Verb::Check(Goals::Gated);
 let mut walk = Walk::new(vec![std::path::PathBuf::from("broken.gandr")]);
 while let Maybe::Present(step) = walk.step() {
     for entry in entries(&step, verb) {
-        match entry {
-            | Entry::Report(report) => println!("{}\n", report.render(RenderStyle::Plain)),
-            | Entry::Line(line) => println!("{line}"),
-        }
+        println!("{}", entry.render(RenderStyle::Plain, Verbosity::User));
     }
 }
 ```
@@ -104,6 +103,21 @@ No message carries a byte range: the snippet's path, line and column locate the 
 Each producer words its refusals for whoever reads its code: the lowering names the grammar's sorts (`` `hole` has an operand where it takes none ``), the checker its rules (`the rule here requires a thunk type`). A report keeps that text as `Report::title` and leads with `Report::message` instead: one plain message per refusal variant, chosen by an exhaustive match in `message.rs`, naming the source's own names and its forms in words (`this hole has an operand it does not take`, `expected a thunk type`, `` `missing` is not defined ``), and naming no grammar sort, node or admission position. A refusal only a producer's broken invariant reaches says `internal error:`. Every other report's message is its title, which is already the user's. The terminal and the language server both lead with the message; the title stays for a face that wants the producer's words, the verbosity levels in particular.
 
 The alternative was rewording each producer's `Display`, which would leave the implementer text nowhere: the lowering's and the checker's own tests, ledger lines and a detailed verbosity read it. Reversal: when no face reads the producer's text, the two collapse into one. Witness: `message::tests::every_refusal_name_has_a_plain_message`, which builds one refusal of every vocabulary name and holds each message to one line with no grammar sort.
+
+## The verbosity chooses what to show, never what the report holds
+
+`Report::render` and `Entry::render` take a `Verbosity`, and every level renders the same report:
+
+| Level | Adds |
+| ----- | ---- |
+| `User`, the default | the message, the labels, the nested reasons and the note |
+| `Detailed` | `class:` the report's class, `detail:` the producer's own wording where it differs from the message, `expression:` the primary locus's source text when it is one line |
+| `Debug` | `spans:` the byte span of every locus, `refusal:` and `judgements:` the producer's refusal and the judgements it stood inside, as their implementers print them, core ids included |
+| `Json` | instead of the snippet, one line of JSON: `level`, `name`, `class`, `message`, `title`, `path`, `primary`, `context`, `reasons` and `note`, each locus with its bytes, its one-based line and column in characters and its label; a ledger line is `{"level":"line","path":…,"line":…}` |
+
+The added lines close the snippet beside the note, so a reader at the detailed level reads the user's report first. The refusal name stays on the first line at every level: a user copies it into a `refuses` expectation. The typing context a refusal stood in is not shown at any level: the step carries the judgements, not the bindings in scope at them, and showing it waits for the checker to report them. The JSON image ignores the style.
+
+The alternative was a separate renderer per level, which would let two levels disagree about what a report holds; and a JSON image derived from the producers' own types, which would make every producer's internal layout a wire format. Reversal: a face that needs a fact no level shows adds it to the level that owns it here. Witnesses: `diagnostics::diagnostics::one_refusal_renders_at_every_verbosity`, which pins one refusal at every level and parses the JSON image back.
 
 ## The label says what the locus is
 

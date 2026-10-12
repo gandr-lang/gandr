@@ -98,6 +98,27 @@ impl RenderStyle
     }
 }
 
+/// How much of a report a rendering shows.
+///
+/// Every level renders the same report: a level chooses what to show, never
+/// what the report holds.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Verbosity
+{
+    /// The message, the labels, the nested reasons and the note.
+    #[default]
+    User,
+    /// Adds the report's class, the producer's own wording of a refusal and
+    /// the source text of the primary locus.
+    Detailed,
+    /// Adds the byte span of every locus and the producer's refusal and
+    /// judgements as their implementers print them.
+    Debug,
+    /// The whole report as one line of JSON, for tools and agents; the style
+    /// adds nothing to it.
+    Json,
+}
+
 /// Owned presentation text. [`crate::Report::render`] adds no framing
 /// terminator; literal path content can include one. Adopting a string
 /// preserves its bytes unchanged.

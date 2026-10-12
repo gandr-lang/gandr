@@ -22,7 +22,8 @@ name = "gandr"
 path = "src/main.rs"
 
 # The pinned anodized facade supplies core-only specification helpers;
-# logic/BigInt stays disabled.
+# logic/BigInt stays disabled. serde_json encodes the run's summary line
+# under `--verbosity json`.
 [dependencies]
 anodized.workspace = true
 clap.workspace = true
@@ -33,6 +34,7 @@ gandr-surface-lsp.workspace = true
 gandr-surface-repl.workspace = true
 gandr-surface-tui.workspace = true
 quenchant-shape.workspace = true
+serde_json.workspace = true
 tracing = { workspace = true, optional = true }
 tracing-subscriber = { workspace = true, optional = true }
 

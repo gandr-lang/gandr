@@ -14,6 +14,7 @@ use gandr_surface_corpus::Outcome;
 use gandr_surface_diagnostics::Class;
 use gandr_surface_diagnostics::Entry;
 use gandr_surface_diagnostics::RenderStyle;
+use gandr_surface_diagnostics::Verbosity;
 use gandr_surface_diagnostics::entries;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Evaluation;
@@ -360,12 +361,12 @@ pub fn encode_submission(
             | Entry::Report(report) => match report.class() {
                 | Class::Goal => {},
                 | Class::Warning => {
-                    let rendered = report.render(style).to_string();
+                    let rendered = report.render(style, Verbosity::User).to_string();
                     lines.push((OutKind::Diag, String::from(rendered.trim_end())));
                 },
                 | Class::Refusal(_) | Class::Unsettled(_) => {
                     refused = true;
-                    let rendered = report.render(style).to_string();
+                    let rendered = report.render(style, Verbosity::User).to_string();
                     lines.push((OutKind::Diag, String::from(rendered.trim_end())));
                 },
             },
