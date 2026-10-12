@@ -1345,11 +1345,7 @@ impl<'source> Lowerer<'_, 'source>
             }
             read_pieces(self.pbg, self.tree, next.node, &mut pieces)?;
             if let Maybe::Present(repaired) = pieces.repair {
-                return Err(LoweringRefusal::MalformedForm {
-                    span: repaired.span,
-                    form: FormName::OR_PATTERN,
-                    fault: FormFault::Repaired(repaired.repair),
-                });
+                return Err(repaired.refusal(FormName::OR_PATTERN));
             }
             for piece in pieces.pieces.iter().rev() {
                 if let Piece::Operand(alternative) = *piece {
@@ -1494,7 +1490,7 @@ impl<'source> Lowerer<'_, 'source>
         }
         read_pieces(self.pbg, self.tree, at.node, pieces)?;
         if let Maybe::Present(repaired) = pieces.repair {
-            return Err(here.fault(repaired.span, FormFault::Repaired(repaired.repair)));
+            return Err(repaired.refusal(here.name));
         }
         if name == FormName::LITERAL_PATTERN {
             return match pieces.pieces.first() {

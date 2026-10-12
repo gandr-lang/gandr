@@ -24,7 +24,9 @@ use gandr_core_checker::UnadmittedFormer;
 use gandr_kernel_term::DescentRefusal;
 use gandr_kernel_term::OccurrenceSite;
 use gandr_surface_corpus::CorpusRefusal;
+use gandr_surface_corpus::ExpectationFault;
 use gandr_surface_corpus::Refusal;
+use gandr_surface_corpus::Stated;
 use gandr_surface_corpus::Surviving;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::Origin;
@@ -32,7 +34,8 @@ use gandr_surface_lowering::OriginTable;
 use gandr_surface_syntax::ByteSpan;
 use quenchant_shape::shape::Maybe;
 
-use crate::report::Class;
+use crate::culprit::Culprit;
+use crate::report::Unsettlement;
 use crate::report::report_span;
 
 quenchant_shape::reason_enum! {
@@ -57,14 +60,18 @@ quenchant_shape::reason_enum! {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Label
 {
-    /// The report's class: the primary locus of a refusal or of a
-    /// declaration unsettled with no refusal produced.
-    Class(Class),
+    /// What the refused bytes are: the primary locus of a refusal.
+    Culprit(Culprit),
+    /// What the unsettlement of a declaration that produced no refusal rests
+    /// on: its primary locus.
+    Unsettled(Unsettlement),
     /// The obligations a declaration leaves unsettled: the primary locus of a
     /// goal and of a declaration unsettled by its obligations.
     Surviving(Surviving),
     /// The first occurrence a duplicate repeats.
     First,
+    /// The declaration of a member named before it.
+    Declared,
     /// The type a mismatched term was checked against.
     Expected,
     /// The type a mismatched term synthesised.
@@ -101,9 +108,11 @@ impl fmt::Display for Label
     ) -> fmt::Result
     {
         match *self {
-            | Self::Class(class) => fmt::Display::fmt(&class, f),
+            | Self::Culprit(culprit) => fmt::Display::fmt(&culprit, f),
+            | Self::Unsettled(unsettlement) => fmt::Display::fmt(&unsettlement, f),
             | Self::Surviving(surviving) => write!(f, "surviving obligations: {surviving}"),
             | Self::First => f.write_str("first written here"),
+            | Self::Declared => f.write_str("declared here"),
             | Self::Expected => f.write_str("the type it is checked against"),
             | Self::Synthesised => f.write_str("the type it synthesises"),
             | Self::Met(wanted) => write!(f, "the type met, where {} is required", Shape(wanted)),
@@ -155,14 +164,76 @@ impl Annotations
         }
     }
 
-    /// The loci of a lowering refusal of class `class`.
+    /// The loci of a declaration whose expectation `stated` states no
+    /// verdict, the declaration spanning `declaration`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the primary locus is the attribute the fault names — the
+    ///   second of two conflicting expectations, with the first as context —
+    ///   labelled as a malformed expectation; a statement that is a verdict
+    ///   falls back to `declaration`.
+    /// - provides: the loci of a malformed expectation, read from the fault.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a conflicting pair exposes the primary and context
+    ///   roles and a one-span fault its attribute; a verdict exposes the
+    ///   fallback.
+    /// - witness: `locus::tests::a_malformed_expectation_points_at_its_attribute`
+    #[spec(ensures: |ref ret| match *stated {
+        Stated::Malformed(ExpectationFault::ConflictingExpectations { first, second }) =>
+            *ret == Self {
+                primary: Maybe::Present(Annotation { span: second, label: Label::Unsettled(Unsettlement::Malformed) }),
+                context: [Maybe::Present(Annotation { span: first, label: Label::First }), Maybe::Absent(report_context::Absent::Unnamed)],
+            },
+        Stated::Malformed(ExpectationFault::UnknownRefusal { span }
+            | ExpectationFault::NegativeObligations { span }
+            | ExpectationFault::ObligationsBeyondRange { span }) =>
+            *ret == Self::at(span, Label::Unsettled(Unsettlement::Malformed)),
+        Stated::Verdict(_) => *ret == Self::at(declaration, Label::Unsettled(Unsettlement::Malformed)),
+    })]
+    pub fn malformed(
+        stated: &Stated,
+        declaration: ByteSpan,
+    ) -> Self
+    {
+        let label = Label::Unsettled(Unsettlement::Malformed);
+        match *stated {
+            | Stated::Malformed(ExpectationFault::ConflictingExpectations { first, second }) => {
+                Self {
+                    primary: Maybe::Present(Annotation {
+                        span: second,
+                        label,
+                    }),
+                    context: [
+                        Maybe::Present(Annotation {
+                            span: first,
+                            label: Label::First,
+                        }),
+                        Maybe::Absent(report_context::Absent::Unnamed),
+                    ],
+                }
+            },
+            | Stated::Malformed(
+                ExpectationFault::UnknownRefusal { span }
+                | ExpectationFault::NegativeObligations { span }
+                | ExpectationFault::ObligationsBeyondRange { span },
+            ) => Self::at(span, label),
+            | Stated::Verdict(_) => Self::at(declaration, label),
+        }
+    }
+
+    /// The loci of a lowering refusal.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the primary locus is the span the lowering rejected, labelled
-    ///   with `class`, and is absent for the two refusals about the run rather
-    ///   than a position; a duplicate declaration, import alias or attribute
-    ///   marks its first occurrence as context.
+    ///   with what those bytes are, and is absent for the two refusals about
+    ///   the run rather than a position; a duplicate declaration, import alias
+    ///   or attribute marks its first occurrence as context, and a member named
+    ///   before its declaration marks that declaration.
     /// - provides: the loci of a lowering refusal, whether it refused a
     ///   declaration or the source as a whole.
     /// - fails: never.
@@ -177,35 +248,35 @@ impl Annotations
     /// - witness: `diagnostics::diagnostics::a_refused_declaration_renders_its_snippet`
     /// - witness: `locus::tests::run_refusals_have_no_invented_source_locus`
     #[spec(ensures: |ref ret| {
+        let label = Label::Culprit(Culprit::of(Refusal::Lowering(refusal)));
         let located = match (refusal.span(), ret.primary) {
             (Maybe::Present(span), Maybe::Present(annotation)) =>
-                annotation.span == span && annotation.label == Label::Class(class),
+                annotation.span == span && annotation.label == label,
             (Maybe::Absent(_), Maybe::Absent(report_span::Absent::Run)) => true,
             _ => false,
         };
         located && ret.context[1_usize] == Maybe::Absent(report_context::Absent::Unnamed)
-            && if let LoweringRefusal::DuplicateSignature { first, .. }
+            && match refusal {
+                LoweringRefusal::DuplicateSignature { first, .. }
                 | LoweringRefusal::DuplicateDefinition { first, .. }
                 | LoweringRefusal::DuplicateImportAlias { first, .. }
-                | LoweringRefusal::DuplicateAttribute { first, .. } = refusal {
-                ret.context[0_usize] == Maybe::Present(Annotation { span: first, label: Label::First })
-            } else {
-                ret.context[0_usize] == Maybe::Absent(report_context::Absent::Unnamed)
+                | LoweringRefusal::DuplicateAttribute { first, .. } =>
+                    ret.context[0_usize] == Maybe::Present(Annotation { span: first, label: Label::First }),
+                LoweringRefusal::ForwardMemberReference { declared, .. } =>
+                    ret.context[0_usize] == Maybe::Present(Annotation { span: declared, label: Label::Declared }),
+                _ => ret.context[0_usize] == Maybe::Absent(report_context::Absent::Unnamed),
             }
     })]
-    pub fn lowering(
-        refusal: LoweringRefusal<'_>,
-        class: Class,
-    ) -> Self
+    pub fn lowering(refusal: LoweringRefusal<'_>) -> Self
     {
         let primary = match refusal.span() {
             | Maybe::Present(span) => Maybe::Present(Annotation {
                 span,
-                label: Label::Class(class),
+                label: Label::Culprit(Culprit::of(Refusal::Lowering(refusal))),
             }),
             | Maybe::Absent(_) => Maybe::Absent(report_span::Absent::Run),
         };
-        let first = match refusal {
+        let context = match refusal {
             | LoweringRefusal::DuplicateSignature { first, .. }
             | LoweringRefusal::DuplicateDefinition { first, .. }
             | LoweringRefusal::DuplicateImportAlias { first, .. }
@@ -213,6 +284,12 @@ impl Annotations
                 span: first,
                 label: Label::First,
             }),
+            | LoweringRefusal::ForwardMemberReference { declared, .. } => {
+                Maybe::Present(Annotation {
+                    span: declared,
+                    label: Label::Declared,
+                })
+            },
             | LoweringRefusal::UnresolvedName { .. }
             | LoweringRefusal::UnresolvedTypeHead { .. }
             | LoweringRefusal::ShadowedBuiltin { .. }
@@ -224,7 +301,6 @@ impl Annotations
             | LoweringRefusal::MissingPayload { .. }
             | LoweringRefusal::NonValuePayload { .. }
             | LoweringRefusal::IllTypedPayload { .. }
-            | LoweringRefusal::ForwardMemberReference { .. }
             | LoweringRefusal::UnknownMember { .. }
             | LoweringRefusal::UnreadAscription { .. }
             | LoweringRefusal::LowercaseModuleName { .. }
@@ -236,7 +312,7 @@ impl Annotations
         };
         Self {
             primary,
-            context: [first, Maybe::Absent(report_context::Absent::Unnamed)],
+            context: [context, Maybe::Absent(report_context::Absent::Unnamed)],
         }
     }
 
@@ -256,30 +332,30 @@ impl Annotations
     ///   allowance, an admission out of order and a machine invariant are about
     ///   the declaration as a whole and are located at `declaration`. A node
     ///   the table holds nothing for leaves its locus absent.
-    /// - provides: the primary locus labelled with the refusal's class, and its
-    ///   context.
+    /// - provides: the primary locus labelled with what the refused bytes are,
+    ///   and its context.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — lowering, corpus and checker fixtures expose the
-    ///   producer's primary class and causal spans. Distinct origin records and
+    ///   producer's primary label and causal spans. Distinct origin records and
     ///   missing nodes distinguish wrong locations from missing metadata. Other
     ///   producer payloads are outside these finite fixtures.
     /// - witness: `diagnostics::diagnostics::a_refused_declaration_renders_its_snippet`
     /// - witness: `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`
     /// - witness: `locus::tests::refusal_locations_keep_origin_families_and_missing_nodes_distinct`
     #[spec(ensures: |ref ret| {
-        let class = Class::Refusal(refusal.classify());
-        let classified = match ret.primary {
-            Maybe::Present(annotation) => annotation.label == Label::Class(class),
+        let label = Label::Culprit(Culprit::of(refusal));
+        let labelled = match ret.primary {
+            Maybe::Present(annotation) => annotation.label == label,
             Maybe::Absent(report_span::Absent::Run | report_span::Absent::Unrecorded) => true,
             Maybe::Absent(report_span::Absent::OutsideText) => false,
         };
-        classified && ret.context.iter().all(|slot| !matches!(*slot,
+        labelled && ret.context.iter().all(|slot| !matches!(*slot,
             Maybe::Absent(report_context::Absent::OutsideText)))
             && if let Refusal::Corpus(CorpusRefusal::ExpectationOutsideFixtureRoot { span, .. }) = refusal {
-                ret.primary == Maybe::Present(Annotation { span, label: Label::Class(class) })
+                ret.primary == Maybe::Present(Annotation { span, label })
                     && ret.context == UNNAMED
             } else { true }
     })]
@@ -289,18 +365,17 @@ impl Annotations
         origins: &OriginTable,
     ) -> Self
     {
-        let class = Class::Refusal(refusal.classify());
         match refusal {
-            | Refusal::Lowering(lowering) => Self::lowering(lowering, class),
+            | Refusal::Lowering(lowering) => Self::lowering(lowering),
             | Refusal::Corpus(CorpusRefusal::ExpectationOutsideFixtureRoot { span, .. }) => {
-                Self::at(span, Label::Class(class))
+                Self::at(span, Label::Culprit(Culprit::of(refusal)))
             },
-            | Refusal::Checking(checking) => checked(checking, declaration, origins, class),
+            | Refusal::Checking(checking) => checked(checking, declaration, origins),
         }
     }
 }
 
-/// The loci of the checker refusal `refusal` of class `class`.
+/// The loci of the checker refusal `refusal`.
 ///
 /// # Specification
 /// - requires: origins describe the nodes named by the refusal.
@@ -321,8 +396,9 @@ impl Annotations
 /// - witness: `locus::tests::refusal_locations_keep_origin_families_and_missing_nodes_distinct`
 /// - witness: `locus::tests::checker_fallbacks_preserve_causal_roles`
 #[spec(ensures: |ref ret| {
-    let classified = match ret.primary {
-        Maybe::Present(annotation) => annotation.label == Label::Class(class),
+    let label = Label::Culprit(Culprit::of(Refusal::Checking(refusal)));
+    let labelled = match ret.primary {
+        Maybe::Present(annotation) => annotation.label == label,
         Maybe::Absent(report_span::Absent::Unrecorded) => true,
         Maybe::Absent(report_span::Absent::Run | report_span::Absent::OutsideText) => false,
     };
@@ -331,7 +407,7 @@ impl Annotations
         Maybe::Absent(report_context::Absent::Unrecorded) => true,
         Maybe::Absent(report_context::Absent::Unnamed | report_context::Absent::OutsideText) => false,
     };
-    classified && match refusal {
+    labelled && match refusal {
         CheckRefusal::DataFieldLevel {..} | CheckRefusal::MissingRecordField {..} => role(&ret.context[0_usize],Label::Expected) && ret.context[1_usize] == Maybe::Absent(report_context::Absent::Unnamed),
         CheckRefusal::TypeMismatch(_) | CheckRefusal::SortMismatch { .. }
             | CheckRefusal::LevelMismatch { .. } | CheckRefusal::FamilyArgumentClassifier { .. } =>
@@ -347,7 +423,7 @@ impl Annotations
             | CheckRefusal::CrossBlockReference { .. }
             | CheckRefusal::BudgetExceeded { .. } | CheckRefusal::AdmissionOrder { .. }
             | CheckRefusal::MachineInvariant => ret.primary == Maybe::Present(Annotation {
-                span: declaration, label: Label::Class(class),
+                span: declaration, label,
             }) && ret.context == UNNAMED,
         _ => ret.context == UNNAMED,
     }
@@ -356,10 +432,9 @@ fn checked(
     refusal: CheckRefusal,
     declaration: ByteSpan,
     origins: &OriginTable,
-    class: Class,
 ) -> Annotations
 {
-    let label = Label::Class(class);
+    let label = Label::Culprit(Culprit::of(Refusal::Checking(refusal)));
     let (primary, context) = match refusal {
         | CheckRefusal::DataKindNotUniverse(at) | CheckRefusal::DataArgumentArity(at) => {
             (spanned(origins.value_type(at)), UNNAMED)
@@ -996,9 +1071,12 @@ mod tests
     use super::Annotation;
     use super::Annotations;
     use super::Checked;
-    use super::Class;
+    use super::Culprit;
+    use super::ExpectationFault;
     use super::Label;
+    use super::Stated;
     use super::UNNAMED;
+    use super::Unsettlement;
     use super::report_context;
     use super::report_span;
 
@@ -1056,7 +1134,7 @@ mod tests
                 found.primary,
                 Maybe::Present(Annotation {
                     span,
-                    label: Label::Class(Class::Refusal(refusal.classify())),
+                    label: Label::Culprit(Culprit::of(refusal)),
                 })
             );
             assert_eq!(found.context, UNNAMED);
@@ -1121,7 +1199,7 @@ mod tests
             found.primary,
             Maybe::Present(Annotation {
                 span: spans[0_usize],
-                label: Label::Class(Class::Refusal(refusal.classify())),
+                label: Label::Culprit(Culprit::of(refusal)),
             })
         );
         assert_eq!(found.context, [
@@ -1178,11 +1256,57 @@ mod tests
                 found.primary,
                 Maybe::Present(Annotation {
                     span: spans[3_usize],
-                    label: Label::Class(Class::Refusal(refusal.classify())),
+                    label: Label::Culprit(Culprit::of(refusal)),
                 })
             );
             assert_eq!(found.context, UNNAMED);
         }
+    }
+
+    #[test]
+    fn a_malformed_expectation_points_at_its_attribute()
+    {
+        let span = |start: usize, end: usize| {
+            ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end))
+                .expect("ordered fixture spans")
+        };
+        let declaration = span(0_usize, 40_usize);
+        let first = span(2_usize, 9_usize);
+        let second = span(12_usize, 20_usize);
+        let label = Label::Unsettled(Unsettlement::Malformed);
+        let conflicting = Annotations::malformed(
+            &Stated::Malformed(ExpectationFault::ConflictingExpectations { first, second }),
+            declaration,
+        );
+        assert_eq!(
+            conflicting.primary,
+            Maybe::Present(Annotation {
+                span: second,
+                label
+            }),
+            "the contradicting attribute is the locus"
+        );
+        assert_eq!(
+            conflicting.context,
+            [
+                Maybe::Present(Annotation {
+                    span: first,
+                    label: Label::First
+                }),
+                Maybe::Absent(report_context::Absent::Unnamed),
+            ],
+            "the attribute it contradicts is its context"
+        );
+        let negative = Annotations::malformed(
+            &Stated::Malformed(ExpectationFault::NegativeObligations { span: first }),
+            declaration,
+        );
+        assert_eq!(
+            negative.primary,
+            Maybe::Present(Annotation { span: first, label }),
+            "a payload fault points at its attribute, not the declaration"
+        );
+        assert_eq!(negative.context, UNNAMED);
     }
 
     #[test]
@@ -1191,7 +1315,7 @@ mod tests
         let refusal = LoweringRefusal::BudgetExceeded {
             budget: 0_usize.into(),
         };
-        let found = Annotations::lowering(refusal, Class::Refusal(refusal.classify()));
+        let found = Annotations::lowering(refusal);
         assert_eq!(found.primary, Maybe::Absent(report_span::Absent::Run));
         assert_eq!(found.context, UNNAMED);
     }

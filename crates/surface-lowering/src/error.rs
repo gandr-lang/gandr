@@ -606,7 +606,9 @@ pub enum LoweringRefusal<'source>
 
 impl fmt::Display for LoweringRefusal<'_>
 {
-    /// Writes the refusal and the position it names.
+    /// Writes the refusal without the positions it names: a diagnostic
+    /// locates those through [`LoweringRefusal::span`] and the payload's own
+    /// spans, so the message never repeats them as byte offsets.
     ///
     /// # Specification
     /// trivial.
@@ -617,118 +619,87 @@ impl fmt::Display for LoweringRefusal<'_>
     ) -> fmt::Result
     {
         match *self {
-            | Self::UnresolvedName { span, name } => {
-                write!(f, "no declaration or binder answers `{name}` at {span}")
+            | Self::UnresolvedName { name, .. } => {
+                write!(f, "no declaration or binder answers `{name}`")
             },
-            | Self::UnresolvedTypeHead { span, name, arity } => {
-                write!(f, "no type head answers `{name}` {arity} at {span}")
+            | Self::UnresolvedTypeHead { name, arity, .. } => {
+                write!(f, "no type head answers `{name}` {arity}")
             },
-            | Self::DuplicateSignature { span, name, first } => {
-                write!(
-                    f,
-                    "`{name}` already has a signature at {first}; a second at {span}"
-                )
+            | Self::DuplicateSignature { name, .. } => {
+                write!(f, "`{name}` already has a signature")
             },
-            | Self::DuplicateDefinition { span, name, first } => {
-                write!(
-                    f,
-                    "`{name}` already has a definition at {first}; a second at {span}"
-                )
+            | Self::DuplicateDefinition { name, .. } => {
+                write!(f, "`{name}` already has a definition")
             },
-            | Self::DuplicateImportAlias { span, alias, first } => write!(
+            | Self::DuplicateImportAlias { alias, .. } => write!(
                 f,
-                "the import alias `{alias}` at {span} is already bound by the import at {first}: \
-                 {ONE_SOURCE}"
+                "the import alias `{alias}` is already bound by an earlier import: {ONE_SOURCE}"
             ),
-            | Self::ShadowedBuiltin { span, name } => write!(
+            | Self::ShadowedBuiltin { name, .. } => write!(
                 f,
-                "`{name}` at {span} shadows a builtin name, which the active policy forbids"
+                "`{name}` shadows a builtin name, which the active policy forbids"
             ),
             | Self::OutOfFragment {
-                span,
                 form,
                 sort,
                 boundary,
-            } => write!(f, "{form} at {span}, read as {sort}, {boundary}"),
-            | Self::GradedBridge { span, grade } => write!(
+                ..
+            } => write!(f, "{form}, read as {sort}, {boundary}"),
+            | Self::GradedBridge { grade, .. } => write!(
                 f,
-                "the bridge's grade `{grade}` at {span} is not the default `ω`, the only grade \
-                 the fragment admits"
+                "the bridge's grade `{grade}` is not the default `ω`, the only grade the \
+                 fragment admits"
             ),
-            | Self::MalformedLiteral { span, form } => {
-                write!(f, "the text at {span} is not the lexeme of {form}")
+            | Self::MalformedLiteral { form, .. } => {
+                write!(f, "the text is not the lexeme of {form}")
             },
-            | Self::MalformedForm { span, form, fault } => write!(f, "{form} {fault} at {span}"),
+            | Self::MalformedForm { form, fault, .. } => write!(f, "{form} {fault}"),
             | Self::UnknownAttribute {
-                span,
-                name,
-                suggestion,
+                name, suggestion, ..
             } => match suggestion {
                 | Maybe::Present(nearest) => write!(
                     f,
-                    "no attribute is registered as `{name}` at {span}; the nearest is `{nearest}`"
+                    "no attribute is registered as `{name}`; the nearest is `{nearest}`"
                 ),
-                | Maybe::Absent(_) => write!(f, "no attribute is registered as `{name}` at {span}"),
+                | Maybe::Absent(_) => write!(f, "no attribute is registered as `{name}`"),
             },
-            | Self::DuplicateAttribute { span, name, first } => write!(
-                f,
-                "the attribute `{name}` is already written at {first}; a second at {span}"
-            ),
-            | Self::MissingPayload {
-                span,
-                name,
-                expected,
-            } => write!(f, "`{name}` at {span} takes {expected} and was given none"),
-            | Self::NonValuePayload { span, name, form } => {
-                write!(
-                    f,
-                    "the payload of `{name}` at {span} is {form}, not a value"
-                )
+            | Self::DuplicateAttribute { name, .. } => {
+                write!(f, "the attribute `{name}` is already written")
+            },
+            | Self::MissingPayload { name, expected, .. } => {
+                write!(f, "`{name}` takes {expected} and was given none")
+            },
+            | Self::NonValuePayload { name, form, .. } => {
+                write!(f, "the payload of `{name}` is {form}, not a value")
             },
             | Self::IllTypedPayload {
-                span,
                 name,
                 expected,
                 written,
-            } => write!(
+                ..
+            } => write!(f, "`{name}` takes {expected} and was given {written}"),
+            | Self::ForwardMemberReference { name, .. } => write!(
                 f,
-                "`{name}` at {span} takes {expected} and was given {written}"
+                "the member `{name}` is declared at or after the member naming it; a member \
+                 names only the members before it"
             ),
-            | Self::ForwardMemberReference {
-                span,
-                name,
-                declared,
-            } => write!(
-                f,
-                "the member `{name}` at {span} is declared at {declared}, at or after the member \
-                 naming it; a member names only the members before it"
-            ),
-            | Self::UnknownMember {
-                span,
-                module,
-                member,
-            } => write!(
-                f,
-                "the module `{module}` exports no member `{member}` at {span}"
-            ),
-            | Self::UnreadAscription { span, name, form } => {
-                write!(
-                    f,
-                    "`{name}` at {span} {form}; the fragment does not read it yet"
-                )
+            | Self::UnknownMember { module, member, .. } => {
+                write!(f, "the module `{module}` exports no member `{member}`")
             },
-            | Self::LowercaseModuleName { span, name } => write!(
+            | Self::UnreadAscription { name, form, .. } => {
+                write!(f, "`{name}` {form}; the fragment does not read it yet")
+            },
+            | Self::LowercaseModuleName { name, .. } => write!(
                 f,
-                "the module `{name}` at {span} is named with a lowercase initial; a top-level \
-                 module's name starts with an uppercase letter"
+                "the module `{name}` is named with a lowercase initial; a top-level module's \
+                 name starts with an uppercase letter"
             ),
-            | Self::NonExhaustiveMatch { span } => write!(
+            | Self::NonExhaustiveMatch { .. } => {
+                f.write_str("the match leaves a value of its scrutinee that no arm matches")
+            },
+            | Self::UnmarkedSelfReference { name, .. } => write!(
                 f,
-                "the match at {span} leaves a value of its scrutinee that no arm matches"
-            ),
-            | Self::UnmarkedSelfReference { span, name } => write!(
-                f,
-                "`{name}` at {span} names its own recursive definition without a claim; write \
+                "`{name}` names its own recursive definition without a claim; write \
                  `{name}[<](…)` to recurse on a field of the last parameter"
             ),
             | Self::BudgetExceeded { budget } => {
@@ -740,9 +711,9 @@ impl fmt::Display for LoweringRefusal<'_>
                 u64::from(tree),
                 u64::from(grammar)
             ),
-            | Self::UnknownMold { span, mold } => write!(
+            | Self::UnknownMold { mold, .. } => write!(
                 f,
-                "the mold {} at {span} is not in the grammar's table",
+                "the mold {} is not in the grammar's table",
                 u32::from(mold)
             ),
         }
@@ -1020,6 +991,20 @@ mod tests
                 refusal.span(),
                 position,
                 "each refusal reports its own rejected span"
+            );
+        }
+    }
+
+    #[test]
+    fn no_message_spells_a_byte_range()
+    {
+        use alloc::string::ToString as _;
+
+        for refusal in every_variant() {
+            let message = refusal.to_string();
+            assert!(
+                !message.contains(".."),
+                "a diagnostic locates the refusal; its message repeats no byte range: {message}"
             );
         }
     }

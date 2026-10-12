@@ -347,9 +347,10 @@ mod session
     ///
     /// # Specification
     /// - requires: index describes the report source; located spans project.
-    /// - ensures: the primary range, optional code, title and related ranges
-    ///   and labels are represented in the comparison object, preserving
-    ///   context order.
+    /// - ensures: the primary range, optional code, message (title, then the
+    ///   primary label and the note on lines of their own when present) and
+    ///   related ranges and labels are represented in the comparison object,
+    ///   preserving context order.
     /// - provides: an independent renderer-stage observation of editor
     ///   diagnostics.
     /// - fails: never for valid report spans.
@@ -389,7 +390,16 @@ mod session
             })),
             Maybe::Absent(_) => None,
         }).collect();
-        json!({"range": range, "code": code, "message": report.title().to_string(), "related": related})
+        let label = match report.label() {
+            | Maybe::Present(label) => format!("\n{label}"),
+            | Maybe::Absent(_) => String::new(),
+        };
+        let note = match report.note() {
+            | Maybe::Present(note) => format!("\nnote: {note}"),
+            | Maybe::Absent(_) => String::new(),
+        };
+        let message = format!("{}{label}{note}", report.title());
+        json!({"range": range, "code": code, "message": message, "related": related})
     }
 
     /// The range, code and message of each diagnostic a publication carries.

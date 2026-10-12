@@ -107,12 +107,13 @@ impl CorpusRefusal
 
 impl fmt::Display for CorpusRefusal
 {
-    /// Writes the refusal and the attribute it refuses.
+    /// Writes the refusal and the schema it refuses.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: writes the rejected schema and source span, and names both
-    ///   schemas admitted by the strict root.
+    /// - ensures: writes the rejected schema and names both schemas admitted by
+    ///   the strict root; the source span is the diagnostic's locus and never
+    ///   appears in the text.
     /// - fails: propagates a refusing sink as `fmt::Error`.
     /// - panics: none.
     /// - executable: none — the formatter exposes neither emitted text nor
@@ -124,8 +125,8 @@ impl fmt::Display for CorpusRefusal
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a strict-root refusal at a nonempty span retains its
-    ///   exact identifier, admitted alternatives and source range, without
-    ///   fixing English sentence wording.
+    ///   exact identifier and admitted alternatives and omits the source range,
+    ///   without fixing English sentence wording.
     /// - witness: `refusal::tests::root_refusal_names_every_admitted_schema`
     #[inline]
     fn fmt(
@@ -134,9 +135,9 @@ impl fmt::Display for CorpusRefusal
     ) -> fmt::Result
     {
         match *self {
-            | Self::ExpectationOutsideFixtureRoot { schema, span } => write!(
+            | Self::ExpectationOutsideFixtureRoot { schema, .. } => write!(
                 f,
-                "`{schema}` at {span} states an expectation the strict root refuses; only `checks` and `runs` are admitted outside the fixture root"
+                "`{schema}` states an expectation the strict root refuses; only `checks` and `runs` are admitted outside the fixture root"
             ),
         }
     }
@@ -1045,7 +1046,10 @@ mod tests
                 "the diagnostic must name each admitted schema: {admitted}"
             );
         }
-        assert!(rendered.contains(&at.to_string()));
+        assert!(
+            !rendered.contains(&at.to_string()),
+            "the span is the report's locus, not part of its message"
+        );
         assert_eq!(
             fmt::Write::write_fmt(&mut RefusingWriter, format_args!("{refusal}")),
             Err(fmt::Error)

@@ -269,14 +269,15 @@ pub struct Rechecked
 /// - ensures: the text is judged once, and each entry `gandr check --goals`
 ///   prints for the judgement's step becomes one diagnostic, in the order
 ///   printed: a report at the range its span projects to, with the refusal's
-///   vocabulary name as its code, its title as its message, each context locus
-///   as a related location carrying its label, and the severity of a goal as
-///   information and of every other report as an error; a report the renderer
-///   leaves unlocated, and a ledger line, at the document's origin. A fault
-///   that keeps the document from composing, and a grammar that did not build,
-///   is one error at the origin naming it. The timing carries the judgement's
-///   form census, the incremental checker's census, and the wall of the whole
-///   recheck; its admission is pending when the judgement left one.
+///   vocabulary name as its code, its title, primary label and note as its
+///   message, each context locus as a related location carrying its label, and
+///   the severity of a goal as information and of every other report as an
+///   error; a report the renderer leaves unlocated, and a ledger line, at the
+///   document's origin. A fault that keeps the document from composing, and a
+///   grammar that did not build, is one error at the origin naming it. The
+///   timing carries the judgement's form census, the incremental checker's
+///   census, and the wall of the whole recheck; its admission is pending when
+///   the judgement left one.
 /// - provides: the one recheck every synchronisation publishes.
 /// - fails: never; a fault is a diagnostic.
 /// - panics: none.
@@ -495,22 +496,29 @@ pub fn highlight(text: SourceText<'_>) -> Vec<HlSpan>
 /// - requires: `index` was built from the text `report` is about.
 /// - ensures: as [`recheck`] states for one report. A span the renderer locates
 ///   lies inside the text on character boundaries, so it always projects; the
-///   origin stands in for one that would not.
+///   origin stands in for one that would not. The message is the report's
+///   title, then the primary locus's label on its own line when the report is
+///   located, then its note on a line of its own after `note: ` when it closes
+///   with one: what the terminal prints, in the one text field the protocol
+///   gives a diagnostic.
 /// - provides: the one map from a renderer report to an editor diagnostic.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a type mismatch and duplicate signature have exact
-///   primary and causal locations. L2 — every corpus report agrees with its
-///   wire ranges, code, title and related labels, distinguishing omitted,
-///   misclassified or misprojected report fields without pinning wording.
+///   primary and causal locations, and a refused declaration's message carries
+///   its label and note. L2 — every corpus report agrees with its wire ranges,
+///   code, message and related labels, distinguishing omitted, misclassified or
+///   misprojected report fields without pinning wording.
 /// - witness: `recheck::tests::causal_contexts_become_lsp_related_information`
 /// - witness: `recheck::tests::a_labeled_context_keeps_its_locus_and_cause_in_related_information`
+/// - witness: `recheck::tests::a_refusal_publishes_its_label_and_note`
 /// - witness: `session::session::every_corpus_report_is_published_where_the_walk_renders_it`
 #[spec(ensures: |ret| ret.source == "gandr"
     && ret.severity == match report.class() { Class::Goal => Severity::INFORMATION, _ => Severity::ERROR }
     && ret.code.is_some() == matches!(report.identifier(), Maybe::Present(_))
+    && ret.message.starts_with(&report.title().to_string())
     && ret.related_information.len() == report.context().into_iter()
         .filter(|slot| matches!(slot, Maybe::Present(_))).count()
     && ret.related_information.iter().all(|related| related.location.uri == *uri))]
@@ -536,7 +544,16 @@ fn diagnostic(
         | Class::Goal => Severity::INFORMATION,
         | Class::Refusal(_) | Class::Unsettled(_) => Severity::ERROR,
     };
-    let mut diagnostic = Diagnostic::new(range, severity, report.title().to_string());
+    let mut message = report.title().to_string();
+    if let Maybe::Present(label) = report.label() {
+        message.push('\n');
+        message.push_str(&label.to_string());
+    }
+    if let Maybe::Present(note) = report.note() {
+        message.push_str("\nnote: ");
+        message.push_str(&note.to_string());
+    }
+    let mut diagnostic = Diagnostic::new(range, severity, message);
     if let Maybe::Present(spelling) = report.identifier() {
         diagnostic.code = Some(spelling.to_string());
     }
@@ -689,6 +706,36 @@ mod tests
             uri,
             range: range(Span(0, 0, 0, 17))
         });
+    }
+
+    #[test]
+    fn a_refusal_publishes_its_label_and_note()
+    {
+        let uri = DocumentUri::from("file:///strict/head.gandr");
+        let text = "def f(xs: List(Integer)) -> -F Integer {\n  ret 1\n}\n";
+        let diagnostics = checked(&uri, SourceText::from(text));
+        let [ref diagnostic] = *diagnostics.as_slice()
+        else {
+            panic!("one unresolved type head");
+        };
+        let lines: Vec<&str> = diagnostic.message.lines().collect();
+        let [title, label, note] = *lines.as_slice()
+        else {
+            panic!("a title, a label and a note: {:?}", diagnostic.message);
+        };
+        assert!(title.contains("`List`"), "the title names the head");
+        assert!(
+            !title.contains(".."),
+            "the range locates the head; the title repeats no byte range"
+        );
+        assert!(
+            !label.is_empty() && label != "malformed source",
+            "the label says what the span is, not its class"
+        );
+        assert!(
+            note.starts_with("note: ") && note.contains("`f`"),
+            "the note names the declaration the terminal names"
+        );
     }
 
     #[test]

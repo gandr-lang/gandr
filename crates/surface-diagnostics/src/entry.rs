@@ -83,14 +83,15 @@ enum LineKind<'step>
 impl fmt::Display for Line<'_>
 {
     /// Writes the source's path, then the settled fixture's report, the
-    /// pending refusal, or the note that a pending source belongs under the
-    /// fixture root.
+    /// pending refusal with the bytes it stands at, or the note that a pending
+    /// source belongs under the fixture root.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: writes the source path, a separator and the kind-specific
-    ///   record, propagating destination failure. Adds no line terminator;
-    ///   embedded controls in producer text or paths are not escaped.
+    ///   record — a pending refusal followed by its byte range when it has one
+    ///   — propagating destination failure. Adds no line terminator; embedded
+    ///   controls in producer text or paths are not escaped.
     /// - provides: the ledger representation beside located reports.
     /// - fails: if the formatter rejects a write.
     /// - panics: none.
@@ -111,7 +112,10 @@ impl fmt::Display for Line<'_>
         let path = self.path.display();
         match self.kind {
             | LineKind::Fixture(declaration) => write!(f, "{path}: {declaration}"),
-            | LineKind::Pending(refusal) => write!(f, "{path}: pending: {refusal}"),
+            | LineKind::Pending(refusal) => match refusal.span() {
+                | Maybe::Present(span) => write!(f, "{path}: pending: {refusal} at {span}"),
+                | Maybe::Absent(_) => write!(f, "{path}: pending: {refusal}"),
+            },
             | LineKind::Lowered => write!(
                 f,
                 "{path}: unsettled: a pending source whose every expectation can be stated; it \

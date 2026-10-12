@@ -36,6 +36,7 @@ use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
+use crate::error::FormFault;
 use crate::error::LoweringRefusal;
 use crate::resolve::OperandCount;
 
@@ -61,6 +62,20 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// Every child is a tile, an operand or layout the source wrote.
             Unrepaired,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a repair is reported against the form read rather than a form
+    /// inside it.
+    pub mod nested {
+        /// The repair stands among the form's own children.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The repair is one of the form's own children, and no form
+            /// inside it holds one the form's minted close could follow from.
+            Own,
         }
     }
 }
@@ -1072,29 +1087,79 @@ impl Piece
     }
 }
 
-/// A repair the parser made among a form's children.
+/// A repair the parser made among a form's children, or inside the form
+/// whose missing close a form's own minted close follows from.
 ///
 /// # Specification
 /// - requires: a repaired syntax node supplies the span and repair class.
-/// - ensures: both fields describe that same inserted node.
-/// - provides: the first repair retained beside a written-piece sequence.
-/// - fails: does not prove parser provenance from the two fields alone.
+/// - ensures: the span and the repair describe that same inserted node;
+///   `nested` names the form holding it when that form stands inside the one
+///   read.
+/// - provides: the repair retained beside a written-piece sequence, and the
+///   refusal it earns.
+/// - fails: does not prove parser provenance from the fields alone.
 /// - panics: none.
 /// - executable: none — the originating node is not retained; `read_pieces`
-///   checks the first repair against the actual children.
+///   checks the repair against the actual children.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the parser's missing-operand repair has its exact class
-///   and empty span; a different later repair cannot replace the first record.
+///   and empty span; a different later repair cannot replace the first record;
+///   a case arm's trailing comma reports the case's missing close rather than
+///   the definition's.
 /// - witness: `form::tests::a_repair_among_the_children_is_reported_beside_them`
 /// - witness: `form::tests::the_first_repair_survives_later_repairs`
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+/// - witness: `lower::tests::a_missing_close_is_reported_at_the_innermost_form`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Repaired
 {
     /// The bytes the inserted node stands at.
     pub span: ByteSpan,
     /// What was inserted.
     pub repair: Repair,
+    /// The form inside the one read whose children hold the repair.
+    pub nested: Maybe<FormName, nested::Absent>,
+}
+
+impl Repaired
+{
+    /// The refusal of the form named `form` for holding this repair.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`LoweringRefusal::MalformedForm`] at the repair's span with
+    ///   the [`FormFault::Repaired`] fault, naming the nested form when the
+    ///   repair stands inside one and `form` otherwise.
+    /// - provides: the one refusal every reader raises for a repair.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an own repair names the form read and a nested one
+    ///   the form holding it.
+    /// - witness: `lower::tests::a_missing_close_is_reported_at_the_innermost_form`
+    /// - witness: `lower::tests::a_repaired_declaration_is_refused`
+    #[spec(ensures: |ret| ret == LoweringRefusal::MalformedForm {
+        span: self.span,
+        form: match self.nested { Maybe::Present(inner) => inner, Maybe::Absent(_) => form },
+        fault: FormFault::Repaired(self.repair),
+    })]
+    #[inline]
+    #[must_use]
+    pub fn refusal<'source>(
+        self,
+        form: FormName,
+    ) -> LoweringRefusal<'source>
+    {
+        LoweringRefusal::MalformedForm {
+            span: self.span,
+            form: match self.nested {
+                | Maybe::Present(inner) => inner,
+                | Maybe::Absent(_) => form,
+            },
+            fault: FormFault::Repaired(self.repair),
+        }
+    }
 }
 
 /// A form's children as its rule reads them.
@@ -1167,8 +1232,12 @@ impl Default for Pieces
 ///   rule as an own tile and every other written child as an operand, in child
 ///   order; the root reads every written child as an operand; layout is dropped
 ///   everywhere, and the first grout or minted close among the children is
-///   reported beside the pieces rather than read as one. Reading layout or a
-///   repair node itself leaves both fields empty.
+///   reported beside the pieces rather than read as one. When that first repair
+///   is a minted close of a form of several tiles and a form inside it holds a
+///   repair too, the deepest such repair — the first in source order among
+///   equals — is reported instead, naming the form that holds it: the outer
+///   close follows from the inner form's. Reading layout or a repair node
+///   itself leaves both fields empty.
 /// - provides: the one reading of a form's children every reader takes, so the
 ///   own-tile test is decided in one place, over one buffer reused from form to
 ///   form.
@@ -1238,11 +1307,24 @@ impl Default for Pieces
                             Some(Repaired {
                                 span: held.span(),
                                 repair,
+                                nested: Maybe::Absent(nested::Absent::Own),
                             })
                         })
                         .map_or(Maybe::Absent(repair::Absent::Unrepaired), Maybe::Present);
+                    let reported = match (read.repair, first_repair) {
+                        | (Maybe::Present(found), Maybe::Present(first)) => {
+                            found == first
+                                || (matches!(first.repair, Repair::GhostClose(_))
+                                    && node.label() != NodeLabel::Wald
+                                    && matches!(found.nested, Maybe::Present(_))
+                                    && node.span().start() <= found.span.start()
+                                    && found.span.end() <= node.span().end())
+                        },
+                        | (Maybe::Absent(_), Maybe::Absent(_)) => true,
+                        | _ => false,
+                    };
                     read.pieces.iter().map(|piece| piece.placed()).eq(written)
-                        && read.repair == first_repair
+                        && reported
                         && (node.label() != NodeLabel::Wald
                             || read
                                 .pieces
@@ -1315,7 +1397,111 @@ pub fn read_pieces<'source>(
         read.pieces.push(piece);
     }
 
+    if matches!(own, Holder::Rule(_))
+        && matches!(
+            read.repair,
+            Maybe::Present(Repaired {
+                repair: Repair::GhostClose(_),
+                ..
+            })
+        )
+    {
+        let inner = nested_repair(pbg, tree, &read.pieces)?;
+        if let Maybe::Present(inner) = inner {
+            read.repair = Maybe::Present(inner);
+        }
+    }
     Ok(())
+}
+
+/// The deepest repair inside the operands `pieces` names, with the form that
+/// holds it.
+///
+/// # Specification
+/// - requires: `pieces` were read from `tree`.
+/// - ensures: among the grout and minted closes standing as children of a form
+///   inside one of the operands, the one at the greatest depth, the first in
+///   source order among equals, with the name of the form whose child it is;
+///   absent when no operand holds one.
+/// - provides: the inner repair a minted close follows from.
+/// - fails: [`LoweringRefusal::UnknownMold`] for a holding form whose mold
+///   `pbg` does not hold.
+/// - panics: none.
+///
+/// # Errors
+/// [`LoweringRefusal::UnknownMold`] for a mold `pbg` does not hold.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a definition whose case arm ends in a trailing comma
+///   finds the case's minted close under the definition's own.
+/// - witness: `lower::tests::a_missing_close_is_reported_at_the_innermost_form`
+#[spec(ensures: |ret| match ret {
+    | Ok(Maybe::Present(found)) => matches!(found.nested, Maybe::Present(_)),
+    | Ok(Maybe::Absent(_)) | Err(LoweringRefusal::UnknownMold { .. }) => true,
+    | Err(_) => false,
+})]
+fn nested_repair<'source>(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'source>,
+    pieces: &[Piece],
+) -> Result<Maybe<Repaired, nested::Absent>, LoweringRefusal<'source>>
+{
+    // economy: the walk runs only over a form the parser closed for the
+    // source, so a clean tree never pays for it.
+    let mut forms: Vec<(NodeIndex, usize)> = pieces
+        .iter()
+        .filter_map(|piece| match *piece {
+            | Piece::Operand(placed) => Some((placed.node, 1_usize)),
+            | Piece::Tile { .. } => None,
+        })
+        .collect();
+    let mut deepest: Maybe<(usize, Repaired), nested::Absent> = Maybe::Absent(nested::Absent::Own);
+    while let Some((form, depth)) = forms.pop() {
+        let Some(holder) = tree.node(form)
+        else {
+            continue;
+        };
+        if !matches!(holder.label(), NodeLabel::Meld(_)) {
+            continue;
+        }
+        for child in tree.children(form) {
+            let Some(held) = tree.node(child)
+            else {
+                continue;
+            };
+            let repair = match held.label() {
+                | NodeLabel::Grout { shape, .. } => Repair::Grout(shape),
+                | NodeLabel::GhostClose { class, .. } => Repair::GhostClose(class),
+                | NodeLabel::Meld(_) => {
+                    forms.push((child, depth.saturating_add(1_usize)));
+                    continue;
+                },
+                | NodeLabel::Wald | NodeLabel::Tile(_) | NodeLabel::Space => continue,
+            };
+            let span = held.span();
+            let deeper = match deepest {
+                | Maybe::Present((best, ref found)) => {
+                    depth > best || (depth == best && span.start() < found.span.start())
+                },
+                | Maybe::Absent(_) => true,
+            };
+            if deeper {
+                let Shape::Form { name, .. } = shape_of(pbg, holder)?
+                else {
+                    continue;
+                };
+                deepest = Maybe::Present((depth, Repaired {
+                    span,
+                    repair,
+                    nested: Maybe::Present(name),
+                }));
+            }
+        }
+    }
+    Ok(match deepest {
+        | Maybe::Present((_, found)) => Maybe::Present(found),
+        | Maybe::Absent(reason) => Maybe::Absent(reason),
+    })
 }
 
 /// Read one child tile against the rule of the form holding it.
@@ -1415,6 +1601,7 @@ fn own_tile<'source>(
                 | Maybe::Absent(_) => Maybe::Present(Repaired {
                     span: placed.span,
                     repair,
+                    nested: Maybe::Absent(nested::Absent::Own),
                 }),
             },
 )]
@@ -1428,6 +1615,7 @@ fn note_repair(
         read.repair = Maybe::Present(Repaired {
             span: placed.span,
             repair,
+            nested: Maybe::Absent(nested::Absent::Own),
         });
     }
 }
@@ -2139,6 +2327,7 @@ mod tests
             Maybe::Present(Repaired {
                 span: at(5_usize, 5_usize),
                 repair: Repair::Grout(GroutShape::Postfix),
+                nested: Maybe::Absent(crate::form::nested::Absent::Own),
             }),
             "the grout the parser inserted is reported where it stands"
         );
@@ -2416,6 +2605,7 @@ mod tests
         let expected = Maybe::Present(Repaired {
             span: first.span,
             repair: Repair::Grout(GroutShape::Postfix),
+            nested: Maybe::Absent(crate::form::nested::Absent::Own),
         });
         assert_eq!(read.repair, expected);
         super::note_repair(
@@ -2439,6 +2629,7 @@ mod tests
             Maybe::Present(Repaired {
                 span: at(5_usize, 5_usize),
                 repair: Repair::Grout(GroutShape::Postfix),
+                nested: Maybe::Absent(crate::form::nested::Absent::Own),
             })
         );
         let tree = parsed(&pbg, SourceText::from("def y = 3 ; def z = 4 ;"));
@@ -2494,6 +2685,7 @@ mod tests
         read.repair = Maybe::Present(Repaired {
             span: at(0_usize, 0_usize),
             repair: Repair::Grout(GroutShape::Convex),
+            nested: Maybe::Absent(crate::form::nested::Absent::Own),
         });
         assert_eq!(
             read_pieces(&pbg, &tree, tree.root(), &mut read),
@@ -2530,6 +2722,7 @@ mod tests
             read.repair = Maybe::Present(Repaired {
                 span: at(0_usize, 0_usize),
                 repair: Repair::Grout(GroutShape::Convex),
+                nested: Maybe::Absent(crate::form::nested::Absent::Own),
             });
             assert_eq!(
                 read_pieces(&pbg, &tree, tree.root(), &mut read),
@@ -2629,6 +2822,7 @@ mod tests
                 read.repair = Maybe::Present(Repaired {
                     span: at(0_usize, 0_usize),
                     repair: Repair::Grout(GroutShape::Convex),
+                    nested: Maybe::Absent(crate::form::nested::Absent::Own),
                 });
                 read_pieces(&pbg, &tree, child, &mut read).unwrap();
                 assert!(read.pieces.is_empty());

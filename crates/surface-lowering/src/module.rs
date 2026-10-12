@@ -103,7 +103,6 @@ use crate::form::Former;
 use crate::form::Piece;
 use crate::form::Pieces;
 use crate::form::Placed;
-use crate::form::Repair;
 use crate::form::Run;
 use crate::form::Shape;
 use crate::form::TileName;
@@ -1405,11 +1404,7 @@ pub fn collect<'source>(
     let mut root = Pieces::new();
     read_pieces(pbg, tree, tree.root(), &mut root)?;
     if let Maybe::Present(repaired) = root.repair {
-        return Err(LoweringRefusal::MalformedForm {
-            span: repaired.span,
-            form: FormName::ROOT,
-            fault: FormFault::Repaired(repaired.repair),
-        });
+        return Err(repaired.refusal(FormName::ROOT));
     }
     let mut decorations: Vec<Placed> = Vec::new();
     for piece in root.pieces {
@@ -1799,11 +1794,7 @@ impl<'source> Collector<'_, 'source>
     ) -> Result<ImportDeclaration<'source>, LoweringRefusal<'source>>
     {
         if let Maybe::Present(repaired) = pieces.repair {
-            return Err(LoweringRefusal::MalformedForm {
-                span: repaired.span,
-                form,
-                fault: FormFault::Repaired(repaired.repair),
-            });
+            return Err(repaired.refusal(form));
         }
         let out_of_place = |cursor: &Cursor<'_>| LoweringRefusal::MalformedForm {
             span: cursor.here(),
@@ -1925,11 +1916,7 @@ impl<'source> Collector<'_, 'source>
         let slot = self.admit(container, name, declaration, named);
         self.collected.own(declaration.node, slot);
         let tail = if let Maybe::Present(repaired) = pieces.repair {
-            Tail::Refused(LoweringRefusal::MalformedForm {
-                span: repaired.span,
-                form: FormName::DECLARATION,
-                fault: FormFault::Repaired(repaired.repair),
-            })
+            Tail::Refused(repaired.refusal(FormName::DECLARATION))
         }
         else if let Err(refusal) = attributed {
             Tail::Refused(refusal)
@@ -1960,11 +1947,7 @@ impl<'source> Collector<'_, 'source>
     #[spec(
         ensures: |ret| match pieces.repair {
             | Maybe::Present(repaired) => {
-                ret == LoweringRefusal::MalformedForm {
-                    span: repaired.span,
-                    form: FormName::DECLARATION,
-                    fault: FormFault::Repaired(repaired.repair),
-                }
+                ret == repaired.refusal(FormName::DECLARATION)
             },
             | Maybe::Absent(_) => matches!(
                 ret,
@@ -1988,11 +1971,7 @@ impl<'source> Collector<'_, 'source>
     ) -> LoweringRefusal<'source>
     {
         if let Maybe::Present(repaired) = pieces.repair {
-            return LoweringRefusal::MalformedForm {
-                span: repaired.span,
-                form: FormName::DECLARATION,
-                fault: FormFault::Repaired(repaired.repair),
-            };
+            return repaired.refusal(FormName::DECLARATION);
         }
         if let Maybe::Present(Piece::Operand(standing)) = header.peek()
             && let Some(held) = self.tree.node(standing.node)
@@ -2936,9 +2915,7 @@ impl<'source> Collector<'_, 'source>
     {
         let mut cursor = Cursor::new(&pieces.pieces, form.span);
         let unnamed = |cursor: &Cursor<'_>| match pieces.repair {
-            | Maybe::Present(repaired) => {
-                Header::Unnamed(repaired_module(repaired.span, repaired.repair))
-            },
+            | Maybe::Present(repaired) => Header::Unnamed(repaired.refusal(FormName::MODULE)),
             | Maybe::Absent(_) => Header::Unnamed(misplaced_in(FormName::MODULE, cursor.here())),
         };
         if let Maybe::Absent(_) = cursor.tile(TileName::MODULE) {
@@ -2978,7 +2955,7 @@ impl<'source> Collector<'_, 'source>
         if let Maybe::Present(repaired) = pieces.repair
             && !self.carried(pieces).0
         {
-            return refused(repaired_module(repaired.span, repaired.repair));
+            return refused(repaired.refusal(FormName::MODULE));
         }
         let ascription = if let Maybe::Present(seal) = cursor.tile(TileName::SEAL) {
             return refused(LoweringRefusal::UnreadAscription {
@@ -4368,11 +4345,7 @@ impl<'source> Collector<'_, 'source>
     {
         let form = self.form_name(record)?;
         if let Maybe::Present(repaired) = pieces.repair {
-            return Err(LoweringRefusal::MalformedForm {
-                span: repaired.span,
-                form,
-                fault: FormFault::Repaired(repaired.repair),
-            });
+            return Err(repaired.refusal(form));
         }
         let mut cursor = Cursor::new(&pieces.pieces, record.span);
         if let Maybe::Absent(_) = cursor.tile(TileName::RECORD) {
@@ -4642,22 +4615,6 @@ const fn misplaced_in<'source>(
         span,
         form,
         fault: FormFault::MisplacedTile,
-    }
-}
-
-/// The refusal a module whose own pieces hold `repair` at `span` earns.
-///
-/// # Specification
-/// trivial.
-const fn repaired_module<'source>(
-    span: ByteSpan,
-    repair: Repair,
-) -> LoweringRefusal<'source>
-{
-    LoweringRefusal::MalformedForm {
-        span,
-        form: FormName::MODULE,
-        fault: FormFault::Repaired(repair),
     }
 }
 
