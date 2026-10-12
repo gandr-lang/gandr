@@ -1,0 +1,14 @@
+@[ runs("<fun>") ]
+def compose(t : Type, u : Type, v : Type, f : +U[ω] (t -> -F u), g : +U[ω] (u -> -F v), x : t) -> -F v {
+  run y <- f(x);
+  g(y)
+}
+
+def captured(a : Type, d : Type, u : +U[ω] (a -> -F d), h : +U[ω] (d -> -F d))
+  -> -F (+U[ω] (a -> -F d))
+{
+  ret thunk { compose(a, d, d, u, h) }
+}
+
+def answer : Integer ;
+def answer = 42 ;   def again = answer ;

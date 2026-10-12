@@ -1,0 +1,21 @@
+data Either(a : Type, b : Type) : Type {
+  Left : (x : a) --> Either(a, b);
+  Right : (y : b) --> Either(a, b);
+}
+
+def from_left() -> -F Integer {
+  case (Left(5) : Either(Integer, String)) { Left(x) => ret x, Right(y) => ret 0 }
+}
+
+module Facts : #{ inner: #{ answer: Integer }, total: Integer } {
+  def base = 40;
+  module inner : #{ answer: Integer } {
+    def answer = base + 1;
+  }
+
+
+  def total = inner.answer + 1;
+}
+
+def pairs = thunk { fn (m) { fn (k) { run p <- force m ; (force k)(1) } } } ;
+def listed = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20] ;
