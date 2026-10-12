@@ -106,7 +106,7 @@ impl FormName
     ///   possible custom grammar kind.
     /// - witness: `error::tests::the_form_names_are_pairwise_distinct`
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 43_usize] = [
+    pub const ALL: [Self; 44_usize] = [
         Self::ROOT,
         Self::UNIT,
         Self::TUPLE,
@@ -146,6 +146,7 @@ impl FormName
         Self::AS_PATTERN,
         Self::HOLE,
         Self::IDENTIFIER,
+        Self::TYPE_VARIABLE,
         Self::CONSTRUCTOR,
         Self::BOOLEAN,
         Self::NUMBER,
@@ -240,6 +241,9 @@ impl FormName
     pub const IDENTIFIER: Self = Self("identifier");
     /// A capitalised name: a nullary constructor where a pattern is read.
     pub const CONSTRUCTOR: Self = Self("constructor");
+    /// A lowercase word where a type is read: a telescope entry's key, read
+    /// as its label.
+    pub const TYPE_VARIABLE: Self = Self("type_variable");
     /// A boolean literal standing as its own pattern.
     pub const BOOLEAN: Self = Self("boolean");
     /// A number standing as its own pattern.

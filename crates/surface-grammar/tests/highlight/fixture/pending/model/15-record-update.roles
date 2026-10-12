@@ -6,7 +6,7 @@
 17..18 Other "="
 19..20 Number "1"
 20..21 Other ","
-22..23 Member "y"
+22..23 Variable "y"
 24..25 Other "="
 26..27 Number "2"
 28..29 Other "}"

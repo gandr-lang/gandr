@@ -8,7 +8,7 @@
 21..26 StringLit "gandr"
 26..27 StringLit "\""
 27..28 Other ","
-29..34 Member "stars"
+29..34 Variable "stars"
 35..36 Other "="
 37..38 Number "1"
 38..39 Other "}"

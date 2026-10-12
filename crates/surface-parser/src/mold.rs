@@ -3355,12 +3355,12 @@ mod tests
     {
         let pbg = built()?;
         let molder = Molder::new(&pbg);
-        // The parameter comma admits a type identifier after it; the record
-        // pattern's comma admits only a field name.
+        // The parameter comma admits a type identifier after it; the comma
+        // between a telescope update's fields admits only a field name.
         let parameter_comma = mold_in(&pbg, DEF, COMMA, RightSide::Closed, &[TYPE_IDENTIFIER])?;
         let field_comma = mold_in(
             &pbg,
-            RuleName("record_pattern"),
+            RuleName("telescope_expression"),
             COMMA,
             RightSide::Closed,
             &[TileLabel("identifier")],
