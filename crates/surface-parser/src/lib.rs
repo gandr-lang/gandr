@@ -66,6 +66,7 @@ pub use crate::meld::UnitSeam;
 pub use crate::mold::CandidateLabel;
 pub use crate::mold::Molder;
 pub use crate::mold::TokenIndex;
+pub use crate::mold::TokenLabels;
 pub use crate::mold::TokenRun;
 pub use crate::mold::TokenText;
 pub use crate::mold::candidate_labels;

@@ -75,6 +75,10 @@ use crate::oblig::Delta;
 /// own keyword tile spelling, `identifier`, `type_variable`, and `hole_name`).
 const MAX_LABELS: usize = 4;
 
+/// The most labels a [`TokenLabels`] holds: a lexeme's own menu, and the
+/// fallback labels the follow check adds for a reserved uppercase word.
+const LABEL_CAPACITY: usize = MAX_LABELS + RESERVED_FALLBACK_LABELS.len();
+
 /// The bounded lookahead window (non-space tokens) that resolves a
 /// shared-prefix form-variant tie.
 ///
@@ -176,6 +180,127 @@ impl<'label> From<CandidateLabel<'label>> for &'label str
     fn from(value: CandidateLabel<'label>) -> Self
     {
         value.0
+    }
+}
+
+/// A token's candidate labels in their fixed order, held inline so that
+/// deriving them allocates nothing.
+///
+/// # Specification
+/// - ensures: reads as the slice of labels pushed, in push order, at most
+///   [`LABEL_CAPACITY`] of them.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every lexeme's menu reads back as the exact label
+///   sequence, and a reserved word's fallback labels follow its own.
+/// - witness: `mold::tests::literal_and_shell_menus_are_exact`
+/// - witness: `mold::tests::keyword_and_identifier_share_a_word_menu`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TokenLabels<'label>
+{
+    /// The labels, the first `count` of them live.
+    labels: [CandidateLabel<'label>; LABEL_CAPACITY],
+    /// How many labels are live.
+    count: usize,
+}
+
+impl<'label> TokenLabels<'label>
+{
+    /// No labels.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn new() -> Self
+    {
+        Self {
+            labels: [CandidateLabel(""); LABEL_CAPACITY],
+            count: 0,
+        }
+    }
+
+    /// Append `label`.
+    ///
+    /// # Specification
+    /// - requires: fewer than [`LABEL_CAPACITY`] labels are held; every caller
+    ///   pushes a lexeme's menu and at most the fallback labels after it.
+    /// - ensures: `label` is the last label, or nothing changes when the set is
+    ///   full.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the menus of every lexeme and a reserved word's
+    ///   fallback read back whole.
+    /// - witness: `mold::tests::literal_and_shell_menus_are_exact`
+    #[inline]
+    #[spec(captures: before = self.count, ensures: |()| (before == LABEL_CAPACITY && self.count == before) || (self.count == before.saturating_add(1) && self.as_slice().last() == Some(&label)))]
+    fn push(
+        &mut self,
+        label: CandidateLabel<'label>,
+    )
+    {
+        if let Some(slot) = self.labels.get_mut(self.count) {
+            *slot = label;
+            self.count = self.count.saturating_add(1);
+        }
+    }
+
+    /// The labels, in push order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn as_slice(&self) -> &[CandidateLabel<'label>]
+    {
+        self.labels.get(.. self.count).unwrap_or_default()
+    }
+}
+
+impl<'label> core::ops::Deref for TokenLabels<'label>
+{
+    type Target = [CandidateLabel<'label>];
+
+    /// The labels, in push order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn deref(&self) -> &Self::Target
+    {
+        self.as_slice()
+    }
+}
+
+impl<'set, 'label> IntoIterator for &'set TokenLabels<'label>
+{
+    type IntoIter = core::slice::Iter<'set, CandidateLabel<'label>>;
+    type Item = &'set CandidateLabel<'label>;
+
+    /// The labels, in push order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter
+    {
+        self.as_slice().iter()
+    }
+}
+
+impl<'label> IntoIterator for TokenLabels<'label>
+{
+    type IntoIter = core::iter::Take<core::array::IntoIter<CandidateLabel<'label>, LABEL_CAPACITY>>;
+    type Item = CandidateLabel<'label>;
+
+    /// The labels, in push order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter
+    {
+        self.labels.into_iter().take(self.count)
     }
 }
 
@@ -586,10 +711,10 @@ const KEYWORDS: &[&str] = &[
 pub fn candidate_labels<'text>(
     lexeme: Lexeme,
     text: TokenText<'text>,
-) -> Vec<CandidateLabel<'text>>
+) -> TokenLabels<'text>
 {
     let text = <&str>::from(text);
-    let mut labels: Vec<CandidateLabel<'text>> = Vec::with_capacity(MAX_LABELS);
+    let mut labels = TokenLabels::new();
     match lexeme {
         | Lexeme::LowerWord => {
             labels.push(CandidateLabel::from(text));
@@ -1081,7 +1206,9 @@ impl<'pbg> Molder<'pbg>
     {
         // The bench probe reports the full declared menu (no live frontier).
         let source = source_slice(src);
-        self.gather_menu(token, &source, None, CandidateMenu::Declared);
+        let slice = token.text(&source);
+        let labels = candidate_labels(token.lexeme, TokenText::from(AsRef::<str>::as_ref(&slice)));
+        self.gather_menu(&labels, None, CandidateMenu::Declared);
         CandidateCount(self.candidates.len())
     }
 
@@ -1128,8 +1255,9 @@ impl<'pbg> Molder<'pbg>
         let source = source_slice(src);
         let slice = token.text(&source);
         let text = TokenText::from(AsRef::<str>::as_ref(&slice));
-        self.settle_shadowing(state, token, &source);
-        self.gather(state, token, &source);
+        let labels = candidate_labels(token.lexeme, text);
+        self.settle_shadowing(state, &labels);
+        self.gather(state, token.lexeme, text, &labels);
         state.settle_declaration_boundary(&self.candidates);
         let best = self.choose(state, text, Ahead::Nothing);
         Self::push_choice(state, best, text);
@@ -1228,8 +1356,9 @@ impl<'pbg> Molder<'pbg>
             }
             else {
                 let text = TokenText::from(AsRef::<str>::as_ref(&slice));
-                self.settle_shadowing(state, token, &source);
-                self.gather(state, token, &source);
+                let labels = candidate_labels(token.lexeme, text);
+                self.settle_shadowing(state, &labels);
+                self.gather(state, token.lexeme, text, &labels);
                 state.settle_declaration_boundary(&self.candidates);
                 let best = self.choose_stream(state, tokens, TokenIndex::from(index), &source);
                 Self::push_choice(state, best, text);
@@ -1418,7 +1547,7 @@ impl<'pbg> Molder<'pbg>
         seam
     }
 
-    /// Eagerly settle any completable `?` hole frontier the upcoming `token`
+    /// Eagerly settle any completable `?` hole frontier the upcoming token
     /// cannot continue, before it is gathered / chosen.
     ///
     /// A pass-through to
@@ -1428,7 +1557,8 @@ impl<'pbg> Molder<'pbg>
     /// `hole_name` word stays open so the name attaches.
     ///
     /// # Specification
-    /// - requires: the token bounds identify its exact source fragment.
+    /// - requires: `labels` are the token's [`candidate_labels`], so none is
+    ///   empty.
     /// - ensures: settles shadowing holes only when the incoming label cannot
     ///   continue them.
     /// - panics: none.
@@ -1440,20 +1570,16 @@ impl<'pbg> Molder<'pbg>
     ///   loss and a non-no-op space.
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
     #[inline]
-    #[spec(requires: source.as_ref().get(usize::try_from(token.start).unwrap_or(usize::MAX) .. usize::try_from(token.end).unwrap_or(usize::MAX)).is_some())]
-    fn settle_shadowing<'src>(
+    #[spec(requires: labels.iter().all(|label| !label.0.is_empty()))]
+    fn settle_shadowing(
         &self,
         state: &mut MeldState<'_>,
-        token: Token,
-        source: &'src SourceFragment<'src>,
+        labels: &TokenLabels<'_>,
     )
     {
-        let slice = token.text(source);
-        let text = TokenText::from(AsRef::<str>::as_ref(&slice));
-        let labels = candidate_labels(token.lexeme, text);
-        let mut raw_labels = [""; MAX_LABELS];
+        let mut raw_labels = [""; LABEL_CAPACITY];
         let mut count = 0_usize;
-        for &label in &labels {
+        for &label in labels {
             let Some(label) = self.candidate_label(label)
             else {
                 continue;
@@ -1497,8 +1623,8 @@ impl<'pbg> Molder<'pbg>
         }
     }
 
-    /// Gather the sorted, de-duplicated candidate molds for `token`, restricted
-    /// to the fresh-slot menu when no form is open.
+    /// Gather the sorted, de-duplicated candidate molds for a token's
+    /// `labels`, restricted to the fresh-slot menu when no form is open.
     ///
     /// With no open form the wide form-mid tail of a label's menu is
     /// inadmissible (a `≐`-continuation with nothing to continue), so the
@@ -1511,7 +1637,8 @@ impl<'pbg> Molder<'pbg>
     /// would on the full menu.
     ///
     /// # Specification
-    /// - requires: the token bounds identify its exact source fragment.
+    /// - requires: `labels` are the [`candidate_labels`] of a token of `lexeme`
+    ///   spelled `text`.
     /// - ensures: gathers the applicable menu in ascending order without
     ///   duplicate molds.
     /// - panics: none.
@@ -1525,21 +1652,22 @@ impl<'pbg> Molder<'pbg>
     /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
     /// - witness: `tests::acceptance::a_sign_block_may_be_named_with_a_primitive_type_spelling`
     #[spec(ensures: |_| self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right))]
-    fn gather<'src>(
+    fn gather(
         &mut self,
         state: &MeldState<'_>,
-        token: Token,
-        source: &'src SourceFragment<'src>,
+        lexeme: Lexeme,
+        text: TokenText<'_>,
+        labels: &TokenLabels<'_>,
     )
     {
         let open = state.open_form_mold();
-        self.gather_menu(token, source, open, CandidateMenu::Fresh);
+        self.gather_menu(labels, open, CandidateMenu::Fresh);
         if self.candidates.is_empty() {
             // A stray form-continuation with no matching frontier: the full menu
             // supplies the tile the melder pushes to flag the exact obligation.
-            self.gather_menu(token, source, open, CandidateMenu::Declared);
+            self.gather_menu(labels, open, CandidateMenu::Declared);
         }
-        self.gather_reserved_fallback(state, token, source, open);
+        self.gather_reserved_fallback(state, lexeme, text, open);
     }
 
     /// Widen a **reserved uppercase word**'s menu to its lexical class's
@@ -1560,8 +1688,8 @@ impl<'pbg> Molder<'pbg>
     /// when nothing admissible exists either way.
     ///
     /// # Specification
-    /// - requires: `token` came from the labeler over `source`; the reserved
-    ///   menu was already gathered into `self.candidates`.
+    /// - requires: the reserved menu of a token of `lexeme` spelled `text` was
+    ///   already gathered into `self.candidates`.
     /// - ensures: leaves `self.candidates` sorted and de-duplicated; widens it
     ///   with the generic-label menus exactly when the token is a reserved
     ///   uppercase word with no admissible candidate at the live frontier;
@@ -1580,19 +1708,15 @@ impl<'pbg> Molder<'pbg>
     /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
     /// - witness: `tests::acceptance::a_sign_block_may_be_named_with_a_primitive_type_spelling`
     #[spec(ensures: |_| self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right))]
-    fn gather_reserved_fallback<'src>(
+    fn gather_reserved_fallback(
         &mut self,
         state: &MeldState<'_>,
-        token: Token,
-        source: &'src SourceFragment<'src>,
+        lexeme: Lexeme,
+        text: TokenText<'_>,
         open: Option<MoldId>,
     )
     {
-        if !matches!(token.lexeme, Lexeme::UpperWord) {
-            return;
-        }
-        let slice = token.text(source);
-        if !UPPER_KEYWORDS.contains(&AsRef::<str>::as_ref(&slice)) {
+        if !matches!(lexeme, Lexeme::UpperWord) || !UPPER_KEYWORDS.contains(&<&str>::from(text)) {
             return;
         }
         let frontier = state.admissibility_frontier();
@@ -1614,12 +1738,12 @@ impl<'pbg> Molder<'pbg>
         self.candidates.dedup();
     }
 
-    /// Gather the candidate molds for `token`, from the fresh-slot menu plus
-    /// the open form's `≐`-successors ([`CandidateMenu::Fresh`]) or the full
-    /// declared menu ([`CandidateMenu::Declared`]).
+    /// Gather the candidate molds for a token's `labels`, from the fresh-slot
+    /// menu plus the open form's `≐`-successors ([`CandidateMenu::Fresh`]) or
+    /// the full declared menu ([`CandidateMenu::Declared`]).
     ///
     /// # Specification
-    /// - requires: the token bounds identify its exact source fragment.
+    /// - requires: `labels` are a token's [`candidate_labels`].
     /// - ensures: gathers the applicable menu in ascending order without
     ///   duplicate molds.
     /// - panics: none.
@@ -1633,19 +1757,15 @@ impl<'pbg> Molder<'pbg>
     /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
     /// - witness: `tests::acceptance::a_sign_block_may_be_named_with_a_primitive_type_spelling`
     #[spec(ensures: |_| self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right))]
-    fn gather_menu<'src>(
+    fn gather_menu(
         &mut self,
-        token: Token,
-        source: &'src SourceFragment<'src>,
+        labels: &TokenLabels<'_>,
         open: Option<MoldId>,
         menu: CandidateMenu,
     )
     {
         self.candidates.clear();
-        let slice = token.text(source);
-        let text = TokenText::from(AsRef::<str>::as_ref(&slice));
-        let labels = candidate_labels(token.lexeme, text);
-        self.gather_labels(&labels, open, menu);
+        self.gather_labels(labels, open, menu);
     }
 
     /// Gather the candidate molds for `labels`, from the fresh-slot menu plus
@@ -2324,8 +2444,9 @@ impl<'pbg> Molder<'pbg>
                     return WindowEnd::Dominated;
                 }
                 let text = TokenText::from(AsRef::<str>::as_ref(&slice));
-                self.settle_shadowing(state, token, source);
-                self.gather(state, token, source);
+                let labels = candidate_labels(token.lexeme, text);
+                self.settle_shadowing(state, &labels);
+                self.gather(state, token.lexeme, text, &labels);
                 state.settle_declaration_boundary(&self.candidates);
                 let ahead = Ahead::Stream {
                     tokens,
@@ -2443,7 +2564,9 @@ impl<'pbg> Molder<'pbg>
         let mut labels = candidate_labels(next.lexeme, text);
         if matches!(next.lexeme, Lexeme::UpperWord) && UPPER_KEYWORDS.contains(&<&str>::from(text))
         {
-            labels.extend(RESERVED_FALLBACK_LABELS.map(CandidateLabel::from));
+            for fallback in RESERVED_FALLBACK_LABELS {
+                labels.push(CandidateLabel::from(fallback));
+            }
         }
         if molds
             .iter()
@@ -3422,16 +3545,16 @@ mod tests
     {
         // A reserved keyword molds only to its own tile (no identifier menu).
         assert_eq!(
-            candidate_labels(Lexeme::LowerWord, TokenText::from("def")),
-            vec![CandidateLabel::from("def")]
+            candidate_labels(Lexeme::LowerWord, TokenText::from("def")).as_slice(),
+            [CandidateLabel::from("def")]
         );
         assert_eq!(
-            candidate_labels(Lexeme::LowerWord, TokenText::from("val")),
-            vec![CandidateLabel::from("val")]
+            candidate_labels(Lexeme::LowerWord, TokenText::from("val")).as_slice(),
+            [CandidateLabel::from("val")]
         );
         assert_eq!(
-            candidate_labels(Lexeme::LowerWord, TokenText::from("let")),
-            vec![
+            candidate_labels(Lexeme::LowerWord, TokenText::from("let")).as_slice(),
+            [
                 CandidateLabel::from("let"),
                 CandidateLabel::from("identifier"),
                 CandidateLabel::from("type_variable"),
@@ -3439,15 +3562,15 @@ mod tests
             ]
         );
         assert_eq!(
-            candidate_labels(Lexeme::LowerWord, TokenText::from("run")),
-            vec![CandidateLabel::from("run")]
+            candidate_labels(Lexeme::LowerWord, TokenText::from("run")).as_slice(),
+            [CandidateLabel::from("run")]
         );
         // An ordinary lowercase word gets the wide identifier menu, plus the
         // `hole_name` tile — admissible only after a `?` hole frontier, so it
         // never competes at an ordinary word slot.
         assert_eq!(
-            candidate_labels(Lexeme::LowerWord, TokenText::from("greeting")),
-            vec![
+            candidate_labels(Lexeme::LowerWord, TokenText::from("greeting")).as_slice(),
+            [
                 CandidateLabel::from("greeting"),
                 CandidateLabel::from("identifier"),
                 CandidateLabel::from("type_variable"),
@@ -3456,21 +3579,21 @@ mod tests
         );
         // A reserved primitive/type keyword molds only to its own tile.
         assert_eq!(
-            candidate_labels(Lexeme::UpperWord, TokenText::from("Integer")),
-            vec![CandidateLabel::from("Integer")]
+            candidate_labels(Lexeme::UpperWord, TokenText::from("Integer")).as_slice(),
+            [CandidateLabel::from("Integer")]
         );
         // An ordinary uppercase word gets the constructor / type-identifier menu.
         assert_eq!(
-            candidate_labels(Lexeme::UpperWord, TokenText::from("Inl")),
-            vec![
+            candidate_labels(Lexeme::UpperWord, TokenText::from("Inl")).as_slice(),
+            [
                 CandidateLabel::from("Inl"),
                 CandidateLabel::from("constructor"),
                 CandidateLabel::from("type_identifier")
             ]
         );
         assert_eq!(
-            candidate_labels(Lexeme::Punct, TokenText::from("->")),
-            vec![CandidateLabel::from("->")]
+            candidate_labels(Lexeme::Punct, TokenText::from("->")).as_slice(),
+            [CandidateLabel::from("->")]
         );
         assert!(candidate_labels(Lexeme::Space, TokenText::from(" ")).is_empty());
         assert!(candidate_labels(Lexeme::Unknown, TokenText::from("~")).is_empty());
