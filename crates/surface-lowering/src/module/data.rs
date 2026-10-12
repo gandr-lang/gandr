@@ -453,7 +453,9 @@ impl<'source> Collector<'_, 'source>
                 }
                 let classifier = one_in(FormName::PARAMETER, cursor.operands())?;
                 parameters.push(DataParameter { named, classifier });
-                if let Maybe::Present(_) = cursor.tile(TileName::COMMA) {
+                if let Maybe::Present(_) = cursor.tile(TileName::COMMA)
+                    && let Maybe::Absent(_) = cursor.at(TileName::PAREN_CLOSE)
+                {
                     continue;
                 }
                 if let Maybe::Present(_) = cursor.tile(TileName::PAREN_CLOSE) {
@@ -558,7 +560,9 @@ impl<'source> Collector<'_, 'source>
                     return Err(declined(at, FormName::GRADE));
                 }
                 fields.push(one_in(FormName::DATA_GENERATOR, cursor.operands())?);
-                if let Maybe::Present(_) = cursor.tile(TileName::COMMA) {
+                if let Maybe::Present(_) = cursor.tile(TileName::COMMA)
+                    && let Maybe::Absent(_) = cursor.at(TileName::PAREN_CLOSE)
+                {
                     continue;
                 }
                 if let Maybe::Present(_) = cursor.tile(TileName::PAREN_CLOSE) {

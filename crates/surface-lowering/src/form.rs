@@ -307,6 +307,8 @@ impl TileName
     pub const ATTRIBUTES: Self = Self("@[");
     /// The bang `!` marking a shared fork.
     pub const BANG: Self = Self("!");
+    /// The bar `|` that may lead a case arm.
+    pub const BAR: Self = Self("|");
     /// The bind arrow `<-` of a `run` statement.
     pub const BIND: Self = Self("<-");
     /// A bracket closer `]`.
@@ -1105,8 +1107,8 @@ impl Piece
 /// # Adequacy
 /// - hypothesis: L3 — the parser's missing-operand repair has its exact class
 ///   and empty span; a different later repair cannot replace the first record;
-///   a case arm's trailing comma reports the case's missing close rather than
-///   the definition's.
+///   a source ending inside a case's arms reports the case's missing close
+///   rather than the definition's.
 /// - witness: `form::tests::a_repair_among_the_children_is_reported_beside_them`
 /// - witness: `form::tests::the_first_repair_survives_later_repairs`
 /// - witness: `lower::tests::a_missing_close_is_reported_at_the_innermost_form`
@@ -1432,8 +1434,8 @@ pub fn read_pieces<'source>(
 /// [`LoweringRefusal::UnknownMold`] for a mold `pbg` does not hold.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a definition whose case arm ends in a trailing comma
-///   finds the case's minted close under the definition's own.
+/// - hypothesis: L3 — a source ending inside a case's arms, within a
+///   definition, finds the case's minted close under the definition's own.
 /// - witness: `lower::tests::a_missing_close_is_reported_at_the_innermost_form`
 #[spec(ensures: |ret| match ret {
     | Ok(Maybe::Present(found)) => matches!(found.nested, Maybe::Present(_)),

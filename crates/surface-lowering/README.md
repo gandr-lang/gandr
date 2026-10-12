@@ -131,7 +131,7 @@ When the parser repairs a form, its tree can hold grout where the source wrote n
 
 The alternative was to lower around a repair, reading grout as a hole term. It was declined because the core fragment has no hole, and a hole would be an obligation the classifier forbids a refusal to become. Reversal: when the core gains typed holes, grout lowers to one and the repair stops refusing.
 
-A minted close is usually an effect, not a cause: the parser closes an outer form at its opening because an inner form swallowed the closer the outer one needed. So when a form's first repair is a minted close and a form inside it holds a repair too, the refusal names the deepest such inner form, at its repair — the first in source order among equals. A case arm ending in a comma, which the grammar does not yet admit, is refused as the case just after the comma rather than as the definition at its opening brace.
+A minted close is usually an effect, not a cause: the parser closes an outer form at its opening because an inner form swallowed the closer the outer one needed. So when a form's first repair is a minted close and a form inside it holds a repair too, the refusal names the deepest such inner form, at its repair — the first in source order among equals. A source that ends after a case's last arm, the case and its definition both open, is refused as the case at the end of the arm rather than as the definition at its opening brace.
 
 The alternative was to report the outer close where the parser minted it, which is faithful to the tree but points at the one place the author did not err. Reversal: when the parser places a minted close at the bytes that caused it, the outer repair is the cause and the walk inward goes.
 

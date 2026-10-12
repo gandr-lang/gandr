@@ -8608,7 +8608,8 @@ fn statement_form(
 /// - requires: `cursor` stands at the list's `(`.
 /// - ensures: every argument written is appended to `written`, left to right,
 ///   with the cursor past the closing `)` and nothing after it; empty
-///   parentheses append nothing.
+///   parentheses append nothing, and a comma after the last argument is
+///   admitted.
 /// - provides: the argument reading of calls and type applications.
 /// - fails: yields the hole's own refusal for an empty or juxtaposed argument,
 ///   and a misplaced-tile refusal for a list out of shape; the arguments read
@@ -8619,9 +8620,10 @@ fn statement_form(
 /// The form's refusal.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — empty and multi-argument calls append their own ordered
-///   operand range; a failure preserves the already-read prefix and locates the
-///   unexpected operand or tile instead of silently accepting a suffix.
+/// - hypothesis: L3 — empty, multi-argument and comma-closed calls append their
+///   own ordered operand range; a failure preserves the already-read prefix and
+///   locates the unexpected operand or tile instead of silently accepting a
+///   suffix.
 /// - witness: `lower::tests::argument_lists_preserve_prefixes_and_locate_the_first_fault`
 /// - witness: `lower::tests::a_call_applies_its_arguments_left_to_right`
 #[spec(
@@ -8651,6 +8653,9 @@ fn statement_form(
                     if matches!(input.tile(TileName::COMMA), Maybe::Absent(_)) {
                         return false;
                     }
+                    if matches!(input.tile(TileName::PAREN_CLOSE), Maybe::Present(_)) {
+                        break;
+                    }
                 }
                 appended.next().is_none()
                     && matches!(input.peek(), Maybe::Absent(_))
@@ -8667,13 +8672,10 @@ fn arguments<'source>(
     if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_OPEN) {
         return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
     }
-    let start = written.len();
     loop {
         let run = cursor.operands();
         let closing = cursor.tile(TileName::PAREN_CLOSE);
-        if let (Run::Empty(_), Maybe::Present(_)) = (run, closing)
-            && written.len() == start
-        {
+        if let (Run::Empty(_), Maybe::Present(_)) = (run, closing) {
             break;
         }
         let argument = site.one(run)?;
@@ -11574,7 +11576,7 @@ mod tests
         let tree = repaired(
             &pbg,
             SourceText::from(
-                "def rank() -> -F Integer {\n  case (Green : Color) {\n    Red => ret 0,\n  }\n}\n",
+                "def rank() -> -F Integer {\n  case (Green : Color) {\n    Red => ret 0,\n",
             ),
         );
         assert_eq!(
@@ -11586,9 +11588,8 @@ mod tests
                     gandr_surface_syntax::ClosingClass::Brace,
                 )),
             },
-            "the definition's close follows from the case's, which the parser closed right \
-             after the arm's trailing comma; the refusal names the case there, not the \
-             definition at its opening brace"
+            "the source ends with both the case and the definition open; the refusal names \
+             the case at the end of its last arm, not the definition at its opening brace"
         );
     }
 
@@ -12540,6 +12541,11 @@ mod tests
                 .as_slice(),
                 Ok(()),
                 [first.node, second.node].as_slice(),
+            ),
+            (
+                [open, super::Piece::Operand(first), comma, close].as_slice(),
+                Ok(()),
+                [first.node].as_slice(),
             ),
             (
                 [

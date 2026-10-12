@@ -2075,7 +2075,9 @@ impl<'source> Collector<'_, 'source>
     {
         loop {
             attributes.push(self.read_attribute(cursor, declaration)?);
-            if let Maybe::Present(_) = cursor.tile(TileName::COMMA) {
+            if let Maybe::Present(_) = cursor.tile(TileName::COMMA)
+                && let Maybe::Absent(_) = cursor.at(TileName::BRACKET_CLOSE)
+            {
                 continue;
             }
             if let Maybe::Present(_) = cursor.tile(TileName::BRACKET_CLOSE) {

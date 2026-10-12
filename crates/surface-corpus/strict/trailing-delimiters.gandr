@@ -1,0 +1,47 @@
+@[ checks, ]
+data Either(a : Type, b : Type,) : Type {
+  Left : (x : a,) --> Either(a, b,);
+  Right : (y : b,) --> Either(a, b,);
+}
+
+@[ checks ]
+data Color : Type {
+  Red : Color;
+  Green : Color;
+  Blue : Color;
+}
+
+@[ checks ]
+def from_left() -> -F Integer {
+  case (Left(5,) : Either(Integer, String,)) {
+    | Left(x,) => ret x,
+    | Right(y) => ret 0,
+  }
+}
+
+@[ checks ]
+def warm(c : Color) -> -F Integer {
+  case c {
+    | Red
+    | Green => ret 1,
+    Blue => ret 0
+  }
+}
+
+@[ checks ]
+def cool(c : Color) -> -F Integer {
+  case c { Red | Green => ret 0, | Blue => ret 1, }
+}
+
+@[ runs("<fun>") ]
+def first : +U (Integer -> Integer -> -F Integer) ;
+def first = thunk { fn (x) { fn (y) { ret x } } } ;
+
+@[ runs("42") ]
+def chosen : +U (-F Integer) ;
+def chosen = thunk { ((force first)(42,))(7,) } ;
+
+@[ checks ]
+def pick(x : Integer, y : Integer,) -> -F Integer {
+  ret x
+}
