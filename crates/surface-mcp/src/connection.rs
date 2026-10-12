@@ -51,8 +51,10 @@ const DIAGNOSTICS: &str = "/diagnostics";
 /// How a model should use this server.
 const INSTRUCTIONS: &str = "Reads the documents gandr's engine hub holds open: their diagnostics, \
                             outline, the syntax expected at a position and the type of a \
-                            declaration. Every tool result carries `changes`: the documents \
-                            opened, changed or closed since this connection's previous call.";
+                            declaration. `trial` judges up to 32 candidate fills of a range at \
+                            once without changing the document and ranks them, best first. \
+                            Every tool result carries `changes`: the documents opened, changed \
+                            or closed since this connection's previous call.";
 
 /// Why a message is refused.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -738,6 +740,7 @@ mod tests
             "documents",
             "expected_syntax",
             "outline",
+            "trial",
             "type_of"
         ]);
         assert_eq!(
@@ -921,6 +924,95 @@ mod tests
         assert_eq!(
             closed.pointer("/structuredContent/changes"),
             Some(&json!({ "changed": [], "closed": [uri] }))
+        );
+    }
+
+    #[test]
+    fn a_trial_ranks_fills_through_the_wire()
+    {
+        let (mut workspace, mut server) = editor();
+        let mut connection = Connection::default();
+        let uri = json!("file:///tmp/trial.gandr");
+        sync(
+            &mut server,
+            &mut workspace,
+            &opened(
+                &uri,
+                &json!(1_i32),
+                &json!("def f : Integer ;\ndef f = missing ;\n"),
+            ),
+        );
+        let hole = json!({ "start": { "line": 1_u32, "character": 8_u32 },
+            "end": { "line": 1_u32, "character": 15_u32 } });
+        let tried = call(
+            &mut connection,
+            &workspace,
+            &json!("trial"),
+            &json!({ "uri": uri, "range": hole, "candidates": ["\"one\"", "42"] }),
+        );
+        assert_eq!(tried.pointer("/isError"), Some(&json!(false)));
+        assert_eq!(
+            tried.pointer("/structuredContent/version"),
+            Some(&json!(1_i32))
+        );
+        let trials = tried
+            .pointer("/structuredContent/trials")
+            .and_then(Value::as_array)
+            .expect("the trials are listed");
+        assert_eq!(
+            trials
+                .iter()
+                .map(|trial| (
+                    trial.get("candidate").cloned(),
+                    trial.get("reached").cloned(),
+                    trial
+                        .get("diagnostics")
+                        .and_then(Value::as_array)
+                        .map(Vec::len)
+                ))
+                .collect::<Vec<_>>(),
+            [
+                (Some(json!(1_i32)), Some(json!("judged")), Some(0_usize)),
+                (Some(json!(0_i32)), Some(json!("judged")), Some(1_usize)),
+            ],
+            "the fill that checks ranks first"
+        );
+        let whole = call(
+            &mut connection,
+            &workspace,
+            &json!("trial"),
+            &json!({ "uri": uri, "candidates": ["def f : Integer ;\nret 3\n"] }),
+        );
+        assert_eq!(
+            whole.pointer("/structuredContent/trials/0/reached"),
+            Some(&json!("refusedWhole")),
+            "without a range a candidate is the whole text"
+        );
+        let too_many = alloc::vec![json!("42"); crate::tools::MOST_CANDIDATES.saturating_add(1)];
+        for refused in [
+            json!({ "uri": uri, "candidates": [] }),
+            json!({ "uri": uri, "candidates": [42_i32] }),
+            json!({ "uri": uri, "candidates": too_many }),
+            json!({ "uri": uri, "candidates": ["42"], "range": "the hole" }),
+        ] {
+            assert_eq!(
+                call(&mut connection, &workspace, &json!("trial"), &refused).pointer("/isError"),
+                Some(&json!(true)),
+                "{refused}"
+            );
+        }
+        assert_eq!(
+            call(
+                &mut connection,
+                &workspace,
+                &json!("diagnostics"),
+                &json!({ "uri": uri })
+            )
+            .pointer("/structuredContent/diagnostics")
+            .and_then(Value::as_array)
+            .map(Vec::len),
+            Some(1_usize),
+            "the trial changed nothing the editor shows"
         );
     }
 

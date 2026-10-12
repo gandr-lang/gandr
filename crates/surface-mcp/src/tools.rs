@@ -12,8 +12,10 @@ use core::fmt;
 
 use anodized::spec;
 use gandr_surface_lsp::Body;
+use gandr_surface_lsp::ContentChange;
 use gandr_surface_lsp::DocumentUri;
 use gandr_surface_lsp::DocumentVersion;
+use gandr_surface_lsp::Reached;
 use gandr_surface_lsp::Workspace;
 use serde_json::Value;
 use serde_json::json;
@@ -75,6 +77,47 @@ fn position_schema() -> Value
     })
 }
 
+/// The most candidates one trial judges.
+pub const MOST_CANDIDATES: usize = 32;
+
+/// The schema of the trial tool: a document's URI, its candidates and the
+/// range they fill.
+///
+/// # Specification
+/// trivial.
+fn trial_schema() -> Value
+{
+    let position = json!({
+        "type": "object",
+        "properties": {
+            "line": { "type": "integer", "minimum": 0_u8 },
+            "character": { "type": "integer", "minimum": 0_u8 },
+        },
+        "required": ["line", "character"],
+    });
+    json!({
+        "type": "object",
+        "properties": {
+            "uri": { "type": "string", "description": "The document's URI, as the editor opened it" },
+            "candidates": {
+                "type": "array",
+                "items": { "type": "string" },
+                "minItems": 1,
+                "maxItems": MOST_CANDIDATES,
+                "description": "The texts to try: each fills `range`, or is the whole document without one",
+            },
+            "range": {
+                "type": "object",
+                "description": "The span each candidate replaces, in zero-based lines and UTF-16 code units: \
+                                a hole or a declaration's body",
+                "properties": { "start": position, "end": position },
+                "required": ["start", "end"],
+            },
+        },
+        "required": ["uri", "candidates"],
+    })
+}
+
 /// Every tool, in name order.
 ///
 /// # Specification
@@ -119,6 +162,15 @@ pub fn list() -> Vec<Value>
             "title": "Outline",
             "description": "An open document's declarations, each nested inside the one that holds it.",
             "inputSchema": document_schema(),
+        }),
+        json!({
+            "name": "trial",
+            "title": "Try candidate fills",
+            "description": "Judge candidate edits of an open document without changing it, best first: each \
+                            candidate replaces `range` when given, or the whole text otherwise. Each result \
+                            names the candidate's index, how far it got (`judged`, `refusedWhole` or \
+                            `faulted`) and the diagnostics the edit would publish.",
+            "inputSchema": trial_schema(),
         }),
         json!({
             "name": "type_of",
@@ -214,6 +266,7 @@ pub fn call(
             )?;
             json!({ "hover": hover })
         },
+        | "trial" => json!({ "trials": tried(workspace, &uri, arguments)? }),
         | _ => return Err(ToolRefusal(alloc::format!("no tool is named `{name}`"))),
     };
     let mut answered = json!({ "uri": uri, "version": version });
@@ -241,6 +294,76 @@ fn held(
         .published(&uri)
         .ok_or_else(|| ToolRefusal(alloc::format!("`{named}` is not open in the hub")))?;
     Ok((uri, version))
+}
+
+/// The trial of the candidates `arguments` names over the document at `uri`,
+/// best first, as JSON.
+///
+/// # Specification
+/// - requires: nothing; any arguments are admitted.
+/// - ensures: one result per candidate, in the order the language server's
+///   trial ranks them, each naming its index among the candidates, how far it
+///   got and its diagnostics; each candidate fills `range` when one is given.
+///   No candidates, more than [`MOST_CANDIDATES`], a candidate that is not a
+///   string, or a range that is not one, are refused.
+/// - provides: the `trial` tool.
+/// - fails: as above, with the reason in the refusal.
+/// - panics: none.
+///
+/// # Errors
+/// [`ToolRefusal`] for unreadable candidates or range, or a document the hub
+/// does not hold.
+///
+/// # Adequacy
+/// - hypothesis: L3 — fills spliced over a hole are ranked through the wire,
+///   and an empty batch, a non-string candidate and an oversized batch are
+///   refused.
+/// - witness: `connection::tests::a_trial_ranks_fills_through_the_wire`
+#[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|trials|
+    arguments.get("candidates").and_then(Value::as_array).map(Vec::len) == Some(trials.len())))]
+fn tried(
+    workspace: &Workspace,
+    uri: &DocumentUri,
+    arguments: &Value,
+) -> Result<Vec<Value>, ToolRefusal>
+{
+    let candidates = arguments
+        .get("candidates")
+        .and_then(Value::as_array)
+        .filter(|candidates| (1_usize ..= MOST_CANDIDATES).contains(&candidates.len()))
+        .ok_or_else(|| {
+            ToolRefusal(alloc::format!(
+                "`candidates` must be an array of 1 to {MOST_CANDIDATES} texts"
+            ))
+        })?;
+    let range = arguments.get("range").cloned().unwrap_or(Value::Null);
+    let changes = candidates
+        .iter()
+        .map(|candidate| {
+            if !candidate.is_string() {
+                return Err(ToolRefusal(String::from("each candidate must be a text")));
+            }
+            serde_json::from_value::<ContentChange>(json!({ "range": range, "text": candidate }))
+                .map_err(|error| ToolRefusal(alloc::format!("`range` is not a range: {error}")))
+        })
+        .collect::<Result<Vec<ContentChange>, ToolRefusal>>()?;
+    let (_version, trials) = workspace
+        .trial(uri, &changes)
+        .ok_or_else(|| ToolRefusal(String::from("the document closed")))?;
+    Ok(trials
+        .into_iter()
+        .map(|tried| {
+            json!({
+                "candidate": usize::from(tried.candidate),
+                "reached": match tried.reached {
+                    | Reached::Judged => "judged",
+                    | Reached::RefusedWhole => "refusedWhole",
+                    | Reached::Faulted => "faulted",
+                },
+                "diagnostics": tried.diagnostics,
+            })
+        })
+        .collect())
 }
 
 /// The result the language server gives `call`, a method and its

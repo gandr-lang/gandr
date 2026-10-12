@@ -56,6 +56,7 @@ use crate::protocol::SemanticTokens;
 use crate::protocol::StringValue;
 use crate::recheck::DocumentSession;
 use crate::recheck::Timing;
+use crate::recheck::Tried;
 use crate::recheck::admit;
 use crate::recheck::grammar;
 use crate::recheck::highlight;
@@ -338,6 +339,55 @@ impl Workspace
         self.documents
             .get(uri)
             .map(|document| (document.version, document.published.as_slice()))
+    }
+
+    /// Judge each of `changes`, applied alone to the document at `uri` as it
+    /// stands, without submitting any: the held version and each candidate's
+    /// result, best first.
+    ///
+    /// # Specification
+    /// - requires: nothing; any changes are admissible input.
+    /// - ensures: `None` for a document no connection holds; otherwise one
+    ///   result per change, each the [`crate::recheck::trial`] of the held text
+    ///   with that change alone applied as a synchronisation applies it — a
+    ///   ranged change splices its text over the range, one naming no range is
+    ///   the whole text — ranked as the trial ranks them. The document, its
+    ///   session and its published diagnostics are unchanged.
+    /// - provides: batched candidate fills at a hole or over a declaration's
+    ///   body, for another face.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fill spliced over a hole and a whole replacement
+    ///   are judged and ranked, and the document reads back as it was.
+    /// - witness: `server::tests::a_workspace_tries_candidate_fills`
+    #[spec(ensures: |ret| ret.as_ref().is_none_or(|&(version, ref tried)|
+        tried.len() == changes.len() && self.documents.get(uri).is_some_and(|document| document.version == version)))]
+    #[inline]
+    #[must_use]
+    pub fn trial(
+        &self,
+        uri: &DocumentUri,
+        changes: &[ContentChange],
+    ) -> Option<(DocumentVersion, Vec<Tried>)>
+    {
+        let document = self.documents.get(uri)?;
+        let texts: Vec<String> = changes
+            .iter()
+            .map(|change| {
+                let mut text = document.text.clone();
+                apply(&mut text, change.clone());
+                text
+            })
+            .collect();
+        let candidates: Vec<SourceText<'_>> = texts
+            .iter()
+            .map(|text| SourceText::from(text.as_str()))
+            .collect();
+        Some((
+            document.version,
+            crate::recheck::trial(uri, &document.session, &candidates),
+        ))
     }
 
     /// The response a running connection gives the request `request`, read
@@ -1394,6 +1444,9 @@ mod tests
     use super::Served;
     use super::Server;
     use super::Workspace;
+    use crate::position::Position;
+    use crate::position::Range;
+    use crate::protocol::ContentChange;
     use crate::rpc::Outgoing;
     use crate::server::Logged;
     use crate::transport::Body;
@@ -2554,6 +2607,85 @@ mod tests
             changes.try_iter().collect::<Vec<_>>(),
             vec![uri],
             "a watcher hears a document forgotten"
+        );
+    }
+
+    #[test]
+    fn a_workspace_tries_candidate_fills()
+    {
+        let (mut workspace, [(mut first, _first_inbox), (_second, _second_inbox)]) =
+            two_connections();
+        let uri = crate::protocol::DocumentUri::from("file:///tmp/shared.gandr");
+        let text = "def f : Integer ;\ndef f = missing ;\n";
+        assert!(workspace.trial(&uri, &[]).is_none(), "nothing is held yet");
+        drop(first.handle(
+            &mut workspace,
+            &shared(
+                Json("textDocument/didOpen"),
+                Json(r#","version":4,"text":"def f : Integer ;\ndef f = missing ;\n"}"#),
+            ),
+        ));
+        let published = workspace
+            .published(&uri)
+            .map(|(version, diagnostics)| (version.to_string(), diagnostics.to_vec()));
+        let hole = Range {
+            start: Position {
+                line: crate::position::Line::from(1_u32),
+                character: crate::position::Character::from(8_u32),
+            },
+            end: Position {
+                line: crate::position::Line::from(1_u32),
+                character: crate::position::Character::from(15_u32),
+            },
+        };
+        let changes = [
+            ContentChange {
+                range: Some(hole),
+                text: String::from("\"one\""),
+            },
+            ContentChange {
+                range: Some(hole),
+                text: String::from("42"),
+            },
+            ContentChange {
+                range: None,
+                text: String::from("def f : Integer ;\nret 3\n"),
+            },
+        ];
+        let (version, tried) = workspace
+            .trial(&uri, &changes)
+            .expect("the document is held");
+        assert_eq!(version.to_string(), "4");
+        assert_eq!(
+            tried
+                .iter()
+                .map(|tried| (
+                    usize::from(tried.candidate),
+                    tried.reached,
+                    tried.diagnostics.len()
+                ))
+                .collect::<Vec<_>>(),
+            [
+                (1_usize, crate::recheck::Reached::Judged, 0_usize),
+                (0_usize, crate::recheck::Reached::Judged, 1_usize),
+                (2_usize, crate::recheck::Reached::RefusedWhole, 1_usize),
+            ],
+            "the fill spliced over the hole that checks ranks first"
+        );
+        assert_eq!(
+            workspace
+                .published(&uri)
+                .map(|(version, diagnostics)| (version.to_string(), diagnostics.to_vec())),
+            published,
+            "the published diagnostics are unchanged"
+        );
+        assert_eq!(
+            workspace
+                .documents
+                .get(&uri)
+                .map(|document| document.text.as_str()),
+            Some(text),
+            "the held text is unchanged"
         );
     }
 }

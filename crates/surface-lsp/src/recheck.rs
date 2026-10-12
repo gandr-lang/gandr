@@ -27,6 +27,7 @@ use gandr_surface_diagnostics::Entry;
 use gandr_surface_diagnostics::Report;
 use gandr_surface_diagnostics::entries;
 use gandr_surface_dispatcher::ComposeFault;
+use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::classify;
@@ -38,9 +39,11 @@ use gandr_surface_parser::parse;
 use gandr_surface_render_remote::ByteOffset;
 use gandr_surface_render_remote::HlSpan;
 use gandr_surface_render_remote::LineIndex;
+use gandr_surface_session::CandidateIndex;
 use gandr_surface_session::FormCensus;
 use gandr_surface_session::Session;
 use gandr_surface_session::SessionFault;
+use gandr_surface_session::Submission;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
@@ -386,15 +389,7 @@ pub fn recheck(
             Maybe::Absent(admitted::Absent::Unadmitted),
         ),
     };
-    let path = uri.path();
-    let index = LineIndex::new(text.as_ref().into());
-    let step = submission.into_step(Path::new(&path));
-    let diagnostics = entries(&step, Verb::Check(Goals::Reported))
-        .map(|entry| match entry {
-            | Entry::Report(report) => diagnostic(&report, &index, uri),
-            | Entry::Line(line) => Diagnostic::at_origin(line.to_string()),
-        })
-        .collect();
+    let diagnostics = diagnostics_of(submission, uri, text);
     Rechecked {
         diagnostics,
         timing: Timing {
@@ -488,6 +483,122 @@ pub fn admit(
             ..timing
         },
     }
+}
+
+/// How far a tried candidate got, best first.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum Reached
+{
+    /// The candidate was lowered and each of its declarations judged.
+    Judged,
+    /// The lowering refused the candidate whole.
+    RefusedWhole,
+    /// An engine fault stopped the candidate, or the grammar did not build.
+    Faulted,
+}
+
+/// One candidate revision as a trial judged it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Tried
+{
+    /// The candidate's position among those the trial was given.
+    pub candidate: CandidateIndex,
+    /// How far it got.
+    pub reached: Reached,
+    /// The diagnostics a synchronisation to its text would publish.
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+/// Judge each of `candidates`, revisions of the document at `uri`, in its
+/// `session` without submitting any, best first.
+///
+/// # Specification
+/// - requires: `session` was opened for `uri`; any texts are admissible input.
+/// - ensures: one result per candidate, in the order `Session::trial` ranks
+///   them, each carrying the diagnostics [`recheck`] would publish for the
+///   candidate's text in a session that has accepted nothing; a fault is one
+///   error at the origin naming it. The session is unchanged.
+/// - provides: the language server's view of a batch of candidate fills.
+/// - fails: never; a fault is a diagnostic.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a settling, a refused and a malformed candidate are
+///   ranked in that order, each with the diagnostics a recheck of its text
+///   publishes, and the session's next recheck is what it was before.
+/// - witness: `recheck::tests::a_trial_ranks_candidates_with_their_diagnostics`
+#[spec(ensures: |ret| ret.len() == candidates.len()
+    && ret.is_sorted_by_key(|tried| tried.reached)
+    && ret.iter().all(|tried| usize::from(tried.candidate) < candidates.len()))]
+#[must_use]
+pub fn trial(
+    uri: &DocumentUri,
+    session: &DocumentSession,
+    candidates: &[SourceText<'_>],
+) -> Vec<Tried>
+{
+    let session = match *session {
+        | Ok(ref session) => session,
+        | Err(fault) => {
+            let diagnostic =
+                Diagnostic::at_origin(format!("the built-in grammar did not build: {fault}"));
+            return (0_usize .. candidates.len())
+                .map(|index| Tried {
+                    candidate: CandidateIndex::from(index),
+                    reached: Reached::Faulted,
+                    diagnostics: vec![diagnostic.clone()],
+                })
+                .collect();
+        },
+    };
+    session
+        .trial(candidates)
+        .into_iter()
+        .map(|tried| {
+            let candidate = tried.candidate();
+            let text = candidates
+                .get(usize::from(candidate))
+                .copied()
+                .unwrap_or_else(|| SourceText::from(""));
+            match tried.into_outcome() {
+                | Ok(submission) => Tried {
+                    candidate,
+                    reached: match *submission.composed() {
+                        | Composed::Refused(_) => Reached::RefusedWhole,
+                        | Composed::Settled { .. } => Reached::Judged,
+                    },
+                    diagnostics: diagnostics_of(submission, uri, text),
+                },
+                | Err(fault) => Tried {
+                    candidate,
+                    reached: Reached::Faulted,
+                    diagnostics: vec![Diagnostic::at_origin(fault.to_string())],
+                },
+            }
+        })
+        .collect()
+}
+
+/// The diagnostics `submission`, the judgement of `text` at `uri`, publishes:
+/// each entry `gandr check --goals` prints for its step, in order.
+///
+/// # Specification
+/// trivial.
+fn diagnostics_of(
+    submission: Submission<'_>,
+    uri: &DocumentUri,
+    text: SourceText<'_>,
+) -> Vec<Diagnostic>
+{
+    let path = uri.path();
+    let index = LineIndex::new(text.as_ref().into());
+    let step = submission.into_step(Path::new(&path));
+    entries(&step, Verb::Check(Goals::Reported))
+        .map(|entry| match entry {
+            | Entry::Report(report) => diagnostic(&report, &index, uri),
+            | Entry::Line(line) => Diagnostic::at_origin(line.to_string()),
+        })
+        .collect()
 }
 
 /// The highlighter's spans over `text`.
@@ -641,6 +752,7 @@ mod tests
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
 
+    use super::Reached;
     use super::admit;
     use super::admitted;
     use super::grammar;
@@ -648,6 +760,7 @@ mod tests
     use super::open;
     use super::recheck;
     use super::toolkit;
+    use super::trial;
     use crate::position::Character;
     use crate::position::Line;
     use crate::position::Position;
@@ -942,5 +1055,46 @@ mod tests
             "a revision refused whole leaves nothing to admit"
         );
         assert_eq!(admit(&mut session, refused.timing).timing, refused.timing);
+    }
+
+    #[test]
+    fn a_trial_ranks_candidates_with_their_diagnostics()
+    {
+        let uri = DocumentUri::from("file:///strict/tried.gandr");
+        let base = "def a = 1 ;\ndef f : Integer ;\n";
+        let candidates = [
+            "def a = 1 ;\ndef f : Integer ;\ndef f = \"one\" ;\n",
+            "def a = 1 ;\ndef f : Integer ;\nret 3\n",
+            "def a = 1 ;\ndef f : Integer ;\ndef f = a ;\n",
+        ];
+        let mut session = open(&uri);
+        let before = recheck(&uri, &mut session, SourceText::from(base)).diagnostics;
+        let tried = trial(&uri, &session, &candidates.map(SourceText::from));
+        assert_eq!(
+            tried
+                .iter()
+                .map(|tried| (usize::from(tried.candidate), tried.reached))
+                .collect::<Vec<_>>(),
+            [
+                (2_usize, Reached::Judged),
+                (0_usize, Reached::Judged),
+                (1_usize, Reached::RefusedWhole)
+            ],
+            "a settling candidate, then a refused declaration, then a revision refused whole"
+        );
+        for tried in &tried {
+            let text = candidates[usize::from(tried.candidate)];
+            assert_eq!(
+                tried.diagnostics,
+                checked(&uri, SourceText::from(text)),
+                "each candidate's diagnostics are a fresh recheck's: {text}"
+            );
+        }
+        assert!(tried[0_usize].diagnostics.is_empty());
+        assert_eq!(
+            recheck(&uri, &mut session, SourceText::from(base)).diagnostics,
+            before,
+            "the session judges its text as before the trial"
+        );
     }
 }
