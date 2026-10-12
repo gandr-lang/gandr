@@ -1,0 +1,16 @@
+@[ refuses("OutOfFragment") ]
+sign Nat {
+  sort Nat : Type;
+  oper add : (Nat, Nat) --> Nat;
+
+  rule cong2 : (
+    rule p : Nat ==> Nat,
+    rule q : Nat ==> Nat,
+    data x : Nat,
+    data y : Nat
+  ) ==> (z : Nat) {
+    node : p(x) ==> (x′);
+    node : q(y) ==> (y′);
+    node : add(x′, y′) --> (z);
+  };
+}

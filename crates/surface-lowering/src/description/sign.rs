@@ -83,6 +83,15 @@ impl HeadKind
     }
 }
 
+/// A sign block's rule member: a face it writes or a circuit it wires.
+enum RuleMember
+{
+    /// A written face `rule name : lhs ==> rhs`.
+    Face(RuleFace),
+    /// A circuit rule whose sphere its wiring derives.
+    Circuit(CircuitRule),
+}
+
 impl Reader<'_, '_>
 {
     /// Read each sign member independently, preserving its declared sort set.
@@ -149,6 +158,7 @@ impl Reader<'_, '_>
         let mut operations = Vec::new();
         let mut operation_spans = Vec::new();
         let mut circuits = Vec::new();
+        let mut faces = Vec::new();
         for member in members {
             let span = member_span(member, at.span);
             let mut reading = Run::new(member, span);
@@ -167,7 +177,10 @@ impl Reader<'_, '_>
             }
             else if reading.eat(Spelling("rule")).0 {
                 self.signature_rule(&mut reading, &sorts, &scope)
-                    .map(|rule| circuits.push(rule))
+                    .map(|member| match member {
+                        | RuleMember::Circuit(rule) => circuits.push(rule),
+                        | RuleMember::Face(face) => faces.push(face),
+                    })
             }
             else {
                 Err(reading.signature_fault(SignatureFault::MissingJudgment))
@@ -181,7 +194,7 @@ impl Reader<'_, '_>
             [],
             [],
             operations,
-            [],
+            faces,
             DeclPolarity::Data,
             Attrs::empty(),
         )
@@ -196,6 +209,68 @@ impl Reader<'_, '_>
             operation_spans,
             parameters: Vec::new(),
             classifier: Maybe::Absent(family_classifier::Absent::Signature),
+        })
+    }
+
+    /// Read a top-level `oper` declaration as the one operation it declares,
+    /// in a description of its own: its boundary through the sign route, and
+    /// its filler declined as an operation filler is inside a sign block.
+    ///
+    /// # Specification
+    /// - ensures: the description holds the operation when its boundary reads
+    ///   and it has no filler, and nothing else; the declaration is named by
+    ///   the operation.
+    /// - fails: a missing name refuses the declaration; a filler or an
+    ///   unreadable boundary is the operation's own diagnostic, appended.
+    /// - panics: none.
+    /// - executable: none — which diagnostic the operation earned is source
+    ///   syntax the description does not retain.
+    ///
+    /// # Errors
+    /// Returns a located malformed-name diagnostic.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a top-level operation with a filler keeps its name
+    ///   and declines the filler at the declaration, where a stray form would
+    ///   refuse the whole module.
+    /// - witness: `description::sign::tests::a_top_level_operation_declines_its_filler_by_name`
+    pub(super) fn circuit_declaration(
+        &self,
+        at: Placed,
+        run: &mut Run<'_>,
+        serial: NominalSerial,
+        diagnostics: &mut Vec<DescriptionDiagnostic>,
+    ) -> Result<DescribedDeclaration, DescriptionDiagnostic>
+    {
+        let Some(&first) = run.remaining().first()
+        else {
+            return Err(run.fault(DescriptionFault::Malformed));
+        };
+        let named = first.placed();
+        let mut operations = Vec::new();
+        let mut operation_spans = Vec::new();
+        match self.signature_operation(run, &[]) {
+            | Ok(operation) => {
+                operations.push(operation);
+                operation_spans.push(at.span);
+            },
+            | Err(diagnostic) => diagnostics.push(diagnostic),
+        }
+        Ok(DescribedDeclaration {
+            at,
+            named,
+            description: SignDesc::new(
+                NominalId::new(serial, self.text(named).0),
+                [],
+                [],
+                operations,
+                [],
+                DeclPolarity::Data,
+                Attrs::empty(),
+            ),
+            operation_spans,
+            parameters: Vec::new(),
+            classifier: Maybe::Absent(family_classifier::Absent::Circuit),
         })
     }
 
@@ -246,12 +321,13 @@ impl Reader<'_, '_>
         ))
     }
 
-    /// Read a boundary-only operation; never discard its filler or extra
-    /// outputs.
+    /// Read a boundary-only operation; never discard its filler or a port.
     ///
     /// # Specification
-    /// - ensures: admitted operations retain every input and their one output.
-    /// - fails: a filler or a many-output boundary is an explicit decline.
+    /// - ensures: admitted operations retain every input and every output, in
+    ///   order, one monomial per output.
+    /// - fails: a filler is an explicit decline; a port name written twice on
+    ///   the boundary is two ports, not one wire, and is refused by name.
     /// - panics: none.
     /// - executable: none — the written boundary is source syntax the operation
     ///   does not retain.
@@ -260,10 +336,13 @@ impl Reader<'_, '_>
     /// Returns the precise signature boundary or malformed syntax.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a filler, a data-spelled operation and a readable one
-    ///   separate the two declines from admission.
+    /// - hypothesis: L3 — a filler, a data-spelled operation, a shared port
+    ///   name and a two-output operation separate the declines from admission,
+    ///   and the admitted outputs keep their order.
     /// - witness: `description::sign::tests::an_oper_filler_stays_declined_and_names_its_own_rung`
     /// - witness: `description::sign::tests::a_data_spelled_sign_oper_declines_before_no_output_can_be_fabricated`
+    /// - witness: `description::sign::tests::a_two_output_operation_keeps_both_ports_in_order`
+    /// - witness: `description::sign::tests::a_port_name_on_both_sides_is_two_ports`
     fn signature_operation(
         &self,
         run: &mut Run<'_>,
@@ -279,24 +358,37 @@ impl Reader<'_, '_>
             return Err(run.signature_fault(SignatureFault::OperationFiller));
         }
         run.end()?;
-        let arity = match *boundary.outputs.as_slice() {
-            | [] => BridgeArity::new(boundary.inputs, [], [], [], []),
-            | [ref output] => BridgeArity::single_output(boundary.inputs, output.clone()),
-            | ref outputs => {
-                return Err(run
-                    .signature_fault(SignatureFault::MultipleOutputs(OutputCount(outputs.len()))));
-            },
-        };
+        let ports: Vec<&SortRef> = boundary.inputs.iter().chain(&boundary.outputs).collect();
+        if let Some(&shared) = ports
+            .iter()
+            .enumerate()
+            .find(|&(at, port)| {
+                ports
+                    .iter()
+                    .take(at)
+                    .any(|earlier| earlier.name == port.name)
+            })
+            .map(|(_, port)| port)
+        {
+            return Err(run.signature_fault(SignatureFault::SharedPort(shared.name.clone())));
+        }
+        let arity = BridgeArity::tupled(boundary.inputs, boundary.outputs);
         Ok(OperDesc::new(self.text(name).0, arity, Attrs::empty()))
     }
 
-    /// Read a rule body and derive its sphere from the written wiring.
+    /// Read a rule member: a written face between two terms, or a circuit
+    /// body whose sphere is derived from the written wiring.
     ///
     /// # Specification
-    /// - ensures: source and target are derived, never fabricated for a failed
-    ///   body.
+    /// - ensures: a member whose first side is a term is the face `lhs ==> rhs`
+    ///   it writes; a member whose first side is a port group is a circuit rule
+    ///   whose source and target are derived, never fabricated for a failed
+    ///   body, with one root per declared output and one port per output of
+    ///   each frame.
     /// - fails: malformed, cyclic, oversized and unrepresentable bodies are
-    ///   located.
+    ///   located; a redex binds exactly one port; a member with no body whose
+    ///   first side is a parenthesized composite, a cell between composites of
+    ///   cells, is a fillerless higher cell.
     /// - panics: none.
     /// - executable: none — the derived sphere is checked by the derivation it
     ///   comes from; restating it would derive it again.
@@ -306,31 +398,57 @@ impl Reader<'_, '_>
     /// failures.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a readable body, a cycle and a body past the node
-    ///   ceiling separate a derived sphere from the two refusals.
+    /// - hypothesis: L3 — a readable body, a cycle, a body past the node
+    ///   ceiling, a written face and a two-rooted body over a many-out frame
+    ///   separate a derived sphere, a written one and the two refusals.
     /// - witness: `description::sign::tests::a_ruled_sign_block_lowers_its_members_into_a_description`
     /// - witness: `description::sign::tests::a_wiring_that_closes_a_cycle_earns_the_declaration_tables_refusal`
     /// - witness: `description::sign::tests::a_doubling_body_declines_on_the_derivation_node_budget`
+    /// - witness: `description::sign::tests::the_cat_shape_laws_are_written_faces`
+    /// - witness: `description::sign::tests::a_many_out_frame_binds_every_port_and_roots_the_body`
+    /// - witness: `description::sign::tests::a_coherence_between_composites_is_a_higher_cell`
     fn signature_rule(
         &self,
         run: &mut Run<'_>,
         sorts: &[SortDesc],
         scope: &BTreeMap<Written<'_>, HeadKind>,
-    ) -> Result<CircuitRule, DescriptionDiagnostic>
+    ) -> Result<RuleMember, DescriptionDiagnostic>
     {
         let name = run.take()?;
         if !run.eat(Spelling(":")).0 {
             return Err(run.signature_fault(SignatureFault::WrittenFace));
         }
+        let parenthesized = !run.at(Spelling("(")).0
+            && run
+                .remaining()
+                .first()
+                .is_some_and(|piece| self.text(piece.placed()).0.starts_with('('));
+        let bodied = run
+            .remaining()
+            .iter()
+            .any(|piece| matches!(*piece, Piece::Tile { ref label, .. } if label.as_ref() == "{"));
+        if parenthesized && !bodied {
+            return Err(run.signature_fault(SignatureFault::HigherCell));
+        }
+        if !run.at(Spelling("(")).0 && !parenthesized {
+            let lhs = run.take()?;
+            run.arrow(Some(ArrowRow::Face))?;
+            let rhs = run.take()?;
+            run.end()?;
+            let lhs = self.free_term(lhs)?;
+            let rhs = self.free_term(rhs)?;
+            let variables = derive_cell_var_meta(&lhs);
+            return Ok(RuleMember::Face(RuleFace::new(
+                lhs,
+                rhs,
+                variables,
+                surface_span(run.span),
+            )));
+        }
         let boundary = self.boundary(run, sorts, ArrowRow::Face)?;
-        let output = match *boundary.outputs.as_slice() {
-            | [ref output] => output.name.clone(),
-            | [] => return Err(run.signature_fault(SignatureFault::MissingOutput)),
-            | ref outputs => {
-                return Err(run
-                    .signature_fault(SignatureFault::MultipleOutputs(OutputCount(outputs.len()))));
-            },
-        };
+        if boundary.outputs.is_empty() {
+            return Err(run.signature_fault(SignatureFault::MissingOutput));
+        }
         if !run.eat(Spelling("{")).0 {
             return Err(run.signature_fault(SignatureFault::HigherCell));
         }
@@ -366,17 +484,21 @@ impl Reader<'_, '_>
                 return Err(run
                     .signature_fault(SignatureFault::UndeclaredRewrite(self.text(head).0.into())));
             }
-            let mut outputs = self.wire_tuple(run)?;
-            if outputs.len() != 1 {
-                return Err(run
-                    .signature_fault(SignatureFault::MultipleOutputs(OutputCount(outputs.len()))));
+            let outputs = self.wire_tuple(run)?;
+            if outputs.is_empty() {
+                return Err(run.signature_fault(SignatureFault::MissingOutput));
             }
-            let out = outputs
-                .pop()
-                .ok_or_else(|| run.signature_fault(SignatureFault::MissingOutput))?;
             let arguments: Vec<_> = arguments.into_iter().map(FreeTerm::var).collect();
             let node =
                 if let Some(port) = rewrite {
+                    let out = match <[Name; 1]>::try_from(outputs) {
+                        | Ok([out]) => out,
+                        | Err(several) => {
+                            return Err(run.signature_fault(SignatureFault::MultipleOutputs(
+                                OutputCount(several.len()),
+                            )));
+                        },
+                    };
                     CircuitNode::Redex(port.interface().instantiate(arguments, out).map_err(
                         |error| run.signature_fault(SignatureFault::Instantiation(error)),
                     )?)
@@ -388,7 +510,7 @@ impl Reader<'_, '_>
                             FrameHead::Op(self.text(head).0.into())
                         },
                     };
-                    CircuitNode::Frame(CircuitFrame::new(head, arguments, out))
+                    CircuitNode::Frame(CircuitFrame::binding(head, arguments, outputs))
                 };
             nodes.push(node);
             if !run.eat(Spelling(";")).0 {
@@ -396,16 +518,19 @@ impl Reader<'_, '_>
             }
         }
         run.end()?;
-        let body = CircuitBody::new(nodes, output);
+        let roots: Vec<Name> = boundary
+            .outputs
+            .iter()
+            .map(|output| output.name.clone())
+            .collect();
+        let body = CircuitBody::rooted(nodes, roots);
         let derived = derive_boundaries(&body)
             .map_err(|error| run.signature_fault(SignatureFault::Derivation(error)))?;
         let vars = derive_cell_var_meta(&derived.source);
-        let span = SurfaceSpan::new(
-            usize::from(run.span.start()).into(),
-            usize::from(run.span.end()).into(),
-        );
-        let sphere = RuleFace::new(derived.source, derived.target, vars, span);
-        Ok(CircuitRule::new(self.text(name).0, sphere, body).with_ports(boundary.rewrites))
+        let sphere = RuleFace::new(derived.source, derived.target, vars, surface_span(run.span));
+        Ok(RuleMember::Circuit(
+            CircuitRule::new(self.text(name).0, sphere, body).with_ports(boundary.rewrites),
+        ))
     }
 
     /// Read both signature sides and rewrite binders before the optional
@@ -618,8 +743,8 @@ impl Run<'_>
     /// Confirm an arrow's row without interpreting an unresolved head.
     ///
     /// # Specification
-    /// - ensures: mismatches and the reserved reversible glyph retain their own
-    ///   span.
+    /// - ensures: mismatches and the reserved reversible glyphs, `<->` and
+    ///   `<=>`, retain their own span.
     /// - fails: a missing arrow is malformed syntax.
     /// - panics: none.
     /// - executable: none — the glyph consumed is source syntax the row does
@@ -629,22 +754,23 @@ impl Run<'_>
     /// Returns a malformed, reversible or wrong-row diagnostic.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a declared head under the wrong arrow and an unknown
-    ///   head under any arrow are refused apart.
+    /// - hypothesis: L3 — a declared head under the wrong arrow, an unknown
+    ///   head under any arrow and a reversible map are refused apart.
     /// - witness: `description::sign::tests::node_arrow_resolution_distinguishes_declared_and_unknown_heads`
+    /// - witness: `description::sign::tests::both_reversible_glyphs_are_reserved`
     fn arrow(
         &mut self,
         expected: Option<ArrowRow>,
     ) -> Result<ArrowRow, DescriptionDiagnostic>
     {
         let at = self.cursor.here();
-        let actual = if self.eat(Spelling("<=>")).0 {
+        let actual = if self.eat(Spelling("<=>")).0 || self.eat(Spelling("<->")).0 {
             return Err(DescriptionDiagnostic {
                 span: at,
                 fault: DescriptionFault::Signature(SignatureFault::Reversible),
             });
         }
-        else if self.eat(Spelling("-->")).0 || self.eat(Spelling("<->")).0 {
+        else if self.eat(Spelling("-->")).0 {
             ArrowRow::Mapping
         }
         else if self.eat(Spelling("==>")).0 {
@@ -683,6 +809,18 @@ fn member_span(
         },
         | _ => fallback,
     }
+}
+
+/// The description's provenance for a written member span.
+///
+/// # Specification
+/// trivial.
+fn surface_span(span: ByteSpan) -> SurfaceSpan
+{
+    SurfaceSpan::new(
+        usize::from(span.start()).into(),
+        usize::from(span.end()).into(),
+    )
 }
 
 /// An anonymous port's collision-free, source-stable internal name.

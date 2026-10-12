@@ -646,6 +646,10 @@ pub enum Operand
     /// An operation of the data declaration that wrote this half, its body
     /// compiled from its rules by the plan the collection keeps for its slot.
     Operation,
+    /// A `sign` block or a top-level `oper`, which lowers to no core term
+    /// until a model of the signature is derived from it: the half that
+    /// carries a member refusal and the expectation stating it.
+    Signature,
 }
 
 /// One half of a declared name: the declaration form that wrote it and what
@@ -1470,6 +1474,11 @@ pub fn collect<'source>(
             decorations.clear();
             continue;
         }
+        if collector.refuses_signature(child).0 {
+            collector.refuse_signature(child, &decorations);
+            decorations.clear();
+            continue;
+        }
         if let Some(&stray) = decorations.first() {
             collector.module_child(stray)?;
         }
@@ -1660,10 +1669,37 @@ impl<'source> Collector<'_, 'source>
         };
         let named = entry.named;
         let name = self.name_of(named);
+        for (span, refusal) in self.described_refusals(child) {
+            let introduced = Placed {
+                node: child.node,
+                span,
+            };
+            let _held = self.refuse_held(Container::TopLevel, name, introduced, named, refusal);
+        }
+    }
+
+    /// Every description and cell refusal raised inside the declaration at
+    /// `child`, with its member's span, in report order.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the description diagnostics whose span lies inside `child`'s,
+    ///   then the cell diagnostics, each with its own span.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::hold_described_refusals`] and
+    ///   [`Self::refuse_signature`].
+    /// - witness: `description::tests::member_refusals_keep_their_spans_and_other_declarations`
+    #[spec(ensures: |ret| ret.iter().all(|&(span, _)| span.start() >= child.span.start() && span.end() <= child.span.end()))]
+    fn described_refusals(
+        &self,
+        child: Placed,
+    ) -> Vec<(ByteSpan, LoweringRefusal<'source>)>
+    {
         let inside =
             |span: ByteSpan| span.start() >= child.span.start() && span.end() <= child.span.end();
-        let refusals: Vec<_> = self
-            .collected
+        self.collected
             .description_diagnostics
             .iter()
             .filter(|diagnostic| inside(diagnostic.span))
@@ -1676,13 +1712,101 @@ impl<'source> Collector<'_, 'source>
                     .filter(|diagnostic| inside(diagnostic.span))
                     .map(|diagnostic| (diagnostic.span, diagnostic.lowering_refusal())),
             )
-            .collect();
-        for (span, refusal) in refusals {
+            .collect()
+    }
+
+    /// Whether `child` is a `sign` block or a top-level `oper` some member of
+    /// which the description route or the cell gate refused.
+    ///
+    /// # Specification
+    /// trivial.
+    fn refuses_signature(
+        &self,
+        child: Placed,
+    ) -> SignatureRefused
+    {
+        SignatureRefused(
+            self.collected
+                .descriptions
+                .get(&child.node)
+                .is_some_and(|entry| matches!(entry.classifier, Maybe::Absent(_)))
+                && !self.described_refusals(child).is_empty(),
+        )
+    }
+
+    /// File the refusals raised inside the `sign` block or top-level `oper`
+    /// at `child` as declarations an expectation states, decorated by the
+    /// attribute blocks `decorations` written before it.
+    ///
+    /// # Specification
+    /// - requires: [`Self::refuses_signature`] holds of `child`; `decorations`
+    ///   are attribute blocks standing on their own before it.
+    /// - ensures: one held slot under the declaration's name per refusal, in
+    ///   report order, each at its member's span with the block itself as its
+    ///   signature half, so the attributes the decorations file under the block
+    ///   are read off every one of them; the first owns the block and its
+    ///   decorations, and an unreadable decoration refuses it.
+    /// - provides: refusals inside a `sign` block an expectation can state.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a refused sign member keeps its span, a decoration
+    ///   before its block states it, and the block's name enters no namespace.
+    /// - witness: `description::sign::tests::a_refused_sign_block_states_its_refusal`
+    #[spec(
+        captures: before = (self.collected.slots.len(), self.collected.by_name.len()),
+        ensures: self.collected.slots.len() >= before.0 && self.collected.by_name.len() == before.1,
+    )]
+    fn refuse_signature(
+        &mut self,
+        child: Placed,
+        decorations: &[Placed],
+    )
+    {
+        let Some(entry) = self.collected.descriptions.get(&child.node)
+        else {
+            return;
+        };
+        let named = entry.named;
+        let name = self.name_of(named);
+        let mut attributes = Vec::new();
+        let mut attributed = Ok(());
+        for &block in decorations {
+            if attributed.is_ok() {
+                attributed = self.decoration(block, child.node, &mut attributes);
+            }
+        }
+        let mut first = Maybe::Absent(slot_owner::Absent::Unowned);
+        for (span, refusal) in self.described_refusals(child) {
             let introduced = Placed {
                 node: child.node,
                 span,
             };
-            let _held = self.refuse_held(Container::TopLevel, name, introduced, named, refusal);
+            let held = self.held(Container::TopLevel, name, introduced, named);
+            if let Some(slot) = self.collected.slots.get_mut(held.0) {
+                slot.signature = Maybe::Present(Half {
+                    declaration: child,
+                    operand: Operand::Signature,
+                });
+                slot.refuse(child.node, refusal);
+            }
+            if let Maybe::Absent(_) = first {
+                first = Maybe::Present(held);
+            }
+        }
+        let Maybe::Present(owner) = first
+        else {
+            return;
+        };
+        self.collected.own(child.node, owner);
+        for &block in decorations {
+            self.collected.own(block.node, owner);
+        }
+        if let Some(slot) = self.collected.slots.get_mut(owner.0) {
+            slot.attributes.append(&mut attributes);
+            if let Err(refusal) = attributed {
+                slot.refuse(child.node, refusal);
+            }
         }
     }
 
@@ -2849,6 +2973,14 @@ struct Carried(bool);
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct BareName(bool);
+
+/// Whether a `sign` block or a top-level `oper` holds a member refusal.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct SignatureRefused(bool);
 
 quenchant_shape::reason_enum! {
     /// Why a signature type sees no manifest type component.

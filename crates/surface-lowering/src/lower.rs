@@ -2641,7 +2641,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     | Operand::Function => {
                         seeds.push((half.declaration.node, Reading::Function));
                     },
-                    | Operand::Member(_) | Operand::Data(_) | Operand::Operation => {},
+                    | Operand::Member(_)
+                    | Operand::Data(_)
+                    | Operand::Operation
+                    | Operand::Signature => {},
                 }
             }
             for written in &slot.attributes {
@@ -8890,7 +8893,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     | Maybe::Present(half) => match half.operand {
                         | Operand::Written(written) => self.value_type_at(written.node),
                         | Operand::Function => self.signature_at(half.declaration.node),
-                        | Operand::Member(_) | Operand::Data(_) | Operand::Operation => Maybe::Absent(lowered::Absent::Unminted),
+                        | Operand::Member(_) | Operand::Data(_) | Operand::Operation | Operand::Signature => Maybe::Absent(lowered::Absent::Unminted),
                     },
                     | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
                 };
@@ -8903,7 +8906,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             .get(&position)
                             .copied()
                             .map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
-                        | Operand::Data(_) | Operand::Operation => Maybe::Absent(lowered::Absent::Unminted),
+                        | Operand::Data(_) | Operand::Operation | Operand::Signature => Maybe::Absent(lowered::Absent::Unminted),
                     },
                     | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
                 };
@@ -8984,9 +8987,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Maybe::Present(half) => match half.operand {
                 | Operand::Written(written) => self.value_type_at(written.node),
                 | Operand::Function => self.signature_at(half.declaration.node),
-                | Operand::Member(_) | Operand::Data(_) | Operand::Operation => {
-                    Maybe::Absent(lowered::Absent::Unminted)
-                },
+                | Operand::Member(_)
+                | Operand::Data(_)
+                | Operand::Operation
+                | Operand::Signature => Maybe::Absent(lowered::Absent::Unminted),
             },
             | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
         };
@@ -8999,7 +9003,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     .get(&position)
                     .copied()
                     .map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
-                | Operand::Data(_) | Operand::Operation => Maybe::Absent(lowered::Absent::Unminted),
+                | Operand::Data(_) | Operand::Operation | Operand::Signature => {
+                    Maybe::Absent(lowered::Absent::Unminted)
+                },
             },
             | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
         };

@@ -165,7 +165,9 @@ impl Reader<'_, '_>
     /// # Specification
     /// - ensures: every application preserves its head and ordered argument
     ///   terms; a parenthesized term is its one component, and a parenthesized
-    ///   list of several is a results tuple of them in order.
+    ///   list of several is a results tuple of them in order; a variable
+    ///   spelled in a type hole, as a pinned rewrite endpoint is, is a
+    ///   variable.
     /// - fails: forms outside names, applications and parenthesized lists are
     ///   located.
     /// - panics: none.
@@ -180,6 +182,7 @@ impl Reader<'_, '_>
     ///   component.
     /// - witness: `description::tests::operations_and_rules_preserve_their_boundaries`
     /// - witness: `description::tests::a_parenthesized_result_list_reads_as_a_results_tuple`
+    /// - witness: `description::sign::tests::a_pinned_rewrite_endpoint_reads_as_a_variable`
     #[spec(ensures: |result| result.is_ok() || self.tree.node(at.node).is_some())]
     pub(super) fn free_term(
         &self,
@@ -194,7 +197,9 @@ impl Reader<'_, '_>
                     let pieces = self.pieces(at)?;
                     if let [Piece::Tile { label, .. }] = *pieces.as_slice() {
                         match label.as_ref() {
-                            | "identifier" => terms.push(FreeTerm::var(self.text(at).0)),
+                            | "identifier" | "type_variable" => {
+                                terms.push(FreeTerm::var(self.text(at).0));
+                            },
                             | "constructor" => terms.push(FreeTerm::ctor(self.text(at).0, [])),
                             | _ => {
                                 return Err(DescriptionDiagnostic {

@@ -14,7 +14,7 @@ pub enum ArrowRow
     Face,
 }
 
-/// The number of output ports a term-shaped cell cannot represent.
+/// The number of output ports a redex line binds, where its rewrite binds one.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct OutputCount(pub usize);
@@ -27,7 +27,8 @@ pub enum SignatureFault
     MissingJudgment,
     /// A sign block presents sorts, operations and rules, not item-level data.
     RetiredDataMember,
-    /// A written face belongs in a data or codata block.
+    /// A sign block's written face names itself, `rule name : lhs ==> rhs`;
+    /// the unnamed face is the data and codata blocks' spelling.
     WrittenFace,
     /// An expression CST node cannot silently become a circuit binder group.
     ExpressionEndpoint,
@@ -35,13 +36,14 @@ pub enum SignatureFault
     OperationFiller,
     /// A fillerless higher cell has no circuit body to elaborate.
     HigherCell,
-    /// A node or rule interface has more than one output root.
+    /// A redex line binds more than the one output port its rewrite has.
     MultipleOutputs(OutputCount),
     /// A circuit rule must name the output from which its boundary is derived.
     MissingOutput,
     /// A feed line needs wheel semantics, not a term-shaped cell.
     Wheel,
-    /// The glyph is reserved for reversible rewrites.
+    /// The glyph is reserved for reversible rewrites and maps: `<=>` and
+    /// `<->`.
     Reversible,
     /// The written arrow's row differs from the subject's declared kind.
     ArrowMismatch
@@ -57,6 +59,9 @@ pub enum SignatureFault
     Instantiation(PortInstantiationError),
     /// The written wiring cannot derive a finite boundary within its ceiling.
     Derivation(CircuitDerivationError),
+    /// A port name written twice on an operation's boundary: two ports, not
+    /// one wire.
+    SharedPort(Name),
 }
 
 pub mod embed;
