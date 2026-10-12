@@ -9,6 +9,7 @@ use core::error::Error;
 
 use anodized::spec;
 use gandr_surface_grammar::Comparison;
+use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::MAX_WALK_CHAIN_LEN;
 use gandr_surface_grammar::MoldCount;
 use gandr_surface_grammar::Pbg;
@@ -386,6 +387,13 @@ fn declared_mold_candidate_inventory_is_exact() -> Result<(), Box<dyn Error>>
         .expect("the mold total fits");
     assert_eq!(BUILT_IN_MOLD_COUNT.0, total);
     assert_eq!(BUILT_IN_MOLD_COUNT, pbg.mold_count());
+    // Every declared label resolves from its spelling to itself, and neither
+    // an undeclared spelling nor a declared one's prefix resolves at all.
+    for &(label, _count) in &counts {
+        assert_eq!(Some(label), pbg.tile_label(LabelText(label.0)));
+    }
+    assert_eq!(None, pbg.tile_label(LabelText("no such label")));
+    assert_eq!(None, pbg.tile_label(LabelText("identifie")));
     Ok(())
 }
 

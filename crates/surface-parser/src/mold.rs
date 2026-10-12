@@ -45,6 +45,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_surface_grammar::CandidateCount;
+use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::Sort;
 use gandr_surface_grammar::StepSym;
@@ -974,8 +975,6 @@ pub struct Molder<'pbg>
     pbg: &'pbg Pbg,
     /// Reused candidate-mold buffer, sorted and de-duplicated per token.
     candidates: Vec<MoldId>,
-    /// Static candidate labels declared by this grammar, sorted by label text.
-    labels: Vec<TileLabel>,
     /// Reused per-token candidates that survive the pre-filter (or the whole
     /// menu when none does), in ascending `MoldId` order.
     eligible: Vec<MoldId>,
@@ -1001,25 +1000,18 @@ impl<'pbg> Molder<'pbg>
     ///
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a fresh molder resolves the first and last declared
-    ///   labels and rejects an absent label before any token is gathered. Dirty
-    ///   buffers, an unsorted label index or omitted endpoints change the
-    ///   queries.
+    /// - hypothesis: L3 — a fresh molder holds empty buffers before any token
+    ///   is gathered; a buffer carried over from another molding changes the
+    ///   first token's candidates.
     /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret.candidates.is_empty() && ret.eligible.is_empty() && ret.ranked.is_empty() && ret.tied.is_empty() && ret.openers.is_empty() && ret.labels.iter().zip(ret.labels.iter().skip(1)).all(|(left, right)| left.as_ref() < right.as_ref()))]
+    #[spec(ensures: |ret| ret.candidates.is_empty() && ret.eligible.is_empty() && ret.ranked.is_empty() && ret.tied.is_empty() && ret.openers.is_empty())]
     pub fn new(pbg: &'pbg Pbg) -> Self
     {
-        let labels = pbg
-            .candidate_counts()
-            .into_iter()
-            .map(|(label, _count)| label)
-            .collect();
         Self {
             pbg,
             candidates: Vec::new(),
-            labels,
             eligible: Vec::new(),
             ranked: Vec::new(),
             tied: Vec::new(),
@@ -1046,22 +1038,17 @@ impl<'pbg> Molder<'pbg>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — first and last declared spellings and an absent
-    ///   neighbor expose the optional label. Off-by-one binary-search bounds or
-    ///   a spurious fallback label change the answer.
+    /// - hypothesis: L3 — every declared spelling and an absent one expose the
+    ///   optional label; a dropped or misspelt key, or a spurious fallback
+    ///   label, changes the answer.
     /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
-    #[spec(ensures: |ret| ret == self.labels.iter().copied().find(|candidate| candidate.as_ref() == label.0))]
+    #[spec(ensures: |ret| ret == self.pbg.tile_label(LabelText(label.0)))]
     fn candidate_label(
         &self,
         label: CandidateLabel<'_>,
     ) -> Option<TileLabel>
     {
-        let label = <&str>::from(label);
-        let index = self
-            .labels
-            .binary_search_by(|candidate| candidate.as_ref().cmp(label))
-            .ok()?;
-        self.labels.get(index).copied()
+        self.pbg.tile_label(LabelText(label.0))
     }
 
     /// Return the number of candidate molds considered for a labeled token.
