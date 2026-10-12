@@ -24,9 +24,11 @@ use std::io::Write;
 use std::sync::mpsc::Sender;
 
 use anodized::spec;
+use gandr_surface_diagnostics::Verbosity;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
+use serde::Deserialize as _;
 use serde_json::Value;
 
 use crate::format::edits;
@@ -45,6 +47,7 @@ use crate::proposal::ghosts;
 use crate::proposal::lenses;
 use crate::proposal::notes;
 use crate::protocol::Answer;
+use crate::protocol::ConfigurationParams;
 use crate::protocol::ContentChange;
 use crate::protocol::Diagnostic;
 use crate::protocol::DidChangeParams;
@@ -53,6 +56,7 @@ use crate::protocol::DocumentParams;
 use crate::protocol::DocumentUri;
 use crate::protocol::DocumentVersion;
 use crate::protocol::Hover;
+use crate::protocol::InitializeParams;
 use crate::protocol::InitializeResult;
 use crate::protocol::InlineCompletionItem;
 use crate::protocol::InlineCompletionList;
@@ -62,6 +66,7 @@ use crate::protocol::PublishParams;
 use crate::protocol::RangeParams;
 use crate::protocol::SelectionRangeParams;
 use crate::protocol::SemanticTokens;
+use crate::protocol::Settings;
 use crate::protocol::StringValue;
 use crate::recheck::DocumentSession;
 use crate::recheck::Timing;
@@ -494,6 +499,7 @@ impl Workspace
         let mut reader = Server {
             phase: Phase::Running,
             peer: Peer(u64::MAX),
+            verbosity: Verbosity::User,
         };
         let answer = match classify(request) {
             | Err(malformed) => malformed.response(),
@@ -616,14 +622,17 @@ impl Workspace
     }
 }
 
-/// One connection's state: where it stands in the lifecycle, and which
-/// connection it is.
+/// One connection's state: where it stands in the lifecycle, which connection
+/// it is, and how much of each report its diagnostics carry.
 pub struct Server
 {
     /// Where the connection stands in the lifecycle.
     phase: Phase,
     /// Which connection it is.
     peer: Peer,
+    /// The level its editor's `gandr.diagnostics.verbosity` setting names:
+    /// read at `initialize` and at each `workspace/didChangeConfiguration`.
+    verbosity: Verbosity,
 }
 
 impl Default for Server
@@ -652,6 +661,7 @@ impl Server
         Self {
             phase: Phase::Waiting,
             peer,
+            verbosity: Verbosity::User,
         }
     }
 
@@ -663,13 +673,15 @@ impl Server
     ///   as the lifecycle and the method decide, from the documents `workspace`
     ///   holds, whichever connection opened them; a notification is never
     ///   answered, and a document synchronisation publishes the document's
-    ///   diagnostics off its session's judgement of the whole text and logs one
-    ///   timing line, its admission left for [`Server::admit`] — opening and
-    ///   changing it publish its diagnostics at its new version, to this
-    ///   connection and to every other holding it open, and closing it
-    ///   publishes none to this connection and forgets it once no connection
-    ///   holds it. A body that is not a message is answered with the error the
-    ///   protocol owes it. `exit` ends the session.
+    ///   diagnostics off its session's judgement of the whole text, at this
+    ///   connection's verbosity, and logs one timing line, its admission left
+    ///   for [`Server::admit`] — opening and changing it publish its
+    ///   diagnostics at its new version, to this connection and to every other
+    ///   holding it open, and closing it publishes none to this connection and
+    ///   forgets it once no connection holds it. A configuration change that
+    ///   names another verbosity republishes every document this connection
+    ///   holds, to it alone. A body that is not a message is answered with the
+    ///   error the protocol owes it. `exit` ends the session.
     /// - provides: the whole of a connection's behaviour but the admission
     ///   [`Server::admit`] runs after it; [`serve`] and the hub only move
     ///   bytes.
@@ -688,9 +700,10 @@ impl Server
     /// - witness: `server::tests::the_lifecycle_admits_requests_in_the_protocol_order`
     /// - witness: `server::tests::synchronisation_publishes_and_close_clears`
     /// - witness: `server::tests::ignored_messages_and_empty_changes_preserve_document_text`
+    /// - witness: `server::tests::a_configuration_change_republishes_at_its_verbosity`
     #[spec(
         captures: phase = self.phase,
-        ensures: |ret| ret.messages.len() <= 1 && ret.log.len() <= ret.messages.len()
+        ensures: |ret| ret.log.len() <= ret.messages.len()
             && (self.phase == phase || matches!((phase, self.phase),
                 (Phase::Waiting, Phase::Running) | (Phase::Running, Phase::ShuttingDown)))
             && match ret.flow { Flow::Continue => true, Flow::Exit(ending) =>
@@ -806,10 +819,12 @@ impl Server
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: initialization and shutdown advance the lifecycle once; other
-    ///   requests preserve it, and no request changes `workspace`. The response
-    ///   echoes the identifier and carries the method result or its lifecycle,
-    ///   unknown-method or invalid-parameter error.
+    /// - ensures: initialization and shutdown advance the lifecycle once, and
+    ///   initialization takes the verbosity its options name, the user level
+    ///   when they name none; other requests preserve it, and no request
+    ///   changes `workspace`. The response echoes the identifier and carries
+    ///   the method result or its lifecycle, unknown-method or
+    ///   invalid-parameter error.
     /// - provides: one response per request.
     /// - fails: refusals are error responses, never Rust errors.
     /// - panics: none.
@@ -825,10 +840,12 @@ impl Server
     /// - witness: `server::tests::a_hover_answers_a_known_declaration`
     /// - witness: `server::tests::kept_proposals_reach_every_editor_surface`
     /// - witness: `server::tests::formatting_answers_the_edits_that_lay_a_document_out`
+    /// - witness: `server::tests::a_configuration_change_republishes_at_its_verbosity`
     #[spec(
-        captures: phase = self.phase,
+        captures: [phase = self.phase, initial = initial_verbosity(&params)],
         ensures: |ret| match (phase, method.as_ref()) {
             (Phase::Waiting, "initialize") => self.phase == Phase::Running
+                && self.verbosity == initial
                 && matches!(ret, Outgoing::Success { result: Answer::Initialize(_), .. }),
             (Phase::Waiting, _) => self.phase == phase && matches!(ret,
                 Outgoing::Failure { ref error, .. } if error.code == ErrorCode::SERVER_NOT_INITIALIZED),
@@ -889,6 +906,7 @@ impl Server
         match (self.phase, name) {
             | (Phase::Waiting, "initialize") => {
                 self.phase = Phase::Running;
+                self.verbosity = initial_verbosity(&params);
                 success(
                     id,
                     Answer::Initialize(Box::new(InitializeResult::advertised())),
@@ -1052,9 +1070,14 @@ impl Server
     ///   order, as [`apply`] states; an empty change list preserves text. Close
     ///   lets this connection's hold go, forgets the document once no
     ///   connection holds it, and publishes a versionless empty diagnostic list
-    ///   to this connection, even for an unknown URI. Unknown, malformed and
+    ///   to this connection, even for an unknown URI. A running-state
+    ///   configuration change whose `gandr` section names a verbosity other
+    ///   than this connection's takes it, then republishes every document this
+    ///   connection holds, in URI order, at its held version, to this
+    ///   connection alone, logging one timing line each; a change naming none,
+    ///   or the verbosity already held, changes nothing. Unknown, malformed and
     ///   out-of-phase notifications leave documents alone.
-    /// - provides: document synchronization and termination.
+    /// - provides: document synchronization, configuration and termination.
     /// - fails: unreadable parameters and changes to unknown documents are
     ///   ignored.
     /// - panics: none.
@@ -1068,11 +1091,16 @@ impl Server
     /// - witness: `server::tests::the_lifecycle_admits_requests_in_the_protocol_order`
     /// - witness: `server::tests::ignored_messages_and_empty_changes_preserve_document_text`
     /// - witness: `server::tests::ranged_changes_edit_the_held_text_in_order`
+    /// - witness: `server::tests::a_configuration_change_republishes_at_its_verbosity`
     #[spec(
         captures: [phase = self.phase, count = workspace.documents.len()],
-        ensures: |ret| self.phase == phase && ret.messages.len() <= 1
-            && ret.log.len() == usize::from(matches!(method.as_ref(), "textDocument/didOpen" | "textDocument/didChange")
-                && !ret.messages.is_empty())
+        ensures: |ret| self.phase == phase
+            && (ret.messages.len() <= 1 || method.as_ref() == "workspace/didChangeConfiguration")
+            && ret.log.len() == match method.as_ref() {
+                "textDocument/didOpen" | "textDocument/didChange" => usize::from(!ret.messages.is_empty()),
+                "workspace/didChangeConfiguration" => ret.messages.len(),
+                _ => 0_usize,
+            }
             && ret.flow == if method.as_ref() == "exit" { Flow::Exit(self.closed()) } else { Flow::Continue }
             && if ret.messages.is_empty() { workspace.documents.len() == count } else {
                 phase == Phase::Running && ret.messages.iter().all(|message| match *message {
@@ -1085,6 +1113,9 @@ impl Server
                         "textDocument/didClose" => params.version.is_none() && params.diagnostics.is_empty()
                             && !workspace.holders.get(&params.uri).is_some_and(|holders| holders.contains(&self.peer))
                             && workspace.documents.contains_key(&params.uri) == workspace.holders.contains_key(&params.uri),
+                        "workspace/didChangeConfiguration" =>
+                            workspace.documents.get(&params.uri).is_some_and(|document| params.version == Some(document.version))
+                            && workspace.holders.get(&params.uri).is_some_and(|holders| holders.contains(&self.peer)),
                         _ => false,
                     },
                     _ => false,
@@ -1092,7 +1123,7 @@ impl Server
             },
     )]
     fn notification(
-        &self,
+        &mut self,
         workspace: &mut Workspace,
         method: &Method,
         params: Value,
@@ -1123,7 +1154,7 @@ impl Server
                 document.version = text_document.version;
                 document.text = text_document.text;
                 document.proposals.clear();
-                let outcome = synchronised(&uri, document);
+                let outcome = synchronised(&uri, document, self.verbosity);
                 let _first = workspace.holders.entry(uri).or_default().insert(self.peer);
                 for message in &outcome.messages {
                     workspace.published_by(self.peer, message);
@@ -1147,7 +1178,7 @@ impl Server
                 for change in content_changes {
                     apply(&mut document.text, change);
                 }
-                let outcome = synchronised(&text_document.uri, document);
+                let outcome = synchronised(&text_document.uri, document, self.verbosity);
                 for message in &outcome.messages {
                     workspace.published_by(self.peer, message);
                 }
@@ -1169,6 +1200,31 @@ impl Server
                     version: None,
                     diagnostics: Vec::new(),
                 }))
+            },
+            | (Phase::Running, "workspace/didChangeConfiguration") => {
+                let Some(verbosity) = serde_json::from_value::<ConfigurationParams>(params)
+                    .ok()
+                    .and_then(|params| params.settings)
+                    .and_then(|sections| sections.gandr)
+                    .and_then(Settings::verbosity)
+                    .filter(|&verbosity| verbosity != self.verbosity)
+                else {
+                    return Outcome::quiet();
+                };
+                self.verbosity = verbosity;
+                let peer = self.peer;
+                let holders = &workspace.holders;
+                let mut outcome = Outcome::quiet();
+                for (uri, document) in workspace.documents.iter_mut().filter(|&(uri, _)| {
+                    holders
+                        .get(uri)
+                        .is_some_and(|holders| holders.contains(&peer))
+                }) {
+                    let republished = synchronised(uri, document, verbosity);
+                    outcome.messages.extend(republished.messages);
+                    outcome.log.extend(republished.log);
+                }
+                outcome
             },
             | (Phase::Waiting | Phase::Running | Phase::ShuttingDown, _) => Outcome::quiet(),
         }
@@ -1450,16 +1506,32 @@ fn apply(
     text.replace_range(start .. end, &change.text);
 }
 
-/// Recheck `document`, open at `uri`: the notification publishing its
-/// diagnostics and the line logging what the recheck cost.
+/// The verbosity the `initialize` parameters `params` name: the one their
+/// initialization options' `diagnostics.verbosity` names, the user level when
+/// they name none or cannot be read.
+///
+/// # Specification
+/// trivial.
+fn initial_verbosity(params: &Value) -> Verbosity
+{
+    InitializeParams::deserialize(params)
+        .ok()
+        .and_then(|params| params.initialization_options)
+        .and_then(Settings::verbosity)
+        .unwrap_or_default()
+}
+
+/// Recheck `document`, open at `uri`, at `verbosity`: the notification
+/// publishing its diagnostics and the line logging what the recheck cost.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: one diagnostic notification naming the supplied URI and held
 ///   version, with the diagnostics the document's session judges for its whole
-///   text, and one log line naming the same URI and version, its admission
-///   pending when the judgement left one.
-/// - provides: the publication shared by open and change notifications.
+///   text, rendered at `verbosity`, and one log line naming the same URI and
+///   version, its admission pending when the judgement left one.
+/// - provides: the publication shared by open, change and configuration
+///   notifications.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -1470,6 +1542,7 @@ fn apply(
 /// - witness: `server::tests::synchronisation_publishes_and_close_clears`
 /// - witness: `server::tests::ignored_messages_and_empty_changes_preserve_document_text`
 /// - witness: `session::session::an_edit_to_a_large_document_rechecks_its_forms`
+/// - witness: `server::tests::a_configuration_change_republishes_at_its_verbosity`
 #[spec(ensures: |ret| ret.flow == Flow::Continue
     && matches!(*ret.messages.as_slice(), [Outgoing::Notification { method: "textDocument/publishDiagnostics", ref params, .. }]
         if params.uri == *uri && params.version == Some(document.version))
@@ -1477,12 +1550,14 @@ fn apply(
 fn synchronised(
     uri: &DocumentUri,
     document: &mut Document,
+    verbosity: Verbosity,
 ) -> Outcome
 {
     let rechecked = recheck(
         uri,
         &mut document.session,
         SourceText::from(document.text.as_str()),
+        verbosity,
     );
     Outcome {
         messages: vec![publish(PublishParams {
@@ -2332,6 +2407,97 @@ mod tests
             wire(Json(r#"[{"jsonrpc":"2.0","id":9,"result":null}]"#)),
             "a closed document has no tokens"
         );
+    }
+
+    #[test]
+    fn a_configuration_change_republishes_at_its_verbosity()
+    {
+        let mut server = Connected::default();
+        let _answered = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},
+                    "initializationOptions":{"diagnostics":{"verbosity":"detailed"}}}}"#,
+            ),
+        );
+        let opened = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{
+                    "uri":"file:///tmp/b.gandr","languageId":"gandr","version":3,
+                    "text":"def g = missing ;\n"}}}"#,
+            ),
+        );
+        let message = opened
+            .pointer("/0/params/diagnostics/0/message")
+            .and_then(Value::as_str)
+            .expect("the refusal is published");
+        assert!(
+            message.lines().any(|line| line.starts_with("class: ")),
+            "the initialization options choose the detailed level: {message}"
+        );
+        let _clean = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{
+                    "uri":"file:///tmp/a.gandr","languageId":"gandr","version":7,
+                    "text":"def f = 42 ;\n"}}}"#,
+            ),
+        );
+        let configure = |verbosity: &str| {
+            Body::from(
+                format!(
+                    r#"{{"jsonrpc":"2.0","method":"workspace/didChangeConfiguration",
+                        "params":{{"settings":{{"gandr":{{"diagnostics":{{"verbosity":{verbosity}}}}}}}}}}}"#
+                )
+                .into_bytes(),
+            )
+        };
+        let republished = server.handle(&configure(r#""json""#));
+        let published: Vec<Value> = republished
+            .messages
+            .iter()
+            .map(|outgoing| serde_json::to_value(outgoing).expect("a message encodes"))
+            .collect();
+        assert_eq!(
+            published
+                .iter()
+                .map(|message| (
+                    message.pointer("/params/uri").and_then(Value::as_str),
+                    message.pointer("/params/version").and_then(Value::as_i64)
+                ))
+                .collect::<Vec<_>>(),
+            [
+                (Some("file:///tmp/a.gandr"), Some(7_i64)),
+                (Some("file:///tmp/b.gandr"), Some(3_i64))
+            ],
+            "every held document is republished at its held version, in URI order"
+        );
+        assert_eq!(
+            republished.log.len(),
+            2_usize,
+            "one timing line per republication"
+        );
+        let image: Value = published
+            .get(1)
+            .and_then(|message| message.pointer("/params/diagnostics/0/message"))
+            .and_then(Value::as_str)
+            .and_then(|message| serde_json::from_str(message).ok())
+            .expect("the json level publishes the report's JSON image");
+        assert_eq!(
+            image.get("name").and_then(Value::as_str),
+            Some("UnresolvedName")
+        );
+        for (unchanged, why) in [
+            (configure(r#""json""#), "the level already held"),
+            (configure(r#""loud""#), "a value that names no level"),
+            (configure("null"), "a section that names none"),
+        ] {
+            assert!(
+                server.handle(&unchanged).messages.is_empty(),
+                "{why} republishes nothing"
+            );
+        }
     }
 
     #[test]

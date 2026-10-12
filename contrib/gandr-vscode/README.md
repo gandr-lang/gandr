@@ -68,6 +68,8 @@ The **gandr language server** output channel (**View: Toggle Output**) carries t
 
 No setting selects the server's features. The client adopts what `initialize` advertises: incremental document synchronisation, so an edit sends only the changed range, and semantic tokens for the whole document and for a range.
 
+`gandr.diagnostics.verbosity` chooses how much of each report a diagnostic shows, at the levels `gandr check --verbosity` names: `user`, the default, shows the message, the label and the note; `detailed` adds the report's class, the checker's own wording and the offending source text; `debug` adds every locus's byte span and the checker's refusal as its implementers print it; `json` shows the whole report as one line of JSON. Changing it republishes the open files' diagnostics at the new level.
+
 ## Develop the extension
 
 `mise exec -- aube run watch` recompiles on every change into `dist/src`. To run the extension without installing it, bundle once and start an Extension Development Host:

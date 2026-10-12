@@ -85,6 +85,7 @@ pub use crate::locus::PrimaryLabel;
 pub use crate::locus::Reason;
 pub use crate::locus::report_context;
 pub use crate::report::Class;
+pub use crate::report::Detail;
 pub use crate::report::Message;
 pub use crate::report::Note;
 pub use crate::report::Report;

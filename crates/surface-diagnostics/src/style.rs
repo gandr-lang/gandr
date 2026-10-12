@@ -139,6 +139,19 @@ impl From<String> for Rendered
     }
 }
 
+impl From<Rendered> for String
+{
+    /// The rendered text, owned.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(rendered: Rendered) -> Self
+    {
+        rendered.0
+    }
+}
+
 impl AsRef<str> for Rendered
 {
     /// Borrow the rendered text.

@@ -24,7 +24,9 @@ use gandr_core_incremental::ResumeCensus;
 use gandr_storage_records::InMemoryBlockStore;
 use gandr_surface_diagnostics::Class;
 use gandr_surface_diagnostics::Entry;
+use gandr_surface_diagnostics::RenderStyle;
 use gandr_surface_diagnostics::Report;
+use gandr_surface_diagnostics::Verbosity;
 use gandr_surface_diagnostics::entries;
 use gandr_surface_dispatcher::ComposeFault;
 use gandr_surface_dispatcher::Composed;
@@ -309,7 +311,7 @@ pub struct Rechecked
 }
 
 /// Judge `text`, the document at `uri`, in its `session`, and read its
-/// diagnostics off the judgement.
+/// diagnostics off the judgement at `verbosity`.
 ///
 /// # Specification
 /// - requires: `session` was opened for `uri`; any text is admissible input.
@@ -317,15 +319,16 @@ pub struct Rechecked
 ///   prints for the judgement's step becomes one diagnostic, in the order
 ///   printed: a report at the range its span projects to, with the refusal's
 ///   vocabulary name as its code, its message, primary label and note as its
-///   message, each context locus as a related location carrying its label, then
-///   each nested reason, outermost first, as a related location carrying the
-///   judgement it stands for, and the severity of a goal as information, of a
-///   warning as a warning and of every other report as an error; a report the
-///   renderer leaves unlocated, and a ledger line, at the document's origin. A
-///   fault that keeps the document from composing, and a grammar that did not
-///   build, is one error at the origin naming it. The timing carries the
-///   judgement's form census, the incremental checker's census, and the wall of
-///   the whole recheck; its admission is pending when the judgement left one.
+///   message at `verbosity` as [`diagnostic`] writes it, each context locus as
+///   a related location carrying its label, then each nested reason, outermost
+///   first, as a related location carrying the judgement it stands for, and the
+///   severity of a goal as information, of a warning as a warning and of every
+///   other report as an error; a report the renderer leaves unlocated, and a
+///   ledger line, at the document's origin. A fault that keeps the document
+///   from composing, and a grammar that did not build, is one error at the
+///   origin naming it. The timing carries the judgement's form census, the
+///   incremental checker's census, and the wall of the whole recheck; its
+///   admission is pending when the judgement left one.
 /// - provides: the one recheck every synchronisation publishes.
 /// - fails: never; a fault is a diagnostic.
 /// - panics: none.
@@ -354,6 +357,7 @@ pub fn recheck(
     uri: &DocumentUri,
     session: &mut DocumentSession,
     text: SourceText<'_>,
+    verbosity: Verbosity,
 ) -> Rechecked
 {
     let started = Instant::now();
@@ -389,7 +393,7 @@ pub fn recheck(
             Maybe::Absent(admitted::Absent::Unadmitted),
         ),
     };
-    let diagnostics = diagnostics_of(submission, uri, text);
+    let diagnostics = diagnostics_of(submission, uri, text, verbosity);
     Rechecked {
         diagnostics,
         timing: Timing {
@@ -515,9 +519,9 @@ pub struct Tried
 /// # Specification
 /// - requires: `session` was opened for `uri`; any texts are admissible input.
 /// - ensures: one result per candidate, in the order `Session::trial` ranks
-///   them, each carrying the diagnostics [`recheck`] would publish for the
-///   candidate's text in a session that has accepted nothing; a fault is one
-///   error at the origin naming it. The session is unchanged.
+///   them, each carrying the diagnostics [`recheck`] would publish at the user
+///   verbosity for the candidate's text in a session that has accepted nothing;
+///   a fault is one error at the origin naming it. The session is unchanged.
 /// - provides: the language server's view of a batch of candidate fills.
 /// - fails: never; a fault is a diagnostic.
 /// - panics: none.
@@ -567,7 +571,7 @@ pub fn trial(
                         | Composed::Refused(_) => Reached::RefusedWhole,
                         | Composed::Settled { .. } => Reached::Judged,
                     },
-                    diagnostics: diagnostics_of(submission, uri, text),
+                    diagnostics: diagnostics_of(submission, uri, text, Verbosity::User),
                 },
                 | Err(fault) => Tried {
                     candidate,
@@ -579,8 +583,9 @@ pub fn trial(
         .collect()
 }
 
-/// The diagnostics `submission`, the judgement of `text` at `uri`, publishes:
-/// each entry `gandr check --goals` prints for its step, in order.
+/// The diagnostics `submission`, the judgement of `text` at `uri`, publishes
+/// at `verbosity`: each entry `gandr check --goals` prints for its step, in
+/// order.
 ///
 /// # Specification
 /// trivial.
@@ -588,6 +593,7 @@ fn diagnostics_of(
     submission: Submission<'_>,
     uri: &DocumentUri,
     text: SourceText<'_>,
+    verbosity: Verbosity,
 ) -> Vec<Diagnostic>
 {
     let path = uri.path();
@@ -595,7 +601,7 @@ fn diagnostics_of(
     let step = submission.into_step(Path::new(&path));
     entries(&step, Verb::Check(Goals::Reported))
         .map(|entry| match entry {
-            | Entry::Report(report) => diagnostic(&report, &index, uri),
+            | Entry::Report(report) => diagnostic(&report, &index, uri, verbosity),
             | Entry::Line(line) => Diagnostic::at_origin(line.to_string()),
         })
         .collect()
@@ -648,17 +654,19 @@ pub fn highlight(text: SourceText<'_>) -> Vec<HlSpan>
         .unwrap_or_default()
 }
 
-/// The diagnostic `report` is published as.
+/// The diagnostic `report` is published as at `verbosity`.
 ///
 /// # Specification
 /// - requires: `index` was built from the text `report` is about.
 /// - ensures: as [`recheck`] states for one report. A span the renderer locates
 ///   lies inside the text on character boundaries, so it always projects; the
-///   origin stands in for one that would not. The message is the report's plain
-///   message, then the primary locus's label on its own line when the report is
-///   located, then its note on a line of its own after `note: ` when it closes
-///   with one: what the terminal prints, in the one text field the protocol
-///   gives a diagnostic.
+///   origin stands in for one that would not. At [`Verbosity::Json`] the
+///   message is the report's JSON image; at every other level it is the
+///   report's plain message, then the primary locus's label on its own line
+///   when the report is located, then its note on a line of its own after
+///   `note: ` when it closes with one, then each detail line the level adds,
+///   each on a line of its own: what the terminal prints, in the one text field
+///   the protocol gives a diagnostic.
 /// - provides: the one map from a renderer report to an editor diagnostic.
 /// - fails: never.
 /// - panics: none.
@@ -673,12 +681,13 @@ pub fn highlight(text: SourceText<'_>) -> Vec<HlSpan>
 /// - witness: `recheck::tests::a_labeled_context_keeps_its_locus_and_cause_in_related_information`
 /// - witness: `recheck::tests::nested_reasons_become_lsp_related_information`
 /// - witness: `recheck::tests::a_refusal_publishes_its_label_and_note`
+/// - witness: `recheck::tests::one_refusal_is_published_at_every_verbosity`
 /// - witness: `recheck::tests::a_shadowed_builtin_is_published_as_a_warning`
 /// - witness: `session::session::every_corpus_report_is_published_where_the_walk_renders_it`
 #[spec(ensures: |ret| ret.source == "gandr"
     && ret.severity == match report.class() { Class::Goal => Severity::INFORMATION, Class::Warning => Severity::WARNING, _ => Severity::ERROR }
     && ret.code.is_some() == matches!(report.identifier(), Maybe::Present(_))
-    && ret.message.starts_with(&report.message().to_string())
+    && (verbosity == Verbosity::Json || ret.message.starts_with(&report.message().to_string()))
     && ret.related_information.len() == report.context().into_iter()
         .filter(|slot| matches!(slot, Maybe::Present(_))).count().saturating_add(report.reasons().len())
     && ret.related_information.iter().all(|related| related.location.uri == *uri))]
@@ -686,6 +695,7 @@ fn diagnostic(
     report: &Report<'_>,
     index: &LineIndex<'_>,
     uri: &DocumentUri,
+    verbosity: Verbosity,
 ) -> Diagnostic
 {
     let range_of = |span: ByteSpan| {
@@ -705,15 +715,25 @@ fn diagnostic(
         | Class::Warning => Severity::WARNING,
         | Class::Refusal(_) | Class::Unsettled(_) => Severity::ERROR,
     };
-    let mut message = report.message().to_string();
-    if let Maybe::Present(label) = report.label() {
-        message.push('\n');
-        message.push_str(&label.to_string());
+    let message = if verbosity == Verbosity::Json {
+        String::from(report.render(RenderStyle::Plain, Verbosity::Json))
     }
-    if let Maybe::Present(note) = report.note() {
-        message.push_str("\nnote: ");
-        message.push_str(&note.to_string());
-    }
+    else {
+        let mut message = report.message().to_string();
+        if let Maybe::Present(label) = report.label() {
+            message.push('\n');
+            message.push_str(&label.to_string());
+        }
+        if let Maybe::Present(note) = report.note() {
+            message.push_str("\nnote: ");
+            message.push_str(&note.to_string());
+        }
+        for detail in report.details(verbosity) {
+            message.push('\n');
+            message.push_str(&detail.to_string());
+        }
+        message
+    };
     let mut diagnostic = Diagnostic::new(range, severity, message);
     if let Maybe::Present(spelling) = report.identifier() {
         diagnostic.code = Some(spelling.to_string());
@@ -749,6 +769,7 @@ fn diagnostic(
 #[cfg(test)]
 mod tests
 {
+    use gandr_surface_diagnostics::Verbosity;
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
 
@@ -781,7 +802,7 @@ mod tests
         text: SourceText<'_>,
     ) -> Vec<Diagnostic>
     {
-        recheck(uri, &mut open(uri), text).diagnostics
+        recheck(uri, &mut open(uri), text, Verbosity::User).diagnostics
     }
 
     /// A range from one line and character to another.
@@ -987,6 +1008,76 @@ mod tests
     }
 
     #[test]
+    fn one_refusal_is_published_at_every_verbosity()
+    {
+        let uri = DocumentUri::from("file:///strict/head.gandr");
+        let text = SourceText::from("def f(xs: List(Integer)) -> -F Integer {\n  ret 1\n}\n");
+        let [user, detailed, debug, json] = [
+            Verbosity::User,
+            Verbosity::Detailed,
+            Verbosity::Debug,
+            Verbosity::Json,
+        ]
+        .map(|verbosity| {
+            let diagnostics = recheck(&uri, &mut open(&uri), text, verbosity).diagnostics;
+            let [ref diagnostic] = *diagnostics.as_slice()
+            else {
+                panic!("one unresolved type head at {verbosity:?}");
+            };
+            diagnostic.clone()
+        });
+        for other in [&detailed, &debug, &json] {
+            assert_eq!(
+                (
+                    other.range,
+                    other.code.as_deref(),
+                    &other.related_information
+                ),
+                (user.range, user.code.as_deref(), &user.related_information),
+                "a level changes the message alone"
+            );
+        }
+        let names = |diagnostic: &Diagnostic| -> Vec<String> {
+            diagnostic
+                .message
+                .lines()
+                .skip(user.message.lines().count())
+                .filter_map(|line| line.split_once(": ").map(|(name, _)| name.to_owned()))
+                .collect()
+        };
+        assert_eq!(
+            user.message.lines().count(),
+            3_usize,
+            "message, label, note"
+        );
+        assert!(
+            detailed.message.starts_with(&user.message)
+                && debug.message.starts_with(&detailed.message),
+            "each level keeps the one below it"
+        );
+        assert_eq!(names(&detailed), ["class", "detail", "expression"]);
+        assert!(
+            detailed.message.ends_with("expression: `List`"),
+            "the detailed level quotes the offending source: {:?}",
+            detailed.message
+        );
+        assert_eq!(names(&debug), [
+            "class",
+            "detail",
+            "expression",
+            "spans",
+            "refusal"
+        ]);
+        let image: serde_json::Value =
+            serde_json::from_str(&json.message).expect("the json level publishes one JSON image");
+        assert_eq!(
+            (image["name"].as_str(), image["message"].as_str()),
+            (user.code.as_deref(), user.message.lines().next()),
+            "the image carries the refusal's name and plain message"
+        );
+    }
+
+    #[test]
     fn a_fault_is_published_at_the_origin()
     {
         let lowered = DocumentUri::from("file:///corpus/fixture/pending/lowered.gandr");
@@ -1017,6 +1108,7 @@ mod tests
             &uri,
             &mut session,
             SourceText::from("def a : Integer ;\ndef a = 1 ;\n"),
+            Verbosity::User,
         );
         assert_eq!(rechecked.diagnostics, Vec::new());
         assert_eq!(
@@ -1048,7 +1140,12 @@ mod tests
             admission.timing,
             "an admitted synchronisation is not admitted again"
         );
-        let refused = recheck(&uri, &mut session, SourceText::from("ret 3\n"));
+        let refused = recheck(
+            &uri,
+            &mut session,
+            SourceText::from("ret 3\n"),
+            Verbosity::User,
+        );
         assert_eq!(
             refused.timing.admitted,
             Maybe::Absent(admitted::Absent::Unadmitted),
@@ -1068,7 +1165,8 @@ mod tests
             "def a = 1 ;\ndef f : Integer ;\ndef f = a ;\n",
         ];
         let mut session = open(&uri);
-        let before = recheck(&uri, &mut session, SourceText::from(base)).diagnostics;
+        let before =
+            recheck(&uri, &mut session, SourceText::from(base), Verbosity::User).diagnostics;
         let tried = trial(&uri, &session, &candidates.map(SourceText::from));
         assert_eq!(
             tried
@@ -1092,7 +1190,7 @@ mod tests
         }
         assert!(tried[0_usize].diagnostics.is_empty());
         assert_eq!(
-            recheck(&uri, &mut session, SourceText::from(base)).diagnostics,
+            recheck(&uri, &mut session, SourceText::from(base), Verbosity::User).diagnostics,
             before,
             "the session judges its text as before the trial"
         );

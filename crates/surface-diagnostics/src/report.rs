@@ -835,7 +835,8 @@ impl<'step> Report<'step>
     ///   locus's text when it is one line; at [`Verbosity::Debug`] then the
     ///   byte spans and, for a refusal, the producer's refusal and the
     ///   judgements it stood inside. Every text is one line.
-    /// - provides: the detail [`Report::render`] adds above the user level.
+    /// - provides: the detail [`Report::render`] adds above the user level, and
+    ///   an editor's diagnostic closes its message with.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -845,7 +846,9 @@ impl<'step> Report<'step>
     /// - witness: `diagnostics::diagnostics::one_refusal_renders_at_every_verbosity`
     #[spec(ensures: |ref ret| (matches!(verbosity, Verbosity::User | Verbosity::Json) == ret.is_empty())
         && ret.iter().all(|detail| !detail.text.contains('\n')))]
-    fn details(
+    #[inline]
+    #[must_use]
+    pub fn details(
         &self,
         verbosity: Verbosity,
     ) -> Vec<Detail>
@@ -1140,14 +1143,30 @@ where
     }
 }
 
-/// One line a rendering above the user level closes with.
+/// One line a rendering above the user level closes with: `name: text`.
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct Detail
+pub struct Detail
 {
     /// What the line states, written where a note writes `note`.
-    name: &'static str,
+    pub name: &'static str,
     /// The line.
-    text: String,
+    pub text: String,
+}
+
+impl fmt::Display for Detail
+{
+    /// The line as a plain rendering writes it: the name, a colon, the text.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        write!(f, "{}: {}", self.name, self.text)
+    }
 }
 
 /// A report's JSON image.
