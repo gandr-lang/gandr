@@ -311,6 +311,89 @@ impl FormStore
         };
         Ok((joined?.into_result(), census))
     }
+
+    /// Parse `revision` under `grammar`, taking up every form whose identity
+    /// the store holds and molding the rest on `threads` threads, keeping
+    /// nothing: the store is unchanged.
+    ///
+    /// # Specification
+    /// - requires: nothing; the store may hold units of any revision and any
+    ///   grammar.
+    /// - ensures: the parse equals [`parse`](gandr_surface_parser::parse) of
+    ///   `revision` under `grammar`. The revision is labeled whole; a run is
+    ///   taken up when the store holds a unit under its identity molded over
+    ///   `grammar`'s fingerprint, and molded otherwise, once per run; the
+    ///   census counts the runs and the molded ones.
+    /// - provides: the parse a trial lowers, so a candidate revision reuses
+    ///   every form it shares with the latest one without disturbing the store
+    ///   another trial or the next submission reads.
+    /// - fails: [`MeldError`] when the commit's arena cannot be built.
+    /// - panics: only by propagating a molding thread's panic.
+    /// - economy: each run's identity is looked up once and each taken-up
+    ///   unit's checkpoint cloned once into the join; nothing is parked.
+    ///
+    /// # Errors
+    /// The commit's [`MeldError`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — candidate revisions of a submitted one parse to the
+    ///   trees their whole parse gives, molding only the forms the store does
+    ///   not hold, and leave the store as the next submission's census reads
+    ///   it.
+    /// - witness: `forms::tests::a_held_parse_keeps_the_store`
+    #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|&(ref parsed, census)|
+        parsed.tree().source() == revision && census.molded <= census.forms))]
+    pub fn parse_held<'text>(
+        &self,
+        grammar: &Pbg,
+        revision: SourceText<'text>,
+        threads: Threads,
+    ) -> Result<(ParseResult<'text>, FormCensus), MeldError>
+    {
+        let mut molder = Molder::new(grammar);
+        let split = FormSplit::labeled(
+            &molder,
+            revision,
+            Labeling::new(SourceFragment::from(<&str>::from(revision))),
+        );
+        let runs = split.runs();
+        let held: Vec<Option<&ParkedUnit>> = runs
+            .iter()
+            .map(|&run| {
+                self.units
+                    .get(&split.identity(run))
+                    .map(|held| &held.parked)
+                    .filter(|parked| parked.fingerprint() == grammar.fingerprint())
+            })
+            .collect();
+        let missing: Vec<(RunPosition, TokenRun)> = runs
+            .iter()
+            .zip(&held)
+            .enumerate()
+            .filter(|&(_, (_, parked))| parked.is_none())
+            .map(|(position, (&run, _))| (RunPosition(position), run))
+            .collect();
+        let mut molded: BTreeMap<usize, FormUnit<'_>> =
+            mold_runs(grammar, &split, &missing, threads)
+                .into_iter()
+                .map(|(RunPosition(position), unit)| (position, unit))
+                .collect();
+        let census = FormCensus {
+            forms: FormCount(runs.len()),
+            molded: FormCount(molded.len()),
+        };
+        let mut units = Vec::with_capacity(runs.len());
+        for (position, (&run, parked)) in runs.iter().zip(&held).enumerate() {
+            units.push(match (*parked, molded.remove(&position)) {
+                | (Some(parked), _) => FormUnit::resume(grammar, run, parked),
+                | (None, Some(unit)) => unit,
+                // Every run the store does not hold was molded above; molding
+                // here keeps the parse total should that ever not hold.
+                | (None, None) => split.mold(&mut molder, run),
+            });
+        }
+        Ok((split.join(&mut molder, units)?.into_result(), census))
+    }
 }
 
 /// A run's position among its revision's runs.
@@ -485,5 +568,56 @@ mod tests
         let (parsed, census) = store.parse(&other, source, Threads::ONE).expect("commits");
         assert_eq!(usize::from(census.molded()), 12);
         assert_eq!(parsed, parse(&other, source).expect("commits"));
+    }
+
+    #[test]
+    fn a_held_parse_keeps_the_store()
+    {
+        // A held parse takes up what the store holds and molds the rest, to the
+        // whole parse of its text, and parks nothing: the store still holds
+        // exactly the latest parsed revision's units afterwards.
+        let grammar = built_in().expect("the grammar builds");
+        let edited = SOURCE.replace("def e = 5;", "def e = 50;");
+        let edited = SourceText::from(edited.as_str());
+        let empty = FormStore::default();
+        let (parsed, census) = empty
+            .parse_held(&grammar, edited, Threads::ONE)
+            .expect("commits");
+        assert_eq!(parsed, parse(&grammar, edited).expect("commits"));
+        assert_eq!(
+            usize::from(census.molded()),
+            12,
+            "an empty store molds every form"
+        );
+        let mut store = FormStore::default();
+        let _first = store
+            .parse(&grammar, SourceText::from(SOURCE), Threads::ONE)
+            .expect("commits");
+        for _ in 0_u8 .. 2_u8 {
+            let (parsed, held) = store
+                .parse_held(&grammar, edited, Threads::ONE)
+                .expect("commits");
+            assert_eq!(parsed, parse(&grammar, edited).expect("commits"));
+            assert!(
+                usize::from(held.molded()) > 0 && usize::from(held.molded()) < 12,
+                "the edited form and the forms reading it are molded, the rest taken up"
+            );
+            assert_eq!(usize::from(held.forms()), 12);
+        }
+        let (_, again) = store
+            .parse(&grammar, SourceText::from(SOURCE), Threads::ONE)
+            .expect("commits");
+        assert_eq!(
+            usize::from(again.molded()),
+            0,
+            "the store still holds every form of the revision it parsed"
+        );
+        let (_, submitted) = store
+            .parse(&grammar, edited, Threads::ONE)
+            .expect("commits");
+        assert!(
+            usize::from(submitted.molded()) > 0,
+            "nothing the held parses molded was parked for the next parse"
+        );
     }
 }
