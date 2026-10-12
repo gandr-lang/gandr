@@ -530,6 +530,22 @@ fn converge(
                         stack.push(ConversionGoal::Value(a, c));
                         stack.push(ConversionGoal::Value(b, d));
                     },
+                    | (
+                        &ValueType::Path {
+                            domain: one_domain,
+                            left: one_left,
+                            right: one_right,
+                        },
+                        &ValueType::Path {
+                            domain: other_domain,
+                            left: other_left,
+                            right: other_right,
+                        },
+                    ) => {
+                        stack.push(ConversionGoal::ValueType(one_domain, other_domain));
+                        stack.push(ConversionGoal::Value(one_left, other_left));
+                        stack.push(ConversionGoal::Value(one_right, other_right));
+                    },
                     | (&ValueType::Base(one), &ValueType::Base(other)) => {
                         if one != other {
                             return Convertibility::Distinct;
@@ -638,6 +654,7 @@ fn converge(
                         &ValueType::Data { .. }
                         | &ValueType::Record(_)
                         | &ValueType::PathUniverse(..)
+                        | &ValueType::Path { .. }
                         | &ValueType::Base(_)
                         | &ValueType::Product(..)
                         | &ValueType::Sum(..)
@@ -751,7 +768,24 @@ fn converge(
                         stack.push(ConversionGoal::ValueType(one_type, other_type));
                         stack.push(ConversionGoal::Value(one_paths, other_paths));
                     },
-                    | (&Value::PathRefl(one), &Value::PathRefl(other)) => stack.push(ConversionGoal::Value(one, other)),
+                    | (&Value::PathRefl(one), &Value::PathRefl(other))
+                    | (&Value::Here(one), &Value::Here(other)) => stack.push(ConversionGoal::Value(one, other)),
+                    // The guarded program is the field's structure and compares
+                    // exactly; the layer evidence compares child for child.
+                    | (&Value::Higher { program: ref one, evidence: ref xs }, &Value::Higher { program: ref other, evidence: ref ys }) => {
+                        if one != other || xs.len() != ys.len() { return Convertibility::Distinct; }
+                        stack.extend(xs.iter().zip(ys.iter()).map(|(&a, &b)| ConversionGoal::Value(a, b)));
+                    },
+                    // Replay dialogues are certificates and are erased, as the
+                    // universe-path round-trip evidence is.
+                    | (&Value::HigherEvaluation { components: ref xs, .. }, &Value::HigherEvaluation { components: ref ys, .. }) => {
+                        if xs.len() != ys.len() { return Convertibility::Distinct; }
+                        for (one, other) in xs.iter().zip(ys.iter()) {
+                            stack.push(ConversionGoal::Value(one.left, other.left));
+                            stack.push(ConversionGoal::Value(one.right, other.right));
+                            stack.push(ConversionGoal::Value(one.evidence, other.evidence));
+                        }
+                    },
                     | (&Value::PathProduct(a, b), &Value::PathProduct(c, d)) => {
                         stack.push(ConversionGoal::Value(a, c));
                         stack.push(ConversionGoal::Value(b, d));
@@ -850,6 +884,7 @@ fn converge(
                     },
                     | (
                         &Value::Constructor { .. } | &Value::Record(_) | &Value::SessionPath { .. } | &Value::PathRefl(_) | &Value::PathProduct(..) | &Value::PathEquiv { .. }
+                        | &Value::Here(_) | &Value::Higher { .. } | &Value::HigherEvaluation { .. }
                         | &Value::Variable(_)
                         | &Value::Constant(_)
                         | &Value::ListNil | &Value::ListCons(..)
@@ -946,6 +981,46 @@ fn converge(
                         stack.push(ConversionGoal::Value(a, c));
                         stack.push(ConversionGoal::Value(b, d));
                     },
+                    | (
+                        &Computation::PathTransport {
+                            motive: one_motive,
+                            path: one_path,
+                            value: one_value,
+                        },
+                        &Computation::PathTransport {
+                            motive: other_motive,
+                            path: other_path,
+                            value: other_value,
+                        },
+                    ) => {
+                        stack.push(ConversionGoal::ValueType(one_motive, other_motive));
+                        stack.push(ConversionGoal::Value(one_path, other_path));
+                        stack.push(ConversionGoal::Value(one_value, other_value));
+                    },
+                    | (
+                        &Computation::RelatedApplication {
+                            path: one_path,
+                            left: one_left,
+                            right: one_right,
+                            evidence: one_evidence,
+                            body: one_body,
+                        },
+                        &Computation::RelatedApplication {
+                            path: other_path,
+                            left: other_left,
+                            right: other_right,
+                            evidence: other_evidence,
+                            body: other_body,
+                        },
+                    ) => {
+                        stack.extend([
+                            ConversionGoal::Value(one_path, other_path),
+                            ConversionGoal::Value(one_left, other_left),
+                            ConversionGoal::Value(one_right, other_right),
+                            ConversionGoal::Value(one_evidence, other_evidence),
+                            ConversionGoal::Computation(one_body, other_body),
+                        ]);
+                    },
                     | (&Computation::Lambda(one), &Computation::Lambda(other))
                     | (
                         &Computation::Fixpoint { body: one, .. },
@@ -997,6 +1072,8 @@ fn converge(
                         | &Computation::RecordProjection(..)
                         | &Computation::TupleProjection(..)
                         | &Computation::Transport(..)
+                        | &Computation::PathTransport { .. }
+                        | &Computation::RelatedApplication { .. }
                         | &Computation::Lambda(_)
                         | &Computation::Fixpoint { .. }
                         | &Computation::ListFold { .. }

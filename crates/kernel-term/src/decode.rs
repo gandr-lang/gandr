@@ -1900,6 +1900,80 @@ fn decode_entry(
                 Family::Computation,
             )
         },
+        | tags::NODE_VT_PATH => {
+            let domain = read_value_type(reader, table, this, &mut children)?;
+            let left = read_value(reader, table, this, &mut children)
+                .map_err(|error| named_polarity(error, MalformedSite::PathEndpoint))?;
+            let right = read_value(reader, table, this, &mut children)
+                .map_err(|error| named_polarity(error, MalformedSite::PathEndpoint))?;
+            let id = table.arena.value_type_path(domain, left, right);
+            (DecodedNode::ValueType(id), Family::ValueType)
+        },
+        | tags::NODE_V_HERE => {
+            let point = read_value(reader, table, this, &mut children)?;
+            (
+                DecodedNode::Value(table.arena.value_here(point)),
+                Family::Value,
+            )
+        },
+        | tags::NODE_C_PATH_TRANSPORT => {
+            let motive = read_value_type(reader, table, this, &mut children)
+                .map_err(|error| named_polarity(error, MalformedSite::TransportMotive))?;
+            let path = read_value(reader, table, this, &mut children)?;
+            let value = read_value(reader, table, this, &mut children)?;
+            let id = table.arena.computation_path_transport(motive, path, value);
+            (DecodedNode::Computation(id), Family::Computation)
+        },
+        | tags::NODE_V_HIGHER => {
+            let program = decode_higher_program(reader)?;
+            let mut evidence = Vec::new();
+            for layer in &program.layers {
+                if matches!(layer, crate::HigherLayer::Guard { .. }) {
+                    evidence.push(read_value(reader, table, this, &mut children)?);
+                }
+            }
+            let id = table
+                .arena
+                .value_higher(alloc::sync::Arc::new(program), evidence.into_boxed_slice());
+            (DecodedNode::Value(id), Family::Value)
+        },
+        | tags::NODE_V_HIGHER_EVALUATION => {
+            let count = reader.read_uvarint()?;
+            let mut dialogues = Vec::new();
+            for _ in 0 .. u64::from(count) {
+                let left = decode_dialogue(reader)?;
+                let right = decode_dialogue(reader)?;
+                dialogues.push(crate::EvaluationDialogues { left, right });
+            }
+            let mut components = Vec::with_capacity(dialogues.len());
+            for _ in &dialogues {
+                let left = read_value(reader, table, this, &mut children)?;
+                let right = read_value(reader, table, this, &mut children)?;
+                let evidence = read_value(reader, table, this, &mut children)?;
+                components.push(crate::EvaluationComponent {
+                    left,
+                    right,
+                    evidence,
+                });
+            }
+            let id = table.arena.value_higher_evaluation(
+                alloc::sync::Arc::from(dialogues),
+                components.into_boxed_slice(),
+            );
+            (DecodedNode::Value(id), Family::Value)
+        },
+        | tags::NODE_C_RELATED_APPLICATION => {
+            let path = read_value(reader, table, this, &mut children)?;
+            let left = read_value(reader, table, this, &mut children)?;
+            let right = read_value(reader, table, this, &mut children)?;
+            let evidence = read_value(reader, table, this, &mut children)?;
+            let body = read_computation(reader, table, this, &mut children)?;
+            let id =
+                table
+                    .arena
+                    .computation_related_application(path, (left, right), evidence, body);
+            (DecodedNode::Computation(id), Family::Computation)
+        },
         | tags::NODE_VT_BASE => {
             let base = decode_base_type(reader)?;
             let id = table.arena.value_type_base(base);
@@ -2171,6 +2245,140 @@ fn decode_dialogues(
     }
     Ok(dialogues)
 }
+
+/// Name the slot a polarity refusal happened at, leaving every other refusal
+/// unchanged.
+///
+/// # Specification
+/// - ensures: a [`MalformedSite::Polarity`] refusal becomes the same refusal at
+///   `site`; every other error is returned unchanged.
+/// - provides: the named structural invariants of the identity nodes, whose
+///   slots are refused by what they must hold rather than by family alone.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a computation in a path endpoint slot and a value in a
+///   transport motive slot refuse at their own sites; a forward index in the
+///   same slots keeps its child-order refusal.
+/// - witness: `decode::tests::identity_nodes_round_trip_and_refuse_their_malformed_sites`
+#[spec(ensures: |ret| match error {
+    DecodeError::Malformed { site: MalformedSite::Polarity } => ret == DecodeError::Malformed { site },
+    other => ret == other,
+})]
+fn named_polarity(
+    error: DecodeError,
+    site: MalformedSite,
+) -> DecodeError
+{
+    match error {
+        | DecodeError::Malformed {
+            site: MalformedSite::Polarity,
+        } => DecodeError::Malformed { site },
+        | other => other,
+    }
+}
+
+/// Decode one portable dialogue, allocating only as bytes are consumed.
+///
+/// # Specification
+/// - requires: nothing; the remaining bytes may be adversarial.
+/// - ensures: preserves every decision of the dialogue in wire order.
+/// - provides: syntax only; no replay claim is trusted here.
+/// - fails: truncated, overlong or unknown decision words are refused.
+/// - panics: none.
+///
+/// # Errors
+/// The byte reader's error or malformed path evidence.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a higher evaluation's dialogues round-trip and an invalid
+///   word refuses before admission.
+/// - witness: `decode::tests::identity_nodes_round_trip_and_refuse_their_malformed_sites`
+#[spec(captures: before = reader.position.0, ensures: |ret| ret.as_ref().map_or(true, |dialogue| 1_usize.saturating_add(dialogue.len()) <= reader.position.0.saturating_sub(before)))]
+fn decode_dialogue(reader: &mut ByteReader<'_>) -> Result<crate::Dialogue, DecodeError>
+{
+    let count = reader.read_uvarint()?;
+    let mut dialogue = Vec::new();
+    for _ in 0 .. u64::from(count) {
+        let word = reader.read_uvarint()?;
+        let decision = crate::EvidenceWord(u64::from(word))
+            .try_into()
+            .map_err(|site| DecodeError::Malformed { site })?;
+        dialogue.push(decision);
+    }
+    Ok(dialogue)
+}
+
+/// Decode a higher-field program and check that every position it names is
+/// one of its layers.
+///
+/// # Specification
+/// - requires: nothing; the remaining bytes may be adversarial.
+/// - ensures: the depth, root and layers in wire order; the root and every
+///   layer target are below the layer count.
+/// - provides: the framing check of the guarded program; productivity and
+///   evidence remain the kernel's.
+/// - fails: [`MalformedSite::HigherLayer`] for a position outside the layer
+///   list, [`TagSite::HigherLayer`] for an unknown layer kind,
+///   [`MalformedSite::IndexRange`] for a depth or position past `u32`, and the
+///   reader's truncation or varint refusals.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — guard and redirect layers round-trip; an out-of-range
+///   target and an unknown kind refuse at their own sites.
+/// - witness: `decode::tests::identity_nodes_round_trip_and_refuse_their_malformed_sites`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |program| usize::try_from(program.root.0).is_ok_and(|root| root < program.layers.len()) && program.layers.iter().all(|layer| match *layer { crate::HigherLayer::Guard { tail: target } | crate::HigherLayer::Redirect(target) => usize::try_from(target.0).is_ok_and(|target| target < program.layers.len()) })))]
+fn decode_higher_program(reader: &mut ByteReader<'_>) -> Result<crate::HigherProgram, DecodeError>
+{
+    let position = |reader: &mut ByteReader<'_>| -> Result<crate::LayerPosition, DecodeError> {
+        let word = reader.read_uvarint()?;
+        let narrow = u32::try_from(u64::from(word)).map_err(|_error| DecodeError::Malformed {
+            site: MalformedSite::IndexRange,
+        })?;
+        Ok(crate::LayerPosition(narrow))
+    };
+    let depth = crate::HigherDepth(position(reader)?.0);
+    let root = position(reader)?;
+    let count = reader.read_uvarint()?;
+    let mut layers = Vec::new();
+    for _ in 0 .. u64::from(count) {
+        let kind = reader.next_tag()?;
+        let target = position(reader)?;
+        layers.push(match kind {
+            | tags::HIGHER_GUARD => crate::HigherLayer::Guard { tail: target },
+            | tags::HIGHER_REDIRECT => crate::HigherLayer::Redirect(target),
+            | other => {
+                return Err(DecodeError::UnknownTag {
+                    site: TagSite::HigherLayer,
+                    tag: other,
+                });
+            },
+        });
+    }
+    let in_range = |target: crate::LayerPosition| {
+        usize::try_from(target.0).is_ok_and(|target| target < layers.len())
+    };
+    let targets_in_range = layers.iter().all(|layer| match *layer {
+        | crate::HigherLayer::Guard { tail: target } | crate::HigherLayer::Redirect(target) => {
+            in_range(target)
+        },
+    });
+    if !in_range(root) || !targets_in_range {
+        return Err(DecodeError::Malformed {
+            site: MalformedSite::HigherLayer,
+        });
+    }
+    Ok(crate::HigherProgram {
+        depth,
+        root,
+        layers,
+    })
+}
+
 /// Read one child index, validating strictly-earlier order and the required
 /// polarity, and return the entry it names.
 ///
@@ -4804,6 +5012,257 @@ mod tests
             Err(DecodeError::Truncated),
             reader.read_uvarint(),
             "a continuation with no successor ends mid-field"
+        );
+    }
+
+    #[test]
+    fn identity_nodes_round_trip_and_refuse_their_malformed_sites()
+    {
+        use crate::Computation;
+        use crate::EvaluationComponent;
+        use crate::EvaluationDialogues;
+        use crate::HigherDepth;
+        use crate::HigherLayer;
+        use crate::HigherProgram;
+        use crate::LayerPosition;
+        use crate::Value;
+        use crate::error::TagSite;
+        use crate::types::ValueType;
+
+        let mut table = four_family_table();
+        let &[
+            _,
+            super::DecodedNode::Value(v0),
+            _,
+            _,
+            super::DecodedNode::ValueType(vt1),
+            super::DecodedNode::Value(v1),
+            _,
+            super::DecodedNode::Computation(c1),
+        ] = table.nodes.as_slice()
+        else {
+            panic!("four-family seed");
+        };
+        let program = HigherProgram {
+            depth: HigherDepth(2),
+            root: LayerPosition(0),
+            layers: vec![
+                HigherLayer::Guard {
+                    tail: LayerPosition(1),
+                },
+                HigherLayer::Redirect(LayerPosition(0)),
+            ],
+        };
+        let dialogues = alloc::sync::Arc::from([EvaluationDialogues {
+            left: vec![gandr_kernel_conversion_trace::ConversionDecision::Decompose],
+            right: vec![],
+        }]);
+        let component = EvaluationComponent {
+            left: v1,
+            right: v0,
+            evidence: v1,
+        };
+        // Each entry, the node it decodes to, and its ordered child edges.
+        let entries: &[(&[u8], super::DecodedNode, &[u32])] = &[
+            (&[0x30, 4, 5, 1], super::DecodedNode::ValueType(vt1), &[
+                4, 5, 1,
+            ]),
+            (&[0x31, 5], super::DecodedNode::Value(v1), &[5]),
+            (&[0x32, 4, 5, 1], super::DecodedNode::Computation(c1), &[
+                4, 5, 1,
+            ]),
+            (
+                &[0x33, 2, 0, 2, 0, 1, 1, 0, 5],
+                super::DecodedNode::Value(v1),
+                &[5],
+            ),
+            (
+                &[0x38, 1, 1, 11, 0, 5, 1, 5],
+                super::DecodedNode::Value(v1),
+                &[5, 1, 5],
+            ),
+            (
+                &[0x39, 5, 1, 5, 1, 7],
+                super::DecodedNode::Computation(c1),
+                &[5, 1, 5, 1, 7],
+            ),
+        ];
+        let expected_value_types = [ValueType::Path {
+            domain: vt1,
+            left: v1,
+            right: v0,
+        }];
+        let expected_values = [
+            Value::Here(v1),
+            Value::Higher {
+                program: alloc::sync::Arc::new(program),
+                evidence: [v1].into(),
+            },
+            Value::HigherEvaluation {
+                dialogues,
+                components: [component].into(),
+            },
+        ];
+        let expected_computations = [
+            Computation::PathTransport {
+                motive: vt1,
+                path: v1,
+                value: v0,
+            },
+            Computation::RelatedApplication {
+                path: v1,
+                left: v0,
+                right: v1,
+                evidence: v0,
+                body: c1,
+            },
+        ];
+        let (mut value_types, mut values, mut computations) = (
+            expected_value_types.iter(),
+            expected_values.iter(),
+            expected_computations.iter(),
+        );
+        for &(bytes, family, children) in entries {
+            let before = table.arena.watermark();
+            let count = table.nodes.len();
+            for end in 0 .. bytes.len() {
+                let prefix = bytes.get(.. end).expect("proper prefix");
+                let mut reader = ByteReader::new(ArtifactImage::from(prefix));
+                assert_eq!(
+                    super::decode_entry(&mut reader, &mut table),
+                    Err(DecodeError::Truncated)
+                );
+                assert_eq!(table.arena.watermark(), before);
+                assert_eq!(table.nodes.len(), count);
+            }
+            let mut reader = ByteReader::new(ArtifactImage::from(bytes));
+            super::decode_entry(&mut reader, &mut table).expect("literal identity entry");
+            assert_eq!(reader.position.0, bytes.len());
+            let decoded = table.nodes.last().copied().expect("appended row");
+            match (family, decoded) {
+                | (super::DecodedNode::ValueType(_), super::DecodedNode::ValueType(id)) => {
+                    assert_eq!(table.arena.value_type(id), value_types.next());
+                },
+                | (super::DecodedNode::Value(_), super::DecodedNode::Value(id)) => {
+                    assert_eq!(table.arena.value(id), values.next());
+                },
+                | (super::DecodedNode::Computation(_), super::DecodedNode::Computation(id)) => {
+                    assert_eq!(table.arena.computation(id), computations.next());
+                },
+                | _ => panic!("wrong node family"),
+            }
+            assert!(
+                table
+                    .children
+                    .last()
+                    .expect("ordered edges")
+                    .iter()
+                    .copied()
+                    .map(u32::from)
+                    .eq(children.iter().copied())
+            );
+        }
+        assert_eq!(
+            (value_types.next(), values.next(), computations.next()),
+            (None, None, None)
+        );
+
+        // Each structural invariant refuses at its own site, minting nothing.
+        let refusals: &[(&[u8], DecodeError)] = &[
+            (&[0x30, 4, 3, 1], DecodeError::Malformed {
+                site: MalformedSite::PathEndpoint,
+            }),
+            (&[0x30, 4, 5, 2], DecodeError::Malformed {
+                site: MalformedSite::PathEndpoint,
+            }),
+            (&[0x32, 5, 5, 1], DecodeError::Malformed {
+                site: MalformedSite::TransportMotive,
+            }),
+            (&[0x33, 1, 0, 1, 0, 1, 5], DecodeError::Malformed {
+                site: MalformedSite::HigherLayer,
+            }),
+            (&[0x33, 1, 1, 1, 0, 0, 5], DecodeError::Malformed {
+                site: MalformedSite::HigherLayer,
+            }),
+            (
+                &[0x33, 0x80, 0x80, 0x80, 0x80, 0x10, 0, 0],
+                DecodeError::Malformed {
+                    site: MalformedSite::IndexRange,
+                },
+            ),
+            (&[0x38, 1, 1, 0x0D, 0, 5, 1, 5], DecodeError::Malformed {
+                site: MalformedSite::PathEvidence,
+            }),
+        ];
+        for &(bytes, ref expected) in refusals {
+            let before = table.arena.watermark();
+            let mut reader = ByteReader::new(ArtifactImage::from(bytes));
+            assert_eq!(
+                super::decode_entry(&mut reader, &mut table).as_ref(),
+                Err(expected)
+            );
+            assert_eq!(table.arena.watermark(), before);
+        }
+        let mut reader =
+            ByteReader::new(ArtifactImage::from([0x33_u8, 1, 0, 1, 2, 0, 5].as_slice()));
+        assert!(matches!(
+            super::decode_entry(&mut reader, &mut table),
+            Err(DecodeError::UnknownTag {
+                site: TagSite::HigherLayer,
+                ..
+            })
+        ));
+
+        // A whole artifact carrying every identity node re-encodes byte for
+        // byte.
+        let mut arena = crate::TermArena::new();
+        let unit_type = arena.value_type_unit();
+        let unit = arena.value_unit();
+        let identity = arena.value_type_path(unit_type, unit, unit);
+        let here = arena.value_here(unit);
+        let field = arena.value_higher(
+            alloc::sync::Arc::new(HigherProgram {
+                depth: HigherDepth(3),
+                root: LayerPosition(0),
+                layers: vec![HigherLayer::Guard {
+                    tail: LayerPosition(0),
+                }],
+            }),
+            [unit].into(),
+        );
+        let evaluation = arena.value_higher_evaluation(
+            alloc::sync::Arc::from([EvaluationDialogues {
+                left: vec![gandr_kernel_conversion_trace::ConversionDecision::Force { thunk: () }],
+                right: vec![gandr_kernel_conversion_trace::ConversionDecision::Decompose],
+            }]),
+            [EvaluationComponent {
+                left: unit,
+                right: unit,
+                evidence: here,
+            }]
+            .into(),
+        );
+        let returned = arena.computation_return(field);
+        let transport = arena.computation_path_transport(identity, here, evaluation);
+        let related = arena.computation_related_application(here, (unit, unit), field, returned);
+        let sequenced = arena.computation_bind(transport, related);
+        let body = arena.value_thunk(sequenced);
+        let returns = arena.comp_type_returner(identity);
+        let declared = arena.value_type_thunk(returns);
+        let declaration = crate::DeclarationBuilder::new(&mut arena).def(
+            crate::LevelSignature::monomorphic(),
+            declared,
+            body,
+        );
+        let declarations = [crate::MarkedDeclaration::new(
+            crate::AdmissionMark::Checked,
+            declaration,
+        )];
+        let bytes = crate::encode(&arena, &declarations);
+        let decoded = crate::decode(bytes.as_image()).expect("identity artifact decodes");
+        assert_eq!(
+            crate::encode(decoded.arena(), decoded.declarations()),
+            bytes
         );
     }
 }

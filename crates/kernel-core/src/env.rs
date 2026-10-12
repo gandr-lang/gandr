@@ -1518,7 +1518,18 @@ fn collect_reachable(
                     pending.push(AnyNode::ValueType(path_type));
                     pending.push(AnyNode::Value(payload_paths));
                 },
-                | Some(&Value::PathRefl(code)) => pending.push(AnyNode::Value(code)),
+                | Some(&Value::PathRefl(code) | &Value::Here(code)) => {
+                    pending.push(AnyNode::Value(code));
+                },
+                | Some(&Value::Higher { ref evidence, .. }) => {
+                    pending.extend(evidence.iter().copied().map(AnyNode::Value));
+                },
+                | Some(&Value::HigherEvaluation { ref components, .. }) => pending.extend(
+                    components
+                        .iter()
+                        .flat_map(|component| [component.left, component.right, component.evidence])
+                        .map(AnyNode::Value),
+                ),
                 | Some(
                     &Value::PathProduct(first, second)
                     | &Value::ListCons(first, second)
@@ -1572,6 +1583,30 @@ fn collect_reachable(
                     pending.push(AnyNode::Value(path));
                     pending.push(AnyNode::Value(value));
                 },
+                | Some(&Computation::PathTransport {
+                    motive,
+                    path,
+                    value,
+                }) => {
+                    pending.push(AnyNode::ValueType(motive));
+                    pending.push(AnyNode::Value(path));
+                    pending.push(AnyNode::Value(value));
+                },
+                | Some(&Computation::RelatedApplication {
+                    path,
+                    left,
+                    right,
+                    evidence,
+                    body,
+                }) => {
+                    pending.extend([
+                        AnyNode::Value(path),
+                        AnyNode::Value(left),
+                        AnyNode::Value(right),
+                        AnyNode::Value(evidence),
+                        AnyNode::Computation(body),
+                    ]);
+                },
                 | Some(&Computation::Lambda(body) | &Computation::Fixpoint { body, .. }) => {
                     pending.push(AnyNode::Computation(body));
                 },
@@ -1615,6 +1650,19 @@ fn collect_reachable(
                     if follow {
                         pending.push(AnyNode::Value(source));
                         pending.push(AnyNode::Value(target));
+                    }
+                },
+                // The domain is a type; the endpoints cross into the term
+                // language and follow only where codes do.
+                | Some(&ValueType::Path {
+                    domain,
+                    left,
+                    right,
+                }) => {
+                    pending.push(AnyNode::ValueType(domain));
+                    if follow {
+                        pending.push(AnyNode::Value(left));
+                        pending.push(AnyNode::Value(right));
                     }
                 },
                 | Some(&ValueType::Element { code, .. }) => {

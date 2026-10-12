@@ -712,6 +712,7 @@ ensures: |ret| ret.0.as_image().as_ref().first().copied()
             Some(&ValueType::Data { .. }) => tags::NODE_VT_DATA,
             Some(&ValueType::Record(_)) => tags::NODE_VT_RECORD,
             Some(&ValueType::PathUniverse(..)) => tags::NODE_VT_PATH_UNIVERSE,
+            Some(&ValueType::Path { .. }) => tags::NODE_VT_PATH,
             Some(&ValueType::Base(_)) => tags::NODE_VT_BASE,
             Some(&ValueType::Universe { sort: GroundSort::Value, .. }) => tags::NODE_VT_UNIVERSE,
             Some(&ValueType::Universe { sort: GroundSort::Computation, .. }) => {
@@ -740,6 +741,9 @@ ensures: |ret| ret.0.as_image().as_ref().first().copied()
             Some(&Value::PathRefl(_)) => tags::NODE_V_PATH_REFL,
             Some(&Value::PathProduct(..)) => tags::NODE_V_PATH_PRODUCT,
             Some(&Value::PathEquiv { .. }) => tags::NODE_V_PATH_EQUIV,
+            Some(&Value::Here(_)) => tags::NODE_V_HERE,
+            Some(&Value::Higher { .. }) => tags::NODE_V_HIGHER,
+            Some(&Value::HigherEvaluation { .. }) => tags::NODE_V_HIGHER_EVALUATION,
             Some(&Value::Variable(_)) => tags::NODE_V_VARIABLE,
             Some(&Value::Constant(_)) => tags::NODE_V_CONSTANT,
             Some(&Value::Literal(_)) => tags::NODE_V_LITERAL,
@@ -758,6 +762,8 @@ ensures: |ret| ret.0.as_image().as_ref().first().copied()
             Some(&Computation::RecordProjection(..)) => tags::NODE_C_RECORD_PROJECTION,
             Some(&Computation::TupleProjection(..)) => tags::NODE_C_TUPLE_PROJECTION,
             Some(&Computation::Transport(..)) => tags::NODE_C_TRANSPORT,
+            Some(&Computation::PathTransport { .. }) => tags::NODE_C_PATH_TRANSPORT,
+            Some(&Computation::RelatedApplication { .. }) => tags::NODE_C_RELATED_APPLICATION,
             None | Some(&Computation::Return(_)) => tags::NODE_C_RETURN,
             Some(&Computation::Lambda(_)) => tags::NODE_C_LAMBDA,
             Some(&Computation::Fixpoint { .. }) => tags::NODE_C_FIXPOINT,
@@ -802,6 +808,7 @@ fn encode_entry(
                     out.put_tag(base_type_tag(base));
                 },
                 | ValueType::PathUniverse(..) => out.put_tag(tags::NODE_VT_PATH_UNIVERSE),
+                | ValueType::Path { .. } => out.put_tag(tags::NODE_VT_PATH),
                 | ValueType::Universe {
                     sort: GroundSort::Value,
                     ref level,
@@ -894,6 +901,19 @@ fn encode_entry(
                         out.put_uvarint(WireU64::from(word.0));
                     }
                 },
+                | Value::Here(_) => out.put_tag(tags::NODE_V_HERE),
+                | Value::Higher { ref program, .. } => {
+                    out.put_tag(tags::NODE_V_HIGHER);
+                    for word in program.words() {
+                        out.put_uvarint(WireU64::from(word.0));
+                    }
+                },
+                | Value::HigherEvaluation { ref dialogues, .. } => {
+                    out.put_tag(tags::NODE_V_HIGHER_EVALUATION);
+                    for word in crate::identity::evaluation_words(dialogues) {
+                        out.put_uvarint(WireU64::from(word.0));
+                    }
+                },
                 | Value::Literal(ref literal) => {
                     out.put_tag(tags::NODE_V_LITERAL);
                     encode_literal(&mut out, literal);
@@ -932,6 +952,12 @@ fn encode_entry(
                 out.put_uvarint(WireU64::from(WireUsize::from(usize::from(component))));
             },
             | Some(&Computation::Transport(..)) => out.put_tag(tags::NODE_C_TRANSPORT),
+            | Some(&Computation::PathTransport { .. }) => {
+                out.put_tag(tags::NODE_C_PATH_TRANSPORT);
+            },
+            | Some(&Computation::RelatedApplication { .. }) => {
+                out.put_tag(tags::NODE_C_RELATED_APPLICATION);
+            },
             | Some(&Computation::Lambda(_)) => out.put_tag(tags::NODE_C_LAMBDA),
             | Some(&Computation::Fixpoint { evidence, .. }) => {
                 out.put_tag(tags::NODE_C_FIXPOINT);

@@ -26,7 +26,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 - **Type formation.** An iterative walk computing a type's universe level, gating lift strictness, level scope, a sealed atom's kind, and the code a decode of either family owes.
 - **Conversion.** `convert_value_type`, `convert_comp_type` and their `convertible_*` forms: structural comparison of two types, descending into the terms they carry, over `Convertibility`.
 - **Conversion replay.** `replay`: a conversion trace replayed against an engine's `EngineClaim` for two `ReplaySides`, answering a `KernelVerdict` — certified convertible, certified not convertible, or declined with a `ReplayDecline`.
-- **Native formers.** Nominal data and structural records, recursive data with the structural fixpoint, the native List former, universe paths and session codes, all through ordinary admission.
+- **Native formers.** Nominal data and structural records, recursive data with the structural fixpoint, the native List former, universe paths, session codes, and element and function identity (`element_identity`), all through ordinary admission.
 - **Rule languages beside admission.** Universe flows (`flow_universe`), identity and bridge recursion (`identity_recursion`), guarded higher fields (`higher_field`), the experimental stage universe (`stage`) and guarded admission of staging-equation families (`admission`); none of them admits a declaration on its own authority.
 - **The content key.** `ContentTable`, `encode_support`, `content_digest`, `NodeSupport` and `SupportContext`: content ids, canonical support encodings and their digests.
 - **The rewrites.** `shift_value_type` and `substitute_comp_type`, de Bruijn shifting and substitution as memoized machines.
@@ -101,6 +101,7 @@ Mechanism, rule tables, decisions and specification detail live in the rustdoc b
 | Shifting and substitution | [`src/rewrite.rs`](src/rewrite.rs) |
 | Universe paths | [`src/path_universe.rs`](src/path_universe.rs) |
 | Universe flows | [`src/flow_universe.rs`](src/flow_universe.rs) |
+| Element and function identity: formation, `here`, transport, higher fields and higher evaluation | [`src/element_identity.rs`](src/element_identity.rs) |
 | Identity and bridge recursion, function identity | [`src/identity_recursion.rs`](src/identity_recursion.rs), [`src/identity_recursion/recursive.rs`](src/identity_recursion/recursive.rs) |
 | Guarded higher fields | [`src/higher_field.rs`](src/higher_field.rs) |
 | Session codes and certificates | [`src/session.rs`](src/session.rs) |

@@ -72,6 +72,8 @@ fn children(
                 .collect(),
             | Computation::ListFold { .. }
             | Computation::Transport(..)
+            | Computation::PathTransport { .. }
+            | Computation::RelatedApplication { .. }
             | Computation::DataCase { .. }
             | Computation::RecordProjection(..)
             | Computation::TupleProjection(..) => {
@@ -166,6 +168,8 @@ fn translate(
                     ),
                     | Computation::ListFold { .. }
                     | Computation::Transport(..)
+                    | Computation::PathTransport { .. }
+                    | Computation::RelatedApplication { .. }
                     | Computation::DataCase { .. }
                     | Computation::RecordProjection(..)
                     | Computation::TupleProjection(..) => {

@@ -75,11 +75,11 @@
 //! inspectable and bounds each replay. **Alternatives.** Eager towers cannot
 //! represent infinite higher data; closures hide productivity obligations and
 //! allocate opaque continuations. The graph stores no checking verdict and
-//! adds no dependency or wire tag. **Reversal.** A native higher identity
-//! language would replace the auxiliary representation only with checked
-//! substitution, reduction and persistence rules. Each observed native fibre
-//! must be representable at the admitted stratum; J and a general dependent
-//! eliminator are not provided.
+//! adds no dependency. Its persisted form is the kernel's guarded higher field,
+//! which [`crate::element_identity`] checks to the program's depth and reads
+//! back as this program; `J` is transport in the singleton family there.
+//! **Reversal.** Each observed native fibre must be representable at the
+//! admitted stratum; a general dependent eliminator is not provided.
 //!
 //! # Witnesses
 //!
@@ -112,7 +112,9 @@ use crate::replay::KernelVerdict;
 use crate::replay::ReplayBudget;
 
 mod certificate;
+
 mod square;
+
 #[cfg(test)]
 mod tests;
 
@@ -429,7 +431,71 @@ impl Codata
         }
         right.check(arena, context)?;
         let code = fibre_code(arena, context, left)?;
-        let mut goal = (code, left.evidence, right.evidence);
+        let start = Goal {
+            code,
+            left: left.evidence,
+            right: right.evidence,
+        };
+        self.walk(arena, start, budget, |arena, cell, _fibre| {
+            cell.check(arena, context).map(|_identity| ())
+        })
+    }
+
+    /// Walk the guarded program from `start`, handing every exposed cell and
+    /// its computed fibre to `visit` before the walk relies on it.
+    ///
+    /// # Specification
+    /// - requires: `start`'s endpoints inhabit the fibre its code denotes, and
+    ///   `visit` refuses every cell whose evidence does not inhabit the fibre
+    ///   it is handed, or records that obligation for a caller that discharges
+    ///   it before trusting the walk.
+    /// - ensures: each guard's cell is visited with the native fibre of its
+    ///   code at its two endpoints, computed without a nested check; the tail
+    ///   observes identity of that guard's evidence with itself. Exactly the
+    ///   requested depth is reached, or the walk refuses.
+    /// - provides: the one control loop behind [`Self::observe`] and the
+    ///   kernel's persisted higher field, which records its cells as checking
+    ///   goals instead of re-entering the checker.
+    /// - fails: `ZeroDepth`, `DepthBound`, `UnknownLayer`, `NonProductive`, a
+    ///   fibre refusal, or the visitor's refusal.
+    /// - panics: none.
+    /// - intension: every visited instruction consumes one replay unit; only a
+    ///   Guard advances depth and clears the local cycle detector.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Termination
+    /// - reason: the `loop` below over an explicit position, not recursion.
+    /// - measure: the replay allowance, which every visited instruction
+    ///   consumes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::observe`]; the persisted higher field's
+    ///   productive and non-productive programs reach the same verdicts.
+    /// - witness: `higher_field::tests::non_productive_certificate_is_refused`
+    /// - witness: `element_identity::tests::a_non_productive_higher_field_is_refused_by_name`
+    #[spec(ensures: |ret| match ret {
+        Ok(prefix) => prefix.depth == budget.depth && prefix.depth.0 > 0 && u64::from(prefix.depth.0) <= u64::from(budget.replay),
+        Err(HigherError::ZeroDepth) => budget.depth.0 == 0,
+        Err(HigherError::UnknownLayer(id)) => self.nodes.get(id.0).is_none(),
+        Err(HigherError::NonProductive(id)) => matches!(self.nodes.get(id.0), Some(&Layer::Redirect(_))),
+        Err(_) => budget.depth.0 > 0,
+    })]
+    pub(crate) fn walk<V>(
+        &self,
+        arena: &mut TermArena,
+        start: Goal,
+        budget: ObservationBudget,
+        mut visit: V,
+    ) -> Result<Prefix, HigherError>
+    where
+        V: FnMut(&mut TermArena, Cell, ValueTypeId) -> Result<(), HigherError>,
+    {
+        if budget.depth.0 == 0 {
+            return Err(HigherError::ZeroDepth);
+        }
+        let mut goal = start;
         let mut current = self.root;
         let mut remaining = u64::from(budget.replay);
         let mut depth = 0_u32;
@@ -448,27 +514,45 @@ impl Codata
                 | Layer::Redirect(next) => current = next,
                 | Layer::Guard { evidence, tail } => {
                     let cell = Cell {
-                        code: goal.0,
-                        left: goal.1,
-                        right: goal.2,
+                        code: goal.code,
+                        left: goal.left,
+                        right: goal.right,
                         evidence,
                     };
+                    let fibre = relation(arena, cell.code)?
+                        .evaluate(arena, cell.left, cell.right)?
+                        .native(arena)?;
+                    visit(arena, cell, fibre)?;
                     depth = depth.saturating_add(1);
+                    let head = *head.get_or_insert(cell);
                     if depth == budget.depth.0 {
-                        cell.check(arena, context)?;
-                        let head = head.unwrap_or(cell);
                         return Ok(Prefix {
                             head,
                             depth: Depth(depth),
                         });
                     }
-                    let code = fibre_code(arena, context, cell)?;
-                    head.get_or_insert(cell);
-                    goal = (code, evidence, evidence);
+                    goal = Goal {
+                        code: arena.value_quote(fibre),
+                        left: evidence,
+                        right: evidence,
+                    };
                     current = tail;
                     unguarded.clear();
                 },
             }
         }
     }
+}
+
+/// The goal a higher observation stands at: identity between two inhabitants
+/// of the fibre a code denotes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct Goal
+{
+    /// The quoted fibre both endpoints inhabit.
+    pub code: ValueId,
+    /// Source endpoint.
+    pub left: ValueId,
+    /// Target endpoint.
+    pub right: ValueId,
 }

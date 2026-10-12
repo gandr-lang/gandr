@@ -378,9 +378,25 @@ fn walk(
                     );
                 },
                 | Some(
-                    &(Value::PathRefl(body) | Value::Injection(_, body) | Value::Lift { body, .. }),
+                    &(Value::PathRefl(body)
+                    | Value::Here(body)
+                    | Value::Injection(_, body)
+                    | Value::Lift { body, .. }),
                 ) => {
                     pending.push((AnyNode::Value(body), depth, results));
+                },
+                | Some(&Value::Higher { ref evidence, .. }) => {
+                    pending.extend(
+                        evidence
+                            .iter()
+                            .map(|&layer| (AnyNode::Value(layer), depth, results)),
+                    );
+                },
+                | Some(&Value::HigherEvaluation { ref components, .. }) => {
+                    pending.extend(components.iter().flat_map(|component| {
+                        [component.left, component.right, component.evidence]
+                            .map(|child| (AnyNode::Value(child), depth, results))
+                    }));
                 },
                 | Some(&Value::Thunk(body)) => {
                     pending.push((AnyNode::Computation(body), depth, results));
@@ -465,6 +481,32 @@ fn walk(
                     pending.push((AnyNode::Value(path), depth, results));
                     pending.push((AnyNode::Value(value), depth, results));
                 },
+                | Some(&Computation::PathTransport {
+                    motive,
+                    path,
+                    value,
+                }) => {
+                    pending.push((AnyNode::ValueType(motive), deeper, results));
+                    pending.push((AnyNode::Value(path), depth, results));
+                    pending.push((AnyNode::Value(value), depth, results));
+                },
+                | Some(&Computation::RelatedApplication {
+                    path,
+                    left,
+                    right,
+                    evidence,
+                    body,
+                }) => {
+                    pending.extend(
+                        [path, left, right, evidence]
+                            .map(|child| (AnyNode::Value(child), depth, results)),
+                    );
+                    pending.push((
+                        AnyNode::Computation(body),
+                        deeper.deeper().deeper(),
+                        results,
+                    ));
+                },
                 | Some(&Computation::ListFold {
                     element,
                     result,
@@ -512,6 +554,15 @@ fn walk(
                 | Some(&ValueType::PathUniverse(source, target)) => {
                     pending.push((AnyNode::Value(source), depth, results));
                     pending.push((AnyNode::Value(target), depth, results));
+                },
+                | Some(&ValueType::Path {
+                    domain,
+                    left,
+                    right,
+                }) => {
+                    pending.push((AnyNode::ValueType(domain), depth, results));
+                    pending.push((AnyNode::Value(left), depth, results));
+                    pending.push((AnyNode::Value(right), depth, results));
                 },
                 | Some(&ValueType::Thunk(body)) => {
                     pending.push((AnyNode::CompType(body), depth, results));

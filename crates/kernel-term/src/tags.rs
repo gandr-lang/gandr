@@ -31,10 +31,11 @@
 //!
 //! The tag space is one disjoint enumeration over four families, and this
 //! table is authoritative; [`NODE_TAG_TABLE`] supplies the assigned formers
-//! and their arities. Native paths have distinct bytes. Higher fields and
-//! function identity remain in-memory rule languages, with reserved ranges and
-//! no wire nodes. The original `0x00–0x1F` meanings are frozen, including the
-//! static operators at `0x1E–0x1F`.
+//! and their arities. Native paths have distinct bytes. Element identity holds
+//! `0x30–0x37` and function identity `0x38–0x47`; [Element and function
+//! identity](#element-and-function-identity) states each assigned node's
+//! children and inline payload. The original `0x00–0x1F` meanings are frozen,
+//! including the static operators at `0x1E–0x1F`.
 //!
 //! | Byte or range | Meaning | Artifact reader |
 //! | ------------- | ------- | --------------- |
@@ -52,8 +53,16 @@
 //! | `0x2D` | Product path, two path children | Admitted |
 //! | `0x2E` | Transport, path and input children | Admitted |
 //! | `0x2F` | Unassigned | Refused |
-//! | `0x30–0x37` | Higher-field reservation | Refused |
-//! | `0x38–0x47` | Funext reservation | Refused |
+//! | `0x30` | Element `Path`, value-type child and two endpoint value children | Admitted |
+//! | `0x31` | `here`, one point value child | Admitted |
+//! | `0x32` | Dependent transport, motive (value type under one binder), path and input children | Admitted |
+//! | `0x33` | Guarded higher field, inline depth and layers, one evidence child per guard | Admitted |
+//! | `0x34–0x37` | Unassigned element-identity growth | Refused |
+//! | `0x38` | Higher evaluation, inline dialogues and three value children per component | Admitted |
+//! | `0x39` | Related-inputs application, path, two arguments, evidence and a body under three binders | Admitted |
+//! | `0x3A` | Reserved: quantified higher evaluation | Refused |
+//! | `0x3B` | Reserved: dependent-arrow higher evaluation | Refused |
+//! | `0x3C–0x47` | Held function-identity growth | Refused |
 //! | `0x48–0x4F` | `Flow_U` reservation | Refused |
 //! | `0x50` | List code, one element-type child | Admitted |
 //! | `0x51` | Native List nil, no children | Admitted |
@@ -121,6 +130,40 @@
 //! it: the core resumes above [`SHARING_BLOCK_LAST`], and the block's
 //! contiguity — the property that makes a sharing former's family a
 //! subtraction rather than a lookup — survives.
+//!
+//! # Element and function identity
+//!
+//! Element identity takes the higher-field reservation because the higher
+//! field is identity between identities: a higher cell inhabits an element
+//! path whose value type is itself an element path, so the former and its
+//! guarded inhabitant share one range. Function identity takes the funext
+//! reservation for the same reason the range was held: identity at a thunk
+//! code is the related-inputs product, introduced by higher evaluation.
+//!
+//! | byte | node | family | children, in order | inline payload |
+//! | ---- | ---- | ------ | ------------------ | -------------- |
+//! | `0x30` | [`NODE_VT_PATH`] | value type | the value type `A`; endpoint values `a`, `b` | none |
+//! | `0x31` | [`NODE_V_HERE`] | value | the point `a` | none |
+//! | `0x32` | [`NODE_C_PATH_TRANSPORT`] | computation | the motive, a value type under one value binder; the path; the input value | none |
+//! | `0x33` | [`NODE_V_HIGHER`] | value | one evidence value per guard layer, in layer order | depth, root, layer count, layers |
+//! | `0x38` | [`NODE_V_HIGHER_EVALUATION`] | value | per component: left returned value, right returned value, output evidence | component count, then per component the left and the right dialogue |
+//! | `0x39` | [`NODE_C_RELATED_APPLICATION`] | computation | the function path; left and right arguments; argument evidence; the body under three value binders | none |
+//!
+//! The two structural invariants the reader names rather than reporting as
+//! a bare polarity fault are an endpoint child of [`NODE_VT_PATH`] that is
+//! not a value, and a motive child of [`NODE_C_PATH_TRANSPORT`] that is not a
+//! value type: the motive is a type-level function, a value type scoped under
+//! the endpoint binder. A higher-field layer is [`HIGHER_GUARD`] followed by
+//! its tail position, or [`HIGHER_REDIRECT`] followed by its target position;
+//! positions, depth and counts are unsigned varints, and dialogues use the
+//! decision alphabet of [`NODE_V_PATH_EQUIV`]'s evidence.
+//!
+//! [`NODE_V_QUANTIFIED_EVALUATION`] and [`NODE_V_DEPENDENT_EVALUATION`] name
+//! the next two function-identity introductions — higher-order argument
+//! coverage and identity at dependent arrows — and carry no shape yet; a
+//! reader refuses them as it refuses any unassigned byte. Filling any of
+//! these slots holds [`FORMAT_VERSION`]: every byte in both ranges is a node
+//! tag, refused by name by the closed-vocabulary reader until it is admitted.
 //!
 //! # Universe paths
 //!
@@ -431,6 +474,65 @@ pub const NODE_V_PATH_PRODUCT: WireTag = WireTag(0x2D);
 /// Node tag: transport, over a path and its source value.
 pub const NODE_C_TRANSPORT: WireTag = WireTag(0x2E);
 
+/// Node tag: element identity `Path(A, a, b)`, over the value type `A` and
+/// the endpoint values `a` and `b`.
+///
+/// The first byte of the identity range: the higher field and function
+/// identity are both inhabitants of this former at a particular value type.
+pub const NODE_VT_PATH: WireTag = WireTag(0x30);
+
+/// Node tag: `here(a)`, the diagonal of element identity, over its point.
+///
+/// One child rather than three: it inhabits `Path(A, a, b)` exactly when
+/// both endpoints convert to its point, so storing them again would only
+/// admit a disagreeing copy.
+pub const NODE_V_HERE: WireTag = WireTag(0x31);
+
+/// Node tag: dependent transport along an element path, over the motive, the
+/// path and the input value.
+///
+/// A byte apart from [`NODE_C_TRANSPORT`], which transports along a universe
+/// path with the family implicit: here the motive is explicit syntax, a value
+/// type scoped under one binder, so the substitution law has a family to
+/// substitute each endpoint into.
+pub const NODE_C_PATH_TRANSPORT: WireTag = WireTag(0x32);
+
+/// Node tag: the guarded higher field, an inline guarded program over one
+/// evidence value per guard layer.
+///
+/// Identity between identities is codata; its finite syntax is a graph whose
+/// cycles a guard must break, replayed to the depth the node states. The
+/// guard and redirect alphabet is [`HIGHER_GUARD`] and [`HIGHER_REDIRECT`].
+pub const NODE_V_HIGHER: WireTag = WireTag(0x33);
+
+/// Higher-field layer kind: expose one evidence value, then observe its tail.
+pub const HIGHER_GUARD: WireTag = WireTag(0);
+/// Higher-field layer kind: follow an edge without exposing a constructor.
+pub const HIGHER_REDIRECT: WireTag = WireTag(1);
+
+/// Node tag: higher evaluation, the introduction of identity at a thunk code,
+/// with inline replay dialogues over three values per coverage component.
+///
+/// `refl` of a λ and function extensionality share it: both relate related
+/// inputs to related outputs, one component per kernel-generated coverage
+/// pattern, each replayed rather than trusted.
+pub const NODE_V_HIGHER_EVALUATION: WireTag = WireTag(0x38);
+
+/// Node tag: application at related inputs, the related-inputs product's
+/// elimination, over the function path, both arguments, their evidence and
+/// a body under three binders.
+///
+/// The body binds the left result, the right result and their identity,
+/// innermost last: the output endpoints are the two returned values, which
+/// only evaluation names, so the eliminator continues rather than returns.
+pub const NODE_C_RELATED_APPLICATION: WireTag = WireTag(0x39);
+
+/// Reserved node tag: higher evaluation with quantified evidence, covering
+/// higher-order arguments.
+pub const NODE_V_QUANTIFIED_EVALUATION: WireTag = WireTag(0x3A);
+/// Reserved node tag: higher evaluation at a dependent arrow.
+pub const NODE_V_DEPENDENT_EVALUATION: WireTag = WireTag(0x3B);
+
 /// Node tag: the strictly positive list code, over one element type.
 pub const NODE_VT_LIST: WireTag = WireTag(0x50);
 
@@ -646,7 +748,7 @@ pub struct NodeTagDescription
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_TUPLE_PROJECTION.0))
+    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_TUPLE_PROJECTION.0))
             && match max_token_bound { Some(bound) => bound.0 >= 1, None => true },
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -698,7 +800,7 @@ const fn row(
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_TUPLE_PROJECTION.0))
+    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_TUPLE_PROJECTION.0))
             && !matches!(tag, NODE_VT_BASE | NODE_V_VARIABLE | NODE_V_CONSTANT | NODE_VT_ABSTRACT | NODE_V_LIST_NIL),
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -798,7 +900,7 @@ const fn bounded_alias(
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
-pub const NODE_TAG_TABLE: [NodeTagDescription; 49] = [
+pub const NODE_TAG_TABLE: [NodeTagDescription; 55] = [
     row(
         NODE_VT_BASE,
         ChildArity::Fixed(0),
@@ -840,6 +942,12 @@ pub const NODE_TAG_TABLE: [NodeTagDescription; 49] = [
     unbounded(NODE_V_PATH_EQUIV, ChildArity::Fixed(3)),
     unbounded(NODE_V_PATH_PRODUCT, ChildArity::Fixed(2)),
     unbounded(NODE_C_TRANSPORT, ChildArity::Fixed(2)),
+    unbounded(NODE_VT_PATH, ChildArity::Fixed(3)),
+    unbounded(NODE_V_HERE, ChildArity::Fixed(1)),
+    unbounded(NODE_C_PATH_TRANSPORT, ChildArity::Fixed(3)),
+    unbounded(NODE_V_HIGHER, ChildArity::Counted(0)),
+    unbounded(NODE_V_HIGHER_EVALUATION, ChildArity::Counted(0)),
+    unbounded(NODE_C_RELATED_APPLICATION, ChildArity::Fixed(5)),
     unbounded(NODE_VT_LIST, ChildArity::Fixed(1)),
     bounded_alias(NODE_V_LIST_NIL, TokenCount(1)),
     unbounded(NODE_VT_SESSION, ChildArity::Fixed(1)),
@@ -918,6 +1026,9 @@ mod tests
                         Some(&crate::Value::PathRefl(_)) => row.tag == super::NODE_V_PATH_REFL,
                         Some(&crate::Value::PathProduct(_, _)) => row.tag == super::NODE_V_PATH_PRODUCT,
                         Some(&crate::Value::PathEquiv { .. }) => row.tag == super::NODE_V_PATH_EQUIV,
+                        Some(&crate::Value::Here(_)) => row.tag == super::NODE_V_HERE,
+                        Some(&crate::Value::Higher { .. }) => row.tag == super::NODE_V_HIGHER,
+                        Some(&crate::Value::HigherEvaluation { .. }) => row.tag == super::NODE_V_HIGHER_EVALUATION,
                         Some(&crate::Value::SessionPath { .. }) => row.tag == super::NODE_V_SESSION_PATH,
                         Some(&crate::Value::ListNil) => row.tag == super::NODE_V_LIST_NIL,
                         Some(&crate::Value::ListCons(..)) => row.tag == super::NODE_V_LIST_CONS,
@@ -935,6 +1046,8 @@ mod tests
                         Some(&crate::Computation::Force(_)) => row.tag == super::NODE_C_FORCE,
                         Some(&crate::Computation::Case { .. }) => row.tag == super::NODE_C_CASE,
                         Some(&crate::Computation::Transport(_, _)) => row.tag == super::NODE_C_TRANSPORT,
+                        Some(&crate::Computation::PathTransport { .. }) => row.tag == super::NODE_C_PATH_TRANSPORT,
+                        Some(&crate::Computation::RelatedApplication { .. }) => row.tag == super::NODE_C_RELATED_APPLICATION,
                         Some(&crate::Computation::ListFold { .. }) => row.tag == super::NODE_C_LIST_FOLD,
                         None => false,
                     },
@@ -952,6 +1065,7 @@ mod tests
                         Some(&crate::ValueType::StaticPi { .. }) => row.tag == super::NODE_VT_STATIC_PI,
                         Some(&crate::ValueType::Element { .. }) => row.tag == super::NODE_VT_ELEMENT,
                         Some(&crate::ValueType::PathUniverse(_, _)) => row.tag == super::NODE_VT_PATH_UNIVERSE,
+                        Some(&crate::ValueType::Path { .. }) => row.tag == super::NODE_VT_PATH,
                         Some(&crate::ValueType::List(_)) => row.tag == super::NODE_VT_LIST,
                         Some(&crate::ValueType::Session { .. }) => row.tag == super::NODE_VT_SESSION,
                         None => false,
@@ -1011,6 +1125,31 @@ mod tests
         let equiv = arena.value_path_equiv(path_type, map, map, alloc::sync::Arc::default());
         let product_path = arena.value_path_product(refl, refl);
         let transport = arena.computation_transport(product_path, pair);
+        let element_path = arena.value_type_path(unit_type, unit, unit);
+        let here = arena.value_here(unit);
+        let element_transport = arena.computation_path_transport(unit_type, here, unit);
+        let higher = arena.value_higher(
+            alloc::sync::Arc::new(crate::HigherProgram {
+                depth: crate::HigherDepth(1),
+                root: crate::LayerPosition(0),
+                layers: alloc::vec![
+                    crate::HigherLayer::Guard {
+                        tail: crate::LayerPosition(1),
+                    },
+                    crate::HigherLayer::Redirect(crate::LayerPosition(0)),
+                ],
+            }),
+            alloc::boxed::Box::from([unit]),
+        );
+        let evaluation = arena.value_higher_evaluation(
+            alloc::sync::Arc::from([crate::EvaluationDialogues::default()]),
+            alloc::boxed::Box::from([crate::EvaluationComponent {
+                left: unit,
+                right: literal,
+                evidence: here,
+            }]),
+        );
+        let related = arena.computation_related_application(here, (unit, literal), here, ret);
         let session = arena.value_type_session(
             alloc::sync::Arc::new(crate::session::Graph {
                 nodes: alloc::vec![crate::session::Node::End],
@@ -1073,6 +1212,12 @@ mod tests
             AnyNode::Value(equiv),
             AnyNode::Value(product_path),
             AnyNode::Computation(transport),
+            AnyNode::ValueType(element_path),
+            AnyNode::Value(here),
+            AnyNode::Computation(element_transport),
+            AnyNode::Value(higher),
+            AnyNode::Value(evaluation),
+            AnyNode::Computation(related),
             AnyNode::ValueType(arena.value_type_list(unit_type)),
             AnyNode::Value(nil),
             AnyNode::ValueType(session),
@@ -1108,6 +1253,10 @@ mod tests
                         | crate::Value::Constructor { ref fields, .. } => fields.len(),
                         | crate::Value::Record(ref fields) => fields.len(),
                         | crate::Value::Tuple(ref components) => components.len(),
+                        | crate::Value::Higher { ref evidence, .. } => evidence.len(),
+                        | crate::Value::HigherEvaluation { ref components, .. } => {
+                            components.len().saturating_mul(3)
+                        },
                         | _ => 0,
                     },
                     | None => 0,
@@ -1171,9 +1320,16 @@ mod tests
                 !reserved.contains(&tag),
                 "an assigned former cannot consume a reserved sharing byte"
             );
+            let identity = matches!(tag, 0x30 ..= 0x33 | 0x38 | 0x39);
             assert!(
-                !(0x30_u8 .. 0x50).contains(&tag),
-                "higher-field, funext and universe-flow reservations have no native formers"
+                identity || !(0x30_u8 .. 0x50).contains(&tag),
+                "only the assigned identity bytes leave the identity, funext and flow ranges"
+            );
+        }
+        for unassigned in (0x34_u8 ..= 0x37).chain(0x3A ..= 0x47).chain(0x48 ..= 0x4F) {
+            assert!(
+                !assigned[usize::from(unassigned)],
+                "the unassigned identity growth and the flow reservation name no former: {unassigned:#04x}"
             );
         }
     }
@@ -1203,6 +1359,7 @@ mod tests
         let expected: Vec<_> = (0_u8 ..= 0x1f)
             .filter(|tag| !matches!(tag, 0x01 | 0x0B))
             .chain(0x2a ..= 0x2e)
+            .chain([0x30, 0x31, 0x32, 0x33, 0x38, 0x39])
             .chain([0x50, 0x51, 0x52, 0x5a, 0x5b, 0x5c])
             .chain(0x5d ..= 0x64)
             .collect();

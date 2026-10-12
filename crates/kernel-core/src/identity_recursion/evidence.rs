@@ -461,6 +461,51 @@ impl Fibers
         arena: &mut TermArena,
     ) -> Result<ValueId, RelationError>
     {
+        let diagonal = self.diagonal(arena)?;
+        for &proof in &diagonal.universe {
+            super::Interpretation::UniverseIdentity.path(
+                arena,
+                proof,
+                crate::replay::ReplayBudget::DEFAULT,
+            )?;
+        }
+        Ok(diagonal.value)
+    }
+
+    /// Construct diagonal evidence without re-forming any universe
+    /// coordinate's native reflexivity through the ordinary checker.
+    ///
+    /// # Specification
+    /// - requires: nothing; a caller that has not checked every universe index
+    ///   at the level-zero universe checks each of [`Diagonal::universe`].
+    /// - ensures: the diagonal [`Self::inhabitant`] constructs, with every
+    ///   universe reflexivity it formed listed in construction order.
+    /// - provides: the reading the checking machine takes, which cannot
+    ///   re-enter itself to synthesize a nested reflexivity.
+    /// - fails: as [`Self::inhabitant`], less the universe re-formation.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a persisted reflexivity at a product of Bool and the
+    ///   universe pairs the unit diagonal with native path reflexivity.
+    /// - witness: `element_identity::tests::a_higher_field_checks_and_computes_square_symmetry`
+    #[spec(ensures: |ret| match (self.get(self.root()), ret.as_ref()) {
+        (Ok(Fiber::Empty), Err(&RelationError::Evidence)) | (Ok(Fiber::Function { .. }), Err(&RelationError::HigherEvaluationRequired)) | (Ok(Fiber::Certificate(..)), Err(&RelationError::HigherFieldRequired))
+        | (Ok(Fiber::Discrete(..) | Fiber::Suspended(..)), Err(&RelationError::NeutralFiber))
+        | (Ok(Fiber::Universe(..) | Fiber::Product(..)), Err(_)) | (Err(_), Err(&RelationError::Arena)) => true,
+        (Ok(Fiber::Unit), Ok(diagonal)) => diagonal.universe.is_empty() && matches!(arena.value(diagonal.value).and_then(gandr_kernel_term::Value::components), Some(&[])),
+        (Ok(Fiber::Universe(..)), Ok(diagonal)) => diagonal.universe == [diagonal.value] && matches!(arena.value(diagonal.value), Some(&gandr_kernel_term::Value::PathRefl(_))),
+        (Ok(Fiber::Product(..)), Ok(diagonal)) => matches!(arena.value(diagonal.value).and_then(gandr_kernel_term::Value::components), Some(&[_, _])),
+        _ => false,
+    })]
+    pub(crate) fn diagonal(
+        &self,
+        arena: &mut TermArena,
+    ) -> Result<Diagonal, RelationError>
+    {
         /// Pending proof-construction work.
         enum Task
         {
@@ -473,6 +518,7 @@ impl Fibers
         }
         let mut pending = Vec::from([Task::Visit(self.root())]);
         let mut values = Vec::new();
+        let mut universe = Vec::new();
         let mut completed = alloc::collections::BTreeMap::new();
         while let Some(task) = pending.pop() {
             let value = match task {
@@ -501,11 +547,7 @@ impl Fibers
                                 return Err(RelationError::CertificateOperationRequired);
                             }
                             let proof = arena.value_path_refl(left);
-                            super::Interpretation::UniverseIdentity.path(
-                                arena,
-                                proof,
-                                crate::replay::ReplayBudget::DEFAULT,
-                            )?;
+                            universe.push(proof);
                             proof
                         },
                         | Fiber::Certificate(..) => return Err(RelationError::HigherFieldRequired),
@@ -527,8 +569,19 @@ impl Fibers
             };
             values.push(value);
         }
-        values.pop().ok_or(RelationError::Arena)
+        let value = values.pop().ok_or(RelationError::Arena)?;
+        Ok(Diagonal { value, universe })
     }
+}
+
+/// Diagonal evidence and the universe reflexivities it formed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Diagonal
+{
+    /// The diagonal evidence.
+    pub value: ValueId,
+    /// Every universe reflexivity the evidence holds, in construction order.
+    pub universe: Vec<ValueId>,
 }
 
 /// Extract the value type of a substituted returner family.

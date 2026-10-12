@@ -200,6 +200,8 @@ pub enum TagSite
     ConstraintRelation,
     /// A fixpoint's termination claim.
     FixpointEvidence,
+    /// A higher-field layer kind, outside the guard and redirect alphabet.
+    HigherLayer,
 }
 
 impl fmt::Display for TagSite
@@ -241,6 +243,7 @@ impl fmt::Display for TagSite
             | Self::LiteralKind => "a literal kind",
             | Self::ConstraintRelation => "a constraint relation",
             | Self::FixpointEvidence => "a fixpoint evidence claim",
+            | Self::HigherLayer => "a higher-field layer kind",
         })
     }
 }
@@ -270,6 +273,13 @@ pub enum MalformedSite
     Session,
     /// A path dialogue word is outside the portable decision alphabet.
     PathEvidence,
+    /// An endpoint child of an element `Path` was not a value.
+    PathEndpoint,
+    /// A motive child of an element transport was not a value type, so it
+    /// was not a type-level function of the endpoint.
+    TransportMotive,
+    /// A higher-field program named a layer position it does not hold.
+    HigherLayer,
     /// The magic did not match a gandr kernel export.
     Header,
     /// A varint was overlong — that is, non-minimal — or exceeded the 64-bit
@@ -343,6 +353,9 @@ impl fmt::Display for MalformedSite
         f.write_str(match *self {
             | Self::Session => "session inline data was malformed",
             | Self::PathEvidence => "a path dialogue word was invalid",
+            | Self::PathEndpoint => "a path endpoint was not a value",
+            | Self::TransportMotive => "a transport motive was not a value type",
+            | Self::HigherLayer => "a higher-field layer position was out of range",
             | Self::Header => "the artifact magic did not match",
             | Self::Varint => "a varint was overlong or out of range",
             | Self::IndexRange => "a decoded index did not fit its width",
