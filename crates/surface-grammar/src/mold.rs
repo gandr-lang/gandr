@@ -951,7 +951,10 @@ impl MoldTable
     {
         let index =
             usize::try_from(u32::from(id)).map_err(|_error| PbgError::UnknownMold { id })?;
-        self.molds.get(index).ok_or(PbgError::UnknownMold { id })
+        match self.molds.get(index) {
+            | Some(def) => Ok(def),
+            | None => Err(PbgError::UnknownMold { id }),
+        }
     }
 
     /// The rule mold `id` belongs to, among the `rules` the table was built
@@ -986,12 +989,14 @@ impl MoldTable
     {
         let index =
             usize::try_from(u32::from(id)).map_err(|_error| PbgError::UnknownMold { id })?;
-        let owner = self
-            .owners
-            .get(index)
-            .copied()
-            .ok_or(PbgError::UnknownMold { id })?;
-        rules.get(owner).ok_or(PbgError::UnknownMold { id })
+        let Some(&owner) = self.owners.get(index)
+        else {
+            return Err(PbgError::UnknownMold { id });
+        };
+        match rules.get(owner) {
+            | Some(rule) => Ok(rule),
+            | None => Err(PbgError::UnknownMold { id }),
+        }
     }
 
     /// The precedence bounds of mold `id`.
@@ -1024,10 +1029,10 @@ impl MoldTable
     {
         let index =
             usize::try_from(u32::from(id)).map_err(|_error| PbgError::UnknownMold { id })?;
-        self.bounds
-            .get(index)
-            .copied()
-            .ok_or(PbgError::UnknownMold { id })
+        match self.bounds.get(index) {
+            | Some(&bounds) => Ok(bounds),
+            | None => Err(PbgError::UnknownMold { id }),
+        }
     }
 
     /// The symbols crossed stepping out of `rctx` in direction `dir`.
@@ -1061,10 +1066,10 @@ impl MoldTable
     {
         let index =
             usize::try_from(u32::from(rctx)).map_err(|_error| PbgError::UnknownRCtx { rctx })?;
-        let data = self
-            .rctxs
-            .get(index)
-            .ok_or(PbgError::UnknownRCtx { rctx })?;
+        let Some(data) = self.rctxs.get(index)
+        else {
+            return Err(PbgError::UnknownRCtx { rctx });
+        };
         Ok(match dir {
             | Dir::Left => &data.left_steps,
             | Dir::Right => &data.right_steps,
