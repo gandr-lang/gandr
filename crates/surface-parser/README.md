@@ -17,6 +17,7 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
   - [A tied bracket is read past its closer](#a-tied-bracket-is-read-past-its-closer)
   - [Interchangeable openers share one window](#interchangeable-openers-share-one-window)
   - [A shell string's text is its own lexeme](#a-shell-strings-text-is-its-own-lexeme)
+  - [A token's labels are derived once and held inline](#a-tokens-labels-are-derived-once-and-held-inline)
 - [A closer with a required operand after it is a mid tile](#a-closer-with-a-required-operand-after-it-is-a-mid-tile)
 - [A required tail runs as far as its group yields](#a-required-tail-runs-as-far-as-its-group-yields)
 - [The tree the melder commits](#the-tree-the-melder-commits)
@@ -53,7 +54,7 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
 
 - `label`, `Token` and `Lexeme`: the total lossless labeler. Witnesses: `label::tests::span_tiling_is_total_and_gapless`, `label::tests::stray_bytes_are_unknown_never_a_panic`, `label::tests::multi_byte_operators_munch_maximally`, `label::tests::bridge_tiles_end_where_their_letter_does`.
 - `Labeling`: a source's tokens with where the labeler stood within a mode, and `Labeling::relabel`, the labeling of an edit made from the unedited source's by scanning only around the edit. Witnesses: `label::tests::an_edit_relabels_as_the_edited_source_labels`, `label::tests::a_relabel_restarts_before_what_a_token_read`.
-- `Molder`, `candidate_labels`, `CandidateLabel` and `TokenText`: per-token mold choice by least obligation delta, deterministic across runs. Witnesses: `mold::tests::picks_the_obligation_minimum_mold`, `mold::tests::molding_is_deterministic_across_runs`, `mold::tests::unmoldable_token_takes_the_unmolded_path`.
+- `Molder`, `candidate_labels`, `TokenLabels`, `CandidateLabel` and `TokenText`: per-token mold choice by least obligation delta, deterministic across runs. Witnesses: `mold::tests::picks_the_obligation_minimum_mold`, `mold::tests::molding_is_deterministic_across_runs`, `mold::tests::unmoldable_token_takes_the_unmolded_path`.
 - `TokenIndex`, `TokenRun`, `Molder::mold_run` and `Molder::form_runs`: a stream molded run by run, each run reading past its end as lookahead, and the runs a stream splits into at its predicted top-level declaration boundaries. Witnesses: `mold::tests::runs_mold_as_the_whole_stream`, `parse::tests::a_source_splits_before_each_declaration_head`.
 - `MeldState`, `MoldedTile`, `TileText`, `SpaceText` and `MeldError`: the total push machine and its commit into a molded tree. Witnesses: `meld::tests::infix_reduces_after_precedence`, `meld::tests::brackets_close_on_the_matching_delimiter`, `meld::tests::a_bracket_before_a_required_tail_keeps_its_form_open`, `meld::tests::a_foreign_source_is_refused_at_commit`, `tests::contracts::arbitrary_real_mold_streams_parse_totally`, `tests::contracts::trace_precedence_climbs_like_figure_23`.
 - Comment placement: `commit` makes each comment a child of the node it describes, and leaves whitespace and a shebang under the root. Witnesses: `meld::tests::each_comment_is_owned_by_the_node_it_describes`, `tests::acceptance::comments_reach_no_digest_and_lose_no_byte`.
@@ -132,7 +133,7 @@ The labeler carries a little state between tokens — inside a string, a shell b
 
 Every survivor of the pre-filter used to be dry-run for its key, the ties dry-run again for their completion, and every tied opener's lookahead window molded to its end; where the pre-filter left nothing — a token inside a lookahead window, mostly, whose admissible menu is empty — the whole menu, up to 186 molds for a `)`, took that path. Measured over the six longest corpus sources, a token cost 61 key dry-runs, 12 completions, 73 marks each copying the slope, and 128 allocations; the per-token cost ran to tens of microseconds where a parser spends a tenth of one.
 
-The choice is unchanged, and the work to reach it is bounded by the least key found. A candidate's key is at least a floor read without a dry-run — its rank bits and an empty delta — so candidates are visited floor by floor and the search stops once the least key found lies below every floor left. Pass two stops at the first empty completion, which nothing beats. Each window after the first is bounded by the best window delta so far, and is abandoned the moment its own delta reaches that bound, since a window's delta never shrinks as it molds. A dry-run no longer copies the slope: a `Mark` records lengths, and the slope edits made under a live mark go to a trail that `rollback_to` undoes newest first, restoring only the cells the dry-run touched. The completion delta is counted without collecting the obligations, a push never builds a `MoldedTile`, and the grammar answers adjacency and membership from per-mold runs and flags. Over the six longest sources a token now costs 14 key dry-runs, 12 completions, 26 marks restoring 1.2 KB, and 7 allocations; over the corpus, 9, 7, 16 and 7.
+The choice is unchanged, and the work to reach it is bounded by the least key found. A candidate's key is at least a floor read without a dry-run — its rank bits and an empty delta — so candidates are visited floor by floor and the search stops once the least key found lies below every floor left. Pass two stops at the first empty completion, which nothing beats. Each window after the first is bounded by the best window delta so far, and is abandoned the moment its own delta reaches that bound, since a window's delta never shrinks as it molds. A dry-run no longer copies the slope: a `Mark` records lengths, and the slope edits made under a live mark go to a trail that `rollback_to` undoes newest first, restoring only the cells the dry-run touched. The completion delta is counted without collecting the obligations, a push never builds a `MoldedTile`, and the grammar answers adjacency and membership from per-mold runs and flags. Over the six longest sources a token now costs 14 key dry-runs, 12 completions and 26 marks restoring 1.2 KB; over the corpus, 9, 7 and 16.
 
 The tree and the obligations are identical, node by node, on every corpus source and on each one cut short and with one significant token dropped at eight positions.
 
@@ -170,6 +171,13 @@ A `"` opens an expression string in code and a double-quoted string in a shell b
 
 - Alternatives: a distinct label for the shell `"` itself, which is a grammar change for what the labeler already knows.
 - Reversal: a string form that admits both interiors, which would take both labels again.
+
+### A token's labels are derived once and held inline
+
+A token's candidate labels feed three steps: settling the holes it cannot continue, gathering its menu, and, past a tie, refuting the openers it cannot follow. `candidate_labels` returns them as `TokenLabels`, an array of at most six held inline, and the molder derives them once per token and passes them to each step. Before, each step derived them again into a fresh vector, two or three heap allocations per token. A parse of the corpus now makes 2.1 heap allocations per significant token rather than 5.7, and takes 7% less time; the trees are unchanged.
+
+- Alternatives: a `smallvec`, which is the same array behind a dependency; caching labels per token across windows, which re-reads a token's labels no cheaper than deriving them from its lexeme.
+- Reversal: a lexeme whose menu outgrows the array; `candidate_labels`'s postcondition bounds each menu at four labels, so such a lexeme fails that check before it can lose a label.
 
 ## A closer with a required operand after it is a mid tile
 
