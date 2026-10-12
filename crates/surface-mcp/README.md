@@ -22,7 +22,7 @@ The gandr Model Context Protocol server: the documents the engine hub holds open
 
 ## Synopsis
 
-**What.** `gandr-surface-mcp` serves the Model Context Protocol's tools and resources over the engine hub's shared workspace. Six tools: `diagnostics` (the last diagnostics published for an open document), `documents` (every open document and its version), `outline` (its declarations, nested), `expected_syntax` (the syntax the parser expects at a position, as snippets), `trial` (candidate fills judged without changing the document, best first) and `type_of` (the type and documentation of the declaration named at a position). One resource per open document, `gandr://<path>/diagnostics`, readable and subscribable. On Unix the hub hands it every connection whose first byte is `{`; `gandr mcp` relays a model host's standard streams to that hub.
+**What.** `gandr-surface-mcp` serves the Model Context Protocol's tools and resources over the engine hub's shared workspace. Seven tools: `diagnostics` (the last diagnostics published for an open document), `documents` (every open document and its version), `outline` (its declarations, nested), `expected_syntax` (the syntax the parser expects at a position, as snippets), `trial` (candidate fills judged without changing the document, best first), `propose` (a fill offered to the document's editors, kept once it checks) and `type_of` (the type and documentation of the declaration named at a position). One resource per open document, `gandr://<path>/diagnostics`, readable and subscribable. On Unix the hub hands it every connection whose first byte is `{`; `gandr mcp` relays a model host's standard streams to that hub.
 
 **Why.** A model writing gandr should see what the author's editor shows, at the version the editor last synchronised, without a second checker that could disagree with the first, and without re-running the pipeline on every read.
 
@@ -38,7 +38,7 @@ The gandr Model Context Protocol server: the documents the engine hub holds open
 ## Provided features
 
 - `Connection`, `MODERN` and `LEGACY`: either era's opening, the tool list, resource listing and reading, both subscription styles and their notifications, and the protocol's error codes. Witnesses: `connection::tests::each_era_opens_and_lists_the_tools`, `connection::tests::an_unsupported_version_names_the_supported_ones`, `connection::tests::resources_name_each_documents_diagnostics`, `connection::tests::subscriptions_hear_only_their_documents`.
-- The six tools and `ToolRefusal`: each answered off the shared workspace, a refusal answered as a tool error the model reads. Witnesses: `connection::tests::each_tool_answers_through_the_wire`, `connection::tests::a_trial_ranks_fills_through_the_wire`.
+- The seven tools and `ToolRefusal`: each answered off the shared workspace, a refusal answered as a tool error the model reads. Witnesses: `connection::tests::each_tool_answers_through_the_wire`, `connection::tests::a_trial_ranks_fills_through_the_wire`, `connection::tests::a_proposal_reaches_the_editor_once_it_checks`.
 - `serve`, on Unix: a model's connection to the hub, notified as editors' synchronisations publish. Witness: `face::tests::an_edit_through_the_hub_notifies_its_subscribers`.
 - `relay`, on Unix: a host's standard streams carried to the hub as lines. Witnesses: `face::tests::a_relay_carries_a_model_session`, `cli::cli::mcp_reads_what_an_editor_holds_open`.
 
@@ -47,7 +47,6 @@ The gandr Model Context Protocol server: the documents the engine hub holds open
 - The goals at a document's holes with their spelled types, once the language server answers them.
 - Normalisation and conversion queries, once the session exposes them.
 - The explanation of a refusal, beside the verbosity levels of the diagnostics renderer.
-- Proposals a model makes for the editor to apply.
 - A transport beside the hub's socket: streamable HTTP, and the authorisation it carries.
 
 ## Examples
@@ -59,7 +58,7 @@ use serde_json::json;
 
 let mut connection = Connection::default();
 let replies = connection.handle(
-    &Workspace::default(),
+    &mut Workspace::default(),
     &json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }),
 );
 assert_eq!(replies[0]["result"]["tools"][0]["name"], "diagnostics");
@@ -102,6 +101,8 @@ printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"d
 **Alternatives.** Candidates as whole texts alone would make a model copy the document once per candidate for a fill of a few characters. A target named by a declaration rather than a range would need a resolution step from name to span that the editor's range already gives. No cap would let one call hold the hub's lock for as long as a model cares to send; 32 is past the batch the session's measurements were taken at (8 and 16), and a batch at 16 candidates across the performance cores already costs a fraction of a model turn.
 
 **Reversal.** A model host measured to send larger batches raises the cap, or moves the trial off the hub's lock onto a copy of the session; a face that names holes by their goal resolves the range from the goal.
+
+**Proposals.** `propose` is the trial of one fill that, when it checks, is kept beside the document for its editors (the language server's `Workspace::propose`). A fill that does not check is answered `kept: false` with its diagnostics rather than refused, so the model reads why in the same call; a stale version or a document the hub does not hold is a tool error, since there is nothing to show. The language server's README records what checking means and how the editor shows a kept fill.
 
 ## One socket, two faces
 

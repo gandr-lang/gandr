@@ -36,6 +36,8 @@ mod capabilities
                     "hoverProvider": true,
                     "documentFormattingProvider": true,
                     "documentRangeFormattingProvider": true,
+                    "codeLensProvider": {"resolveProvider": false},
+                    "codeActionProvider": true,
                 },
                 "serverInfo": {"name": "gandr", "version": env!("CARGO_PKG_VERSION")},
             }),

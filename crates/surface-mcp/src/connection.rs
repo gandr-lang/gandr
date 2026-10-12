@@ -52,7 +52,8 @@ const DIAGNOSTICS: &str = "/diagnostics";
 const INSTRUCTIONS: &str = "Reads the documents gandr's engine hub holds open: their diagnostics, \
                             outline, the syntax expected at a position and the type of a \
                             declaration. `trial` judges up to 32 candidate fills of a range at \
-                            once without changing the document and ranks them, best first. \
+                            once without changing the document and ranks them, best first; \
+                            `propose` offers one to the editors, shown only once it checks. \
                             Every tool result carries `changes`: the documents opened, changed \
                             or closed since this connection's previous call.";
 
@@ -114,7 +115,7 @@ impl Connection
     #[must_use]
     pub fn handle(
         &mut self,
-        workspace: &Workspace,
+        workspace: &mut Workspace,
         message: &Value,
     ) -> Vec<Value>
     {
@@ -212,7 +213,7 @@ impl Connection
     /// trivial.
     fn request(
         &mut self,
-        workspace: &Workspace,
+        workspace: &mut Workspace,
         id: &Value,
         object: &Map<String, Value>,
     ) -> Value
@@ -276,7 +277,7 @@ impl Connection
     /// trivial.
     fn call(
         &mut self,
-        workspace: &Workspace,
+        workspace: &mut Workspace,
         params: &Value,
     ) -> Value
     {
@@ -641,7 +642,7 @@ mod tests
     /// trivial.
     fn ask(
         connection: &mut Connection,
-        workspace: &Workspace,
+        workspace: &mut Workspace,
         message: &Value,
     ) -> Value
     {
@@ -656,7 +657,7 @@ mod tests
     /// trivial.
     fn call(
         connection: &mut Connection,
-        workspace: &Workspace,
+        workspace: &mut Workspace,
         tool: &Value,
         arguments: &Value,
     ) -> Value
@@ -682,13 +683,13 @@ mod tests
     #[test]
     fn each_era_opens_and_lists_the_tools()
     {
-        let workspace = Workspace::default();
+        let mut workspace = Workspace::default();
         let mut connection = Connection::default();
         let legacy = ask(
             &mut connection,
-            &workspace,
+            &mut workspace,
             &json!({ "jsonrpc": "2.0", "id": 1_i32, "method": "initialize",
-                "params": { "protocolVersion": "2025-06-18", "capabilities": {} } }),
+            "params": { "protocolVersion": "2025-06-18", "capabilities": {} } }),
         );
         assert_eq!(
             legacy.pointer("/result/protocolVersion"),
@@ -704,9 +705,9 @@ mod tests
         );
         let unknown = ask(
             &mut connection,
-            &workspace,
+            &mut workspace,
             &json!({ "jsonrpc": "2.0", "id": 2_i32, "method": "initialize",
-                "params": { "protocolVersion": "1999-01-01" } }),
+            "params": { "protocolVersion": "1999-01-01" } }),
         );
         assert_eq!(
             unknown.pointer("/result/protocolVersion"),
@@ -716,7 +717,7 @@ mod tests
         let meta = json!({ "io.modelcontextprotocol/protocolVersion": MODERN });
         let discovered = ask(
             &mut connection,
-            &workspace,
+            &mut workspace,
             &json!({ "jsonrpc": "2.0", "id": 3_i32, "method": "server/discover", "params": { "_meta": meta } }),
         );
         assert_eq!(
@@ -725,7 +726,7 @@ mod tests
         );
         let listed = ask(
             &mut connection,
-            &workspace,
+            &mut workspace,
             &json!({ "jsonrpc": "2.0", "id": 4_i32, "method": "tools/list", "params": { "_meta": meta } }),
         );
         let names: Vec<&str> = listed
@@ -740,13 +741,14 @@ mod tests
             "documents",
             "expected_syntax",
             "outline",
+            "propose",
             "trial",
             "type_of"
         ]);
         assert_eq!(
             ask(
                 &mut connection,
-                &workspace,
+                &mut workspace,
                 &json!({ "jsonrpc": "2.0", "id": 5_i32, "method": "ping" })
             )
             .pointer("/result/resultType"),
@@ -755,14 +757,14 @@ mod tests
         assert_eq!(
             ask(
                 &mut connection,
-                &workspace,
+                &mut workspace,
                 &json!({ "jsonrpc": "2.0", "id": 6_i32, "method": "prompts/list" })
             )
             .pointer("/error/code"),
             Some(&json!(-32_601_i32))
         );
         assert_eq!(
-            ask(&mut connection, &workspace, &json!(3_u8)),
+            ask(&mut connection, &mut workspace, &json!(3_u8)),
             json!({ "jsonrpc": "2.0", "id": null, "error": { "code": -32_600_i32, "message": "Invalid Request" } })
         );
         assert_eq!(
@@ -772,7 +774,7 @@ mod tests
         assert!(
             connection
                 .handle(
-                    &workspace,
+                    &mut workspace,
                     &json!({ "jsonrpc": "2.0", "method": "notifications/initialized" })
                 )
                 .is_empty(),
@@ -781,7 +783,7 @@ mod tests
         assert!(
             connection
                 .handle(
-                    &workspace,
+                    &mut workspace,
                     &json!({ "jsonrpc": "2.0", "id": 7_i32, "result": {} })
                 )
                 .is_empty(),
@@ -794,9 +796,9 @@ mod tests
     {
         let reply = ask(
             &mut Connection::default(),
-            &Workspace::default(),
+            &mut Workspace::default(),
             &json!({ "jsonrpc": "2.0", "id": 1_i32, "method": "tools/list",
-                "params": { "_meta": { "io.modelcontextprotocol/protocolVersion": "1900-01-01" } } }),
+            "params": { "_meta": { "io.modelcontextprotocol/protocolVersion": "1900-01-01" } } }),
         );
         assert_eq!(reply.pointer("/error/code"), Some(&json!(-32_022_i32)));
         assert_eq!(
@@ -826,7 +828,12 @@ mod tests
             &mut workspace,
             &opened(&uri, &json!(1_i32), &json!("def f = 42 ;\n")),
         );
-        let documents = call(&mut connection, &workspace, &json!("documents"), &json!({}));
+        let documents = call(
+            &mut connection,
+            &mut workspace,
+            &json!("documents"),
+            &json!({}),
+        );
         assert_eq!(
             documents.pointer("/structuredContent/documents"),
             Some(&json!([{ "uri": uri, "version": 1_i32 }]))
@@ -837,7 +844,12 @@ mod tests
             "the first call sees every open document as changed"
         );
         let named = json!({ "uri": uri });
-        let diagnostics = call(&mut connection, &workspace, &json!("diagnostics"), &named);
+        let diagnostics = call(
+            &mut connection,
+            &mut workspace,
+            &json!("diagnostics"),
+            &named,
+        );
         assert_eq!(diagnostics.pointer("/isError"), Some(&json!(false)));
         assert_eq!(
             diagnostics.pointer("/structuredContent/version"),
@@ -852,26 +864,26 @@ mod tests
             Some(&json!({ "changed": [], "closed": [] })),
             "nothing changed since the last call"
         );
-        let outline = call(&mut connection, &workspace, &json!("outline"), &named);
+        let outline = call(&mut connection, &mut workspace, &json!("outline"), &named);
         assert_eq!(
             outline.pointer("/structuredContent/symbols/0/name"),
             Some(&json!("f"))
         );
         let at = json!({ "uri": uri, "line": 0_u32, "character": 4_u32 });
-        let typed = call(&mut connection, &workspace, &json!("type_of"), &at);
+        let typed = call(&mut connection, &mut workspace, &json!("type_of"), &at);
         assert_eq!(
             typed.pointer("/structuredContent/hover/contents/value"),
             Some(&json!("```gandr\nf : Integer\n```"))
         );
         let expected = call(
             &mut connection,
-            &workspace,
+            &mut workspace,
             &json!("expected_syntax"),
             &json!({ "uri": uri, "line": 0_u32, "character": 7_u32 }),
         );
         assert_eq!(expected.pointer("/isError"), Some(&json!(false)));
         assert!(expected.pointer("/structuredContent/completions").is_some());
-        let unplaced = call(&mut connection, &workspace, &json!("type_of"), &named);
+        let unplaced = call(&mut connection, &mut workspace, &json!("type_of"), &named);
         assert_eq!(
             unplaced.pointer("/isError"),
             Some(&json!(true)),
@@ -882,7 +894,12 @@ mod tests
             &mut workspace,
             &changed(&uri, &json!(2_i32), &json!("def g = missing ;\n")),
         );
-        let refused = call(&mut connection, &workspace, &json!("diagnostics"), &named);
+        let refused = call(
+            &mut connection,
+            &mut workspace,
+            &json!("diagnostics"),
+            &named,
+        );
         assert_eq!(
             refused.pointer("/structuredContent/version"),
             Some(&json!(2_i32))
@@ -901,7 +918,7 @@ mod tests
         );
         let stranger = call(
             &mut connection,
-            &workspace,
+            &mut workspace,
             &json!("diagnostics"),
             &json!({ "uri": "file:///tmp/elsewhere.gandr" }),
         );
@@ -912,7 +929,7 @@ mod tests
                 .and_then(Value::as_str)
                 .is_some_and(|error| error.contains("not open in the hub"))
         );
-        let unknown = call(&mut connection, &workspace, &json!("normalise"), &named);
+        let unknown = call(&mut connection, &mut workspace, &json!("normalise"), &named);
         assert_eq!(unknown.pointer("/isError"), Some(&json!(true)));
         sync(
             &mut server,
@@ -920,10 +937,79 @@ mod tests
             &json!({ "jsonrpc": "2.0", "method": "textDocument/didClose",
                 "params": { "textDocument": { "uri": uri } } }),
         );
-        let closed = call(&mut connection, &workspace, &json!("documents"), &json!({}));
+        let closed = call(
+            &mut connection,
+            &mut workspace,
+            &json!("documents"),
+            &json!({}),
+        );
         assert_eq!(
             closed.pointer("/structuredContent/changes"),
             Some(&json!({ "changed": [], "closed": [uri] }))
+        );
+    }
+
+    #[test]
+    fn a_proposal_reaches_the_editor_once_it_checks()
+    {
+        let (mut workspace, mut server) = editor();
+        let mut connection = Connection::default();
+        let uri = json!("file:///tmp/proposal.gandr");
+        sync(
+            &mut server,
+            &mut workspace,
+            &opened(
+                &uri,
+                &json!(2_i32),
+                &json!("def f : Integer ;\ndef f = missing ;\n"),
+            ),
+        );
+        let hole = json!({ "start": { "line": 1_u32, "character": 8_u32 },
+            "end": { "line": 1_u32, "character": 15_u32 } });
+        let failing = call(
+            &mut connection,
+            &mut workspace,
+            &json!("propose"),
+            &json!({ "uri": uri, "version": 2_i32, "range": hole, "text": "\"one\"" }),
+        );
+        assert_eq!(failing.pointer("/isError"), Some(&json!(false)));
+        assert_eq!(
+            failing.pointer("/structuredContent/kept"),
+            Some(&json!(false))
+        );
+        assert_eq!(
+            failing
+                .pointer("/structuredContent/diagnostics")
+                .and_then(Value::as_array)
+                .map(Vec::len),
+            Some(1_usize),
+            "a fill that does not check is answered with why"
+        );
+        let stale = call(
+            &mut connection,
+            &mut workspace,
+            &json!("propose"),
+            &json!({ "uri": uri, "version": 1_i32, "range": hole, "text": "42" }),
+        );
+        assert_eq!(stale.pointer("/isError"), Some(&json!(true)));
+        let kept = call(
+            &mut connection,
+            &mut workspace,
+            &json!("propose"),
+            &json!({ "uri": uri, "version": 2_i32, "range": hole, "text": "42",
+                "explanation": "the answer" }),
+        );
+        assert_eq!(kept.pointer("/structuredContent/kept"), Some(&json!(true)));
+        let lenses = workspace.query(&Body::from(
+            json!({ "jsonrpc": "2.0", "id": 1_i32, "method": "textDocument/codeLens",
+                "params": { "textDocument": { "uri": uri } } })
+            .to_string()
+            .into_bytes(),
+        ));
+        assert_eq!(
+            lenses.pointer("/result/0/command/title"),
+            Some(&json!("1 checked fill")),
+            "the editor sees the one fill that checked"
         );
     }
 
@@ -946,7 +1032,7 @@ mod tests
             "end": { "line": 1_u32, "character": 15_u32 } });
         let tried = call(
             &mut connection,
-            &workspace,
+            &mut workspace,
             &json!("trial"),
             &json!({ "uri": uri, "range": hole, "candidates": ["\"one\"", "42"] }),
         );
@@ -979,7 +1065,7 @@ mod tests
         );
         let whole = call(
             &mut connection,
-            &workspace,
+            &mut workspace,
             &json!("trial"),
             &json!({ "uri": uri, "candidates": ["def f : Integer ;\nret 3\n"] }),
         );
@@ -996,7 +1082,8 @@ mod tests
             json!({ "uri": uri, "candidates": ["42"], "range": "the hole" }),
         ] {
             assert_eq!(
-                call(&mut connection, &workspace, &json!("trial"), &refused).pointer("/isError"),
+                call(&mut connection, &mut workspace, &json!("trial"), &refused)
+                    .pointer("/isError"),
                 Some(&json!(true)),
                 "{refused}"
             );
@@ -1004,7 +1091,7 @@ mod tests
         assert_eq!(
             call(
                 &mut connection,
-                &workspace,
+                &mut workspace,
                 &json!("diagnostics"),
                 &json!({ "uri": uri })
             )
@@ -1032,7 +1119,7 @@ mod tests
         );
         let listed = ask(
             &mut connection,
-            &workspace,
+            &mut workspace,
             &json!({ "jsonrpc": "2.0", "id": 1_i32, "method": "resources/list" }),
         );
         assert_eq!(
@@ -1041,9 +1128,9 @@ mod tests
         );
         let read = ask(
             &mut connection,
-            &workspace,
+            &mut workspace,
             &json!({ "jsonrpc": "2.0", "id": 2_i32, "method": "resources/read",
-                "params": { "uri": "gandr:///tmp/mcp.gandr/diagnostics" } }),
+            "params": { "uri": "gandr:///tmp/mcp.gandr/diagnostics" } }),
         );
         let text: Value = serde_json::from_str(
             read.pointer("/result/contents/0/text")
@@ -1062,7 +1149,7 @@ mod tests
             assert_eq!(
                 ask(
                     &mut connection,
-                    &workspace,
+                    &mut workspace,
                     &json!({ "jsonrpc": "2.0", "id": 3_i32, "method": "resources/read",
                         "params": { "uri": unknown } }),
                 )
@@ -1075,15 +1162,15 @@ mod tests
     #[test]
     fn subscriptions_hear_only_their_documents()
     {
-        let workspace = Workspace::default();
+        let mut workspace = Workspace::default();
         let mut connection = Connection::default();
         let first = gandr_surface_lsp::DocumentUri::from("file:///tmp/first.gandr");
         let second = gandr_surface_lsp::DocumentUri::from("file:///tmp/second.gandr");
         let subscribed = ask(
             &mut connection,
-            &workspace,
+            &mut workspace,
             &json!({ "jsonrpc": "2.0", "id": 1_i32, "method": "resources/subscribe",
-                "params": { "uri": "gandr:///tmp/first.gandr/diagnostics" } }),
+            "params": { "uri": "gandr:///tmp/first.gandr/diagnostics" } }),
         );
         assert_eq!(
             subscribed.pointer("/result/resultType"),
@@ -1091,13 +1178,13 @@ mod tests
         );
         let acknowledged = ask(
             &mut connection,
-            &workspace,
+            &mut workspace,
             &json!({ "jsonrpc": "2.0", "id": 7_i32, "method": "subscriptions/listen", "params": {
-                "_meta": { "io.modelcontextprotocol/protocolVersion": MODERN },
-                "notifications": {
-                    "toolsListChanged": true,
-                    "resourceSubscriptions": ["gandr:///tmp/second.gandr/diagnostics", "file:///tmp/x"],
-                } } }),
+            "_meta": { "io.modelcontextprotocol/protocolVersion": MODERN },
+            "notifications": {
+                "toolsListChanged": true,
+                "resourceSubscriptions": ["gandr:///tmp/second.gandr/diagnostics", "file:///tmp/x"],
+            } } }),
         );
         assert_eq!(
             acknowledged,
@@ -1125,15 +1212,15 @@ mod tests
         );
         drop(ask(
             &mut connection,
-            &workspace,
+            &mut workspace,
             &json!({ "jsonrpc": "2.0", "id": 2_i32, "method": "resources/unsubscribe",
-                "params": { "uri": "gandr:///tmp/first.gandr/diagnostics" } }),
+            "params": { "uri": "gandr:///tmp/first.gandr/diagnostics" } }),
         ));
         assert!(connection.changed(&first).is_empty());
         assert!(
             connection
                 .handle(
-                    &workspace,
+                    &mut workspace,
                     &json!({ "jsonrpc": "2.0", "method": "notifications/cancelled",
                         "params": { "requestId": 7_i32 } })
                 )
