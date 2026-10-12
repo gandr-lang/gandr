@@ -305,7 +305,7 @@ pub fn digest_of(
         put(NODE_DOMAIN);
         put(&[u8::from(label.tag())]);
         match label {
-            | NodeLabel::Wald | NodeLabel::Space => {},
+            | NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => {},
             | NodeLabel::Meld(mold) | NodeLabel::Tile(mold) => {
                 put(&u32::from(mold).to_le_bytes());
             },

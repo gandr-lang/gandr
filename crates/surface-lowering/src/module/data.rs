@@ -259,6 +259,10 @@ impl<'source> Collector<'_, 'source>
         let name = self.name_of(named);
         let slot = self.admit(Container::TopLevel, name, declaration, named);
         self.collected.own(declaration.node, slot);
+        self.document(slot, declaration.node, named.span.start(), declaration.node);
+        for &block in decorations {
+            self.document(slot, block.node, block.span.end(), declaration.node);
+        }
         let mut attributes = Vec::new();
         let mut attributed = Ok(());
         for &block in decorations {

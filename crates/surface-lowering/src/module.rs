@@ -83,6 +83,7 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::NameSegment;
 use gandr_kernel_term::StructuredName;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeDigest;
 use gandr_surface_syntax::NodeIndex;
@@ -92,6 +93,7 @@ use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
 use crate::attribute::AttributeTable;
+use crate::doc::Documentation;
 use crate::error::AscriptionForm;
 use crate::error::FormFault;
 use crate::error::FragmentBoundary;
@@ -731,6 +733,20 @@ pub struct WrittenAttribute<'source>
     pub decorates: NodeIndex,
 }
 
+/// One piece of documentation a declaration form wrote before itself: a run
+/// of `///` lines or a `doc("…")` entry, grouped by the parser.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct WrittenDoc
+{
+    /// The documentation node.
+    pub at: Placed,
+    /// The declaration form it documents.
+    pub documents: NodeIndex,
+}
+
 /// One name's declarations, as the collection pass found them.
 ///
 /// # Specification
@@ -775,6 +791,9 @@ pub struct DeclarationSlot<'source>
     pub definition: Maybe<Half, declaration_half::Absent>,
     /// The attributes decorating this name's declarations, in source order.
     pub attributes: Vec<WrittenAttribute<'source>>,
+    /// The documentation written for this name's declarations, in source
+    /// order.
+    pub docs: Vec<WrittenDoc>,
     /// The lowest-positioned refusal found for this name so far.
     pub refusal: Maybe<(NodeIndex, LoweringRefusal<'source>), slot_refusal::Absent>,
 }
@@ -1565,6 +1584,10 @@ impl<'source> Collector<'_, 'source>
                 attributed = self.decoration(block, child.node, &mut attributes);
             }
         }
+        self.document(position, child.node, named.span.start(), child.node);
+        for &block in decorations {
+            self.document(position, block.node, block.span.end(), child.node);
+        }
         if let Some(slot) = self.collected.slots.get_mut(usize::from(position)) {
             if slot.introduced_by.node == child.node {
                 slot.signature = Maybe::Present(Half {
@@ -1915,6 +1938,7 @@ impl<'source> Collector<'_, 'source>
         let name = self.name_of(named);
         let slot = self.admit(container, name, declaration, named);
         self.collected.own(declaration.node, slot);
+        self.document(slot, declaration.node, named.span.start(), declaration.node);
         let tail = if let Maybe::Present(repaired) = pieces.repair {
             Tail::Refused(repaired.refusal(FormName::DECLARATION))
         }
@@ -2408,6 +2432,7 @@ impl<'source> Collector<'_, 'source>
             signature: Maybe::Absent(declaration_half::Absent::Unwritten),
             definition: Maybe::Absent(declaration_half::Absent::Unwritten),
             attributes: Vec::new(),
+            docs: Vec::new(),
             refusal: Maybe::Absent(slot_refusal::Absent::Unrefused),
         });
         self.collected.by_name.insert((container, name), minted);
@@ -2483,6 +2508,7 @@ impl<'source> Collector<'_, 'source>
                 operand: Operand::Member(target),
             }),
             attributes: Vec::new(),
+            docs: Vec::new(),
             refusal: Maybe::Absent(slot_refusal::Absent::Unrefused),
         };
         self.collected.slots.push(witness);
@@ -2519,6 +2545,56 @@ impl<'source> Collector<'_, 'source>
         self.tree
             .fragment(tile.node)
             .map_or_else(|| SurfaceName::from(""), SurfaceName::from)
+    }
+
+    /// File under `slot` the documentation `holder` holds, ending at or before
+    /// `before`, as documenting the declaration form at `documents`.
+    ///
+    /// # Specification
+    /// - requires: `holder` is the declaration form at `documents`, or an
+    ///   attribute block standing before it.
+    /// - ensures: each [`NodeLabel::Doc`] child of `holder` whose span ends at
+    ///   or before `before` joins the slot's documentation, in child order; a
+    ///   documentation node after `before` documents something inside the form
+    ///   rather than the form, and is left alone.
+    /// - provides: the documentation half of collection.
+    /// - fails: never; an unlisted slot files nothing.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — documentation before a definition, before a data
+    ///   declaration and in its own block reach the declaration, while a
+    ///   comment of `///` lines inside a data body does not.
+    /// - witness: `lower::tests::documentation_is_filed_under_the_declaration_digest`
+    #[spec(
+        captures: before_docs = self.collected.slots.get(slot.0).map_or(0, |entry| entry.docs.len()),
+        ensures: self.collected.slots.get(slot.0).is_none_or(|entry| entry.docs.len() >= before_docs),
+    )]
+    fn document(
+        &mut self,
+        slot: SlotIndex,
+        holder: NodeIndex,
+        before: ByteOffset,
+        documents: NodeIndex,
+    )
+    {
+        let tree = self.tree;
+        let Some(entry) = self.collected.slots.get_mut(slot.0)
+        else {
+            return;
+        };
+        for child in tree.children(holder) {
+            let Some(node) = tree.node(child)
+            else {
+                continue;
+            };
+            if node.label() == NodeLabel::Doc && node.span().end() <= before {
+                entry.docs.push(WrittenDoc {
+                    at: Placed::of(child, node),
+                    documents,
+                });
+            }
+        }
     }
 }
 
@@ -3454,6 +3530,7 @@ impl<'source> Collector<'_, 'source>
             signature: Maybe::Absent(declaration_half::Absent::Unwritten),
             definition: Maybe::Absent(declaration_half::Absent::Unwritten),
             attributes: Vec::new(),
+            docs: Vec::new(),
             refusal: Maybe::Absent(slot_refusal::Absent::Unrefused),
         });
 
@@ -5360,6 +5437,9 @@ pub struct LoweredModule<'source>
     structures: Vec<LoweredStructure<'source>>,
     /// The attribute side table, keyed by declaration content identity.
     attributes: AttributeTable,
+    /// Each documented declaration form's documentation, keyed by its content
+    /// identity.
+    documentation: BTreeMap<NodeDigest, Documentation<'source>>,
     /// Every minted core node's origin, and the declarations' own.
     origins: OriginTable,
     /// The imports, in source order, with their aliases bound.
@@ -5394,6 +5474,7 @@ impl<'source> LoweredModule<'source>
             data,
             structures,
             attributes,
+            documentation: BTreeMap::new(),
             origins,
             imports,
             recognition,
@@ -5414,6 +5495,22 @@ impl<'source> LoweredModule<'source>
     {
         self.descriptions = descriptions;
         self.cells = cells;
+        self
+    }
+
+    /// This module, carrying `documentation`, keyed by declaration content
+    /// identity.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_documentation(
+        mut self,
+        documentation: BTreeMap<NodeDigest, Documentation<'source>>,
+    ) -> Self
+    {
+        self.documentation = documentation;
         self
     }
 
@@ -5668,6 +5765,39 @@ impl<'source> LoweredModule<'source>
     pub const fn attributes(&self) -> &AttributeTable
     {
         &self.attributes
+    }
+
+    /// The documentation of the declaration form whose content identity is
+    /// `key`.
+    ///
+    /// # Specification
+    /// - requires: nothing — any digest is admissible input.
+    /// - ensures: the documentation filed under `key`, or the undocumented
+    ///   absence when nothing was. A form's identity excludes its
+    ///   documentation, so the key is the same whichever spelling, if any, the
+    ///   documentation took.
+    /// - provides: the read face hover and rendering consumers read.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a documented and an undocumented declaration are
+    ///   separated by presence and the exact text.
+    /// - witness: `lower::tests::documentation_is_filed_under_the_declaration_digest`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(found) => self.documentation.get(&key) == Some(found),
+        | Maybe::Absent(_) => !self.documentation.contains_key(&key),
+    })]
+    #[inline]
+    pub fn documentation(
+        &self,
+        key: NodeDigest,
+    ) -> Maybe<&Documentation<'source>, crate::doc::documentation::Absent>
+    {
+        self.documentation.get(&key).map_or(
+            Maybe::Absent(crate::doc::documentation::Absent::Undocumented),
+            Maybe::Present,
+        )
     }
 
     /// Every minted core node's origin, and the declarations' own.
@@ -6161,6 +6291,7 @@ mod tests
             signature: Maybe::<Half, _>::Absent(declaration_half::Absent::Unwritten),
             definition: Maybe::Absent(declaration_half::Absent::Unwritten),
             attributes: Vec::new(),
+            docs: Vec::new(),
             refusal: Maybe::Absent(slot_refusal::Absent::Unrefused),
         };
         let deep = LoweringRefusal::UnresolvedName {

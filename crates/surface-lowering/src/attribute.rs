@@ -277,11 +277,12 @@ pub struct AttributeRegistry;
 ///   suggestions select the earlier eligible row.
 /// - witness: `attribute::tests::every_registered_attribute_answers_its_schema`
 /// - witness: `attribute::tests::suggestions_include_the_bound_and_break_ties_by_registry_order`
-const REGISTRY: [(&str, AttributeSchema); 4_usize] = [
+const REGISTRY: [(&str, AttributeSchema); 5_usize] = [
     ("checks", AttributeSchema::Marker),
     ("owes", AttributeSchema::Integer),
     ("refuses", AttributeSchema::Text),
     ("runs", AttributeSchema::Text),
+    ("doc", AttributeSchema::Text),
 ];
 
 impl AttributeRegistry
@@ -929,7 +930,7 @@ mod tests
             Maybe::Present(owes)
         );
         assert_eq!(
-            AttributeRegistry::suggestion(SurfaceName::from("o")),
+            AttributeRegistry::suggestion(SurfaceName::from("e")),
             Maybe::Absent(suggestion::Absent::BeyondBound)
         );
         assert_eq!(
@@ -978,6 +979,7 @@ mod tests
             ("owes", AttributeSchema::Integer),
             ("refuses", AttributeSchema::Text),
             ("runs", AttributeSchema::Text),
+            ("doc", AttributeSchema::Text),
         ];
 
         for (spelling, schema) in expected {
@@ -1024,6 +1026,7 @@ mod tests
             ("owe", "owes"),
             ("refuse", "refuses"),
             ("run", "runs"),
+            ("docs", "doc"),
         ];
 
         for (written, nearest) in expected {

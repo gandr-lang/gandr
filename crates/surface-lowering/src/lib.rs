@@ -120,6 +120,7 @@ pub mod circuit;
 mod classify;
 pub mod desc_cells;
 pub mod description;
+mod doc;
 mod error;
 #[cfg(test)]
 mod fixture;
@@ -143,6 +144,10 @@ pub use crate::attribute::RegisteredAttribute;
 pub use crate::attribute::payload_form;
 pub use crate::attribute::payload_verdict;
 pub use crate::classify::FailureClass;
+pub use crate::doc::DocLink;
+pub use crate::doc::Documentation;
+pub use crate::doc::DocumentationText;
+pub use crate::doc::documentation;
 pub use crate::error::AscriptionForm;
 pub use crate::error::FormFault;
 pub use crate::error::FragmentBoundary;
