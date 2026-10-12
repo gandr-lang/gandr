@@ -189,16 +189,16 @@ Each rule's tiles form a graph under adjacency. Every tile in one strongly conne
 
 ## Built-in surface
 
-`built_in` is the gandr surface: 21 precedence groups and 19 tighter-than edges, then the term forms, the type-and-shell forms and the circuit forms. The groups form one expression chain, one pattern chain and one type chain whose union, intersection and lazy-product bands are mutually incomparable between the sum and arrow bands; the item group stands apart from all three. Its pinned shape is 2489 molds, 78 labels projected to more than one mold, and the fingerprint `0x3930_dc67_fa9f_b403`; a change to any form, group or edge moves the fingerprint, and the test pinning it states the change.
+`built_in` is the gandr surface: 21 precedence groups and 19 tighter-than edges, then the term forms, the type-and-shell forms and the circuit forms. The groups form one expression chain, one pattern chain and one type chain whose union, intersection and lazy-product bands are mutually incomparable between the sum and arrow bands; the item group stands apart from all three. Its pinned shape is 2490 molds, 78 labels projected to more than one mold, and the fingerprint `0xcf11_4827_9fa4_5c8e`; a change to any form, group or edge moves the fingerprint, and the test pinning it states the change.
 
 ### Lists close on an optional separator
 
-Every comma-separated list of one or more elements — arguments, parameters, fields, type arguments, patterns, tuple and record elements, attribute blocks — may end with a comma before its closer, so a list spread one element per line reads the same whatever line is last. A parenthesised expression is not a list: `(a,)` has no reading, neither a one-element tuple nor `a`. A case or offer arm may open with `|`, so an or-pattern spread over lines can lead each line with its separator. A mold is one tile occurrence, and an occurrence a hole can follow admits an operand before any successor, so an optional bar after a shared `{` or `,` would let `{ A | B => …` read `A` before the arm's bar; the arm block instead spells its opener and its separator twice, once followed by a hole and once by the bar.
+Every comma-separated list of one or more elements — arguments, parameters, fields, type arguments, patterns, tuple and record elements, attribute blocks — may end with a comma before its closer, so a list spread one element per line reads the same whatever line is last. A parenthesised expression is not a list: `(a,)` is the one-element tuple, whose comma is its spelling rather than an optional tail, and a tuple of two or more elements may still close on a comma. A one-element tuple pattern and a one-element parenthesised type have no reading yet. A case or offer arm may open with `|`, so an or-pattern spread over lines can lead each line with its separator. A mold is one tile occurrence, and an occurrence a hole can follow admits an operand before any successor, so an optional bar after a shared `{` or `,` would let `{ A | B => …` read `A` before the arm's bar; the arm block instead spells its opener and its separator twice, once followed by a hole and once by the bar.
 
 - Alternatives: a leading bar as an optional prefix of the arm, which ties every or-pattern with a bar-led arm; a trailing comma only on lists of two or more, which leaves the one-element list the place a reordering breaks.
 - Reversal: a list whose trailing comma means something — a one-element tuple — takes the comma out of that list's optional tail.
 
-The optional separators and the doubled arm block moved the pinned shape from 2378 molds and the fingerprint `0xf9c2_15a1_2bea_b69c`.
+The optional separators and the doubled arm block moved the pinned shape from 2378 molds and the fingerprint `0xf9c2_15a1_2bea_b69c`; the one-element tuple moved it from 2489 molds and `0x3930_dc67_fa9f_b403`.
 
 ### An attribute block is a form of its own
 

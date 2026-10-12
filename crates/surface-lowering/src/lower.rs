@@ -1369,10 +1369,13 @@ enum Plan
     Arrow(NodeIndex, NodeIndex),
     /// A static Pi over its domain and codomain.
     StaticPi(NodeIndex, NodeIndex),
-    /// The eager product of two value types.
-    Product(NodeIndex, NodeIndex),
-    /// The values in the lowerer's operand store, paired to the right.
-    Pair(Stretch),
+    /// One eager product of the value types in the lowerer's operand store,
+    /// in order: an unparenthesized `*` chain is one former.
+    Product(Stretch),
+    /// A case of no arms over its scrutinee: the eliminator of the empty sum.
+    EmptyCase(NodeIndex),
+    /// One tuple of the values in the lowerer's operand store, in order.
+    Tuple(Stretch),
     /// The thunked arrow from the domains in the lowerer's operand store to
     /// the returner of the codomain.
     ValueFunction(Stretch, NodeIndex),
@@ -3569,8 +3572,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — grouping preserves its operand while a
-    ///   comma-separated tuple plans an eager pair rather than treating the
-    ///   commas as grouping.
+    ///   comma-separated tuple plans one tuple rather than treating the commas
+    ///   as grouping.
     /// - witness: `lower::tests::a_grouping_lowers_to_what_it_wraps`
     /// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
     /// - witness: `lower::tests::the_empty_parentheses_are_never_the_unit`
@@ -3580,7 +3583,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(usize::from(site.at.node)),
-                    Some(&(Plan::Transparent(_) | Plan::Pair(_)))
+                    Some(&(Plan::Transparent(_) | Plan::Tuple(_)))
                 )
         },
     )]
@@ -3621,36 +3624,36 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
-    /// Classify a pair, `(v1, …, vn)`.
+    /// Classify a tuple, `(v1, …, vn)`, the one-element `(v,)` included.
     ///
     /// # Specification
     /// - requires: `cursor` stands at the `(` of a parenthesised expression
     ///   whose first member a comma follows.
-    /// - ensures: the pair stands as a value, reads every member as a value
-    ///   under its own frame, and is planned over them, paired to the right as
-    ///   the product associates.
+    /// - ensures: the tuple stands as a value, reads every member as a value
+    ///   under its own frame, and is planned over them as one tuple, as one `*`
+    ///   chain is one product.
     /// - provides: the introduction of the eager product.
     /// - fails: yields the wrong-sort refusal where no value is read, and the
     ///   list's refusal for a member out of shape, both naming the tuple.
     /// - panics: none.
     ///
     /// # Errors
-    /// The pair's refusal.
+    /// The tuple's refusal.
     ///
     /// # Termination
     /// The member loop runs once per entry of the finite member stretch.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a pair of two, a tuple of four, and a pair where a
-    ///   computation is read, each asserted as the exact core node read back
-    ///   out of the arena or the exact refusal.
+    /// - hypothesis: L3 — a tuple of one, of two and of three, and a tuple
+    ///   where a computation is read, each asserted as the exact core node read
+    ///   back out of the arena or the exact refusal.
     /// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.plans.get(usize::from(site.at.node)),
-                    Some(&Plan::Pair(members)) if members.end.saturating_sub(members.start) >= 2_usize
+                    Some(&Plan::Tuple(members)) if members.end.saturating_sub(members.start) >= 1_usize
                 )
         },
     )]
@@ -3680,7 +3683,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
         }
 
-        self.plan(site, Plan::Pair(members));
+        self.plan(site, Plan::Tuple(members));
 
         Ok(())
     }
@@ -5612,32 +5615,42 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
-    /// Classify an eager product type, `A * B`.
+    /// Classify an eager product type, `A * B`, and the chain it heads.
     ///
     /// # Specification
     /// - requires: `site` is a product in type position, or in value position
     ///   where a type is quoted.
-    /// - ensures: the product stands as a value type, reads both operands as
-    ///   value types under its own frame, and is planned over them.
+    /// - ensures: the product stands as a value type; an operand that is itself
+    ///   an unparenthesized product contributes its own operands instead, so a
+    ///   chain `A * B * C` is one product of three components however it
+    ///   associates, while `(A * B) * C` keeps the parenthesized product as one
+    ///   component. Every component is read as a value type under the product's
+    ///   frame, in written order, and the product is planned over them; the
+    ///   inner products of the chain are not read.
     /// - provides: the eager product of the fragment.
     /// - fails: yields the wrong-sort refusal where no value type is read, and
-    ///   either hole's own refusal.
+    ///   the refusal of any product in the chain out of shape.
     /// - panics: none.
     ///
     /// # Errors
     /// The product's refusal.
     ///
+    /// # Termination
+    /// Each round of the chain walk consumes fuel and replaces one product of
+    /// the finite tree by its two operands.
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — a product of atoms, a chain of three, and a product
-    ///   where a computation type is read, each asserted as the exact core node
-    ///   read back out of the arena or the exact refusal.
+    /// - hypothesis: L3 — a product of atoms, a chain of three, a parenthesized
+    ///   inner product and a product where a computation type is read, each
+    ///   asserted as the exact core node read back out of the arena or the
+    ///   exact refusal.
     /// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.plans.get(usize::from(site.at.node)),
-                    Some(&Plan::Product(..))
+                    Some(&Plan::Product(components)) if components.end.saturating_sub(components.start) >= 2_usize
                 )
         },
     )]
@@ -5648,16 +5661,89 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let frame = self.require(site, Produced::ValueType)?;
-        let first = site.one(cursor.operands())?;
-        closed(site, &mut cursor, TileName::STAR)?;
-        let second = site.one(cursor.operands())?;
-        exhausted(site, &cursor)?;
-        self.read(first.node, Reading::ValueType(frame));
-        self.read(second.node, Reading::ValueType(frame));
+        let start = self.operands.len();
+        let [first, second] = halves(site, &mut cursor)?;
+        let mut pending = Vec::from([second, first]);
+        while let Some(operand) = pending.pop() {
+            match self.fuel.spend().and_then(|()| self.chained(site, operand)) {
+                | Ok(Some([inner_first, inner_second])) => {
+                    pending.extend([inner_second, inner_first]);
+                },
+                | Ok(None) => self.operands.push(operand),
+                | Err(refusal) => {
+                    self.operands.truncate(start);
+                    return Err(refusal);
+                },
+            }
+        }
+        let components = Stretch {
+            start,
+            end: self.operands.len(),
+        };
+        for position in components.start .. components.end {
+            if let Some(&component) = self.operands.get(position) {
+                self.read(component, Reading::ValueType(frame));
+            }
+        }
 
-        self.plan(site, Plan::Product(first.node, second.node));
+        self.plan(site, Plan::Product(components));
 
         Ok(())
+    }
+
+    /// The two operands of `operand` when it is an unparenthesized product, a
+    /// link of the chain a product heads.
+    ///
+    /// # Specification
+    /// - requires: `operand` is an operand of a product at `site`.
+    /// - ensures: a product form answers its operands in written order; any
+    ///   other node, a parenthesized product included, answers nothing.
+    /// - provides: the one place a product chain is followed.
+    /// - fails: a repaired or ill-shaped product in the chain yields its own
+    ///   refusal; [`LoweringRefusal::UnknownMold`] for a mold the grammar does
+    ///   not hold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The inner product's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a chain of three and a parenthesized inner product
+    ///   separate the followed link from the kept component.
+    /// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |halves| halves.is_none_or(|[first, second]| first != operand && second != operand)))]
+    fn chained(
+        &mut self,
+        site: Site,
+        operand: NodeIndex,
+    ) -> Result<Option<[NodeIndex; 2]>, LoweringRefusal<'source>>
+    {
+        let Some(node) = self.tree.node(operand)
+        else {
+            return Ok(None);
+        };
+        let Shape::Form {
+            name,
+            former: Former::ProductType,
+        } = shape_of(self.pbg, node)?
+        else {
+            return Ok(None);
+        };
+        let link = Site {
+            at: Placed::of(operand, node),
+            name,
+            reading: site.reading,
+        };
+        let mut scratch = core::mem::take(&mut self.scratch);
+        let read = read_pieces(self.pbg, self.tree, operand, &mut scratch).and_then(|()| {
+            if let Maybe::Present(repaired) = scratch.repair {
+                return Err(repaired.refusal(name));
+            }
+            halves(link, &mut Cursor::new(&scratch.pieces, link.at.span))
+        });
+        self.scratch = scratch;
+
+        read.map(Some)
     }
 
     /// Classify a value function space, `A => B` or `(A1, …, An) => B`, `n`
@@ -6321,11 +6407,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Unit
                 | Plan::Literal(_)
                 | Plan::StaticApplication(..)
-                | Plan::Pair(_)
+                | Plan::Tuple(_)
                 | Plan::StaticLambda(_)
                 | Plan::Thunk(_)
                 | Plan::Constructor(_) => Some(Produced::Value),
-                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(_) | Plan::Block(_) | Plan::Application(..) | Plan::Case(_) => {
+                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(_) | Plan::Block(_) | Plan::Application(..) | Plan::Case(_) | Plan::EmptyCase(_) => {
                     Some(Produced::Computation)
                 },
                 | Plan::Atom(_)
@@ -6477,7 +6563,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::StaticApplication(code, arguments) => self
                 .mint_code(code, arguments, sink, origin)
                 .map(Lowered::Value),
-            | Plan::Pair(members) => self.mint_pair(members, sink, origin),
+            | Plan::Tuple(members) => self.mint_tuple(members, sink, origin),
             | Plan::ValueFunction(domains, codomain) => {
                 self.mint_value_function(domains, codomain, sink, origin)
             },
@@ -6492,10 +6578,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             | Plan::Constructor(constructed) => self.mint_constructor(constructed, sink, origin),
             | Plan::Case(case) => self.mint_case(case, sink, origin),
+            | Plan::EmptyCase(scrutinee) => self.value_at(scrutinee).map(|scrutinised| {
+                let id = sink.arena.computation_case(scrutinised, &[]);
+                sink.computation(id, origin)
+            }),
+            | Plan::Product(components) => self.mint_product(components, sink, origin),
             | Plan::Block(block) => self.mint_block(block, sink).map(Lowered::Computation),
             | Plan::Arrow(..)
             | Plan::StaticPi(..)
-            | Plan::Product(..)
             | Plan::StaticLambda(_)
             | Plan::Thunk(_)
             | Plan::Return(_)
@@ -6689,42 +6779,24 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
         }
     }
-
-    /// Carry out a pair's plan: its members, paired to the right.
+    /// Carry out a tuple's plan: its members, as one tuple.
     ///
     /// # Specification
     /// - requires: every member is already minted or absent.
-    /// - ensures: `(v1, …, vn)` mints as `pair(v1, … pair(vn-1, vn))`, every
-    ///   pair with the written origin, so a tuple inhabits the product chain
-    ///   `*` builds; nothing is minted when a member did not lower or fewer
-    ///   than two were written.
+    /// - ensures: `(v1, …, vn)` mints as one tuple of `n` components in written
+    ///   order, with the written origin, so a tuple inhabits the product of as
+    ///   many components that one `*` chain builds; nothing is minted when a
+    ///   member did not lower.
     /// - provides: the introduction of the eager product.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Termination
-    /// Both loops run once per entry of the finite stretch `members`.
+    /// The loop runs once per entry of the finite stretch `members`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a pair of two and a tuple of four, each asserted as
-    ///   the exact core value read back out of the arena.
-    /// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
-    #[spec(
-        ensures: |ret| match ret {
-            | Maybe::Present(Lowered::Value(id)) => {
-                sink.arena
-                    .value(id)
-                    .and_then(gandr_core_term::Value::components)
-                    .is_some_and(|components| components.len() == 2)
-            },
-            | Maybe::Present(_) => false,
-            | Maybe::Absent(_) => true,
-        },
-    )]
-    /// # Adequacy
-    /// - hypothesis: L3 — eager pairs associate to the right and preserve the
-    ///   order of their member values; their new pair nodes record the pair’s
-    ///   origin.
+    /// - hypothesis: L3 — a tuple of two and a tuple of four keep their members
+    ///   in order as one node; the node records the tuple's origin.
     /// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
     /// - witness: `lower::tests::every_minted_node_has_an_origin`
     #[spec(
@@ -6737,14 +6809,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     | Maybe::Absent(reason) => Some(reason),
                 }) {
                 | Some(reason) => ret == Maybe::Absent(reason),
-                | None if written.len() < 2 => ret == Maybe::Absent(lowered::Absent::Unminted),
                 | None => {
-                    matches!(ret, Maybe::Present(Lowered::Value(id)) if sink.origins.value(id) == Maybe::Present(origin))
+                    matches!(ret, Maybe::Present(Lowered::Value(id))
+                        if sink.origins.value(id) == Maybe::Present(origin)
+                            && sink.arena.value(id).and_then(gandr_core_term::Value::components).is_some_and(|components| components.len() == written.len()))
                 },
             }
         },
     )]
-    fn mint_pair(
+    fn mint_tuple(
         &self,
         members: Stretch,
         sink: &mut Sink<'_>,
@@ -6752,32 +6825,74 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Maybe<Lowered, lowered::Absent>
     {
         let written = stretch(&self.operands, members);
+        let mut components = Vec::with_capacity(written.len());
         for &member in written {
-            if let Maybe::Absent(reason) = self.value_at(member) {
-                return Maybe::Absent(reason);
+            match self.value_at(member) {
+                | Maybe::Present(component) => components.push(component),
+                | Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
         }
-        let Some((&last, before)) = written.split_last()
-        else {
-            return Maybe::Absent(lowered::Absent::Unminted);
-        };
-        if before.is_empty() {
-            return Maybe::Absent(lowered::Absent::Unminted);
-        }
-        let Maybe::Present(mut paired) = self.value_at(last)
-        else {
-            return Maybe::Absent(lowered::Absent::Unminted);
-        };
-        for &member in before.iter().rev() {
-            let Maybe::Present(first) = self.value_at(member)
-            else {
-                return Maybe::Absent(lowered::Absent::Unminted);
-            };
-            paired = sink.arena.value_tuple(&[first, paired]);
-            sink.origins.record_value(paired, origin);
-        }
+        let id = sink.arena.value_tuple(&components);
 
-        Maybe::Present(Lowered::Value(paired))
+        Maybe::Present(sink.value(id, origin))
+    }
+
+    /// Carry out a product's plan: its components, as one product.
+    ///
+    /// # Specification
+    /// - requires: every component is already minted or absent.
+    /// - ensures: `A1 * … * An` mints as one product of `n` components in
+    ///   written order, with the written origin; nothing is minted when a
+    ///   component did not lower.
+    /// - provides: the eager product type.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// The loop runs once per entry of the finite stretch `components`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a product of two and a chain of four keep their
+    ///   components in order as one node, which records the product's origin.
+    /// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
+    /// - witness: `lower::tests::every_minted_node_has_an_origin`
+    #[spec(
+        ensures: |ret| {
+            let written = stretch(&self.operands, components);
+            match written
+                .iter()
+                .find_map(|&component| match self.value_type_at(component) {
+                    | Maybe::Present(_) => None,
+                    | Maybe::Absent(reason) => Some(reason),
+                }) {
+                | Some(reason) => ret == Maybe::Absent(reason),
+                | None => {
+                    matches!(ret, Maybe::Present(Lowered::ValueType(id))
+                        if sink.origins.value_type(id) == Maybe::Present(origin)
+                            && sink.arena.value_type(id).is_some_and(|held| matches!(*held, ValueType::Product(ref parts) if parts.len() == written.len())))
+                },
+            }
+        },
+    )]
+    fn mint_product(
+        &self,
+        components: Stretch,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let written = stretch(&self.operands, components);
+        let mut parts = Vec::with_capacity(written.len());
+        for &component in written {
+            match self.value_type_at(component) {
+                | Maybe::Present(part) => parts.push(part),
+                | Maybe::Absent(reason) => return Maybe::Absent(reason),
+            }
+        }
+        let id = sink.arena.value_type_product(&parts);
+        sink.origins.record_value_type(id, origin);
+
+        Maybe::Present(Lowered::ValueType(id))
     }
 
     /// Carry out a value function space's plan: the thunked arrow it is the
@@ -6959,7 +7074,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     && sink.origins.computation(id) == Maybe::Present(origin)
             },
             | Maybe::Present(Lowered::ValueType(id)) => {
-                matches!(*plan, Plan::StaticPi(_, _) | Plan::Product(_, _))
+                matches!(*plan, Plan::StaticPi(_, _))
                     && sink.origins.value_type(id) == Maybe::Present(origin)
             },
             | Maybe::Present(Lowered::CompType(id)) => {
@@ -6987,13 +7102,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::StaticPi(domain, codomain) => self.value_type_at(domain).and_then(|from| {
                 self.value_type_at(codomain).map(|to| {
                     let id = sink.arena.value_type_static_pi(from, to);
-                    sink.origins.record_value_type(id, origin);
-                    Lowered::ValueType(id)
-                })
-            }),
-            | Plan::Product(first, second) => self.value_type_at(first).and_then(|left| {
-                self.value_type_at(second).map(|right| {
-                    let id = sink.arena.value_type_product(&[left, right]);
                     sink.origins.record_value_type(id, origin);
                     Lowered::ValueType(id)
                 })
@@ -7031,7 +7139,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Universe(_)
             | Plan::Decode(..)
             | Plan::StaticApplication(..)
-            | Plan::Pair(_)
+            | Plan::Tuple(_)
             | Plan::ValueFunction(..)
             | Plan::Former(..)
             | Plan::Transparent(_)
@@ -7040,6 +7148,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Data(..)
             | Plan::Constructor(_)
             | Plan::Case(_)
+            | Plan::EmptyCase(_)
+            | Plan::Product(_)
             | Plan::Block(_) => Maybe::Absent(lowered::Absent::Unminted),
         }
     }
@@ -8768,6 +8878,7 @@ impl Sink<'_>
                 TypeAtom::Unit => self.arena.value_type(id) == Some(&ValueType::unit()),
                 TypeAtom::Integer => self.arena.value_type(id) == Some(&ValueType::Base(BaseType::Integer)),
                 TypeAtom::Text => self.arena.value_type(id) == Some(&ValueType::Base(BaseType::String)),
+                TypeAtom::Void => self.arena.value_type(id).is_some_and(|held| matches!(*held, ValueType::Sum(ref parts) if parts.is_empty())),
             },
             | _ => false,
         },
@@ -8787,6 +8898,7 @@ impl Sink<'_>
             | TypeAtom::Unit => self.arena.value_type_unit(),
             | TypeAtom::Integer => self.arena.value_type_base(BaseType::Integer),
             | TypeAtom::Text => self.arena.value_type_base(BaseType::String),
+            | TypeAtom::Void => self.arena.value_type_sum(&[]),
         };
         self.origins.record_value_type(id, origin);
 
@@ -9182,6 +9294,36 @@ fn exhausted<'source>(
             Err(site.fault(at.span, FormFault::MisplacedTile))
         },
     }
+}
+
+/// The two operands of the product `site`, `A * B`, in written order.
+///
+/// # Specification
+/// - requires: `cursor` holds the pieces of the product at `site`.
+/// - ensures: one operand, the `*` tile and one operand, nothing after them.
+/// - provides: the shape check every link of a product chain shares.
+/// - fails: either hole's own refusal, and a misplaced-tile or extra-operand
+///   refusal for a product out of shape.
+/// - panics: none.
+///
+/// # Errors
+/// The product's refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a well-shaped product answers its operands in order.
+/// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&[first, second]| first != second))]
+fn halves<'source>(
+    site: Site,
+    cursor: &mut Cursor<'_>,
+) -> Result<[NodeIndex; 2], LoweringRefusal<'source>>
+{
+    let first = site.one(cursor.operands())?;
+    closed(site, cursor, TileName::STAR)?;
+    let second = site.one(cursor.operands())?;
+    exhausted(site, cursor)?;
+
+    Ok([first.node, second.node])
 }
 
 /// Whether a form can stand where a value is expected.
@@ -11596,52 +11738,71 @@ mod tests
         let module = lowered(
             SourceText::from(
                 "def p : Integer * String ; def q = (1, \"a\") ; def r : Integer * Unit * String ; \
-                 def s = (1, unit, \"a\") ;",
+                 def s = (1, unit, \"a\") ; def l : (Integer * Unit) * String ; def m : Integer \
+                 * (Unit * String) ; def o = (1,) ;",
             ),
             &mut arena,
         );
         let lowered = outcomes(&module);
         let one = Value::Literal(integer(SourceFragment::from("1")));
         let letter = Value::Literal(text(SourceFragment::from("a")));
-        let pair = |id| match arena.value(id) {
-            | Some(&Value::Tuple(ref components)) => match **components {
-                | [first, second] => Some((first, second)),
-                | _ => None,
-            },
+        let members = |id| {
+            arena
+                .value(id)
+                .and_then(Value::components)
+                .map(|components| {
+                    components
+                        .iter()
+                        .map(|&component| arena.value(component))
+                        .collect::<Vec<_>>()
+                })
+        };
+        let parts = |id| match arena.value_type(id) {
+            | Some(&ValueType::Product(ref parts)) => Some(parts.to_vec()),
             | _ => None,
+        };
+        let spines = |id| {
+            parts(id)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|part| spine(&arena, part).join(" "))
+                .collect::<Vec<_>>()
         };
 
         assert_eq!(
-            spine(&arena, declared_of(lowered[0])),
-            ["*", "Integer", "String"],
+            spines(declared_of(lowered[0])),
+            ["Integer", "String"],
             "`A * B` lowers to the product of its operands"
         );
-        let Some((first, second)) = pair(body_of(lowered[1]))
-        else {
-            panic!("a comma list where a value is read is a pair");
-        };
         assert_eq!(
-            (arena.value(first), arena.value(second)),
-            (Some(&one), Some(&letter)),
-            "the pair holds its members in order"
+            members(body_of(lowered[1])),
+            Some(vec![Some(&one), Some(&letter)]),
+            "a comma list where a value is read is one tuple holding its members in order"
         );
         assert_eq!(
-            spine(&arena, declared_of(lowered[2])),
-            ["*", "Integer", "*", "Unit", "String"],
-            "a product chain nests to the right"
+            spines(declared_of(lowered[2])),
+            ["Integer", "Unit", "String"],
+            "an unparenthesized chain is one product of three components"
         );
-        let Some((head, tail)) = pair(body_of(lowered[3]))
-        else {
-            panic!("a tuple is a pair");
-        };
-        let Some((middle, last)) = pair(tail)
-        else {
-            panic!("a tuple pairs to the right, as the product chain nests");
-        };
         assert_eq!(
-            (arena.value(head), arena.value(middle), arena.value(last)),
-            (Some(&one), Some(&Value::unit()), Some(&letter)),
-            "each member stands at its place in the chain"
+            members(body_of(lowered[3])),
+            Some(vec![Some(&one), Some(&Value::unit()), Some(&letter)]),
+            "a tuple of three is one node, each member at its place"
+        );
+        assert_eq!(
+            spines(declared_of(lowered[4])),
+            ["* Integer Unit", "String"],
+            "a parenthesized product on the left stays one component"
+        );
+        assert_eq!(
+            spines(declared_of(lowered[5])),
+            ["Integer", "* Unit String"],
+            "a parenthesized product on the right stays one component"
+        );
+        assert_eq!(
+            members(body_of(lowered[6])),
+            Some(vec![Some(&one)]),
+            "`(v,)` is the tuple of one component, not `v`"
         );
         assert_eq!(
             refusal(SourceText::from("def t : +U (Integer * Integer) ;")),

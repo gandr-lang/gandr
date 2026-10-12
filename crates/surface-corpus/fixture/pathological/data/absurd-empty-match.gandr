@@ -1,7 +1,7 @@
 @[ checks ]
 data Empty : Type {}
 
-@[ refuses("OutOfFragment") ]
+@[ refuses("ShapeMismatch") ]
 def absurd(v: Empty) -> -F Integer {
   case v {}
 }

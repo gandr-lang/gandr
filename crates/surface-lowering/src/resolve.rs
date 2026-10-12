@@ -247,6 +247,8 @@ pub enum TypeAtom
     Integer,
     /// `String`, the text base atom.
     Text,
+    /// `Void`, the sum of no summands, eliminated by a case of no arms.
+    Void,
 }
 
 /// A unary type head: a type former of the fragment.
@@ -274,8 +276,9 @@ pub enum TypeFormer
 ///   near spellings separating the absent branch.
 /// - witness: `lower::tests::native_boolean_results_have_the_written_classifier`
 /// - witness: `resolve::tests::a_near_miss_nullary_head_answers_nothing`
-const TYPE_ATOMS: [(&str, TypeAtom); 4_usize] = [
+const TYPE_ATOMS: [(&str, TypeAtom); 5_usize] = [
     ("Unit", TypeAtom::Unit),
+    ("Void", TypeAtom::Void),
     ("Bool", TypeAtom::Boolean),
     ("Integer", TypeAtom::Integer),
     ("String", TypeAtom::Text),

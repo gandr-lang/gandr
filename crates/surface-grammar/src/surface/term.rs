@@ -3213,14 +3213,14 @@ fn primary_expressions(
     ));
     out.push(hole);
     // The `(`-opened expression atoms — unit `( )`, parenthesized `( E )`, tuple
-    // `( E , E+ )`, and annotation `( E : T )` — share the `( E` prefix and
-    // diverge only at the tile after the expression (`)` versus `,` versus `:`),
-    // which for a long `E` sits arbitrarily far past the `(`, out of reach of a
-    // bounded lookahead. They are factored into one form whose tail alternates on
-    // that discriminating tile, so the `(` owns one mold and the choice is
-    // locally decidable — the discriminator `≐`-continues exactly one tail.
-    // The concrete language is unchanged; the folded kinds are recorded as
-    // adaptations for the parity inventory.
+    // `( E , )` or `( E , E+ )`, and annotation `( E : T )` — share the `( E`
+    // prefix and diverge only at the tile after the expression (`)` versus `,`
+    // versus `:`), which for a long `E` sits arbitrarily far past the `(`, out
+    // of reach of a bounded lookahead. They are factored into one form whose
+    // tail alternates on that discriminating tile, so the `(` owns one mold and
+    // the choice is locally decidable — the discriminator `≐`-continues exactly
+    // one tail. The concrete language is unchanged; the folded kinds are
+    // recorded as adaptations for the parity inventory.
     let mut paren = r(
         RuleName("parenthesized_expression"),
         Provenance("parenthesized_expression"),
@@ -3236,10 +3236,14 @@ fn primary_expressions(
                     alt([
                         // parenthesized: `( E )`
                         t(TileLabel(")")),
-                        // tuple: `( E , E+ ,? )`
+                        // tuple: `( E , )` or `( E , E (, E)* ,? )`
                         seq([
-                            repeat1(seq([t(TileLabel(",")), h(s)])),
-                            opt(t(TileLabel(","))),
+                            t(TileLabel(",")),
+                            opt(seq([
+                                h(s),
+                                opt(repeat1(seq([t(TileLabel(",")), h(s)]))),
+                                opt(t(TileLabel(","))),
+                            ])),
                             t(TileLabel(")")),
                         ]),
                         // annotation: `( E : T )`
