@@ -265,8 +265,9 @@ impl InitializeResult
     ///   synchronisation with open and close notifications; semantic tokens
     ///   over the whole document and over a range, under the legend of
     ///   [`TOKEN_TYPES`] and [`TOKEN_MODIFIERS`]; inline completion; document
-    ///   symbols, folding ranges and selection ranges; the server named `gandr`
-    ///   at this crate's version. Nothing else: no hover, no completion list.
+    ///   symbols, folding ranges and selection ranges; hover; formatting over
+    ///   the whole document and over a range; the server named `gandr` at this
+    ///   crate's version. Nothing else: no completion list.
     /// - provides: the one capabilities answer, written by `initialize` and by
     ///   the driver's `gandr lsp --capabilities` alike.
     /// - fails: never.
@@ -287,7 +288,10 @@ impl InitializeResult
             && ret.capabilities.inline_completion_provider.0
             && ret.capabilities.document_symbol_provider.0
             && ret.capabilities.folding_range_provider.0
-            && ret.capabilities.selection_range_provider.0)]
+            && ret.capabilities.selection_range_provider.0
+            && ret.capabilities.hover_provider.0
+            && ret.capabilities.document_formatting_provider.0
+            && ret.capabilities.document_range_formatting_provider.0)]
     #[inline]
     #[must_use]
     pub const fn advertised() -> Self
@@ -312,6 +316,8 @@ impl InitializeResult
                 folding_range_provider: Provider::ANSWERED,
                 selection_range_provider: Provider::ANSWERED,
                 hover_provider: Provider::ANSWERED,
+                document_formatting_provider: Provider::ANSWERED,
+                document_range_formatting_provider: Provider::ANSWERED,
             },
             server_info: ServerInfo {
                 name: SOURCE,
@@ -342,6 +348,10 @@ pub struct ServerCapabilities
     pub selection_range_provider: Provider,
     /// Hovers are answered.
     pub hover_provider: Provider,
+    /// Formatting the whole document is answered.
+    pub document_formatting_provider: Provider,
+    /// Formatting a range is answered.
+    pub document_range_formatting_provider: Provider,
 }
 
 /// Whether a request is answered, advertised as a provider with no options.
@@ -434,6 +444,9 @@ pub enum Answer
     Selections(Vec<SelectionRange>),
     /// What a hover request answers over a declaration's name.
     Hover(Hover),
+    /// What a formatting request answers for an open document: the edits that
+    /// lay it out, in document order.
+    Edits(Vec<TextEdit>),
     /// `null`: what `shutdown` answers, a request about a document that is not
     /// open, and a hover over nothing the server knows.
     Nothing,
@@ -634,6 +647,17 @@ pub struct Hover
     pub contents: MarkupContent,
     /// The range the text is about.
     pub range: Range,
+}
+
+/// One edit: the text replacing a range of the document.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TextEdit
+{
+    /// The range replaced.
+    pub range: Range,
+    /// The text replacing it.
+    pub new_text: String,
 }
 
 /// Text in a markup the client renders.

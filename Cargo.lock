@@ -775,6 +775,7 @@ dependencies = [
  "gandr-storage-records",
  "gandr-surface-diagnostics",
  "gandr-surface-dispatcher",
+ "gandr-surface-format",
  "gandr-surface-grammar",
  "gandr-surface-parser",
  "gandr-surface-pretty",

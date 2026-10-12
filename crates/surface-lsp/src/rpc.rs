@@ -103,6 +103,8 @@ impl ErrorCode
     pub const METHOD_NOT_FOUND: Self = Self(-32_601);
     /// The body is not JSON.
     pub const PARSE_ERROR: Self = Self(-32_700);
+    /// The request was valid, but the server could not answer it.
+    pub const REQUEST_FAILED: Self = Self(-32_803);
     /// A request arrived before `initialize` was answered.
     pub const SERVER_NOT_INITIALIZED: Self = Self(-32_002);
 }
