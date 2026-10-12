@@ -12,6 +12,7 @@ use core::mem;
 use std::path::PathBuf;
 
 use anodized::spec;
+use gandr_surface_diagnostics::Verbosity;
 use serde::Deserialize;
 use serde::Serialize;
 use serde::Serializer;
@@ -209,6 +210,110 @@ pub struct DocumentIdentifier
 {
     /// The document's URI.
     pub uri: DocumentUri,
+}
+
+/// The parameters of `initialize` the server reads: the client's `gandr`
+/// settings, passed as its initialization options.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct InitializeParams
+{
+    /// The `gandr` settings, when the client passes any.
+    #[serde(default)]
+    pub initialization_options: Option<Settings>,
+}
+
+/// The parameters of `workspace/didChangeConfiguration`: every section the
+/// client pushes, of which the server reads `gandr`.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct ConfigurationParams
+{
+    /// The sections, absent from a client that has the server pull them.
+    #[serde(default)]
+    pub settings: Option<Sections>,
+}
+
+/// The configuration sections a client pushes.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct Sections
+{
+    /// The `gandr` section.
+    #[serde(default)]
+    pub gandr: Option<Settings>,
+}
+
+/// The `gandr` settings the server reads.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct Settings
+{
+    /// `gandr.diagnostics`.
+    #[serde(default)]
+    pub diagnostics: Option<DiagnosticSettings>,
+}
+
+/// The `gandr.diagnostics` settings.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct DiagnosticSettings
+{
+    /// `gandr.diagnostics.verbosity`: how much of each report a diagnostic
+    /// carries.
+    #[serde(default)]
+    pub verbosity: Option<VerbositySetting>,
+}
+
+/// A `gandr.diagnostics.verbosity` value, spelled as `gandr check
+/// --verbosity` spells it.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum VerbositySetting
+{
+    /// [`Verbosity::User`].
+    User,
+    /// [`Verbosity::Detailed`].
+    Detailed,
+    /// [`Verbosity::Debug`].
+    Debug,
+    /// [`Verbosity::Json`].
+    Json,
+}
+
+impl From<VerbositySetting> for Verbosity
+{
+    /// The verbosity `setting` names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(setting: VerbositySetting) -> Self
+    {
+        match setting {
+            | VerbositySetting::User => Self::User,
+            | VerbositySetting::Detailed => Self::Detailed,
+            | VerbositySetting::Debug => Self::Debug,
+            | VerbositySetting::Json => Self::Json,
+        }
+    }
+}
+
+impl Settings
+{
+    /// The verbosity these settings name, when they name one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn verbosity(self) -> Option<Verbosity>
+    {
+        self.diagnostics
+            .and_then(|diagnostics| diagnostics.verbosity)
+            .map(Verbosity::from)
+    }
 }
 
 /// The parameters of `textDocument/semanticTokens/range`.

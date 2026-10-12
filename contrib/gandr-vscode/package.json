@@ -36,6 +36,28 @@
     "typescript": "^7.0.2"
   },
   "contributes": {
+    "configuration": {
+      "title": "gandr",
+      "properties": {
+        "gandr.diagnostics.verbosity": {
+          "type": "string",
+          "enum": [
+            "user",
+            "detailed",
+            "debug",
+            "json"
+          ],
+          "enumDescriptions": [
+            "The message, the labels, the nested reasons and the note.",
+            "Adds the report's class, the checker's own wording and the offending source text.",
+            "Adds every locus's byte span and the checker's refusal as its implementers print it.",
+            "The whole report as one line of JSON, for tools and agents."
+          ],
+          "default": "user",
+          "markdownDescription": "How much of each report a diagnostic shows, as `gandr check --verbosity` chooses it."
+        }
+      }
+    },
     "grammars": [
       {
         "language": "gandr",

@@ -37,8 +37,16 @@ export class GandrLanguageClient extends LanguageClient {
       run: server,
       debug: server,
     };
+    // The server reads `gandr.diagnostics.verbosity` from the initialization
+    // options at startup, and from the `gandr` section each configuration
+    // change pushes, republishing open documents at the new level.
+    const verbosity = vscode.workspace
+      .getConfiguration("gandr")
+      .get<string>("diagnostics.verbosity", "user");
     const clientOptions: LanguageClientOptions = {
       documentSelector: [{ scheme: "file", language: "gandr" }],
+      initializationOptions: { diagnostics: { verbosity } },
+      synchronize: { configurationSection: "gandr" },
       outputChannel,
       traceOutputChannel,
     };
