@@ -20,6 +20,8 @@ The gandr language server: diagnostics, semantic tokens, inline completion, the 
 - [The transport is written here](#the-transport-is-written-here)
 - [Document URIs](#document-uris)
 - [Coverage of the specification](#coverage-of-the-specification)
+- [What editors add beyond the protocol](#what-editors-add-beyond-the-protocol)
+- [Extensions beyond the specification](#extensions-beyond-the-specification)
 - [Specification evidence](#specification-evidence)
 - [License](#license)
 
@@ -39,6 +41,14 @@ The gandr language server: diagnostics, semantic tokens, inline completion, the 
 - Microsoft. "Language Server Protocol Specification 3.18." <https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification/> — `textDocument/inlineCompletion`, its snippet `StringValue`, and the snippet syntax a ghost text's tab stops are written in.
 - JSON-RPC Working Group. "JSON-RPC 2.0 Specification." 2010, revised 2013. <https://www.jsonrpc.org/specification> — the envelope, the batch the server refuses, and the reserved error codes it answers with.
 - Matthew Kerwin. "The 'file' URI Scheme." RFC 8089, February 2017. `doi:10.17487/RFC8089` — the URI a document is named by, whose percent-decoded path classifies its source root.
+- The rust-analyzer contributors. "LSP Extensions." <https://rust-analyzer.github.io/book/contributing/lsp-extensions.html> — the `experimental/` and `rust-analyzer/` methods the extensions assessment weighs.
+- The Lean developers. "Lean.Data.Lsp.Extra." <https://lean-lang.org/doc/api/Lean/Data/Lsp/Extra.html> — `$/lean/plainGoal`, `$/lean/plainTermGoal`, `$/lean/fileProgress` and the `$/lean/rpc/*` session the infoview runs on.
+- The rocq-lsp developers. "rocq-lsp protocol documentation." <https://github.com/ejgallego/coq-lsp/blob/main/etc/doc/PROTOCOL.md> — the `proof/goals` request and the progress and viewport notifications.
+- Microsoft. "Webview API." <https://code.visualstudio.com/api/extension-guides/webview> — the panel a VS Code extension draws its own view in.
+- The Neovim developers. "LSP." <https://neovim.io/doc/user/lsp.html> — a client's `request` of any method and the handlers a notification is routed to.
+- Free Software Foundation. "Eglot: The Emacs Client for the Language Server Protocol." <https://www.gnu.org/software/emacs/manual/html_mono/eglot.html> — the Emacs client, whose server connection is a JSON-RPC endpoint any request reaches.
+- The Helix developers. "Helix." <https://helix-editor.com/> — no plugin system yet, so the standard protocol only.
+- Zed Industries. "Language Extensions." <https://zed.dev/docs/extensions/languages> — what a Zed extension adds to a language server.
 
 ## Provided features
 
@@ -254,7 +264,42 @@ Every feature of the protocol, 3.17 and 3.18, with whether this server serves it
 | workspace folders, file watching, file operations | `workspace/didChangeWorkspaceFolders`, `didChangeWatchedFiles`, `willCreateFiles` and the other file operations | blocked: a workspace of more than the open documents |
 | configuration | `workspace/didChangeConfiguration`, `workspace/configuration` | blocked: the server has no setting yet |
 | window messages and progress | `window/showMessage`, `logMessage`, `workDoneProgress/*` | declined: the timing line goes to the server's log; reverses for a client that reads only the protocol stream |
-| the render-bus attach and custom `gandr/` methods | — | blocked: a renderer in another process reading `gandr-surface-render-remote`'s frames |
+| gandr's extensions | `gandr/goals`, `gandr/syntaxTree`, `gandr/serverStatus`, the render-bus attach | blocked: each as [the assessment below](#extensions-beyond-the-specification) names |
+
+## What editors add beyond the protocol
+
+A client speaks the protocol; what it does with a method the protocol does not name decides where a gandr-specific view can live.
+
+| Editor | Beyond the protocol | What it means here |
+| ------ | ------------------- | ------------------ |
+| VS Code | an extension sends any request through its language client and draws a webview panel of its own HTML; proposed APIs are closed to published extensions | the one editor where a rich goal view is a panel; it needs an extension, and its panel reads whatever the extension fetches |
+| Neovim | a client sends any request and installs a handler for any notification; floating windows and virtual text draw the answer | a plain-text goal request is shown with a few lines of configuration and no extension |
+| Emacs | `eglot` and `lsp-mode` send any JSON-RPC request; a buffer draws the answer | as Neovim: a plain-text goal request suffices |
+| Helix | the standard protocol only; no plugin system yet | sees only the specification's features, so every extension must degrade to them |
+| Zed | extensions launch a server and label its completions and symbols | as Helix today for anything beyond the specification |
+
+The table fixes two rules. A gandr extension answers plain, already-laid-out text first, so the editors that can send a custom request show it without a gandr extension of their own; a structured view rides beside it, never in place of it. And nothing an editor needs to read a document correctly lives only in an extension: diagnostics, goals as diagnostics, hover and tokens stay in the specification, which Helix and Zed read.
+
+## Extensions beyond the specification
+
+The assessment the language server's coverage owes: the extensions three servers of the closest kind add, and which gandr takes up.
+
+| Extension | Server | Recommendation | Why |
+| --------- | ------ | -------------- | --- |
+| a goal at a position: `$/lean/plainGoal`, `$/lean/plainTermGoal`; `proof/goals` | Lean 4; coq-lsp | **adopt** as `gandr/goals`: the goals the cursor's hole owes, each its expected type and its context, laid out by the printer as plain text, beside the same goals as `gandr-surface-render-remote`'s `GoalCard`s | the interaction model is holes and goals, which today reach an editor only as information diagnostics; blocked with completion on goals whose types the checker spells |
+| the infoview: `$/lean/rpc/connect`, `$/lean/rpc/call`, user widgets | Lean 4 | **decline** the RPC session; the side view reads the render bus instead | a remote-procedure session per file worker, with references a client must release and keep alive, duplicates what the render bus frames already carry: versioned goal and diagnostic cards one renderer or many read |
+| file checking progress: `$/lean/fileProgress`; coq-lsp's progress and viewport | Lean 4; coq-lsp | **decline** | both check on demand or in order and report how far they got; every synchronisation here judges the whole document and publishes at once, and the timing line already says what it cost |
+| syntax tree view: `rust-analyzer/viewSyntaxTree` | rust-analyzer | **adopt** as `gandr/syntaxTree`: the molded tree of a document, its molds, tiles, layout and repairs, as text | the tree exists for every request already, and grammar and parser work reads it; a debugging aid, advertised as one |
+| snippet text edits | rust-analyzer | **adopt** with code actions: a repair the parser recorded becomes a fix whose holes are tab stops | inline completion already writes snippets; waits on the code actions it would ride on |
+| runnables: `experimental/runnables` | rust-analyzer | **decline** the method; a code lens over each declaration that evaluates, running it as `gandr run` does, once commands exist | the specification's lenses and commands carry it, so Helix and Zed see it too |
+| hover actions | rust-analyzer | **decline** until definition and references exist | its actions are go-to and find-references links, which wait on the use-to-binder map |
+| matching brace: `experimental/matchingBrace` | rust-analyzer | **decline** | selection ranges already grow from a tile to its form, and the client matches brackets itself |
+| join lines: `experimental/joinLines`; on enter | rust-analyzer | **decline** | layout belongs to the source formatter, which formatting will serve |
+| server status: `experimental/serverStatus` | rust-analyzer | **adopt** as `gandr/serverStatus`: whether the latest revision's kernel admission is pending, done or refused | the admission runs after the diagnostics are published, and an editor cannot otherwise tell a revision the kernel has yet to admit from one it admitted |
+
+**The goal view is both.** `gandr/goals` is the portable answer: plain text any client that sends a custom request shows, and the structured cards a richer one draws. The live side view, which follows the cursor and the check, reads the render bus: a terminal pane beside the editor reads its frames directly, and a VS Code webview attaches to the same frames through the language server's render-bus attach, so the cards a goal view draws are the ones every renderer draws. An extension method answers once per request; the bus streams what changed, so the side view is not a poll.
+
+**Reversal.** A client that can show neither a custom request's text nor a side view, measured as the editor most authors use, moves goals into the specification's features alone — inlay hints at each hole, a hover over it. A render bus that cannot attach through the language server's stream moves the webview onto `gandr/goals` alone.
 
 ## Specification evidence
 
