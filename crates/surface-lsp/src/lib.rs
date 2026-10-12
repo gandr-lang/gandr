@@ -1,6 +1,6 @@
-//! **The language server**: diagnostics, semantic tokens and inline
-//! completion over the Language Server Protocol, served over any pair of
-//! byte streams.
+//! **The language server**: diagnostics, semantic tokens, inline completion
+//! and the document's outline over the Language Server Protocol, served over
+//! any pair of byte streams.
 //!
 //! # Every synchronisation submits the document to its session
 //!
@@ -16,7 +16,9 @@
 //! request highlights the document whole through the grammar's role table,
 //! the same classification a terminal face styles. An inline-completion
 //! request molds the form the cursor ends and answers, as a snippet, the
-//! material the parser expects to close it. Positions are counted in
+//! material the parser expects to close it. An outline request reads the
+//! document's declarations, its multi-line forms or the forms around a
+//! position off its parsed tree. Positions are counted in
 //! UTF-16 code units through the renderer seam's line index.
 //!
 //! # The transport is the base protocol, written here
@@ -68,6 +70,7 @@ extern crate alloc;
 use core::fmt;
 
 mod inline;
+mod outline;
 mod position;
 mod protocol;
 mod recheck;

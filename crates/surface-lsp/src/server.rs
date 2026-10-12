@@ -28,6 +28,9 @@ use quenchant_shape::shape::Maybe;
 use serde_json::Value;
 
 use crate::inline::ghost;
+use crate::outline::folds;
+use crate::outline::selections;
+use crate::outline::symbols;
 use crate::position::Position;
 use crate::position::Range;
 use crate::protocol::Answer;
@@ -43,6 +46,7 @@ use crate::protocol::InlineCompletionList;
 use crate::protocol::InlineCompletionParams;
 use crate::protocol::PublishParams;
 use crate::protocol::RangeParams;
+use crate::protocol::SelectionRangeParams;
 use crate::protocol::SemanticTokens;
 use crate::protocol::StringValue;
 use crate::recheck::DocumentSession;
@@ -389,6 +393,7 @@ impl Server
     /// - witness: `server::tests::the_lifecycle_admits_requests_in_the_protocol_order`
     /// - witness: `server::tests::semantic_tokens_full_answers_a_known_document`
     /// - witness: `server::tests::inline_completion_answers_the_expected_closer`
+    /// - witness: `server::tests::the_outline_requests_answer_a_known_document`
     #[spec(
         captures: [phase = self.phase, documents = self.documents.len()],
         ensures: |ret| self.documents.len() == documents && match (phase, method.as_ref()) {
@@ -409,6 +414,12 @@ impl Server
             (Phase::Running, "textDocument/inlineCompletion") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Inline(_), .. } => true,
+                    Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
+                    _ => false,
+                },
+            (Phase::Running, "textDocument/documentSymbol" | "textDocument/foldingRange" | "textDocument/selectionRange") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Nothing | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     _ => false,
                 },
@@ -468,6 +479,37 @@ impl Server
                     | Ok(params) => {
                         success(id, self.inline(&params.text_document.uri, params.position))
                     },
+                    | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            | (Phase::Running, "textDocument/documentSymbol") => {
+                match serde_json::from_value::<DocumentParams>(params) {
+                    | Ok(params) => success(
+                        id,
+                        self.outline(&params.text_document.uri, |text| {
+                            Answer::Symbols(symbols(text))
+                        }),
+                    ),
+                    | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            | (Phase::Running, "textDocument/foldingRange") => {
+                match serde_json::from_value::<DocumentParams>(params) {
+                    | Ok(params) => success(
+                        id,
+                        self.outline(&params.text_document.uri, |text| Answer::Folds(folds(text))),
+                    ),
+                    | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            | (Phase::Running, "textDocument/selectionRange") => {
+                match serde_json::from_value::<SelectionRangeParams>(params) {
+                    | Ok(params) => success(
+                        id,
+                        self.outline(&params.text_document.uri, |text| {
+                            Answer::Selections(selections(text, &params.positions))
+                        }),
+                    ),
                     | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
@@ -614,7 +656,7 @@ impl Server
         Answer::Tokens(ref tokens) => self.documents.contains_key(uri)
             && tokens.data.as_ref().len().is_multiple_of(5)
             && match window { Window::Within(range) if range.start >= range.end => tokens.data.as_ref().is_empty(), _ => true },
-        Answer::Initialize(_) | Answer::Inline(_) => false,
+        Answer::Initialize(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_) => false,
     })]
     fn tokens(
         &self,
@@ -661,7 +703,7 @@ impl Server
         Answer::Nothing => !self.documents.contains_key(uri),
         Answer::Inline(ref list) => self.documents.contains_key(uri) && list.items.len() <= 1
             && list.items.iter().all(|item| item.range.start == position && item.range.end == position),
-        Answer::Initialize(_) | Answer::Tokens(_) => false,
+        Answer::Initialize(_) | Answer::Tokens(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_) => false,
     })]
     fn inline(
         &self,
@@ -690,6 +732,33 @@ impl Server
             | Ok(Maybe::Absent(_)) | Err(_) => Vec::new(),
         };
         Answer::Inline(InlineCompletionList { items })
+    }
+
+    /// What `read` answers over the text of the document at `uri`.
+    ///
+    /// # Specification
+    /// - requires: nothing; an unknown URI is admitted.
+    /// - ensures: an unknown document yields Nothing, without calling `read`; a
+    ///   held document yields what `read` answers over its text.
+    /// - provides: the answers to the outline requests, which read the
+    ///   document's text alone.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each outline request over a held and an unknown
+    ///   document is asserted at its exact wire answer.
+    /// - witness: `server::tests::the_outline_requests_answer_a_known_document`
+    #[spec(ensures: |ret| matches!(ret, Answer::Nothing) != self.documents.contains_key(uri))]
+    fn outline(
+        &self,
+        uri: &DocumentUri,
+        read: impl FnOnce(SourceText<'_>) -> Answer,
+    ) -> Answer
+    {
+        self.documents.get(uri).map_or(Answer::Nothing, |document| {
+            read(SourceText::from(document.text.as_str()))
+        })
     }
 }
 
@@ -1050,7 +1119,10 @@ mod tests
                                 "tokenModifiers":["declaration","defaultLibrary"]},
                             "full":true,
                             "range":true},
-                        "inlineCompletionProvider":true},
+                        "inlineCompletionProvider":true,
+                        "documentSymbolProvider":true,
+                        "foldingRangeProvider":true,
+                        "selectionRangeProvider":true},
                     "serverInfo":{"name":"gandr","version":""#,
                 env!("CARGO_PKG_VERSION"),
                 r#""}}}]"#
@@ -1138,6 +1210,65 @@ mod tests
             wire(Json(r#"[{"jsonrpc":"2.0","id":7,"result":null}]"#)),
             "a document the server does not hold answers null"
         );
+    }
+
+    #[test]
+    fn the_outline_requests_answer_a_known_document()
+    {
+        let mut server = server_over_the_known_document();
+        let ask = |server: &mut Server, method: &str, uri: &str, extra: &str| {
+            let request = format!(
+                r#"{{"jsonrpc":"2.0","id":9,"method":"{method}","params":{{
+                    "textDocument":{{"uri":"{uri}"}}{extra}}}}}"#
+            );
+            send(server, Json(&request))
+        };
+        let known = "file:///tmp/example.gandr";
+        assert_eq!(
+            ask(&mut server, "textDocument/documentSymbol", known, ""),
+            wire(Json(
+                r#"[{"jsonrpc":"2.0","id":9,"result":[{"name":"f","kind":12,
+                    "range":{"start":{"line":0,"character":0},"end":{"line":0,"character":12}},
+                    "selectionRange":{"start":{"line":0,"character":4},"end":{"line":0,"character":5}}}]}]"#
+            )),
+            "the one definition is a function symbol, selected at its name"
+        );
+        assert_eq!(
+            ask(&mut server, "textDocument/foldingRange", known, ""),
+            wire(Json(r#"[{"jsonrpc":"2.0","id":9,"result":[]}]"#)),
+            "a one-line document folds nowhere"
+        );
+        assert_eq!(
+            ask(
+                &mut server,
+                "textDocument/selectionRange",
+                known,
+                r#","positions":[{"line":0,"character":9}]"#
+            ),
+            wire(Json(
+                r#"[{"jsonrpc":"2.0","id":9,"result":[{
+                    "range":{"start":{"line":0,"character":8},"end":{"line":0,"character":10}},
+                    "parent":{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":12}},
+                    "parent":{"range":{"start":{"line":0,"character":0},"end":{"line":1,"character":0}}}}}]}]"#
+            )),
+            "inside `42`: the number, the definition, the document"
+        );
+        for method in [
+            "textDocument/documentSymbol",
+            "textDocument/foldingRange",
+            "textDocument/selectionRange",
+        ] {
+            assert_eq!(
+                ask(
+                    &mut server,
+                    method,
+                    "file:///tmp/closed.gandr",
+                    r#","positions":[]"#
+                ),
+                wire(Json(r#"[{"jsonrpc":"2.0","id":9,"result":null}]"#)),
+                "{method} about a document the server does not hold answers null"
+            );
+        }
     }
 
     #[test]

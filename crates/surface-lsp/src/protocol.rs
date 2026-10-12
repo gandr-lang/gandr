@@ -7,12 +7,18 @@
 //! does not know.
 
 use core::fmt;
+use core::mem;
 use std::path::PathBuf;
 
 use anodized::spec;
 use serde::Deserialize;
 use serde::Serialize;
+use serde::Serializer;
+use serde::ser;
+use serde_json::Map;
+use serde_json::Value;
 
+use crate::position::Line;
 use crate::position::Position;
 use crate::position::Range;
 use crate::tokens::TOKEN_MODIFIERS;
@@ -226,6 +232,17 @@ pub struct InlineCompletionParams
     pub position: Position,
 }
 
+/// The parameters of `textDocument/selectionRange`.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SelectionRangeParams
+{
+    /// The document addressed.
+    pub text_document: DocumentIdentifier,
+    /// The positions whose enclosing forms are asked for.
+    pub positions: Vec<Position>,
+}
+
 /// The result of `initialize`: what the server provides, and its name.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -246,9 +263,9 @@ impl InitializeResult
     /// - ensures: positions counted in UTF-16 code units; incremental document
     ///   synchronisation with open and close notifications; semantic tokens
     ///   over the whole document and over a range, under the legend of
-    ///   [`TOKEN_TYPES`] and [`TOKEN_MODIFIERS`]; inline completion; the server
-    ///   named `gandr` at this crate's version. Nothing else: no hover, no
-    ///   completion list.
+    ///   [`TOKEN_TYPES`] and [`TOKEN_MODIFIERS`]; inline completion; document
+    ///   symbols, folding ranges and selection ranges; the server named `gandr`
+    ///   at this crate's version. Nothing else: no hover, no completion list.
     /// - provides: the one capabilities answer, written by `initialize` and by
     ///   the driver's `gandr lsp --capabilities` alike.
     /// - fails: never.
@@ -266,7 +283,10 @@ impl InitializeResult
             && ret.capabilities.text_document_sync.change.0 == SyncKind::INCREMENTAL.0
             && ret.capabilities.semantic_tokens_provider.full
             && ret.capabilities.semantic_tokens_provider.range
-            && ret.capabilities.inline_completion_provider)]
+            && ret.capabilities.inline_completion_provider.0
+            && ret.capabilities.document_symbol_provider.0
+            && ret.capabilities.folding_range_provider.0
+            && ret.capabilities.selection_range_provider.0)]
     #[inline]
     #[must_use]
     pub const fn advertised() -> Self
@@ -286,7 +306,10 @@ impl InitializeResult
                     full: true,
                     range: true,
                 },
-                inline_completion_provider: true,
+                inline_completion_provider: Provider::ANSWERED,
+                document_symbol_provider: Provider::ANSWERED,
+                folding_range_provider: Provider::ANSWERED,
+                selection_range_provider: Provider::ANSWERED,
             },
             server_info: ServerInfo {
                 name: SOURCE,
@@ -308,7 +331,25 @@ pub struct ServerCapabilities
     /// The semantic tokens the server answers.
     pub semantic_tokens_provider: SemanticTokensProvider,
     /// Inline completion is answered.
-    pub inline_completion_provider: bool,
+    pub inline_completion_provider: Provider,
+    /// Document symbols are answered.
+    pub document_symbol_provider: Provider,
+    /// Folding ranges are answered.
+    pub folding_range_provider: Provider,
+    /// Selection ranges are answered.
+    pub selection_range_provider: Provider,
+}
+
+/// Whether a request is answered, advertised as a provider with no options.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct Provider(bool);
+
+impl Provider
+{
+    /// The request is answered.
+    pub const ANSWERED: Self = Self(true);
 }
 
 /// Document synchronisation, as advertised.
@@ -380,8 +421,15 @@ pub enum Answer
     Tokens(SemanticTokens),
     /// What an inline-completion request answers for an open document.
     Inline(InlineCompletionList),
-    /// `null`: what `shutdown` answers, and a semantic-tokens or
-    /// inline-completion request for a document that is not open.
+    /// What a document-symbol request answers for an open document.
+    Symbols(DocumentSymbols),
+    /// What a folding-range request answers for an open document.
+    Folds(Vec<FoldingRange>),
+    /// What a selection-range request answers for an open document: one per
+    /// position asked about, in order.
+    Selections(Vec<SelectionRange>),
+    /// `null`: what `shutdown` answers, and a request about a document that is
+    /// not open.
     Nothing,
 }
 
@@ -401,6 +449,175 @@ pub struct InlineCompletionList
 {
     /// The completions, the one shown first; empty when none is shown.
     pub items: Vec<InlineCompletionItem>,
+}
+
+/// One declaration of a document, and where the declaration holding it
+/// stands among the document's symbols.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DocumentSymbol
+{
+    /// The declared name.
+    pub name: String,
+    /// What the declaration declares.
+    pub kind: SymbolKind,
+    /// The whole declaration.
+    pub range: Range,
+    /// The declared name's tile.
+    pub selection_range: Range,
+    /// The position of the declaration holding it among the document's
+    /// symbols; none at the top level.
+    pub holder: Option<usize>,
+}
+
+/// The declarations of a document in source order, each after the one
+/// holding it, written as the protocol's nested symbols.
+///
+/// The nesting is kept flat, a holder named by position, so no type owns its
+/// way back to itself; [`Serialize`] builds the nested wire value with a loop.
+#[repr(transparent)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct DocumentSymbols(pub Vec<DocumentSymbol>);
+
+impl Serialize for DocumentSymbols
+{
+    /// Write the symbols as the protocol's tree: each symbol an object, its
+    /// held symbols in source order under `children`, omitted when it holds
+    /// none; a holder that is not an earlier symbol writes its symbol at the
+    /// top level.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn serialize<S>(
+        &self,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut objects: Vec<Map<String, Value>> = Vec::with_capacity(self.0.len());
+        for symbol in &self.0 {
+            let mut object = Map::new();
+            let _name = object.insert("name".to_owned(), Value::String(symbol.name.clone()));
+            let _kind = object.insert("kind".to_owned(), Value::from(symbol.kind.0));
+            let _range = object.insert(
+                "range".to_owned(),
+                serde_json::to_value(symbol.range).map_err(ser::Error::custom)?,
+            );
+            let _selection = object.insert(
+                "selectionRange".to_owned(),
+                serde_json::to_value(symbol.selection_range).map_err(ser::Error::custom)?,
+            );
+            objects.push(object);
+        }
+        // Every symbol a symbol holds stands after it, so writing from the
+        // last gives each holder all its children before it is written itself.
+        let mut held: Vec<Vec<Value>> = self.0.iter().map(|_| Vec::new()).collect();
+        let mut roots: Vec<Value> = Vec::new();
+        for (position, symbol) in self.0.iter().enumerate().rev() {
+            let Some(mut object) = objects.pop()
+            else {
+                break;
+            };
+            if let Some(children) = held.get_mut(position)
+                && !children.is_empty()
+            {
+                children.reverse();
+                let _children =
+                    object.insert("children".to_owned(), Value::Array(mem::take(children)));
+            }
+            match symbol
+                .holder
+                .filter(|&holder| holder < position)
+                .and_then(|holder| held.get_mut(holder))
+            {
+                | Some(siblings) => siblings.push(Value::Object(object)),
+                | None => roots.push(Value::Object(object)),
+            }
+        }
+        roots.reverse();
+        Value::Array(roots).serialize(serializer)
+    }
+}
+
+/// What a symbol declares, as the protocol numbers it.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct SymbolKind(u8);
+
+impl SymbolKind
+{
+    /// A module.
+    pub const MODULE: Self = Self(2);
+    /// A data declaration: a sum of constructors.
+    pub const ENUM: Self = Self(10);
+    /// A signature.
+    pub const INTERFACE: Self = Self(11);
+    /// A function.
+    pub const FUNCTION: Self = Self(12);
+    /// A value.
+    pub const VARIABLE: Self = Self(13);
+    /// A codata declaration: a record of observations.
+    pub const STRUCT: Self = Self(23);
+}
+
+/// A run of lines a client can fold.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FoldingRange
+{
+    /// The first line folded.
+    pub start_line: Line,
+    /// The last line folded.
+    pub end_line: Line,
+    /// `comment` for documentation and a block comment; absent for a form.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<&'static str>,
+}
+
+/// The ranges around a position, innermost first, written as the protocol's
+/// chain of each range and the range enclosing it.
+///
+/// The chain is kept flat so no type owns its way back to itself;
+/// [`Serialize`] builds the nested wire value with a loop.
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SelectionRange
+{
+    /// The ranges, from the one selected out to the whole document.
+    pub ranges: Vec<Range>,
+}
+
+impl Serialize for SelectionRange
+{
+    /// Write the innermost range with each enclosing range as the `parent` of
+    /// the one inside it, the outermost with none; no range writes `null`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn serialize<S>(
+        &self,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut built = Value::Null;
+        for &range in self.ranges.iter().rev() {
+            let mut object = Map::new();
+            let _range = object.insert(
+                "range".to_owned(),
+                serde_json::to_value(range).map_err(ser::Error::custom)?,
+            );
+            if !built.is_null() {
+                let _parent = object.insert("parent".to_owned(), mem::take(&mut built));
+            }
+            built = Value::Object(object);
+        }
+        built.serialize(serializer)
+    }
 }
 
 /// One inline completion: the snippet inserted, and where.
