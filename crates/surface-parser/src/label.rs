@@ -22,6 +22,22 @@
 //! and the exact text, and the molder enumerates the candidate molds over the
 //! text-as-label plus the class's generic labels, picking the obligation
 //! minimum (`crate::mold::candidate_labels`).
+//!
+//! # A dot before a digit stands alone
+//!
+//! A number's fraction is written after its whole part, `0.5`, and a `.` the
+//! labeler meets outside a number is a lexeme of its own whatever follows it,
+//! a digit included; `..` stays the rest token. So `.1` is a dot and a
+//! number: the positional label of `+{ .1 = b }` and `#{ .0 = a }`, the
+//! leading-dot entries of the arity-shaped formers
+//! (`gandr_surface_grammar::built_in`). Before, `.5` scanned as a number with
+//! no whole part, which the lowering never read as one.
+//!
+//! - Alternatives: a label lexeme `.name` scanned by context, a dot preceded by
+//!   space, `{` or `,`, which teaches the labeler grammar and breaks a
+//!   projection spread over lines.
+//! - Reversal: a fraction written without its whole part that must read as a
+//!   number, which needs a lead the label does not take.
 
 use alloc::vec::Vec;
 
@@ -2230,7 +2246,7 @@ fn scan_shell_start(
 ///   and failure to advance change a row; a number commits fractions and
 ///   exponents only with a digit and promotes only a bounded primitive suffix.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-#[spec(requires: bytes.0.get(pos.0).is_some_and(u8::is_ascii_digit) || (bytes.0.get(pos.0) == Some(&b'.') && bytes.0.get(pos.0.saturating_add(1)).is_some_and(u8::is_ascii_digit)), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Number | Lexeme::TypedNumber)))]
+#[spec(requires: bytes.0.get(pos.0).is_some_and(u8::is_ascii_digit), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Number | Lexeme::TypedNumber)))]
 fn scan_number(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -2476,35 +2492,32 @@ fn suffix_len(
     None
 }
 
-/// Scan a lexeme led by `.`: a fractional number, the `..` rest token, or a
-/// bare `.` projection.
+/// Scan a lexeme led by `.`: the `..` rest token, or a bare `.`.
+///
+/// A dot before a digit stands alone too, so `.1` is the leading-dot label
+/// of a positional entry, `+{ .1 = b }`, rather than a number with no whole
+/// part: a fraction is written with its whole part, `0.5`, which is the only
+/// spelling the lowering ever read as one.
 ///
 /// # Specification
 /// - requires: the cursor identifies a byte in this scanner's lexical domain.
-/// - ensures: scanning advances; a dot before a digit starts a fraction; a pair
-///   is rest punctuation and other dots stand alone.
+/// - ensures: scanning advances; a pair is rest punctuation and every other
+///   dot, one before a digit included, stands alone.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
 ///   complete tokens, adjacent delimiters and truncated tails are compared with
 ///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
-///   and failure to advance change a row; a dot before a digit starts a
-///   fraction; a pair is rest punctuation and other dots stand alone.
+///   and failure to advance change a row; a pair is rest punctuation and a dot
+///   before a digit stands alone.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-#[spec(requires: bytes.0.get(pos.0) == Some(&b'.'), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Punct | Lexeme::Number | Lexeme::TypedNumber)))]
+#[spec(requires: bytes.0.get(pos.0) == Some(&b'.'), ensures: |ret| ret.next > pos && ret.lexeme == Lexeme::Punct)]
 fn scan_dot(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
 ) -> ScanResult
 {
-    // A leading `.[0-9]` is a fractional number (`.5`); `..` is the rest token.
-    if bytes
-        .byte(pos.advance(ByteWidth::ONE))
-        .is_some_and(|byte| bool::from(byte.is_ascii_digit()))
-    {
-        return scan_number(bytes, pos);
-    }
     if bytes.byte(pos.advance(ByteWidth::ONE)) == Some(SourceByte::from(b'.')) {
         ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::TWO))
     }
@@ -3097,7 +3110,7 @@ mod tests
                 ("1.", Lexeme::Number, 1),
                 ("1.5e-2!", Lexeme::Number, 6),
                 ("1e+", Lexeme::Number, 1),
-                (".5u32!", Lexeme::TypedNumber, 5),
+                ("0.5u32!", Lexeme::TypedNumber, 6),
                 ("1u32x", Lexeme::Number, 1),
             ]),
             (super::scan_shell_word, &[
@@ -3108,8 +3121,8 @@ mod tests
                 (";", Lexeme::Unknown, 1),
             ]),
             (super::scan_dot, &[
-                (".5!", Lexeme::Number, 2),
-                (".5f64", Lexeme::TypedNumber, 5),
+                (".5!", Lexeme::Punct, 1),
+                (".0 =", Lexeme::Punct, 1),
                 ("..x", Lexeme::Punct, 2),
                 (".x", Lexeme::Punct, 1),
                 (".", Lexeme::Punct, 1),

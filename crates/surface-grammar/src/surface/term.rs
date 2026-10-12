@@ -44,7 +44,7 @@ use crate::model::Sym;
 /// - witness: `surface::term::tests::assembly_reports_the_first_missing_band`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.atom", "expression.pure", "expression.or", "expression.and", "expression.cmp", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 101 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=18 => Sort::Item, 19..=21 => Sort::ModuleMember, 22..=31 | 85..=91 => Sort::Pattern, 32..=37 => Sort::Instantiation, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "escape_sequence")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.atom", "expression.pure", "expression.or", "expression.and", "expression.cmp", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 104 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=18 => Sort::Item, 19..=21 => Sort::ModuleMember, 22..=32 | 88..=94 => Sort::Pattern, 33..=38 => Sort::Instantiation, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "escape_sequence")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let item = precs.prec(PrecName("item.singleton"))?;
@@ -1262,7 +1262,7 @@ fn statements(
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 10 && added.iter().zip(["wildcard", "constructor_pattern", "tuple_pattern", "record_pattern", "list_pattern", "rest_pattern", "literal_pattern", "hole.pattern", "or_pattern", "as_pattern"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Pattern && rule.prec() == match name { "or_pattern" => or, "as_pattern" => as_p, _ => atom } && rule.provenance().0 == if name == "hole.pattern" { "hole" } else { name })))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 11 && added.iter().zip(["wildcard", "constructor_pattern", "tuple_pattern", "telescope_pattern", "labelled_sum_pattern", "list_pattern", "rest_pattern", "literal_pattern", "hole.pattern", "or_pattern", "as_pattern"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Pattern && rule.prec() == match name { "or_pattern" => or, "as_pattern" => as_p, _ => atom } && rule.provenance().0 == if name == "hole.pattern" { "hole" } else { name })))]
 fn patterns(
     out: &mut Vec<Rule>,
     or: Prec,
@@ -1301,30 +1301,51 @@ fn patterns(
             t(TileLabel(")")),
         ]),
     ));
-    // The `record_pattern_field` (`id = PAT`) helper is inline-only — it appears
-    // solely inside `record_pattern`. A standalone rule additionally gives its
-    // `identifier` opener a form-first Pattern-sort mold that ties with every
-    // bare pattern variable, a spurious competitor the molder must break by
-    // lookahead (the pattern analogue of the folded `record_field`). It is folded
-    // into `record_pattern` (recorded as an adaptation); the inlined fields still
-    // realise its shape.
-    let mut record_pattern = r(
-        RuleName("record_pattern"),
-        Provenance("record_pattern"),
+    // The telescope pattern `#{ x, y }`, `#{ .n, .v }` punning its labels and
+    // `#{ .n = m }` renaming one. An entry's shape is inlined, since a
+    // standalone `record_pattern_field` rule would give its `identifier`
+    // opener a form-first Pattern-sort mold that ties with every bare pattern
+    // variable. A bare `n = m` molds too, its key a pattern hole, so the
+    // lowering refuses the undotted label by name rather than the parser by
+    // repair; the record pattern this renames and the folded field are
+    // adaptations.
+    let mut telescope_pattern = r(
+        RuleName("telescope_pattern"),
+        Provenance("telescope_pattern"),
         s,
         atom,
         seq([
             t(TileLabel("#{")),
-            opt(comma1(record_pat_field())),
+            opt(comma1(telescope_pattern_entry())),
             t(TileLabel("}")),
         ]),
     );
-    record_pattern.adaptations.push(Adaptation::new(
-        RuleName("record_pattern"),
-        SurfaceForm("record_pattern_field"),
-        AdaptationReason("folded into record_pattern: the `id = PAT` field is inlined, not a standalone form-first identifier competing with a bare pattern variable"),
+    telescope_pattern.adaptations.push(Adaptation::new(
+        RuleName("telescope_pattern"),
+        SurfaceForm("record_pattern"),
+        AdaptationReason("renamed into telescope_pattern: the record pattern is the telescope pattern `#{ … }` with labelled entries, the same former as the tuple pattern"),
     ));
-    out.push(record_pattern);
+    telescope_pattern.adaptations.push(Adaptation::new(
+        RuleName("telescope_pattern"),
+        SurfaceForm("record_pattern_field"),
+        AdaptationReason("folded into telescope_pattern: the `.id = PAT` entry is inlined, not a standalone form-first identifier competing with a bare pattern variable"),
+    ));
+    out.push(telescope_pattern);
+    // The injection pattern `+{ .ok = PAT }`, positional as `+{ .1 = PAT }`.
+    out.push(r(
+        RuleName("labelled_sum_pattern"),
+        Provenance("labelled_sum_pattern"),
+        s,
+        atom,
+        seq([
+            t(TileLabel("+")),
+            t(TileLabel("{")),
+            dotted_label(),
+            t(TileLabel("=")),
+            h(s),
+            t(TileLabel("}")),
+        ]),
+    ));
     out.push(r(
         RuleName("list_pattern"),
         Provenance("list_pattern"),
@@ -1489,7 +1510,7 @@ fn instantiations(
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 47 && added.iter().zip(["pure_expression", "return_expression", "become_expression", "binary_expression.or", "binary_expression.and", "binary_expression.cmp.eq", "binary_expression.cmp.ne", "binary_expression.cmp.lt", "binary_expression.cmp.le", "binary_expression.cmp.gt", "binary_expression.cmp.ge", "binary_expression.then", "binary_expression.add.concat", "binary_expression.add.plus", "binary_expression.add.minus", "binary_expression.mul.times", "unary_expression", "force_expression", "hold_expression", "pack_expression", "call_expression", "instantiation_expression", "projection_expression", "hole", "parenthesized_expression", "list_expression", "block", "lambda_expression", "thunk_expression", "case_expression", "if_expression", "for_expression", "while_expression", "loop_expression", "break_expression", "continue_expression", "co_expression", "glob_expression", "record_expression", "offer_expression", "migrate_expression", "send_expression", "close_expression", "select_expression", "dup_expression", "drop_expression", "shell_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == match name { "pure_expression" | "return_expression" | "become_expression" | "pack_expression" => p.pure, "binary_expression.or" => p.or, "binary_expression.and" => p.and, "binary_expression.cmp.eq" | "binary_expression.cmp.ne" | "binary_expression.cmp.lt" | "binary_expression.cmp.le" | "binary_expression.cmp.gt" | "binary_expression.cmp.ge" | "binary_expression.then" => p.cmp, "binary_expression.add.concat" | "binary_expression.add.plus" | "binary_expression.add.minus" => p.add, "binary_expression.mul.times" => p.mul, "unary_expression" | "force_expression" | "hold_expression" => p.unary, "call_expression" | "instantiation_expression" | "projection_expression" => p.postfix, _ => p.atom } && rule.provenance().0 == if name.starts_with("binary_expression.") { "binary_expression" } else { name })))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 49 && added.iter().zip(["pure_expression", "return_expression", "become_expression", "binary_expression.or", "binary_expression.and", "binary_expression.cmp.eq", "binary_expression.cmp.ne", "binary_expression.cmp.lt", "binary_expression.cmp.le", "binary_expression.cmp.gt", "binary_expression.cmp.ge", "binary_expression.then", "binary_expression.add.concat", "binary_expression.add.plus", "binary_expression.add.minus", "binary_expression.mul.times", "unary_expression", "force_expression", "hold_expression", "pack_expression", "call_expression", "instantiation_expression", "projection_expression", "hole", "parenthesized_expression", "list_expression", "block", "lambda_expression", "thunk_expression", "case_expression", "if_expression", "for_expression", "while_expression", "loop_expression", "break_expression", "continue_expression", "co_expression", "glob_expression", "telescope_expression", "labelled_sum_expression", "lazy_record_expression", "offer_expression", "migrate_expression", "send_expression", "close_expression", "select_expression", "dup_expression", "drop_expression", "shell_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == match name { "pure_expression" | "return_expression" | "become_expression" | "pack_expression" => p.pure, "binary_expression.or" => p.or, "binary_expression.and" => p.and, "binary_expression.cmp.eq" | "binary_expression.cmp.ne" | "binary_expression.cmp.lt" | "binary_expression.cmp.le" | "binary_expression.cmp.gt" | "binary_expression.cmp.ge" | "binary_expression.then" => p.cmp, "binary_expression.add.concat" | "binary_expression.add.plus" | "binary_expression.add.minus" => p.add, "binary_expression.mul.times" => p.mul, "unary_expression" | "force_expression" | "hold_expression" => p.unary, "call_expression" | "instantiation_expression" | "projection_expression" => p.postfix, _ => p.atom } && rule.provenance().0 == if name.starts_with("binary_expression.") { "binary_expression" } else { name })))]
 fn expressions(
     out: &mut Vec<Rule>,
     p: ExprPrecs,
@@ -2238,11 +2259,12 @@ fn block() -> Regex
     ])
 }
 
-/// Build a record pattern field.
+/// Build a leading-dot label: `.` then a name, or `.` then an index for a
+/// positional entry.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: a named field assigned a pattern hole.
+/// - ensures: a `.` tile followed by an identifier or a number tile.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -2252,13 +2274,62 @@ fn block() -> Regex
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "=")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Pattern))))]
-fn record_pat_field() -> Regex
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ".")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(ref labels) if labels.len() == 2 && labels.iter().zip(["identifier", "number"]).all(|(label, expected)| matches!(label.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == expected))))))]
+fn dotted_label() -> Regex
 {
     seq([
-        t(TileLabel("identifier")),
-        t(TileLabel("=")),
-        h(Sort::Pattern),
+        t(TileLabel(".")),
+        alt([t(TileLabel("identifier")), t(TileLabel("number"))]),
+    ])
+}
+
+/// Build one hole-led entry of a telescope value: a positional `E`, or the
+/// shorthand `E = E` whose key the lowering reads as a bare label.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: an expression hole optionally followed by `=` and a second
+///   expression hole.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|hole| matches!(hole.shape(), RegexShape::Sym(Sym::Sort(Sort::Expression)))) && sequence.get(1).is_some_and(|key| matches!(key.shape(), RegexShape::Optional(_)))))]
+fn positional_entry() -> Regex
+{
+    let s = Sort::Expression;
+    seq([h(s), opt(seq([t(TileLabel("=")), h(s)]))])
+}
+
+/// Build one entry of a telescope pattern: a labelled `.l`, punning its
+/// label, or `.l = PAT`; a positional `PAT`; or `PAT = PAT`, whose undotted
+/// key the lowering refuses by name.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the labelled entry with an optional `= PAT`, then a pattern hole
+///   optionally followed by `=` and a second pattern hole.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.get(1).is_some_and(|rename| matches!(rename.shape(), RegexShape::Optional(_))))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|hole| matches!(hole.shape(), RegexShape::Sym(Sym::Sort(Sort::Pattern))))))))]
+fn telescope_pattern_entry() -> Regex
+{
+    let s = Sort::Pattern;
+    alt([
+        seq([dotted_label(), opt(seq([t(TileLabel("=")), h(s)]))]),
+        seq([h(s), opt(seq([t(TileLabel("=")), h(s)]))]),
     ])
 }
 
@@ -3181,7 +3252,7 @@ fn h(sort: Sort) -> Regex
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 24 && added.iter().zip(["hole", "parenthesized_expression", "list_expression", "block", "lambda_expression", "thunk_expression", "case_expression", "if_expression", "for_expression", "while_expression", "loop_expression", "break_expression", "continue_expression", "co_expression", "glob_expression", "record_expression", "offer_expression", "migrate_expression", "send_expression", "close_expression", "select_expression", "dup_expression", "drop_expression", "shell_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == p && rule.provenance().0 == name)))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 26 && added.iter().zip(["hole", "parenthesized_expression", "list_expression", "block", "lambda_expression", "thunk_expression", "case_expression", "if_expression", "for_expression", "while_expression", "loop_expression", "break_expression", "continue_expression", "co_expression", "glob_expression", "telescope_expression", "labelled_sum_expression", "lazy_record_expression", "offer_expression", "migrate_expression", "send_expression", "close_expression", "select_expression", "dup_expression", "drop_expression", "shell_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == p && rule.provenance().0 == name)))]
 fn primary_expressions(
     out: &mut Vec<Rule>,
     p: Prec,
@@ -3471,63 +3542,116 @@ fn primary_expressions(
             t(TileLabel("}")),
         ]),
     ));
-    // The `#{`-opened expression forms — the empty/populated record literal
-    // `#{ }` / `#{ id = E, … }` and the record update `#{ E | id = E, … }` —
-    // share the `#{` prefix and diverge only at the tile after the first
-    // expression: an update's `|` versus a literal field's `=`. Declaring them as
-    // two rules gives `#{` two Expression-sort molds, so the molder must decide
-    // record-versus-update at the `#{` — a choice whose discriminating `|` sits
-    // arbitrarily deep past nested `#{ … }` values (each carrying its own `|`),
-    // out of a bounded lookahead's reach (`deep-record-update-cost`). They are
-    // factored into one form whose tail alternates on the discriminating tile:
-    // `#{` owns one mold, the first expression fills one hole, and the following
-    // `|` / `=` `≐`-continues exactly one tail — locally decidable with no window
-    // — and the `|` reads as the form's own continuation (continuation-rank 0),
-    // never the pipeline operator. The
-    // concrete language is unchanged; the folded kinds are adaptations for the
-    // parity inventory.
-    let mut record = r(
-        RuleName("record_expression"),
-        Provenance("record_expression"),
+    // The `#{`-opened expression forms — the telescope value `#{ }`, `#{ a, b
+    // }`, `#{ .n = E, … }`, its `#{ n = E }` shorthand, and the record update
+    // `#{ E | id = E, … }` — share the `#{` prefix. The hole-led ones diverge
+    // only at the tile after the first entry: an update's `|` versus a
+    // telescope's `,` or `}`. Declaring them as two rules would give `#{` two
+    // hole-led Expression-sort molds, so the molder would decide
+    // telescope-versus-update at the `#{` — a choice whose discriminating `|`
+    // sits arbitrarily deep past nested `#{ … }` values (each carrying its own
+    // `|`), out of a bounded lookahead's reach (`deep-record-update-cost`).
+    // They are factored into one branch whose tail alternates on the
+    // discriminating tile: the first entry fills the hole, and the following
+    // `|`, `,` or `}` `≐`-continues exactly one tail — locally decidable with
+    // no window — and the `|` reads as the form's own continuation
+    // (continuation-rank 0), never the pipeline operator. A positional entry
+    // is an `E`, and `E = E` the shorthand whose key the lowering reads as a
+    // bare label.
+    //
+    // The leading-dot entries `.n = E` and `.0 = E` take a `#{` of their own,
+    // decided by the very next tile: a `#{` that admits a hole after it and
+    // also a `.` would let an operand stand before the form's `.`, so
+    // `#{ p.x, p.y }` would read its projection dot as a label's. Each `#{`
+    // instead has one kind of successor, so the dot after an operand is
+    // always the projection's. A telescope is labelled throughout or
+    // positional throughout; the concrete language is otherwise unchanged,
+    // and the folded kinds are adaptations for the parity inventory.
+    let mut telescope = r(
+        RuleName("telescope_expression"),
+        Provenance("telescope_expression"),
         s,
         p,
-        seq([
-            t(TileLabel("#{")),
-            alt([
-                // empty record: `#{ }`
+        alt([
+            // labelled: `#{ .l = E, … }`
+            seq([
+                t(TileLabel("#{")),
+                comma1(seq([dotted_label(), t(TileLabel("=")), h(s)])),
                 t(TileLabel("}")),
-                seq([
-                    // the first expression: the update source, or a literal
-                    // field's key (a bare identifier molds as an atom here).
-                    h(s),
-                    alt([
-                        // update tail: `| id = E, … }`
-                        seq([t(TileLabel("|")), comma1(record_field()), t(TileLabel("}"))]),
-                        // literal tail: the first field's `= E`, then `, id = E`*,
-                        // then an optional trailing `,`.
-                        seq([
-                            t(TileLabel("=")),
-                            h(s),
-                            repeat(seq([t(TileLabel(",")), record_field()])),
-                            opt(t(TileLabel(","))),
-                            t(TileLabel("}")),
+            ]),
+            seq([
+                t(TileLabel("#{")),
+                alt([
+                    // the unit: `#{ }`
+                    t(TileLabel("}")),
+                    seq([
+                        // the first entry: the update source, or a positional
+                        // entry.
+                        positional_entry(),
+                        alt([
+                            // update tail: `| id = E, … }`
+                            seq([t(TileLabel("|")), comma1(record_field()), t(TileLabel("}"))]),
+                            // telescope tail: `, entry`*, an optional trailing
+                            // `,`.
+                            seq([
+                                repeat(seq([t(TileLabel(",")), positional_entry()])),
+                                opt(t(TileLabel(","))),
+                                t(TileLabel("}")),
+                            ]),
                         ]),
                     ]),
                 ]),
             ]),
         ]),
     );
-    record.adaptations.push(Adaptation::new(
-        RuleName("record_expression"),
-        SurfaceForm("record_field"),
-        AdaptationReason("folded into the factored #{ family: the `id = E` field is inlined (the first field's key is the leading expression hole), not a standalone form-first identifier competing with a bare variable"),
+    telescope.adaptations.push(Adaptation::new(
+        RuleName("telescope_expression"),
+        SurfaceForm("record_expression"),
+        AdaptationReason("renamed into telescope_expression: the record literal is the telescope value `#{ … }` with labelled entries, the same former as the tuple"),
     ));
-    record.adaptations.push(Adaptation::new(
-        RuleName("record_expression"),
+    telescope.adaptations.push(Adaptation::new(
+        RuleName("telescope_expression"),
+        SurfaceForm("record_field"),
+        AdaptationReason("folded into the factored #{ family: the `.id = E` entry and its `id = E` shorthand are inlined (the shorthand's key is an expression hole), not a standalone form-first identifier competing with a bare variable"),
+    ));
+    telescope.adaptations.push(Adaptation::new(
+        RuleName("telescope_expression"),
         SurfaceForm("record_update_expression"),
         AdaptationReason("factored into the #{ expression family: the update tail `| id = E, … }` shares the `#{ E` prefix and discriminates on the `|` tile after the source expression"),
     ));
-    out.push(record);
+    out.push(telescope);
+    // The injection `+{ .ok = E }` into a sum over labels, positional as
+    // `+{ .1 = E }`. Its `+` molds where an operand starts, so it never
+    // competes with the infix `+`, which follows one.
+    out.push(r(
+        RuleName("labelled_sum_expression"),
+        Provenance("labelled_sum_expression"),
+        s,
+        p,
+        seq([
+            t(TileLabel("+")),
+            t(TileLabel("{")),
+            dotted_label(),
+            t(TileLabel("=")),
+            h(s),
+            t(TileLabel("}")),
+        ]),
+    ));
+    // The anonymous copattern block `&{ .get => E, .put => E }`, the value of
+    // a lazy record over labels: the clause `.l => E` of a `def rec` body,
+    // labels positional as `.0 => E`, and `&{}` the empty lazy record.
+    out.push(r(
+        RuleName("lazy_record_expression"),
+        Provenance("lazy_record_expression"),
+        s,
+        p,
+        seq([
+            t(TileLabel("&")),
+            t(TileLabel("{")),
+            opt(comma1(seq([dotted_label(), t(TileLabel("=>")), h(s)]))),
+            t(TileLabel("}")),
+        ]),
+    ));
     session_expressions(out, p);
     // The shell block's interior is a generic Expression hole: its commands mold
     // as juxtaposed command atoms (`command_name`, `single_quoted_string`, …)

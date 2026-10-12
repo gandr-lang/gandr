@@ -1,5 +1,54 @@
 //! The built-in surface: the named precedence table, the term, type-and-shell
 //! and circuit rule assemblies, and the named-kind lists.
+//!
+//! # One delimiter per arity-shaped former
+//!
+//! Three delimiters spell the formers over a finite arity, each at the type,
+//! the value and the pattern or observation: `#{…}` the telescope — the
+//! tuple, the record and Σ — `+{…}` the sum over labels, and `&{…}` the lazy
+//! record over labels. An entry is positional, labelled by its index, or
+//! labelled. A type entry is `k : T`; a value entry `.l = v` stores a value,
+//! a lazy-record entry `.l => c` defines a computation run when observed,
+//! and a pattern entry `.l` puns its label where `.l = p` renames it. A
+//! positional label is a number, `.0`, which the labeler reads as `.` then
+//! `0`. `A * B`, `A + B`, `C & D`, `(a, b)`, `unit`, `Unit` and `Void` stay
+//! as written. The session select and offer are the sum and the lazy record
+//! over labels read where a session type is read, so they are not second
+//! rules; they, the session field and the record type, value, pattern and
+//! update forms are recorded as adaptations for the parity inventory. A
+//! parenthesised type's entries take the same `k : T` shape: the domain of
+//! the telescope Π `(x : A, y : B(x)) => C`.
+//!
+//! A type entry's key is a type hole rather than an `identifier` tile. A
+//! form's own tile continues the open form and so outranks every atom at its
+//! token, which would read the `a` of `(a -> -F b)` as a key before the arrow
+//! could say otherwise; as a hole, the word molds as the type variable it
+//! reads as, and the `:` after it makes it a key, which the lowering reads as
+//! a bare lowercase word. The highlighter gives such a key the type-variable
+//! role, and a shorthand value key `#{ x = 1, … }` the variable role, every
+//! key alike.
+//!
+//! A leading-dot value entry takes a `#{` of its own. A mold is one tile
+//! occurrence, and one `#{` followed by both a hole and a `.` would admit an
+//! operand before the `.`, so `#{ p.x, p.y }` would read its projection dot
+//! as a label's; the labelled `#{` is followed only by `.` and the hole-led
+//! one only by an operand or `}`, so the next token decides. A telescope
+//! value is labelled throughout or positional throughout. The `+{` and `&{`
+//! value forms open on two tiles, `+` `{` and `&` `{`, molded where an
+//! operand starts, so neither competes with the infix `+` or `&`, which
+//! follows one.
+//!
+//! - Alternatives: a prefix `=` pun `#{=n}`, a new prefix reading inside
+//!   braces; a type-directed pattern `#{n, v}` that binds positionally or puns
+//!   by the scrutinee's type, where renaming a label silently changes a
+//!   pattern's meaning; keys as `identifier` tiles behind a lookahead window,
+//!   which the continuation rank pre-empts.
+//! - Reversal: a labelled type entry that must be told apart from a positional
+//!   one at its first token, which needs a lead tile there, as the value
+//!   entries have.
+//!
+//! The delimiters moved the pinned shape from 2490 molds and the fingerprint
+//! `0xcf11_4827_9fa4_5c8e`.
 
 use alloc::vec::Vec;
 
@@ -221,6 +270,11 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "glob_expression",
     "import_declaration",
     "circuit_declaration",
+    "labelled_sum_expression",
+    "labelled_sum_pattern",
+    "labelled_sum_type",
+    "lazy_record_expression",
+    "lazy_record_type",
     "loop_expression",
     "operator_declaration",
     "pack_expression",
@@ -231,6 +285,9 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "return_expression",
     "sign_declaration",
     "static_abstraction",
+    "telescope_expression",
+    "telescope_pattern",
+    "telescope_type",
     "unknown_type",
     "universe_type",
     "value_function_type",

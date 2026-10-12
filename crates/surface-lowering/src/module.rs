@@ -2625,9 +2625,10 @@ impl<'source> Collector<'_, 'source>
     }
 }
 
-/// The kind a record type is written as, the only form a signature states a
-/// nested module's components with.
-const RECORD_TYPE: &str = "record_type";
+/// The kind a telescope type is written as, the only form a signature states
+/// a nested module's components with: its labelled entries are the
+/// components.
+const TELESCOPE_TYPE: &str = "telescope_type";
 
 /// A module form's header, read.
 ///
@@ -3816,7 +3817,7 @@ impl<'source> Collector<'_, 'source>
                 (entry.signature, entry.definition, entry.introduced_by);
             if let (Maybe::Present(stated), Maybe::Absent(_)) = (signature, definition)
                 && let Operand::Written(record) = stated.operand
-                && self.form_name(record)?.as_ref() == RECORD_TYPE
+                && self.form_name(record)?.as_ref() == TELESCOPE_TYPE
             {
                 if let Some(absorbed) = self.collected.slots.get_mut(slot.0) {
                     absorbed.signature = Maybe::Absent(declaration_half::Absent::Unwritten);
@@ -4077,7 +4078,7 @@ impl<'source> Collector<'_, 'source>
             },
             | Maybe::Present(Member::Module(nested)) => {
                 let form = self.form_name(stated)?;
-                if form.as_ref() != RECORD_TYPE {
+                if form.as_ref() != TELESCOPE_TYPE {
                     let refusal = LoweringRefusal::OutOfFragment {
                         span: stated.span,
                         form,
@@ -4366,7 +4367,7 @@ impl<'source> Collector<'_, 'source>
                 },
                 | Some(Member::Module(nested)) => {
                     let form = self.form_name(field.stated)?;
-                    if form.as_ref() != RECORD_TYPE {
+                    if form.as_ref() != TELESCOPE_TYPE {
                         let refusal = LoweringRefusal::OutOfFragment {
                             span: field.stated.span,
                             form,
@@ -4413,16 +4414,18 @@ impl<'source> Collector<'_, 'source>
         Ok(())
     }
 
-    /// Read a record type's fields, `#{ name : T, … }`.
+    /// Read a record type's fields, `#{ name : T, … }`, each name the bare
+    /// type-variable word its key hole holds.
     ///
     /// # Specification
     /// - requires: `pieces` is the reading of the record type `record`.
-    /// - ensures: every field in order, when the tiles read `#{`, fields
-    ///   separated by `,`, and `}` with nothing after.
+    /// - ensures: every field in order, when the tiles read `#{`, fields whose
+    ///   key is a bare lowercase word and whose type follows its `:`, separated
+    ///   by `,`, and `}` with nothing after.
     /// - provides: the reading half of [`Self::layer`].
-    /// - fails: yields the repair the record holds, a misplaced tile, or the
-    ///   hole's refusal for a field type not written as one form, each naming
-    ///   the record form.
+    /// - fails: yields the repair the record holds, a misplaced tile or key, or
+    ///   the hole's refusal for a field type not written as one form, each
+    ///   naming the record form.
     /// - panics: none.
     ///
     /// # Errors
@@ -4462,10 +4465,10 @@ impl<'source> Collector<'_, 'source>
             if let Maybe::Present(_) = cursor.tile(TileName::BRACE_CLOSE) {
                 break;
             }
-            let Maybe::Present(named) = cursor.tile(TileName::IDENTIFIER)
-            else {
-                return Err(misplaced_in(form, cursor.here()));
-            };
+            let named = one_in(form, cursor.operands())?;
+            if self.form_name(named)? != FormName::TYPE_VARIABLE {
+                return Err(misplaced_in(form, named.span));
+            }
             if let Maybe::Absent(_) = cursor.tile(TileName::COLON) {
                 return Err(misplaced_in(form, cursor.here()));
             }

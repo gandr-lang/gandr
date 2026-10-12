@@ -305,42 +305,48 @@ fn add_type_rules(
         ]),
     ));
     // A parenthesized type holds one type or, as the domain of the n-ary `=>`,
-    // a list of them. One rule, so `(` keeps a single type-sort mold and the
-    // molder never needs a lookahead window to tell the two apart; the
-    // lowering refuses a list anywhere but before `=>`.
+    // a list of them, each entry a bare type or a binder `x : A` — the
+    // telescope `(x : A, y : B(x)) => C`. One rule, so `(` keeps a single
+    // type-sort mold; the binder's name is a type hole the `:` after it makes
+    // a key, so `(a -> -F b)` still reads its `a` as a type. The lowering
+    // refuses a list, and a binder, anywhere but before `=>`.
     rules.push(rule(
         RuleName("parenthesized_type"),
         ty,
         type_atom,
         Regex::seq([
             tile(TileLabel("(")),
-            comma1(Regex::sort(ty)),
+            comma1(entry_shape(ty)),
             tile(TileLabel(")")),
         ]),
     ));
-    // The `record_type_field` (`id : T`) helper is inline-only. Referencing it as
-    // a `tile(TileLabel("record_type_field"))` left an unmatchable placeholder
-    // terminal (no lexeme carries that label) AND a standalone rule whose
-    // `identifier` opener is a spurious form-first Type-sort competitor. The
-    // field shape is inlined directly so a real `#{ id : T, … }` record type
-    // molds, and the standalone kind is folded into `record_type` as an
-    // adaptation.
-    let mut record_type = rule(
-        RuleName("record_type"),
+    // The telescope `#{ … }`: the tuple, the record and Σ are one former, so
+    // one rule spells all three. An entry is a bare type, positional and
+    // labelled by its index, or a labelled `k : T`; `#{}` is the unit and
+    // `#{A}` the 1-ary product. The entry shape is inlined, its key a type
+    // hole the lowering reads as a bare label; the record type it renames and
+    // the folded field are recorded as adaptations.
+    let mut telescope_type = rule(
+        RuleName("telescope_type"),
         ty,
         type_atom,
         Regex::seq([
             tile(TileLabel("#{")),
-            Regex::optional(comma1(field_shape(ty))),
+            Regex::optional(comma1(entry_shape(ty))),
             tile(TileLabel("}")),
         ]),
     );
-    record_type.adaptations.push(Adaptation::new(
-        RuleName("record_type"),
-        SurfaceForm("record_type_field"),
-        AdaptationReason("folded into record_type: the `id : T` field is inlined, not a placeholder tile nor a standalone form-first identifier competing at a type slot"),
+    telescope_type.adaptations.push(Adaptation::new(
+        RuleName("telescope_type"),
+        SurfaceForm("record_type"),
+        AdaptationReason("renamed into telescope_type: the record type is the telescope `#{ … }` with labelled entries, the same former as the tuple and Σ"),
     ));
-    rules.push(record_type);
+    telescope_type.adaptations.push(Adaptation::new(
+        RuleName("telescope_type"),
+        SurfaceForm("record_type_field"),
+        AdaptationReason("folded into telescope_type: the `k : T` field is inlined with its key a type hole, not a placeholder tile nor a form tile that would outrank every type variable at the same token"),
+    ));
+    rules.push(telescope_type);
     rules.push(rule(
         RuleName("send_session_type"),
         ty,
@@ -369,41 +375,54 @@ fn add_type_rules(
         type_atom,
         tile(TileLabel("end")),
     ));
-    // The `session_field` (`id : T`) helper is inline-only. Like
-    // `record_type_field`, referencing it as `tile(TileLabel("session_field"))`
-    // left an unmatchable placeholder terminal and a standalone rule whose
-    // `identifier` opener is a spurious form-first Type-sort competitor. The
-    // field shape is inlined into both session-choice types so a real `+{ id :
-    // T, … }` / `&{ … }` molds, and the folded kind is recorded on
-    // `select_session_type`.
-    let mut select_session = rule(
-        RuleName("select_session_type"),
+    // The sum over labels `+{ … }` and the lazy record over labels `&{ … }`:
+    // one former per polarity, and one rule each. The session select and
+    // offer are these same forms read where a session type is read, so they
+    // are not second rules: the sort of an entry decides the reading, a
+    // session type making a protocol and a value or computation type a sum or
+    // a lazy record. An entry is positional or a labelled `k : T`, as in the
+    // telescope; `+{}` is the empty sum and `&{}` the empty lazy record. The
+    // entry shape is inlined, as in the telescope; the session forms the two
+    // rules read and the folded field are recorded as adaptations.
+    let mut labelled_sum = rule(
+        RuleName("labelled_sum_type"),
         ty,
         type_atom,
         Regex::seq([
             tile(TileLabel("+")),
             tile(TileLabel("{")),
-            comma1(field_shape(ty)),
+            Regex::optional(comma1(entry_shape(ty))),
             tile(TileLabel("}")),
         ]),
     );
-    select_session.adaptations.push(Adaptation::new(
-        RuleName("select_session_type"),
-        SurfaceForm("session_field"),
-        AdaptationReason("folded away: the `id : T` session field is inlined into the select/offer session types, not a placeholder tile nor a standalone form-first identifier competing at a type slot"),
+    labelled_sum.adaptations.push(Adaptation::new(
+        RuleName("labelled_sum_type"),
+        SurfaceForm("select_session_type"),
+        AdaptationReason("read, not repeated: the session select is the sum over labels `+{ … }` whose entries are session types, one former read in the zone its type is written in"),
     ));
-    rules.push(select_session);
-    rules.push(rule(
-        RuleName("offer_session_type"),
+    labelled_sum.adaptations.push(Adaptation::new(
+        RuleName("labelled_sum_type"),
+        SurfaceForm("session_field"),
+        AdaptationReason("folded away: the `k : T` session field is inlined into the sum and the lazy record over labels with its key a type hole, not a placeholder tile nor a form tile that would outrank every type variable at the same token"),
+    ));
+    rules.push(labelled_sum);
+    let mut lazy_record = rule(
+        RuleName("lazy_record_type"),
         ty,
         type_atom,
         Regex::seq([
             tile(TileLabel("&")),
             tile(TileLabel("{")),
-            comma1(field_shape(ty)),
+            Regex::optional(comma1(entry_shape(ty))),
             tile(TileLabel("}")),
         ]),
+    );
+    lazy_record.adaptations.push(Adaptation::new(
+        RuleName("lazy_record_type"),
+        SurfaceForm("offer_session_type"),
+        AdaptationReason("read, not repeated: the session offer is the lazy record over labels `&{ … }` whose entries are session types, one former read in the zone its type is written in"),
     ));
+    rules.push(lazy_record);
     rules.push(rule(
         RuleName("mu_session_type"),
         ty,
@@ -1107,12 +1126,21 @@ fn comma1(item: Regex) -> Regex
     ])
 }
 
-/// Build an inline `id : T` field shape, shared by record and session types.
+/// Build an inline entry of a telescope, a sum or a lazy record over labels,
+/// or a parenthesized type: a positional type, or `K : T` whose key the
+/// lowering reads as a bare label.
+///
+/// The key is a hole rather than an `identifier` tile, as a telescope value's
+/// first key is: a form's own tile continues the open form and so outranks
+/// every atom at the same token, which would read the type variable `a` of
+/// `(a -> -F b)` as a label before the arrow could say otherwise. As a hole,
+/// the word molds as the type variable it reads as, and the `:` after it is
+/// what makes it a key.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: an identifier, colon and hole of the supplied sort, in that
-///   order.
+/// - ensures: a hole of the supplied sort, then optionally a colon and a second
+///   hole of the same sort.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1122,13 +1150,12 @@ fn comma1(item: Regex) -> Regex
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == sort))))]
-fn field_shape(sort: Sort) -> Regex
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == sort)) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(labelled) if matches!(labelled.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|colon| matches!(colon.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":")))))))]
+fn entry_shape(sort: Sort) -> Regex
 {
     Regex::seq([
-        tile(TileLabel("identifier")),
-        tile(TileLabel(":")),
         Regex::sort(sort),
+        Regex::optional(Regex::seq([tile(TileLabel(":")), Regex::sort(sort)])),
     ])
 }
 

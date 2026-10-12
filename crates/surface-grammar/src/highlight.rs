@@ -774,17 +774,16 @@ fn classify(facts: &MoldFacts<'_>) -> HlRole
 /// - requires: `facts` is an `identifier` mold's.
 /// - ensures: the reference atom's identifier is a variable. A member: in a
 ///   projection, after `.`, inside a record bracket `#{`, and inside a block
-///   `{` of fields or observations. A label: a world, a session branch, the
-///   label a `select` names. A named instantiation argument is a parameter, and
-///   an attribute name is [`HlRole::Other`]. The operation a circuit node
-///   applies, between `:` and `(`, is a call. A name after a defining keyword
-///   is a function definition and after a binding keyword a variable
-///   definition, either one a parameter inside a parenthesised list. Inside
-///   `@[…]` a binder before `:` is a parameter and any other name an attribute;
-///   inside `[…]` a grade word is a number, a migration's world a label, and a
-///   decoration [`HlRole::Other`]; every other identifier inside a
-///   parenthesised list is a parameter. An identifier none of these reach is a
-///   variable.
+///   `{` of fields or observations. A label: a world and the label a `select`
+///   names. A named instantiation argument is a parameter, and an attribute
+///   name is [`HlRole::Other`]. The operation a circuit node applies, between
+///   `:` and `(`, is a call. A name after a defining keyword is a function
+///   definition and after a binding keyword a variable definition, either one a
+///   parameter inside a parenthesised list. Inside `@[…]` a binder before `:`
+///   is a parameter and any other name an attribute; inside `[…]` a grade word
+///   is a number, a migration's world a label, and a decoration
+///   [`HlRole::Other`]; every other identifier inside a parenthesised list is a
+///   parameter. An identifier none of these reach is a variable.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -798,7 +797,7 @@ fn classify(facts: &MoldFacts<'_>) -> HlRole
 #[spec(requires: facts.label.0 == "identifier", ensures: |ret| ret == match facts.kind.0 {
     "identifier" => HlRole::Variable,
     "projection_expression" => HlRole::Member,
-    "at_type" | "offer_session_type" | "select_session_type" => HlRole::Label,
+    "at_type" => HlRole::Label,
     "attribute_block" => HlRole::Other,
     "instantiation_expression" => HlRole::VariableParam,
     _ if facts.left.crosses(TileLabel(".")).0 => HlRole::Member,
@@ -825,7 +824,7 @@ fn identifier_role(facts: &MoldFacts<'_>) -> HlRole
     match kind {
         | "identifier" => return HlRole::Variable,
         | "projection_expression" => return HlRole::Member,
-        | "at_type" | "offer_session_type" | "select_session_type" => return HlRole::Label,
+        | "at_type" => return HlRole::Label,
         | "attribute_block" => return HlRole::Other,
         | "instantiation_expression" => return HlRole::VariableParam,
         | _ => {},
@@ -1112,12 +1111,12 @@ mod tests
             ("sign_declaration", "node", None, HlRole::VariableDef),
             ("circuit_declaration", ":", Some("("), HlRole::FunctionCall),
             ("def_value", ".", None, HlRole::Member),
-            ("record_type", "#{", None, HlRole::Member),
+            ("telescope_expression", ".", None, HlRole::Member),
+            ("telescope_expression", "|", None, HlRole::Member),
             ("glob_expression", "{", None, HlRole::Member),
             ("codata_declaration", "{", None, HlRole::Member),
             ("select_expression", ",", None, HlRole::Label),
             ("at_type", "at", None, HlRole::Label),
-            ("offer_session_type", "{", None, HlRole::Label),
             ("migrate_expression", "[", None, HlRole::Label),
             ("thunk_expression", "[", None, HlRole::Number),
         ];

@@ -24,7 +24,7 @@
 90..93 StringLit "0.2"
 93..94 StringLit "\""
 94..95 Other ","
-96..100 Member "note"
+96..100 Variable "note"
 101..102 Other "="
 103..104 StringLit "\""
 104..122 StringLit "use square_checked"
