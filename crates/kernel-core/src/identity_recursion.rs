@@ -376,7 +376,7 @@ pub fn interpret(
         }
         let node = arena.value_type(ty).ok_or(RelationError::Arena)?;
         let clause = match *node {
-            | ValueType::Unit => Clause::Unit,
+            | ValueType::Product(ref parts) if parts.is_empty() => Clause::Unit,
             | ValueType::Universe {
                 sort: GroundSort::Value,
                 ref level,
@@ -384,7 +384,13 @@ pub fn interpret(
             | ValueType::PathUniverse(..) if mode == Mode::Identity => Clause::Certificate,
 
             | ValueType::Base(_) => Clause::Discrete,
-            | ValueType::Sum(left, right) | ValueType::Product(left, right) => {
+            // The relation fold reads the unit and binary sums and products;
+            // another arity is outside its vocabulary until the fold is n-ary.
+            | ValueType::Sum(ref parts) | ValueType::Product(ref parts) => {
+                let &[left, right] = &**parts
+                else {
+                    return Err(RelationError::UnsupportedType(ty));
+                };
                 if !expanded {
                     pending.push((ty, true));
                     pending.push((right, false));
@@ -711,7 +717,7 @@ impl Relation
             | CaseIndex::Left => {
                 same_type(arena, first.target, second.target)?;
                 (
-                    arena.value_type_sum(first.source, second.source),
+                    arena.value_type_sum(&[first.source, second.source]),
                     first.target,
                 )
             },
@@ -719,7 +725,7 @@ impl Relation
                 same_type(arena, first.source, second.source)?;
                 (
                     first.source,
-                    arena.value_type_sum(first.target, second.target),
+                    arena.value_type_sum(&[first.target, second.target]),
                 )
             },
         };

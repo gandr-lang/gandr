@@ -196,8 +196,6 @@ pub enum TagSite
     Sign,
     /// A literal kind.
     LiteralKind,
-    /// An injection side.
-    Side,
     /// A landmark-constraint relation.
     ConstraintRelation,
     /// A fixpoint's termination claim.
@@ -241,7 +239,6 @@ impl fmt::Display for TagSite
             | Self::BaseType => "a base-type atom",
             | Self::Sign => "a literal sign",
             | Self::LiteralKind => "a literal kind",
-            | Self::Side => "an injection side",
             | Self::ConstraintRelation => "a constraint relation",
             | Self::FixpointEvidence => "a fixpoint evidence claim",
         })
@@ -555,7 +552,6 @@ mod tests
             TagSite::BaseType,
             TagSite::Sign,
             TagSite::LiteralKind,
-            TagSite::Side,
             TagSite::ConstraintRelation,
         ] {
             names.push(format!("{site}"));

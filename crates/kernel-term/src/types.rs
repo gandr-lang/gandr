@@ -40,6 +40,7 @@
 
 use core::fmt;
 
+use anodized::spec;
 use gandr_kernel_strata::Level;
 
 use crate::arena::CompTypeId;
@@ -139,7 +140,7 @@ pub enum ValueType
     {
         /// Raw syntax; formation checks closure and contractivity.
         graph: alloc::sync::Arc<crate::session::Graph>,
-        /// Right-associated payload product, terminated by Unit.
+        /// The payload product, one component per payload code, in order.
         payloads: ValueTypeId,
     },
     /// Certified equivalences between two quoted closed first-order codes.
@@ -147,15 +148,14 @@ pub enum ValueType
     PathUniverse(ValueId, ValueId),
     /// A rigid base-type atom.
     Base(BaseType),
-    /// The unit type, inhabited by [`crate::Value::Unit`] alone.
-    Unit,
-    /// The empty value type, with no introduction rule.
-    Empty,
-    /// The non-dependent product `A × B`.
-    Product(ValueTypeId, ValueTypeId),
-    /// The sum `A + B`, with left and right injections.
-    Sum(ValueTypeId, ValueTypeId),
-    /// The strictly positive fixed point List A = μX. Unit + A × X.
+    /// The product of its components, in order: `Product([])` is the unit
+    /// type, inhabited by the empty [`crate::Value::Tuple`] alone, and
+    /// `Product([A, B])` the pair type `A × B`.
+    Product(alloc::boxed::Box<[ValueTypeId]>),
+    /// The sum of its summands, in order: `Sum([])` is the empty type, with
+    /// no introduction rule, and `Sum([A, B])` the binary sum `A + B`.
+    Sum(alloc::boxed::Box<[ValueTypeId]>),
+    /// The strictly positive fixed point List A = μX. 1 + A × X.
     /// Its code is finite; inhabitants are observed through guarded replay.
     List(ValueTypeId),
     /// The thunk type `U C` of a computation type `C`.
@@ -226,6 +226,47 @@ pub enum ValueType
         /// The classifier of the result.
         codomain: ValueTypeId,
     },
+}
+
+impl ValueType
+{
+    /// The unit type: the product of no components.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Product([])`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the unit built here and the one the arena mints are
+    ///   the same node, and neither a product of two components nor the empty
+    ///   sum is the unit.
+    /// - witness: `arena::tests::the_unit_and_the_empty_type_are_zero_ary`
+    #[spec(ensures: |ret| matches!(ret, Self::Product(ref components) if components.is_empty()))]
+    #[inline]
+    #[must_use]
+    pub fn unit() -> Self
+    {
+        Self::Product(alloc::boxed::Box::default())
+    }
+
+    /// The empty type: the sum of no summands.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Sum([])`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::unit`].
+    /// - witness: `arena::tests::the_unit_and_the_empty_type_are_zero_ary`
+    #[spec(ensures: |ret| matches!(ret, Self::Sum(ref summands) if summands.is_empty()))]
+    #[inline]
+    #[must_use]
+    pub fn empty() -> Self
+    {
+        Self::Sum(alloc::boxed::Box::default())
+    }
 }
 
 /// A computation type: the negative fragment of the type vocabulary.

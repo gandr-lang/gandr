@@ -63,7 +63,7 @@ mod sharing_format
     {
         let mut arena = TermArena::new();
         let unit = arena.value_type_unit();
-        let boolean = arena.value_type_sum(unit, unit);
+        let boolean = arena.value_type_sum(&[unit, unit]);
         let list = arena.value_type_list(boolean);
         let declarations = vec![MarkedDeclaration::new(
             AdmissionMark::Checked,
@@ -76,11 +76,15 @@ mod sharing_format
         else {
             panic!("list former retained");
         };
-        let Some(&ValueType::Sum(left, right)) = decoded.arena().value_type(element)
+        let Some(&ValueType::Sum(ref summands)) = decoded.arena().value_type(element)
         else {
             panic!("element sum retained");
         };
-        assert_eq!(decoded.arena().value_type(left), Some(&ValueType::Unit));
+        let &[left, right] = &**summands
+        else {
+            panic!("two summands retained");
+        };
+        assert_eq!(decoded.arena().value_type(left), Some(&ValueType::unit()));
         assert_eq!(left, right);
         assert_eq!(
             Vec::from(bytes),
@@ -936,8 +940,8 @@ mod sharing_format
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: returns the single tag byte of the unit value type, with no
-    ///   payload.
+    /// - ensures: returns the unit value type: the product tag and a zero
+    ///   component count.
     /// - provides: the smallest accepted entry, used wherever a fixture needs
     ///   one well-formed value type.
     /// - panics: none.
@@ -951,12 +955,13 @@ mod sharing_format
     ///   retaining the surrounding record.
     /// - witness: `sharing_format::sharing_format::a_duplicate_entry_is_refused_as_non_canonical`
     #[spec(
-        ensures: |ret| ret.0.as_slice() == [0x01_u8].as_slice(),
+        ensures: |ret| ret.0.as_slice() == [0x03_u8, 0].as_slice(),
     )]
     fn entry_unit_type() -> Bytes
     {
         let mut out = Bytes::new();
-        out.byte(RawByte(0x01));
+        out.byte(RawByte(0x03));
+        out.varint(WireValue(0));
         out
     }
 
@@ -1111,8 +1116,8 @@ mod sharing_format
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: returns the single tag byte of the unit value, with no
-    ///   payload.
+    /// - ensures: returns the unit value: the tuple tag and a zero component
+    ///   count.
     /// - provides: the smallest accepted value entry, used as a leaf wherever a
     ///   fixture needs one.
     /// - panics: none.
@@ -1126,12 +1131,13 @@ mod sharing_format
     ///   retaining the surrounding record.
     /// - witness: `sharing_format::sharing_format::a_self_or_forward_child_reference_is_refused`
     #[spec(
-        ensures: |ret| ret.0.as_slice() == [0x0b_u8].as_slice(),
+        ensures: |ret| ret.0.as_slice() == [0x0d_u8, 0].as_slice(),
     )]
     fn entry_unit() -> Bytes
     {
         let mut out = Bytes::new();
-        out.byte(RawByte(0x0B));
+        out.byte(RawByte(0x0D));
+        out.varint(WireValue(0));
         out
     }
 
@@ -1155,18 +1161,18 @@ mod sharing_format
     ///   retaining the surrounding record.
     /// - witness: `sharing_format::sharing_format::a_self_or_forward_child_reference_is_refused`
     #[spec(
-        ensures: |ret| ret.0.starts_with(&[0x0d_u8])
+        ensures: |ret| ret.0.starts_with(&[0x0d_u8, 2])
                 && ({ let scalar = u64::from(first.0);
             let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
-            ret.0.as_slice().get(1_usize .. (1_usize).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+            ret.0.as_slice().get(2_usize .. (2_usize).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
             u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
                 && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })
                 && ({ let scalar = u64::from(second.0);
             let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
-            ret.0.as_slice().get((1_usize .saturating_add(usize::try_from(64_u32.saturating_sub((u64::from(first.0)).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX))) .. (1_usize .saturating_add(usize::try_from(64_u32.saturating_sub((u64::from(first.0)).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX))).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+            ret.0.as_slice().get((2_usize .saturating_add(usize::try_from(64_u32.saturating_sub((u64::from(first.0)).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX))) .. (2_usize .saturating_add(usize::try_from(64_u32.saturating_sub((u64::from(first.0)).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX))).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
             u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
                 && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })
-                && ret.0.len() == 1_usize .saturating_add(usize::try_from(64_u32.saturating_sub((u64::from(first.0)).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)) .saturating_add(usize::try_from(64_u32.saturating_sub((u64::from(second.0)).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)),
+                && ret.0.len() == 2_usize .saturating_add(usize::try_from(64_u32.saturating_sub((u64::from(first.0)).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)) .saturating_add(usize::try_from(64_u32.saturating_sub((u64::from(second.0)).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)),
     )]
     fn entry_pair(
         first: TableIndex,
@@ -1175,6 +1181,7 @@ mod sharing_format
     {
         let mut out = Bytes::new();
         out.byte(RawByte(0x0D));
+        out.varint(WireValue(2));
         out.varint(WireValue(u64::from(first.0)));
         out.varint(WireValue(u64::from(second.0)));
         out
@@ -1214,7 +1221,8 @@ mod sharing_format
         out
     }
 
-    /// An entry whose tag byte lies above the frozen block.
+    /// An entry whose tag byte names no former: unassigned, reserved or
+    /// retired.
     ///
     /// # Specification
     /// - requires: `tag` is a byte the format assigns to no former.
@@ -1232,7 +1240,7 @@ mod sharing_format
     ///   retaining the surrounding record.
     /// - witness: `sharing_format::sharing_format::an_unassigned_node_tag_is_refused_by_name`
     #[spec(
-        requires: tag.0 >= 0x20,
+        requires: gandr_kernel_term::NODE_TAG_TABLE.iter().all(|row| u8::from(row.tag) != tag.0),
         ensures: |ret| ret.0.as_slice() == [tag.0].as_slice(),
     )]
     fn entry_unassigned_tag(tag: RawByte) -> Bytes
@@ -1381,11 +1389,11 @@ mod sharing_format
         ensures: |ret| { let mut node = ret;
             let mut remaining = depth.0;
             let mut valid = true;
-            while remaining > 0 { match arena.value(node) { Some(&Value::Pair(left, right)) if left == right => node = left, _ => { valid = false;
+            while remaining > 0 { match arena.value(node).and_then(Value::components) { Some(&[left, right]) if left == right => node = left, _ => { valid = false;
             break;
             } } remaining = remaining.saturating_sub(1);
             } valid
-                && arena.value(node) == Some(&Value::Unit) },
+                && arena.value(node) == Some(&Value::unit()) },
     )]
     fn diamond(
         arena: &mut TermArena,
@@ -1395,7 +1403,7 @@ mod sharing_format
         let mut node = arena.value_unit();
         let mut remaining = depth.0;
         while remaining > 0 {
-            node = arena.value_pair(node, node);
+            node = arena.value_tuple(&[node, node]);
             remaining = remaining.saturating_sub(1);
         }
         node
@@ -1468,7 +1476,7 @@ mod sharing_format
             break;
             } remaining = remaining.saturating_sub(1);
             } valid
-                && arena.value_type(node) == Some(&ValueType::Unit) },
+                && arena.value_type(node) == Some(&ValueType::unit()) },
     )]
     fn type_chain(
         arena: &mut TermArena,
@@ -1651,7 +1659,7 @@ mod sharing_format
         // The first declaration's body shares one unit value with itself.
         let first_declared = arena.value_type_unit();
         let shared = arena.value_unit();
-        let first_body = arena.value_pair(shared, shared);
+        let first_body = arena.value_tuple(&[shared, shared]);
         let first = definition_over(&mut arena, first_declared, first_body);
 
         // The second declaration mints its own structurally equal nodes, so any
@@ -1676,8 +1684,12 @@ mod sharing_format
             decoded_body(&artifact, Position(0)).expect("the first definition decodes");
         let second_body =
             decoded_body(&artifact, Position(1)).expect("the second definition decodes");
-        match artifact.arena().value(first_body) {
-            | Some(&Value::Pair(left, right)) => {
+        match artifact
+            .arena()
+            .value(first_body)
+            .and_then(Value::components)
+        {
+            | Some(&[left, right]) => {
                 assert_eq!(
                     left, right,
                     "the shared pair children decode to one arena id"
@@ -1709,7 +1721,7 @@ mod sharing_format
             let mut arena = TermArena::new();
             let declared = arena.value_type_unit();
             let unit = arena.value_unit();
-            let body = arena.value_pair(unit, unit);
+            let body = arena.value_tuple(&[unit, unit]);
             let declarations = vec![definition_over(&mut arena, declared, body)];
             Vec::from(encode(&arena, &declarations))
         };
@@ -1718,7 +1730,7 @@ mod sharing_format
             let declared = arena.value_type_unit();
             let left = arena.value_unit();
             let right = arena.value_unit();
-            let body = arena.value_pair(left, right);
+            let body = arena.value_tuple(&[left, right]);
             let declarations = vec![definition_over(&mut arena, declared, body)];
             Vec::from(encode(&arena, &declarations))
         };
@@ -2099,13 +2111,13 @@ mod sharing_format
     {
         let arena = TermArena::new();
         let bytes = encode(&arena, &[]);
-        // Hand check of the version field: the version is 2, which as a
-        // little-endian sixteen-bit field is the low byte 0x02 first and the
+        // Hand check of the version field: the version is 3, which as a
+        // little-endian sixteen-bit field is the low byte 0x03 first and the
         // high byte 0x00 after. The header is the four-byte magic, that
         // two-byte field, the empty atom table as one varint zero and the
         // declaration count as one varint zero.
         assert_eq!(
-            vec![b'G', b'K', b'X', b'1', 0x02, 0x00, 0x00, 0x00],
+            vec![b'G', b'K', b'X', b'1', 0x03, 0x00, 0x00, 0x00],
             Vec::from(bytes.clone()),
             "the empty artifact is the magic, the version, an empty atom table and a zero count"
         );
@@ -2460,7 +2472,7 @@ mod sharing_format
             let declared = type_chain(&mut arena, links);
             let unit = arena.value_unit();
             let body = if body_is_a_pair {
-                arena.value_pair(unit, unit)
+                arena.value_tuple(&[unit, unit])
             }
             else {
                 unit
@@ -2546,10 +2558,19 @@ mod sharing_format
             "a predecessor version is named rather than guessed at"
         );
 
-        let future = raw_artifact(Version(3), &[], &[]);
+        let previous = raw_artifact(Version(2), &[], &[]);
         assert_eq!(
             Err(DecodeError::UnsupportedVersion {
-                found: FormatVersion::from(3),
+                found: FormatVersion::from(2),
+            }),
+            decode(ArtifactImage::from(previous.as_ref())),
+            "the binary-former version is refused rather than misread"
+        );
+
+        let future = raw_artifact(Version(4), &[], &[]);
+        assert_eq!(
+            Err(DecodeError::UnsupportedVersion {
+                found: FormatVersion::from(4),
             }),
             decode(ArtifactImage::from(future.as_ref())),
             "a later version is refused with the version it declared"
@@ -2575,7 +2596,7 @@ mod sharing_format
         let mut arena = TermArena::new();
         let declared = arena.value_type_unit();
         let unit = arena.value_unit();
-        let body = arena.value_pair(unit, unit);
+        let body = arena.value_tuple(&[unit, unit]);
         let declarations = vec![definition_over(&mut arena, declared, body)];
         let bytes = Vec::from(encode(&arena, &declarations));
 
@@ -2647,8 +2668,9 @@ mod sharing_format
     #[test]
     fn an_unassigned_node_tag_is_refused_by_name()
     {
-        // Reject every unassigned byte, including the reserved sharing block.
-        // Growth above that block does not change the rejection contract.
+        // Reject every unassigned byte, including the reserved sharing block and
+        // the tags version 3 retired. Growth above that block does not change
+        // the rejection contract.
         for byte in u8::MIN ..= u8::MAX {
             let wire = WireTag::from(byte);
             if gandr_kernel_term::NODE_TAG_TABLE
@@ -2788,9 +2810,9 @@ mod sharing_format
                 && marked.declaration().levels().constraints().is_empty()
                 && marked.declaration().name().segments().is_empty()
                 && marked.declaration().provenance().is_empty()
-                && arena.value_type(marked.declaration().declared_id()) == Some(&ValueType::Unit)
+                && arena.value_type(marked.declaration().declared_id()) == Some(&ValueType::unit())
                 && match *marked.declaration().content() { DeclarationContent::Def { body, .. } => position.rem_euclid(3) == 0
-                && arena.value(body).is_some_and(|value| position.checked_sub(1).map_or(value == &Value::Unit,
+                && arena.value(body).is_some_and(|value| position.checked_sub(1).map_or(value == &Value::unit(),
             |previous| value == &Value::Constant(ConstantIndex::from(previous)))), DeclarationContent::Axiom { .. } => position.rem_euclid(3) == 1, DeclarationContent::AbstractType { .. } => position.rem_euclid(3) == 2, DeclarationContent::Data { .. } => false }),
     )]
     fn referencing_sequence(
@@ -2987,7 +3009,7 @@ mod sharing_format
     ///   retaining the surrounding record.
     /// - witness: `sharing_format::sharing_format::a_sealed_artifact_round_trips_with_its_atom_table`
     #[spec(
-        ensures: |ret| ret.as_image().as_ref() == [b'G', b'K', b'X', b'1', 2, 0, 1, 0, 2, 0, 2, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 0x0b, 1, 2, 0, 0, 0, 0].as_slice(),
+        ensures: |ret| ret.as_image().as_ref() == [b'G', b'K', b'X', b'1', 3, 0, 1, 0, 2, 0, 2, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 2, 3, 0, 0x0d, 0, 1, 2, 0, 0, 0, 0].as_slice(),
     )]
     fn sealed_artifact() -> EncodedArtifact
     {
@@ -3035,7 +3057,7 @@ mod sharing_format
     /// - witness: `sharing_format::sharing_format::a_minted_atom_table_naming_a_definition_is_refused`
     #[spec(
         ensures: |ret| ret.0.starts_with(b"GKX1")
-                && ret.0.get(4 .. 6) == Some([2_u8, 0].as_slice())
+                && ret.0.get(4 .. 6) == Some([3_u8, 0].as_slice())
                 && { let count = u64::try_from(atoms.len()).unwrap_or(u64::MAX);
             let valid_count = { let scalar = count;
             let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
@@ -3048,7 +3070,7 @@ mod sharing_format
             ret.0.as_slice().get((position) .. (position).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
             u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
                 && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) }).then_some(position.saturating_add(usize::try_from(64_u32.saturating_sub((atom.0).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX))) }) }
-            else { None } }.is_some_and(|position| ret.0.get(position ..) == Some([2_u8, 0, 2, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 0x0b, 1, 2, 0, 0, 0, 0].as_slice())),
+            else { None } }.is_some_and(|position| ret.0.get(position ..) == Some([2_u8, 0, 2, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 2, 3, 0, 0x0d, 0, 1, 2, 0, 0, 0, 0].as_slice())),
     )]
     fn sealed_with_atom_table(atoms: &[WireValue]) -> Bytes
     {

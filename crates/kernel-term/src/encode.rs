@@ -65,7 +65,6 @@ use crate::decl::StructuredName;
 use crate::tags;
 use crate::term::Computation;
 use crate::term::ConstantIndex;
-use crate::term::Side;
 use crate::term::Value;
 use crate::types::CompType;
 use crate::types::GroundSort;
@@ -713,15 +712,13 @@ ensures: |ret| ret.0.as_image().as_ref().first().copied()
             Some(&ValueType::Data { .. }) => tags::NODE_VT_DATA,
             Some(&ValueType::Record(_)) => tags::NODE_VT_RECORD,
             Some(&ValueType::PathUniverse(..)) => tags::NODE_VT_PATH_UNIVERSE,
-            None | Some(&ValueType::Unit) => tags::NODE_VT_UNIT,
-            Some(&ValueType::Empty) => tags::NODE_VT_EMPTY,
             Some(&ValueType::Base(_)) => tags::NODE_VT_BASE,
             Some(&ValueType::Universe { sort: GroundSort::Value, .. }) => tags::NODE_VT_UNIVERSE,
             Some(&ValueType::Universe { sort: GroundSort::Computation, .. }) => {
                 tags::NODE_VT_COMPUTATION_UNIVERSE
             },
             Some(&ValueType::Abstract(_)) => tags::NODE_VT_ABSTRACT,
-            Some(&ValueType::Product(..)) => tags::NODE_VT_PRODUCT,
+            None | Some(&ValueType::Product(_)) => tags::NODE_VT_PRODUCT,
             Some(&ValueType::Sum(..)) => tags::NODE_VT_SUM,
             Some(&ValueType::Session { .. }) => tags::NODE_VT_SESSION,
             Some(&ValueType::List(_)) => tags::NODE_VT_LIST,
@@ -743,11 +740,10 @@ ensures: |ret| ret.0.as_image().as_ref().first().copied()
             Some(&Value::PathRefl(_)) => tags::NODE_V_PATH_REFL,
             Some(&Value::PathProduct(..)) => tags::NODE_V_PATH_PRODUCT,
             Some(&Value::PathEquiv { .. }) => tags::NODE_V_PATH_EQUIV,
-            None | Some(&Value::Unit) => tags::NODE_V_UNIT,
             Some(&Value::Variable(_)) => tags::NODE_V_VARIABLE,
             Some(&Value::Constant(_)) => tags::NODE_V_CONSTANT,
             Some(&Value::Literal(_)) => tags::NODE_V_LITERAL,
-            Some(&Value::Pair(..)) => tags::NODE_V_PAIR,
+            None | Some(&Value::Tuple(_)) => tags::NODE_V_TUPLE,
             Some(&Value::Injection(..)) => tags::NODE_V_INJECTION,
             Some(&Value::ListNil) => tags::NODE_V_LIST_NIL,
             Some(&Value::ListCons(..)) => tags::NODE_V_LIST_CONS,
@@ -768,7 +764,6 @@ ensures: |ret| ret.0.as_image().as_ref().first().copied()
             Some(&Computation::Bind(..)) => tags::NODE_C_BIND,
             Some(&Computation::Force(_)) => tags::NODE_C_FORCE,
             Some(&Computation::Case { .. }) => tags::NODE_C_CASE,
-            Some(&Computation::Absurd(_)) => tags::NODE_C_ABSURD,
             Some(&Computation::ListFold { .. }) => tags::NODE_C_LIST_FOLD,
         },
     })))]
@@ -781,7 +776,10 @@ fn encode_entry(
     let mut out = EncodedArtifact::new();
     match node {
         | AnyNode::ValueType(id) => match arena.value_type(id) {
-            | None => out.put_tag(tags::NODE_VT_UNIT),
+            | None => {
+                out.put_tag(tags::NODE_VT_PRODUCT);
+                out.put_uvarint(WireU64::from(WireUsize::from(0_usize)));
+            },
             | Some(value_type) => match *value_type {
                 | ValueType::Data {
                     declaration,
@@ -803,8 +801,6 @@ fn encode_entry(
                     out.put_tag(base_type_tag(base));
                 },
                 | ValueType::PathUniverse(..) => out.put_tag(tags::NODE_VT_PATH_UNIVERSE),
-                | ValueType::Unit => out.put_tag(tags::NODE_VT_UNIT),
-                | ValueType::Empty => out.put_tag(tags::NODE_VT_EMPTY),
                 | ValueType::Universe {
                     sort: GroundSort::Value,
                     ref level,
@@ -823,8 +819,14 @@ fn encode_entry(
                     out.put_tag(tags::NODE_VT_ABSTRACT);
                     out.put_uvarint(WireU64::from(WireUsize::from(usize::from(atom))));
                 },
-                | ValueType::Product(..) => out.put_tag(tags::NODE_VT_PRODUCT),
-                | ValueType::Sum(..) => out.put_tag(tags::NODE_VT_SUM),
+                | ValueType::Product(ref components) => {
+                    out.put_tag(tags::NODE_VT_PRODUCT);
+                    out.put_uvarint(WireU64::from(WireUsize::from(components.len())));
+                },
+                | ValueType::Sum(ref summands) => {
+                    out.put_tag(tags::NODE_VT_SUM);
+                    out.put_uvarint(WireU64::from(WireUsize::from(summands.len())));
+                },
                 | ValueType::Session { ref graph, .. } => {
                     out.put_tag(tags::NODE_VT_SESSION);
                     graph.write(|word| out.put_uvarint(WireU64::from(word.0)));
@@ -852,7 +854,10 @@ fn encode_entry(
             },
         },
         | AnyNode::Value(id) => match arena.value(id) {
-            | None => out.put_tag(tags::NODE_V_UNIT),
+            | None => {
+                out.put_tag(tags::NODE_V_TUPLE);
+                out.put_uvarint(WireU64::from(WireUsize::from(0_usize)));
+            },
             | Some(value) => match *value {
                 | Value::Constructor {
                     tag, ref fields, ..
@@ -888,17 +893,19 @@ fn encode_entry(
                         out.put_uvarint(WireU64::from(word.0));
                     }
                 },
-                | Value::Unit => out.put_tag(tags::NODE_V_UNIT),
                 | Value::Literal(ref literal) => {
                     out.put_tag(tags::NODE_V_LITERAL);
                     encode_literal(&mut out, literal);
                 },
-                | Value::Pair(..) => out.put_tag(tags::NODE_V_PAIR),
+                | Value::Tuple(ref components) => {
+                    out.put_tag(tags::NODE_V_TUPLE);
+                    out.put_uvarint(WireU64::from(WireUsize::from(components.len())));
+                },
                 | Value::ListNil => out.put_tag(tags::NODE_V_LIST_NIL),
                 | Value::ListCons(..) => out.put_tag(tags::NODE_V_LIST_CONS),
-                | Value::Injection(side, _) => {
+                | Value::Injection(summand, _) => {
                     out.put_tag(tags::NODE_V_INJECTION);
-                    out.put_tag(side_tag(side));
+                    out.put_uvarint(WireU64::from(WireUsize::from(usize::from(summand))));
                 },
                 | Value::Thunk(_) => out.put_tag(tags::NODE_V_THUNK),
                 | Value::Lift { ref target, .. } => {
@@ -929,8 +936,10 @@ fn encode_entry(
             | Some(&Computation::Return(_)) | None => out.put_tag(tags::NODE_C_RETURN),
             | Some(&Computation::Bind(..)) => out.put_tag(tags::NODE_C_BIND),
             | Some(&Computation::Force(_)) => out.put_tag(tags::NODE_C_FORCE),
-            | Some(&Computation::Case { .. }) => out.put_tag(tags::NODE_C_CASE),
-            | Some(&Computation::Absurd(_)) => out.put_tag(tags::NODE_C_ABSURD),
+            | Some(&Computation::Case { ref branches, .. }) => {
+                out.put_tag(tags::NODE_C_CASE);
+                out.put_uvarint(WireU64::from(WireUsize::from(branches.len())));
+            },
             | Some(&Computation::ListFold { .. }) => out.put_tag(tags::NODE_C_LIST_FOLD),
         },
     }
@@ -1242,45 +1251,6 @@ fn sign_tag(sign: Sign) -> WireTag
     }
 }
 
-/// The wire tag of an injection side.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: maps each injection side to its frozen tag.
-/// - provides: the total side-to-tag map, so a side's byte is decided in one
-///   place rather than at each write site.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 observes literal entry bytes for every frozen former, every
-///   base atom, both injection sides, nonzero inline levels and distinguishable
-///   one-, two- and three-child index sequences crossing varint boundaries.
-///   This separates tag reassignment, child permutation, missing payloads and
-///   lost high bits. It covers live nodes and supplied global assignments, not
-///   formation or inputs outside the live, acyclic graph domain. L3 compares
-///   complete appended bytes, including a nonempty prefix, with literal wire
-///   fixtures. Text covers NUL, multibyte UTF-8 and the 127/128 and 16383/16384
-///   length boundaries; literals cover every kind and sign plus canonical zero.
-///   Levels cover empty, constant, ordered multi-atom and u64-ceiling forms,
-///   and signatures distinguish both relations and parameter widths. These
-///   separate byte-versus-character lengths, field permutation, prefix damage
-///   and lost high bits. Arbitrary payload sizes and allocation failure are
-///   outside the fixture domain.
-/// - witness: `encode::tests::entry_goldens_pin_every_former_and_child_position`
-/// - witness: `encode::tests::text_and_literals_match_literal_wire_fixtures`
-/// - witness: `encode::tests::levels_and_interfaces_match_literal_wire_fixtures`
-#[spec(
-    ensures: |ret| ret == match side { Side::Left => tags::SIDE_LEFT, Side::Right => tags::SIDE_RIGHT },
-)]
-#[inline]
-fn side_tag(side: Side) -> WireTag
-{
-    match side {
-        | Side::Left => tags::SIDE_LEFT,
-        | Side::Right => tags::SIDE_RIGHT,
-    }
-}
-
 /// The wire tag of a fixpoint's termination claim.
 ///
 /// # Specification
@@ -1339,7 +1309,7 @@ mod tests
     use crate::decl::StructuredName;
     use crate::term::ConstantIndex;
     use crate::term::DeBruijnIndex;
-    use crate::term::Side;
+    use crate::term::Summand;
     use crate::types::GroundSort;
 
     #[cfg(anodized_panic)]
@@ -1536,21 +1506,24 @@ mod tests
                 &[],
                 &[0x00, 2],
             ),
-            (AnyNode::ValueType(arena.value_type_unit()), &[], &[0x01]),
+            (AnyNode::ValueType(arena.value_type_unit()), &[], &[0x03, 0]),
+            (AnyNode::ValueType(arena.value_type_empty()), &[], &[
+                0x04, 0,
+            ]),
             (
                 AnyNode::ValueType(arena.value_type_universe(GroundSort::Value, level.clone())),
                 &[],
                 &[0x02, 7, 0],
             ),
             (
-                AnyNode::ValueType(arena.value_type_product(t0, t1)),
+                AnyNode::ValueType(arena.value_type_product(&[t0, t1])),
                 &[first, second],
-                &[0x03, 3, 0x81, 1],
+                &[0x03, 2, 3, 0x81, 1],
             ),
             (
-                AnyNode::ValueType(arena.value_type_sum(t0, t1)),
-                &[first, second],
-                &[0x04, 3, 0x81, 1],
+                AnyNode::ValueType(arena.value_type_sum(&[t0, t1, t0])),
+                &[first, second, third],
+                &[0x04, 3, 3, 0x81, 1, 0x80, 0x80, 1],
             ),
             (AnyNode::ValueType(arena.value_type_thunk(k0)), &[first], &[
                 0x05, 3,
@@ -1580,7 +1553,7 @@ mod tests
                 &[],
                 &[0x0a, 0x81, 1],
             ),
-            (AnyNode::Value(arena.value_unit()), &[], &[0x0b]),
+            (AnyNode::Value(arena.value_unit()), &[], &[0x0d, 0]),
             (
                 AnyNode::Value(
                     arena.value_literal(Literal::Text(StringLiteral::new(String::from("é")))),
@@ -1589,19 +1562,19 @@ mod tests
                 &[0x0c, 1, 2, 0xc3, 0xa9],
             ),
             (
-                AnyNode::Value(arena.value_pair(v0, v1)),
+                AnyNode::Value(arena.value_tuple(&[v0, v1])),
                 &[first, second],
-                &[0x0d, 3, 0x81, 1],
+                &[0x0d, 2, 3, 0x81, 1],
             ),
             (
-                AnyNode::Value(arena.value_injection(Side::Left, v0)),
+                AnyNode::Value(arena.value_injection(Summand::from(0_usize), v0)),
                 &[first],
                 &[0x0e, 0, 3],
             ),
             (
-                AnyNode::Value(arena.value_injection(Side::Right, v0)),
+                AnyNode::Value(arena.value_injection(Summand::from(129_usize), v0)),
                 &[first],
-                &[0x0e, 1, 3],
+                &[0x0e, 0x81, 1, 3],
             ),
             (AnyNode::Value(arena.value_thunk(c0)), &[first], &[0x0f, 3]),
             (
@@ -1649,9 +1622,14 @@ mod tests
                 &[0x15, 3],
             ),
             (
-                AnyNode::Computation(arena.computation_case(v0, c0, c1)),
+                AnyNode::Computation(arena.computation_case(v0, &[c0, c1])),
                 &[first, second, third],
-                &[0x16, 3, 0x81, 1, 0x80, 0x80, 1],
+                &[0x16, 2, 3, 0x81, 1, 0x80, 0x80, 1],
+            ),
+            (
+                AnyNode::Computation(arena.computation_case(v0, &[])),
+                &[first],
+                &[0x16, 0, 3],
             ),
             (
                 AnyNode::ValueType(arena.value_type_abstract(ConstantIndex::from(129_usize))),
@@ -1716,9 +1694,9 @@ mod tests
         let first_unit = arena.value_unit();
         let second_unit = arena.value_unit();
         let variable = arena.value_variable(DeBruijnIndex::from(0x4000_u32));
-        let first_pair = arena.value_pair(first_unit, variable);
-        let equal_pair = arena.value_pair(second_unit, variable);
-        let reversed = arena.value_pair(variable, first_unit);
+        let first_pair = arena.value_tuple(&[first_unit, variable]);
+        let equal_pair = arena.value_tuple(&[second_unit, variable]);
+        let reversed = arena.value_tuple(&[variable, first_unit]);
         let mut interner = super::Interner::new();
         let mut first_segment = Vec::new();
         assert_eq!(
@@ -1767,7 +1745,7 @@ mod tests
             ),
             GlobalIndex::from(2_u32)
         );
-        let expected: &[&[u8]] = &[&[0x09, 0x80, 0x80, 1], &[0x0d, 0, 1]];
+        let expected: &[&[u8]] = &[&[0x09, 0x80, 0x80, 1], &[0x0d, 2, 0, 1]];
         assert_eq!(second_segment.len(), expected.len());
         for (entry, &bytes) in second_segment.iter().zip(expected) {
             assert_eq!(entry.0.as_image().as_ref(), bytes);
@@ -1799,7 +1777,7 @@ mod tests
                 .0
                 .as_image()
                 .as_ref(),
-            [0x0d, 1, 0]
+            [0x0d, 2, 1, 0]
         );
         assert_eq!(interner.next, GlobalIndex::from(4_u32));
         assert_eq!(interner.by_content.len(), 4);
@@ -1835,7 +1813,7 @@ mod tests
             MarkedDeclaration::new(AdmissionMark::Checked, axiom),
         ];
         let expected = [
-            b'G', b'K', b'X', b'1', 2, 0, 1, 0, 3, 0, 2, 0, 0, 0, 1, 0x02, 0, 0, 0, 1, 0, 2, 1,
+            b'G', b'K', b'X', b'1', 3, 0, 1, 0, 3, 0, 2, 0, 0, 0, 1, 0x02, 0, 0, 0, 1, 0, 2, 1,
             b'a', 2, 0xc3, 0xa9, 0, 0, 2, 0x17, 0, 0x1c, 1, 0, 2, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
         ];
         let bytes = super::encode(&arena, &declarations);

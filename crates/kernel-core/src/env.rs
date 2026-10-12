@@ -1387,13 +1387,15 @@ enum CodeEdges
 #[spec(ensures: |ret| match root {
     AnyNode::Value(id) => match arena.value(id) {
         Some(&Value::Constant(index)) => ret.len() == 1_usize && ret.contains(&index),
-        Some(&Value::Variable(_) | &Value::Unit | &Value::Literal(_)) | None => ret.is_empty(),
+        Some(&Value::Variable(_) | &Value::Literal(_)) | None => ret.is_empty(),
+        Some(&Value::Tuple(ref components)) if components.is_empty() => ret.is_empty(),
         _ => true,
     },
     AnyNode::Computation(id) => arena.computation(id).is_some() || ret.is_empty(),
     AnyNode::ValueType(id) => match arena.value_type(id) {
         Some(&ValueType::Abstract(index)) => ret.len() == 1_usize && ret.contains(&index),
-        Some(&ValueType::Base(_) | &ValueType::Unit | &ValueType::Empty | &ValueType::Universe { .. }) | None => ret.is_empty(),
+        Some(&ValueType::Base(_) | &ValueType::Universe { .. }) | None => ret.is_empty(),
+        Some(&ValueType::Product(ref parts) | &ValueType::Sum(ref parts)) if parts.is_empty() => ret.is_empty(),
         Some(&ValueType::Element { .. } | &ValueType::PathUniverse(..)) if matches!(codes, CodeEdges::Stop) => ret.is_empty(),
         _ => true,
     },
@@ -1438,10 +1440,7 @@ fn collect_reachable(
                 | Some(&Value::Constant(index)) => {
                     let _fresh = found.insert(index);
                 },
-                | Some(
-                    &Value::ListNil | &Value::Variable(_) | &Value::Unit | &Value::Literal(_),
-                )
-                | None => {},
+                | Some(&Value::ListNil | &Value::Variable(_) | &Value::Literal(_)) | None => {},
                 | Some(&Value::PathEquiv {
                     path_type,
                     forward,
@@ -1463,12 +1462,14 @@ fn collect_reachable(
                 | Some(&Value::PathRefl(code)) => pending.push(AnyNode::Value(code)),
                 | Some(
                     &Value::PathProduct(first, second)
-                    | &Value::Pair(first, second)
                     | &Value::ListCons(first, second)
                     | &Value::StaticApplication(first, second),
                 ) => {
                     pending.push(AnyNode::Value(first));
                     pending.push(AnyNode::Value(second));
+                },
+                | Some(&Value::Tuple(ref components)) => {
+                    pending.extend(components.iter().copied().map(AnyNode::Value));
                 },
                 | Some(&Value::Injection(_, body) | &Value::Lift { body, .. }) => {
                     pending.push(AnyNode::Value(body));
@@ -1516,11 +1517,7 @@ fn collect_reachable(
                     pending.push(AnyNode::Computation(head));
                     pending.push(AnyNode::Value(argument));
                 },
-                | Some(
-                    &Computation::Return(value)
-                    | &Computation::Force(value)
-                    | &Computation::Absurd(value),
-                ) => {
+                | Some(&Computation::Return(value) | &Computation::Force(value)) => {
                     pending.push(AnyNode::Value(value));
                 },
                 | Some(&Computation::Bind(bound, body)) => {
@@ -1529,12 +1526,10 @@ fn collect_reachable(
                 },
                 | Some(&Computation::Case {
                     scrutinee,
-                    on_left,
-                    on_right,
+                    ref branches,
                 }) => {
                     pending.push(AnyNode::Value(scrutinee));
-                    pending.push(AnyNode::Computation(on_left));
-                    pending.push(AnyNode::Computation(on_right));
+                    pending.extend(branches.iter().copied().map(AnyNode::Computation));
                 },
                 | None => {},
             },
@@ -1565,21 +1560,14 @@ fn collect_reachable(
                         pending.push(AnyNode::Value(code));
                     }
                 },
-                | Some(
-                    &ValueType::Base(_)
-                    | &ValueType::Unit
-                    | &ValueType::Empty
-                    | &ValueType::Universe { .. },
-                )
-                | None => {},
-                | Some(
-                    &ValueType::Product(first, second)
-                    | &ValueType::Sum(first, second)
-                    | &ValueType::StaticPi {
-                        domain: first,
-                        codomain: second,
-                    },
-                ) => {
+                | Some(&ValueType::Base(_) | &ValueType::Universe { .. }) | None => {},
+                | Some(&ValueType::Product(ref parts) | &ValueType::Sum(ref parts)) => {
+                    pending.extend(parts.iter().copied().map(AnyNode::ValueType));
+                },
+                | Some(&ValueType::StaticPi {
+                    domain: first,
+                    codomain: second,
+                }) => {
                     pending.push(AnyNode::ValueType(first));
                     pending.push(AnyNode::ValueType(second));
                 },
@@ -1657,7 +1645,8 @@ fn audited_type_constants(
 /// - witness: `env::tests::sealing_provenance_does_not_follow_codes`
 #[spec(ensures: |ret| match arena.value_type(root) {
     Some(&ValueType::Abstract(index)) => ret.len() == 1_usize && ret.contains(&index),
-    Some(&ValueType::Data { .. } | &ValueType::Base(_) | &ValueType::Unit | &ValueType::Universe { .. } | &ValueType::Element { .. }) | None => ret.is_empty(),
+    Some(&ValueType::Data { .. } | &ValueType::Base(_) | &ValueType::Universe { .. } | &ValueType::Element { .. }) | None => ret.is_empty(),
+    Some(&ValueType::Product(ref parts)) if parts.is_empty() => ret.is_empty(),
     _ => true,
 })]
 #[inline]

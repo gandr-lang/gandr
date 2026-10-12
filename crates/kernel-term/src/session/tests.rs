@@ -20,9 +20,8 @@ use crate::wire::WireU64;
 fn session_artifact_retains_graph_payloads_and_evidence()
 {
     let mut arena = crate::TermArena::new();
-    let unit = arena.value_type_unit();
     let payload = arena.value_type_base(crate::BaseType::String);
-    let payloads = arena.value_type_product(payload, unit);
+    let payloads = arena.value_type_product(&[payload]);
     let graph = alloc::sync::Arc::new(Graph {
         root: State(0),
         nodes: vec![
@@ -44,8 +43,7 @@ fn session_artifact_retains_graph_payloads_and_evidence()
     let classifier = arena.value_type_path_universe(code, code);
     let payload_code = arena.value_quote(payload);
     let proof = arena.value_path_refl(payload_code);
-    let end = arena.value_unit();
-    let proofs = arena.value_pair(proof, end);
+    let proofs = arena.value_tuple(&[proof]);
     let value = arena.value_session_path(classifier, alloc::sync::Arc::clone(&evidence), proofs);
     let declaration = crate::DeclarationBuilder::new(&mut arena).def(
         crate::LevelSignature::monomorphic(),
@@ -94,21 +92,25 @@ fn session_artifact_retains_graph_payloads_and_evidence()
         panic!("session code retained")
     };
     assert_eq!(actual, &graph);
-    let crate::ValueType::Product(payload, _) = *decoded
+    let crate::ValueType::Product(ref telescope) = *decoded
         .arena()
         .value_type(payloads)
         .expect("payload telescope")
     else {
         panic!("payload code retained")
     };
+    let &[payload] = &**telescope
+    else {
+        panic!("one payload, no terminator")
+    };
     assert_eq!(
         decoded.arena().value_type(payload),
         Some(&crate::ValueType::Base(crate::BaseType::String))
     );
-    let crate::Value::Pair(proof, _) = *decoded
+    let Some(&[proof]) = decoded
         .arena()
         .value(payload_paths)
-        .expect("payload proofs")
+        .and_then(crate::Value::components)
     else {
         panic!("proof tuple retained")
     };

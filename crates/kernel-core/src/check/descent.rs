@@ -307,12 +307,18 @@ fn walk(
                 },
                 | Some(
                     &(Value::PathProduct(first, second)
-                    | Value::Pair(first, second)
                     | Value::ListCons(first, second)
                     | Value::StaticApplication(first, second)),
                 ) => {
                     pending.push((AnyNode::Value(first), depth, results));
                     pending.push((AnyNode::Value(second), depth, results));
+                },
+                | Some(&Value::Tuple(ref components)) => {
+                    pending.extend(
+                        components
+                            .iter()
+                            .map(|&component| (AnyNode::Value(component), depth, results)),
+                    );
                 },
                 | Some(
                     &(Value::PathRefl(body) | Value::Injection(_, body) | Value::Lift { body, .. }),
@@ -328,10 +334,7 @@ fn walk(
                 | Some(&Value::QuoteComputation(quoted)) => {
                     pending.push((AnyNode::CompType(quoted), depth, results));
                 },
-                | Some(
-                    &(Value::Constant(_) | Value::Unit | Value::Literal(_) | Value::ListNil),
-                )
-                | None => {},
+                | Some(&(Value::Constant(_) | Value::Literal(_) | Value::ListNil)) | None => {},
             },
             | AnyNode::Computation(id) => match arena.computation(id) {
                 | Some(&Computation::Application(head, argument)) => {
@@ -381,19 +384,20 @@ fn walk(
                 },
                 | Some(&Computation::Case {
                     scrutinee,
-                    on_left,
-                    on_right,
+                    ref branches,
                 }) => {
                     pending.push((AnyNode::Value(scrutinee), depth, results));
-                    pending.push((AnyNode::Computation(on_left), deeper, results));
-                    pending.push((AnyNode::Computation(on_right), deeper, results));
+                    pending.extend(
+                        branches
+                            .iter()
+                            .map(|&case| (AnyNode::Computation(case), deeper, results)),
+                    );
                 },
                 | Some(&(Computation::Lambda(body) | Computation::Fixpoint { body, .. })) => {
                     pending.push((AnyNode::Computation(body), deeper, results));
                 },
                 | Some(
                     &(Computation::RecordProjection(value, _)
-                    | Computation::Absurd(value)
                     | Computation::Return(value)
                     | Computation::Force(value)),
                 ) => {
@@ -433,14 +437,17 @@ fn walk(
                             .map(|&field| (AnyNode::ValueType(field), depth, results)),
                     );
                 },
-                | Some(
-                    &(ValueType::Product(first, second)
-                    | ValueType::Sum(first, second)
-                    | ValueType::StaticPi {
-                        domain: first,
-                        codomain: second,
-                    }),
-                ) => {
+                | Some(&(ValueType::Product(ref parts) | ValueType::Sum(ref parts))) => {
+                    pending.extend(
+                        parts
+                            .iter()
+                            .map(|&part| (AnyNode::ValueType(part), depth, results)),
+                    );
+                },
+                | Some(&ValueType::StaticPi {
+                    domain: first,
+                    codomain: second,
+                }) => {
                     pending.push((AnyNode::ValueType(first), depth, results));
                     pending.push((AnyNode::ValueType(second), depth, results));
                 },
@@ -464,11 +471,7 @@ fn walk(
                     pending.push((AnyNode::Value(code), depth, results));
                 },
                 | Some(
-                    &(ValueType::Base(_)
-                    | ValueType::Unit
-                    | ValueType::Empty
-                    | ValueType::Universe { .. }
-                    | ValueType::Abstract(_)),
+                    &(ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_)),
                 )
                 | None => {},
             },

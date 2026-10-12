@@ -201,7 +201,7 @@ pub enum Value
         path_type: ValueTypeId,
         /// Finite untrusted relation, replayed at formation.
         evidence: alloc::sync::Arc<crate::session::Evidence>,
-        /// Native payload-path tuple, terminated by Unit.
+        /// Native payload-path tuple, one path per payload, in order.
         payload_paths: ValueId,
     },
     /// Reflexivity at a quoted closed first-order or session code.
@@ -224,14 +224,13 @@ pub enum Value
     Variable(DeBruijnIndex),
     /// A reference to a prior declaration.
     Constant(ConstantIndex),
-    /// The unique inhabitant of the unit type.
-    Unit,
     /// A base-type literal.
     Literal(Literal),
-    /// A pair, introducing the product `A × B`.
-    Pair(ValueId, ValueId),
-    /// A sum injection, introducing `A + B` on the given side.
-    Injection(Side, ValueId),
+    /// A tuple of its components, in order, introducing the product of their
+    /// types: the empty tuple is the unique inhabitant of the unit type.
+    Tuple(alloc::boxed::Box<[ValueId]>),
+    /// A sum injection into the summand at the given position.
+    Injection(Summand, ValueId),
     /// The empty native list; its element type comes from checking.
     ListNil,
     /// A native list cell, with its head and list tail.
@@ -264,6 +263,51 @@ pub enum Value
     /// static applications, and nothing reduces it. A static lambda a producer
     /// wrote is normalized away before export.
     StaticApplication(ValueId, ValueId),
+}
+
+impl Value
+{
+    /// The unit value: the tuple of no components.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Tuple([])`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the unit built here and the one the arena mints are
+    ///   the same node, and a tuple of two components is not the unit.
+    /// - witness: `arena::tests::the_unit_and_the_empty_type_are_zero_ary`
+    #[spec(ensures: |ret| matches!(ret, Self::Tuple(ref components) if components.is_empty()))]
+    #[inline]
+    #[must_use]
+    pub fn unit() -> Self
+    {
+        Self::Tuple(alloc::boxed::Box::default())
+    }
+
+    /// The components of a tuple, in order; nothing for any other former.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the tuple's own component list for a tuple, and nothing for
+    ///   every other former.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a tuple of two components, the empty tuple and an
+    ///   injection separate the tuple reading from every other former.
+    /// - witness: `arena::tests::the_unit_and_the_empty_type_are_zero_ary`
+    #[spec(ensures: |ret| match *self { Self::Tuple(ref components) => ret == Some(&**components), _ => ret.is_none() })]
+    #[inline]
+    #[must_use]
+    pub fn components(&self) -> Option<&[ValueId]>
+    {
+        match *self {
+            | Self::Tuple(ref components) => Some(components),
+            | _ => None,
+        }
+    }
 }
 
 /// A computation: the negative fragment of the term vocabulary.
@@ -305,9 +349,6 @@ pub enum Computation
     },
     /// Return one named field of a structural record.
     RecordProjection(ValueId, crate::FieldLabel),
-    /// Empty elimination: checks against any computation type when its
-    /// scrutinee checks at Empty. There is no beta rule.
-    Absurd(ValueId),
     /// A lambda `λ. M`, binding one value variable; introduces `A → C`.
     Lambda(ComputationId),
     /// An application `M v` of a computation to a value argument.
@@ -318,15 +359,16 @@ pub enum Computation
     Bind(ComputationId, ComputationId),
     /// A force `force v` of a thunk value `v : U C`, running it as `C`.
     Force(ValueId),
-    /// A sum elimination, binding the injected value into each branch.
+    /// A sum elimination, binding the injected value into the branch of its
+    /// summand. A case of no branches eliminates the empty sum: it checks
+    /// against any computation type and has no beta rule.
     Case
     {
         /// The scrutinee value, of a sum type.
         scrutinee: ValueId,
-        /// The left branch, checked with the left summand bound.
-        on_left: ComputationId,
-        /// The right branch, checked with the right summand bound.
-        on_right: ComputationId,
+        /// One branch per summand, in summand order, each checked with its
+        /// summand bound.
+        branches: alloc::boxed::Box<[ComputationId]>,
     },
     /// Pure right fold of a native list. The cons branch binds the head,
     /// then the folded tail result (index zero).

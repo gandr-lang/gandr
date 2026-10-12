@@ -34,9 +34,9 @@
 //!
 //! | region        | tags        | holds                                                                |
 //! | ------------- | ----------- | -------------------------------------------------------------------- |
-//! | frozen block  | `0x00–0x1F` | the original native formers, contiguous from zero                   |
+//! | frozen block  | `0x00–0x1F` | the original native formers from zero; `0x01` and `0x0B` retired in version 3 |
 //! | sharing block | `0x20–0x27` | the stored sharing plane: one former per family, plus held weakening |
-//! | empty fragment | `0x28–0x29` | Empty value type and checking-only absurd computation |
+//! | empty fragment | `0x28–0x29` | retired in version 3: the empty type is the sum of no summands |
 //! | universe paths | `0x2A–0x2E` | `Path_U`, reflexivity, equivalence, product paths and transport        |
 //! | higher fields | `0x30–0x37` | reserved; guarded observations remain an in-memory rule language |
 //! | funext | `0x38–0x47` | reserved; higher evaluation remains an in-memory rule language |
@@ -101,14 +101,20 @@ use crate::wire::WireTag;
 ///   requires revising its conformance evidence.
 /// - witness: `sharing_format::sharing_format::a_foreign_magic_is_refused_at_the_header`
 /// - witness: `sharing_format::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
-/// - witness: `tags::tests::the_tag_table_is_a_contiguous_frozen_block`
+/// - witness: `tags::tests::the_frozen_block_keeps_its_order_around_the_retired_tags`
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 pub const MAGIC: [u8; 4] = *b"GKX1";
 
 /// The format version this crate writes and the only one it accepts.
 ///
 /// Version two writes the version field and every fixed-width integer field
-/// little-endian.
+/// little-endian. Version three makes products, sums, tuples and cases n-ary:
+/// [`NODE_VT_PRODUCT`], [`NODE_VT_SUM`], [`NODE_V_TUPLE`] and [`NODE_C_CASE`]
+/// carry an inline child count, [`NODE_V_INJECTION`] an inline summand
+/// position, and the unit, empty, unit-value and absurd tags `0x01`, `0x28`,
+/// `0x0B` and `0x29` are retired, because the unit is the empty product and
+/// tuple and the empty type the empty sum, eliminated by a case of no
+/// branches. A retired tag is refused as any unassigned byte is.
 ///
 /// A refusal names the version it met rather than guessing at it, which is
 /// what makes an older reader meeting a newer artifact stop with an accurate
@@ -129,9 +135,9 @@ pub const MAGIC: [u8; 4] = *b"GKX1";
 ///   requires revising its conformance evidence.
 /// - witness: `sharing_format::sharing_format::a_predecessor_version_is_refused_by_name`
 /// - witness: `sharing_format::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
-/// - witness: `tags::tests::the_tag_table_is_a_contiguous_frozen_block`
+/// - witness: `tags::tests::the_frozen_block_keeps_its_order_around_the_retired_tags`
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
-pub const FORMAT_VERSION: FormatVersion = FormatVersion(2);
+pub const FORMAT_VERSION: FormatVersion = FormatVersion(3);
 
 /// Admission mark: admitted through the checked choke point.
 pub const ADMISSION_CHECKED: WireTag = WireTag(0);
@@ -163,11 +169,6 @@ pub const SIGN_NON_NEGATIVE: WireTag = WireTag(0);
 /// Literal sign: negative.
 pub const SIGN_NEGATIVE: WireTag = WireTag(1);
 
-/// Injection side: the left injection.
-pub const SIDE_LEFT: WireTag = WireTag(0);
-/// Injection side: the right injection.
-pub const SIDE_RIGHT: WireTag = WireTag(1);
-
 /// Fixpoint evidence: no claim, a partial fixpoint.
 pub const FIXPOINT_PARTIAL: WireTag = WireTag(0);
 /// Fixpoint evidence: a structural-descent claim.
@@ -187,13 +188,13 @@ pub const RELATION_EQ: WireTag = WireTag(1);
 
 /// Node tag: a value-type base atom, with a base-type byte inline.
 pub const NODE_VT_BASE: WireTag = WireTag(0x00);
-/// Node tag: the value-type unit.
-pub const NODE_VT_UNIT: WireTag = WireTag(0x01);
 /// Node tag: the universe of value types, with an inline level.
 pub const NODE_VT_UNIVERSE: WireTag = WireTag(0x02);
-/// Node tag: the product former, over two value types.
+/// Node tag: the product former, with an inline component count, over its
+/// component value types in order; the unit type is the product of none.
 pub const NODE_VT_PRODUCT: WireTag = WireTag(0x03);
-/// Node tag: the sum former, over two value types.
+/// Node tag: the sum former, with an inline summand count, over its summand
+/// value types in order; the empty type is the sum of none.
 pub const NODE_VT_SUM: WireTag = WireTag(0x04);
 /// Node tag: the value-type thunk former, over one computation type.
 pub const NODE_VT_THUNK: WireTag = WireTag(0x05);
@@ -209,14 +210,14 @@ pub const NODE_CT_ARROW: WireTag = WireTag(0x08);
 pub const NODE_V_VARIABLE: WireTag = WireTag(0x09);
 /// Node tag: a constant reference, with an inline admission position.
 pub const NODE_V_CONSTANT: WireTag = WireTag(0x0A);
-/// Node tag: the unit value.
-pub const NODE_V_UNIT: WireTag = WireTag(0x0B);
 /// Node tag: a literal value, with an inline literal kind and canonical
 /// payload.
 pub const NODE_V_LITERAL: WireTag = WireTag(0x0C);
-/// Node tag: a pair value, over two values.
-pub const NODE_V_PAIR: WireTag = WireTag(0x0D);
-/// Node tag: a sum injection value, with an inline side, over one value.
+/// Node tag: a tuple value, with an inline component count, over its
+/// components in order; the unit value is the tuple of none.
+pub const NODE_V_TUPLE: WireTag = WireTag(0x0D);
+/// Node tag: a sum injection value, with an inline summand position, over one
+/// value.
 pub const NODE_V_INJECTION: WireTag = WireTag(0x0E);
 /// Node tag: a thunk value, over one computation.
 pub const NODE_V_THUNK: WireTag = WireTag(0x0F);
@@ -232,8 +233,8 @@ pub const NODE_C_RETURN: WireTag = WireTag(0x13);
 pub const NODE_C_BIND: WireTag = WireTag(0x14);
 /// Node tag: a force computation, over one value.
 pub const NODE_C_FORCE: WireTag = WireTag(0x15);
-/// Node tag: a case computation, over a value scrutinee and two computation
-/// branches.
+/// Node tag: a case computation, with an inline branch count, over a value
+/// scrutinee and its computation branches in summand order.
 pub const NODE_C_CASE: WireTag = WireTag(0x16);
 /// Node tag: a sealed abstract type, with the admission position of its
 /// abstract-type declaration inline and no children.
@@ -286,7 +287,7 @@ pub const NODE_SHARE_COMP_TYPE: WireTag = WireTag(0x23);
 ///   requires revising its conformance evidence.
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 /// - witness: `sharing_format::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
-/// - witness: `tags::tests::the_tag_table_is_a_contiguous_frozen_block`
+/// - witness: `tags::tests::the_frozen_block_keeps_its_order_around_the_retired_tags`
 pub const SHARING_BLOCK_FIRST: WireTag = NODE_SHARE_VALUE;
 /// The last tag of the reserved stored-sharing block: the fourth held slot,
 /// which the explicit weakening form would take one family at a time.
@@ -306,7 +307,7 @@ pub const SHARING_BLOCK_FIRST: WireTag = NODE_SHARE_VALUE;
 ///   requires revising its conformance evidence.
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 /// - witness: `sharing_format::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
-/// - witness: `tags::tests::the_tag_table_is_a_contiguous_frozen_block`
+/// - witness: `tags::tests::the_frozen_block_keeps_its_order_around_the_retired_tags`
 pub const SHARING_BLOCK_LAST: WireTag = WireTag(0x27);
 
 /// Node tag: universe paths, over source and target codes.
@@ -323,12 +324,6 @@ pub const NODE_V_PATH_PRODUCT: WireTag = WireTag(0x2D);
 
 /// Node tag: transport, over a path and its source value.
 pub const NODE_C_TRANSPORT: WireTag = WireTag(0x2E);
-
-/// Node tag: the empty value type, with no children.
-pub const NODE_VT_EMPTY: WireTag = WireTag(0x28);
-
-/// Node tag: empty elimination, over one value scrutinee.
-pub const NODE_C_ABSURD: WireTag = WireTag(0x29);
 
 /// Node tag: the strictly positive list code, over one element type.
 pub const NODE_VT_LIST: WireTag = WireTag(0x50);
@@ -381,7 +376,7 @@ pub const NODE_C_LIST_FOLD: WireTag = WireTag(0x5C);
 ///   distinguish tag reuse, wrong arity and collapsed classification criteria;
 ///   arbitrary extension vocabularies are outside this fixed catalogue.
 /// - witness: `tags::tests::the_tag_table_matches_the_wire_arities`
-/// - witness: `tags::tests::the_tag_table_is_a_contiguous_frozen_block`
+/// - witness: `tags::tests::the_frozen_block_keeps_its_order_around_the_retired_tags`
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
@@ -414,7 +409,7 @@ pub enum ChildArity
 ///   distinguish tag reuse, wrong arity and collapsed classification criteria;
 ///   arbitrary extension vocabularies are outside this fixed catalogue.
 /// - witness: `tags::tests::the_tag_table_matches_the_wire_arities`
-/// - witness: `tags::tests::the_tag_table_is_a_contiguous_frozen_block`
+/// - witness: `tags::tests::the_frozen_block_keeps_its_order_around_the_retired_tags`
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
@@ -461,7 +456,7 @@ impl From<TokenCount> for u8
 ///   distinguish tag reuse, wrong arity and collapsed classification criteria;
 ///   arbitrary extension vocabularies are outside this fixed catalogue.
 /// - witness: `tags::tests::the_tag_table_matches_the_wire_arities`
-/// - witness: `tags::tests::the_tag_table_is_a_contiguous_frozen_block`
+/// - witness: `tags::tests::the_frozen_block_keeps_its_order_around_the_retired_tags`
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
@@ -497,7 +492,7 @@ pub enum NodeTagVerdict
 ///   distinguish tag reuse, wrong arity and collapsed classification criteria;
 ///   arbitrary extension vocabularies are outside this fixed catalogue.
 /// - witness: `tags::tests::the_tag_table_matches_the_wire_arities`
-/// - witness: `tags::tests::the_tag_table_is_a_contiguous_frozen_block`
+/// - witness: `tags::tests::the_frozen_block_keeps_its_order_around_the_retired_tags`
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
@@ -537,12 +532,12 @@ pub struct NodeTagDescription
 ///   distinguish tag reuse, wrong arity and collapsed classification criteria;
 ///   arbitrary extension vocabularies are outside this fixed catalogue.
 /// - witness: `tags::tests::the_tag_table_matches_the_wire_arities`
-/// - witness: `tags::tests::the_tag_table_is_a_contiguous_frozen_block`
+/// - witness: `tags::tests::the_frozen_block_keeps_its_order_around_the_retired_tags`
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_EMPTY.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_FIXPOINT.0))
+    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_FIXPOINT.0))
             && match max_token_bound { Some(bound) => bound.0 >= 1, None => true },
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -589,13 +584,13 @@ const fn row(
 ///   distinguish tag reuse, wrong arity and collapsed classification criteria;
 ///   arbitrary extension vocabularies are outside this fixed catalogue.
 /// - witness: `tags::tests::the_tag_table_matches_the_wire_arities`
-/// - witness: `tags::tests::the_tag_table_is_a_contiguous_frozen_block`
+/// - witness: `tags::tests::the_frozen_block_keeps_its_order_around_the_retired_tags`
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_EMPTY.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_FIXPOINT.0))
-            && !matches!(tag, NODE_VT_BASE | NODE_VT_UNIT | NODE_V_VARIABLE | NODE_V_CONSTANT | NODE_V_UNIT | NODE_VT_ABSTRACT | NODE_VT_EMPTY | NODE_V_LIST_NIL),
+    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_FIXPOINT.0))
+            && !matches!(tag, NODE_VT_BASE | NODE_V_VARIABLE | NODE_V_CONSTANT | NODE_VT_ABSTRACT | NODE_V_LIST_NIL),
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
             && ret.token_contribution.0 == 1
@@ -637,12 +632,12 @@ const fn unbounded(
 ///   distinguish tag reuse, wrong arity and collapsed classification criteria;
 ///   arbitrary extension vocabularies are outside this fixed catalogue.
 /// - witness: `tags::tests::the_tag_table_matches_the_wire_arities`
-/// - witness: `tags::tests::the_tag_table_is_a_contiguous_frozen_block`
+/// - witness: `tags::tests::the_frozen_block_keeps_its_order_around_the_retired_tags`
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: match tag { NODE_VT_UNIT | NODE_V_UNIT | NODE_VT_EMPTY | NODE_V_LIST_NIL => bound.0 >= 1, NODE_V_VARIABLE | NODE_V_CONSTANT | NODE_VT_ABSTRACT => bound.0 >= 2, _ => false },
+    requires: match tag { NODE_V_LIST_NIL => bound.0 >= 1, NODE_V_VARIABLE | NODE_V_CONSTANT | NODE_VT_ABSTRACT => bound.0 >= 2, _ => false },
     ensures: |ret| ret.tag.0 == tag.0
             && matches!(ret.child_arity, ChildArity::Fixed(0))
             && ret.token_contribution.0 == 1
@@ -690,11 +685,11 @@ const fn bounded_alias(
 ///   distinguish tag reuse, wrong arity and collapsed classification criteria;
 ///   arbitrary extension vocabularies are outside this fixed catalogue.
 /// - witness: `tags::tests::the_tag_table_matches_the_wire_arities`
-/// - witness: `tags::tests::the_tag_table_is_a_contiguous_frozen_block`
+/// - witness: `tags::tests::the_frozen_block_keeps_its_order_around_the_retired_tags`
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
-pub const NODE_TAG_TABLE: [NodeTagDescription; 52] = [
+pub const NODE_TAG_TABLE: [NodeTagDescription; 48] = [
     row(
         NODE_VT_BASE,
         ChildArity::Fixed(0),
@@ -702,19 +697,17 @@ pub const NODE_TAG_TABLE: [NodeTagDescription; 52] = [
         NodeTagVerdict::Boundary,
         NodeTagVerdict::Alias,
     ),
-    bounded_alias(NODE_VT_UNIT, TokenCount(1)),
     unbounded(NODE_VT_UNIVERSE, ChildArity::Fixed(0)),
-    unbounded(NODE_VT_PRODUCT, ChildArity::Fixed(2)),
-    unbounded(NODE_VT_SUM, ChildArity::Fixed(2)),
+    unbounded(NODE_VT_PRODUCT, ChildArity::Counted(0)),
+    unbounded(NODE_VT_SUM, ChildArity::Counted(0)),
     unbounded(NODE_VT_THUNK, ChildArity::Fixed(1)),
     unbounded(NODE_VT_LIFT, ChildArity::Fixed(1)),
     unbounded(NODE_CT_RETURNER, ChildArity::Fixed(1)),
     unbounded(NODE_CT_ARROW, ChildArity::Fixed(2)),
     bounded_alias(NODE_V_VARIABLE, TokenCount(2)),
     bounded_alias(NODE_V_CONSTANT, TokenCount(2)),
-    bounded_alias(NODE_V_UNIT, TokenCount(1)),
     unbounded(NODE_V_LITERAL, ChildArity::Fixed(0)),
-    unbounded(NODE_V_PAIR, ChildArity::Fixed(2)),
+    unbounded(NODE_V_TUPLE, ChildArity::Counted(0)),
     unbounded(NODE_V_INJECTION, ChildArity::Fixed(1)),
     unbounded(NODE_V_THUNK, ChildArity::Fixed(1)),
     unbounded(NODE_V_LIFT, ChildArity::Fixed(1)),
@@ -723,7 +716,7 @@ pub const NODE_TAG_TABLE: [NodeTagDescription; 52] = [
     unbounded(NODE_C_RETURN, ChildArity::Fixed(1)),
     unbounded(NODE_C_BIND, ChildArity::Fixed(2)),
     unbounded(NODE_C_FORCE, ChildArity::Fixed(1)),
-    unbounded(NODE_C_CASE, ChildArity::Fixed(3)),
+    unbounded(NODE_C_CASE, ChildArity::Counted(1)),
     bounded_alias(NODE_VT_ABSTRACT, TokenCount(2)),
     unbounded(NODE_CT_PI, ChildArity::Fixed(2)),
     unbounded(NODE_VT_ELEMENT, ChildArity::Fixed(1)),
@@ -733,8 +726,6 @@ pub const NODE_TAG_TABLE: [NodeTagDescription; 52] = [
     unbounded(NODE_V_QUOTE_COMPUTATION, ChildArity::Fixed(1)),
     unbounded(NODE_VT_STATIC_PI, ChildArity::Fixed(2)),
     unbounded(NODE_V_STATIC_APPLICATION, ChildArity::Fixed(2)),
-    bounded_alias(NODE_VT_EMPTY, TokenCount(1)),
-    unbounded(NODE_C_ABSURD, ChildArity::Fixed(1)),
     unbounded(NODE_VT_PATH_UNIVERSE, ChildArity::Fixed(2)),
     unbounded(NODE_V_PATH_REFL, ChildArity::Fixed(1)),
     unbounded(NODE_V_PATH_EQUIV, ChildArity::Fixed(3)),
@@ -773,7 +764,7 @@ mod tests
     use crate::base::Sign;
     use crate::term::ConstantIndex;
     use crate::term::DeBruijnIndex;
-    use crate::term::Side;
+    use crate::term::Summand;
     use crate::types::GroundSort;
     use crate::wire::WireTag;
 
@@ -806,9 +797,8 @@ mod tests
                         Some(&crate::Value::Record(_)) => row.tag == super::NODE_V_RECORD,
                         Some(&crate::Value::Variable(_)) => row.tag == super::NODE_V_VARIABLE,
                         Some(&crate::Value::Constant(_)) => row.tag == super::NODE_V_CONSTANT,
-                        Some(&crate::Value::Unit) => row.tag == super::NODE_V_UNIT,
                         Some(&crate::Value::Literal(_)) => row.tag == super::NODE_V_LITERAL,
-                        Some(&crate::Value::Pair(_, _)) => row.tag == super::NODE_V_PAIR,
+                        Some(&crate::Value::Tuple(_)) => row.tag == super::NODE_V_TUPLE,
                         Some(&crate::Value::Injection(_, _)) => row.tag == super::NODE_V_INJECTION,
                         Some(&crate::Value::Thunk(_)) => row.tag == super::NODE_V_THUNK,
                         Some(&crate::Value::Lift { .. }) => row.tag == super::NODE_V_LIFT,
@@ -833,7 +823,6 @@ mod tests
                         Some(&crate::Computation::Bind(_, _)) => row.tag == super::NODE_C_BIND,
                         Some(&crate::Computation::Force(_)) => row.tag == super::NODE_C_FORCE,
                         Some(&crate::Computation::Case { .. }) => row.tag == super::NODE_C_CASE,
-                        Some(&crate::Computation::Absurd(_)) => row.tag == super::NODE_C_ABSURD,
                         Some(&crate::Computation::Transport(_, _)) => row.tag == super::NODE_C_TRANSPORT,
                         Some(&crate::Computation::ListFold { .. }) => row.tag == super::NODE_C_LIST_FOLD,
                         None => false,
@@ -842,18 +831,16 @@ mod tests
                         Some(&crate::ValueType::Data { .. }) => row.tag == super::NODE_VT_DATA,
                         Some(&crate::ValueType::Record(_)) => row.tag == super::NODE_VT_RECORD,
                         Some(&crate::ValueType::Base(_)) => row.tag == super::NODE_VT_BASE,
-                        Some(&crate::ValueType::Unit) => row.tag == super::NODE_VT_UNIT,
                         Some(&crate::ValueType::Universe { sort: GroundSort::Value, .. }) => row.tag == super::NODE_VT_UNIVERSE,
                         Some(&crate::ValueType::Universe { sort: GroundSort::Computation, .. }) => row.tag == super::NODE_VT_COMPUTATION_UNIVERSE,
-                        Some(&crate::ValueType::Product(_, _)) => row.tag == super::NODE_VT_PRODUCT,
-                        Some(&crate::ValueType::Sum(_, _)) => row.tag == super::NODE_VT_SUM,
+                        Some(&crate::ValueType::Product(_)) => row.tag == super::NODE_VT_PRODUCT,
+                        Some(&crate::ValueType::Sum(_)) => row.tag == super::NODE_VT_SUM,
                         Some(&crate::ValueType::Thunk(_)) => row.tag == super::NODE_VT_THUNK,
                         Some(&crate::ValueType::Lift { .. }) => row.tag == super::NODE_VT_LIFT,
                         Some(&crate::ValueType::Abstract(_)) => row.tag == super::NODE_VT_ABSTRACT,
                         Some(&crate::ValueType::StaticPi { .. }) => row.tag == super::NODE_VT_STATIC_PI,
                         Some(&crate::ValueType::Element { .. }) => row.tag == super::NODE_VT_ELEMENT,
                         Some(&crate::ValueType::PathUniverse(_, _)) => row.tag == super::NODE_VT_PATH_UNIVERSE,
-                        Some(&crate::ValueType::Empty) => row.tag == super::NODE_VT_EMPTY,
                         Some(&crate::ValueType::List(_)) => row.tag == super::NODE_VT_LIST,
                         Some(&crate::ValueType::Session { .. }) => row.tag == super::NODE_VT_SESSION,
                         None => false,
@@ -874,8 +861,8 @@ mod tests
         let base = arena.value_type_base(BaseType::Integer);
         let unit_type = arena.value_type_unit();
         let universe = arena.value_type_universe(GroundSort::Value, level.clone());
-        let product = arena.value_type_product(base, unit_type);
-        let sum = arena.value_type_sum(base, unit_type);
+        let product = arena.value_type_product(&[base, unit_type, base]);
+        let sum = arena.value_type_sum(&[base, unit_type]);
         let returner = arena.comp_type_returner(unit_type);
         let thunk_type = arena.value_type_thunk(returner);
         let lift_type = arena.value_type_lift(unit_type, level.clone());
@@ -887,8 +874,8 @@ mod tests
             Sign::NonNegative,
             Magnitude::zero(),
         )));
-        let pair = arena.value_pair(unit, unit);
-        let injection = arena.value_injection(Side::Left, unit);
+        let pair = arena.value_tuple(&[unit, unit, literal]);
+        let injection = arena.value_injection(Summand::from(2_usize), unit);
         let ret = arena.computation_return(unit);
         let thunk = arena.value_thunk(ret);
         let lift = arena.value_lift(level.clone(), unit);
@@ -896,7 +883,7 @@ mod tests
         let application = arena.computation_application(ret, unit);
         let bind = arena.computation_bind(ret, ret);
         let force = arena.computation_force(unit);
-        let case = arena.computation_case(unit, ret, ret);
+        let case = arena.computation_case(unit, &[ret, lambda, ret]);
         let atom = arena.value_type_abstract(ConstantIndex::from(0));
         let pi = arena.comp_type_pi(unit_type, returner);
         let element = arena.value_type_element(unit, level.clone());
@@ -907,8 +894,6 @@ mod tests
         let quote_computation = arena.value_quote_computation(returner);
         let static_pi = arena.value_type_static_pi(universe, universe);
         let static_application = arena.value_static_application(constant, quote);
-        let empty = arena.value_type_empty();
-        let absurd = arena.computation_absurd(variable);
         let path_type = arena.value_type_path_universe(quote, quote);
         let refl = arena.value_path_refl(quote);
         let map = arena.value_thunk(lambda);
@@ -941,7 +926,6 @@ mod tests
         let fold = arena.computation_list_fold(unit_type, unit_type, cons, ret, ret);
         let nodes = alloc::vec![
             AnyNode::ValueType(base),
-            AnyNode::ValueType(unit_type),
             AnyNode::ValueType(universe),
             AnyNode::ValueType(product),
             AnyNode::ValueType(sum),
@@ -951,7 +935,6 @@ mod tests
             AnyNode::CompType(arrow),
             AnyNode::Value(variable),
             AnyNode::Value(constant),
-            AnyNode::Value(unit),
             AnyNode::Value(literal),
             AnyNode::Value(pair),
             AnyNode::Value(injection),
@@ -972,8 +955,6 @@ mod tests
             AnyNode::Value(quote_computation),
             AnyNode::ValueType(static_pi),
             AnyNode::Value(static_application),
-            AnyNode::ValueType(empty),
-            AnyNode::Computation(absurd),
             AnyNode::ValueType(path_type),
             AnyNode::Value(refl),
             AnyNode::Value(equiv),
@@ -1012,6 +993,7 @@ mod tests
                     | Some(matched_native_node) => match *matched_native_node {
                         | crate::Value::Constructor { ref fields, .. } => fields.len(),
                         | crate::Value::Record(ref fields) => fields.len(),
+                        | crate::Value::Tuple(ref components) => components.len(),
                         | _ => 0,
                     },
                     | None => 0,
@@ -1020,12 +1002,15 @@ mod tests
                     | Some(matched_native_node) => match *matched_native_node {
                         | crate::ValueType::Data { ref arguments, .. } => arguments.len(),
                         | crate::ValueType::Record(ref fields) => fields.len(),
+                        | crate::ValueType::Product(ref parts)
+                        | crate::ValueType::Sum(ref parts) => parts.len(),
                         | _ => 0,
                     },
                     | None => 0,
                 },
                 | AnyNode::Computation(id) => match arena.computation(id) {
                     | Some(&crate::Computation::DataCase { ref branches, .. }) => branches.len(),
+                    | Some(&crate::Computation::Case { ref branches, .. }) => branches.len(),
                     | _ => 0,
                 },
                 | AnyNode::CompType(_) => 0,
@@ -1080,14 +1065,20 @@ mod tests
     }
 
     #[test]
-    fn the_tag_table_is_a_contiguous_frozen_block()
+    fn the_frozen_block_keeps_its_order_around_the_retired_tags()
     {
         let frozen: Vec<_> = NODE_TAG_TABLE
             .iter()
-            .take(32)
+            .take(30)
             .map(|row| u8::from(row.tag))
             .collect();
-        assert_eq!(frozen, (0_u8 ..= 0x1f).collect::<Vec<_>>());
+        assert_eq!(
+            frozen,
+            (0_u8 ..= 0x1f)
+                .filter(|tag| !matches!(tag, 0x01 | 0x0B))
+                .collect::<Vec<_>>(),
+            "the unit type and unit value tags are retired; no other frozen byte moved"
+        );
     }
 
     #[test]
@@ -1096,20 +1087,32 @@ mod tests
         assert_eq!(super::SHARING_BLOCK_FIRST, WireTag::from(0x20));
         assert_eq!(super::SHARING_BLOCK_LAST, WireTag::from(0x27));
         let expected: Vec<_> = (0_u8 ..= 0x1f)
-            .chain(0x28 ..= 0x2e)
+            .filter(|tag| !matches!(tag, 0x01 | 0x0B))
+            .chain(0x2a ..= 0x2e)
             .chain([0x50, 0x51, 0x52, 0x5a, 0x5b, 0x5c])
             .chain(0x5d ..= 0x63)
             .collect();
         let actual: Vec<_> = NODE_TAG_TABLE.iter().map(|row| u8::from(row.tag)).collect();
         assert_eq!(actual, expected);
-        let empty = NODE_TAG_TABLE
-            .iter()
-            .find(|row| row.tag == super::NODE_VT_EMPTY)
-            .expect("Empty has a wire former");
-        assert_eq!(empty.child_arity, super::ChildArity::Fixed(0));
-        assert_eq!(empty.max_token_bound, Some(super::TokenCount(1)));
-        assert_eq!(empty.alias_verdict, NodeTagVerdict::Alias);
-        assert_eq!(empty.threshold_verdict, NodeTagVerdict::Alias);
+        for retired in [0x01_u8, 0x0B, 0x28, 0x29] {
+            assert!(
+                NODE_TAG_TABLE
+                    .iter()
+                    .all(|row| u8::from(row.tag) != retired),
+                "the retired tag {retired:#04x} names no former"
+            );
+        }
+        for counted in [
+            super::NODE_VT_PRODUCT,
+            super::NODE_VT_SUM,
+            super::NODE_V_TUPLE,
+        ] {
+            let row = NODE_TAG_TABLE
+                .iter()
+                .find(|row| row.tag == counted)
+                .expect("the n-ary formers have wire tags");
+            assert_eq!(row.child_arity, super::ChildArity::Counted(0));
+        }
     }
 
     #[test]

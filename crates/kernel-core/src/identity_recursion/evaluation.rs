@@ -5,6 +5,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_kernel_term::Side;
+use gandr_kernel_term::Summand;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
@@ -384,9 +385,11 @@ impl Fibers
     /// - witness: `path_universe::tests::universe_fold_tests::universe_clause_is_native`
     #[spec(ensures: |ret| match ret {
         Ok(ty) => !self.nodes.iter().any(|node| matches!(node, &Fiber::Discrete(..) | &Fiber::Suspended(..) | &Fiber::Function { .. } | &Fiber::Certificate(..)))
-            && matches!((self.get(self.root), arena.value_type(ty)),
-                (Ok(Fiber::Unit), Some(&gandr_kernel_term::ValueType::Unit)) | (Ok(Fiber::Empty), Some(&gandr_kernel_term::ValueType::Empty))
-                | (Ok(Fiber::Product(..)), Some(&gandr_kernel_term::ValueType::Product(..))) | (Ok(Fiber::Universe(..)), Some(&gandr_kernel_term::ValueType::PathUniverse(..)))),
+            && (matches!((self.get(self.root), arena.value_type(ty)),
+                (Ok(Fiber::Unit), Some(gandr_kernel_term::ValueType::Product(parts))) if parts.is_empty())
+                || matches!((self.get(self.root), arena.value_type(ty)), (Ok(Fiber::Empty), Some(gandr_kernel_term::ValueType::Sum(parts))) if parts.is_empty())
+                || matches!((self.get(self.root), arena.value_type(ty)), (Ok(Fiber::Product(..)), Some(gandr_kernel_term::ValueType::Product(parts))) if parts.len() == 2_usize)
+                || matches!((self.get(self.root), arena.value_type(ty)), (Ok(Fiber::Universe(..)), Some(&gandr_kernel_term::ValueType::PathUniverse(..))))),
         Err(RelationError::HigherFieldRequired) => self.nodes.iter().any(|node| matches!(node, &Fiber::Certificate(..))),
         Err(_) => true,
     })]
@@ -424,7 +427,7 @@ impl Fibers
                 | Fiber::Product(left, right) => {
                     let left = *types.get(left.0).ok_or(RelationError::Arena)?;
                     let right = *types.get(right.0).ok_or(RelationError::Arena)?;
-                    arena.value_type_product(left, right)
+                    arena.value_type_product(&[left, right])
                 },
                 | Fiber::Discrete(..) | Fiber::Suspended(..) | Fiber::Function { .. } => {
                     return Err(RelationError::NeutralFiber);
@@ -484,7 +487,7 @@ impl Fibers
     /// - witness: `identity_recursion::tests::neutral_fibres_do_not_decide_equality`
     #[spec(ensures: |ret| match ret {
         Ok(projected) => match self.get_index(index) {
-            Ok(Index::Value(value)) if matches!(arena.value(value), Some(&Value::Pair(..))) => matches!((arena.value(value), self.get_index(projected)), (Some(&Value::Pair(left, right)), Ok(Index::Value(found))) if found == match coordinate { Coordinate::First => left, Coordinate::Second => right }),
+            Ok(Index::Value(value)) if matches!(arena.value(value).and_then(Value::components), Some(&[_, _])) => matches!((arena.value(value).and_then(Value::components), self.get_index(projected)), (Some(&[left, right]), Ok(Index::Value(found))) if found == match coordinate { Coordinate::First => left, Coordinate::Second => right }),
             Ok(_) => matches!((coordinate, self.get_index(projected)), (Coordinate::First, Ok(Index::First(held))) | (Coordinate::Second, Ok(Index::Second(held))) if held == index),
             Err(_) => false,
         },
@@ -501,7 +504,7 @@ impl Fibers
     {
         let index_term = self.get_index(index)?;
         if let Index::Value(value) = index_term
-            && let Some(&Value::Pair(left, right)) = arena.value(value)
+            && let Some(&[left, right]) = arena.value(value).and_then(Value::components)
         {
             let value = match coordinate {
                 | Coordinate::First => left,
@@ -530,8 +533,8 @@ impl Fibers
     /// - hypothesis: L3 — a neutral sum index never selects a branch.
     /// - witness: `identity_recursion::tests::neutral_fibres_do_not_decide_equality`
     #[spec(ensures: |ret| match ret {
-        Ok(Injection::Known(side, payload)) => self.get_index(index).is_ok_and(|term| matches!(term, Index::Value(value) if matches!(arena.value(value), Some(&Value::Injection(found, child)) if found == side && child == payload))),
-        Ok(Injection::Neutral) => self.get_index(index).is_ok_and(|term| !matches!(term, Index::Value(value) if matches!(arena.value(value), Some(&Value::Injection(..))))),
+        Ok(Injection::Known(side, payload)) => self.get_index(index).is_ok_and(|term| matches!(term, Index::Value(value) if matches!(arena.value(value), Some(&Value::Injection(found, child)) if found == Summand::from(side) && child == payload))),
+        Ok(Injection::Neutral) => self.get_index(index).is_ok_and(|term| !matches!(term, Index::Value(value) if matches!(arena.value(value), Some(&Value::Injection(found, _)) if Side::try_from(found).is_ok()))),
         Err(RelationError::Arena) => self.get_index(index).is_err(),
         Err(_) => false,
     })]
@@ -544,7 +547,10 @@ impl Fibers
         let index = self.get_index(index)?;
         match index {
             | Index::Value(value) => match arena.value(value) {
-                | Some(&Value::Injection(side, payload)) => Ok(Injection::Known(side, payload)),
+                // The fold's sums are binary, so only the first two summands
+                // select a branch; a further one stays neutral.
+                | Some(&Value::Injection(summand, payload)) => Ok(Side::try_from(summand)
+                    .map_or(Injection::Neutral, |side| Injection::Known(side, payload))),
                 | _ => Ok(Injection::Neutral),
             },
             | Index::First(_) | Index::Second(_) => Ok(Injection::Neutral),

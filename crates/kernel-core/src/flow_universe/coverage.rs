@@ -8,7 +8,7 @@ use anodized::spec;
 use gandr_kernel_check_memo::NullMemo;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::DeBruijnIndex;
-use gandr_kernel_term::Side;
+use gandr_kernel_term::Summand;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
@@ -32,7 +32,9 @@ use crate::rewrite::shift_value;
 /// Validate a quoted code's complete first-order graph.
 ///
 /// # Specification
-/// - ensures: the returned type contains only Unit, Base, Sum and Product.
+/// - ensures: the returned type contains only Base, Product (the unit among
+///   them) and Sum of at least one summand; the empty sum is refused, as the
+///   retired empty type was.
 /// - fails: `UnsupportedCode`, `UnsupportedType`, `Arena` or `Budget`.
 /// - panics: none.
 ///
@@ -47,7 +49,7 @@ use crate::rewrite::shift_value;
     ensures: |ret| allowance.0 <= before && match ret {
         Ok(root) => allowance.0 < before && matches!(arena.value(code), Some(&Value::Quote(ty)) if root == ty),
         Err(FlowError::UnsupportedCode(named)) => named == code && !matches!(arena.value(code), Some(&Value::Quote(_))),
-        Err(FlowError::UnsupportedType(ty)) => arena.value_type(ty).is_some_and(|node| !matches!(node, &ValueType::Unit | &ValueType::Base(_) | &ValueType::Product(..) | &ValueType::Sum(..))),
+        Err(FlowError::UnsupportedType(ty)) => arena.value_type(ty).is_some_and(|node| !matches!(node, &ValueType::Base(_) | &ValueType::Product(..)) && !matches!(node, ValueType::Sum(summands) if !summands.is_empty())),
         Err(FlowError::Budget) => allowance.0 == 0,
         Err(FlowError::Arena) => true,
         Err(_) => false,
@@ -71,10 +73,12 @@ pub(super) fn code(
             continue;
         }
         match arena.value_type(id).ok_or(FlowError::Arena)? {
-            | &ValueType::Base(_) | &ValueType::Unit => {},
-            | &ValueType::Sum(left, right) | &ValueType::Product(left, right) => {
-                pending.push(right);
-                pending.push(left);
+            | &ValueType::Base(_) => {},
+            | ValueType::Sum(parts) if parts.is_empty() => {
+                return Err(FlowError::UnsupportedType(id));
+            },
+            | &ValueType::Sum(ref parts) | &ValueType::Product(ref parts) => {
+                pending.extend(parts.iter().rev().copied());
             },
             | _ => return Err(FlowError::UnsupportedType(id)),
         }
@@ -125,18 +129,19 @@ enum Cover
 {
     /// Visit one closed type.
     Visit(ValueTypeId),
-    /// Join summand shapes.
-    Sum,
-    /// Take the product of component shapes, renaming leaves apart.
-    Product,
+    /// Join the shapes of this many summands.
+    Sum(usize),
+    /// Take the product of this many components' shapes, renaming leaves
+    /// apart.
+    Product(usize),
 }
 
 /// Enumerate all constructor shapes with distinct variables at Base leaves.
 ///
 /// # Specification
 /// - requires: `root` is a validated closed first-order type.
-/// - ensures: left-first sum order and lexicographic product order; leaves are
-///   never sampled and equal-typed positions remain distinct.
+/// - ensures: first-summand-first sum order and lexicographic product order;
+///   leaves are never sampled and equal-typed positions remain distinct.
 /// - fails: `Arena`, `UnsupportedType` or `Budget`.
 /// - panics: none.
 ///
@@ -150,9 +155,9 @@ enum Cover
 #[spec(
     captures: before = allowance.0,
     ensures: |ret| allowance.0 <= before && ret.as_ref().map_or(true, |patterns| allowance.0 < before && match arena.value_type(root) {
-        Some(&ValueType::Unit) => patterns.len() == 1 && patterns.first().is_some_and(|pattern| pattern.leaves.is_empty() && matches!(arena.value(pattern.value), Some(&Value::Unit))),
+Some(ValueType::Product(parts)) if parts.is_empty() => patterns.len() == 1 && patterns.first().is_some_and(|pattern| pattern.leaves.is_empty() && matches!(arena.value(pattern.value), Some(Value::Tuple(components)) if components.is_empty())),
         Some(&ValueType::Base(base)) => patterns.len() == 1 && patterns.first().is_some_and(|pattern| pattern.leaves == [base] && matches!(arena.value(pattern.value), Some(&Value::Variable(index)) if u32::from(index) == 0)),
-        Some(&ValueType::Product(..)) => patterns.iter().all(|pattern| matches!(arena.value(pattern.value), Some(&Value::Pair(..)))),
+        Some(ValueType::Product(parts)) => patterns.iter().all(|pattern| matches!(arena.value(pattern.value), Some(Value::Tuple(components)) if components.len() == parts.len())),
         Some(&ValueType::Sum(..)) => patterns.iter().all(|pattern| matches!(arena.value(pattern.value), Some(&Value::Injection(..)))),
         _ => false,
     }),
@@ -170,69 +175,79 @@ fn patterns(
         allowance.charge()?;
         match task {
             | Cover::Visit(id) => match arena.value_type(id).ok_or(FlowError::Arena)? {
-                | &ValueType::Unit => results.push(Vec::from([Pattern {
-                    value: arena.value_unit(),
-                    leaves: Vec::new(),
-                }])),
                 | &ValueType::Base(base) => results.push(Vec::from([Pattern {
                     value: arena.value_variable(DeBruijnIndex::from(0_u32)),
                     leaves: Vec::from([base]),
                 }])),
-                | &ValueType::Sum(left, right) => {
-                    pending.push(Cover::Sum);
-                    pending.push(Cover::Visit(right));
-                    pending.push(Cover::Visit(left));
+                | ValueType::Sum(parts) if parts.is_empty() => {
+                    return Err(FlowError::UnsupportedType(id));
                 },
-                | &ValueType::Product(left, right) => {
-                    pending.push(Cover::Product);
-                    pending.push(Cover::Visit(right));
-                    pending.push(Cover::Visit(left));
+                | &ValueType::Sum(ref parts) => {
+                    pending.push(Cover::Sum(parts.len()));
+                    pending.extend(parts.iter().rev().copied().map(Cover::Visit));
+                },
+                | &ValueType::Product(ref parts) => {
+                    pending.push(Cover::Product(parts.len()));
+                    pending.extend(parts.iter().rev().copied().map(Cover::Visit));
                 },
                 | _ => return Err(FlowError::UnsupportedType(id)),
             },
-            | Cover::Sum => {
-                let right = results.pop().ok_or(FlowError::Arena)?;
-                let left = results.pop().ok_or(FlowError::Arena)?;
-                let mut joined = Vec::with_capacity(left.len().saturating_add(right.len()));
-                for (side, branch) in [(Side::Left, left), (Side::Right, right)] {
+            | Cover::Sum(arity) => {
+                let start = results.len().checked_sub(arity).ok_or(FlowError::Arena)?;
+                let mut joined = Vec::new();
+                for (summand, branch) in results.drain(start ..).enumerate() {
                     for pattern in branch {
                         allowance.charge()?;
                         joined.push(Pattern {
-                            value: arena.value_injection(side, pattern.value),
+                            value: arena.value_injection(Summand::from(summand), pattern.value),
                             leaves: pattern.leaves,
                         });
                     }
                 }
                 results.push(joined);
             },
-            | Cover::Product => {
-                let right = results.pop().ok_or(FlowError::Arena)?;
-                let left = results.pop().ok_or(FlowError::Arena)?;
-                let mut joined = Vec::new();
-                for first in left {
-                    for second in &right {
-                        allowance.charge()?;
-                        let depth = u32::try_from(second.leaves.len())
-                            .map_err(|_overflow| FlowError::Budget)?;
-                        let value = shift_value(
-                            arena,
-                            &mut table,
-                            &mut NullMemo,
-                            first.value,
-                            BinderDepth::default(),
-                            BinderDepth::from(depth),
-                        );
-                        let mut leaves = Vec::with_capacity(
-                            first.leaves.len().saturating_add(second.leaves.len()),
-                        );
-                        leaves.extend_from_slice(&first.leaves);
-                        leaves.extend_from_slice(&second.leaves);
-                        joined.push(Pattern {
-                            value: arena.value_pair(value, second.value),
-                            leaves,
-                        });
+            // Each step crosses the tuples so far with the next component's
+            // shapes; the earlier components' leaves shift past the new
+            // component's, so every leaf stays distinct.
+            | Cover::Product(arity) => {
+                let start = results.len().checked_sub(arity).ok_or(FlowError::Arena)?;
+                let mut tuples = Vec::from([(Vec::<ValueId>::new(), Vec::<BaseType>::new())]);
+                for component in results.drain(start ..).collect::<Vec<_>>() {
+                    let mut crossed = Vec::new();
+                    for &(ref prefix, ref prefix_leaves) in &tuples {
+                        for next in &component {
+                            allowance.charge()?;
+                            let depth = u32::try_from(next.leaves.len())
+                                .map_err(|_overflow| FlowError::Budget)?;
+                            let mut values = Vec::with_capacity(prefix.len().saturating_add(1));
+                            for &earlier in prefix {
+                                values.push(shift_value(
+                                    arena,
+                                    &mut table,
+                                    &mut NullMemo,
+                                    earlier,
+                                    BinderDepth::default(),
+                                    BinderDepth::from(depth),
+                                ));
+                            }
+                            values.push(next.value);
+                            let mut leaves = Vec::with_capacity(
+                                prefix_leaves.len().saturating_add(next.leaves.len()),
+                            );
+                            leaves.extend_from_slice(prefix_leaves);
+                            leaves.extend_from_slice(&next.leaves);
+                            crossed.push((values, leaves));
+                        }
                     }
+                    tuples = crossed;
                 }
+                let joined = tuples
+                    .into_iter()
+                    .map(|(values, leaves)| Pattern {
+                        value: arena.value_tuple(&values),
+                        leaves,
+                    })
+                    .collect();
                 results.push(joined);
             },
         }
@@ -259,7 +274,8 @@ fn patterns(
 #[spec(
     captures: before = allowance.0,
     ensures: |ret| allowance.0 <= before && ret.as_ref().map_or(true, |&()| allowance.0 < before && match (arena.value(output), arena.value_type(target)) {
-        (Some(&Value::Unit), Some(&ValueType::Unit)) | (Some(&Value::Pair(..)), Some(&ValueType::Product(..))) | (Some(&Value::Injection(..)), Some(&ValueType::Sum(..))) => true,
+        (Some(Value::Tuple(components)), Some(ValueType::Product(parts))) => components.len() == parts.len(),
+        (Some(&Value::Injection(summand, _)), Some(ValueType::Sum(summands))) => usize::from(summand) < summands.len(),
         (Some(&Value::Variable(index)), Some(&ValueType::Base(base))) => usize::try_from(u32::from(index)).ok().and_then(|index| leaves.len().checked_sub(index.saturating_add(1))).and_then(|position| leaves.get(position)) == Some(&base),
         _ => false,
     }),
@@ -277,7 +293,6 @@ fn natural(
         allowance.charge()?;
         let ty = arena.value_type(ty).ok_or(FlowError::Arena)?;
         match (arena.value(value), ty) {
-            | (Some(&Value::Unit), &ValueType::Unit) => {},
             | (Some(&Value::Variable(index)), &ValueType::Base(base)) => {
                 let index =
                     usize::try_from(u32::from(index)).map_err(|_overflow| FlowError::Budget)?;
@@ -289,15 +304,17 @@ fn natural(
                     return Err(FlowError::NonNatural(value));
                 }
             },
-            | (Some(&Value::Pair(left, right)), &ValueType::Product(first, second)) => {
-                pending.push((right, second));
-                pending.push((left, first));
+            | (Some(&Value::Tuple(ref components)), &ValueType::Product(ref parts))
+                if components.len() == parts.len() =>
+            {
+                pending.extend(components.iter().copied().zip(parts.iter().copied()).rev());
             },
-            | (Some(&Value::Injection(side, value)), &ValueType::Sum(left, right)) => {
-                pending.push((value, match side {
-                    | Side::Left => left,
-                    | Side::Right => right,
-                }));
+            | (Some(&Value::Injection(summand, value)), &ValueType::Sum(ref summands)) => {
+                let summand = summands
+                    .get(usize::from(summand))
+                    .copied()
+                    .ok_or(FlowError::NonNatural(value))?;
+                pending.push((value, summand));
             },
             | _ => return Err(FlowError::NonNatural(value)),
         }
@@ -323,7 +340,7 @@ fn natural(
 /// - witness: `flow_universe::tests::constant_leaf_and_forged_evidence_refuse`
 /// - witness: `flow_universe::tests::formation_boundaries_refuse`
 #[spec(ensures: |ret| match ret {
-    Ok(()) => u64::from(budget) > 0 && !images.is_empty() && match arena.value_type(source) { Some(&ValueType::Unit | &ValueType::Base(_)) => images.len() == 1, _ => true },
+    Ok(()) => u64::from(budget) > 0 && !images.is_empty() && match arena.value_type(source) { Some(&ValueType::Base(_)) => images.len() == 1, Some(ValueType::Product(parts)) if parts.is_empty() => images.len() == 1, _ => true },
     Err(FlowError::ForwardReplay { pattern, verdict }) => pattern.0 < images.len() && verdict != KernelVerdict::Convertible,
     Err(_) => true,
 })]

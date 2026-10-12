@@ -275,7 +275,8 @@ impl Relation
                             for (side, branch) in [(Side::Left, first), (Side::Right, second)] {
                                 for mut pattern in branch {
                                     allowance.charge()?;
-                                    pattern.value = arena.value_injection(side, pattern.value);
+                                    pattern.value =
+                                        arena.value_injection(side.into(), pattern.value);
                                     joined.push(pattern);
                                 }
                             }
@@ -309,8 +310,8 @@ impl Relation
                                     context.extend_from_slice(&right.context);
                                     joined.push(RelatedPattern {
                                         context,
-                                        value: arena.value_pair(value, right.value),
-                                        proof: arena.value_pair(proof, right.proof),
+                                        value: arena.value_tuple(&[value, right.value]),
+                                        proof: arena.value_tuple(&[proof, right.proof]),
                                     });
                                 }
                             }

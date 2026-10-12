@@ -429,9 +429,9 @@ impl Fibers
         (Ok(Fiber::Empty), &Err(RelationError::Evidence)) | (Ok(Fiber::Function { .. }), &Err(RelationError::HigherEvaluationRequired)) | (Ok(Fiber::Certificate(..)), &Err(RelationError::HigherFieldRequired))
         | (Ok(Fiber::Discrete(..) | Fiber::Suspended(..)), &Err(RelationError::NeutralFiber))
         | (Ok(Fiber::Universe(..) | Fiber::Product(..)), &Err(_)) | (Err(_), &Err(RelationError::Arena)) => true,
-        (Ok(Fiber::Unit), &Ok(value)) => matches!(arena.value(value), Some(&gandr_kernel_term::Value::Unit)),
+        (Ok(Fiber::Unit), &Ok(value)) => matches!(arena.value(value).and_then(gandr_kernel_term::Value::components), Some(&[])),
         (Ok(Fiber::Universe(..)), &Ok(value)) => matches!(arena.value(value), Some(&gandr_kernel_term::Value::PathRefl(_))),
-        (Ok(Fiber::Product(..)), &Ok(value)) => matches!(arena.value(value), Some(&gandr_kernel_term::Value::Pair(..))),
+        (Ok(Fiber::Product(..)), &Ok(value)) => matches!(arena.value(value).and_then(gandr_kernel_term::Value::components), Some(&[_, _])),
 
         _ => false,
     })]
@@ -463,7 +463,7 @@ impl Fibers
                 | Task::Pair => {
                     let right = values.pop().ok_or(RelationError::Arena)?;
                     let left = values.pop().ok_or(RelationError::Arena)?;
-                    arena.value_pair(left, right)
+                    arena.value_tuple(&[left, right])
                 },
                 | Task::Visit(id) => {
                     if let Some(&value) = completed.get(&id) {
