@@ -1,6 +1,6 @@
 //! **The language server**: diagnostics, semantic tokens, inline completion,
-//! the document's outline and hover over the Language Server Protocol, served
-//! over any pair of byte streams.
+//! the document's outline, hover and formatting over the Language Server
+//! Protocol, served over any pair of byte streams.
 //!
 //! # Every synchronisation submits the document to its session
 //!
@@ -20,8 +20,11 @@
 //! document's declarations, its multi-line forms or the forms around a
 //! position off its parsed tree, and a hover the type and documentation the
 //! document's session holds for the declaration whose name the cursor is on.
-//! Positions are counted in UTF-16 code units through the renderer seam's line
-//! index.
+//! A formatting request lays the document out through `gandr-surface-format`
+//! and answers the edits that turn the held text into that layout: one
+//! trimmed edit for the whole document, or one per top-level form a range
+//! touches. Positions are counted in UTF-16 code units through the renderer
+//! seam's line index.
 //!
 //! # The transport is the base protocol, written here
 //!
@@ -71,6 +74,7 @@ extern crate alloc;
 
 use core::fmt;
 
+mod format;
 mod hover;
 mod inline;
 mod outline;

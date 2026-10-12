@@ -34,6 +34,8 @@ mod capabilities
                     "foldingRangeProvider": true,
                     "selectionRangeProvider": true,
                     "hoverProvider": true,
+                    "documentFormattingProvider": true,
+                    "documentRangeFormattingProvider": true,
                 },
                 "serverInfo": {"name": "gandr", "version": env!("CARGO_PKG_VERSION")},
             }),

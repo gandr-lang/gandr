@@ -26,6 +26,7 @@ gandr-core-incremental.workspace = true
 gandr-storage-records.workspace = true
 gandr-surface-diagnostics.workspace = true
 gandr-surface-dispatcher.workspace = true
+gandr-surface-format.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-parser.workspace = true
 gandr-surface-pretty.workspace = true

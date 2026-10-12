@@ -27,6 +27,7 @@ use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 use serde_json::Value;
 
+use crate::format::edits;
 use crate::hover::hover;
 use crate::inline::ghost;
 use crate::outline::folds;
@@ -85,13 +86,13 @@ enum Phase
     ShuttingDown,
 }
 
-/// The tokens a request asks for.
+/// What a token or formatting request asks about.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Window
+pub enum Window
 {
-    /// Every token of the document.
+    /// The whole document.
     Whole,
-    /// The tokens overlapping a range.
+    /// What overlaps a range.
     Within(Range),
 }
 
@@ -396,6 +397,7 @@ impl Server
     /// - witness: `server::tests::inline_completion_answers_the_expected_closer`
     /// - witness: `server::tests::the_outline_requests_answer_a_known_document`
     /// - witness: `server::tests::a_hover_answers_a_known_declaration`
+    /// - witness: `server::tests::formatting_answers_the_edits_that_lay_a_document_out`
     #[spec(
         captures: [phase = self.phase, documents = self.documents.len()],
         ensures: |ret| self.documents.len() == documents && match (phase, method.as_ref()) {
@@ -429,6 +431,13 @@ impl Server
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Hover(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
+                    _ => false,
+                },
+            (Phase::Running, "textDocument/formatting" | "textDocument/rangeFormatting") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Nothing | Answer::Edits(_), .. } => true,
+                    Outgoing::Failure { ref error, .. } =>
+                        error.code == ErrorCode::INVALID_PARAMS || error.code == ErrorCode::REQUEST_FAILED,
                     _ => false,
                 },
             (Phase::Running, _) => self.phase == phase && matches!(ret,
@@ -525,6 +534,20 @@ impl Server
                 match serde_json::from_value::<PositionParams>(params) {
                     | Ok(params) => {
                         success(id, self.hover(&params.text_document.uri, params.position))
+                    },
+                    | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            | (Phase::Running, "textDocument/formatting") => {
+                match serde_json::from_value::<DocumentParams>(params) {
+                    | Ok(params) => self.format(id, &params.text_document.uri, Window::Whole),
+                    | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            | (Phase::Running, "textDocument/rangeFormatting") => {
+                match serde_json::from_value::<RangeParams>(params) {
+                    | Ok(params) => {
+                        self.format(id, &params.text_document.uri, Window::Within(params.range))
                     },
                     | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
@@ -672,7 +695,7 @@ impl Server
         Answer::Tokens(ref tokens) => self.documents.contains_key(uri)
             && tokens.data.as_ref().len().is_multiple_of(5)
             && match window { Window::Within(range) if range.start >= range.end => tokens.data.as_ref().is_empty(), _ => true },
-        Answer::Initialize(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_) | Answer::Hover(_) => false,
+        Answer::Initialize(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_) | Answer::Hover(_) | Answer::Edits(_) => false,
     })]
     fn tokens(
         &self,
@@ -719,7 +742,7 @@ impl Server
         Answer::Nothing => !self.documents.contains_key(uri),
         Answer::Inline(ref list) => self.documents.contains_key(uri) && list.items.len() <= 1
             && list.items.iter().all(|item| item.range.start == position && item.range.end == position),
-        Answer::Initialize(_) | Answer::Tokens(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_) | Answer::Hover(_) => false,
+        Answer::Initialize(_) | Answer::Tokens(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_) | Answer::Hover(_) | Answer::Edits(_) => false,
     })]
     fn inline(
         &self,
@@ -812,6 +835,46 @@ impl Server
         match hover(SourceText::from(document.text.as_str()), session, position) {
             | Maybe::Present(shown) => Answer::Hover(shown),
             | Maybe::Absent(_) => Answer::Nothing,
+        }
+    }
+
+    /// The answer to a formatting request `id` over `window` of the document
+    /// at `uri`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `null` for a document the server does not hold; otherwise the
+    ///   edits [`edits`] answers for its text, or a request-failed refusal
+    ///   carrying why it was not formatted. The document is not changed: the
+    ///   client applies the edits and synchronises them back.
+    /// - fails: never; a refusal is a response.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the known document out of layout, formatted whole and
+    ///   over a range, a closed document and a document in layout observe the
+    ///   edits, `null` and the empty list exactly.
+    /// - witness: `server::tests::formatting_answers_the_edits_that_lay_a_document_out`
+    #[spec(ensures: |ref ret| match *ret {
+        Outgoing::Success { result: Answer::Nothing, .. } => !self.documents.contains_key(uri),
+        Outgoing::Success { result: Answer::Edits(_), .. } => self.documents.contains_key(uri),
+        Outgoing::Failure { ref error, .. } => error.code == ErrorCode::REQUEST_FAILED,
+        _ => false,
+    })]
+    fn format(
+        &self,
+        id: RequestId,
+        uri: &DocumentUri,
+        window: Window,
+    ) -> Outgoing
+    {
+        let Some(document) = self.documents.get(uri)
+        else {
+            return success(id, Answer::Nothing);
+        };
+        match edits(SourceText::from(document.text.as_str()), window) {
+            | Ok(edits) => success(id, Answer::Edits(edits)),
+            | Err(unformatted) => failure(id, ErrorCode::REQUEST_FAILED, unformatted.to_string()),
         }
     }
 }
@@ -1177,7 +1240,9 @@ mod tests
                         "documentSymbolProvider":true,
                         "foldingRangeProvider":true,
                         "selectionRangeProvider":true,
-                        "hoverProvider":true},
+                        "hoverProvider":true,
+                        "documentFormattingProvider":true,
+                        "documentRangeFormattingProvider":true},
                     "serverInfo":{"name":"gandr","version":""#,
                 env!("CARGO_PKG_VERSION"),
                 r#""}}}]"#
@@ -1316,6 +1381,77 @@ mod tests
                 "{method} about a document the server does not hold answers null"
             );
         }
+    }
+
+    #[test]
+    fn formatting_answers_the_edits_that_lay_a_document_out()
+    {
+        let mut server = initialized();
+        let _published = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
+                    {"uri":"file:///tmp/loose.gandr","languageId":"gandr","version":1,
+                     "text":"def  f =  42 ;\n"}}}"#,
+            ),
+        );
+        let ask = |server: &mut Server, method: &str, uri: &str, range: &str| {
+            let request = format!(
+                r#"{{"jsonrpc":"2.0","id":7,"method":"{method}","params":{{
+                    "textDocument":{{"uri":"{uri}"}},{range}
+                    "options":{{"tabSize":4,"insertSpaces":true}}}}}}"#
+            );
+            send(server, Json(&request))
+        };
+        assert_eq!(
+            ask(
+                &mut server,
+                "textDocument/formatting",
+                "file:///tmp/loose.gandr",
+                ""
+            ),
+            wire(Json(
+                r#"[{"jsonrpc":"2.0","id":7,"result":[{
+                    "range":{"start":{"line":0,"character":4},"end":{"line":0,"character":9}},
+                    "newText":"f ="}]}]"#
+            )),
+            "the whole document: one edit over the span the layout changes"
+        );
+        assert_eq!(
+            ask(
+                &mut server,
+                "textDocument/rangeFormatting",
+                "file:///tmp/loose.gandr",
+                r#""range":{"start":{"line":0,"character":5},"end":{"line":0,"character":5}},"#
+            ),
+            wire(Json(
+                r#"[{"jsonrpc":"2.0","id":7,"result":[{
+                    "range":{"start":{"line":0,"character":4},"end":{"line":0,"character":9}},
+                    "newText":"f ="}]}]"#
+            )),
+            "a cursor: the form holding it"
+        );
+        assert_eq!(
+            ask(
+                &mut server,
+                "textDocument/formatting",
+                "file:///tmp/example.gandr",
+                ""
+            ),
+            wire(Json(r#"[{"jsonrpc":"2.0","id":7,"result":null}]"#)),
+            "a document the server does not hold answers null"
+        );
+        let mut tidy = server_over_the_known_document();
+        assert_eq!(
+            ask(
+                &mut tidy,
+                "textDocument/formatting",
+                "file:///tmp/example.gandr",
+                ""
+            ),
+            wire(Json(r#"[{"jsonrpc":"2.0","id":7,"result":[]}]"#)),
+            "a document in layout answers no edit"
+        );
     }
 
     #[test]

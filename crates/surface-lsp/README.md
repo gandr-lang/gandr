@@ -17,6 +17,7 @@ The gandr language server: diagnostics, semantic tokens, inline completion, the 
 - [A hover reads the session](#a-hover-reads-the-session)
 - [Positions count UTF-16 code units](#positions-count-utf-16-code-units)
 - [The lifecycle and its error codes](#the-lifecycle-and-its-error-codes)
+- [Formatting answers the formatter's layout as edits](#formatting-answers-the-formatters-layout-as-edits)
 - [The transport is written here](#the-transport-is-written-here)
 - [Document URIs](#document-uris)
 - [Coverage of the specification](#coverage-of-the-specification)
@@ -33,11 +34,11 @@ The gandr language server: diagnostics, semantic tokens, inline completion, the 
 
 **Why.** An editor should show what `gandr check` prints, where it prints it, while the source is written. The server is a face over the pipeline's own outputs, never a second pipeline: its diagnostics are the reports `gandr-surface-diagnostics` renders for the dispatcher's step, and its tokens are the roles `gandr-surface-grammar`'s highlighter classifies, so an editor, a terminal and a test cannot disagree about a refusal or a token.
 
-**How.** Each open document holds a `gandr-surface-session` session under the source root its `file` URI's path classifies as. A synchronisation applies the client's changes to the held text and judges the text in the session, reads the judgement's step through `gandr-surface-diagnostics`' `entries` under `check --goals`, and publishes each report as one diagnostic: its span as the range, its refusal's vocabulary name as the code, its title, primary label and note as the message, its context loci and nested reasons as related information. Then it runs the kernel admission the judgement left. A token request parses the document, takes the highlighter's spans and delta-encodes them under the standard legend. An inline-completion request molds the form the cursor ends and spells what `gandr-surface-parser` expects to close it as a snippet. An outline request parses the document and reads its declarations, its multi-line forms or the forms around a position off the tree. A hover request finds the declaration whose name the cursor is on and reads its type and documentation off the document's session. Every position is a UTF-16 position read through `gandr-surface-render-remote`'s `LineIndex`. The server keeps the open documents' text and sessions and one grammar per process.
+**How.** Each open document holds a `gandr-surface-session` session under the source root its `file` URI's path classifies as. A synchronisation applies the client's changes to the held text and judges the text in the session, reads the judgement's step through `gandr-surface-diagnostics`' `entries` under `check --goals`, and publishes each report as one diagnostic: its span as the range, its refusal's vocabulary name as the code, its title, primary label and note as the message, its context loci and nested reasons as related information. Then it runs the kernel admission the judgement left. A token request parses the document, takes the highlighter's spans and delta-encodes them under the standard legend. An inline-completion request molds the form the cursor ends and spells what `gandr-surface-parser` expects to close it as a snippet. An outline request parses the document and reads its declarations, its multi-line forms or the forms around a position off the tree. A hover request finds the declaration whose name the cursor is on and reads its type and documentation off the document's session. A formatting request lays the held text out through `gandr-surface-format` and answers the edits that turn the text into that layout. Every position is a UTF-16 position read through `gandr-surface-render-remote`'s `LineIndex`. The server keeps the open documents' text and sessions and one grammar per process.
 
 ## References
 
-- Microsoft. "Language Server Protocol Specification 3.17." <https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/> — the base protocol, the lifecycle, document synchronisation, published diagnostics, semantic tokens, document symbols, folding and selection ranges, hover, and the position encodings this server serves.
+- Microsoft. "Language Server Protocol Specification 3.17." <https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/> — the base protocol, the lifecycle, document synchronisation, published diagnostics, semantic tokens, document symbols, folding and selection ranges, hover, document and range formatting, and the position encodings this server serves.
 - Microsoft. "Language Server Protocol Specification 3.18." <https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification/> — `textDocument/inlineCompletion`, its snippet `StringValue`, and the snippet syntax a ghost text's tab stops are written in.
 - JSON-RPC Working Group. "JSON-RPC 2.0 Specification." 2010, revised 2013. <https://www.jsonrpc.org/specification> — the envelope, the batch the server refuses, and the reserved error codes it answers with.
 - Matthew Kerwin. "The 'file' URI Scheme." RFC 8089, February 2017. `doi:10.17487/RFC8089` — the URI a document is named by, whose percent-decoded path classifies its source root.
@@ -62,6 +63,7 @@ The gandr language server: diagnostics, semantic tokens, inline completion, the 
 - Inline completion: the material the parser expects to close the innermost form at the cursor, as one snippet whose holes and lexical classes are tab stops; nothing where text follows the cursor on its line or the cursor is in a comment. Witnesses: `inline::tests::ghost_text_closes_the_innermost_form`, `inline::tests::no_ghost_text_where_text_or_a_comment_stands`, `server::tests::inline_completion_answers_the_expected_closer`.
 - The outline: document symbols nesting each declaration inside the one that holds it, folding ranges over multi-line forms, documentation and block comments, and selection ranges growing from the innermost node around a position to the whole document. Witnesses: `outline::tests::declarations_nest_as_symbols`, `outline::tests::multi_line_forms_and_documentation_fold`, `outline::tests::a_selection_grows_from_the_innermost_form`, `server::tests::the_outline_requests_answer_a_known_document`.
 - Hover: a declaration's name hovers its type and its documentation. Witnesses: `hover::tests::a_declaration_hovers_its_type_and_documentation`, `hover::tests::only_a_declared_name_hovers`, `hover::tests::each_member_hovers_its_own_type`, `server::tests::a_hover_answers_a_known_declaration`.
+- Formatting: the whole document as one edit trimmed to the span its layout changes, and a range as one edit per top-level form it touches, each from `gandr-surface-format`. Witnesses: `format::tests::the_whole_document_is_one_trimmed_edit`, `format::tests::a_range_formats_the_forms_it_touches`, `server::tests::formatting_answers_the_edits_that_lay_a_document_out`.
 - Positions in UTF-16 code units, a position past a line's end or past the last line clamped. Witnesses: `position::tests::utf16_counts_an_astral_character_as_two_units`, `position::tests::a_line_past_the_end_clamps`.
 - `Capabilities`: the `initialize` result as one line of JSON. Witnesses: `capabilities::capabilities::advertised_capabilities_name_the_token_legend`, `server::tests::initialize_advertises_the_token_legend`.
 - A `file` URI's percent-decoded path. Witness: `protocol::tests::a_file_uri_names_its_decoded_path`.
@@ -204,11 +206,23 @@ The server advertises `positionEncoding: "utf-16"` and counts every range, relat
 | running | `initialize` again | `-32600` invalid request |
 | running | a method the server does not serve | `-32601` method not found |
 | running | a served method with parameters it cannot read | `-32602` invalid params |
+| running | a formatting request for a document the formatter refuses | `-32803` request failed, with the reason |
 | after `shutdown` | any | `-32600` invalid request |
 | any | a body outside the decoder-supported JSON fragment | `-32700` parse error, under a null id |
 | any | decoded JSON that is not a request, notification or response, a batch included | `-32600` invalid request |
 
 Before `initialize` every notification but `exit` is dropped. A notification is never answered: one whose parameters the server cannot read is dropped, a change to a document the server does not hold is dropped, and `$/` notifications and every other unknown one are ignored, as the protocol admits. A response from the client is read and discarded, since the server sends no request.
+
+## Formatting answers the formatter's layout as edits
+
+A formatting request parses the held text under the process's grammar and lays it out through `gandr-surface-format` at its default page of 100 columns, which keeps every token and comment, copies strings, shell blocks, holes and repaired forms as written, and refuses a layout whose parse differs from the text's. The answer is the edits that turn the held text into that layout; the server's copy changes only when the client applies them and synchronises back.
+
+- **The whole document** answers no edit when the layout is the text's own, and otherwise one edit.
+- **A range** answers one edit per top-level form whose span overlaps it, or holds it when the range is empty, and whose layout changed. A form carries the comments standing directly before it, as the formatter places them; the blank lines between forms are never edited. The formatter lays each top-level form out on its own, so a form's layout does not depend on its neighbours.
+- **Every edit is trimmed** to the span between the longest prefix and the longest suffix the source and the layout share, both on character boundaries, so a client keeps its cursor, marks and undo granularity on every line the layout left alone.
+- **A refusal** — a grammar that did not build, a parse that did not commit, or a layout the formatter refuses — answers `-32803` request failed with the reason, so the client says why the document was not formatted rather than silently leaving it.
+
+The client's `options` — tab size, spaces or tabs — are read and set aside: the formatter's layout is the one `gandr fmt` writes, and a second layout per editor setting would make the two disagree. The alternatives were one edit replacing the whole document, which every client applies but which moves a cursor anywhere in it, and a minimal diff per line, which costs a diff for edits a client merges anyway. The choice reverses when a client is measured paying for the trimmed edit's size, or when the formatter gains settings a project chooses, which the server then reads from the workspace configuration rather than from `options`.
 
 ## The transport is written here
 
@@ -254,7 +268,8 @@ Every feature of the protocol, 3.17 and 3.18, with whether this server serves it
 | rename, linked editing | `textDocument/prepareRename`, `rename`, `linkedEditingRange` | blocked: the same use-to-binder map |
 | call hierarchy | `textDocument/prepareCallHierarchy`, `callHierarchy/*` | blocked: the same use-to-binder map |
 | type hierarchy | `textDocument/prepareTypeHierarchy`, `typeHierarchy/*` | declined: the core has no subtyping to arrange types by |
-| formatting | `textDocument/formatting`, `rangeFormatting`, `onTypeFormatting` | blocked: the source formatter |
+| formatting | `textDocument/formatting`, `rangeFormatting` | served |
+| on-type formatting | `textDocument/onTypeFormatting` | declined: a form's layout is decided once the form is whole, which range formatting at the cursor already serves on request |
 | code actions, code lenses, commands | `textDocument/codeAction`, `codeLens`, `workspace/executeCommand` | blocked: no fix or command the pipeline produces |
 | document links | `textDocument/documentLink` | blocked: imports bind an alias and resolve no address |
 | document colours | `textDocument/documentColor`, `colorPresentation` | declined: gandr has no colour literals |
@@ -294,7 +309,7 @@ The assessment the language server's coverage owes: the extensions three servers
 | runnables: `experimental/runnables` | rust-analyzer | **decline** the method; a code lens over each declaration that evaluates, running it as `gandr run` does, once commands exist | the specification's lenses and commands carry it, so Helix and Zed see it too |
 | hover actions | rust-analyzer | **decline** until definition and references exist | its actions are go-to and find-references links, which wait on the use-to-binder map |
 | matching brace: `experimental/matchingBrace` | rust-analyzer | **decline** | selection ranges already grow from a tile to its form, and the client matches brackets itself |
-| join lines: `experimental/joinLines`; on enter | rust-analyzer | **decline** | layout belongs to the source formatter, which formatting will serve |
+| join lines: `experimental/joinLines`; on enter | rust-analyzer | **decline** | layout belongs to the source formatter, which formatting serves |
 | server status: `experimental/serverStatus` | rust-analyzer | **adopt** as `gandr/serverStatus`: whether the latest revision's kernel admission is pending, done or refused | the admission runs after the diagnostics are published, and an editor cannot otherwise tell a revision the kernel has yet to admit from one it admitted |
 
 **The goal view is both.** `gandr/goals` is the portable answer: plain text any client that sends a custom request shows, and the structured cards a richer one draws. The live side view, which follows the cursor and the check, reads the render bus: a terminal pane beside the editor reads its frames directly, and a VS Code webview attaches to the same frames through the language server's render-bus attach, so the cards a goal view draws are the ones every renderer draws. An extension method answers once per request; the bus streams what changed, so the side view is not a poll.
