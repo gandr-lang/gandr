@@ -128,6 +128,13 @@ impl Module
     /// - hypothesis: L2 — every generated module's text submits to the walk's
     ///   composition of that text.
     /// - witness: `tests::forms::every_generated_edit_submits_as_the_walk_composes_it`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "test fixture: the body sums every form's length to size the text; the check sums them once more"
+        )
+    )]
     #[spec(ensures: |ret| ret.len() == self.forms.iter().map(|form| form.len().saturating_add(2)).sum::<usize>())]
     #[must_use]
     pub fn text(&self) -> String
@@ -242,6 +249,13 @@ impl Module
 /// - hypothesis: L2 — changed forms of every shape submit to the walk's
 ///   compositions.
 /// - witness: `tests::forms::every_generated_edit_submits_as_the_walk_composes_it`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "test fixture: the body searches and rewrites the form; the check copies it once and counts its lines"
+    )
+)]
 #[spec(captures: before = form.clone(), ensures: |_| *form != before && form.lines().count() == before.lines().count())]
 fn change(form: &mut String)
 {

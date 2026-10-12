@@ -566,6 +566,13 @@ impl Regex
     ///   wrong depth and reordered or dropped branches; no language-equivalence
     ///   claim is made.
     /// - witness: `tests::pbg::grouped_forms_preserve_branch_and_rule_order`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body copies every entry into the branches once; the check compares each once"
+        )
+    )]
     #[spec(ensures: |ret| match self.entries.first().map(|root| root.node) { Some(RegexNode::Alt(arity)) => ret.len() == arity.0 && ret.iter().flat_map(|branch| branch.entries.iter()).eq(self.entries.iter().skip(1)), _ => ret.as_slice() == core::slice::from_ref(self) })]
     pub(crate) fn alternatives(&self) -> Vec<Self>
     {
@@ -1595,6 +1602,13 @@ impl Pbg
     ///   committed frozen source.
     /// - witness: `surface::tests::the_frozen_tables_are_the_built_ones`
     #[cfg(test)]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body renders every mold once; the check counts the molds once"
+        )
+    )]
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |source| source.matches("FrozenMold(").count() == self.molds.iter().count()))]
     pub(crate) fn frozen_source(&self) -> Result<alloc::string::String, core::fmt::Error>
     {

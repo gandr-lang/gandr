@@ -2158,6 +2158,13 @@ enum WalkFrame<'regex>
 ///   facet provenance without copying the existing output prefix.
 /// - witness: `mold::tests::occurrence_order_and_nullable_seams_are_exact`
 /// - witness: `tests::pbg::pbg_rejects_duplicate_rctx_tile`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "parity: the body appends every occurrence and merges the facet's key sets at each node of the walk; the check reads the appended occurrences and looks each facet key up among them"
+    )
+)]
 #[spec(captures: start = out.len(), ensures: |ret| out.len() >= start
     && out.iter().skip(start).all(|occurrence| usize::try_from(occurrence.rctx.0).is_ok_and(|index| index < interner.data.len()))
     && ret.first.iter().chain(&ret.last).chain(&ret.complete_last).all(|key| out.iter().skip(start).any(|occurrence| key.0.0.0 == occurrence.label && key.0.1 == occurrence.rctx)))]
@@ -2901,9 +2908,10 @@ enum FoldFrame<'regex>
 /// - hypothesis: For a leaf, empty composites and ordered multi-child
 ///   sequences, L3 stack observations catch pushing a leaf, omitting the finish
 ///   frame and reversed evaluation order; arbitrary nesting is witnessed
-///   through the iterative consumers, not exhaustively generated.
+///   through the iterative consumers, not exhaustively generated. The predicate
+///   reads only the frames past the captured height, the ones this call pushed.
 /// - witness: `mold::tests::expansion_preserves_pending_frames_and_left_to_right_evaluation`
-#[spec(captures: start = frames.len(), ensures: |ret| ret.as_ref().map_or_else(|| frames.len() > start && frames.get(start).is_some_and(|frame| !matches!(frame, FoldFrame::Enter(_))) && frames.iter().skip(start.saturating_add(1)).all(|frame| matches!(frame, FoldFrame::Enter(_))), |shape| frames.len() == start && matches!(shape, RegexShape::Empty | RegexShape::Sym(_))))]
+#[spec(captures: start = frames.len(), ensures: |ret| ret.as_ref().map_or_else(|| frames.len() > start && frames.get(start).is_some_and(|frame| !matches!(frame, FoldFrame::Enter(_))) && frames.get(start.saturating_add(1) ..).is_some_and(|children| children.iter().all(|frame| matches!(frame, FoldFrame::Enter(_)))), |shape| frames.len() == start && matches!(shape, RegexShape::Empty | RegexShape::Sym(_))))]
 fn expand<'regex>(
     regex: RegexView<'regex>,
     frames: &mut Vec<FoldFrame<'regex>>,

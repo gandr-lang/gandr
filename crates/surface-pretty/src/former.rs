@@ -67,8 +67,10 @@ impl Borrow<str> for Name<'_>
     /// - hypothesis: L3 — a generated binder skips the single mentioned name
     ///   through heterogeneous set lookup. Returning altered text changes that
     ///   spelling; arbitrary key sets and Unicode ordering are not enumerated.
+    ///   The predicate asks for the held text itself, by address and length,
+    ///   which implies equal text without reading it.
     /// - witness: `goldens::tests::a_binder_skips_the_names_the_type_mentions`
-    #[spec(ensures: |ret| ret == self.0)]
+    #[spec(ensures: |ret| core::ptr::eq(core::ptr::from_ref(ret), core::ptr::from_ref(self.0)))]
     #[inline]
     fn borrow(&self) -> &str
     {

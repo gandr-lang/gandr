@@ -735,6 +735,13 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
     /// - witness: `resolve::tests::retained_aliases_release_without_consuming_pending_continuations`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the capture scans back over the trailing release records, which the body's releases drain"
+        )
+    )]
     #[spec(
         captures: before = (match set { MeasureSet::Frontier(ref frontier) => frontier.len(), MeasureSet::Tainted(TaintPromise::Ready(_)) => 1, MeasureSet::Tainted(TaintPromise::Deferred { .. }) => 0 }, self.work.len(), self.work.iter().rposition(|item| !matches!(*item, WorkItem::ReleasePlan { .. })).map_or(0,
             |index| index.saturating_add(1)), self.meter.usage()),
@@ -792,6 +799,13 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
     /// - witness: `resolve::tests::retained_aliases_release_without_consuming_pending_continuations`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the capture scans back over the trailing release records, which the body's loop drains"
+        )
+    )]
     #[spec(
         captures: before = (self.work.iter().rposition(|item| !matches!(*item, WorkItem::ReleasePlan { .. })).map_or(0,
             |index| index.saturating_add(1)), self.meter.usage().resolver_work_entries, self.plans.get(plan)),
@@ -847,6 +861,13 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the capture scans back over the trailing release records, which the body's release drains"
+        )
+    )]
     #[spec(
         captures: before = (self.work.len(), self.work.iter().rposition(|item| !matches!(*item, WorkItem::ReleasePlan { .. })).map_or(0,
             |index| index.saturating_add(1)), self.meter.usage()),

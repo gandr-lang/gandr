@@ -861,6 +861,46 @@ if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right
         }
     }
 
+    /// The one body that can enclose `range`: the last whose span starts at or
+    /// before the range's start. Bodies ascend by start and do not overlap, so
+    /// no other body can enclose it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the last body whose span starts at or before `range`'s start;
+    ///   [`located::Absent::Outside`] when every body starts after it.
+    /// - provides: the root [`Self::descend`] starts from, and the reading the
+    ///   locus clauses state absence through.
+    /// - panics: none.
+    ///
+    /// # Clause cost
+    /// - bound: one binary search over the bodies and one read beside it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the descent built on it agrees with an independent
+    ///   linear scan over five source shapes, which a candidate one body off or
+    ///   past the range would break.
+    /// - witness: `edit::tests::descent_agrees_with_the_linear_stab_oracle`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(&(span, _)) => span.start() <= range.start(),
+        Maybe::Absent(_) => self.bodies.first().is_none_or(|&(span, _)| range.start() < span.start()),
+    })]
+    fn candidate(
+        &self,
+        range: ByteSpan,
+    ) -> Maybe<&(ByteSpan, ItemOrdinal), located::Absent>
+    {
+        match self
+            .bodies
+            .partition_point(|&(span, _)| span.start() <= range.start())
+            .checked_sub(1_usize)
+            .and_then(|at| self.bodies.get(at))
+        {
+            | Some(body) => Maybe::Present(body),
+            | None => Maybe::Absent(located::Absent::Outside),
+        }
+    }
+
     /// The smallest body term enclosing `range`.
     ///
     /// # Specification
@@ -884,8 +924,9 @@ if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right
     ///   shapes: an independent linear scan orders candidates by extent, depth
     ///   and left-to-right position. L3 for traversal cost: the same nested
     ///   locus with eight and forty unrelated declarations has equal visited
-    ///   counts. The predicate checks containment and Outside without replaying
-    ///   the allocating localizer.
+    ///   counts. The predicate checks containment, and checks Outside through
+    ///   [`Self::candidate`], the one body that could enclose the range,
+    ///   without replaying the allocating localizer.
     /// - witness: `edit::tests::descent_agrees_with_the_linear_stab_oracle`
     /// - witness: `tests::edit::localize_finds_smallest_enclosing_term`
     /// - witness: `edit::tests::localize_descends_in_depth_not_map_size`
@@ -899,11 +940,7 @@ if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right
         )
     }
     Maybe::Absent(located::Absent::Outside) => {
-        self.bodies
-            .iter()
-            .all(|&(span, _)| {
-                !(span.start() <= range.start() && range.end() <= span.end())
-            })
+        !matches!(self.candidate(range), Maybe::Present(&(span, _)) if range.end() <= span.end())
     }
 },
     )]
@@ -929,7 +966,8 @@ if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right
     /// - hypothesis: L3 — a literal replacement and generated source edits,
     ///   observed at the old-span locus and reconstructed action paths. Using
     ///   new coordinates or an unrelated body changes containment or the
-    ///   independent path witness.
+    ///   independent path witness. Outside is checked through
+    ///   [`Self::candidate`] of the old extent.
     /// - witness: `edit::tests::edit_locus_maps_a_source_edit_to_its_old_span_locus`
     /// - witness: `tests::edit::edit_locus_contains_the_diff`
     #[spec(
@@ -941,11 +979,7 @@ if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right
         )
     }
     Maybe::Absent(located::Absent::Outside) => {
-        self.bodies
-            .iter()
-            .all(|&(span, _)| {
-                !(span.start() <= edit.old.start() && edit.old.end() <= span.end())
-            })
+        !matches!(self.candidate(edit.old), Maybe::Present(&(span, _)) if edit.old.end() <= span.end())
     }
 },
     )]
@@ -975,6 +1009,7 @@ if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right
     ///   against an independent linear scan; L3 for a fixed deep locus with
     ///   increasing unrelated declarations. Exact paths and visited counts
     ///   distinguish wrong ties, skipped nodes and a whole-map traversal.
+    ///   Outside is checked through [`Self::candidate`].
     /// - witness: `edit::tests::descent_agrees_with_the_linear_stab_oracle`
     /// - witness: `tests::edit::localize_finds_smallest_enclosing_term`
     /// - witness: `edit::tests::localize_descends_in_depth_not_map_size`
@@ -988,11 +1023,7 @@ if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right
             )
         }
         Maybe::Absent(located::Absent::Outside) => {
-            self.bodies
-                .iter()
-                .all(|&(span, _)| {
-                    !(span.start() <= range.start() && range.end() <= span.end())
-                })
+            !matches!(self.candidate(range), Maybe::Present(&(span, _)) if range.end() <= span.end())
         }
     })
         && match ret.0 {
@@ -1017,12 +1048,7 @@ if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right
     {
         let outside = (Maybe::Absent(located::Absent::Outside), Visited::default());
         let encloses = |span: ByteSpan| span.start() <= range.start() && range.end() <= span.end();
-        let after = self
-            .bodies
-            .partition_point(|&(span, _)| span.start() <= range.start());
-        let Some(&(root_span, item)) = after
-            .checked_sub(1_usize)
-            .and_then(|at| self.bodies.get(at))
+        let Maybe::Present(&(root_span, item)) = self.candidate(range)
         else {
             return outside;
         };
@@ -3313,6 +3339,13 @@ where
 /// - witness: `edit::tests::hulls_cover_descendants_without_inventing_origins`
 /// - witness: `edit::tests::descent_agrees_with_the_linear_stab_oracle`
 /// - witness: `tests::edit::localize_finds_smallest_enclosing_term`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "parity: the body visits every node and each of its children once; the check visits each once and counts the recorded spans twice"
+    )
+)]
 #[spec(
     requires: spans.len() == tree.nodes.len()
     && (tree.nodes.is_empty()

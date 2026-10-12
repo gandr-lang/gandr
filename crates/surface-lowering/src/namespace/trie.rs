@@ -1921,6 +1921,13 @@ impl<'trie, Data, Tag> Iterator for Bindings<'trie, Data, Tag>
     ///   listing, asserted as the exact ordered listing.
     /// - witness: `namespace::trie::tests::borrowing_a_namespace_iterates_every_binding_in_order`
     /// - witness: `namespace::trie::tests::union_reports_collisions_in_path_order`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body clones the path to the binding it yields; the check compares that path once and looks it up along the same segments"
+        )
+    )]
     #[spec(
         ensures: |ret| match ret.as_ref() {
             | Some(pair) => {

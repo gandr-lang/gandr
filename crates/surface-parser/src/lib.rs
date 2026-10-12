@@ -30,6 +30,7 @@ mod meld;
 mod mold;
 mod oblig;
 mod parse;
+mod spec;
 #[cfg(test)]
 mod testing;
 

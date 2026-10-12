@@ -2061,16 +2061,14 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — stacked blocks retain source order and their
     ///   declaration owner; malformed or duplicate attributes remain located by
-    ///   lowering.
+    ///   lowering. The predicate reads only the attributes this call appended.
     /// - witness: `module::tests::an_attribute_block_decorates_the_declaration_after_it`
     /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_key`
     #[spec(
         captures: before = attributes.len(),
-        ensures: attributes.len() >= before
-            && attributes
-                .iter()
-                .skip(before)
-                .all(|entry| entry.decorates == declaration),
+        ensures: attributes.get(before ..).is_some_and(|appended| {
+            appended.iter().all(|entry| entry.decorates == declaration)
+        }),
     )]
     fn read_attributes(
         &self,
@@ -2106,16 +2104,15 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a block with a payload and stacked marker blocks
-    ///   attach to the same declaration, preserving their source order.
+    ///   attach to the same declaration, preserving their source order. The
+    ///   predicate reads only the attributes this call appended.
     /// - witness: `module::tests::an_attribute_block_decorates_the_declaration_after_it`
     /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_key`
     #[spec(
         captures: before = attributes.len(),
-        ensures: attributes.len() >= before
-            && attributes
-                .iter()
-                .skip(before)
-                .all(|entry| entry.decorates == declaration),
+        ensures: attributes.get(before ..).is_some_and(|appended| {
+            appended.iter().all(|entry| entry.decorates == declaration)
+        }),
     )]
     fn read_block(
         &self,
@@ -2154,14 +2151,18 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — bare marker and integer-payload records retain the
-    ///   owning declaration, exact spelling and covering source span.
+    ///   owning declaration, exact spelling and covering source span. The
+    ///   predicate asks for the name tile's own bytes, by address and length.
     /// - witness: `module::tests::an_attribute_block_decorates_the_declaration_after_it`
     /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_key`
     #[spec(
         ensures: |ret| {
             ret.as_ref().map_or(true, |entry| {
                 entry.decorates == declaration
-                    && entry.name == self.name_of(entry.at)
+                    && core::ptr::eq(
+                        core::ptr::from_ref::<str>(entry.name.as_ref()),
+                        core::ptr::from_ref::<str>(self.name_of(entry.at).as_ref()),
+                    )
                     && entry.span.start() <= entry.at.span.start()
                     && entry.span.end() >= entry.at.span.end()
             })
@@ -2888,7 +2889,8 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — nesting separated by depth one and depth eight, and
     ///   the refusals of the module as a whole by an unread body, an empty
     ///   body, a sealed module, a lowercase name and a malformed member, each
-    ///   asserted as the exact declaration list.
+    ///   asserted as the exact declaration list. The predicate reads only the
+    ///   structures this call appended.
     /// - witness: `modules::modules::modules_lower_to_named_member_declarations`
     /// - witness: `modules::modules::deeply_nested_modules_lower_and_resolve_at_every_depth`
     /// - witness: `modules::modules::an_unread_module_body_is_refused_not_emptied`
@@ -2913,16 +2915,12 @@ impl<'source> Collector<'_, 'source>
             self.collected.slots.len() >= before.0
                 && self.collected.structures.len() >= before.1
                 && self.collected.owner.len() == before.2
-                && self
-                    .collected
-                    .structures
-                    .iter()
-                    .enumerate()
-                    .skip(before.1)
-                    .all(|(index, module)| match module.container {
+                && self.collected.structures.get(before.1 ..).is_some_and(|appended| {
+                    appended.iter().zip(before.1 ..).all(|(module, index)| match module.container {
                         | Container::TopLevel => true,
                         | Container::Module(parent) => parent.0 < index,
                     })
+                })
         },
     )]
     fn module(
@@ -2988,7 +2986,8 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — readable, empty, sealed, lowercase and repaired
     ///   modules separate a readable header from a named refusal or an unnamed
-    ///   form.
+    ///   form. The predicate asks for the name tile's own bytes, by address and
+    ///   length.
     /// - witness: `modules::modules::modules_lower_to_named_member_declarations`
     /// - witness: `modules::modules::an_empty_module_is_not_an_unread_one`
     /// - witness: `modules::modules::opaque_module_ascription_is_declined_not_read_as_transparent`
@@ -3000,13 +2999,19 @@ impl<'source> Collector<'_, 'source>
                 |refusal| matches!(*refusal, LoweringRefusal::UnknownMold { .. }),
                 |header| match *header {
                     | Header::Opened(ref opened) => {
-                        opened.name == self.name_of(opened.named)
+                        core::ptr::eq(
+                            core::ptr::from_ref::<str>(opened.name.as_ref()),
+                            core::ptr::from_ref::<str>(self.name_of(opened.named).as_ref()),
+                        )
                             && opened
                                 .members
                                 .iter()
                                 .all(|&member| pieces.pieces.contains(&Piece::Operand(member)))
                     },
-                    | Header::Refused { name, named, .. } => name == self.name_of(named),
+                    | Header::Refused { name, named, .. } => core::ptr::eq(
+                        core::ptr::from_ref::<str>(name.as_ref()),
+                        core::ptr::from_ref::<str>(self.name_of(named).as_ref()),
+                    ),
                     | Header::Unnamed(_) => true,
                 },
             )
@@ -3222,6 +3227,8 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — reordered value components and manifest, kinded and
     ///   abstract type components retain their names and select distinct forms.
+    ///   The predicate asks for each name tile's own bytes, by address and
+    ///   length.
     /// - witness: `modules::modules::a_reordered_signature_matches_and_canonicalizes`
     /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
     /// - witness: `modules::modules::a_kinded_type_component_is_declined_by_name_and_a_manifest_one_is_not`
@@ -3233,7 +3240,10 @@ impl<'source> Collector<'_, 'source>
                 starts_record
                     && components
                         .iter()
-                        .all(|component| component.name == self.name_of(component.named))
+                        .all(|component| core::ptr::eq(
+                            core::ptr::from_ref::<str>(component.name.as_ref()),
+                            core::ptr::from_ref::<str>(self.name_of(component.named).as_ref()),
+                        ))
             })
         },
     )]
@@ -3413,7 +3423,8 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — valid members and nested modules stay under their
     ///   container; malformed members leave siblings readable and report at the
-    ///   module.
+    ///   module. The predicate reads only the slots and structures this call
+    ///   appended.
     /// - witness: `modules::modules::a_malformed_member_is_repaired_and_its_siblings_kept`
     /// - witness: `modules::modules::modules_lower_to_named_member_declarations`
     /// - witness: `modules::modules::module_members_admit_in_source_order`
@@ -3430,16 +3441,15 @@ impl<'source> Collector<'_, 'source>
         ensures: |_| {
             self.collected.slots.len() >= before.0
                 && self.collected.structures.len() >= before.1
-                && self.collected.slots.iter().skip(before.0).all(|slot| {
-                    slot.container == Container::Module(structure)
-                        || (slot.role == Role::Held && Some(slot.container) == before.2)
+                && self.collected.slots.get(before.0 ..).is_some_and(|appended| {
+                    appended.iter().all(|slot| {
+                        slot.container == Container::Module(structure)
+                            || (slot.role == Role::Held && Some(slot.container) == before.2)
+                    })
                 })
-                && self
-                    .collected
-                    .structures
-                    .iter()
-                    .skip(before.1)
-                    .all(|entry| entry.container == Container::Module(structure))
+                && self.collected.structures.get(before.1 ..).is_some_and(|appended| {
+                    appended.iter().all(|entry| entry.container == Container::Module(structure))
+                })
         },
     )]
     fn member(
@@ -3749,7 +3759,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a nested module signature is absorbed as a constraint
     ///   rather than exported as a value, while a conflicting definition is
-    ///   refused.
+    ///   refused. The predicate reads only the layers this call appended.
     /// - witness: `modules::modules::nested_member_signature_constrains_the_parent_binding`
     /// - witness: `modules::modules::duplicate_module_member_definition_is_rejected`
     #[spec(
@@ -3764,14 +3774,14 @@ impl<'source> Collector<'_, 'source>
                 && self.collected.structures.len() == before.1
                 && self.collected.by_name.len() <= before.2
                 && layers.len() >= before.3
-                && layers.iter().skip(before.3).all(|layer| {
+                && layers.get(before.3 ..).is_some_and(|appended| appended.iter().all(|layer| {
                     layer.scope == Maybe::Absent(component_scope::Absent::Body)
                         && self
                             .collected
                             .structures
                             .get(layer.structure.0)
                             .is_some_and(|entry| entry.container == Container::Module(structure))
-                })
+                }))
         },
     )]
     fn absorb(
@@ -4433,14 +4443,18 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a nested record signature names the retained field
-    ///   and constrains its binding rather than exposing an omitted member.
+    ///   and constrains its binding rather than exposing an omitted member. The
+    ///   predicate asks for each name tile's own bytes, by address and length.
     /// - witness: `modules::modules::nested_member_signature_constrains_the_parent_binding`
     #[spec(
         ensures: |ret| {
             ret.as_ref().map_or(true, |fields| {
                 matches!(pieces.repair, Maybe::Absent(_))
                     && fields.iter().all(|field| {
-                        field.name == self.name_of(field.named)
+                        core::ptr::eq(
+                            core::ptr::from_ref::<str>(field.name.as_ref()),
+                            core::ptr::from_ref::<str>(self.name_of(field.named).as_ref()),
+                        )
                             && pieces.pieces.contains(&Piece::Operand(field.stated))
                     })
             })
@@ -5675,9 +5689,19 @@ impl<'source> LoweredModule<'source>
     /// # Adequacy
     /// - hypothesis: L3 — real nested declarations export their exact paths.
     ///   Composed metadata separates repeated positions, held declarations,
-    ///   invalid leaf segments and invalid container segments.
+    ///   invalid leaf segments and invalid container segments. The predicate
+    ///   walks the declarations once from the last, so the first eligible one
+    ///   met at a position is the one that wins, and compares the count of
+    ///   positions met with the names returned.
     /// - witness: `modules::modules::modules_lower_to_named_member_declarations`
     /// - witness: `module::tests::structured_export_omits_invalid_segments_and_keeps_the_last_declared_name`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks every declaration and files each eligible one's name in an ordered map; the check walks them once in reverse, filing each position in an ordered set"
+        )
+    )]
     #[spec(
         ensures: |ret| {
             let prefix = |declaration: &LoweredDeclaration<'source>| match declaration.container() {
@@ -5694,25 +5718,24 @@ impl<'source> LoweredModule<'source>
                         .iter()
                         .all(|segment| !segment.as_ref().contains(NameSegment::SEPARATOR))
             };
-            self.declarations.iter().all(|declaration| {
-                !eligible(declaration) || ret.contains_key(&declaration.constant())
-            }) && ret.iter().all(|(constant, name)| {
-                self.declarations
-                    .iter()
-                    .rev()
-                    .find(|declaration| {
-                        declaration.constant() == *constant && eligible(declaration)
-                    })
-                    .is_some_and(|declaration| {
-                        name.segments()
-                            .iter()
-                            .map(AsRef::as_ref)
-                            .eq(prefix(declaration)
+            let mut named = alloc::collections::BTreeSet::new();
+            self.declarations
+                .iter()
+                .rev()
+                .filter(|declaration| eligible(declaration))
+                .all(|declaration| {
+                    !named.insert(declaration.constant())
+                        || ret.get(&declaration.constant()).is_some_and(|name| {
+                            name.segments()
                                 .iter()
                                 .map(AsRef::as_ref)
-                                .chain(core::iter::once(declaration.name().as_ref())))
-                    })
-            })
+                                .eq(prefix(declaration)
+                                    .iter()
+                                    .map(AsRef::as_ref)
+                                    .chain(core::iter::once(declaration.name().as_ref())))
+                        })
+                })
+                && named.len() == ret.len()
         },
     )]
     #[inline]

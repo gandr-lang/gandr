@@ -296,6 +296,13 @@ impl<'source> ModuleImports<'source>
     /// - witness: `namespace::namespace::duplicate_source_import_alias_is_rejected_as_a_shadow`
     /// - witness: `namespace::namespace::duplicate_source_import_alias_becomes_a_refusal`
     /// - witness: `import::tests::an_identical_import_is_still_a_duplicate_and_preserves_the_next_position`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "bounded: an accepted import is checked at the appended declaration; only a refused duplicate scans the module's imports, once, for the first binding of its alias"
+        )
+    )]
     #[spec(
         captures: before = (self.declarations.len(), declaration.alias, declaration.span),
         ensures: |ret| {

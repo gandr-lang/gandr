@@ -165,6 +165,13 @@ impl App
     /// - witness: `app::tests::completed_and_interrupted_waits_preserve_the_transcript`
     /// - witness: `launch::tests::the_face_drives_the_loop_from_its_keys`
     /// - witness: `launch::tests::a_waiting_buffer_shows_in_the_input_pane`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: on Enter the body offers the whole line to the loop, which reads it; the check scans it once for a terminator and otherwise reads its last scalar"
+        )
+    )]
     #[spec(
         requires: key != Key::Enter || !self.line.contains(['\r', '\n']),
         captures: [

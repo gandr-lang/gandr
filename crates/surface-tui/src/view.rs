@@ -294,13 +294,15 @@ fn paint<'block>(
 ///   split-character endpoint, unsorted and overlapping spans, and a seeded
 ///   output prefix are compared as literal segments and colours. Lost bytes,
 ///   overwritten prefixes, wrong clipping and last-span-wins mutations differ.
-///   These cases do not enumerate arbitrary span lists or terminal fonts.
+///   These cases do not enumerate arbitrary span lists or terminal fonts. The
+///   predicate reads only the spans past the captured prefix, the ones this
+///   call appended.
 /// - witness: `view::tests::echo_clipping_keeps_utf8_gaps_and_first_accepted_spans`
 /// - witness: `launch::tests::a_submitted_keyword_is_painted_in_the_keyword_colour`
 #[spec(
     captures: [prefix = painted.len()],
-    ensures: painted.len() >= prefix && painted.iter().skip(prefix)
-        .flat_map(|span| span.content.bytes()).eq(row.text.bytes()),
+    ensures: painted.get(prefix ..).is_some_and(|appended| appended.iter()
+        .flat_map(|span| span.content.bytes()).eq(row.text.bytes())),
 )]
 fn paint_echo<'block>(
     spans: &[HlSpan],

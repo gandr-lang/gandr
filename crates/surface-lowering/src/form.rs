@@ -847,6 +847,11 @@ pub enum Shape
 /// # Errors
 /// [`LoweringRefusal::UnknownMold`] for a mold `pbg` does not hold.
 ///
+/// # Clause cost
+/// - bound: reads the node's label, resolves its mold by index in the grammar's
+///   table and matches the kind's spelling against the fixed former table; no
+///   read grows with the source.
+///
 /// # Adequacy
 /// - hypothesis: L3 — all seven label classes are observed as exact shapes,
 ///   including a ghost close and an unknown mold with its exact location.
@@ -1290,6 +1295,13 @@ impl Default for Pieces
 /// - witness: `form::tests::every_label_shape_is_read_and_unknown_molds_are_located`
 /// - witness: `form::tests::unknown_root_molds_clear_the_reused_buffer`
 #[inline]
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "parity: the body clears the pieces and refills them from the node's children; the check reads each piece and child a fixed number of times"
+    )
+)]
 #[spec(
     requires: tree.node(position).is_some(),
     ensures: |ret| {
@@ -1761,7 +1773,7 @@ pub enum Run
 /// - witness: `form::tests::an_empty_cursor_starts_at_the_form_start`
 /// - witness: `form::tests::a_cursor_reads_a_tile_only_by_its_label`
 /// - witness: `form::tests::an_operand_run_stops_at_the_first_tile`
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Cursor<'pieces>
 {
     /// The pieces not yet read.
@@ -1769,6 +1781,26 @@ pub struct Cursor<'pieces>
     /// The last piece read, or the empty span at the form's start before any:
     /// an empty hole stands at its end.
     edge: ByteSpan,
+}
+
+impl Clone for Cursor<'_>
+{
+    /// A cursor at the same pieces and edge: a lookahead a parse can take
+    /// without consuming the original.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Clause cost
+    /// - bound: copies one slice reference and one span; no piece is read.
+    #[inline]
+    fn clone(&self) -> Self
+    {
+        Self {
+            rest: self.rest,
+            edge: self.edge,
+        }
+    }
 }
 
 impl<'pieces> Cursor<'pieces>

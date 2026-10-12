@@ -316,11 +316,14 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a block of two attributes decorates the family after
-    ///   it, each filed under the family's content identity.
+    ///   it, each filed under the family's content identity. The predicate
+    ///   reads only the attributes this call appended.
     /// - witness: `lower::native::tests::an_attribute_block_decorates_the_data_declaration_after_it`
     #[spec(
         captures: before = attributes.len(),
-        ensures: |ret| ret.is_err() || attributes.iter().skip(before).all(|entry| entry.decorates == declaration),
+        ensures: |ret| ret.is_err() || attributes.get(before ..).is_some_and(|appended| {
+            appended.iter().all(|entry| entry.decorates == declaration)
+        }),
     )]
     pub(super) fn decoration(
         &self,

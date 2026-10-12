@@ -608,7 +608,7 @@ impl<'source> FormSplit<'source>
     /// - witness: `parse::tests::a_source_splits_before_each_declaration_head`
     /// - witness: `parse::tests::arbitrary_source_parses_by_form_as_whole`
     #[inline]
-    #[spec(captures: before = units.len(), ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|joined| joined.result.tree.source() == self.source && joined.seams.len() == before))]
+    #[spec(captures: before = units.len(), ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|joined| core::ptr::eq(core::ptr::from_ref::<str>(<&str>::from(joined.result.tree.source())), core::ptr::from_ref::<str>(<&str>::from(self.source))) && joined.seams.len() == before))]
     pub fn join<'pbg>(
         &self,
         molder: &mut Molder<'pbg>,
