@@ -895,7 +895,6 @@ name = "gandr-surface-syntax"
 version = "0.0.0"
 dependencies = [
  "blake3",
- "foldhash 0.2.0",
  "quenchant-anodized",
 ]
 

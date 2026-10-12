@@ -1,6 +1,6 @@
 # gandr-surface-syntax
 
-The concrete syntax tree of the gandr surface language: a molded node vocabulary, byte spans, and a flat level-order arena whose every node carries an arena position and a content digest.
+The concrete syntax tree of the gandr surface language: a molded node vocabulary, byte spans, and a flat level-order arena whose every node carries an arena position and, inside a top-level form, a cross-tree key.
 
 <!-- toc -->
 
@@ -11,11 +11,10 @@ The concrete syntax tree of the gandr surface language: a molded node vocabulary
 - [Examples](#examples)
 - [Molded labels](#molded-labels)
 - [Layout in the tree](#layout-in-the-tree)
-- [Arena position and content digest](#arena-position-and-content-digest)
+- [Arena position and node key](#arena-position-and-node-key)
 - [Node keys](#node-keys)
 - [Digest preimage](#digest-preimage)
-  - [A preimage is hashed in one call](#a-preimage-is-hashed-in-one-call)
-  - [A builder hashes each leaf once](#a-builder-hashes-each-leaf-once)
+  - [A digest per form, not per node](#a-digest-per-form-not-per-node)
 - [Level-order layout](#level-order-layout)
 - [Builder identity](#builder-identity)
 - [Source text and fragments](#source-text-and-fragments)
@@ -27,23 +26,23 @@ The concrete syntax tree of the gandr surface language: a molded node vocabulary
 
 ## Synopsis
 
-**What.** The tree a surface parser produces. `NodeLabel` is what a node is: a completed form or a written tile, each named by its `MoldId`; grout the parser inserted where the source left a term or a closer unwritten; layout; or the root. `ByteSpan` is a half-open byte range of a `SourceText`; `SyntaxTree` is a flat arena laid out in level order, whose node carries its label, its span, its children as a contiguous range of arena positions, and a `NodeDigest`, and which records the `GrammarFingerprint` its mold ids index. `TreeBuilder` stages nodes bottom-up as a parser completes them and finishes them into the arena. `MoldId`, `GroutSort`, `GroutShape`, `GrammarFingerprint` and `ClosingClass` are the references into a grammar's tables that a grammar and a parser exchange. The crate holds representation only: it lexes and parses nothing, and reads a source only to answer what a span covers. It is `no_std` over `core` and `alloc`, and its one runtime dependency is BLAKE3.
+**What.** The tree a surface parser produces. `NodeLabel` is what a node is: a completed form or a written tile, each named by its `MoldId`; grout the parser inserted where the source left a term or a closer unwritten; layout; or the root. `ByteSpan` is a half-open byte range of a `SourceText`; `SyntaxTree` is a flat arena laid out in level order, whose node carries its label, its span, and its children as a contiguous range of arena positions, which records the `GrammarFingerprint` its mold ids index, and which digests each top-level form once and keys every node inside one by that `NodeDigest` and a rank. `TreeBuilder` stages nodes bottom-up as a parser completes them and finishes them into the arena. `MoldId`, `GroutSort`, `GroutShape`, `GrammarFingerprint` and `ClosingClass` are the references into a grammar's tables that a grammar and a parser exchange. The crate holds representation only: it lexes and parses nothing, and reads a source only to answer what a span covers. It is `no_std` over `core` and `alloc`, and its one runtime dependency is BLAKE3.
 
 **Why.** A consumer that dispatches on forms needs the tree to name them; the grammar already names every form by the molds of its tiles, so the node carries a mold and the grammar resolves it. A re-renderer needs every byte back, so layout and inserted material are nodes. A position resolves fast inside one tree but moves with every edit earlier in the file; a consumer whose side table outlives one parse needs an identity that depends on content alone, and that a reformat leaves alone.
 
-**How.** Children as a contiguous range force level order, which puts every parent before its children: a walk in ascending position order needs no stack, and a cycle is unrepresentable rather than checked for. The digest is computed at staging over the significant children's digests rather than their positions, so it survives the layout, every edit elsewhere in the file, and every change of layout inside the node. A staged identity carries the identity of the builder that minted it. Every refusal is a `SyntaxError` naming the offset or staged node it rejected; nothing panics, indexes, or repairs.
+**How.** Children as a contiguous range force level order, which puts every parent before its children: a walk in ascending position order needs no stack, and a cycle is unrepresentable rather than checked for. A form's digest is one hash over its significant nodes in preorder, taken as the builder lays the tree out, rather than over positions, so it survives the layout, every edit elsewhere in the file, and every change of layout inside the form. A staged identity carries the identity of the builder that minted it. Every refusal is a `SyntaxError` naming the offset or staged node it rejected; nothing panics, indexes, or repairs.
 
 ## References
 
-- Jack O'Connor, Jean-Philippe Aumasson, Samuel Neves and Zooko Wilcox-O'Hearn. "BLAKE3: one function, fast everywhere." Specification, 9 January 2020. <https://github.com/BLAKE3-team/BLAKE3-specs/blob/master/blake3.pdf> — the hash whose extendable output is a node digest.
+- Jack O'Connor, Jean-Philippe Aumasson, Samuel Neves and Zooko Wilcox-O'Hearn. "BLAKE3: one function, fast everywhere." Specification, 9 January 2020. <https://github.com/BLAKE3-team/BLAKE3-specs/blob/master/blake3.pdf> — the hash a form digest is.
 - David Moon, Andrew Blinn, Thomas J. Porter and Cyrus Omar. "Syntactic Completions with Material Obligations." _Proceedings of the ACM on Programming Languages_ 9, OOPSLA2 (2025). <https://doi.org/10.1145/3763182>, arXiv:2508.16848 — molds, grout and the material a tree records.
 
 ## Provided features
 
-- `NodeLabel`, `LabelTag`, `CarriesText` and `Significance`: the molded node vocabulary, each label with a pinned digest tag, whether it draws text from the source, and whether a parent's digest folds it. Witnesses: `label::tests::every_digest_tag_is_pinned`, `label::tests::only_layout_is_insignificant`.
+- `NodeLabel`, `LabelTag`, `CarriesText` and `Significance`: the molded node vocabulary, each label with a pinned digest tag, whether it draws text from the source, and whether a form's digest reads it. Witnesses: `label::tests::every_digest_tag_is_pinned`, `label::tests::only_layout_is_insignificant`.
 - `SyntaxTree`, `Node` and `NodeIndex`: the level-order arena with checked lookups, `children`, `positions`, `fragment` and the recorded `grammar`.
-- `TreeBuilder` and `StagedId`: bottom-up staging under a grammar fingerprint and the layout `TreeBuilder::finish` produces; `TreeBuilder::node_with_digest` stages a node under a digest folded apart from the builder, which the enforcing build folds again and compares. Witnesses: `build::tests::a_supplied_digest_stages_the_folded_node`, `build::tests::a_supplied_digest_is_refused_as_node_refuses`.
-- `NodeDigest`, `NODE_DIGEST_LEN` and `digest_of`: the 32-byte content identity, rendered as lowercase hexadecimal, and the one fold that computes it.
+- `TreeBuilder` and `StagedId`: bottom-up staging under a grammar fingerprint and the layout `TreeBuilder::finish` produces, which digests each top-level form and the tree. Witnesses: `build::tests::two_builds_of_one_source_agree_digest_by_digest`, `build::tests::an_edit_reaches_its_form_and_the_tree`.
+- `NodeDigest` and `NODE_DIGEST_LEN`: the 32-byte content identity of a form or a tree, rendered as lowercase hexadecimal. Witnesses: `digest::tests::a_pinned_form_digest_is_stable`, `digest::tests::a_digest_renders_lowercase_hexadecimal`.
 - `NodeKey`, `FormRank`, `SyntaxTree::key`, `SyntaxTree::forms` and `SyntaxTree::digest`: a significant node's cross-tree key — its top-level form's digest and its preorder rank in that form — the forms, and the whole tree's digest. Witnesses: `build::tests::keys_rank_a_forms_nodes_in_preorder`, `build::tests::keys_survive_layout_and_another_forms_edit`.
 - `SourceText`, `SourceFragment`, `ByteSpan`, `ByteOffset` and `ByteLength`: byte-addressed source positions.
 - `SyntaxError`: every refusal, with the offset, span or staged node it names.
@@ -125,15 +124,15 @@ The alternative was a closed `NodeKind` enum in this crate, one variant per surf
 
 ## Layout in the tree
 
-Every token the source wrote is a node, layout included, so the leaves read in source order reproduce the source byte for byte; grout the parser inserted covers no bytes, and grout standing over a token no grammar label molds covers exactly that token's. Every leaf label carries its own text into its digest — a tile, grout, a minted close and layout — so two unmolded tokens of different spellings are two identities; a form, the root and documentation carry only their children's. A parent's digest folds a child only when the child's label is significant. `NodeLabel::Space` is not, so reformatting a declaration leaves its digest and every ancestor's unchanged while the layout stays in the tree for a re-renderer. `NodeLabel::Doc` is not either: it groups a run of `///` lines or one `doc("…")` attribute entry under the form it documents, so editing documentation, or moving it between the two spellings, leaves that form's identity alone. A missing closer is a `NodeLabel::GhostClose` naming its family, so a consumer can pair it against a closer written later; a missing closer of no single family is postfix grout.
+Every token the source wrote is a node, layout included, so the leaves read in source order reproduce the source byte for byte; grout the parser inserted covers no bytes, and grout standing over a token no grammar label molds covers exactly that token's. Every leaf label carries its own text into its form's digest — a tile, grout, a minted close and layout — so two unmolded tokens of different spellings are two identities; a form, the root and documentation carry only their children's. A form's digest reads a node only when the node and every node above it in the form are significant. `NodeLabel::Space` is not, so reformatting a declaration leaves its form's digest and the tree's unchanged while the layout stays in the tree for a re-renderer. `NodeLabel::Doc` is not either: it groups a run of `///` lines or one `doc("…")` attribute entry under the form it documents, so editing documentation, or moving it between the two spellings, leaves that form's identity alone. A missing closer is a `NodeLabel::GhostClose` naming its family, so a consumer can pair it against a closer written later; a missing closer of no single family is postfix grout.
 
-## Arena position and content digest
+## Arena position and node key
 
-`NodeIndex` addresses a node inside one tree and nowhere else: it is an offset into that tree's node vector, and the next parse of an edited source lays the same declaration out elsewhere. `NodeDigest` addresses a node across trees, runs and processes: it is a function of the node's label, its own text when its label carries text, and its significant children's digests, so the same declaration parsed from two files on two machines carries one identity. A side table keyed by position is invalidated by an edit anywhere earlier in the file; one keyed by digest only by an edit to the thing it is about. A diagnostic that carries both resolves fast in the tree in hand and survives it.
+`NodeIndex` addresses a node inside one tree and nowhere else: it is an offset into that tree's node vector, and the next parse of an edited source lays the same declaration out elsewhere. `NodeKey` addresses a node across trees, runs and processes: it is its top-level form's `NodeDigest`, a function of the form's labels and texts alone, and its rank in that form, so the same declaration parsed from two files on two machines carries one key. A side table keyed by position is invalidated by an edit anywhere earlier in the file; one keyed by key only by an edit to the form it is about.
 
 ## Node keys
 
-A table that outlives one parse files a node under its `NodeKey`: the digest of the top-level form holding it — a significant child of the root — and its rank among that form's significant nodes in preorder, the form's own root ranked zero. Layout, documentation and what they hold take no rank and have no key, and neither does the root; the whole tree's identity is `SyntaxTree::digest`. An edit to another form, to layout or to documentation leaves a key alone; an edit inside the form changes the form's digest and so every key under it, which is the set a consumer derives again when that form is lowered again. `TreeBuilder::finish` ranks the forms once, so `SyntaxTree::key` answers without a walk.
+A table that outlives one parse files a node under its `NodeKey`: the digest of the top-level form holding it — a significant child of the root — and its rank among that form's significant nodes in preorder, the form's own root ranked zero. Layout, documentation and what they hold take no rank and have no key, and neither does the root; the whole tree's identity is `SyntaxTree::digest`. An edit to another form, to layout or to documentation leaves a key alone; an edit inside the form changes the form's digest and so every key under it, which is the set a consumer derives again when that form is lowered again. `TreeBuilder::finish` ranks and digests the forms in one walk, so `SyntaxTree::key` answers without one.
 
 - Choice: the form's digest and a rank. Only top-level forms need an identity at commit; a node inside one is found by its position in the form.
 - Alternatives: the node's own digest, which needs a digest at every node and cannot tell apart two equal nodes in one form; an arena position, which an edit anywhere earlier in the file invalidates.
@@ -141,21 +140,15 @@ A table that outlives one parse files a node under its `NodeKey`: the digest of 
 
 ## Digest preimage
 
-The preimage is the domain string `gandr.surface-syntax.node.v2`, the label's pinned tag, the label's payload (a mold id as four little-endian bytes; a grout's sort as two and its shape as one; a minted close's sort as two and its family as one), the significant child count, the node's own text when its label is a leaf label, and the significant children's digests in order. Spans, child positions and layout children are excluded, so moving or reformatting text leaves its digest unchanged. Every variable-width field is preceded by its length at a fixed width, so `ab` beside `c` and `a` beside `bc` hash differently. The version suffix belongs to the domain: a change to the layout changes every node's identity, and two layouts never compare equal. The pinned form is asserted against an external BLAKE3 golden rather than a value this crate produced.
+A form's preimage is the domain string `gandr.surface-syntax.form.v1`, then each significant node of the form in preorder: the label's pinned tag, the label's payload (a mold id as four little-endian bytes; a grout's sort as two and its shape as one; a minted close's sort as two and its family as one), the significant child count as four little-endian bytes, and, when the label is a leaf label, the text's length as four little-endian bytes and the text. Spans, positions, layout and documentation are excluded, so moving or reformatting text leaves the digest unchanged. Every variable-width field is preceded by its length and every node by its child count, so `ab` beside `c` and `a` beside `bc` hash differently, and `f (x y)` and `(f x) y` do too. A tree's preimage is `gandr.surface-syntax.tree.v1`, the root's label read the same way with the form count as its child count, and the forms' digests in order. The version suffix belongs to the domain: a change to the layout changes every identity, and two layouts never compare equal. The pinned form is asserted against an external BLAKE3 golden rather than a value this crate produced.
 
-### A preimage is hashed in one call
+### A digest per form, not per node
 
-Most nodes are leaves and small forms: over the corpus, 97% of the digested nodes have a preimage of at most four BLAKE3 blocks, 256 bytes. `digest_of` writes such a preimage into a 256-byte stack buffer and hashes it with one `blake3::hash` call; a longer one goes through the incremental hasher field by field. Both read the same bytes, so every digest is unchanged. A leaf's digest takes 91 ns rather than 130, a form over two children 163 rather than 191, and parsing the corpus about 4% less time.
+`TreeBuilder::finish` walks each top-level form in preorder once, ranking its nodes and writing their bytes into one buffer, and hashes the buffer in one `blake3::hash` call; the tree's digest hashes the forms' digests. Nothing is hashed while a node is staged. Parsing the corpus one source after another, best of 300, took 9.69 ms with a digest per node and takes 8.5 ms (about 12% less).
 
-- Alternatives: the incremental hasher for every node, which sets up its whole chunk state and copies each field through its buffer; a kilobyte stack buffer, which zeroes a kilobyte for every leaf and measured 101 ns; a heap buffer past the stack one, which allocates where the incremental hasher does not; reading the digest with `finalize` instead of the extendable output, which measured no different.
-- Reversal: a preimage layout whose common case outgrows four blocks moves the bound; hashing many nodes' preimages at once replaces the per-node call.
-
-### A builder hashes each leaf once
-
-A leaf's digest reads only its label and its text, and a source repeats both: its keywords, punctuation, layout and names. Of the 22,761 leaves a parse of the corpus stages, most repeat one staged earlier in the same source. A `TreeBuilder` keeps the digests of the leaves it has staged in a direct-mapped cache, one slot per eight bytes of source, rounded up to a power of two between 64 and 4096 slots, keyed by `foldhash`'s fixed-seed hash of the label and the text. A slot holds the last leaf that hashed to it, and a leaf whose slot holds another replaces it. A parse of the corpus hashes 9,178 leaves rather than 22,761 and takes 6% less time; every digest is unchanged.
-
-- Alternatives: a hash map keyed by label and text, which keeps every distinct leaf but degrades to a scan when the keys collide, and the keys are source text, which a caller chooses, while `foldhash` makes no claim against chosen collisions; a direct-mapped slot costs one hash and one comparison however the keys collide, and keys chosen to collide only make every lookup a miss, which hashes the leaf as before. A cache that outlives the builder, shared by successive parses of one document, would skip the leaves an edit leaves alone, at the cost of an owner for it across parses.
-- Reversal: a caller that reparses one document often enough to want the cache across parses moves it out of the builder; a corpus whose leaves repeat less, or a hash whose cost approaches BLAKE3's on a short leaf, removes it.
+- Choice: one digest per top-level form, the only identity a consumer reads, with a rank keying every node inside it.
+- Alternatives: a digest per node, hashed as each node is staged, with each leaf hashed once per builder and a parser carrying a molded form's digests across revisions; it cost about a sixth of a parse and nothing read a digest below a form. Deferring the per-node digests until after lowering kept that cost, off the critical path but not gone.
+- Reversal: a consumer that needs a node's own content identity below its form — reuse of a sub-form's work across a move — needs a digest per node again.
 
 ## Level-order layout
 

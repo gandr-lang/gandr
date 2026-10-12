@@ -1,15 +1,16 @@
 //! The **concrete syntax tree of the gandr surface**: the molded node
 //! vocabulary, byte spans, and a flat level-order arena whose every node
-//! carries an arena position and a content digest.
+//! carries an arena position and, below the root, a cross-tree key.
 //!
 //! - [`NodeLabel`] is what a node is: a form or a tile named by its mold, grout
 //!   a parser inserted, layout, or the root.
 //! - [`TreeBuilder`] stages nodes bottom-up and finishes them into a
 //!   [`SyntaxTree`], whose children are a contiguous range of strictly higher
 //!   positions.
-//! - [`NodeIndex`] addresses a node inside one tree; [`NodeDigest`] addresses
-//!   it across trees, runs and processes, folded by [`digest_of`], the fold
-//!   [`TreeBuilder`] stages every node under.
+//! - [`NodeIndex`] addresses a node inside one tree; [`NodeKey`] addresses it
+//!   across trees, runs and processes: the [`NodeDigest`] of its top-level
+//!   form, hashed once as [`TreeBuilder::finish`] lays the tree out, and its
+//!   rank in that form.
 //! - [`SourceText`], [`ByteSpan`] and [`SourceFragment`] are byte-addressed
 //!   source positions; [`SyntaxError`] is every refusal.
 //! - [`MoldId`], [`GroutSort`], [`GroutShape`], [`GrammarFingerprint`] and
@@ -46,7 +47,6 @@ pub use crate::build::StagedId;
 pub use crate::build::TreeBuilder;
 pub use crate::digest::NODE_DIGEST_LEN;
 pub use crate::digest::NodeDigest;
-pub use crate::digest::digest_of;
 pub use crate::error::SyntaxError;
 pub use crate::key::FormRank;
 pub use crate::key::NodeKey;

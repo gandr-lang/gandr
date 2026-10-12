@@ -37,20 +37,15 @@
 
 use alloc::vec::Vec;
 use core::fmt;
-use core::hash::BuildHasher as _;
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering as AtomicOrdering;
 
 use anodized::spec;
-use foldhash::fast::FixedState;
 
-use crate::digest::NodeDigest;
-use crate::digest::digest_of;
 use crate::error::SyntaxError;
 use crate::label::NodeLabel;
 use crate::mold::GrammarFingerprint;
 use crate::span::ByteSpan;
-use crate::span::SourceFragment;
 use crate::span::SourceText;
 use crate::tree::ChildCount;
 use crate::tree::Node;
@@ -140,158 +135,6 @@ impl BuilderIdCounter
     }
 }
 
-/// Source bytes per slot of a builder's leaf cache.
-const SOURCE_BYTES_PER_LEAF_SLOT: usize = 8_usize;
-
-/// The fewest slots a builder's leaf cache holds, so a short source still
-/// keeps its keywords, punctuation and layout.
-const MIN_LEAF_SLOTS: usize = 64_usize;
-
-/// The most slots a builder's leaf cache holds, so a long source's cache
-/// stays a few hundred kilobytes.
-const MAX_LEAF_SLOTS: usize = 4096_usize;
-
-/// One leaf a builder has folded: its label, its text and its digest.
-#[derive(Clone, Copy, Debug)]
-struct CachedLeaf<'source>
-{
-    /// The leaf's label.
-    label: NodeLabel,
-    /// The leaf's text.
-    text: SourceFragment<'source>,
-    /// `digest_of(label, text, &[])`.
-    digest: NodeDigest,
-}
-
-/// The leaf digests a builder has folded, direct-mapped by label and text.
-///
-/// A slot holds the last leaf whose key hashed to it, and a leaf that finds
-/// another there replaces it, so a lookup costs one hash of the key and one
-/// comparison however the keys collide: source text chosen to collide makes
-/// every lookup a miss, which hashes the leaf as a builder without the cache
-/// would.
-///
-/// # Specification
-/// - ensures: every occupied slot holds a leaf's label and text with that
-///   leaf's digest; the slot count is a power of two.
-///
-/// # Adequacy
-/// - hypothesis: L3 — leaves that repeat, and more distinct leaves than the
-///   cache has slots, each read back the digest folded without the cache.
-/// - witness: `build::tests::a_cached_leaf_digest_is_the_folded_one`
-#[spec(maintains: self.slots.len().is_power_of_two())]
-#[repr(transparent)]
-#[derive(Debug)]
-struct LeafDigests<'source>
-{
-    /// The slots, a power of two of them, indexed by the low bits of the
-    /// key's hash.
-    slots: Vec<Option<CachedLeaf<'source>>>,
-}
-
-/// The position of one slot of a [`LeafDigests`].
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct LeafSlot(usize);
-
-impl<'source> LeafDigests<'source>
-{
-    /// An empty cache sized to `source`: one slot per
-    /// [`SOURCE_BYTES_PER_LEAF_SLOT`] bytes, rounded up to a power of two
-    /// between [`MIN_LEAF_SLOTS`] and [`MAX_LEAF_SLOTS`].
-    ///
-    /// # Specification
-    /// - ensures: every slot is empty, and there are a power of two of them.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a source shorter than the minimum and one with more
-    ///   distinct leaves than slots both fold every leaf as without the cache.
-    /// - witness: `build::tests::a_cached_leaf_digest_is_the_folded_one`
-    #[inline]
-    #[spec(ensures: |ret| ret.slots.len().is_power_of_two() && ret.slots.iter().all(Option::is_none))]
-    fn new(source: SourceText<'source>) -> Self
-    {
-        let wanted = <&str>::from(source)
-            .len()
-            .div_ceil(SOURCE_BYTES_PER_LEAF_SLOT)
-            .clamp(MIN_LEAF_SLOTS, MAX_LEAF_SLOTS)
-            .next_power_of_two();
-        Self {
-            slots: alloc::vec![None; wanted],
-        }
-    }
-
-    /// The slot a leaf labelled `label` over `text` maps to.
-    ///
-    /// # Specification
-    /// - ensures: a position below the slot count, the same for the same label
-    ///   and text.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — more distinct leaves than slots map into range and
-    ///   repeated leaves find the slot they were entered in.
-    /// - witness: `build::tests::a_cached_leaf_digest_is_the_folded_one`
-    #[inline]
-    #[spec(ensures: |ret| ret.0 < self.slots.len())]
-    fn slot_of(
-        &self,
-        label: NodeLabel,
-        text: SourceFragment<'source>,
-    ) -> LeafSlot
-    {
-        let hash = FixedState::default().hash_one((label, text));
-        // The slot count is a power of two no larger than `MAX_LEAF_SLOTS`, so
-        // the low bits of the hash index it.
-        let low = usize::try_from(hash & u64::from(u16::MAX)).unwrap_or_default();
-        LeafSlot(low & self.slots.len().saturating_sub(1))
-    }
-
-    /// The digest of a leaf labelled `label` over `text`, read from the cache
-    /// when the leaf's slot holds it and folded and entered otherwise.
-    ///
-    /// # Specification
-    /// - ensures: returns `digest_of(label, text, &[])`, and leaves the leaf's
-    ///   slot holding the leaf with that digest; the executable clause checks
-    ///   the slot, since checking the digest would hash the leaf again.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — leaves that repeat, and more distinct leaves than the
-    ///   cache has slots, so that slots are shared and replaced, each read back
-    ///   the digest folded without the cache, under two labels over the same
-    ///   text.
-    /// - witness: `build::tests::a_cached_leaf_digest_is_the_folded_one`
-    #[inline]
-    #[spec(ensures: |ret| self.slots.get(self.slot_of(label, text).0).is_some_and(|slot| slot.is_some_and(|leaf| leaf.label == label && leaf.text == text && leaf.digest == ret)))]
-    fn digest(
-        &mut self,
-        label: NodeLabel,
-        text: SourceFragment<'source>,
-    ) -> NodeDigest
-    {
-        let at = self.slot_of(label, text);
-        let Some(slot) = self.slots.get_mut(at.0)
-        else {
-            return digest_of(label, text, &[]);
-        };
-        if let Some(leaf) = *slot
-            && leaf.label == label
-            && leaf.text == text
-        {
-            return leaf.digest;
-        }
-        let digest = digest_of(label, text, &[]);
-        *slot = Some(CachedLeaf {
-            label,
-            text,
-            digest,
-        });
-        digest
-    }
-}
-
 /// The identity of a node staged inside one [`TreeBuilder`].
 ///
 /// The identity names its builder as well as the node's staging position, so a
@@ -366,8 +209,6 @@ struct StagedNode
     label: NodeLabel,
     /// The bytes of the source this node covers.
     span: ByteSpan,
-    /// The content identity, computed when the node was staged.
-    digest: NodeDigest,
     /// Where this node's children start in the builder's edge list.
     first_edge: usize,
     /// How many edges follow that position.
@@ -449,13 +290,6 @@ pub struct TreeBuilder<'source>
     staged: Vec<StagedNode>,
     /// Every staged node's children, in one flat list.
     edges: Vec<StagedId>,
-    /// Scratch for the significant child digests [`node`](Self::node) folds,
-    /// kept across calls: a fold allocates only when it has more significant
-    /// children than every fold before it.
-    child_digests: Vec<NodeDigest>,
-    /// The digests of the leaves staged so far, so a leaf whose label and text
-    /// repeat an earlier one is not hashed again.
-    leaves: LeafDigests<'source>,
 }
 
 impl<'source> TreeBuilder<'source>
@@ -505,8 +339,6 @@ impl<'source> TreeBuilder<'source>
             grammar,
             staged: Vec::new(),
             edges: Vec::new(),
-            child_digests: Vec::new(),
-            leaves: LeafDigests::new(source),
         })
     }
 
@@ -563,14 +395,11 @@ impl<'source> TreeBuilder<'source>
     ///   has not yet been accepted as a child; `span` lies inside this
     ///   builder's source and does not split a character. Each is checked
     ///   rather than assumed, the builder stamp before the position.
-    /// - ensures: on success the node's content digest folds its label, its own
-    ///   source fragment when its label carries text, and the digests of its
-    ///   significant children in the order given — layout children are kept in
-    ///   the tree and left out of the fold — and each child is now attached to
+    /// - ensures: on success the node is staged with its label, its span and
+    ///   its children in the order given, and each child is now attached to
     ///   exactly one parent; the returned identity is fresh.
     /// - provides: the one way to stage a node, so every node in a finished
-    ///   tree has a validated span and a digest computed over the same
-    ///   preimage.
+    ///   tree has a validated span.
     /// - fails: [`SyntaxError::SpanOutsideSource`] or
     ///   [`SyntaxError::SpanSplitsCharacter`] when the span does not name a
     ///   fragment of the source; [`SyntaxError::UnknownStagedNode`] when a
@@ -589,15 +418,11 @@ impl<'source> TreeBuilder<'source>
     /// parent.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — five decision surfaces (the span validation, the
-    ///   child lookup, the attachment test, the significance filter, the digest
-    ///   fold) separated by a span one byte past the source end, a child
-    ///   identity from a second builder, a child offered twice across two calls
-    ///   and twice within one call, each asserted as an exact variant with its
-    ///   exact payload; a parent over layout and the same parent without it
-    ///   asserted one digest; the fold is separated by the digest agreements
-    ///   and disagreements the layout witnesses assert, and a leaf's digest by
-    ///   leaves that repeat and leaves that share one cache slot.
+    /// - hypothesis: L3 — three decision surfaces (the span validation, the
+    ///   child lookup, the attachment test) separated by a span one byte past
+    ///   the source end, a child identity from a second builder, a child
+    ///   offered twice across two calls and twice within one call, each
+    ///   asserted as an exact variant with its exact payload.
     /// - witness: `build::tests::a_span_outside_the_source_is_refused_at_mint`
     /// - witness: `build::tests::a_span_splitting_a_character_is_refused_at_mint`
     /// - witness: `build::tests::an_unknown_staged_node_is_refused`
@@ -605,8 +430,6 @@ impl<'source> TreeBuilder<'source>
     /// - witness: `build::tests::attaching_a_staged_node_twice_is_refused`
     /// - witness: `build::tests::a_child_listed_twice_in_one_call_is_refused`
     /// - witness: `build::tests::a_refusal_leaves_the_builder_at_the_failure_point`
-    /// - witness: `build::tests::layout_never_reaches_a_parent_digest`
-    /// - witness: `build::tests::a_cached_leaf_digest_is_the_folded_one`
     #[inline]
     #[spec(
         captures: [next_position = self.staged.len(), next_edge = self.edges.len()],
@@ -629,138 +452,13 @@ impl<'source> TreeBuilder<'source>
         children: &[StagedId],
     ) -> Result<StagedId, SyntaxError>
     {
-        let fragment = self.source.fragment(span)?;
-        if children.is_empty() {
-            let digest = self.leaves.digest(label, fragment);
-            return Ok(self.stage(label, span, children, digest));
-        }
-        // The scratch leaves the builder while `attach` borrows it, and returns
-        // whether or not a child is refused.
-        let mut digests = core::mem::take(&mut self.child_digests);
-        digests.clear();
-        let attached = self.attach(children, |staged| {
-            if bool::from(staged.label.significance()) {
-                digests.push(staged.digest);
-            }
-        });
-        let folded = attached.map(|()| digest_of(label, fragment, &digests));
-        self.child_digests = digests;
-        let digest = folded?;
-
-        Ok(self.stage(label, span, children, digest))
-    }
-
-    /// Stage a node as [`node`](Self::node) does, under the digest a caller
-    /// already folded for it.
-    ///
-    /// A digest depends on a node's label, its own text and its significant
-    /// children's digests, never on where the node sits, so a parser that
-    /// kept a subtree's digests from an earlier fold stages that subtree again
-    /// at any offset without hashing it.
-    ///
-    /// # Specification
-    /// - requires: `digest` is the digest [`node`](Self::node) would fold for
-    ///   `label` over `span` and `children`; everything else
-    ///   [`node`](Self::node) requires, which is checked as it checks it.
-    /// - ensures: on success the staged node is the node [`node`](Self::node)
-    ///   would stage, and the children are attached as it attaches them.
-    /// - provides: a subtree's identity carried across builds; every node of a
-    ///   finished tree still has a validated span and a digest over the one
-    ///   preimage, which the enforcing build recomputes.
-    /// - fails: as [`node`](Self::node) fails.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// [`SyntaxError::SpanOutsideSource`] and
-    /// [`SyntaxError::SpanSplitsCharacter`] from validating `span`;
-    /// [`SyntaxError::UnknownStagedNode`] and
-    /// [`SyntaxError::ChildAlreadyAttached`] from attaching `children`.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — the fixture tree staged under digests folded apart
-    ///   from the builder equals the tree [`node`](Self::node) stages, node by
-    ///   node; a node staged with a span past the source or a child attached
-    ///   twice is refused with the exact variant [`node`](Self::node) returns.
-    ///   A digest other than the fold breaks the precondition, which the
-    ///   enforcing build checks on every call.
-    /// - witness: `build::tests::a_supplied_digest_stages_the_folded_node`
-    /// - witness: `build::tests::a_supplied_digest_is_refused_as_node_refuses`
-    #[inline]
-    #[spec(
-        requires: self.folded(label, span, children).map_or(true, |folded| folded == digest),
-        captures: [next_position = self.staged.len(), next_edge = self.edges.len()],
-        ensures: |ret| ret.as_ref().map_or_else(
-            |_| self.staged.len() == next_position && self.edges.len() == next_edge,
-            |minted| minted.builder == self.identity && minted.position == next_position
-                && self.staged.get(minted.position).is_some_and(|staged| {
-                    staged.label == label && staged.span == span && staged.digest == digest
-                        && !staged.attached.0 && staged.first_edge == next_edge
-                        && self.edges.get(next_edge ..) == Some(children)
-                }),
-        ),
-    )]
-    pub fn node_with_digest(
-        &mut self,
-        label: NodeLabel,
-        span: ByteSpan,
-        children: &[StagedId],
-        digest: NodeDigest,
-    ) -> Result<StagedId, SyntaxError>
-    {
         let _fragment = self.source.fragment(span)?;
-        self.attach(children, |_staged| {})?;
+        self.attach(children)?;
 
-        Ok(self.stage(label, span, children, digest))
+        Ok(self.stage(label, span, children))
     }
 
-    /// The digest [`node`](Self::node) folds for `label` over `span` and
-    /// `children`, attaching nothing.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the fold of `label`, `span`'s fragment and the significant
-    ///   children's digests in order; the builder is unchanged.
-    /// - fails: the span or child refusals [`node`](Self::node) reports, except
-    ///   that an attached child is read rather than refused.
-    /// - panics: none.
-    /// - executable: none — the fold is the body; repeating it as a
-    ///   postcondition observes nothing independent.
-    ///
-    /// # Errors
-    /// [`SyntaxError::SpanOutsideSource`],
-    /// [`SyntaxError::SpanSplitsCharacter`] or
-    /// [`SyntaxError::UnknownStagedNode`].
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — the precondition of
-    ///   [`node_with_digest`](Self::node_with_digest) agrees with every digest
-    ///   the fixture folds apart from the builder.
-    /// - witness: `build::tests::a_supplied_digest_stages_the_folded_node`
-    fn folded(
-        &self,
-        label: NodeLabel,
-        span: ByteSpan,
-        children: &[StagedId],
-    ) -> Result<NodeDigest, SyntaxError>
-    {
-        let fragment = self.source.fragment(span)?;
-        let mut digests: Vec<NodeDigest> = Vec::with_capacity(children.len());
-        for &child in children {
-            let position = self.resolve(child)?;
-            let Some(staged) = self.staged.get(position.0)
-            else {
-                return Err(SyntaxError::UnknownStagedNode { node: child });
-            };
-            if bool::from(staged.label.significance()) {
-                digests.push(staged.digest);
-            }
-        }
-
-        Ok(digest_of(label, fragment, &digests))
-    }
-
-    /// Attach `children`, in order, to the node about to be staged, handing
-    /// each to `accepted` as it is attached.
+    /// Attach `children`, in order, to the node about to be staged.
     ///
     /// # Specification
     /// - requires: nothing — a foreign, unknown or attached identity is
@@ -777,18 +475,15 @@ impl<'source> TreeBuilder<'source>
     /// [`SyntaxError::ChildAlreadyAttached`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the staging refusals [`node`](Self::node) and
-    ///   [`node_with_digest`](Self::node_with_digest) assert, a child offered
-    ///   twice within one call among them, separate the lookup from the
-    ///   attachment test.
+    /// - hypothesis: L3 — the staging refusals [`node`](Self::node) asserts, a
+    ///   child offered twice within one call among them, separate the lookup
+    ///   from the attachment test.
     /// - witness: `build::tests::a_child_listed_twice_in_one_call_is_refused`
     /// - witness: `build::tests::a_refusal_leaves_the_builder_at_the_failure_point`
-    /// - witness: `build::tests::a_supplied_digest_is_refused_as_node_refuses`
     #[spec(ensures: |ret| ret.is_err() || children.iter().all(|child| self.staged.get(child.position).is_some_and(|staged| staged.attached.0)))]
     fn attach(
         &mut self,
         children: &[StagedId],
-        mut accepted: impl FnMut(&StagedNode),
     ) -> Result<(), SyntaxError>
     {
         for &child in children {
@@ -801,13 +496,12 @@ impl<'source> TreeBuilder<'source>
                 return Err(SyntaxError::ChildAlreadyAttached { node: child });
             }
             staged.attached = Attached(true);
-            accepted(staged);
         }
 
         Ok(())
     }
 
-    /// Stage a node over `children`, already attached, under `digest`.
+    /// Stage a node over `children`, already attached.
     ///
     /// # Specification
     /// trivial.
@@ -816,13 +510,11 @@ impl<'source> TreeBuilder<'source>
         label: NodeLabel,
         span: ByteSpan,
         children: &[StagedId],
-        digest: NodeDigest,
     ) -> StagedId
     {
         let staged = StagedNode {
             label,
             span,
-            digest,
             first_edge: self.edges.len(),
             child_count: children.len(),
             attached: Attached(false),
@@ -846,8 +538,8 @@ impl<'source> TreeBuilder<'source>
     /// - ensures: the tree holds exactly the nodes reachable from `root`, with
     ///   `root` at position zero, every node's children occupying one
     ///   contiguous range of positions strictly above its own, and siblings in
-    ///   the order they were given; every node keeps the digest it was staged
-    ///   with, so the layout permutes positions and never content.
+    ///   the order they were given; each top-level form is digested once, over
+    ///   its significant nodes in preorder, and the tree over its forms.
     /// - provides: the finished tree, and the end of the staged identity space.
     /// - fails: [`SyntaxError::UnknownStagedNode`] when `root` carries another
     ///   builder's stamp or names no node here.
@@ -878,7 +570,7 @@ impl<'source> TreeBuilder<'source>
     /// - witness: `build::tests::two_builds_of_one_source_agree_digest_by_digest`
     /// - witness: `build::tests::an_unreachable_staged_node_is_dropped`
     /// - witness: `build::tests::the_same_subtree_in_two_sources_shares_its_digest`
-    /// - witness: `build::tests::an_edit_reaches_exactly_the_edited_node_and_its_ancestors`
+    /// - witness: `build::tests::an_edit_reaches_its_form_and_the_tree`
     /// - witness: `build::tests::a_tree_records_its_grammar`
     /// - witness: `build::tests::a_foreign_identity_at_a_live_position_is_refused`
     #[inline]
@@ -886,12 +578,12 @@ impl<'source> TreeBuilder<'source>
         captures: [
             source = self.source,
             grammar = self.grammar,
-            root_parts = self.resolve(root).ok().and_then(|position| self.staged.get(position.0)).map(|staged| (staged.label, staged.span, staged.digest)),
+            root_parts = self.resolve(root).ok().and_then(|position| self.staged.get(position.0)).map(|staged| (staged.label, staged.span)),
         ],
         ensures: |ret| ret.as_ref().map_or_else(
             |error| root_parts.is_none() && *error == SyntaxError::UnknownStagedNode { node: root },
             |tree| tree.source() == source && tree.grammar() == grammar
-                && tree.node(tree.root()).map(|node| (node.label(), node.span(), node.digest())) == root_parts
+                && tree.node(tree.root()).map(|node| (node.label(), node.span())) == root_parts
                 && tree.positions().all(|parent| tree.children(parent).all(|child| child > parent && tree.node(child).is_some())),
         ),
     )]
@@ -917,7 +609,6 @@ impl<'source> TreeBuilder<'source>
             nodes.push(Node::new(
                 staged.label,
                 staged.span,
-                staged.digest,
                 first_child,
                 ChildCount::from(staged.child_count),
             ));
@@ -937,7 +628,6 @@ mod tests
     use anodized::spec;
 
     use super::TreeBuilder;
-    use crate::digest::digest_of;
     use crate::error::SyntaxError;
     use crate::label::NodeLabel;
     use crate::mold::GrammarFingerprint;
@@ -1246,7 +936,7 @@ mod tests
         let tree = two_forms(SourceText::from("def a = x ; def b = y ;"));
         let forms = tree.forms();
         assert_eq!(forms.len(), 2, "layout is not a form");
-        let digest = |position: NodeIndex| tree.node(position).map(Node::digest).unwrap();
+        let digest = |position: NodeIndex| tree.key(position).map(|key| key.form()).unwrap();
         let first = digest(forms[0]);
         let second = digest(forms[1]);
         let key = |form, rank: u32| Some(crate::NodeKey::new(form, crate::FormRank::from(rank)));
@@ -1263,7 +953,12 @@ mod tests
         );
         assert_eq!(tree.key(tree.root()), None, "the root is no form's node");
         assert_eq!(tree.key(NodeIndex::from(99_usize)), None);
-        assert_eq!(tree.digest(), tree.node(tree.root()).map(Node::digest));
+        assert_ne!(first, second, "two forms of different content");
+        assert!(
+            tree.digest()
+                .is_some_and(|whole| whole != first && whole != second),
+            "the tree's identity is neither form's"
+        );
     }
 
     #[test]
@@ -1506,11 +1201,16 @@ mod tests
             second.node_count(),
             "two builds of one source lay out the same number of nodes"
         );
+        assert_eq!(
+            first.digest(),
+            second.digest(),
+            "the tree's identity agrees"
+        );
         for position in first.positions() {
             assert_eq!(
-                first.node(position).map(Node::digest),
-                second.node(position).map(Node::digest),
-                "a node's identity is a function of its content alone"
+                first.key(position),
+                second.key(position),
+                "a node's key is a function of its form's content alone"
             );
         }
     }
@@ -1527,9 +1227,14 @@ mod tests
         let definition = NodeIndex::from(1_usize);
 
         assert_eq!(
-            plain.node(definition).map(Node::digest),
-            padded.node(definition).map(Node::digest),
+            plain.key(definition),
+            padded.key(definition),
             "the same declaration at two offsets carries one identity"
+        );
+        assert_ne!(
+            plain.digest(),
+            plain.key(definition).map(|key| key.form()),
+            "a tree of one form is not that form"
         );
         assert_ne!(
             plain.node(definition).map(Node::span),
@@ -1539,7 +1244,7 @@ mod tests
     }
 
     #[test]
-    fn an_edit_reaches_exactly_the_edited_node_and_its_ancestors()
+    fn an_edit_reaches_its_form_and_the_tree()
     {
         let renamed_source = LAMBDA_SOURCE.replace("def f", "def g");
         let before = lambda_tree(SourceText::from(LAMBDA_SOURCE), ByteOffset::from(0_usize));
@@ -1547,22 +1252,19 @@ mod tests
             SourceText::from(renamed_source.as_str()),
             ByteOffset::from(0_usize),
         );
-        let changed = [0_usize, 1_usize, 2_usize];
-        let unchanged = [3_usize, 4_usize, 5_usize, 6_usize];
 
-        for position in changed {
+        assert_ne!(before.digest(), after.digest(), "the tree's identity moves");
+        for position in before.positions().skip(1) {
+            let (Some(old), Some(new)) = (before.key(position), after.key(position))
+            else {
+                panic!("every node below the root of the fixture is keyed");
+            };
             assert_ne!(
-                before.node(NodeIndex::from(position)).map(Node::digest),
-                after.node(NodeIndex::from(position)).map(Node::digest),
-                "the renamed leaf and every ancestor of it acquire new identities"
+                old.form(),
+                new.form(),
+                "every node of the edited form takes the form's new digest"
             );
-        }
-        for position in unchanged {
-            assert_eq!(
-                before.node(NodeIndex::from(position)).map(Node::digest),
-                after.node(NodeIndex::from(position)).map(Node::digest),
-                "nothing outside that path moves"
-            );
+            assert_eq!(old.rank(), new.rank(), "while keeping its rank in it");
         }
     }
 
@@ -1590,14 +1292,14 @@ mod tests
         let tight_tree = tight.finish(root).unwrap();
 
         assert_eq!(
-            spaced_tree.node(NodeIndex::from(1_usize)).map(Node::digest),
-            tight_tree.node(NodeIndex::from(1_usize)).map(Node::digest),
+            spaced_tree.key(NodeIndex::from(1_usize)),
+            tight_tree.key(NodeIndex::from(1_usize)),
             "a form over layout has the identity of the same form without it"
         );
         assert_eq!(
-            spaced_tree.node(spaced_tree.root()).map(Node::digest),
-            tight_tree.node(tight_tree.root()).map(Node::digest),
-            "and so does every ancestor"
+            spaced_tree.digest(),
+            tight_tree.digest(),
+            "and so does the tree"
         );
         assert_eq!(
             spaced_tree.node(NodeIndex::from(3_usize)).map(Node::label),
@@ -1609,44 +1311,6 @@ mod tests
             Some(SourceFragment::from("  ")),
             "covering exactly the bytes it was staged over"
         );
-    }
-
-    #[test]
-    fn a_cached_leaf_digest_is_the_folded_one()
-    {
-        // A thousand distinct three-digit words, written twice, each staged
-        // under two labels: two thousand distinct leaves, each repeated, over
-        // a cache of 1024 slots, so leaves both hit and share and replace
-        // slots.
-        let mut text = alloc::string::String::new();
-        for _ in 0_u8 .. 2_u8 {
-            for word in 0_u16 .. 1000_u16 {
-                core::fmt::Write::write_fmt(&mut text, format_args!("{word:03}")).unwrap();
-            }
-        }
-        let source = SourceText::from(text.as_str());
-        let mut builder = TreeBuilder::new(source, grammar()).unwrap();
-        assert_eq!(builder.leaves.slots.len(), 1024, "the fixture's cache size");
-        let mut leaves = Vec::new();
-        for start in (0 .. text.len()).step_by(3) {
-            let at = span(ByteOffset::from(start), ByteOffset::from(start + 3));
-            leaves.push(builder.node(word(), at, &[]).unwrap());
-            leaves.push(builder.node(NodeLabel::Space, at, &[]).unwrap());
-        }
-        let whole = span(ByteOffset::from(0_usize), ByteOffset::from(text.len()));
-        let root = builder.node(NodeLabel::Wald, whole, &leaves).unwrap();
-        let tree = builder.finish(root).unwrap();
-        let mut checked = 0_usize;
-        for leaf in tree.children(tree.root()) {
-            let node = tree.node(leaf).unwrap();
-            assert_eq!(
-                node.digest(),
-                digest_of(node.label(), tree.fragment(leaf).unwrap(), &[]),
-                "a leaf's digest is the one folded without the cache"
-            );
-            checked += 1;
-        }
-        assert_eq!(checked, 4000, "every leaf was checked");
     }
 
     #[test]
@@ -1776,84 +1440,6 @@ mod tests
             Err(SyntaxError::ChildAlreadyAttached { node: leaf }),
             "the attachment is recorded as each child is accepted, so a repeat \
              inside one call is caught as well"
-        );
-    }
-
-    #[test]
-    fn a_supplied_digest_stages_the_folded_node()
-    {
-        let source = SourceText::from(LAMBDA_SOURCE);
-        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
-        let text = |start: usize, end: usize| source.fragment(at(start, end)).unwrap();
-        let mut builder = TreeBuilder::new(source, grammar()).unwrap();
-        let mut leaf = |start: usize, end: usize| {
-            let digest = digest_of(word(), text(start, end), &[]);
-            let staged = builder
-                .node_with_digest(word(), at(start, end), &[], digest)
-                .unwrap();
-            (staged, digest)
-        };
-        let (name, name_digest) = leaf(4, 5);
-        let (binder, binder_digest) = leaf(9, 10);
-        let (body, body_digest) = leaf(19, 20);
-        let returned_digest = digest_of(returner(), text(12, 20), &[body_digest]);
-        let returned = builder
-            .node_with_digest(returner(), at(12, 20), &[body], returned_digest)
-            .unwrap();
-        let abstraction_digest =
-            digest_of(lambda(), text(8, 20), &[binder_digest, returned_digest]);
-        let abstraction = builder
-            .node_with_digest(lambda(), at(8, 20), &[binder, returned], abstraction_digest)
-            .unwrap();
-        let declaration_digest = digest_of(definition(), text(0, 22), &[
-            name_digest,
-            abstraction_digest,
-        ]);
-        let declaration = builder
-            .node_with_digest(
-                definition(),
-                at(0, 22),
-                &[name, abstraction],
-                declaration_digest,
-            )
-            .unwrap();
-        let root_digest = digest_of(NodeLabel::Wald, text(0, 22), &[declaration_digest]);
-        let root = builder
-            .node_with_digest(NodeLabel::Wald, at(0, 22), &[declaration], root_digest)
-            .unwrap();
-
-        assert_eq!(
-            builder.finish(root).unwrap(),
-            lambda_tree(source, ByteOffset::from(0_usize)),
-            "digests folded apart from the builder stage the tree the builder folds"
-        );
-    }
-
-    #[test]
-    fn a_supplied_digest_is_refused_as_node_refuses()
-    {
-        let source = SourceText::from(REFUSAL_SOURCE);
-        let mut builder = TreeBuilder::new(source, grammar()).unwrap();
-        let first = source.fragment(first_byte()).unwrap();
-        let leaf_digest = digest_of(word(), first, &[]);
-
-        assert_eq!(
-            builder.node_with_digest(word(), past_fixture_end(), &[], leaf_digest),
-            Err(SyntaxError::SpanOutsideSource {
-                span: past_fixture_end(),
-                source_end: ByteOffset::from(2_usize),
-            }),
-            "the span is validated though no fragment is hashed"
-        );
-        let leaf = builder
-            .node_with_digest(word(), first_byte(), &[], leaf_digest)
-            .unwrap();
-        let whole = source.fragment(whole_fixture()).unwrap();
-        let twice = digest_of(NodeLabel::Wald, whole, &[leaf_digest, leaf_digest]);
-        assert_eq!(
-            builder.node_with_digest(NodeLabel::Wald, whole_fixture(), &[leaf, leaf], twice),
-            Err(SyntaxError::ChildAlreadyAttached { node: leaf }),
-            "a child listed twice is refused as node refuses it"
         );
     }
 
