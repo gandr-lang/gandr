@@ -366,7 +366,7 @@ fn item_ascription_change_is_one_set_item_ascription()
 fn constructor_change_is_one_replace()
 {
     let base = snapshot("def v = 1 ;\n");
-    let edited = snapshot("def v = thunk { ret 1 } ;\n");
+    let edited = snapshot("def v = thunk { return 1 } ;\n");
     let script = diff_sound(&base, &edited);
     let [Action::Replace { ref path, ref to }] = *script.actions()
     else {
@@ -386,9 +386,11 @@ fn constructor_change_is_one_replace()
 #[test]
 fn comp_constructor_change_is_one_replace()
 {
-    let function = "def f(x: Integer) -> -F Integer { ret x }\n";
-    let base = snapshot(&format!("{function}def v = thunk {{ ret 1 }} ;\n"));
-    let edited = snapshot(&format!("{function}def v = thunk {{ (force f)(1) }} ;\n"));
+    let function = "def f(x: Integer) -> -F Integer { return x }\n";
+    let base = snapshot(&format!("{function}def v = thunk {{ return 1 }} ;\n"));
+    let edited = snapshot(&format!(
+        "{function}def v = thunk {{ become (force f)(1) }} ;\n"
+    ));
     let script = diff_sound(&base, &edited);
     let [Action::Replace { ref path, ref to }] = *script.actions()
     else {
@@ -481,14 +483,14 @@ fn edit_locus_contains_the_diff()
 #[test]
 fn multi_point_edit_localizes_to_the_common_ancestor()
 {
-    let functions = "def f(x: Integer) -> -F Integer { ret x }\n\
-                     def g(x: Integer) -> -F Integer { ret x }\n\
+    let functions = "def f(x: Integer) -> -F Integer { return x }\n\
+                     def g(x: Integer) -> -F Integer { return x }\n\
                      def shown : +U (-F Integer) ;\n";
     let base = snapshot(&format!(
-        "{functions}def shown = thunk {{ (force f)(1) }} ;\n"
+        "{functions}def shown = thunk {{ become (force f)(1) }} ;\n"
     ));
     let edited = snapshot(&format!(
-        "{functions}def shown = thunk {{ (force g)(2) }} ;\n"
+        "{functions}def shown = thunk {{ become (force g)(2) }} ;\n"
     ));
     // The application is the smallest term spanning both the callee and the
     // argument; its span is the edit's range.
@@ -797,7 +799,7 @@ fn a_submission_carries_the_edits_from_the_last_accepted_revision()
         "the next revision carries the literal edit from the first"
     );
 
-    let refused = submit(&mut session, "def a = 1 ;\nret a");
+    let refused = submit(&mut session, "def a = 1 ;\npure a");
     assert_eq!(
         refused.edits(),
         Maybe::Absent(resumed::Absent::RefusedWhole),

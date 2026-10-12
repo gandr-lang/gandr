@@ -376,8 +376,9 @@ def wrong = "text" ;
     fn a_mismatch_label_spells_both_types()
     {
         let mismatch = SourceText::from(MISMATCH);
-        let shape = SourceText::from("def a : +U (-F Integer) ;\ndef a = thunk { force 1 } ;\n");
-        let head = SourceText::from("def f(xs: List(Integer)) -> -F Integer {\n  ret 1\n}\n");
+        let shape =
+            SourceText::from("def a : +U (-F Integer) ;\ndef a = thunk { become force 1 } ;\n");
+        let head = SourceText::from("def f(xs: List(Integer)) -> -F Integer {\n  pure 1\n}\n");
         let steps = [mismatch, shape, head]
             .map(|text| unsettled(Path::new("spelled.gandr"), SourceRoot::Strict, text));
         let [ref mismatched, ref shaped, ref unresolved] = steps;
@@ -417,12 +418,13 @@ def wrong = "text" ;
     #[test]
     fn a_refusal_names_the_judgements_it_stood_inside()
     {
-        let force = SourceText::from("def a : +U (-F Integer) ;\ndef a = thunk { force 1 } ;\n");
+        let force =
+            SourceText::from("def a : +U (-F Integer) ;\ndef a = thunk { become force 1 } ;\n");
         let application =
-            SourceText::from("def b : +U (-F Integer) ;\ndef b = thunk { (ret 1)(2) } ;\n");
+            SourceText::from("def b : +U (-F Integer) ;\ndef b = thunk { become (pure 1)(2) } ;\n");
         let bound = SourceText::from(
-            "def f : +U (Integer -> -F Integer) ;\ndef f = thunk { fn (x) { ret x } } ;\ndef d : +U \
-             (-F Integer) ;\ndef d = thunk { run y <- (force f)(\"no\") ; ret y } ;\n",
+            "def f : +U (Integer -> -F Integer) ;\ndef f = thunk { fn (x) { return x } } ;\ndef d : +U \
+             (-F Integer) ;\ndef d = thunk { run y <- (force f)(\"no\") ; return y } ;\n",
         );
         let mismatch = SourceText::from(MISMATCH);
         let steps = [
@@ -462,7 +464,7 @@ def wrong = "text" ;
             named(force, only(&steps[0])),
             [
                 (
-                    "thunk { force 1 }".to_owned(),
+                    "thunk { become force 1 }".to_owned(),
                     "while checking this against `+U (-F Integer)`".to_owned()
                 ),
                 (
@@ -476,11 +478,11 @@ def wrong = "text" ;
             named(application, only(&steps[1])),
             [
                 (
-                    "thunk { (ret 1)(2) }".to_owned(),
+                    "thunk { become (pure 1)(2) }".to_owned(),
                     "while checking this against `+U (-F Integer)`".to_owned()
                 ),
                 (
-                    "(ret 1)(2)".to_owned(),
+                    "(pure 1)(2)".to_owned(),
                     "while checking this against `-F Integer`".to_owned()
                 ),
             ],
@@ -517,7 +519,7 @@ def wrong = "text" ;
     fn a_shadowed_builtin_renders_as_a_warning()
     {
         let text = SourceText::from(
-            "def add : Integer ;\ndef add = 1 ;\ndef f(int: Integer) -> -F Integer { ret int \
+            "def add : Integer ;\ndef add = 1 ;\ndef f(int: Integer) -> -F Integer { return int \
              }\ndef g : Integer ;\ndef g = missing ;\n",
         );
         let step = unsettled(Path::new("shadow.gandr"), SourceRoot::Strict, text);
@@ -586,7 +588,8 @@ def wrong = "text" ;
     #[test]
     fn one_refusal_renders_at_every_verbosity()
     {
-        let text = SourceText::from("def a : +U (-F Integer) ;\ndef a = thunk { force 1 } ;\n");
+        let text =
+            SourceText::from("def a : +U (-F Integer) ;\ndef a = thunk { become force 1 } ;\n");
         let step = unsettled(Path::new("force.gandr"), SourceRoot::Strict, text);
         let [report] = *reports(&step, Verb::Check(Goals::Gated)).as_slice()
         else {
@@ -629,7 +632,7 @@ def wrong = "text" ;
         assert_eq!(image["title"], report.title().to_string());
         assert_eq!(
             (&image["primary"]["line"], &image["primary"]["column"]),
-            (&serde_json::json!(2_u64), &serde_json::json!(23_u64)),
+            (&serde_json::json!(2_u64), &serde_json::json!(30_u64)),
             "the primary locus is where the terminal points"
         );
         assert_eq!(
@@ -643,7 +646,7 @@ def wrong = "text" ;
     fn refusals_of_one_class_label_what_their_locus_is()
     {
         let mismatch = SourceText::from(MISMATCH);
-        let head = SourceText::from("def f(xs: List(Integer)) -> -F Integer {\n  ret 1\n}\n");
+        let head = SourceText::from("def f(xs: List(Integer)) -> -F Integer {\n  pure 1\n}\n");
         let mismatched = unsettled(Path::new("mismatch.gandr"), SourceRoot::Strict, mismatch);
         let unresolved = unsettled(Path::new("head.gandr"), SourceRoot::Strict, head);
         let [mismatch_report] = *reports(&mismatched, Verb::Check(Goals::Gated)).as_slice()
@@ -951,7 +954,7 @@ def broken = missing ;
         let sources = [
             ("fixture/hole.gandr", "def hole : Integer ;\n"),
             ("fixture/pending/lowered.gandr", "def a = 1 ;\n"),
-            ("fixture/pending/whole.gandr", "ret 3\n"),
+            ("fixture/pending/whole.gandr", "pure 3\n"),
             (
                 "fixture/settled.gandr",
                 "@[ owes(1) ] def later : Integer ;\n",
@@ -960,7 +963,7 @@ def broken = missing ;
                 "fixture/unproduced.gandr",
                 "@[ refuses(\"UnresolvedName\") ] def answer = 42 ;\n",
             ),
-            ("strict/whole.gandr", "ret 3\n"),
+            ("strict/whole.gandr", "pure 3\n"),
         ];
         for (relative, text) in sources {
             scratch.file(Path::new(relative), SourceText::from(text));
@@ -1003,12 +1006,12 @@ def broken = missing ;
                                 "the JSON image carries the path and the line"
                             );
                             if path.ends_with("fixture/pending/whole.gandr") {
-                                assert!(payload.contains("ret_expression"));
+                                assert!(payload.contains("pure_expression"));
                                 assert!(
                                     payload
                                         .split(|character: char| !character.is_ascii_digit())
                                         .filter_map(|digits| digits.parse::<usize>().ok())
-                                        .eq([0_usize, 5_usize])
+                                        .eq([0_usize, 6_usize])
                                 );
                             }
                             if path.ends_with("fixture/settled.gandr") {

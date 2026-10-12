@@ -2962,7 +2962,7 @@ mod tests
             },
             ContentChange {
                 range: None,
-                text: String::from("def f : Integer ;\nret 3\n"),
+                text: String::from("def f : Integer ;\npure 3\n"),
             },
         ];
         let (version, tried) = workspace
@@ -3108,7 +3108,7 @@ mod tests
         );
         assert!(
             matches!(
-                workspace.propose(&uri, held, fill(hole, Json("1 ;\nret 3"), None)),
+                workspace.propose(&uri, held, fill(hole, Json("1 ;\npure 3"), None)),
                 Err(ProposalRefusal::Unchecked { .. })
             ),
             "a fill the lowering refuses whole is not kept"

@@ -398,7 +398,7 @@ mod tests
                 RunStatus::Value,
             ),
             (
-                r#"def later : +U (-F Integer) ; def main : +U (-F Integer) ; def main = thunk { force later } ;"#,
+                r#"def later : +U (-F Integer) ; def main : +U (-F Integer) ; def main = thunk { become force later } ;"#,
                 RunStatus::Failed,
             ),
             (

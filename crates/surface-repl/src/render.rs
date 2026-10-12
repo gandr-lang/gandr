@@ -104,7 +104,7 @@ mod tests
         );
         assert_eq!(
             last(
-                "def identity : +U (Integer -> -F Integer) ; def identity = thunk { fn (x) { ret x } } ;"
+                "def identity : +U (Integer -> -F Integer) ; def identity = thunk { fn (x) { return x } } ;"
             ),
             Some((OutKind::Value, String::from("<fun>"))),
             "a function terminal renders opaquely"

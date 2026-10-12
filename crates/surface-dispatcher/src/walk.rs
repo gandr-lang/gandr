@@ -1408,7 +1408,7 @@ pub mod tests
             Path::new("tree/a/notes.txt"),
             SourceText::from("not a source"),
         );
-        scratch.file(Path::new("tree/c.gandr"), SourceText::from("ret 3"));
+        scratch.file(Path::new("tree/c.gandr"), SourceText::from("pure 3"));
         scratch.file(Path::new("named.source"), SourceText::from("def n = 4 ;"));
         scratch.file(
             Path::new("elsewhere/linked.gandr"),
@@ -1521,11 +1521,11 @@ pub mod tests
         scratch.file(Path::new("corpus/fixture/owes.gandr"), owes);
         scratch.file(
             Path::new("corpus/fixture/whole.gandr"),
-            SourceText::from("ret 3"),
+            SourceText::from("pure 3"),
         );
         scratch.file(
             Path::new("corpus/fixture/pending/outside.gandr"),
-            SourceText::from("ret 3"),
+            SourceText::from("pure 3"),
         );
         scratch.file(
             Path::new("corpus/fixture/pending/lowered.gandr"),
@@ -1533,7 +1533,9 @@ pub mod tests
         );
         scratch.file(
             Path::new("corpus/fixture/pending/form.gandr"),
-            SourceText::from("def f @[a : Type] (x: a) -> -F a { ret x }\ndef broken = missing ;"),
+            SourceText::from(
+                "def f @[a : Type] (x: a) -> -F a { return x }\ndef broken = missing ;",
+            ),
         );
         let (seen, walk) = steps(&scratch.0, vec![scratch.0.join("corpus")]);
         assert_eq!(

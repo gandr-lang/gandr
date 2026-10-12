@@ -575,7 +575,7 @@ mod tests
     {
         let mut repl = repl();
         assert_eq!(
-            lines(&mut repl, "def id(a : Type, x : a) -> -F a { ret x }"),
+            lines(&mut repl, "def id(a : Type, x : a) -> -F a { return x }"),
             [
                 (
                     OutKind::Type,

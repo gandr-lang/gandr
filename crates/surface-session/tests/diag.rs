@@ -93,32 +93,32 @@ const ERROR_CORPUS: [Case; 13] = [
     Case {
         name: "shape-arrow",
         identifier: RefusalName::ShapeMismatch,
-        source: "def h : +U (-F Integer) ;\ndef h = thunk { ret 1 } ;\ndef g : +U (-F Integer) ;\ndef g \
-             = thunk { (force h)(1) } ;\n",
+        source: "def h : +U (-F Integer) ;\ndef h = thunk { return 1 } ;\ndef g : +U (-F Integer) ;\ndef g \
+             = thunk { become (force h)(1) } ;\n",
         locus: "force h",
     },
     Case {
         name: "shape-thunk",
         identifier: RefusalName::ShapeMismatch,
-        source: "def y : +U (-F Integer) ;\ndef y = thunk { force 1 } ;\n",
+        source: "def y : +U (-F Integer) ;\ndef y = thunk { become force 1 } ;\n",
         locus: "1",
     },
     Case {
         name: "shape-returner",
         identifier: RefusalName::ShapeMismatch,
-        source: "def f : +U (Integer -> -F Integer) ;\ndef f = thunk { ret 1 } ;\n",
-        locus: "ret 1",
+        source: "def f : +U (Integer -> -F Integer) ;\ndef f = thunk { return 1 } ;\n",
+        locus: "return 1",
     },
     Case {
         name: "not-synthesisable",
         identifier: RefusalName::NotSynthesisable,
-        source: "def a = thunk { ret 1 } ;\n",
-        locus: "thunk { ret 1 }",
+        source: "def a = thunk { return 1 } ;\n",
+        locus: "thunk { return 1 }",
     },
     Case {
         name: "unknown-constant",
         identifier: RefusalName::UnknownConstant,
-        source: "def a = thunk { ret 1 } ;\ndef b = a ;\n",
+        source: "def a = thunk { return 1 } ;\ndef b = a ;\n",
         locus: "a",
     },
     Case {

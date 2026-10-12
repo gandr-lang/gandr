@@ -192,6 +192,7 @@ use crate::resolve::type_atom;
 use crate::resolve::type_former;
 
 mod description;
+
 mod native;
 
 quenchant_shape::reason_enum! {
@@ -702,6 +703,91 @@ enum Family
     Type,
     /// Neither: a declaration or an attribute block.
     Neither,
+}
+
+/// How a form standing where a body ends treats that end.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the variants partition what a form does at a body's end.
+/// - provides: the vocabulary of the exit requirement.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an exit, a match passing its end to its arms and a
+///   returner ending a body distinguish the three.
+/// - witness: `lower::tests::an_exit_lowers_where_the_body_ends_and_nowhere_else`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum Ending
+{
+    /// The form is the exit: `return` or `become`.
+    Exit,
+    /// The form passes the end on to what ends it — a block's last
+    /// computation, a match's arms, a grouping's operand, a lambda's own body,
+    /// which answers the function type the end has — or is a hole, which the
+    /// author has yet to fill.
+    Passes,
+    /// The form ends the body without an exit.
+    Missing,
+}
+
+/// How `former`, standing where a body ends, treats that end.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `return` and `become` are the exit; a block, a match, a grouping,
+///   a lambda and a hole pass the end on; every other former is missing an
+///   exit.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — exits settle, a match ending in exits settles, and a
+///   returner or a call ending a body is refused at itself.
+/// - witness: `lower::tests::an_exit_lowers_where_the_body_ends_and_nowhere_else`
+#[spec(ensures: |ret| match former {
+    Former::Exit | Former::Become => ret == Ending::Exit,
+    Former::Block | Former::Case | Former::Parenthesized | Former::Lambda | Former::Hole => ret == Ending::Passes,
+    _ => ret == Ending::Missing,
+})]
+fn ending(former: Former) -> Ending
+{
+    match former {
+        | Former::Exit | Former::Become => Ending::Exit,
+        | Former::Block | Former::Case | Former::Parenthesized | Former::Lambda | Former::Hole => {
+            Ending::Passes
+        },
+        | Former::Name
+        | Former::Constructor
+        | Former::Number
+        | Former::Text
+        | Former::Thunk
+        | Former::Return
+        | Former::Force
+        | Former::Call
+        | Former::Binary
+        | Former::Unary
+        | Former::Projection
+        | Former::Instantiation
+        | Former::TypeHead
+        | Former::Universe
+        | Former::TypeApplication
+        | Former::ThunkType
+        | Former::ReturnerType
+        | Former::ArrowType
+        | Former::ProductType
+        | Former::LazyProductType
+        | Former::ValueFunctionType
+        | Former::StaticAbstraction
+        | Former::ParenthesizedType
+        | Former::Declaration
+        | Former::AttributeBlock
+        | Former::Import
+        | Former::Module
+        | Former::Data
+        | Former::Unadmitted => Ending::Missing,
+    }
 }
 
 /// The family `former` belongs to.
@@ -1681,7 +1767,7 @@ struct Lowerer<'run, 'source>
     /// The computation positions a function exit may stand at: the last
     /// computation of a function's, a lambda's or a thunk's body, and what
     /// stands in tail position of one — a block's last computation, a match's
-    /// arm, a grouping's operand, a `become`'s operand.
+    /// arm, a grouping's operand.
     exits: BTreeSet<NodeIndex>,
     /// The matches, each compiled to its decision tree.
     cases: Vec<native::CaseForm>,
@@ -2824,9 +2910,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: `pieces` is the reading of the form at `site`.
     /// - ensures: a repair refuses the form; a former of the wrong family for
     ///   the position refuses as the wrong sort, except a type standing where a
-    ///   value is read, which is quoted; every other former is handed to its
-    ///   own reader, a declaration form to the function reader, the one reading
-    ///   of the family that seeds one.
+    ///   value is read, which is quoted; a form where a body ends that is
+    ///   neither an exit nor a form that passes the end on — a block, a match,
+    ///   a grouping — nor a hole refuses as a missing exit at its bytes; every
+    ///   other former is handed to its own reader, a declaration form to the
+    ///   function reader, the one reading of the family that seeds one.
     /// - provides: the dispatch on the grammar's named kind.
     /// - fails: yields the form's first refusal.
     /// - panics: none.
@@ -2841,6 +2929,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_repaired_declaration_is_refused`
     /// - witness: `lower::tests::a_lambda_in_value_position_is_refused`
     /// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
+    /// - witness: `lower::tests::an_exit_lowers_where_the_body_ends_and_nowhere_else`
     #[spec(
         ensures: |ret| {
             if let Maybe::Present(repaired) = pieces.repair {
@@ -2850,6 +2939,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 && !(family_of(former) == Family::Type && matches!(site.reading, Reading::Value(_)))
             {
                 ret == Err(site.out(FragmentBoundary::WrongSort))
+            }
+            else if self.exits.contains(&site.at.node) && ending(former) == Ending::Missing {
+                ret == Err(LoweringRefusal::MissingExit { span: site.at.span })
             }
             else {
                 ret.is_err()
@@ -2874,6 +2966,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let quoted = family == Family::Type && matches!(site.reading, Reading::Value(_));
         if family != site.reading.family() && !quoted {
             return Err(site.out(FragmentBoundary::WrongSort));
+        }
+        if self.exits.contains(&site.at.node) && ending(former) == Ending::Missing {
+            return Err(LoweringRefusal::MissingExit { span: site.at.span });
         }
         let cursor = Cursor::new(&pieces.pieces, site.at.span);
         match former {
@@ -2903,7 +2998,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Former::Thunk => self.thunk(site, cursor),
             | Former::Lambda => self.lambda(site, cursor),
             | Former::Block => self.sequenced(site, cursor),
-            | Former::Return => self.keyed(site, cursor, TileName::RET),
+            | Former::Return => self.keyed(site, cursor, TileName::PURE),
             | Former::Exit => self.keyed(site, cursor, TileName::RETURN),
             | Former::Become => self.tail_call(site, cursor),
             | Former::Force => self.keyed(site, cursor, TileName::FORCE),
@@ -4224,9 +4319,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: `site` is a `become` in term position.
     /// - ensures: the form standing as a computation in tail position of a
     ///   function's, a lambda's or a thunk's body reads its one operand as a
-    ///   computation in its own frame, in tail position itself, the answer its
-    ///   position states passed on, and adopts it: the operand runs under the
-    ///   caller's continuation, so the exit adds the guarantee, not a frame.
+    ///   computation in its own frame, the answer its position states passed
+    ///   on, and adopts it: the operand runs under the caller's continuation,
+    ///   so the exit adds the guarantee, not a frame. The operand is not itself
+    ///   where the body ends: `become` is the exit, so the operand needs none
+    ///   and admits none.
     /// - provides: the exit that leaves a function by running a computation.
     /// - fails: yields the wrong-sort refusal outside computation position, the
     ///   not-in-tail refusal for a `become` that does not stand in tail
@@ -4244,7 +4341,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| {
             ret.is_err()
                 || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Transparent(operand))
-                    if self.exits.contains(&site.at.node) && self.exits.contains(&operand)
+                    if self.exits.contains(&site.at.node) && !self.exits.contains(&operand)
                         && self.reading(operand) == Reading::Computation(site.reading.frame()))
         },
     )]
@@ -4265,8 +4362,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if let Some(&answer) = self.answers.get(&site.at.node) {
             let _passed = self.answers.insert(operand.node, answer);
         }
-        let _tail = self.exits.insert(operand.node);
-
         self.plan(site, Plan::Transparent(operand.node));
 
         Ok(())
@@ -9366,7 +9461,7 @@ mod tests
     {
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from("def answer : +U (-F Bool) ; def answer = thunk { 19 < 7 } ;"),
+            SourceText::from("def answer : +U (-F Bool) ; def answer = thunk { become 19 < 7 } ;"),
             &mut arena,
         );
         let declared = declared_of(module.declarations()[0].outcome());
@@ -9428,7 +9523,7 @@ mod tests
     {
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from("def answer = thunk { 19 - 7 } ;"),
+            SourceText::from("def answer = thunk { become 19 - 7 } ;"),
             &mut arena,
         );
         let body = body_of(module.declarations()[0].outcome());
@@ -10117,7 +10212,7 @@ mod tests
     {
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from("def id(a : Type, x : a) -> -F a { ret x }"),
+            SourceText::from("def id(a : Type, x : a) -> -F a { return x }"),
             &mut arena,
         );
         let declared = declared_of(outcomes(&module)[0]);
@@ -10192,7 +10287,7 @@ mod tests
         let module = lowered(
             SourceText::from(
                 "def small : Type[+, 1] ; def n : small ; def k(c : (Type[-, 2]), t : +U c) -> c \
-                 { force t }",
+                 { become force t }",
             ),
             &mut arena,
         );
@@ -10379,7 +10474,7 @@ mod tests
     {
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from("def x = thunk { fn (y) { ret y } } ;"),
+            SourceText::from("def x = thunk { fn (y) { return y } } ;"),
             &mut arena,
         );
         let body = body_of(outcomes(&module)[0]);
@@ -10494,7 +10589,7 @@ mod tests
     {
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from("def g = 3 ; def a = thunk { (force g)(3) } ;"),
+            SourceText::from("def g = 3 ; def a = thunk { become (force g)(3) } ;"),
             &mut arena,
         );
         let body = body_of(outcomes(&module)[1]);
@@ -10530,7 +10625,7 @@ mod tests
         let module = lowered(
             SourceText::from(
                 "def g = 3 ; def a = thunk { return g } ; def b = thunk { become (force a) } ; \
-                 def c = thunk { { become { return 4 } } } ;",
+                 def c = thunk { { return 4 } } ;",
             ),
             &mut arena,
         );
@@ -10562,21 +10657,27 @@ mod tests
                 arena.computation(suspended(3_usize)),
                 Some(&Computation::Return(_))
             ),
-            "tail position reaches through a block and a `become`"
+            "tail position reaches through a block"
         );
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         for (source, start, end, kind) in [
             (
-                "def a = thunk { run y <- return 1 ; ret y } ;",
+                "def a = thunk { run y <- return 1 ; return y } ;",
                 25_usize,
                 33_usize,
                 "return_expression",
             ),
             (
-                "def a = thunk { run y <- become ret 1 ; ret y } ;",
+                "def a = thunk { run y <- become pure 1 ; return y } ;",
                 25_usize,
-                37_usize,
+                38_usize,
                 "become_expression",
+            ),
+            (
+                "def a = thunk { become return 1 } ;",
+                23_usize,
+                31_usize,
+                "return_expression",
             ),
         ] {
             let refused = refusal(SourceText::from(source));
@@ -10602,7 +10703,7 @@ mod tests
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "def f(x: Integer, y: String) -> -F Integer { run z <- ret y ; ret x }",
+                "def f(x: Integer, y: String) -> -F Integer { run z <- pure y ; return x }",
             ),
             &mut arena,
         );
@@ -10706,7 +10807,7 @@ mod tests
     {
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from("def main() -> -F Integer { ret 3 }"),
+            SourceText::from("def main() -> -F Integer { return 3 }"),
             &mut arena,
         );
         let [
@@ -10744,8 +10845,8 @@ mod tests
     fn a_tail_missing_a_type_writes_its_definition_alone()
     {
         for source in [
-            "def f(x: Integer) { ret x }",
-            "def f(x, y: Integer) -> -F Integer { ret y }",
+            "def f(x: Integer) { return x }",
+            "def f(x, y: Integer) -> -F Integer { return y }",
         ] {
             let mut arena = CoreArena::new();
             let module = lowered(SourceText::from(source), &mut arena);
@@ -10775,7 +10876,7 @@ mod tests
         };
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from("def a = thunk { run x <- ret 1 ; run y <- ret x ; ret x } ;"),
+            SourceText::from("def a = thunk { run x <- pure 1 ; run y <- pure x ; return x } ;"),
             &mut arena,
         );
         let body = body_of(outcomes(&module)[0]);
@@ -10821,7 +10922,7 @@ mod tests
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from("def a = thunk { { run x <- ret 1 ; ret x } } ;"),
+            SourceText::from("def a = thunk { { run x <- pure 1 ; return x } } ;"),
             &mut arena,
         );
         let Some(&Value::Thunk(suspended)) = arena.value(body_of(outcomes(&module)[0]))
@@ -10841,9 +10942,9 @@ mod tests
             "the last computation reads the statement's binder"
         );
         assert_eq!(
-            refusal(SourceText::from("def b = thunk { ret { ret 1 } } ;")),
+            refusal(SourceText::from("def b = thunk { return { pure 1 } } ;")),
             LoweringRefusal::OutOfFragment {
-                span: at(20_usize, 29_usize),
+                span: at(23_usize, 33_usize),
                 form: FormName::BLOCK,
                 sort: FragmentSort::Value,
                 boundary: FragmentBoundary::WrongSort,
@@ -10858,8 +10959,8 @@ mod tests
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "def g = thunk { fn (x) { fn (y) { ret x } } } ; def h = thunk { g(1, 2) } ; \
-                 def k = thunk { g() } ;",
+                "def g = thunk { fn (x) { fn (y) { return x } } } ; def h = thunk { become g(1, 2) } ; \
+                 def k = thunk { become g() } ;",
             ),
             &mut arena,
         );
@@ -10907,7 +11008,9 @@ mod tests
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from("def g = thunk { fn (x) { ret x } } ; def h = thunk { g(1) } ;"),
+            SourceText::from(
+                "def g = thunk { fn (x) { return x } } ; def h = thunk { become g(1) } ;",
+            ),
             &mut arena,
         );
         let Some(&Value::Thunk(suspended)) = arena.value(body_of(outcomes(&module)[1]))
@@ -10936,7 +11039,7 @@ mod tests
         );
         assert_eq!(
             origin.map(|inserted| inserted.span()),
-            Maybe::Present(at(53_usize, 54_usize)),
+            Maybe::Present(at(63_usize, 64_usize)),
             "the inserted force names the head whose position demanded it"
         );
     }
@@ -10946,7 +11049,7 @@ mod tests
     {
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from("def g = 3 ; def a = thunk { (force g)(3) } ;"),
+            SourceText::from("def g = 3 ; def a = thunk { become (force g)(3) } ;"),
             &mut arena,
         );
         let Some(&Value::Thunk(suspended)) = arena.value(body_of(outcomes(&module)[1]))
@@ -10982,7 +11085,7 @@ mod tests
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "def f(x: Integer) -> Integer { ret x } def g(x: Integer) -> -F Integer { ret x }",
+                "def f(x: Integer) -> Integer { return x } def g(x: Integer) -> -F Integer { return x }",
             ),
             &mut arena,
         );
@@ -11581,9 +11684,9 @@ mod tests
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
 
         assert_eq!(
-            refusal(SourceText::from("def a = fn (y) { ret y } ;")),
+            refusal(SourceText::from("def a = fn (y) { return y } ;")),
             LoweringRefusal::OutOfFragment {
-                span: at(8_usize, 24_usize),
+                span: at(8_usize, 27_usize),
                 form: FormName::from(NamedKind("lambda_expression")),
                 sort: FragmentSort::Value,
                 boundary: FragmentBoundary::WrongSort,
@@ -11615,7 +11718,7 @@ mod tests
                 ),
             ),
             (
-                "def a = thunk { val y = 3; ret y } ;",
+                "def a = thunk { val y = 3; return y } ;",
                 unadmitted(
                     16_usize,
                     19_usize,
@@ -11624,7 +11727,7 @@ mod tests
                 ),
             ),
             (
-                "def a = thunk { fork (x : Integer) { ret 1 } as y ; ret 2 } ;",
+                "def a = thunk { fork (x : Integer) { pure 1 } as y ; return 2 } ;",
                 unadmitted(
                     16_usize,
                     20_usize,
@@ -11633,16 +11736,16 @@ mod tests
                 ),
             ),
             (
-                "def a = thunk { ret 1; ret 2 } ;",
+                "def a = thunk { pure 1; return 2 } ;",
                 unadmitted(
                     16_usize,
-                    22_usize,
+                    23_usize,
                     FormName::EXPRESSION_STATEMENT,
                     FragmentSort::Computation,
                 ),
             ),
             (
-                "def a = thunk { run _ <- ret 1; ret 2 } ;",
+                "def a = thunk { run _ <- pure 1; return 2 } ;",
                 unadmitted(
                     20_usize,
                     21_usize,
@@ -11651,7 +11754,7 @@ mod tests
                 ),
             ),
             (
-                "def a = thunk { run y : -F Integer <- ret 1; ret y } ;",
+                "def a = thunk { run y : -F Integer <- pure 1; return y } ;",
                 unadmitted(
                     22_usize,
                     23_usize,
@@ -11660,25 +11763,25 @@ mod tests
                 ),
             ),
             (
-                "def f @[a : Type] (x) { ret x }",
+                "def f @[a : Type] (x) { return x }",
                 unadmitted(
                     0_usize,
-                    31_usize,
+                    34_usize,
                     FormName::PARAMETERS,
                     FragmentSort::Declaration,
                 ),
             ),
             (
-                "def rec f() { ret 1 }",
+                "def rec f() { return 1 }",
                 unadmitted(
                     0_usize,
-                    21_usize,
+                    24_usize,
                     FormName::RECURSIVE,
                     FragmentSort::Declaration,
                 ),
             ),
             (
-                "def f(A) { ret 1 }",
+                "def f(A) { return 1 }",
                 unadmitted(
                     6_usize,
                     7_usize,
@@ -11725,10 +11828,10 @@ mod tests
         };
         let rows = [
             (
-                "def a = thunk { fn (x, y) { ret x } } ;",
+                "def a = thunk { fn (x, y) { return x } } ;",
                 arity(
                     16_usize,
-                    35_usize,
+                    38_usize,
                     FormName::from(NamedKind("lambda_expression")),
                     2_usize,
                 ),
@@ -11738,8 +11841,8 @@ mod tests
                 arity(14_usize, 16_usize, FormName::BLOCK, 0_usize),
             ),
             (
-                "def a = thunk { run x <- ret 1; } ;",
-                arity(14_usize, 33_usize, FormName::BLOCK, 0_usize),
+                "def a = thunk { run x <- pure 1; } ;",
+                arity(14_usize, 34_usize, FormName::BLOCK, 0_usize),
             ),
         ];
         for (source, expected) in rows {
@@ -11857,13 +11960,13 @@ mod tests
         let tree = repaired(
             &pbg,
             SourceText::from(
-                "def rank() -> -F Integer {\n  case (Green : Color) {\n    Red => ret 0,\n",
+                "def rank() -> -F Integer {\n  case (Green : Color) {\n    Red => return 0,\n",
             ),
         );
         assert_eq!(
             refusal_in(&pbg, &tree),
             LoweringRefusal::MalformedForm {
-                span: at(69_usize, 69_usize),
+                span: at(72_usize, 72_usize),
                 form: FormName::CASE,
                 fault: FormFault::Repaired(Repair::GhostClose(
                     gandr_surface_syntax::ClosingClass::Brace,
@@ -11879,12 +11982,12 @@ mod tests
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
 
-        let refused = refusal(SourceText::from("def a = thunk { ret 1 2 } ;"));
+        let refused = refusal(SourceText::from("def a = thunk { return 1 2 } ;"));
 
         assert_eq!(
             refused,
             LoweringRefusal::MalformedForm {
-                span: at(22_usize, 23_usize),
+                span: at(25_usize, 26_usize),
                 form: FormName::from(NamedKind("thunk_expression")),
                 fault: FormFault::ExtraOperand,
             },
@@ -11897,7 +12000,7 @@ mod tests
             "a juxtaposition is the author's mistake"
         );
         assert_eq!(
-            refusal(SourceText::from("def f(x: Integer Integer) { ret x }")),
+            refusal(SourceText::from("def f(x: Integer Integer) { return x }")),
             LoweringRefusal::MalformedForm {
                 span: at(17_usize, 24_usize),
                 form: FormName::FUNCTION,
@@ -12127,14 +12230,14 @@ mod tests
     fn a_non_value_payload_is_refused()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
-        let refused = refusal(SourceText::from("@[ owes(ret 1) ] def a = 3 ;"));
+        let refused = refusal(SourceText::from("@[ owes(pure 1) ] def a = 3 ;"));
 
         assert_eq!(
             refused,
             LoweringRefusal::NonValuePayload {
-                span: at(8_usize, 13_usize),
+                span: at(8_usize, 14_usize),
                 name: registered(SurfaceName::from("owes")),
-                form: FormName::from(NamedKind("ret_expression")),
+                form: FormName::from(NamedKind("pure_expression")),
             },
             "a computation cannot stand as a payload"
         );
@@ -12404,11 +12507,11 @@ mod tests
                 },
             ),
             (
-                r#"@[ owes(ret 1) ] def a = b ;"#,
+                r#"@[ owes(pure 1) ] def a = b ;"#,
                 LoweringRefusal::NonValuePayload {
-                    span: at(8_usize, 13_usize),
+                    span: at(8_usize, 14_usize),
                     name: owes,
-                    form: FormName::from(NamedKind("ret_expression")),
+                    form: FormName::from(NamedKind("pure_expression")),
                 },
             ),
             (

@@ -3,4 +3,4 @@
   note needs more room than a line comment, and they do not change the program:
   the last value is still the string returned just below.
 */
-ret "hello, gandr"
+pure "hello, gandr"

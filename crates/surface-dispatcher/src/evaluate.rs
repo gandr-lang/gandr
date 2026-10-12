@@ -15,7 +15,7 @@
 //!
 //! A declaration is a value. Running it returns that value, and when the value
 //! is a thunk — a computation suspended, a function's body among them — the
-//! thunk is forced, so `def main = thunk { ret 42 }` runs to `42` and a
+//! thunk is forced, so `def main = thunk { return 42 }` runs to `42` and a
 //! function runs to its own terminal, `<fun>`. The run's terminal is read back
 //! into the core and spelled; the spelling is the one `gandr run` prints, the
 //! session's value line carries and a `runs` expectation compares.
@@ -1496,12 +1496,12 @@ mod tests
 def greeting : String ; def greeting = "a \"quoted\"\nline" ;
 def nothing : Unit ; def nothing = () ;
 def copy = answer ;
-def identity : +U (Integer -> -F Integer) ; def identity = thunk { fn (x) { ret x } } ;
-def first : +U (Integer -> Integer -> -F Integer) ; def first = thunk { fn (x) { fn (y) { ret x } } } ;
-def applied : +U (-F Integer) ; def applied = thunk { (force identity)(answer) } ;
-def chosen : +U (-F Integer) ; def chosen = thunk { ((force first)(answer))(7) } ;
-def delayed : +U (-F String) ; def delayed = thunk { ret "later" } ;
-def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { ret thunk { ret 1 } } ;"#,
+def identity : +U (Integer -> -F Integer) ; def identity = thunk { fn (x) { return x } } ;
+def first : +U (Integer -> Integer -> -F Integer) ; def first = thunk { fn (x) { fn (y) { return x } } } ;
+def applied : +U (-F Integer) ; def applied = thunk { become (force identity)(answer) } ;
+def chosen : +U (-F Integer) ; def chosen = thunk { become (force first)(answer)(7) } ;
+def delayed : +U (-F String) ; def delayed = thunk { return "later" } ;
+def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { return 1 } } ;"#,
         );
         for (name, spelled) in [
             ("answer", "42"),
@@ -1535,12 +1535,12 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { ret thunk { ret 1 
             r#"def later : Integer ;
 def copy : Integer ; def copy = later ;
 def suspended : +U (-F Integer) ;
-def forced : +U (-F Integer) ; def forced = thunk { force suspended } ;
+def forced : +U (-F Integer) ; def forced = thunk { become force suspended } ;
 def function : +U (Integer -> -F Integer) ;
-def applied : +U (-F Integer) ; def applied = thunk { (force function)(1) } ;
-def untouched : +U (-F Integer) ; def untouched = thunk { ret 3 } ;
-def holder : +U (-F Integer) ; def holder = thunk { force suspended } ;
-def kept : +U (-F (+U (-F Integer))) ; def kept = thunk { ret holder } ;"#,
+def applied : +U (-F Integer) ; def applied = thunk { become (force function)(1) } ;
+def untouched : +U (-F Integer) ; def untouched = thunk { return 3 } ;
+def holder : +U (-F Integer) ; def holder = thunk { become force suspended } ;
+def kept : +U (-F (+U (-F Integer))) ; def kept = thunk { return holder } ;"#,
         );
         for (name, goal) in [
             ("later", "later"),

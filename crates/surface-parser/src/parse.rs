@@ -1042,7 +1042,7 @@ mod tests
         let src = r#"// a comment
 def greeting = "hi";
 
-ret greeting
+pure greeting
 "#;
         let result = parse(&pbg, SourceText::from(src))?;
         assert_eq!(
@@ -1314,7 +1314,7 @@ ret greeting
     {
         let pbg = built_in()?;
         let src = r#"def nth @[A : Type, i : Fin(length(xs))] (xs : List(A)) -> A {
-  ret xs
+  pure xs
 }
 "#;
         let result = parse(&pbg, SourceText::from(src))?;
@@ -1364,9 +1364,9 @@ ret greeting
         // A pool of gandr fragments to mutate and truncate.
         let fragments = vec![
             "def x = 1;",
-            "fn(a) { ret a }",
+            "fn(a) { pure a }",
             "case v { Inl(x) => x, Inr(y) => y }",
-            "if c { ret 1 } else { ret 2 }",
+            "if c { pure 1 } else { pure 2 }",
             "#{ a = 1, b = \"s\" }",
             "[1, 2, 3] ++ [4]",
             "#!{ echo hi; }",

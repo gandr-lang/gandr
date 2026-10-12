@@ -307,10 +307,10 @@ fn a_bare_marker_missing_its_payload_is_a_diagnostic()
 #[test]
 fn a_computation_payload_is_rejected_as_non_value()
 {
-    assert_eq!(only("@[owes(ret 1)]\ndef f : Integer ;\n"), Seen {
+    assert_eq!(only("@[owes(pure 1)]\ndef f : Integer ;\n"), Seen {
         class: Class::Refusal(FailureClass::MalformedSource),
         identifier: String::from("NonValuePayload"),
-        locus: String::from("ret 1"),
+        locus: String::from("pure 1"),
 
         context: Vec::new(),
     });
@@ -346,8 +346,8 @@ fn an_ill_typed_payload_becomes_an_ordinary_type_error()
     for (source, locus) in [
         ("@[refuses(42)]\ndef f = 42 ;\n", "42"),
         (
-            "@[owes(thunk { ret 1 })]\ndef f : Integer ;\n",
-            "thunk { ret 1 }",
+            "@[owes(thunk { return 1 })]\ndef f : Integer ;\n",
+            "thunk { return 1 }",
         ),
     ] {
         assert_eq!(

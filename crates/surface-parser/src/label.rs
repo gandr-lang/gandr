@@ -3294,7 +3294,7 @@ mod tests
         for src in [
             "",
             "   ",
-            "def f() -> -F Integer { ret (x * x) }",
+            "def f() -> -F Integer { return (x * x) }",
             "// comment\n/* nested /* block */ */\n#!/usr/bin/env gandr\nx",
             "1u32 + 2.5f64 - .5e-3 * 42",
             "@[doc(\"d\")] def x = #{ a = 1 };",
@@ -3518,7 +3518,7 @@ mod tests
     #[test]
     fn labels_a_definition_losslessly()
     {
-        let src = "def greeting = \"hi\";\nret greeting\n";
+        let src = "def greeting = \"hi\";\npure greeting\n";
         let tokens = label(SourceFragment::from(src));
         assert_eq!(
             reconstruct(SourceFragment::from(src), &tokens),
@@ -3534,7 +3534,7 @@ mod tests
             (Lexeme::StringFragment, "hi".to_owned()),
             (Lexeme::Quote, "\"".to_owned()),
             (Lexeme::Punct, ";".to_owned()),
-            (Lexeme::LowerWord, "ret".to_owned()),
+            (Lexeme::LowerWord, "pure".to_owned()),
             (Lexeme::LowerWord, "greeting".to_owned()),
         ]);
     }

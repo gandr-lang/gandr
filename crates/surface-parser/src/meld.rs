@@ -10085,10 +10085,10 @@ mod tests
         let mut state = MeldState::new(&pbg);
         assert_eq!(Sort::Expression, state.expected_operand_sort());
         let ret = *pbg
-            .candidates(TileLabel("ret"))
+            .candidates(TileLabel("pure"))
             .first()
             .expect("a `ret` mold");
-        state.push(&MoldedTile::new(ret, TileText::from("ret")));
+        state.push(&MoldedTile::new(ret, TileText::from("pure")));
         assert_eq!(
             Sort::Expression,
             state.expected_operand_sort(),
@@ -10111,13 +10111,13 @@ mod tests
         let sources = [
             "#!{ echo a b c d e f; ls | grep x && echo y; }",
             "#!{ [ cd d; ls ] | sort; echo ${x}${y} \"z $w\"; }",
-            "def f(x: Integer) -> -F Integer { ret (x * x + 1) }",
+            "def f(x: Integer) -> -F Integer { return (x * x + 1) }",
             "data Tree(a) { Leaf, Node(l: Tree(a), v: a, r: Tree(a)) }",
             "def s = \"a ${ f(\"${x}\") } b\";",
             "case v { Inl(x) => x, Inr(y) => y }",
             "#!{ echo unclosed",
             ") } ] stray closers",
-            "let p = (1, 2); if c { ret p } else { ret p }",
+            "let p = (1, 2); if c { pure p } else { pure p }",
         ];
         for src in sources {
             let mut molder = crate::Molder::new(&pbg);
@@ -10288,7 +10288,7 @@ mod tests
         assert_eq!(
             vec!["package [ T ] Integer".to_owned()],
             spans_of(
-                "def bad : package [ T ] Integer;\ndef bad = ret 1;",
+                "def bad : package [ T ] Integer;\ndef bad = pure 1;",
                 "package_type"
             )?,
             "a package's operand stays its own when another declaration follows"
@@ -10356,7 +10356,7 @@ mod tests
     {
         let pbg = built_in()?;
         let source = "// lead\ndef x = 1; // trail\n\n// alone\n\n// first\n// second\ndef w = 2;\n\
-                      def f(x: Integer) -> -F Integer {\n  // above\n  ret x\n}\n\
+                      def f(x: Integer) -> -F Integer {\n  // above\n  return x\n}\n\
                       def y = [ /* empty */ ];\ndef z = 1 /* one */;\n";
         let tree = crate::parse::parse(&pbg, SourceText::from(source))?.into_tree();
         assert_eq!(crate::testing::reconstruct(&tree), source);
@@ -10383,7 +10383,7 @@ mod tests
             ("// alone", "the root", "standalone"),
             ("// first", "def w = 2;", "leading, stacked"),
             ("// second", "def w = 2;", "leading"),
-            ("// above", "ret x", "leading, inside a block"),
+            ("// above", "return x", "leading, inside a block"),
             ("/* empty */", "[ /* empty */ ]", "dangling"),
             ("/* one */", "def z = 1 /* one */;", "beside a leaf"),
         ] {

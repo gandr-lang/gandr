@@ -593,6 +593,15 @@ pub enum LoweringRefusal<'source>
         name: SurfaceName<'source>,
     },
 
+    /// A path through a function's, a lambda's or a thunk's body that ends in
+    /// something other than `return` or `become`: every way out of a body is
+    /// written at the exit.
+    MissingExit
+    {
+        /// The bytes of the computation the path ends in.
+        span: ByteSpan,
+    },
+
     /// The lowering's work allowance ran out.
     BudgetExceeded
     {
@@ -724,6 +733,10 @@ impl fmt::Display for LoweringRefusal<'_>
                 "`{name}` names its own recursive definition without a claim; write \
                  `{name}[<](…)` to recurse on a field of the last parameter"
             ),
+            | Self::MissingExit { .. } => f.write_str(
+                "the body's path ends without an exit; a path through a body ends in `return` \
+                 or `become`",
+            ),
             | Self::BudgetExceeded { budget } => {
                 write!(f, "the lowering outran its allowance of {budget} steps")
             },
@@ -802,6 +815,7 @@ impl LoweringRefusal<'_>
             | Self::LowercaseModuleName { span, .. }
             | Self::NonExhaustiveMatch { span }
             | Self::UnmarkedSelfReference { span, .. }
+            | Self::MissingExit { span }
             | Self::UnknownMold { span, .. } => Maybe::Present(span),
             | Self::BudgetExceeded { .. } | Self::GrammarMismatch { .. } => {
                 Maybe::Absent(refusal_span::Absent::Run)
@@ -918,7 +932,7 @@ mod tests
             LoweringRefusal::NonValuePayload {
                 span: s(19_usize, 20_usize),
                 name: owes,
-                form: FormName::from(NamedKind("ret_expression")),
+                form: FormName::from(NamedKind("pure_expression")),
             },
             LoweringRefusal::IllTypedPayload {
                 span: s(21_usize, 22_usize),

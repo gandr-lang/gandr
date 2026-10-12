@@ -1274,7 +1274,7 @@ mod tests
                 (0_usize, 0_usize),
             ),
             (
-                r#"@[ checks ] def f(x: Integer) -> -F Integer { ret x }"#,
+                r#"@[ checks ] def f(x: Integer) -> -F Integer { return x }"#,
                 Settlement::Settled,
                 (0_usize, 0_usize),
             ),
@@ -1573,12 +1573,12 @@ mod tests
                 FailureClass::MalformedSource,
             ),
             (
-                r#"@[ refuses("ShapeMismatch") ] def a : +U (Integer -> -F Integer) ; def a = thunk { ret 3 } ;"#,
+                r#"@[ refuses("ShapeMismatch") ] def a : +U (Integer -> -F Integer) ; def a = thunk { return 3 } ;"#,
                 RefusalName::ShapeMismatch,
                 FailureClass::MalformedSource,
             ),
             (
-                r#"@[ refuses("NotSynthesisable") ] def a = thunk { ret 3 } ;"#,
+                r#"@[ refuses("NotSynthesisable") ] def a = thunk { return 3 } ;"#,
                 RefusalName::NotSynthesisable,
                 FailureClass::MalformedSource,
             ),

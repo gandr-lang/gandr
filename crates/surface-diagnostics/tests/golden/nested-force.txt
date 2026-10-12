@@ -1,11 +1,11 @@
 error[ShapeMismatch]: expected a thunk type `+U C`
-  ╭▸ force.gandr:2:23
+  ╭▸ force.gandr:2:30
   │
-2 │ def a = thunk { force 1 } ;
-  │         ┬───────┬─────┯──
-  │         │       │     │
-  │         │       │     its type is not of the required shape: found `Integer`
-  │         │       while checking this against `-F Integer`
+2 │ def a = thunk { become force 1 } ;
+  │         ┬──────────────┬─────┯──
+  │         │              │     │
+  │         │              │     its type is not of the required shape: found `Integer`
+  │         │              while checking this against `-F Integer`
   │         while checking this against `+U (-F Integer)`
   │
   ╰ note: unsettled `a` states checks owing 0

@@ -32,5 +32,5 @@
 87..88 Other ")"
 88..89 Other ")"
 89..90 Other ";"
-92..95 Keyword "ret"
-96..101 Variable "total"
+92..96 Keyword "pure"
+97..102 Variable "total"

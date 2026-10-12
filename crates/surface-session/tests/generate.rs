@@ -612,7 +612,7 @@ pub fn apply(
                 lines
                     .next()
                     .is_some_and(|line| {
-                        line.split_once("(x: Integer) -> -F Integer { ret ")
+                        line.split_once("(x: Integer) -> -F Integer { return ")
                             .is_some_and(|(name, tail)| {
                                 name
                                     .strip_prefix("def d")
@@ -673,12 +673,12 @@ pub fn apply(
                                                             .is_some_and(|name| name.parse::<usize>() == Ok(index))
                                                     }
                                                     Body::Delay(value) => {
-                                                        body.strip_prefix("thunk { ret ")
+                                                        body.strip_prefix("thunk { return ")
                                                             .and_then(|text| text.strip_suffix(" }"))
                                                             .is_some_and(|number| number.parse::<u64>() == Ok(value))
                                                     }
                                                     Body::Call(index) => {
-                                                        body.strip_prefix("thunk { (force d")
+                                                        body.strip_prefix("thunk { become (force d")
                                                             .and_then(|text| text.strip_suffix(")(0) }"))
                                                             .is_some_and(|name| name.parse::<usize>() == Ok(index))
                                                     }
@@ -699,7 +699,7 @@ pub fn render(statements: &[Stmt]) -> String
         if let Body::Function(literal) = statement.body {
             writeln!(
                 text,
-                "def d{name}(x: Integer) -> -F Integer {{ ret {literal} }}"
+                "def d{name}(x: Integer) -> -F Integer {{ return {literal} }}"
             )
             .expect("a string takes every write");
             continue;
@@ -716,8 +716,8 @@ pub fn render(statements: &[Stmt]) -> String
             | Body::Int(literal) => format!("{literal}"),
             | Body::Str(content) => format!("\"{content}\""),
             | Body::Ref(read) => format!("d{read}"),
-            | Body::Delay(literal) => format!("thunk {{ ret {literal} }}"),
-            | Body::Call(read) => format!("thunk {{ (force d{read})(0) }}"),
+            | Body::Delay(literal) => format!("thunk {{ return {literal} }}"),
+            | Body::Call(read) => format!("thunk {{ become (force d{read})(0) }}"),
             | Body::Function(_) | Body::Absent => continue,
         };
         writeln!(text, "def d{name} = {defined} ;").expect("a string takes every write");

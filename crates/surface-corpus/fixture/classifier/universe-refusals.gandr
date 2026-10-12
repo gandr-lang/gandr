@@ -11,11 +11,11 @@ def graded : Type ;
 def graded = +U[1] (-F Integer) ;
 
 @[ runs("<fun>") ]
-def id(a : Type, x : a) -> -F a { ret x }
+def id(a : Type, x : a) -> -F a { return x }
 
 def chosen : +U (-F Type) ;
-def chosen = thunk { ret Integer } ;
+def chosen = thunk { return Integer } ;
 
 @[ refuses("TypeMismatch") ]
 def escaped : +U (Integer -> -F Integer) ;
-def escaped = thunk { run t <- force chosen ; id(t) } ;
+def escaped = thunk { run t <- force chosen ; become id(t) } ;

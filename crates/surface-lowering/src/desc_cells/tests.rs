@@ -141,7 +141,7 @@ fn a_rule_over_a_many_out_operation_is_declined_rather_than_narrowed()
 #[test]
 fn a_source_with_no_declarations_elaborates_to_no_stores()
 {
-    let cells = elaborate_desc_cells(&descriptions("ret ()").declarations);
+    let cells = elaborate_desc_cells(&descriptions("pure ()").declarations);
     assert_eq!(cells, CellReport::default());
 }
 

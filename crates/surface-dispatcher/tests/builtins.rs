@@ -52,23 +52,23 @@ mod tests
     {
         for (source, expected) in [
             (
-                "def answer : +U (-F Integer) ; def answer = thunk { 19 - 7 } ;",
+                "def answer : +U (-F Integer) ; def answer = thunk { become 19 - 7 } ;",
                 "12",
             ),
             (
-                "def answer : +U (-F Integer) ; def answer = thunk { int.div(19, 4) } ;",
+                "def answer : +U (-F Integer) ; def answer = thunk { become int.div(19, 4) } ;",
                 "4",
             ),
             (
-                "def answer : +U (-F Bool) ; def answer = thunk { 19 < 7 } ;",
+                "def answer : +U (-F Bool) ; def answer = thunk { become 19 < 7 } ;",
                 "inr(())",
             ),
             (
-                "def answer : +U (-F Integer) ; def answer = thunk { -7 } ;",
+                "def answer : +U (-F Integer) ; def answer = thunk { become -7 } ;",
                 "-7",
             ),
             (
-                "def partial : +U (Integer -> -F Integer) ; def partial = thunk { sub(19) } ; def answer : +U (-F Integer) ; def answer = thunk { partial(7) } ;",
+                "def partial : +U (Integer -> -F Integer) ; def partial = thunk { become sub(19) } ; def answer : +U (-F Integer) ; def answer = thunk { become partial(7) } ;",
                 "12",
             ),
         ] {
@@ -85,18 +85,18 @@ mod tests
     {
         assert!(matches!(
             run(SourceText::from(
-                "def answer : +U (-F Integer) ; def answer = thunk { int.div(19, 0) } ;"
+                "def answer : +U (-F Integer) ; def answer = thunk { become int.div(19, 0) } ;"
             )),
             Evaluation::Stuck(Stuck::Primitive(PrimitiveError::DivisionByZero))
         ));
         assert!(matches!(
             run(SourceText::from(
-                "def answer : +U (-F Integer) ; def answer = thunk { sub(\"wrong\", 7) } ;"
+                "def answer : +U (-F Integer) ; def answer = thunk { become sub(\"wrong\", 7) } ;"
             )),
             Evaluation::Unrunnable(Unrunnable::Refused(_))
         ));
         assert!(
-            matches!(run(SourceText::from("def owed : Integer ; def answer : +U (-F Integer) ; def answer = thunk { sub(owed, 7) } ;")), Evaluation::Blamed(name) if name.as_ref() == "owed")
+            matches!(run(SourceText::from("def owed : Integer ; def answer : +U (-F Integer) ; def answer = thunk { become sub(owed, 7) } ;")), Evaluation::Blamed(name) if name.as_ref() == "owed")
         );
     }
 
@@ -104,8 +104,8 @@ mod tests
     fn source_and_binder_names_shadow_the_outer_prelude()
     {
         for source in [
-            "def add : +U (Integer -> Integer -> -F Integer) ; def add = thunk { fn (x) { fn (y) { ret x } } } ; def answer : +U (-F Integer) ; def answer = thunk { add(19, 7) } ;",
-            "def f : +U (Integer -> -F Integer) ; def f = thunk { fn (add) { ret add } } ; def answer : +U (-F Integer) ; def answer = thunk { f(19) } ;",
+            "def add : +U (Integer -> Integer -> -F Integer) ; def add = thunk { fn (x) { fn (y) { return x } } } ; def answer : +U (-F Integer) ; def answer = thunk { become add(19, 7) } ;",
+            "def f : +U (Integer -> -F Integer) ; def f = thunk { fn (add) { return add } } ; def answer : +U (-F Integer) ; def answer = thunk { become f(19) } ;",
         ] {
             let Evaluation::Value(value) = run(SourceText::from(source))
             else {

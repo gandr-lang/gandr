@@ -131,6 +131,7 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         | LoweringRefusal::LowercaseModuleName { .. } => "a lowercase initial",
         | LoweringRefusal::NonExhaustiveMatch { .. } => "some value matches no arm",
         | LoweringRefusal::UnmarkedSelfReference { .. } => "recursion without a claim",
+        | LoweringRefusal::MissingExit { .. } => "the body ends here without an exit",
         | LoweringRefusal::BudgetExceeded { .. } => "the lowering's allowance ran out",
         | LoweringRefusal::GrammarMismatch { .. } => "molded under another grammar",
         | LoweringRefusal::UnknownMold { .. } => "a mold the grammar does not hold",

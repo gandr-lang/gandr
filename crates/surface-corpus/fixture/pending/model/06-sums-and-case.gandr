@@ -1,7 +1,7 @@
 def pick() -> -F Integer {
   case (Inl(42) : Integer + String) {
-    Inl(x) => ret (x + 1),
-    Inr(s) => ret 0
+    Inl(x) => return (x + 1),
+    Inr(s) => return 0
   }
 }
 

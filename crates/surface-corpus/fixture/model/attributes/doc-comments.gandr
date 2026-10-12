@@ -1,12 +1,12 @@
 /// Returns its argument; [echo] does the same.
 @[ checks ]
 def identity(x: Integer) -> -F Integer {
-  ret x
+  return x
 }
 
 @[ checks, doc("Returns its argument, as [identity] does.") ]
 def echo(x: Integer) -> -F Integer {
-  ret x
+  return x
 }
 
 /// Points at [missing], which nothing declares.

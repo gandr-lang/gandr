@@ -926,7 +926,7 @@ mod session
                 writeln!(
                     text,
                     "def p{i} : +U (Integer -> Integer -> -F Integer) ;\n\
-                     def p{i} = thunk {{ fn (x) {{ fn (y) {{ ret x }} }} }} ;"
+                     def p{i} = thunk {{ fn (x) {{ fn (y) {{ return x }} }} }} ;"
                 )
             }
             .expect("a string takes text");

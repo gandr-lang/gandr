@@ -941,10 +941,10 @@ def broken = missing ;"#,
             .expect("the fixture composes")
         };
         let ordinary = compose_source(
-            "def identity : +U (Integer -> -F Integer) ; def identity = thunk { fn (x) { ret x } } ; def hole : Integer ;",
+            "def identity : +U (Integer -> -F Integer) ; def identity = thunk { fn (x) { return x } } ; def hole : Integer ;",
         );
         let pending = compose_source(
-            "def f @[a : Type] (x: a) -> -F a { ret x }\ndef identity : +U (Integer -> -F Integer) ; def identity = thunk { fn (x) { ret x } } ; def hole : Integer ;",
+            "def f @[a : Type] (x: a) -> -F a { return x }\ndef identity : +U (Integer -> -F Integer) ; def identity = thunk { fn (x) { return x } } ; def hole : Integer ;",
         );
         let mut report = RunReport::default();
         report.read(

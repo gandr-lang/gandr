@@ -6,5 +6,5 @@ extern "c" from "./testlib" as testlib {
 {
   run doubled <- testlib.gandr_test_add(21i64, 21i64);
   run length <- testlib.gandr_test_strlen("hello");
-  ret (doubled, length)
+  pure (doubled, length)
 }

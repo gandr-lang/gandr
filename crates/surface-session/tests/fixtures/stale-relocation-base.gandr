@@ -1,9 +1,9 @@
 def alpha(x: Integer) -> -F Integer {
-  ret 1
+  return 1
 }
 def target(y: Integer) -> -F Integer {
-  ret y
+  return y
 }
 def omega(z: Integer) -> -F Integer {
-  ret z
+  return z
 }

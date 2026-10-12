@@ -189,7 +189,7 @@ fn a_hole_scrutinee_leaves_every_branch_possible()
         analysis.coverage().as_ref().unwrap().exhaustiveness(),
         Exhaustiveness::Exhaustive
     );
-    let mut written = color_pick("Red => ret 0, Green => ret 1, Blue => ret 2");
+    let mut written = color_pick("Red => return 0, Green => return 1, Blue => return 2");
     let hole = HoleId::from(0_u32);
     let scrutinee = written.hole(hole);
     let written_analysis = written.analyze("Color", scrutinee);
@@ -503,7 +503,7 @@ fn the_eliminator_still_fires_on_a_hole_payload()
 fn a_missing_constructor_is_reported_by_name()
 {
     let unfinished = alloc::format!(
-        "{COLOR}def pick(c : Color) -> -F Integer {{ case c {{ Red => ret 0, Green => ret 1 }} }}\n"
+        "{COLOR}def pick(c : Color) -> -F Integer {{ case c {{ Red => return 0, Green => return 1 }} }}\n"
     );
     assert!(
         matches!(
@@ -512,7 +512,7 @@ fn a_missing_constructor_is_reported_by_name()
         ),
         "the lowering refuses the declaration a constructor has no arm in"
     );
-    let mut written = color_pick("Red => ret 0, Green => ret 1, Blue => ret 2");
+    let mut written = color_pick("Red => return 0, Green => return 1, Blue => return 2");
     for tag in 0 .. 2_usize {
         let covered = written.construct("Color", tag, Vec::new());
         let analysis = written.analyze_prefix("Color", covered, RowCount(2));
@@ -541,7 +541,7 @@ fn an_inexhaustive_match_does_not_block_its_siblings()
 {
     let mut session = session(SourceRoot::Strict);
     let source = alloc::format!(
-        "{COLOR}def pick(c : Color) -> -F Integer {{ case c {{ Red => ret 0 }} }}\ndef sibling = 41 ;\n"
+        "{COLOR}def pick(c : Color) -> -F Integer {{ case c {{ Red => return 0 }} }}\ndef sibling = 41 ;\n"
     );
     let _submission = submit(&mut session, &source);
     assert!(
@@ -561,7 +561,7 @@ fn an_inexhaustive_match_does_not_block_its_siblings()
 #[test]
 fn an_or_pattern_entails_a_later_repeat_of_either_alternative()
 {
-    let mut written = color_pick("Red | Green => ret 0, Green => ret 1, Blue => ret 2");
+    let mut written = color_pick("Red | Green => return 0, Green => return 1, Blue => return 2");
     let arms: Vec<usize> = written.rows().iter().map(|row| row.arm).collect();
     assert_eq!(
         arms,
@@ -585,7 +585,7 @@ fn an_or_pattern_entails_a_later_repeat_of_either_alternative()
 #[test]
 fn a_pattern_hole_carries_the_pattern_position_mark()
 {
-    let mut written = color_pick("Red => ret 0, ? => ret 1");
+    let mut written = color_pick("Red => return 0, ? => return 1");
     let Some(&hole) = written.rows().get(1)
     else {
         panic!("two rows");
@@ -616,7 +616,7 @@ fn a_pattern_hole_carries_the_pattern_position_mark()
 fn translation_covers_the_landed_pattern_grammar()
 {
     let source = alloc::format!(
-        "{COLOR}{NESTED}def shapes(m : Outer) -> -F Integer {{ case m {{ None => ret 0, Some(Yes(y)) => ret 1, ? => ret 2, ?named => ret 3, x => ret 4, _ => ret 5 }} }}\ndef literal(n : Integer) -> -F Integer {{ case n {{ 7 => ret 0, _ => ret 1 }} }}\ndef flag(b : Bool) -> -F Integer {{ case b {{ true => ret 0, false => ret 1 }} }}\ndef either(c : Color) -> -F Integer {{ case c {{ Red | Green => ret 0, Blue => ret 1 }} }}\n"
+        "{COLOR}{NESTED}def shapes(m : Outer) -> -F Integer {{ case m {{ None => return 0, Some(Yes(y)) => return 1, ? => return 2, ?named => return 3, x => return 4, _ => return 5 }} }}\ndef literal(n : Integer) -> -F Integer {{ case n {{ 7 => return 0, _ => return 1 }} }}\ndef flag(b : Bool) -> -F Integer {{ case b {{ true => return 0, false => return 1 }} }}\ndef either(c : Color) -> -F Integer {{ case c {{ Red | Green => return 0, Blue => return 1 }} }}\n"
     );
     for (function, expected) in [
         ("shapes", &["#0()", "#1(#1(x))", "?", "?", "x", "_"][..]),

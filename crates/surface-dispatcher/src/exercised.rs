@@ -684,6 +684,7 @@ fn lowering_row(
         | LoweringRefusal::LowercaseModuleName { .. }
         | LoweringRefusal::NonExhaustiveMatch { .. }
         | LoweringRefusal::UnmarkedSelfReference { .. }
+        | LoweringRefusal::MissingExit { .. }
         | LoweringRefusal::BudgetExceeded { .. }
         | LoweringRefusal::GrammarMismatch { .. }
         | LoweringRefusal::UnknownMold { .. } => {},
@@ -969,11 +970,11 @@ mod tests
             (
                 r#"def answer : Integer ; def answer = 42 ;
 def identity : +U (Integer -> -F Integer) ;
-def identity = thunk { fn (x) { ret x } } ;
+def identity = thunk { fn (x) { return x } } ;
 def applied : +U (-F Integer) ;
-def applied = thunk { (force identity)(answer) } ;
+def applied = thunk { become (force identity)(answer) } ;
 def konst : +U (Integer -> Integer -> -F Integer) ;
-def konst = thunk { fn (x) { fn (y) { ret x } } } ;"#,
+def konst = thunk { fn (x) { fn (y) { return x } } } ;"#,
                 &[
                     (Row::LambdaChecks, 2_usize),
                     (Row::ReturnChecks, 2_usize),
@@ -991,15 +992,15 @@ def konst = thunk { fn (x) { fn (y) { ret x } } } ;"#,
                 &[(Row::UndefinedTypeHead, 1_usize)],
             ),
             (
-                r#"@[ refuses("ShapeMismatch") ] def a : +U (Integer -> -F Integer) ; def a = thunk { ret 3 } ;"#,
+                r#"@[ refuses("ShapeMismatch") ] def a : +U (Integer -> -F Integer) ; def a = thunk { return 3 } ;"#,
                 &[(Row::ShapeRefusal, 1_usize)],
             ),
             (
-                r#"@[ refuses("NotSynthesisable") ] def a : +U (-F Integer) ; def a = thunk { (fn (x) { ret x })(3) } ;"#,
+                r#"@[ refuses("NotSynthesisable") ] def a : +U (-F Integer) ; def a = thunk { become (fn (x) { return x })(3) } ;"#,
                 &[(Row::NonSynthesisableHead, 1_usize)],
             ),
             (
-                r#"@[ refuses("NotSynthesisable") ] def a = thunk { ret 3 } ;"#,
+                r#"@[ refuses("NotSynthesisable") ] def a = thunk { return 3 } ;"#,
                 &[(Row::NonSynthesisableDefinition, 1_usize)],
             ),
             (
@@ -1042,7 +1043,7 @@ def konst = thunk { fn (x) { fn (y) { ret x } } } ;"#,
 def b : Natural ;
 @[ refuses("TypeMismatch") ] def c : Integer * Integer ;
 def d : Integer ;
-@[ refuses("UnresolvedName") ] def e : +U (-F Integer) ; def e = thunk { ret 3 } ;"#,
+@[ refuses("UnresolvedName") ] def e : +U (-F Integer) ; def e = thunk { return 3 } ;"#,
         ));
         assert_eq!(
             rows,
@@ -1056,9 +1057,9 @@ def d : Integer ;
     {
         let grammar = built_in().expect("the built-in grammar builds");
         let source = SourceText::from(
-            r#"@[ refuses("NotSynthesisable") ] def a : +U (-F Integer) ; def a = thunk { force (thunk { ret 3 }) } ;
-@[ refuses("ShapeMismatch") ] def b : Integer ; def b = thunk { ret 3 } ;
-@[ refuses("OutOfFragment") ] def c = fn (x) { ret x } ;"#,
+            r#"@[ refuses("NotSynthesisable") ] def a : +U (-F Integer) ; def a = thunk { become force (thunk { return 3 }) } ;
+@[ refuses("ShapeMismatch") ] def b : Integer ; def b = thunk { return 3 } ;
+@[ refuses("OutOfFragment") ] def c = fn (x) { return x } ;"#,
         );
         let mut lowerings = LoweringCount::default();
         let Composed::Settled {
@@ -1172,8 +1173,8 @@ def d : Integer ;
     {
         let grammar = built_in().expect("the built-in grammar builds");
         let source = SourceText::from(
-            "def whole = thunk { ret 1 } ; def other = thunk { ret 2 } ;
-             def signed : +U (-F Integer) ; def signed = thunk { ret 3 } ;
+            "def whole = thunk { return 1 } ; def other = thunk { return 2 } ;
+             def signed : +U (-F Integer) ; def signed = thunk { return 3 } ;
              def owed : Integer ; def refused = missing ;",
         );
         let mut lowerings = LoweringCount::default();

@@ -504,7 +504,7 @@ mod tests
     #[test]
     fn declarations_nest_as_symbols()
     {
-        let source = "/// Doubles nothing.\n@[ checks ]\ndef twice(x: Integer) -> -F Integer {\n  ret x\n}\n\
+        let source = "/// Doubles nothing.\n@[ checks ]\ndef twice(x: Integer) -> -F Integer {\n  return x\n}\n\
                       def answer = 42 ;\n\
                       @[ checks ]\ndata Color : Type { Red : Color; }\n\
                       module Outer {\n  def inner = 1 ;\n  module Nested {\n    def deep = 2 ;\n  }\n}\n";
@@ -555,7 +555,7 @@ mod tests
     #[test]
     fn multi_line_forms_and_documentation_fold()
     {
-        let source = "/// One.\n/// Two.\ndef f(x: Integer) -> -F Integer {\n  ret x\n}\n\
+        let source = "/// One.\n/// Two.\ndef f(x: Integer) -> -F Integer {\n  return x\n}\n\
                       def g = 1 ;\n/* a\n   block */\ndef h = 2 ;\n";
         let answered: Vec<(u64, u64, Option<&str>)> = folds(SourceText::from(source))
             .into_iter()

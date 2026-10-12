@@ -266,6 +266,9 @@ fn lowered(
             f,
             "`{name}` calls itself without saying how it recurses; write `{name}[<](…)`"
         ),
+        | LoweringRefusal::MissingExit { .. } => {
+            f.write_str("this body ends without `return` or `become`")
+        },
         | LoweringRefusal::BudgetExceeded { budget } => write!(
             f,
             "the source is too large to read within the allowance of {budget} steps"
@@ -592,6 +595,7 @@ mod tests
             LoweringRefusal::LowercaseModuleName { span, name },
             LoweringRefusal::NonExhaustiveMatch { span },
             LoweringRefusal::UnmarkedSelfReference { span, name },
+            LoweringRefusal::MissingExit { span },
             LoweringRefusal::BudgetExceeded {
                 budget: 0_usize.into(),
             },

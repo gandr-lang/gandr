@@ -17,7 +17,7 @@ use crate::mold::StepSym;
 
 /// The built-in surface's tables and the digest of their rules.
 pub(super) static BUILT_IN: FrozenTable = FrozenTable {
-    rules: RulesDigest(0x4f67_61c7_23c1_bd90),
+    rules: RulesDigest(0x913c_6d8b_ebda_a128),
     molds: &MOLDS,
     contexts: &CONTEXTS,
     steps: &STEPS,
@@ -1118,7 +1118,7 @@ static MOLDS: [FrozenMold; 2487] = [
     FrozenMold("identifier", 1089, 36, None, 1, &[1090], 1089),
     FrozenMold("=", 1090, 36, None, 10, &[], 1090),
     FrozenMold("tail", 1091, 37, None, 7, &[], 1091),
-    FrozenMold("ret", 1092, 38, None, 11, &[], 1092),
+    FrozenMold("pure", 1092, 38, None, 11, &[], 1092),
     FrozenMold("return", 1093, 39, None, 11, &[], 1093),
     FrozenMold("become", 1094, 40, None, 11, &[], 1094),
     FrozenMold("||", 1095, 41, None, 7, &[], 1095),

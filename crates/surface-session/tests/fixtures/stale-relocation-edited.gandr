@@ -1,12 +1,12 @@
 def inserted(n: Integer) -> -F Integer {
-  ret n
+  return n
 }
 def alpha(x: Integer) -> -F Integer {
-  ret 2
+  return 2
 }
 def target(y: Integer) -> -F Integer {
-  ret y
+  return y
 }
 def omega(z: Integer) -> -F Integer {
-  ret z
+  return z
 }

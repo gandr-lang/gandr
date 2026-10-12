@@ -39,7 +39,7 @@ const CANDIDATES: [&str; 5] = [
     // No body: `f` stays owed.
     "def a = 1 ;\ndef f : Integer ;\n",
     // A statement at the top level: the lowering refuses the revision whole.
-    "def a = 1 ;\ndef f : Integer ;\nret 3\n",
+    "def a = 1 ;\ndef f : Integer ;\npure 3\n",
     // The checking body again.
     "def a = 1 ;\ndef f : Integer ;\ndef f = a ;\n",
 ];

@@ -3530,11 +3530,11 @@ mod tests
     fn descent_agrees_with_the_linear_stab_oracle()
     {
         let sources = [
-            "def deep = thunk { ret thunk { ret thunk { ret 1 } } } ;\n",
-            "def target(x: Integer) -> -F Integer {\n  ret 1\n}\ndef shown : +U (-F Integer) ;\ndef shown = thunk { (force target)(0) } ;\n",
+            "def deep = thunk { return thunk { return thunk { return 1 } } } ;\n",
+            "def target(x: Integer) -> -F Integer {\n  return 1\n}\ndef shown : +U (-F Integer) ;\ndef shown = thunk { become (force target)(0) } ;\n",
             "def a = 1 ;\ndef b = 2 ;\ndef c = 3 ;\n",
             "def owed : Integer ;\ndef reads = owed ;\n",
-            "def f(x: Integer) -> -F Integer { ret x }\ndef twice = thunk { (force f)(\"text\") } ;\n",
+            "def f(x: Integer) -> -F Integer { return x }\ndef twice = thunk { become (force f)(\"text\") } ;\n",
         ];
         for source in sources {
             let snapshot = snapshot_of(SourceText::from(source));
@@ -4122,7 +4122,7 @@ def c = 3 ;
     #[spec(
         ensures: |ret| {
     ret.lines().count() == breadth.0.saturating_add(1_usize)
-        && ret.matches("thunk { ret ").count() == depth.0
+        && ret.matches("thunk { return ").count() == depth.0
         && ret.starts_with("def deep = ") && ret.ends_with(" ;\n")
 },
     )]
@@ -4133,7 +4133,7 @@ def c = 3 ;
     {
         let mut nested = String::from("1");
         for _ in 0 .. depth.0 {
-            nested = format!("thunk {{ ret {nested} }}");
+            nested = format!("thunk {{ return {nested} }}");
         }
         let mut text = format!("def deep = {nested} ;\n");
         for index in 0 .. breadth.0 {
@@ -4198,7 +4198,7 @@ def c = 3 ;
     #[test]
     fn edit_locus_maps_a_source_edit_to_its_old_span_locus()
     {
-        let snapshot = snapshot_of(SourceText::from("def v = thunk { ret 1 } ;\n"));
+        let snapshot = snapshot_of(SourceText::from("def v = thunk { return 1 } ;\n"));
         let literal = CorePath {
             item: ItemOrdinal::from(0_usize),
             slots: vec![ChildSlot(0_usize), ChildSlot(0_usize)],

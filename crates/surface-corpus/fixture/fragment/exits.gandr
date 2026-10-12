@@ -22,6 +22,15 @@ def twice(n : Nat) -> -F Nat {
 def identity : +U (Nat -> -F Nat) ;
 def identity = thunk { fn (n) { return n } } ;
 
+@[ checks ]
+def ret : Nat ;
+def ret = Zero ;
+
+@[ checks ]
+def named(n : Nat) -> -F Nat {
+  return ret
+}
+
 @[ refuses("OutOfFragment") ]
 def early(n : Nat) -> -F Nat {
   run m <- return n ;

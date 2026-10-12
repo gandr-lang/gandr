@@ -314,6 +314,8 @@ pub enum RefusalName
     NonExhaustiveMatch,
     /// A recursive definition's own name written without a descent claim.
     UnmarkedSelfReference,
+    /// A path through a body that ends without `return` or `become`.
+    MissingExit,
     /// A work allowance ran out, the lowering's or the checker's.
     BudgetExceeded,
     /// A tree lowered under another grammar than it was molded under.
@@ -375,7 +377,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 63_usize] = [
+    pub const VOCABULARY: [Self; 64_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -414,6 +416,7 @@ impl RefusalName
         Self::LowercaseModuleName,
         Self::NonExhaustiveMatch,
         Self::UnmarkedSelfReference,
+        Self::MissingExit,
         Self::BudgetExceeded,
         Self::GrammarMismatch,
         Self::UnknownMold,
@@ -477,6 +480,7 @@ impl RefusalName
         b"UnreadAscription") | (Self::LowercaseModuleName, b"LowercaseModuleName") |
         (Self::NonExhaustiveMatch, b"NonExhaustiveMatch") |
         (Self::UnmarkedSelfReference, b"UnmarkedSelfReference") |
+        (Self::MissingExit, b"MissingExit") |
         (Self::BudgetExceeded, b"BudgetExceeded") | (Self::GrammarMismatch,
         b"GrammarMismatch") | (Self::UnknownMold, b"UnknownMold") | (Self::TypeMismatch,
         b"TypeMismatch") | (Self::ShapeMismatch, b"ShapeMismatch") |
@@ -560,6 +564,7 @@ impl RefusalName
             | Self::LowercaseModuleName => "LowercaseModuleName",
             | Self::NonExhaustiveMatch => "NonExhaustiveMatch",
             | Self::UnmarkedSelfReference => "UnmarkedSelfReference",
+            | Self::MissingExit => "MissingExit",
             | Self::BudgetExceeded => "BudgetExceeded",
             | Self::GrammarMismatch => "GrammarMismatch",
             | Self::UnknownMold => "UnknownMold",
@@ -740,6 +745,8 @@ impl Refusal<'_>
         RefusalName::NonExhaustiveMatch) |
         (Self::Lowering(LoweringRefusal::UnmarkedSelfReference { .. }),
         RefusalName::UnmarkedSelfReference) |
+        (Self::Lowering(LoweringRefusal::MissingExit { .. }),
+        RefusalName::MissingExit) |
         (Self::Lowering(LoweringRefusal::BudgetExceeded { .. }) |
         Self::Checking(CheckRefusal::BudgetExceeded { .. }), RefusalName::BudgetExceeded)
         | (Self::Lowering(LoweringRefusal::GrammarMismatch { .. }),
@@ -882,7 +889,8 @@ impl Refusal<'_>
         RefusalName::UnreadAscription) | (LoweringRefusal::LowercaseModuleName { .. },
         RefusalName::LowercaseModuleName) | (LoweringRefusal::NonExhaustiveMatch { .. },
         RefusalName::NonExhaustiveMatch) | (LoweringRefusal::UnmarkedSelfReference { .. },
-        RefusalName::UnmarkedSelfReference) | (LoweringRefusal::BudgetExceeded { .. },
+        RefusalName::UnmarkedSelfReference) | (LoweringRefusal::MissingExit { .. },
+        RefusalName::MissingExit) | (LoweringRefusal::BudgetExceeded { .. },
         RefusalName::BudgetExceeded) | (LoweringRefusal::GrammarMismatch { .. },
         RefusalName::GrammarMismatch) | (LoweringRefusal::UnknownMold { .. },
         RefusalName::UnknownMold)
@@ -914,6 +922,7 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | LoweringRefusal::LowercaseModuleName { .. } => RefusalName::LowercaseModuleName,
         | LoweringRefusal::NonExhaustiveMatch { .. } => RefusalName::NonExhaustiveMatch,
         | LoweringRefusal::UnmarkedSelfReference { .. } => RefusalName::UnmarkedSelfReference,
+        | LoweringRefusal::MissingExit { .. } => RefusalName::MissingExit,
         | LoweringRefusal::BudgetExceeded { .. } => RefusalName::BudgetExceeded,
         | LoweringRefusal::GrammarMismatch { .. } => RefusalName::GrammarMismatch,
         | LoweringRefusal::UnknownMold { .. } => RefusalName::UnknownMold,

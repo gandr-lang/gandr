@@ -89,7 +89,8 @@ impl LoweringRefusal<'_>
             | Self::UnknownMember { .. }
             | Self::LowercaseModuleName { .. }
             | Self::NonExhaustiveMatch { .. }
-            | Self::UnmarkedSelfReference { .. } => {
+            | Self::UnmarkedSelfReference { .. }
+            | Self::MissingExit { .. } => {
                 matches!(ret, FailureClass::MalformedSource)
             },
         },
@@ -117,7 +118,8 @@ impl LoweringRefusal<'_>
             | Self::UnknownMember { .. }
             | Self::LowercaseModuleName { .. }
             | Self::NonExhaustiveMatch { .. }
-            | Self::UnmarkedSelfReference { .. } => FailureClass::MalformedSource,
+            | Self::UnmarkedSelfReference { .. }
+            | Self::MissingExit { .. } => FailureClass::MalformedSource,
             | Self::OutOfFragment { .. }
             | Self::GradedBridge { .. }
             | Self::UnreadAscription { .. } => FailureClass::Unrepresentable,
@@ -182,7 +184,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 24_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 25_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -240,7 +242,7 @@ mod tests
             LoweringRefusal::NonValuePayload {
                 span: empty,
                 name: owes,
-                form: FormName::from(NamedKind("ret_expression")),
+                form: FormName::from(NamedKind("pure_expression")),
             },
             LoweringRefusal::IllTypedPayload {
                 span: empty,
@@ -299,6 +301,7 @@ mod tests
                 span: empty,
                 name: SurfaceName::from("gone"),
             },
+            LoweringRefusal::MissingExit { span: empty },
         ]
     }
 
@@ -327,6 +330,7 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::Unrepresentable,
+            FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,

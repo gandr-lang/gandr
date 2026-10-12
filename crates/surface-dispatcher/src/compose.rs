@@ -1361,7 +1361,7 @@ def wrong = "text" ;"#,
         let composed = compose(
             &grammar,
             CorpusRoot::Fixture,
-            SourceText::from("def greeting = \"hello\" ;\nret greeting"),
+            SourceText::from("def greeting = \"hello\" ;\npure greeting"),
             &mut lowerings,
         );
         let Ok(Composed::Refused(refusal)) = composed
@@ -1389,7 +1389,7 @@ def wrong = "text" ;"#,
         let mut lowerings = LoweringCount::default();
         let sources = [
             "def a = 3 ;",
-            "ret 3",
+            "pure 3",
             r#"@[ refuses("UnresolvedName") ] def a = b ;"#,
         ];
         for (composed, source) in sources.into_iter().enumerate() {
@@ -1421,7 +1421,7 @@ def wrong = "text" ;"#,
             ),
             ("def good = 2 ;", false, &[][..]),
             (
-                "def bad = 1 ~ 2 ;\nret 3",
+                "def bad = 1 ~ 2 ;\npure 3",
                 true,
                 &[(gandr_surface_parser::Oblig::UnmoldedTok, 12_usize, 13_usize)][..],
             ),
@@ -1485,7 +1485,7 @@ def wrong = "text" ;"#,
             &grammar,
             CorpusRoot::Fixture,
             SourceText::from(
-                r#"@[ refuses("OutOfFragment") ] def f @[a : Type] (x: a) -> -F a { ret x }
+                r#"@[ refuses("OutOfFragment") ] def f @[a : Type] (x: a) -> -F a { return x }
 @[ refuses("UnresolvedName") ] def g = missing ;
 def h = 1 ;"#,
             ),
@@ -1524,7 +1524,7 @@ def h = 1 ;"#,
     fn a_tail_without_a_result_type_lowers_unsigned()
     {
         let grammar = grammar();
-        let source = SourceText::from("def f(x: Integer) { ret x }");
+        let source = SourceText::from("def f(x: Integer) { return x }");
         let tree = parse(&grammar, source).expect("parses").into_tree();
         let mut arena = CoreArena::new();
         let module = lower_module(
@@ -1750,10 +1750,10 @@ def h = 1 ;"#,
     {
         let grammar = grammar();
         let source = SourceText::from(
-            "def first @[a : Type] (x: a) -> -F a { ret x }\n\
+            "def first @[a : Type] (x: a) -> -F a { return x }\n\
              def broken = missing ;\n\
              def value = 3 ;\n\
-             def last @[a : Type] (x: a) -> -F a { ret x }",
+             def last @[a : Type] (x: a) -> -F a { return x }",
         );
         let mut lowerings = LoweringCount::default();
         let Lowered::Module { module, .. } = lower_source(&grammar, source, &mut lowerings)

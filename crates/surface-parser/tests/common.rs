@@ -34,7 +34,7 @@ use gandr_surface_syntax::SyntaxTree;
 ///   by the corpus.
 /// - witness: `tests::acceptance::core_forms_are_clean`
 /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
-#[spec(ensures: |ret| ["def", "ret", "(", ")"].into_iter().all(|label| !ret.candidates(gandr_surface_grammar::TileLabel(label)).is_empty()))]
+#[spec(ensures: |ret| ["def", "pure", "(", ")"].into_iter().all(|label| !ret.candidates(gandr_surface_grammar::TileLabel(label)).is_empty()))]
 pub fn built() -> &'static Pbg
 {
     /// The process-wide cached grammar.

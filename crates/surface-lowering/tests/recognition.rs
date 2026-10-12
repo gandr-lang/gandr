@@ -685,15 +685,15 @@ mod recognition
     {
         for (written, at) in [
             (
-                "def x = thunk { fn (list) { ret list } } ;",
+                "def x = thunk { fn (list) { return list } } ;",
                 site(20_usize, 24_usize),
             ),
             (
-                "def f(list: Integer) -> -F Integer { ret list }",
+                "def f(list: Integer) -> -F Integer { return list }",
                 site(6_usize, 10_usize),
             ),
             (
-                "def x = thunk { run list <- ret 1 ; ret list } ;",
+                "def x = thunk { run list <- pure 1 ; return list } ;",
                 site(20_usize, 24_usize),
             ),
         ] {

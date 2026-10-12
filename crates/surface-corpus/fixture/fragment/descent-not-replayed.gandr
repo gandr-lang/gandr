@@ -7,18 +7,18 @@ data Nat : Type {
 @[ refuses("DescentNotReplayed") ]
 def rec same(n : Nat) -> -F Nat {
   case n {
-    Zero => ret n,
-    Succ(p) => same[<](n)
+    Zero => return n,
+    Succ(p) => become same[<](n)
   }
 }
 
 @[ refuses("DescentNotReplayed") ]
-def rec counted(n : Integer) -> -F Integer { counted[<](n) }
+def rec counted(n : Integer) -> -F Integer { become counted[<](n) }
 
 @[ checks ]
 def rec down(n : Nat) -> -F Nat {
   case n {
-    Zero => ret n,
-    Succ(p) => down[<](p)
+    Zero => return n,
+    Succ(p) => become down[<](p)
   }
 }

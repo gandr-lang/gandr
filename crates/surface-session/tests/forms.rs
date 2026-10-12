@@ -235,7 +235,7 @@ fn a_one_form_edit_molds_only_the_forms_that_read_it()
     // alone; a change within its first eight molds it and the form before,
     // whose lookahead reads them.
     let form = |i: usize, name: &str, returned: &str| {
-        format!("def {name}{i} = thunk {{ fn (x) {{ fn (y) {{ ret {returned} }} }} }} ;\n")
+        format!("def {name}{i} = thunk {{ fn (x) {{ fn (y) {{ pure {returned} }} }} }} ;\n")
     };
     let text = |renamed: &str, returned: &str| -> String {
         (0 .. 12)

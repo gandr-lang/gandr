@@ -601,6 +601,7 @@ impl Annotations
             | LoweringRefusal::LowercaseModuleName { .. }
             | LoweringRefusal::NonExhaustiveMatch { .. }
             | LoweringRefusal::UnmarkedSelfReference { .. }
+            | LoweringRefusal::MissingExit { .. }
             | LoweringRefusal::BudgetExceeded { .. }
             | LoweringRefusal::GrammarMismatch { .. }
             | LoweringRefusal::UnknownMold { .. } => Maybe::Absent(report_context::Absent::Unnamed),

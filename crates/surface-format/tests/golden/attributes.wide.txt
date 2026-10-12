@@ -3,7 +3,7 @@
 @[ refuses("UnknownAttribute"), note("a note long enough to break the block at a narrow page") ]
 @[doc("Squares its argument.")]
 def square(x: Integer) -> -F Integer {
-  ret (x * x)
+  return (x * x)
 }
 
 @[ checks ]

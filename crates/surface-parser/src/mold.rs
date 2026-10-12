@@ -657,11 +657,11 @@ fn source_slice(src: SourceText<'_>) -> SourceFragment<'_>
 /// is not the same as inadmissible-elsewhere, and the circuit grammar module
 /// records the one slot where `sort`'s mold does collide with a type variable.
 const KEYWORDS: &[&str] = &[
-    "def", "val", "run", "leta", "as", "extern", "from", "type", "fn", "ret", "thunk", "force",
-    "case", "if", "else", "co", "hold", "dup", "drop", "send", "recv", "close", "select", "offer",
-    "fork", "acquire", "release", "migrate", "at", "true", "false", "forall", "mu", "end", "data",
-    "codata", "rec", "op", "rule", "for", "in", "while", "loop", "break", "continue", "with",
-    "import", "module", "sign", "oper",
+    "def", "val", "run", "leta", "as", "extern", "from", "type", "fn", "pure", "return", "become",
+    "thunk", "force", "case", "if", "else", "co", "hold", "dup", "drop", "send", "recv", "close",
+    "select", "offer", "fork", "acquire", "release", "migrate", "at", "true", "false", "forall",
+    "mu", "end", "data", "codata", "rec", "op", "rule", "for", "in", "while", "loop", "break",
+    "continue", "with", "import", "module", "sign", "oper",
 ];
 
 /// Return the grammar tile labels to enumerate for a labeled token.
@@ -3052,7 +3052,7 @@ mod tests
         // byte-identical across 100 runs. Nothing process-varying (hash order,
         // allocation address) reaches the decision.
         let pbg = built()?;
-        let src = "def f() -> -F Integer { ret (x * x) } square(9) [1, 2, 3]";
+        let src = "def f() -> -F Integer { pure (x * x) } square(9) [1, 2, 3]";
 
         let reference = mold_and_hash(&pbg, SourceText::from(src))?;
         for _ in 0 .. 100_u32 {
@@ -3078,7 +3078,7 @@ mod tests
     ///   without repair; a missing atom or invalid declaration changes the
     ///   result.
     /// - witness: `mold::tests::picks_the_obligation_minimum_mold`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |pbg| ["def", "ret", "(", ")"].into_iter().all(|label| !pbg.candidates(gandr_surface_grammar::TileLabel(label)).is_empty())))]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |pbg| ["def", "pure", "(", ")"].into_iter().all(|label| !pbg.candidates(gandr_surface_grammar::TileLabel(label)).is_empty())))]
     fn built() -> Result<Pbg, Box<dyn Error>>
     {
         let pbg = built_in()?;
@@ -3327,7 +3327,7 @@ mod tests
         let declarations = [
             ("def x = 1 ;", "def_value"),
             ("def x : Integer ;", "def_value"),
-            ("def f(y : Integer) -> -F Integer { ret y }", "def_value"),
+            ("def f(y : Integer) -> -F Integer { return y }", "def_value"),
             ("data Color : Type {\n  Red : Color;\n}", "data_declaration"),
         ];
         for count in 1_usize ..= 6 {

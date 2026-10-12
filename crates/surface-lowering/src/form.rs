@@ -376,8 +376,8 @@ impl TileName
     pub const RECV: Self = Self("recv");
     /// The release keyword `release`, opening a statement.
     pub const RELEASE: Self = Self("release");
-    /// The returner keyword `ret`.
-    pub const RET: Self = Self("ret");
+    /// The returner keyword `pure`.
+    pub const PURE: Self = Self("pure");
     /// The function exit `return`.
     pub const RETURN: Self = Self("return");
     /// The tail-call exit `become`.
@@ -658,7 +658,7 @@ pub const FORMERS: [(&str, Former); 37_usize] = [
     ("thunk_expression", Former::Thunk),
     ("lambda_expression", Former::Lambda),
     ("block", Former::Block),
-    ("ret_expression", Former::Return),
+    ("pure_expression", Former::Return),
     ("return_expression", Former::Exit),
     ("become_expression", Former::Become),
     ("force_expression", Former::Force),

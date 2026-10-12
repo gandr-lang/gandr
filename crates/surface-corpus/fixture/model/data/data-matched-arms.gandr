@@ -8,16 +8,16 @@ data Color : Type {
 @[ checks ]
 def rank(c : Color) -> -F Integer {
   case c {
-    Red => ret 0,
-    _ => ret 1
+    Red => return 0,
+    _ => return 1
   }
 }
 
 @[ checks ]
 def warm(c : Color) -> -F Integer {
   case c {
-    Red | Green => ret 1,
-    Blue => ret 0
+    Red | Green => return 1,
+    Blue => return 0
   }
 }
 
@@ -36,9 +36,9 @@ data Outer : Type {
 @[ checks ]
 def depth(m : Outer) -> -F Integer {
   case m {
-    Some(Yes(n)) => ret n,
-    Some(No) => ret 0,
-    None => ret 0
+    Some(Yes(n)) => return n,
+    Some(No) => return 0,
+    None => return 0
   }
 }
 

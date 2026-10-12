@@ -4,8 +4,8 @@ data Maybe(a : Type) : Type {
 }
 
 def sum_first() -> -F Integer {
-  run items <- ret ([Some(1), None, Some(3)] : List(Maybe(Integer)));
-  ret 7
+  run items <- pure ([Some(1), None, Some(3)] : List(Maybe(Integer)));
+  return 7
 }
 
 sum_first()

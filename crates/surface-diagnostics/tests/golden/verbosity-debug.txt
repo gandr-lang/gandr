@@ -1,17 +1,17 @@
 error[ShapeMismatch]: expected a thunk type `+U C`
-  ╭▸ force.gandr:2:23
+  ╭▸ force.gandr:2:30
   │
-2 │ def a = thunk { force 1 } ;
-  │         ┬───────┬─────┯──
-  │         │       │     │
-  │         │       │     its type is not of the required shape: found `Integer`
-  │         │       while checking this against `-F Integer`
+2 │ def a = thunk { become force 1 } ;
+  │         ┬──────────────┬─────┯──
+  │         │              │     │
+  │         │              │     its type is not of the required shape: found `Integer`
+  │         │              while checking this against `-F Integer`
   │         while checking this against `+U (-F Integer)`
   │
   ├ note: unsettled `a` states checks owing 0
   ├ class: malformed source
   ├ detail: the rule here requires a thunk type `+U C`
   ├ expression: `1`
-  ├ spans: primary 48..49; reason 34..51; reason 42..49
+  ├ spans: primary 55..56; reason 34..58; reason 49..56
   ├ refusal: Checking(ShapeMismatch { at: Value(ValueId(0)), wanted: Thunk, found: Value(ValueTypeId(3)) })
   ╰ judgements: [Pending { term: Value(ValueId(1)), expected: Present(Value(ValueTypeId(1))) }, Pending { term: Computation(ComputationId(0)), expected: Present(Computation(CompTypeId(0))) }]

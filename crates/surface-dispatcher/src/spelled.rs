@@ -338,7 +338,7 @@ mod tests
         }) = compose(
             &grammar,
             CorpusRoot::Fixture,
-            SourceText::from("def a : +U (-F Integer) ;\ndef a = thunk { force 1 } ;\n"),
+            SourceText::from("def a : +U (-F Integer) ;\ndef a = thunk { become force 1 } ;\n"),
             &mut lowerings,
         )
         else {
