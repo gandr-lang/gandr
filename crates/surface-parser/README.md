@@ -14,6 +14,7 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
   - [An edit is relabeled around itself](#an-edit-is-relabeled-around-itself)
 - [The molder's search stops at its least key](#the-molders-search-stops-at-its-least-key)
   - [A tie the next token refutes runs no window](#a-tie-the-next-token-refutes-runs-no-window)
+  - [A tied bracket is read past its closer](#a-tied-bracket-is-read-past-its-closer)
 - [A closer with a required operand after it is a mid tile](#a-closer-with-a-required-operand-after-it-is-a-mid-tile)
 - [A required tail runs as far as its group yields](#a-required-tail-runs-as-far-as-its-group-yields)
 - [The tree the melder commits](#the-tree-the-melder-commits)
@@ -142,6 +143,15 @@ The same pruning runs on every tie inside a window. A trailing separator ties it
 
 - Alternatives: one-token dry-run windows instead of the grammar check decide too few ties and disagree with the full windows on some; dropping the windows altogether loses the shared-prefix families the windows exist for. Inside a window, a one-token dry-run window per tie costs a dry-run per tied token for what the grammar check decides without one.
 - Reversal: a grammar whose closed tile can be followed, within its form, by a tile that is not one of its same-form successors voids the check; the table's successor relation then has to carry that tile. A form whose hole can be filled by something that opens with a tile no form begins with voids the hole check.
+
+### A tied bracket is read past its closer
+
+`@[` opens a definition's attribute block and the standalone block that decorates a data declaration, and both readings mold the block's contents alike: only the token after `]` tells them apart. A window that counted eight tokens from the opener would end inside a block of eight or more, or on its closer, where the standalone reading is complete and the definition's is not, so a long block before a definition would read as standalone and one before a data declaration as the definition's. When a tied opener is a bracket whose contents and closer fill the count, its window molds through the closer and counts its eight tokens from there; a shorter bracket keeps the window as it is, which already reads past the closer. The closer is the first token at which the brackets after the opener balance, every family counted alike, the convention the form runs split by. A run ends only where every bracket it opened is closed, so a run's lookahead reach is unchanged.
+
+Extending every tied bracket's window changes no tree over the corpus and molds about 1300 more window tokens per pass; extending only the long ones molds 85, and parsing the corpus takes the same time.
+
+- Alternatives: factoring the grammar so that one standalone block precedes every declaration removes the tie, but takes the attributes out of a definition's identity, which [the lowering](../surface-lowering/README.md#attributes-a-closed-registry-and-a-side-table) keys its side table by; a longer fixed window moves the bound without removing it.
+- Reversal: a bracket-free family whose deciding token lies past the window needs a window bounded by the grammar instead of the token count, and that bound replaces this one.
 
 ## A closer with a required operand after it is a mid tile
 

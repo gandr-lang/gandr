@@ -1,0 +1,14 @@
+@[ refuses("UnknownAttribute"), note("a colour, named by its constructors") ]
+data Color : Type {
+  Red : Color;
+  Green : Color;
+}
+
+@[ refuses("UnknownAttribute"), note("the answer, stated before its definition") ]
+def answer : Integer ;
+def answer = 42 ;
+
+@[ refuses("UnknownAttribute"), note("the first of two integers") ]
+def first(x : Integer, y : Integer) -> -F Integer {
+  ret x
+}
