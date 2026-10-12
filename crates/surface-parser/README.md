@@ -17,6 +17,7 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
 - [A closer with a required operand after it is a mid tile](#a-closer-with-a-required-operand-after-it-is-a-mid-tile)
 - [A required tail runs as far as its group yields](#a-required-tail-runs-as-far-as-its-group-yields)
 - [The tree the melder commits](#the-tree-the-melder-commits)
+  - [A comment belongs to the node it describes](#a-comment-belongs-to-the-node-it-describes)
 - [The completion query is a bound](#the-completion-query-is-a-bound)
   - [An open form expects its cheapest closing](#an-open-form-expects-its-cheapest-closing)
 - [Checkpoints](#checkpoints)
@@ -52,6 +53,7 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
 - `Molder`, `candidate_labels`, `CandidateLabel` and `TokenText`: per-token mold choice by least obligation delta, deterministic across runs. Witnesses: `mold::tests::picks_the_obligation_minimum_mold`, `mold::tests::molding_is_deterministic_across_runs`, `mold::tests::unmoldable_token_takes_the_unmolded_path`.
 - `TokenIndex`, `TokenRun`, `Molder::mold_run` and `Molder::form_runs`: a stream molded run by run, each run reading past its end as lookahead, and the runs a stream splits into at its predicted top-level declaration boundaries. Witnesses: `mold::tests::runs_mold_as_the_whole_stream`, `parse::tests::a_source_splits_before_each_declaration_head`.
 - `MeldState`, `MoldedTile`, `TileText`, `SpaceText` and `MeldError`: the total push machine and its commit into a molded tree. Witnesses: `meld::tests::infix_reduces_after_precedence`, `meld::tests::brackets_close_on_the_matching_delimiter`, `meld::tests::a_bracket_before_a_required_tail_keeps_its_form_open`, `meld::tests::a_foreign_source_is_refused_at_commit`, `tests::contracts::arbitrary_real_mold_streams_parse_totally`, `tests::contracts::trace_precedence_climbs_like_figure_23`.
+- Comment placement: `commit` makes each comment a child of the node it describes, and leaves whitespace and a shebang under the root. Witnesses: `meld::tests::each_comment_is_owned_by_the_node_it_describes`, `tests::acceptance::comments_reach_no_digest_and_lose_no_byte`.
 - `Frontier`, `MoldAdmissibility`, `FormContinuation`, `OperandContinuation`, `HeadOperandPresence` and `OpenFormPresence`: the slope-head queries the molder ranks candidates by. Witnesses: `meld::tests::admits_a_form_first_mid_at_a_fresh_slot`, `meld::tests::admits_rejects_a_stray_closer`, `meld::tests::expected_sort_reads_the_open_slot`.
 - `Completion`, `CompletionStatus` and `Expected`: the non-destructive completion query, its material running from the slope head down, and `Completion::innermost`, the material that closes the innermost open form. Witnesses: `meld::tests::finalize_is_non_destructive`, `meld::tests::finalize_charges_a_required_tail_only_when_it_is_absent`, `meld::tests::finalize_closes_each_frontier_at_its_innermost_material`, `closing::tests::each_form_closes_at_its_cheapest_material`, `tests::acceptance::expected_agrees_with_committed_finalize`, `tests::acceptance::expected_completion_names_the_next_tile_or_hole`.
 - `tile_spelling` and `TileSpelling`: how an expected tile is written, its text or the lexical class whose token fills it. Witness: `closing::tests::every_label_a_token_offers_is_spelled_as_it_reads`.
@@ -160,6 +162,21 @@ The alternatives were closing the tail at its first operand, which reads `forall
 ## The tree the melder commits
 
 `commit` replays the emission log into a `gandr-surface-syntax` `TreeBuilder`. A completed form is a `NodeLabel::Meld` named by the mold of the tile that opened it; an operator form is named by its operator's mold; a written tile is a `NodeLabel::Tile` with its mold. A missing operand is convex grout of the slot's sort; a missing closer is a `NodeLabel::GhostClose` when the grammar says every completion of the form ends at one family of closer, and postfix grout otherwise. A token no candidate molds is convex `Item` grout covering that token's bytes, so the tree stays lossless and the bytes reach the node's digest. Layout is a `NodeLabel::Space` leaf. The form a node realises is the grammar's answer for its mold (`Pbg::named_kind`), so this crate restates no list of forms.
+
+### A comment belongs to the node it describes
+
+The parser decides once which node owns each comment, and every reader inherits the decision from the tree: a formatter, a refactoring or a comment-aware check finds a comment among its owner's children instead of guessing ownership from positions. The rule is the fixed one Roslyn, rust-analyzer and Biome use, read against the innermost form whose span contains the comment (the root when none does) and that form's children on either side of it:
+
+| Comment position | Owner |
+| ---------------- | ----- |
+| Own line(s) directly above a node, no blank line between | that node, leading |
+| Same line, after a node | that node, trailing |
+| Inside an empty block or bracket | the block, dangling |
+| Separated by a blank line | the enclosing node, standalone |
+
+A leaf holds no children, so a comment written against an identifier, a number or one of a form's own tiles belongs to that form. Only `//` and `/* */` comments move; whitespace and a shebang stay root children. Nothing else changes: the content digest skips layout, so the root digest, every cache key and every identity are those the tree had with its comments at the root, and the leaves, read in offset order, still spell the source byte for byte. The commit stages every leaf before any interior, since an owner can be reduced before a comment that trails it is pushed.
+
+The consumers that read a form's children were audited for forms holding layout. The lowering skips `NodeLabel::Space` wherever it reads a form's pieces, operands and repairs (`read_pieces`, `shape_of`, the repair and nesting walks); its ownership, scope and payload marks visit every child whatever its label, and its minting plans nothing for a layout leaf, so a comment inside a declaration is visited and left alone. The highlighter classifies every position whatever its parent and sorts its spans, so semantic tokens and the terminal face are unchanged. The session, the language server and the REPL reach the tree only through those two. No consumer assumed layout-free forms, so none needed a change.
 
 ## The completion query is a bound
 

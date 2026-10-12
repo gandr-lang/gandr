@@ -970,6 +970,18 @@ enum EmitDigest
     Unfolded,
 }
 
+/// What the layout between two nodes holds, as comment placement reads it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Gap
+{
+    /// No line break: the two stand on one line.
+    Inline,
+    /// Line breaks, but no blank line.
+    Lines,
+    /// A blank line.
+    Blank,
+}
+
 /// Where a folded digest stands in its log's [`FoldedDigests`] table, one
 /// past the index, so a slot that names no digest costs no more than one
 /// that names one.
@@ -1384,9 +1396,9 @@ pub struct MeldState<'pbg>
     barriers: Vec<usize>,
     /// The obligation buffer, in accumulation order.
     obligations: Vec<ObligationInstance>,
-    /// Floating layout-space tokens, included as root children at commit for
-    /// losslessness (space is skipped by the merkle hash, so tree position is
-    /// not identity-bearing).
+    /// Floating layout-space tokens: root children at commit for losslessness,
+    /// save a comment, which joins the node it describes (space is skipped by
+    /// the merkle hash, so tree position is not identity-bearing).
     spaces: Vec<EmitId>,
     /// The slope edits made while a [`Mark`] is live, oldest first.
     edits: Vec<SlopeEdit>,
@@ -4545,6 +4557,7 @@ impl<'pbg> MeldState<'pbg>
         self.collapse(StackFloor::from(StackIndex::from(0)));
         let obligations = self.obligations.clone();
         let root = self.wrap_root();
+        self.attach_comments(root);
         let tree = self.build_tree(source, root)?;
         Ok((tree, obligations))
     }
@@ -4620,8 +4633,249 @@ impl<'pbg> MeldState<'pbg>
         }
     }
 
+    /// Return the source span of an emission-log entry (the empty span at
+    /// zero if out of range).
+    ///
+    /// # Specification
+    /// trivial.
+    fn emit_span(
+        &self,
+        id: EmitId,
+    ) -> SourceSpan
+    {
+        let entry = usize::try_from(id.0)
+            .ok()
+            .and_then(|index| self.emit.get(index));
+        match entry {
+            | Some(&EmitOp::Token { start, end, .. } | &EmitOp::Interior { start, end, .. }) => {
+                SourceSpan::new(SourceOffset::from(start), SourceOffset::from(end))
+            },
+            | None => SourceSpan::point(SourceOffset::from(0)),
+        }
+    }
+
+    /// Return the children of an interior emission (none for a leaf or an
+    /// unavailable identity).
+    ///
+    /// # Specification
+    /// trivial.
+    fn emit_children(
+        &self,
+        id: EmitId,
+    ) -> &[EmitId]
+    {
+        match usize::try_from(id.0)
+            .ok()
+            .and_then(|index| self.emit.get(index))
+        {
+            | Some(&EmitOp::Interior { ref children, .. }) => children,
+            | Some(&EmitOp::Token { .. }) | None => &[],
+        }
+    }
+
+    /// Move each comment among `root`'s children into the node that owns it,
+    /// as [`comment_owner`](Self::comment_owner) decides.
+    ///
+    /// # Specification
+    /// - requires: `root` is the interior [`wrap_root`](Self::wrap_root) just
+    ///   emitted, whose children are in source order.
+    /// - ensures: every emission stays the child of exactly one interior; a
+    ///   comment owned by a node other than the root leaves the root's children
+    ///   and joins its owner's at its source position; whitespace, shebangs and
+    ///   the root's own comments stay where they were. No span, label or digest
+    ///   changes, since layout never reaches a digest.
+    /// - provides: the comment placement every tree reader inherits.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: one pass over the root's children, descending only into the
+    ///   forms that contain a comment.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a leading, a trailing, a dangling and a standalone
+    ///   comment are asserted under their owners, with reconstruction and every
+    ///   digest unchanged over the corpus. Leaving a comment at the root,
+    ///   inserting it out of order or losing it changes an owner or the
+    ///   reconstructed source.
+    /// - witness: `meld::tests::each_comment_is_owned_by_the_node_it_describes`
+    /// - witness: `tests::acceptance::comments_reach_no_digest_and_lose_no_byte`
+    #[spec(captures: before = self.emit.iter().map(|op| match *op { EmitOp::Token { .. } => 0, EmitOp::Interior { ref children, .. } => children.len() }).sum::<usize>(),
+        ensures: |_| self.emit.iter().map(|op| match *op { EmitOp::Token { .. } => 0, EmitOp::Interior { ref children, .. } => children.len() }).sum::<usize>() == before)]
+    fn attach_comments(
+        &mut self,
+        root: EmitId,
+    )
+    {
+        let source = self.source.as_str();
+        let text = |span: SourceSpan| {
+            let start = usize::try_from(span.start.0).unwrap_or(usize::MAX);
+            let end = usize::try_from(span.end.0).unwrap_or(usize::MAX);
+            source.get(start .. end).unwrap_or_default()
+        };
+        let is_comment = |id: EmitId| {
+            let written = text(self.emit_span(id));
+            written.starts_with("//") || written.starts_with("/*")
+        };
+        if !self.spaces.iter().any(|&space| is_comment(space)) {
+            return;
+        }
+        let mut layout: Vec<EmitId> = Vec::new();
+        let mut top: Vec<EmitId> = Vec::new();
+        for &child in self.emit_children(root) {
+            match usize::try_from(child.0)
+                .ok()
+                .and_then(|index| self.emit.get(index))
+            {
+                | Some(&EmitOp::Token {
+                    label: NodeLabel::Space,
+                    ..
+                }) => layout.push(child),
+                | Some(_) | None => top.push(child),
+            }
+        }
+        let mut moves: Vec<(EmitId, EmitId)> = Vec::new();
+        for &comment in &layout {
+            if !is_comment(comment) {
+                continue;
+            }
+            let owner = self.comment_owner(root, &top, &layout, comment);
+            if owner != root {
+                moves.push((owner, comment));
+            }
+        }
+        for &(owner, comment) in &moves {
+            let at = self.emit_start(comment);
+            let position = self
+                .emit_children(owner)
+                .partition_point(|&child| self.emit_start(child) <= at);
+            if let Some(&mut EmitOp::Interior {
+                ref mut children, ..
+            }) = usize::try_from(owner.0)
+                .ok()
+                .and_then(|index| self.emit.get_mut(index))
+            {
+                children.insert(position, comment);
+            }
+        }
+        let mut moved: Vec<EmitId> = moves.into_iter().map(|(_, comment)| comment).collect();
+        moved.sort_unstable();
+        if let Some(&mut EmitOp::Interior {
+            ref mut children, ..
+        }) = usize::try_from(root.0)
+            .ok()
+            .and_then(|index| self.emit.get_mut(index))
+        {
+            children.retain(|child| moved.binary_search(child).is_err());
+        }
+    }
+
+    /// The node that owns `comment`: the form it is written against, or the
+    /// innermost form enclosing it.
+    ///
+    /// `top` holds `root`'s children other than layout and `layout` its
+    /// layout, each in source order.
+    ///
+    /// # Specification
+    /// - requires: `top` and `layout` partition `root`'s children in source
+    ///   order.
+    /// - ensures: with the enclosing node the innermost interior whose span
+    ///   contains the comment (the root when none does), and its neighbours the
+    ///   children of that node that end before the comment and start after it:
+    ///   the neighbour before when nothing but spaces separates it from the
+    ///   comment on its line (trailing); otherwise the neighbour after when no
+    ///   blank line separates the comment from it (leading); otherwise the
+    ///   enclosing node, which also owns a comment in an empty block or bracket
+    ///   (dangling) and one set apart by a blank line (standalone). A neighbour
+    ///   that is a leaf holds no children, so the enclosing node owns a comment
+    ///   written against a leaf.
+    /// - provides: the owner [`attach_comments`](Self::attach_comments) moves a
+    ///   comment to.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the four cases and a comment beside a leaf are each
+    ///   asserted at their owner. Reading the neighbour on the wrong side,
+    ///   treating a blank line as a line break or attaching to a leaf changes
+    ///   an owner.
+    /// - witness: `meld::tests::each_comment_is_owned_by_the_node_it_describes`
+    #[spec(ensures: |ret| ret == root || matches!(usize::try_from(ret.0).ok().and_then(|index| self.emit.get(index)), Some(EmitOp::Interior { .. })))]
+    fn comment_owner(
+        &self,
+        root: EmitId,
+        top: &[EmitId],
+        layout: &[EmitId],
+        comment: EmitId,
+    ) -> EmitId
+    {
+        let span = self.emit_span(comment);
+        let is_interior = |id: EmitId| {
+            matches!(
+                usize::try_from(id.0)
+                    .ok()
+                    .and_then(|index| self.emit.get(index)),
+                Some(EmitOp::Interior { .. })
+            )
+        };
+        let mut enclosing = root;
+        let mut siblings = top;
+        let mut next = siblings.partition_point(|&child| self.emit_span(child).end <= span.start);
+        while let Some(&candidate) = siblings.get(next) {
+            let around = self.emit_span(candidate);
+            if !is_interior(candidate) || around.start > span.start || around.end < span.end {
+                break;
+            }
+            enclosing = candidate;
+            siblings = self.emit_children(candidate);
+            next = siblings.partition_point(|&child| self.emit_span(child).end <= span.start);
+        }
+        let gap = |from: SourceOffset, to: SourceOffset| {
+            let first = layout.partition_point(|&space| self.emit_start(space) < from);
+            let mut seen = Gap::Inline;
+            for &space in layout.get(first ..).unwrap_or_default() {
+                let within = self.emit_span(space);
+                if within.start >= to {
+                    break;
+                }
+                let start = usize::try_from(within.start.0).unwrap_or(usize::MAX);
+                let end = usize::try_from(within.end.0).unwrap_or(usize::MAX);
+                let written = self.source.get(start .. end).unwrap_or_default();
+                let breaks = written.matches('\n').count();
+                let blank = breaks > 1 && written.trim().is_empty();
+                seen = match (seen, breaks, blank) {
+                    | (Gap::Blank, ..) | (_, _, true) => Gap::Blank,
+                    | (Gap::Inline, 0, false) => Gap::Inline,
+                    | (Gap::Inline | Gap::Lines, ..) => Gap::Lines,
+                };
+            }
+            seen
+        };
+        let owner = |neighbour: EmitId| {
+            if is_interior(neighbour) {
+                neighbour
+            }
+            else {
+                enclosing
+            }
+        };
+        if let Some(&before) = next.checked_sub(1).and_then(|index| siblings.get(index))
+            && gap(self.emit_span(before).end, span.start) == Gap::Inline
+        {
+            return owner(before);
+        }
+        if let Some(&after) = siblings.get(next)
+            && gap(span.end, self.emit_span(after).start) != Gap::Blank
+        {
+            return owner(after);
+        }
+        enclosing
+    }
+
     /// Replay the emission log into a checked [`TreeBuilder`] over `source`
     /// and finish at `root`.
+    ///
+    /// Every leaf is staged before any interior, so an interior may own a leaf
+    /// logged after it, as a comment its owner was reduced before is; an
+    /// interior owns only interiors logged before it.
     ///
     /// # Specification
     /// - requires: `source` is the assembled text, which
@@ -4630,20 +4884,22 @@ impl<'pbg> MeldState<'pbg>
     ///   reachable from it is a node of the tree; an entry with a folded digest
     ///   is staged under it, every other is folded by the builder.
     /// - fails: the builder refuses a node, or the log names an id outside
-    ///   itself.
+    ///   itself or an interior not yet logged.
     /// - panics: none.
     ///
     /// # Errors
     /// - [`MeldError::Build`] when the tree builder refuses a node.
-    /// - [`MeldError::Corrupt`] when the log names an id outside itself.
+    /// - [`MeldError::Corrupt`] when the log names an id outside itself or an
+    ///   interior not yet logged.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — child order deliberately differing from source order,
     ///   a forward child, an invalid root and an inverted span expose the
-    ///   borrowed source and precise build/corruption errors. Sorting edges,
-    ///   accepting forward references or losing span validation changes the
-    ///   tree or error.
+    ///   borrowed source and precise build/corruption errors; a comment logged
+    ///   after its owner reaches the tree under it. Sorting edges, accepting a
+    ///   forward interior or losing span validation changes the tree or error.
     /// - witness: `meld::tests::emission_preserves_byte_spans_child_order_and_errors`
+    /// - witness: `meld::tests::each_comment_is_owned_by_the_node_it_describes`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |tree| tree.source() == source && tree.grammar() == self.pbg.fingerprint() && tree.node(tree.root()).is_some()))]
     fn build_tree<'source>(
         &self,
@@ -4652,39 +4908,57 @@ impl<'pbg> MeldState<'pbg>
     ) -> Result<SyntaxTree<'source>, MeldError>
     {
         let mut builder = TreeBuilder::new(source, self.pbg.fingerprint())?;
-        let mut mapping: Vec<StagedId> = Vec::with_capacity(self.emit.len());
+        let mut mapping: Vec<Option<StagedId>> = alloc::vec![None; self.emit.len()];
+        let folded = |position: usize| {
+            u32::try_from(position).map_or(EmitDigest::Unfolded, |id| self.digests.at(EmitId(id)))
+        };
+        for ((position, op), slot) in self.emit.iter().enumerate().zip(mapping.iter_mut()) {
+            if let EmitOp::Token { label, start, end } = *op {
+                let span = SourceSpan::new(SourceOffset::from(start), SourceOffset::from(end))
+                    .byte_span()?;
+                *slot = Some(Self::stage(
+                    &mut builder,
+                    folded(position),
+                    label,
+                    span,
+                    &[],
+                )?);
+            }
+        }
         let mut child_nodes: Vec<StagedId> = Vec::new();
         for (position, op) in self.emit.iter().enumerate() {
-            let folded = u32::try_from(position)
-                .map_or(EmitDigest::Unfolded, |id| self.digests.at(EmitId(id)));
-            let node = match *op {
-                | EmitOp::Token { label, start, end } => {
-                    let span = SourceSpan::new(SourceOffset::from(start), SourceOffset::from(end))
-                        .byte_span()?;
-                    Self::stage(&mut builder, folded, label, span, &[])?
-                },
-                | EmitOp::Interior {
-                    label,
-                    start,
-                    end,
-                    ref children,
-                } => {
-                    child_nodes.clear();
-                    for child in children {
-                        let index =
-                            usize::try_from(child.0).map_err(|_error| MeldError::Corrupt)?;
-                        let mapped = mapping.get(index).copied().ok_or(MeldError::Corrupt)?;
-                        child_nodes.push(mapped);
-                    }
-                    let span = SourceSpan::new(SourceOffset::from(start), SourceOffset::from(end))
-                        .byte_span()?;
-                    Self::stage(&mut builder, folded, label, span, &child_nodes)?
-                },
+            let EmitOp::Interior {
+                label,
+                start,
+                end,
+                ref children,
+            } = *op
+            else {
+                continue;
             };
-            mapping.push(node);
+            child_nodes.clear();
+            for child in children {
+                let index = usize::try_from(child.0).map_err(|_error| MeldError::Corrupt)?;
+                let mapped = mapping
+                    .get(index)
+                    .copied()
+                    .flatten()
+                    .ok_or(MeldError::Corrupt)?;
+                child_nodes.push(mapped);
+            }
+            let span =
+                SourceSpan::new(SourceOffset::from(start), SourceOffset::from(end)).byte_span()?;
+            let node = Self::stage(&mut builder, folded(position), label, span, &child_nodes)?;
+            if let Some(slot) = mapping.get_mut(position) {
+                *slot = Some(node);
+            }
         }
         let root_index = usize::try_from(root.0).map_err(|_error| MeldError::Corrupt)?;
-        let root_node = mapping.get(root_index).copied().ok_or(MeldError::Corrupt)?;
+        let root_node = mapping
+            .get(root_index)
+            .copied()
+            .flatten()
+            .ok_or(MeldError::Corrupt)?;
         let tree = builder.finish(root_node)?;
         Ok(tree)
     }
@@ -5123,8 +5397,9 @@ impl<'pbg> MeldState<'pbg>
     /// Trivia (whitespace, comments, shebangs) carry no syntactic weight — the
     /// content digest skips [`NodeLabel::Space`] — but the batch driver records
     /// them so the committed [`SyntaxTree`] reconstructs the source
-    /// byte-for-byte. Space tokens float free of the slope and become root
-    /// children at [`commit`](MeldState::commit).
+    /// byte-for-byte. Space tokens float free of the slope; at
+    /// [`commit`](MeldState::commit) whitespace and shebangs become root
+    /// children and each comment a child of the node it describes.
     ///
     /// # Specification
     /// - requires: `text` is the trivia's exact surface bytes, in source order.
@@ -9664,6 +9939,55 @@ mod tests
             spans_of("def g : +U[1] C * D ;", "u_type")?,
             "a bridge binds tighter than the product, which takes it as an operand"
         );
+        Ok(())
+    }
+
+    /// Each comment is a child of the node it describes: the form below it
+    /// with no blank line between, the form it trails on one line, the empty
+    /// bracket it stands in, the root when a blank line sets it apart, and
+    /// the form of a leaf it is written against.
+    #[test]
+    fn each_comment_is_owned_by_the_node_it_describes() -> Result<(), Box<dyn Error>>
+    {
+        let pbg = built_in()?;
+        let source = "// lead\ndef x = 1; // trail\n\n// alone\n\n// first\n// second\ndef w = 2;\n\
+                      def f(x: Integer) -> -F Integer {\n  // above\n  ret x\n}\n\
+                      def y = [ /* empty */ ];\ndef z = 1 /* one */;\n";
+        let tree = crate::parse::parse(&pbg, SourceText::from(source))?.into_tree();
+        assert_eq!(crate::testing::reconstruct(&tree), source);
+        let owner_of = |comment: &str| -> Option<String> {
+            let at = tree.positions().find(|&position| {
+                label(&tree, position) == Some(NodeLabel::Space)
+                    && tree
+                        .fragment(position)
+                        .is_some_and(|text| <&str>::from(text) == comment)
+            })?;
+            let parent = tree
+                .positions()
+                .find(|&position| children(&tree, position).contains(&at))?;
+            match label(&tree, parent)? {
+                | NodeLabel::Wald => Some("the root".to_owned()),
+                | _ => tree
+                    .fragment(parent)
+                    .map(|text| <&str>::from(text).to_owned()),
+            }
+        };
+        for (comment, owner, case) in [
+            ("// lead", "def x = 1;", "leading"),
+            ("// trail", "def x = 1;", "trailing"),
+            ("// alone", "the root", "standalone"),
+            ("// first", "def w = 2;", "leading, stacked"),
+            ("// second", "def w = 2;", "leading"),
+            ("// above", "ret x", "leading, inside a block"),
+            ("/* empty */", "[ /* empty */ ]", "dangling"),
+            ("/* one */", "def z = 1 /* one */;", "beside a leaf"),
+        ] {
+            assert_eq!(
+                Some(owner.to_owned()),
+                owner_of(comment),
+                "`{comment}` is {case}"
+            );
+        }
         Ok(())
     }
 
