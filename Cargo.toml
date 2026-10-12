@@ -204,13 +204,14 @@ features = ["std"]
 version = "1.5.1"
 default-features = false
 
-# The hasher behind the grammar's label index: a fixed-seed folded-multiply
-# hash, deterministic across runs. The choice and its reversal are in the
-# grammar's README.
+# The hasher behind the grammar's label index and the syntax tree builder's
+# leaf-digest cache: a fixed-seed folded-multiply hash, deterministic across
+# runs. The choices and their reversals are in the consumers' READMEs.
 # features:
 # - none: the fixed-seed state needs neither `std` nor a random seed
 # consumers:
 # - surface-grammar
+# - surface-syntax
 [workspace.dependencies.foldhash]
 version = "0.2.0"
 default-features = false

@@ -11,11 +11,13 @@ keywords = ["arena", "concrete-syntax-tree", "content-addressing", "gandr", "par
 categories = ["data-structures", "parser-implementations"]
 publish.workspace = true
 
-# `blake3` computes content-derived node identity. The pinned anodized
-# facade supplies core-only specification helpers; logic/BigInt stays disabled.
+# `blake3` computes content-derived node identity; `foldhash` indexes the
+# builder's leaf-digest cache. The pinned anodized facade supplies core-only
+# specification helpers; logic/BigInt stays disabled.
 [dependencies]
 anodized.workspace = true
 blake3.workspace = true
+foldhash.workspace = true
 
 [lints]
 workspace = true

@@ -37,10 +37,12 @@
 
 use alloc::vec::Vec;
 use core::fmt;
+use core::hash::BuildHasher as _;
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering as AtomicOrdering;
 
 use anodized::spec;
+use foldhash::fast::FixedState;
 
 use crate::digest::NodeDigest;
 use crate::digest::digest_of;
@@ -48,6 +50,7 @@ use crate::error::SyntaxError;
 use crate::label::NodeLabel;
 use crate::mold::GrammarFingerprint;
 use crate::span::ByteSpan;
+use crate::span::SourceFragment;
 use crate::span::SourceText;
 use crate::tree::ChildCount;
 use crate::tree::Node;
@@ -134,6 +137,158 @@ impl BuilderIdCounter
             })
             .map(BuilderId)
             .map_err(|_current| SyntaxError::BuilderIdExhausted)
+    }
+}
+
+/// Source bytes per slot of a builder's leaf cache.
+const SOURCE_BYTES_PER_LEAF_SLOT: usize = 8_usize;
+
+/// The fewest slots a builder's leaf cache holds, so a short source still
+/// keeps its keywords, punctuation and layout.
+const MIN_LEAF_SLOTS: usize = 64_usize;
+
+/// The most slots a builder's leaf cache holds, so a long source's cache
+/// stays a few hundred kilobytes.
+const MAX_LEAF_SLOTS: usize = 4096_usize;
+
+/// One leaf a builder has folded: its label, its text and its digest.
+#[derive(Clone, Copy, Debug)]
+struct CachedLeaf<'source>
+{
+    /// The leaf's label.
+    label: NodeLabel,
+    /// The leaf's text.
+    text: SourceFragment<'source>,
+    /// `digest_of(label, text, &[])`.
+    digest: NodeDigest,
+}
+
+/// The leaf digests a builder has folded, direct-mapped by label and text.
+///
+/// A slot holds the last leaf whose key hashed to it, and a leaf that finds
+/// another there replaces it, so a lookup costs one hash of the key and one
+/// comparison however the keys collide: source text chosen to collide makes
+/// every lookup a miss, which hashes the leaf as a builder without the cache
+/// would.
+///
+/// # Specification
+/// - ensures: every occupied slot holds a leaf's label and text with that
+///   leaf's digest; the slot count is a power of two.
+///
+/// # Adequacy
+/// - hypothesis: L3 — leaves that repeat, and more distinct leaves than the
+///   cache has slots, each read back the digest folded without the cache.
+/// - witness: `build::tests::a_cached_leaf_digest_is_the_folded_one`
+#[spec(maintains: self.slots.len().is_power_of_two())]
+#[repr(transparent)]
+#[derive(Debug)]
+struct LeafDigests<'source>
+{
+    /// The slots, a power of two of them, indexed by the low bits of the
+    /// key's hash.
+    slots: Vec<Option<CachedLeaf<'source>>>,
+}
+
+/// The position of one slot of a [`LeafDigests`].
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct LeafSlot(usize);
+
+impl<'source> LeafDigests<'source>
+{
+    /// An empty cache sized to `source`: one slot per
+    /// [`SOURCE_BYTES_PER_LEAF_SLOT`] bytes, rounded up to a power of two
+    /// between [`MIN_LEAF_SLOTS`] and [`MAX_LEAF_SLOTS`].
+    ///
+    /// # Specification
+    /// - ensures: every slot is empty, and there are a power of two of them.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a source shorter than the minimum and one with more
+    ///   distinct leaves than slots both fold every leaf as without the cache.
+    /// - witness: `build::tests::a_cached_leaf_digest_is_the_folded_one`
+    #[inline]
+    #[spec(ensures: |ret| ret.slots.len().is_power_of_two() && ret.slots.iter().all(Option::is_none))]
+    fn new(source: SourceText<'source>) -> Self
+    {
+        let wanted = <&str>::from(source)
+            .len()
+            .div_ceil(SOURCE_BYTES_PER_LEAF_SLOT)
+            .clamp(MIN_LEAF_SLOTS, MAX_LEAF_SLOTS)
+            .next_power_of_two();
+        Self {
+            slots: alloc::vec![None; wanted],
+        }
+    }
+
+    /// The slot a leaf labelled `label` over `text` maps to.
+    ///
+    /// # Specification
+    /// - ensures: a position below the slot count, the same for the same label
+    ///   and text.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — more distinct leaves than slots map into range and
+    ///   repeated leaves find the slot they were entered in.
+    /// - witness: `build::tests::a_cached_leaf_digest_is_the_folded_one`
+    #[inline]
+    #[spec(ensures: |ret| ret.0 < self.slots.len())]
+    fn slot_of(
+        &self,
+        label: NodeLabel,
+        text: SourceFragment<'source>,
+    ) -> LeafSlot
+    {
+        let hash = FixedState::default().hash_one((label, text));
+        // The slot count is a power of two no larger than `MAX_LEAF_SLOTS`, so
+        // the low bits of the hash index it.
+        let low = usize::try_from(hash & u64::from(u16::MAX)).unwrap_or_default();
+        LeafSlot(low & self.slots.len().saturating_sub(1))
+    }
+
+    /// The digest of a leaf labelled `label` over `text`, read from the cache
+    /// when the leaf's slot holds it and folded and entered otherwise.
+    ///
+    /// # Specification
+    /// - ensures: returns `digest_of(label, text, &[])`, and leaves the leaf's
+    ///   slot holding the leaf with that digest; the executable clause checks
+    ///   the slot, since checking the digest would hash the leaf again.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — leaves that repeat, and more distinct leaves than the
+    ///   cache has slots, so that slots are shared and replaced, each read back
+    ///   the digest folded without the cache, under two labels over the same
+    ///   text.
+    /// - witness: `build::tests::a_cached_leaf_digest_is_the_folded_one`
+    #[inline]
+    #[spec(ensures: |ret| self.slots.get(self.slot_of(label, text).0).is_some_and(|slot| slot.is_some_and(|leaf| leaf.label == label && leaf.text == text && leaf.digest == ret)))]
+    fn digest(
+        &mut self,
+        label: NodeLabel,
+        text: SourceFragment<'source>,
+    ) -> NodeDigest
+    {
+        let at = self.slot_of(label, text);
+        let Some(slot) = self.slots.get_mut(at.0)
+        else {
+            return digest_of(label, text, &[]);
+        };
+        if let Some(leaf) = *slot
+            && leaf.label == label
+            && leaf.text == text
+        {
+            return leaf.digest;
+        }
+        let digest = digest_of(label, text, &[]);
+        *slot = Some(CachedLeaf {
+            label,
+            text,
+            digest,
+        });
+        digest
     }
 }
 
@@ -298,6 +453,9 @@ pub struct TreeBuilder<'source>
     /// kept across calls: a fold allocates only when it has more significant
     /// children than every fold before it.
     child_digests: Vec<NodeDigest>,
+    /// The digests of the leaves staged so far, so a leaf whose label and text
+    /// repeat an earlier one is not hashed again.
+    leaves: LeafDigests<'source>,
 }
 
 impl<'source> TreeBuilder<'source>
@@ -348,6 +506,7 @@ impl<'source> TreeBuilder<'source>
             staged: Vec::new(),
             edges: Vec::new(),
             child_digests: Vec::new(),
+            leaves: LeafDigests::new(source),
         })
     }
 
@@ -437,7 +596,8 @@ impl<'source> TreeBuilder<'source>
     ///   and twice within one call, each asserted as an exact variant with its
     ///   exact payload; a parent over layout and the same parent without it
     ///   asserted one digest; the fold is separated by the digest agreements
-    ///   and disagreements the layout witnesses assert.
+    ///   and disagreements the layout witnesses assert, and a leaf's digest by
+    ///   leaves that repeat and leaves that share one cache slot.
     /// - witness: `build::tests::a_span_outside_the_source_is_refused_at_mint`
     /// - witness: `build::tests::a_span_splitting_a_character_is_refused_at_mint`
     /// - witness: `build::tests::an_unknown_staged_node_is_refused`
@@ -446,6 +606,7 @@ impl<'source> TreeBuilder<'source>
     /// - witness: `build::tests::a_child_listed_twice_in_one_call_is_refused`
     /// - witness: `build::tests::a_refusal_leaves_the_builder_at_the_failure_point`
     /// - witness: `build::tests::layout_never_reaches_a_parent_digest`
+    /// - witness: `build::tests::a_cached_leaf_digest_is_the_folded_one`
     #[inline]
     #[spec(
         captures: [next_position = self.staged.len(), next_edge = self.edges.len()],
@@ -469,6 +630,10 @@ impl<'source> TreeBuilder<'source>
     ) -> Result<StagedId, SyntaxError>
     {
         let fragment = self.source.fragment(span)?;
+        if children.is_empty() {
+            let digest = self.leaves.digest(label, fragment);
+            return Ok(self.stage(label, span, children, digest));
+        }
         // The scratch leaves the builder while `attach` borrows it, and returns
         // whether or not a child is refused.
         let mut digests = core::mem::take(&mut self.child_digests);
@@ -1318,6 +1483,44 @@ mod tests
             Some(SourceFragment::from("  ")),
             "covering exactly the bytes it was staged over"
         );
+    }
+
+    #[test]
+    fn a_cached_leaf_digest_is_the_folded_one()
+    {
+        // A thousand distinct three-digit words, written twice, each staged
+        // under two labels: two thousand distinct leaves, each repeated, over
+        // a cache of 1024 slots, so leaves both hit and share and replace
+        // slots.
+        let mut text = alloc::string::String::new();
+        for _ in 0_u8 .. 2_u8 {
+            for word in 0_u16 .. 1000_u16 {
+                core::fmt::Write::write_fmt(&mut text, format_args!("{word:03}")).unwrap();
+            }
+        }
+        let source = SourceText::from(text.as_str());
+        let mut builder = TreeBuilder::new(source, grammar()).unwrap();
+        assert_eq!(builder.leaves.slots.len(), 1024, "the fixture's cache size");
+        let mut leaves = Vec::new();
+        for start in (0 .. text.len()).step_by(3) {
+            let at = span(ByteOffset::from(start), ByteOffset::from(start + 3));
+            leaves.push(builder.node(word(), at, &[]).unwrap());
+            leaves.push(builder.node(NodeLabel::Space, at, &[]).unwrap());
+        }
+        let whole = span(ByteOffset::from(0_usize), ByteOffset::from(text.len()));
+        let root = builder.node(NodeLabel::Wald, whole, &leaves).unwrap();
+        let tree = builder.finish(root).unwrap();
+        let mut checked = 0_usize;
+        for leaf in tree.children(tree.root()) {
+            let node = tree.node(leaf).unwrap();
+            assert_eq!(
+                node.digest(),
+                digest_of(node.label(), tree.fragment(leaf).unwrap(), &[]),
+                "a leaf's digest is the one folded without the cache"
+            );
+            checked += 1;
+        }
+        assert_eq!(checked, 4000, "every leaf was checked");
     }
 
     #[test]
