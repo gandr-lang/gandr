@@ -891,6 +891,13 @@ impl HornClause
     ///   matching, wrong comparison direction and an exclusive equality
     ///   boundary.
     /// - witness: `horn::tests::clause_gain_and_subsumption_use_the_correct_extrema`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body searches the body atoms once, as the check does"
+        )
+    )]
     #[spec(ensures: |ret| bool::from(ret) == self.body.iter().any(|atom|
         atom.variable() == self.head.variable() && atom.offset() >= self.head.offset()))]
     pub fn is_trivial(&self) -> ClauseTriviality
@@ -938,6 +945,13 @@ impl HornClause
     ///   its minimum distinguish choosing the maximum, reversing subtraction
     ///   and losing the zero floor through exact growth values.
     /// - witness: `horn::tests::clause_gain_and_subsumption_use_the_correct_extrema`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body reads every body atom's offset once, as the check does"
+        )
+    )]
     #[spec(ensures: |ret| u128::from(ret) == self.body.iter().map(|atom|
         u128::from(self.head.offset()).saturating_sub(u128::from(atom.offset())))
         .max().unwrap_or(0))]
@@ -984,6 +998,13 @@ impl ClauseSystem
     ///   exposes choosing a smaller gain through the exact finite model.
     /// - witness: `horn::tests::clause_gain_and_subsumption_use_the_correct_extrema`
     /// - witness: `horn::tests::paper_example_reaches_the_published_fixpoint`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check repeats the body's one pass over the clauses"
+        )
+    )]
     #[spec(ensures: |ret| ret == self.clauses.iter().map(HornClause::gain)
         .max().unwrap_or(MaxGain::ZERO))]
     pub fn maxgain(&self) -> MaxGain
@@ -1012,6 +1033,13 @@ impl ClauseSystem
     ///   coverage.
     /// - witness: `horn::tests::clause_gain_and_subsumption_use_the_correct_extrema`
     /// - witness: `horn::tests::paper_loop_variant_diverges_everywhere`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check repeats the body's one pass over every body atom"
+        )
+    )]
     #[spec(ensures: |ret| ret == self.clauses.iter().flat_map(|clause|
         clause.body().iter().map(|atom| atom.offset())).max().unwrap_or(HornOffset::ZERO))]
     pub fn max_body_offset(&self) -> HornOffset

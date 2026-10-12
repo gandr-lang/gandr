@@ -377,6 +377,13 @@ impl RecordTree
     /// - witness: `tests::build::a_large_tree_has_an_internal_root`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body reads every leaf's identity once, as the check does"
+        )
+    )]
     #[spec(ensures: |ret| if self.leaves.is_empty() {
         ret.as_ref() == [self.root_node.identity()].as_slice()
     } else {
@@ -419,6 +426,13 @@ impl RecordTree
     /// - witness: `tests::build::a_large_tree_has_an_internal_root`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body copies every node once; the check compares each once"
+        )
+    )]
     #[spec(ensures: |ret| ret.iter().eq(core::iter::once(&self.root_node)
         .chain(self.leaves.iter().map(|leaf| &leaf.node))))]
     pub fn nodes(&self) -> Box<[ProofNode]>
@@ -462,6 +476,13 @@ impl RecordTree
     ///   coverage.
     /// - witness: `tests::store::every_node_of_a_tree_loads_back`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body inserts every node into the store; the check loads each back once"
+        )
+    )]
     #[spec(ensures: |ret| ret.is_err()
         || (store.load(self.root_node.identity()).is_ok()
             && self
@@ -503,11 +524,12 @@ impl RecordTree
     /// - hypothesis: L1 over every key of a fifty-record tree and absent keys
     ///   below, between and above it observes exact values or absence. It
     ///   distinguishes wrong neighbours, value substitution and an invented
-    ///   match.
+    ///   match. The predicate reads the record the logarithmic search names,
+    ///   whose own specification compares it with a scan.
     /// - witness: `tests::build::lookup_and_range_answer_from_the_built_tree`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret == self.records.iter().find(|record| record.key() == key).map(Record::value))]
+    #[spec(ensures: |ret| ret == find_record(self.records.as_ref(), key).map(Record::value))]
     pub fn lookup(
         &self,
         key: RecordKey<'_>,
@@ -534,6 +556,13 @@ impl RecordTree
     /// - witness: `tests::build::lookup_and_range_answer_from_the_built_tree`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body scans the records up to the range's end, every record for an unbounded range; the check scans them once"
+        )
+    )]
     #[spec(ensures: |ret| ret.iter().eq(self.records.iter().filter(|record|
         range.contains(record.key()) == crate::record::RangeContainment::Inside)))]
     pub fn range(
@@ -630,6 +659,13 @@ impl RecordTree
     /// - witness: `tests::membership::an_absent_key_has_no_membership_proof`
     /// - witness: `tests::membership::a_key_of_a_single_leaf_tree_proves`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check verifies the proof the body built, one authentication of the nodes the body copied into it"
+        )
+    )]
     #[spec(ensures: |ret| match find_record(self.records.as_ref(), key) {
         | Some(record) => ret.as_ref().is_ok_and(|proof|
             proof.verify(&self.root, key, record.value()).is_ok()),
@@ -692,6 +728,13 @@ impl RecordTree
     /// - witness: `tests::absence::a_key_below_every_record_has_no_predecessor`
     /// - witness: `tests::absence::a_key_absent_from_a_single_leaf_tree_proves`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check verifies the proof the body built, one authentication of the nodes the body copied into it"
+        )
+    )]
     #[spec(ensures: |ret| if find_record(self.records.as_ref(), key).is_some() {
         matches!(ret, Err(RecordTreeError::InvalidProofShape { .. }))
     } else {
@@ -782,6 +825,13 @@ impl RecordTree
     /// - witness: `tests::range::the_node_budget_ceiling_proves`
     /// - witness: `tests::range::a_range_over_a_single_leaf_tree_proves`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check verifies the proof the body built and rescans the records the body's range selection scans"
+        )
+    )]
     #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|proof|
         proof.verify(&self.root, range).is_ok_and(|verified|
             verified.iter().eq(self.records.iter().filter(|record|
@@ -861,6 +911,13 @@ impl RecordTree
     /// - witness: `tests::membership::every_key_of_a_tree_proves`
     /// - witness: `tests::membership::a_key_of_a_single_leaf_tree_proves`
     /// - witness: `tests::absence::absent_keys_everywhere_prove`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check repeats the body's one selection over the root's children"
+        )
+    )]
     #[spec(ensures: |ret| ret.as_ref().is_ok_and(|position| *position
         == if self.children.is_empty() { None } else { select_child(self.children.as_ref(), key) }))]
     fn selected_leaf(

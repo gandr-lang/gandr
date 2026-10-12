@@ -643,13 +643,15 @@ impl<'stream> TokenReader<'stream>
     /// - hypothesis: L3 observes exact positions and work for word and binary
     ///   payload records, plus a three-record body stopped at a ceiling of two.
     ///   This separates omitted record work, omitted payload work, wrong suffix
-    ///   advancement and a budget overrun on these paths.
+    ///   advancement and a budget overrun on these paths. The predicate asks
+    ///   that the cursor borrow `rest` itself, which reads two pointers rather
+    ///   than the bytes.
     /// - witness: `reader::tests::typed_reads_charge_payloads_and_refuse_wrong_kinds`
     /// - witness: `reader::tests::a_reader_stops_at_its_ceiling`
     #[spec(captures: [entry = self.spent],
         ensures: |ret| ret.is_err()
             || (u64::from(self.spent) == u64::from(entry).saturating_add(u64::from(work))
-                && self.current.remaining == rest
+                && core::ptr::eq(core::ptr::from_ref(self.current.remaining.as_ref()), core::ptr::from_ref(rest.as_ref()))
                 && anodized::types::Spec::predicate(self)))]
     fn advance(
         &mut self,

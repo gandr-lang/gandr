@@ -540,6 +540,13 @@ impl LandmarkPoset
     /// - witness: `entail::tests::landmark_order_is_entailed`
     /// - witness: `entail::tests::strictness_needs_a_strict_hypothesis`
     /// - witness: `entail::tests::non_total_order_is_refused_with_a_countermodel`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check validates the evidence the body's decision produced, one replay of the same derivation"
+        )
+    )]
     #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|evidence| {
         let validates = match *evidence {
             Entailment::Holds(ref witness) => witness.strict() == Strictness::NON_STRICT
@@ -586,6 +593,13 @@ impl LandmarkPoset
     /// - witness: `entailment_oracle::entailment_oracle::prop_lt_equals_succ_leq_under_the_fixed_poset`
     /// - witness: `entail::tests::strictness_needs_a_strict_hypothesis`
     /// - witness: `entail::tests::entailment_is_irreflexive_for_lt_on_admitted_posets`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check makes the one non-strict decision the body's strict decision is equivalent to"
+        )
+    )]
     #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|evidence| {
         (left != right || !bool::from(evidence.holds()))
             && left.succ().map_or(true, |successor| {
@@ -627,6 +641,13 @@ impl LandmarkPoset
     /// - witness: `entailment_oracle::entailment_oracle::prop_entailment_order_laws_under_the_fixed_poset`
     /// - witness: `entail::tests::landmark_order_is_entailed`
     /// - witness: `entail::tests::hypotheses_reach_constant_goals`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check repeats the body's one decision"
+        )
+    )]
     #[spec(ensures: |ret| ret == self.entails_leq_with_evidence(left, right)
         .map(|evidence| evidence.holds()))]
     #[inline]
@@ -662,6 +683,13 @@ impl LandmarkPoset
     /// - witness: `entailment_oracle::entailment_oracle::prop_lt_equals_succ_leq_under_the_fixed_poset`
     /// - witness: `entail::tests::entailment_is_irreflexive_for_lt_on_admitted_posets`
     /// - witness: `entail::tests::strictness_needs_a_strict_hypothesis`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check repeats the body's one decision"
+        )
+    )]
     #[spec(ensures: |ret| ret == self.entails_lt_with_evidence(left, right)
         .map(|evidence| evidence.holds()))]
     #[inline]

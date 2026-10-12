@@ -779,6 +779,13 @@ impl ValueManifest
     /// - witness: `tests::manifest::each_manifest_field_moves_the_identity`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check encodes and hashes the manifest once, as the body does"
+        )
+    )]
     #[spec(ensures: |ret| ret.0 == *blake3::hash(self.encode().as_ref()).as_bytes())]
     pub fn identity(&self) -> ManifestDigest
     {
@@ -912,15 +919,17 @@ impl ManifestCursor<'_>
     /// - hypothesis: L3 on a three-byte cursor takes zero and two bytes, then
     ///   refuses a two-byte field with one remaining without movement. The full
     ///   manifest witness checks every prefix of a 144-byte image. These
-    ///   distinguish wrong widths, wrong bytes and mutation on truncation.
+    ///   distinguish wrong widths, wrong bytes and mutation on truncation. The
+    ///   predicate asks that the cursor borrow the expected remainder itself,
+    ///   which reads two pointers rather than the unread bytes.
     /// - witness: `manifest::tests::fixed_width_reads_preserve_suffixes_and_refusal_state`
     /// - witness: `tests::manifest::each_malformed_manifest_is_refused_by_name`
     #[spec(captures: input = self.0, ensures: |ret|
         ret.is_ok() == (input.len() >= WIDTH)
         && ret.as_ref().ok().is_none_or(|bytes|
             input.split_first_chunk::<WIDTH>().is_some_and(|(expected, rest)|
-                bytes.0 == *expected && self.0 == rest))
-        && (ret.is_ok() || self.0 == input))]
+                bytes.0 == *expected && core::ptr::eq(core::ptr::from_ref(self.0), core::ptr::from_ref(rest))))
+        && (ret.is_ok() || core::ptr::eq(core::ptr::from_ref(self.0), core::ptr::from_ref(input))))]
     fn take<const WIDTH: usize>(
         &mut self,
         field: ManifestField,

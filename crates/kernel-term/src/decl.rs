@@ -618,6 +618,13 @@ impl Declaration
     ///   provenance.
     /// - witness: `decl::tests::finishers_preserve_payloads_and_staged_graphs`
     /// - witness: `sharing_format::sharing_format::a_structured_name_round_trips_as_segments`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "the check copies the content once, linear in its fields; a declaration is named once, after the finisher that built that content in the same order of work"
+        )
+    )]
     #[spec(
         captures: entry = (self.content.clone(), self.levels.params, self.levels.constraints.len(), self.provenance.len(), self.provenance.first().copied(), self.provenance.last().copied(), name.0.len()),
         ensures: |ret| ret.content == entry.0

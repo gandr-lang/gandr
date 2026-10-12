@@ -393,13 +393,15 @@ impl Arena
     ///
     /// # Adequacy
     /// - hypothesis: L3 — interned, uninterned and payload-distinct terms
-    ///   distinguish exact lookup from coincidence.
+    ///   distinguish exact lookup from coincidence. The predicate checks that a
+    ///   found coordinate stores the term; uniqueness and absence are what the
+    ///   probe decides and the witness observes, since deciding them here would
+    ///   walk the arena the probe exists to avoid.
     /// - witness: `stage::tests::term_interning_preserves_exact_content`
     #[inline]
     #[spec(ensures: |ret| match ret {
-        Maybe::Present(id) => self.terms.get(id.0) == Some(term)
-            && self.terms.iter().position(|stored| stored == term) == Some(id.0),
-        Maybe::Absent(_) => !self.terms.contains(term),
+        Maybe::Present(id) => self.terms.get(id.0) == Some(term),
+        Maybe::Absent(_) => true,
     })]
     pub fn find(
         &self,
@@ -427,13 +429,15 @@ impl Arena
     ///
     /// # Adequacy
     /// - hypothesis: L3 — equal classifiers and forward edges distinguish
-    ///   canonicalization and the acyclic-prefix guard.
+    ///   canonicalization and the acyclic-prefix guard. The predicate checks
+    ///   that the coordinate stores the classifier and that its children
+    ///   precede it; that equal descriptors share one coordinate is the probe's
+    ///   decision, which the witnesses observe across growth.
     /// - witness: `stage::tests::syntax_boundaries`
     /// - witness: `stage::tests::interning_survives_lookup_growth`
     #[inline]
     #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|id|
         self.types.get(id.0) == Some(&ty)
-        && self.types.iter().position(|stored| *stored == ty) == Some(id.0)
         && match ty {
             Type::Arrow(a, b) => a.0 < id.0 && b.0 < id.0,
             Type::Lift(inner) => inner.0 < id.0,

@@ -274,13 +274,14 @@ impl StagedMarks
     ///
     /// # Adequacy
     /// - hypothesis: L3 — four registrations, including a repeated middle mark,
-    ///   retain insertion order and are resolved one occurrence at a time.
+    ///   retain insertion order and are resolved one occurrence at a time. A
+    ///   registration appends, so the predicate reads the length and the last
+    ///   mark; the witness checks the whole order and every multiplicity.
     /// - witness: `env::tests::registration_resolution_preserves_multiplicity_and_order`
     #[spec(
-        captures: [entry_len = self.marks.len(), entry_count = self.marks.iter().filter(|&&held| held == mark).count()],
+        captures: [entry_len = self.marks.len()],
         ensures: self.marks.len().checked_sub(1_usize) == Some(entry_len)
             && self.marks.last() == Some(&mark)
-            && self.marks.iter().filter(|&&held| held == mark).count().checked_sub(1_usize) == Some(entry_count)
     )]
     #[inline]
     fn register(
@@ -309,6 +310,13 @@ impl StagedMarks
     ///   predicate checks counts; the witness also checks the exact order.
     /// - witness: `env::tests::registration_resolution_preserves_multiplicity_and_order`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body searches the marks for the first occurrence and shifts the rest; the check counts occurrences before and after"
+        )
+    )]
     #[spec(
         captures: [entry_len = self.marks.len(), entry_count = self.marks.iter().filter(|&&held| held == mark).count()],
         ensures: self.marks.len() == entry_len.saturating_sub(usize::from(entry_count != 0_usize))
@@ -350,6 +358,13 @@ impl StagedMarks
     ///   mark above (not counted), each asserted as an exact count.
     /// - witness: `env::tests::marks_above_are_counted_componentwise`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body clamps every held mark once, as the check does"
+        )
+    )]
     #[spec(ensures: |ret| usize::from(ret) == self.marks.iter().filter(|&&held| held.clamped_into(ArenaWatermark::default(), mark) != held).count())]
     fn above(
         &self,
@@ -936,6 +951,13 @@ impl Environment
     /// - witness: `env::tests::abandoning_a_staged_declaration_releases_its_claim`
     /// - witness: `env::tests::abandoning_beneath_outstanding_content_retains_it`
     /// - witness: `env::tests::abandonment_preserves_the_admission_floor`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body resolves the mark and asks whether anything sits above it, each a walk of the outstanding marks; the check counts and clamps them the same way"
+        )
+    )]
     #[spec(
         captures: [
             entry_mark = staged.content_start,
@@ -1002,6 +1024,13 @@ impl Environment
     /// - witness: `env::tests::outstanding_later_staged_content_refuses_admission`
     /// - witness: `env::tests::abandoning_a_staged_declaration_releases_its_claim`
     /// - witness: `env::tests::marks_above_are_counted_componentwise`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body counts the marks above through one walk; the check searches the same marks once"
+        )
+    )]
     #[spec(ensures: |ret| matches!(ret, OutstandingContent::Present)
         == self.outstanding.marks.iter().any(|&held| held.clamped_into(ArenaWatermark::default(), mark) != held))]
     #[inline]

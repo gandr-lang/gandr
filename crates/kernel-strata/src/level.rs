@@ -579,6 +579,13 @@ impl Level
     /// - witness: `level::tests::succ_renormalizes_dominated_constant`
     /// - witness: `level_oracle::level_oracle::prop_succ_distributes_over_max`
     /// - witness: `level_oracle::level_oracle::prop_eval_agrees_with_reference`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body bumps every atom into a new map; the check looks each up once"
+        )
+    )]
     #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|level| {
         level.atoms.len() == self.atoms.len()
             && self.atoms.iter().all(|(variable, offset)| {
@@ -630,6 +637,13 @@ impl Level
     /// - witness: `level::tests::max_keeps_undominated_constant`
     /// - witness: `level_oracle::level_oracle::prop_max_laws`
     /// - witness: `level_oracle::level_oracle::prop_eval_agrees_with_reference`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body copies one atom map and merges the other into it; the check looks every atom up once"
+        )
+    )]
     #[spec(ensures: |ret| {
         self.atoms.keys().chain(other.atoms.keys()).all(|variable| ret.atoms.contains_key(variable))
             && ret.atoms.iter().all(|(variable, offset)| {
@@ -777,6 +791,13 @@ impl Level
     /// - witness: `level_oracle::level_oracle::prop_eval_agrees_with_reference`
     ///
     /// [`validate_refutation`]: crate::validate_refutation
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check folds the atoms once, as the body does"
+        )
+    )]
     #[spec(ensures: |ret| ret.as_ref().ok().map(|value| u128::from(*value)) ==
         self.atoms.iter().try_fold(u128::from(self.constant), |maximum, (variable, offset)| {
             valuation.get(variable).copied().unwrap_or(LevelValue::ZERO)

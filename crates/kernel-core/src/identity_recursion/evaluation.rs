@@ -155,6 +155,13 @@ impl Relation
     /// - hypothesis: L3 — function applications use argument and result
     ///   relations.
     /// - witness: `identity_recursion::function::tests::funext_computes_and_refuses_wrong_components`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "the refusal arm alone reads the program's clauses, one per node of the relation the declaration compiled, which the body interprets from `relation`"
+        )
+    )]
     #[spec(ensures: |ret| match ret {
         Ok(ref fibers) => fibers.root.0 < fibers.nodes.len()
             && fibers.nodes.iter().enumerate().all(|(id, node)| match *node { Fiber::Product(a, b) => a.0 < id && b.0 < id, _ => true })
@@ -383,6 +390,13 @@ impl Fibers
     /// - witness: `identity_recursion::tests::both_modes_compute_all_element_clauses`
     /// - witness: `identity_recursion::tests::neutral_fibres_do_not_decide_equality`
     /// - witness: `path_universe::tests::universe_fold_tests::universe_clause_is_native`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body scans every fibre for a residual and then lowers each; the check scans them once more"
+        )
+    )]
     #[spec(ensures: |ret| match ret {
         Ok(ty) => !self.nodes.iter().any(|node| matches!(node, &Fiber::Discrete(..) | &Fiber::Suspended(..) | &Fiber::Function { .. } | &Fiber::Certificate(..)))
             && (matches!((self.get(self.root), arena.value_type(ty)),

@@ -226,6 +226,13 @@ impl Relation
     /// - hypothesis: L3 — both Bool constructors and independent product Base
     ///   variables must be covered; higher-order inputs never become samples.
     /// - witness: `identity_recursion::function::tests::symbolic_coverage_keeps_base_variables_independent`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "the refusal arms read the program's clauses, one per node of the relation the declaration compiled; the body walks the argument relation through the same table and every pattern it returns, which the success arm reads once"
+        )
+    )]
     #[spec(ensures: |ret| match ret {
         Ok(ref patterns) => u64::from(budget) > 0 && !patterns.is_empty() && patterns.iter().all(|pattern| pattern.context.iter().all(|&ty| matches!(arena.value_type(ty), Some(&gandr_kernel_term::ValueType::Base(_))))),
         Err(RelationError::RecursiveObservationRequired) => self.nodes.iter().any(|node| matches!(node.clause, Clause::List(_))),

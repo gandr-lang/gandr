@@ -500,6 +500,13 @@ impl ChunkStore for Ledger
     ///   bounded generated histories additionally vary retained prior values.
     /// - witness: `tests::reference::cuts_and_splices_keep_record_coordinates`
     /// - witness: `tests::laws::a_root_pointer_does_not_depend_on_what_the_store_holds`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check loads back the one chunk the body inserted, one verification of the bytes the body stored"
+        )
+    )]
     #[spec(captures: [listed = self.held.contains(&chunk.digest()), count = self.held.len()],
         ensures: |ret| if ret.is_ok() {
             self.held.contains(&chunk.digest())

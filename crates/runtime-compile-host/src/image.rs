@@ -515,6 +515,13 @@ impl Image
     /// # Adequacy
     /// - hypothesis: L3 adding one case changes the accounting side condition.
     /// - witness: `tests::image::accounted_work_counts_each_kind_separately`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body scans the nodes for a case once; the check scans them once more"
+        )
+    )]
     #[spec(ensures: |ret| (ret == DispatchPresence::Present) == self.nodes.iter().any(|node| node.kind == NodeKind::Case))]
     #[must_use]
     #[inline]

@@ -433,13 +433,24 @@ impl Lookup
     /// - hypothesis: L3 — removing the head, the middle and the wrapped tail of
     ///   one colliding run, then probing every survivor, distinguishes a hole
     ///   left open, an entry shifted past its home and a removal that forgets
-    ///   the wrong position.
+    ///   the wrong position. Linear probing keeps every record in the run from
+    ///   its hash's home slot to the first vacant slot, so under the
+    ///   requirement the predicate reads that run alone, before and after.
     /// - witness: `stage::lookup::tests::removal_keeps_every_other_position`
     #[inline]
-    #[spec(captures: [before = self.len, recorded = self.slots.iter().any(|slot|
-            u32::try_from(position.0).is_ok_and(|stored| slot.position == stored))],
-        ensures: self.slots.iter().all(|slot|
-                u32::try_from(position.0) != Ok(slot.position))
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "the check walks only the probe run from `hash`'s home slot to its first vacant slot, the run the body searches and shifts"
+        )
+    )]
+    #[spec(captures: [before = self.len, recorded = self.slots.iter().chain(&self.slots).skip(self.home(hash).0)
+            .take_while(|slot| slot.position != VACANT)
+            .any(|slot| u32::try_from(position.0).is_ok_and(|stored| slot.position == stored))],
+        ensures: !self.slots.iter().chain(&self.slots).skip(self.home(hash).0)
+                .take_while(|slot| slot.position != VACANT)
+                .any(|slot| u32::try_from(position.0).is_ok_and(|stored| slot.position == stored))
             && self.len == if recorded { before.saturating_sub(1) } else { before })]
     pub(super) fn remove(
         &mut self,

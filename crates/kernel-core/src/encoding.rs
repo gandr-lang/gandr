@@ -454,6 +454,13 @@ impl ContentEncoding
     /// - witness: `encoding::tests::the_digest_separates_a_transposition`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check folds the bytes once, as the body does"
+        )
+    )]
     #[spec(ensures: |ret| {
         let fingerprint = self.0.iter().fold(0x6c62_272e_07bb_0142_62b8_2175_6295_c58d_u128,
             |state, &byte| (state ^ u128::from(byte))

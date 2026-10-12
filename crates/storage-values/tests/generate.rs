@@ -390,6 +390,13 @@ impl Tree
     /// - hypothesis: L3 a literal heterogeneous tree separates record indices
     ///   from constructor ordinals and payload byte offsets.
     /// - witness: `tests::generate::generated_codec_preserves_schema_and_leaf_edits`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body scans every item once; the check scans them once more"
+        )
+    )]
     #[spec(ensures: |ret| ret.len()
         == self.0.iter().filter(|item| matches!(item, Item::Open(_))).count()
         && ret.iter().all(|index| matches!(self.0.get(index.0), Some(Item::Open(_))))
@@ -418,6 +425,13 @@ impl Tree
     /// - hypothesis: L3 nested and empty constructors retain all inner exits
     ///   without treating the root's close as a boundary event.
     /// - witness: `tests::generate::generated_codec_preserves_schema_and_leaf_edits`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body scans every item once; the check validates and scans them once more"
+        )
+    )]
     #[spec(requires: anodized::types::Spec::predicate(self),
         ensures: |ret| ret.len() == self.0.iter().filter(|item|
             matches!(item, Item::Close)).count().saturating_sub(1_usize)
@@ -490,6 +504,13 @@ impl Tree
     /// - hypothesis: L3 heterogeneous siblings and a nested word leaf have
     ///   exact indices and depths; nonleaf payload fields must be excluded.
     /// - witness: `tests::generate::generated_codec_preserves_schema_and_leaf_edits`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body scans every item once; the check validates and scans them once more"
+        )
+    )]
     #[spec(requires: anodized::types::Spec::predicate(self),
         ensures: |ret| {
             let mut depth = 0_u64;
@@ -549,6 +570,13 @@ impl Tree
     /// - hypothesis: L3 distinct word, binary and empty-byte leaves pin the
     ///   replacement and every untouched record, including a binary tail.
     /// - witness: `tests::generate::generated_codec_preserves_schema_and_leaf_edits`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "test fixture: the generated value is bounded by the property generator, and the check re-establishes the value invariant the in-place edit must keep"
+        )
+    )]
     #[spec(requires: anodized::types::Spec::predicate(self)
         && leaf.payload.0 > 0_usize
         && matches!(self.0.get(leaf.payload.0.saturating_sub(1_usize)),
@@ -909,6 +937,13 @@ impl Arena
     /// - hypothesis: L3 an unused sibling remains a root while two references
     ///   to one child remove that child only once from the frontier.
     /// - witness: `tests::generate::arena_counts_and_bounds_keep_semantic_nodes`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body scans every node once; the check scans them once more"
+        )
+    )]
     #[spec(ensures: |ret| ret.len() == self.0.iter()
         .filter(|node| node.nested == Nested(false)).count()
         && ret.iter().all(|id| self.0.get(id.0).is_some_and(|node| node.nested == Nested(false)))

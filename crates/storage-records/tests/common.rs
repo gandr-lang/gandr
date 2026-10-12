@@ -159,6 +159,13 @@ impl Corpus
     /// - witness: `tests::build::a_large_tree_has_an_internal_root`
     /// - witness: `tests::build::unsorted_input_is_refused`
     /// - witness: `tests::build::duplicate_keys_are_refused`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body borrows every entry once; the check compares each once"
+        )
+    )]
     #[spec(ensures: |ret| ret.iter().copied().eq(self.entries.iter().map(Record::as_record_ref)))]
     pub fn records(&self) -> Vec<RecordRef<'_>>
     {
@@ -182,6 +189,13 @@ impl Corpus
     ///   scan. The predicate additionally checks the query-source sequence
     ///   positionally, detecting a lost, repeated or permuted key.
     /// - witness: `tests::absence::absent_keys_everywhere_prove`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body borrows every key once; the check compares each once"
+        )
+    )]
     #[spec(ensures: |ret| ret.iter().copied().eq(self.entries.iter().map(Record::key)))]
     pub fn keys(&self) -> Vec<RecordKey<'_>>
     {
@@ -216,6 +230,13 @@ impl Corpus
     ///   exercises replacement at its first and last positions.
     /// - witness: `tests::agreement::trees_differing_in_one_value_disagree`
     /// - witness: `tests::agreement::the_answer_is_the_direct_comparison`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body copies every entry once; the check compares each once"
+        )
+    )]
     #[spec(
         requires: usize::from(position) < self.entries.len(),
         ensures: |ret| ret.entries.len() == self.entries.len()
@@ -266,6 +287,13 @@ impl Corpus
     ///   position.
     /// - witness: `tests::agreement::trees_differing_in_one_record_disagree`
     /// - witness: `tests::sharing::removing_one_record_rebuilds_a_bounded_neighbourhood`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body copies every entry once; the check compares each once"
+        )
+    )]
     #[spec(
         requires: usize::from(position) < self.entries.len(),
         ensures: |ret| ret.entries.iter().eq(self.entries.iter().enumerate()

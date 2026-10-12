@@ -154,6 +154,10 @@ pub trait TraceSink<Id>
     /// - executable: none — a predicate on this declaration changes the
     ///   required trait-method interface; storage belongs to implementations.
     ///
+    /// # Clause cost
+    /// - bound: reads a count the implementation keeps beside its storage; no
+    ///   decision is read.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — empty and populated logs expose exact counts, while
     ///   recording two decisions at the null sink leaves zero. These

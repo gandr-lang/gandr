@@ -589,6 +589,13 @@ impl ArtifactRecordSet
     ///   they do not exhaust record-tree shapes or allocation behaviour.
     /// - witness: `artifact_contract::artifact_contract::tree_nodes_store_and_reopen`
     /// - witness: `artifact_contract::artifact_contract::any_perturbation_changes_the_identity`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body borrows every record once; the check compares each once"
+        )
+    )]
     #[spec(ensures: |ret| ret.len() == self.records.len().saturating_add(1)
         && ret.first().is_some_and(|header| header.key().as_ref() == HEADER_KEY
             && header.value().as_ref() == self.header.as_ref())
@@ -627,6 +634,13 @@ impl ArtifactRecordSet
     ///   validate arbitrary bytes admitted by the unchecked record constructor.
     /// - witness: `artifact_contract::artifact_contract::records_round_trip_to_a_byte_identical_artifact`
     /// - witness: `artifact_contract::artifact_contract::round_trip_over_generated_environments`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body copies every segment byte once; the check compares each once"
+        )
+    )]
     #[spec(ensures: |ret| {
         let mut offset = self.header.len();
         ret.0.starts_with(self.header.as_ref())
@@ -685,6 +699,13 @@ impl ArtifactRecordSet
     ///   It distinguishes conflating valid bytes with valid cuts; later cuts
     ///   and differing record/layout counts are not sampled by this witness.
     /// - witness: `artifact_contract::artifact_contract::records_cut_off_a_segment_boundary_are_refused`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks the records against the layout once; the check walks them once more"
+        )
+    )]
     #[spec(ensures: |ret| {
         let ends = layout.declaration_ends();
         let first = if self.header.len() == usize::from(layout.header_end()) {

@@ -900,6 +900,13 @@ impl ChunkerParams
     ///   exact independently calculated words distinguish seed-kind, order,
     ///   rotation and mixing mutations, not collisions over every salt.
     /// - witness: `gear::tests::seed_states_match_independent_goldens`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check folds the salt once, as the body does"
+        )
+    )]
     #[spec(ensures: |ret| ret.0 == self.seed_policy.salt().as_ref().iter().fold(
         GEAR_STATE_IV ^ u64::from(u16::from(self.seed_policy.discriminator())),
         |state, byte| (state.rotate_left(5) ^ u64::from(*byte)).wrapping_mul(SEED_MIX_MULTIPLIER),

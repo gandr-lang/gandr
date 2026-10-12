@@ -209,6 +209,13 @@ impl Relation
     ///   fibre.
     /// - witness: `identity_recursion::tests::product_transport_composes_componentwise`
     /// - witness: `path_universe::tests::universe_fold_tests::universe_clause_is_native`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body validates both identities, compares the middle boundary and scans the program's clauses; the check makes three of those comparisons and the same scan"
+        )
+    )]
     #[spec(ensures: |ret| match ret {
         Ok(ref identity) => self.mode == Mode::Identity
             && equal_values(arena, first.right, second.left) == Convertibility::Convertible
@@ -271,6 +278,13 @@ impl Relation
     ///   license unchecked conversion of a dependent family.
     /// - witness: `identity_recursion::tests::reflexivity_and_transport_compute`
     /// - witness: `path_universe::tests::universe_fold_tests::universe_clause_is_native`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body compares the identity's endpoints before returning the value; the check makes the same comparison"
+        )
+    )]
     #[spec(ensures: |ret| match ret {
         Ok(Transport::Return(result)) => result == value && equal_values(arena, identity.left, identity.right) == Convertibility::Convertible,
         Ok(Transport::Neutral { value: held, motive: family, identity: ref evidence, .. }) => held == value && family == motive && evidence == identity,
@@ -370,6 +384,13 @@ impl Relation
     /// - hypothesis: L3 — changing the context or relation cannot reuse
     ///   evidence as an unchecked judgement.
     /// - witness: `identity_recursion::tests::identity_evidence_refuses_false_fibres`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check compares a diagonal identity's endpoints, as the body does on that arm"
+        )
+    )]
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&()| self.mode == Mode::Identity && (!matches!(identity.proof, Proof::Diagonal) || equal_values(arena, identity.left, identity.right) == Convertibility::Convertible)))]
     pub(super) fn validate(
         &self,
