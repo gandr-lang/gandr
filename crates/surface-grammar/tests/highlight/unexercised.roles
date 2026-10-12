@@ -112,7 +112,6 @@
 157 Other def_value : L[identifier] R[<type>]
 158 Other def_value ) L[<type>] R[<expression>]
 159 Other def_value ; L[<expression>] R[<expression> }]
-160 Other def_value ; L[<expression>] R[<expression> }]
 177 Number data_declaration number L[(] R[identifier]
 178 Number data_declaration ω L[(] R[identifier]
 182 Number data_declaration number L[,] R[identifier]

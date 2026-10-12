@@ -1769,6 +1769,9 @@ struct Lowerer<'run, 'source>
     /// stands in tail position of one — a block's last computation, a match's
     /// arm, a grouping's operand.
     exits: BTreeSet<NodeIndex>,
+    /// Each block's last computation written as a statement, `c ;` before the
+    /// closing brace, with the statement's span: admitted only as an exit.
+    stated: BTreeMap<NodeIndex, ByteSpan>,
     /// The matches, each compiled to its decision tree.
     cases: Vec<native::CaseForm>,
     /// The position each lowered data declaration's signature takes, by its
@@ -2175,6 +2178,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             classifiers: BTreeMap::new(),
             answers: BTreeMap::new(),
             exits: BTreeSet::new(),
+            stated: BTreeMap::new(),
             cases: Vec::new(),
             signatures: BTreeMap::new(),
             described: BTreeMap::new(),
@@ -2908,7 +2912,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// - requires: `pieces` is the reading of the form at `site`.
-    /// - ensures: a repair refuses the form; a former of the wrong family for
+    /// - ensures: a repair refuses the form; a block's last computation written
+    ///   as a statement that is not an exit refuses as an unadmitted expression
+    ///   statement at the statement's bytes; a former of the wrong family for
     ///   the position refuses as the wrong sort, except a type standing where a
     ///   value is read, which is quoted; a form where a body ends that is
     ///   neither an exit nor a form that passes the end on — a block, a match,
@@ -2934,6 +2940,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| {
             if let Maybe::Present(repaired) = pieces.repair {
                 ret == Err(repaired.refusal(site.name))
+            }
+            else if let Some(&statement) = self.stated.get(&site.at.node)
+                && ending(former) != Ending::Exit
+            {
+                ret == Err(LoweringRefusal::OutOfFragment {
+                    span: statement,
+                    form: FormName::EXPRESSION_STATEMENT,
+                    sort: FragmentSort::Computation,
+                    boundary: FragmentBoundary::Unadmitted,
+                })
             }
             else if family_of(former) != site.reading.family()
                 && !(family_of(former) == Family::Type && matches!(site.reading, Reading::Value(_)))
@@ -2963,6 +2979,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return Err(repaired.refusal(site.name));
         }
         let family = family_of(former);
+        if let Some(&statement) = self.stated.get(&site.at.node)
+            && ending(former) != Ending::Exit
+        {
+            return Err(LoweringRefusal::OutOfFragment {
+                span: statement,
+                form: FormName::EXPRESSION_STATEMENT,
+                sort: FragmentSort::Computation,
+                boundary: FragmentBoundary::Unadmitted,
+            });
+        }
         let quoted = family == Family::Type && matches!(site.reading, Reading::Value(_));
         if family != site.reading.family() && !quoted {
             return Err(site.out(FragmentBoundary::WrongSort));
@@ -3988,9 +4014,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   piece closes.
     /// - ensures: each `run x <- c ;` statement reads its computation under the
     ///   frame the statements before it extended and binds `x` in a frame
-    ///   extending that one; the last computation reads under the frame every
-    ///   statement extended; the statements and the last computation are
-    ///   returned, with the cursor past the closing `}` and nothing after it.
+    ///   extending that one; the last computation, written bare or as a
+    ///   statement `c ;` before the closing `}` and then recorded as stated,
+    ///   reads under the frame every statement extended; the statements and the
+    ///   last computation are returned, with the cursor past the closing `}`
+    ///   and nothing after it.
     /// - provides: the body reading of thunks, lambdas and function tails.
     /// - fails: yields the unadmitted refusal for a statement the fragment does
     ///   not read, by the statement's own name; the arity refusal, as a block,
@@ -4051,8 +4079,27 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             },
                             | Run::Empty(gap) => gap,
                         };
+                        let statement = first.join(semicolon.span);
+                        let mut ahead = cursor.clone();
+                        let _semicolon = ahead.tile(TileName::SEMICOLON);
+                        if let (Run::One(written), Maybe::Present(_)) =
+                            (run, ahead.at(TileName::BRACE_CLOSE))
+                        {
+                            let _semicolon = cursor.tile(TileName::SEMICOLON);
+                            let _first = self.stated.insert(written.node, statement);
+                            closed(site, cursor, TileName::BRACE_CLOSE)?;
+                            exhausted(site, cursor)?;
+                            self.read(written.node, Reading::Computation(frame));
+                            return Ok(Block {
+                                statements: Stretch {
+                                    start,
+                                    end: self.statements.len(),
+                                },
+                                last: written.node,
+                            });
+                        }
                         return Err(LoweringRefusal::OutOfFragment {
-                            span: first.join(semicolon.span),
+                            span: statement,
                             form: FormName::EXPRESSION_STATEMENT,
                             sort: FragmentSort::Computation,
                             boundary: FragmentBoundary::Unadmitted,
@@ -10625,7 +10672,7 @@ mod tests
         let module = lowered(
             SourceText::from(
                 "def g = 3 ; def a = thunk { return g } ; def b = thunk { become (force a) } ; \
-                 def c = thunk { { return 4 } } ;",
+                 def c = thunk { { return 4 } } ; def d = thunk { return 5 ; } ;",
             ),
             &mut arena,
         );
@@ -10658,6 +10705,13 @@ mod tests
                 Some(&Computation::Return(_))
             ),
             "tail position reaches through a block"
+        );
+        assert!(
+            matches!(
+                arena.computation(suspended(4_usize)),
+                Some(&Computation::Return(_))
+            ),
+            "an exit written as the block's closing statement ends the body"
         );
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         for (source, start, end, kind) in [
@@ -11740,6 +11794,15 @@ mod tests
                 unadmitted(
                     16_usize,
                     23_usize,
+                    FormName::EXPRESSION_STATEMENT,
+                    FragmentSort::Computation,
+                ),
+            ),
+            (
+                "def a = thunk { pure 1 ; } ;",
+                unadmitted(
+                    16_usize,
+                    24_usize,
                     FormName::EXPRESSION_STATEMENT,
                     FragmentSort::Computation,
                 ),
