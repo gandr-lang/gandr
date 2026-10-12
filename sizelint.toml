@@ -29,3 +29,71 @@ max_size = "64KB"
 # Burn-down list for pages that predate the budgets. Entries leave as splits
 # land; entries never enter without owner sign-off.
 excludes = []
+
+# README budgets. A README is its crate's overview and conceptual entry; the
+# mechanism, decisions and specification detail it links to live in the
+# crate's rustdoc. Over budget: move more into rustdoc, never trim to pass.
+# Both rules outrank `doc_sprawl`. A pattern without a slash matches at any
+# depth, so the root rule excludes the crate and contrib trees.
+# Burn-down: the excludes under each `# Burn-down.` comment name the READMEs
+# over budget when the gate landed. Entries only leave, as their prose moves
+# into rustdoc; an entry never enters.
+[rules.readme_root]
+enabled = true
+priority = 200
+description = "Root README over its budget"
+suggestion = "Keep what gandr is, its verbs, the build and the licence; move the rest into rustdoc"
+includes = ["README.md"]
+max_size = "6KB"
+excludes = [
+  "contrib/**",
+  "crates/**",
+  # Burn-down.
+  "README.md",
+]
+
+[rules.readme]
+enabled = true
+priority = 200
+description = "Crate README over its budget"
+suggestion = "Move mechanism, decisions and specification detail into the crate's rustdoc; never trim to pass"
+includes = ["contrib/*/README.md", "crates/*/README.md", "crates/README.md"]
+max_size = "12KB"
+excludes = [
+  # Burn-down.
+  "crates/core-checker/README.md",
+  "crates/core-incremental/README.md",
+  "crates/core-nbe/README.md",
+  "crates/core-sequent/README.md",
+  "crates/core-term/README.md",
+  "crates/kernel-core/README.md",
+  "crates/kernel-term/README.md",
+  "crates/storage-artifact/README.md",
+  "crates/storage-values/README.md",
+  "crates/surface-corpus/README.md",
+  "crates/surface-diagnostics/README.md",
+  "crates/surface-dispatcher/README.md",
+  "crates/surface-driver/README.md",
+  "crates/surface-grammar/README.md",
+  "crates/surface-layout/README.md",
+  "crates/surface-lowering/README.md",
+  "crates/surface-lsp/README.md",
+  "crates/surface-mcp/README.md",
+  "crates/surface-parser/README.md",
+  "crates/surface-pretty/README.md",
+  "crates/surface-render-remote/README.md",
+  "crates/surface-repl/README.md",
+  "crates/surface-session/README.md",
+  "crates/surface-syntax/README.md",
+  "crates/surface-tui/README.md",
+  "crates/theory-cell-complexes-tools/README.md",
+  "crates/theory-cell-complexes/README.md",
+  "crates/theory-circuit-algebras/README.md",
+  "crates/theory-coherent-resolutions/README.md",
+  "crates/theory-computads/README.md",
+  "crates/theory-decomposition-spaces/README.md",
+  "crates/theory-deep-inference/README.md",
+  "crates/theory-graphs/README.md",
+  "crates/theory-levitation/README.md",
+  "crates/theory-sites/README.md",
+]
