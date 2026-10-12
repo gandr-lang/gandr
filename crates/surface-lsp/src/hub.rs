@@ -84,7 +84,7 @@ quenchant_shape::reason_enum! {
 ///
 /// # Specification
 /// trivial.
-fn lock<Held>(mutex: &Mutex<Held>) -> MutexGuard<'_, Held>
+pub fn lock<Held>(mutex: &Mutex<Held>) -> MutexGuard<'_, Held>
 {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
@@ -191,7 +191,8 @@ pub type Face = fn(&mut BufReader<UnixStream>, Peer, &Mutex<Workspace>);
 /// # Specification
 /// - requires: `listener` is bound to `socket`.
 /// - ensures: a connection whose first byte is `{` is handed to `lines` when
-///   one is given. Every other accepted connection is served as
+///   one is given, and one whose first byte is `r` to the render-bus face,
+///   [`crate::bus::serve`]. Every other accepted connection is served as
 ///   [`Server::handle`] and [`Server::admit`] state, over the documents every
 ///   connection shares: its answers and publications reach it in the order its
 ///   handling made them, interleaved with the publications other connections'
@@ -218,6 +219,7 @@ pub type Face = fn(&mut BufReader<UnixStream>, Peer, &Mutex<Workspace>);
 /// - witness: `hub::tests::two_clients_share_one_document`
 /// - witness: `hub::tests::a_hub_left_alone_exits_after_its_linger`
 /// - witness: `hub::tests::a_line_connection_reaches_the_second_face`
+/// - witness: `hub::tests::an_attached_view_follows_the_editors_edits`
 #[inline]
 pub fn run_hub<Log>(
     listener: &UnixListener,
@@ -301,11 +303,16 @@ fn connection<Log>(
     Log: Write,
 {
     let mut reading = BufReader::new(stream);
-    if let Some(face) = lines
-        && reading
-            .fill_buf()
-            .is_ok_and(|bytes| bytes.first() == Some(&b'{'))
-    {
+    let first = reading
+        .fill_buf()
+        .ok()
+        .and_then(|bytes| bytes.first().copied());
+    let face: Option<Face> = match (first, lines) {
+        | (Some(b'{'), Some(lines)) => Some(lines),
+        | (Some(b'r'), _) => Some(crate::bus::serve),
+        | _ => None,
+    };
+    if let Some(face) = face {
         face(&mut reading, peer, workspace);
         lock(workspace).depart(peer);
         drop(reading.get_ref().shutdown(std::net::Shutdown::Both));
@@ -448,6 +455,11 @@ mod tests
     use std::thread::JoinHandle;
 
     use anodized::spec;
+    use gandr_surface_render_remote::DocId;
+    use gandr_surface_render_remote::DocVersion;
+    use gandr_surface_render_remote::FrameBody;
+    use gandr_surface_render_remote::FrameScope;
+    use gandr_surface_render_remote::RenderFrame;
     use quenchant_shape::shape::Maybe;
     use serde_json::Value;
 
@@ -455,6 +467,7 @@ mod tests
     use super::relay;
     use super::run_hub;
     use super::socket_for;
+    use crate::bus::RENDER_BUS_PREFACE;
     use crate::server::Served;
     use crate::transport::Body;
     use crate::transport::read_frame;
@@ -763,6 +776,119 @@ mod tests
             "a connection opening with `{{` is served by the line face, over the shared documents"
         );
         drop(model);
+        drop(editor);
+        hub.join().expect("the hub exits");
+    }
+
+    /// The next frame the render bus sent on `reading`, and the line it came
+    /// on.
+    ///
+    /// # Specification
+    /// trivial.
+    fn next_frame(reading: &mut BufReader<UnixStream>) -> (String, RenderFrame)
+    {
+        let mut line = String::new();
+        assert_ne!(
+            reading.read_line(&mut line).expect("the face writes lines"),
+            0_usize,
+            "the face owes a frame"
+        );
+        let frame =
+            serde_json::from_str(&line).expect("each line is a frame at the schema version");
+        (line, frame)
+    }
+
+    #[test]
+    fn an_attached_view_follows_the_editors_edits()
+    {
+        let scratch = Scratch::new(Json("view"));
+        let socket = scratch.socket();
+        let hub = hub(&socket);
+        let mut editor = Client::new(&socket);
+        editor.send(Json(
+            r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{
+                "uri":"file:///tmp/view.gandr","version":1,"text":"def f : Integer ;\ndef f = \"one\" ;\n"}}}"#,
+        ));
+        assert_eq!(editor.published(), Some(serde_json::json!(1_i32)));
+        let mut view = UnixStream::connect(&socket).expect("the hub accepts");
+        view.write_all(RENDER_BUS_PREFACE.as_bytes())
+            .expect("the hub reads");
+        let mut reading = BufReader::new(view.try_clone().expect("the stream clones"));
+        let document = |version: i32| DocId {
+            uri: gandr_surface_render_remote::DocumentUri::from(String::from(
+                "file:///tmp/view.gandr",
+            )),
+            version: DocVersion::from(version),
+        };
+        let (_line, greeting) = next_frame(&mut reading);
+        assert_eq!(
+            greeting,
+            RenderFrame::hello(Vec::from([document(1_i32)])),
+            "the view is greeted with the held document"
+        );
+        let report = |frame: &RenderFrame| match *frame.body() {
+            | FrameBody::Frame { ref report } => report.clone(),
+            | FrameBody::Hello { .. } | FrameBody::Resync | FrameBody::Detach => {
+                panic!("a report was owed, not {frame:?}")
+            },
+        };
+        let (line, first) = next_frame(&mut reading);
+        assert!(
+            line.contains("\"schema_version\":1"),
+            "the served frame carries its schema version: {line}"
+        );
+        assert_eq!(first.scope(), &FrameScope::Document(document(1_i32)));
+        assert_eq!(
+            report(&first).diagnostics.len(),
+            1_usize,
+            "the refusal the editor shows is a card"
+        );
+        editor.send(Json(
+            r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{
+                "textDocument":{"uri":"file:///tmp/view.gandr","version":2},
+                "contentChanges":[{"text":"def f : Integer ;\ndef f = 1 ;\n"}]}}"#,
+        ));
+        assert_eq!(editor.published(), Some(serde_json::json!(2_i32)));
+        let (_line, second) = next_frame(&mut reading);
+        assert_eq!(
+            second.scope(),
+            &FrameScope::Document(document(2_i32)),
+            "the edit reaches the view within its one check"
+        );
+        assert_eq!(report(&second).source, "def f : Integer ;\ndef f = 1 ;\n");
+        assert!(
+            report(&second).diagnostics.is_empty(),
+            "the repaired document carries no card"
+        );
+        let mut resync =
+            serde_json::to_string(&RenderFrame::resync(document(1_i32))).expect("a frame encodes");
+        resync.push('\n');
+        view.write_all(resync.as_bytes()).expect("the hub reads");
+        assert_eq!(
+            next_frame(&mut reading).1,
+            second,
+            "a resync is answered at the current version"
+        );
+        let mut detach = serde_json::to_string(&RenderFrame::detach()).expect("a frame encodes");
+        detach.push('\n');
+        view.write_all(detach.as_bytes()).expect("the hub reads");
+        assert_eq!(next_frame(&mut reading).1, RenderFrame::detach());
+        let mut rest = String::new();
+        assert_eq!(
+            reading.read_line(&mut rest).expect("the end is read"),
+            0_usize,
+            "a detach closes the stream"
+        );
+        let mut stranger = UnixStream::connect(&socket).expect("the hub accepts");
+        stranger
+            .write_all(b"render-bus/9\n")
+            .expect("the hub reads");
+        let mut stranger = BufReader::new(stranger);
+        assert_eq!(
+            next_frame(&mut stranger).1,
+            RenderFrame::detach(),
+            "another bus version is detached at once"
+        );
         drop(editor);
         hub.join().expect("the hub exits");
     }

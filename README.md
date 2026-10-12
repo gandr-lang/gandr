@@ -21,6 +21,8 @@ cargo run -p gandr-lang -- check --jobs 1 crates/surface-corpus/strict   # one s
 
 `gandr mcp` serves the Model Context Protocol over standard input and output through the same hub: a model reads the diagnostics, outline and types of the documents the workspace's editors hold open, at the version the editor shows.
 
+`gandr view` follows the same hub's render bus in a terminal beside the editor: every diagnostic of the document checked last, at its row and column with its derivation, and every hole with its goal, refreshed at each check.
+
 ## Crates
 
 `crates/README.md` names every crate, its package and its layer.

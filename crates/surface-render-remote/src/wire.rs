@@ -189,12 +189,23 @@ pub enum FrameScope
     Document(DocId),
 }
 
-/// The renderer-facing report a [`FrameBody::Frame`] carries: highlights,
-/// marks, diagnostic cards and goal cards over one document version.
+/// The renderer-facing report a [`FrameBody::Frame`] carries: the document's
+/// text, highlights, marks, diagnostic cards and goal cards over one document
+/// version.
+///
+/// # Specification
+/// - provides: under the `serde` feature, a decode that reads an image without
+///   `source` as the empty text, so an image written before the field was added
+///   still decodes at the same schema version.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ReportView
 {
+    /// The document's text at the report's version, which every byte range
+    /// below addresses; empty when the producer paints over a buffer the
+    /// renderer already holds.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub source: String,
     /// The highlight spans over the document.
     pub highlights: Vec<HlSpan>,
     /// The mark spans: error underlines and hole tints.
@@ -842,6 +853,7 @@ mod tests
     fn every_body_variant_round_trips_through_json()
     {
         let report = ReportView {
+            source: "def x = ?0 ;".into(),
             highlights: vec![HlSpan {
                 range: ByteRange::new(ByteOffset::from(0_usize), ByteOffset::from(3_usize))
                     .expect("an ordered range"),
@@ -870,6 +882,31 @@ mod tests
             let back: RenderFrame = serde_json::from_str(&json).expect("deserialize");
             assert_eq!(frame, back, "the frame round-trips: {json}");
         }
+    }
+
+    #[test]
+    fn a_report_written_without_its_source_still_decodes()
+    {
+        let mut image = image(&RenderFrame::frame(document(Version(3)), ReportView {
+            source: "def x = 1 ;".into(),
+            ..ReportView::default()
+        }));
+        assert_eq!(
+            image["body"]["data"]["report"]["source"], "def x = 1 ;",
+            "the text is on the wire"
+        );
+        drop(
+            image["body"]["data"]["report"]
+                .as_object_mut()
+                .and_then(|report| report.remove("source")),
+        );
+        let decoded: RenderFrame =
+            serde_json::from_value(image).expect("a report without its text decodes");
+        assert_eq!(
+            RenderFrame::frame(document(Version(3)), ReportView::default()),
+            decoded,
+            "the missing text reads as empty, at the same schema version"
+        );
     }
 
     #[test]

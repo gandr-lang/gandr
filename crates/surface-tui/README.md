@@ -1,6 +1,6 @@
 # gandr-surface-tui
 
-The gandr terminal face: the read-evaluate loop's transcript, an input pane and a status line, painted full-screen.
+The gandr terminal face: the read-evaluate loop's transcript, an input pane and a status line, painted full-screen; and the side view, which follows the engine hub's render bus beside an editor.
 
 <!-- toc -->
 
@@ -16,6 +16,7 @@ The gandr terminal face: the read-evaluate loop's transcript, an input pane and 
 - [The transcript pane](#the-transcript-pane)
 - [Keys](#keys)
 - [The smoke face](#the-smoke-face)
+- [The side view](#the-side-view)
 - [Specification and evidence](#specification-and-evidence)
 - [License](#license)
 
@@ -42,6 +43,7 @@ The gandr terminal face: the read-evaluate loop's transcript, an input pane and 
 | Painting | `draw` keeps the newest transcript rows and visible input tail; backend witnesses observe pane layout, roles, cursor geometry and malformed highlight boundaries. |
 | Styling | Both const style maps have executable predicates. Finite witnesses cover all 23 roles and eight line kinds, semantic contrast and emphasis. |
 | Event loop | `drive` draws before reading and stops on quit or failure. Scripted input, modifier boundaries and partial-write failure observe its transitions and error provenance. |
+| Side view | `Following` keeps the last report of each document the render bus sends and follows the one checked last; `Following::rows` lays out its heading, cards and holes; `drive_following` paints them and stops at `q`, Esc, Ctrl-C, a detach or the hub's end; `follow` runs it on the terminal and `follow_plain` prints each report to a pipe. Witnesses: `follow::tests::the_view_follows_the_document_checked_last`, `follow::tests::a_report_lays_out_its_cards_and_holes`, `follow::tests::the_view_paints_what_the_bus_sends`, `follow::tests::a_piped_view_prints_each_report`. |
 
 ## Expected features
 
@@ -101,23 +103,34 @@ The input pane selects visible waiting rows before converting coordinates, clips
 | Ctrl-C | drops the line and the buffer the parser waits on |
 | Esc | leaves |
 
+The side view types nothing: `q`, Esc and Ctrl-C leave it, and every other key redraws.
+
 `:quit` and every other meta-command go to the loop as lines. The face keeps no history, offers no completion, and edits only at the end of the line.
 
 ## The smoke face
 
 `run_smoke` drives the same event loop as `gandr tui` over ratatui's headless backend, 80 columns by 24 rows, with an input source that asks to leave at its first read, then prints `gandr tui: ready`. The gate exercises the grammar, the loop's construction, one full paint and the event loop without a terminal, and the driver's witness spawns it as a user would.
 
+## The side view
+
+**Choice.** `gandr view` attaches to the render bus of the workspace's hub and shows what an editor cannot: every diagnostic of the document the hub checked last, each at its one-based row and column with its further lines and its derivation, then each hole with its goal, under a heading naming the document, its version and the counts. The view follows whichever document's report arrived last, so it moves with the editor's focus without being told where the cursor is. It is a renderer and nothing more: the reports are the hub's, read off the diagnostics the editor already shows, and `Following::rows` is the one layout the terminal pane and a pipe print. On a terminal the frames are read on one thread and the keys on another, started once the terminal is raw, both into the one channel `drive_following` waits on, so a report paints while no key is pressed; `q`, Esc and Ctrl-C leave, and leaving sends the hub a detach. Piped, each report prints as its rows followed by a blank line, which is what the driver's witness reads.
+
+**Alternatives.** Following the cursor would need the editor to say where it is, a request the protocol does not carry to a second client; following the last check is what an author editing one document sees. Drawing the source with its highlights and marks beside the cards would repeat the editor's own pane; the report carries them for a renderer that has no editor. Polling the hub would show a check late or ask for reports nothing changed; the bus pushes each publication.
+
+**Reversal.** An editor extension that reports the focused document moves the view onto it; a renderer with no editor beside it paints the source the report carries.
+
 ## Specification and evidence
 
-The crate specifies 26 nontrivial items: 21 executable predicates and 26 bounded adequacy arguments. Transparent accessors and the constant quit source remain trivial. Predicates cover editing transitions, style classifications, text conservation, coordinate saturation, key precedence, fault provenance and the test harness's transformations.
+The crate specifies 32 nontrivial items: 23 executable predicates and 32 bounded adequacy arguments. Transparent accessors, the constant quit source and the side view's frame reader and detach remain trivial. Predicates cover editing transitions, style classifications, text conservation, coordinate saturation, key precedence, fault provenance, the side view's following and layout, and the test harness's transformations.
 
-Five items need effect witnesses instead of predicates:
+Nine items need effect witnesses instead of predicates:
 
-- `draw`, `draw_transcript` and `draw_input`: ratatui exposes the frame buffer only through a mutable borrow, which a predicate's `Fn` closure cannot take; frame cursor state has no getter. Tests observe the completed backend instead.
+- `draw`, `draw_transcript`, `draw_input` and `draw_following`: ratatui exposes the frame buffer only through a mutable borrow, which a predicate's `Fn` closure cannot take; frame cursor state has no getter. Tests observe the completed backend instead.
 - `InputSource::next`: the abstract source has no pending-input or read-state observer.
-- `drive`: generic input and backend traits expose no immutable queue or painted-state observer, and supplied faults may be arbitrary.
+- `drive` and `drive_following`: generic input and backend traits, and a channel, expose no immutable queue or painted-state observer, and supplied faults may be arbitrary.
+- `follow` and `follow_plain`: their effects are a terminal's, a socket's and a writer's, none read back.
 
-The 21 terminal-free tests cover application transitions, complete style classifications, Unicode and coordinate boundaries, malformed highlight precedence, modifier handling, independent frame layouts, transcript scrolling, failed-input termination and partial-write failure. A 22nd test, `the_terminal_face_completes_and_restores_its_settings`, is opt-in because it needs an attached terminal: it reads real quit keys and compares terminal settings before and after. The two cursor/tail regression witnesses fail on the previous renderer and pass with the corrected clipping. Wording-only and implementation-copy checks are not evidence; the frame golden compares literal pane layout rather than rebuilding the painter's algorithm.
+The 25 terminal-free tests cover application transitions, complete style classifications, Unicode and coordinate boundaries, malformed highlight precedence, modifier handling, independent frame layouts, transcript scrolling, failed-input termination, partial-write failure, and the side view's following, layout, paint and piped rows. A 26th test, `the_terminal_face_completes_and_restores_its_settings`, is opt-in because it needs an attached terminal: it reads real quit keys and compares terminal settings before and after. The two cursor/tail regression witnesses fail on the previous renderer and pass with the corrected clipping. Wording-only and implementation-copy checks are not evidence; the frame golden compares literal pane layout rather than rebuilding the painter's algorithm. The side view on a real terminal is exercised by `gandr view` beside an editor's session; the driver's witness runs it piped.
 
 `cargo nextest run -p gandr-surface-tui` runs the terminal-free witnesses. With `RUSTFLAGS='--cfg anodized_panic'`, it also executes their predicates. To exercise the native input and terminal predicates, build the `launch` test executable with that flag, then run it on a terminal with `--exact tests::the_terminal_face_completes_and_restores_its_settings --ignored --nocapture` and enter `:quit`. A public rendering probe covers empty panes, wide and combining characters, and a 65,537-character input; `gandr tui --smoke` exercises terminal-free launch. A real terminal session also discards an incomplete definition, evaluates and queries an accepted definition, quits through `:quit`, and restores terminal settings. Real terminal failure injection and font-dependent glyph appearance remain outside the deterministic test domain.
 

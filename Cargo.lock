@@ -912,6 +912,7 @@ dependencies = [
  "gandr-surface-syntax",
  "quenchant-anodized",
  "ratatui",
+ "serde_json",
 ]
 
 [[package]]

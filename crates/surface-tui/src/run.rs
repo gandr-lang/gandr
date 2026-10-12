@@ -63,7 +63,7 @@ pub trait InputSource
 }
 
 /// The terminal's key events.
-struct Keyboard;
+pub struct Keyboard;
 
 impl InputSource for Keyboard
 {

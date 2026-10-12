@@ -17,7 +17,8 @@ publish.workspace = true
 # parser's tree, the parser's completion query, the printer's page width for
 # a hover's type, and the renderer seam's UTF-16 projection. The wire is
 # JSON, decoded and encoded through serde; a `file` URI's path is
-# percent-decoded.
+# percent-decoded. The hub's render-bus face writes the seam's frames, so the
+# seam's serde image is on.
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled.
 [dependencies]
@@ -31,7 +32,7 @@ gandr-surface-format.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-parser.workspace = true
 gandr-surface-pretty.workspace = true
-gandr-surface-render-remote.workspace = true
+gandr-surface-render-remote = { workspace = true, features = ["serde"] }
 gandr-surface-session.workspace = true
 gandr-surface-syntax.workspace = true
 percent-encoding.workspace = true
