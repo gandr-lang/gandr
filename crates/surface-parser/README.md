@@ -13,6 +13,7 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
 - [Label, mold, meld](#label-mold-meld)
   - [An edit is relabeled around itself](#an-edit-is-relabeled-around-itself)
 - [The molder's search stops at its least key](#the-molders-search-stops-at-its-least-key)
+  - [A tie the next token refutes runs no window](#a-tie-the-next-token-refutes-runs-no-window)
 - [A closer with a required operand after it is a mid tile](#a-closer-with-a-required-operand-after-it-is-a-mid-tile)
 - [A required tail runs as far as its group yields](#a-required-tail-runs-as-far-as-its-group-yields)
 - [The tree the melder commits](#the-tree-the-melder-commits)
@@ -130,6 +131,13 @@ The tree and the obligations are identical, node by node, on every corpus source
 
 - Alternatives: dropping the whole-menu fallback inside windows removed most of the cost and changed 20 sources' trees, so it is not this crate's to make — the fallback is part of the molding the corpus checks. Memoizing completions across tied candidates by the slope they leave never found two candidates leaving one slope, and cost more than it saved.
 - Reversal: a ranking key whose floor cannot be read without a dry-run, or a window delta that can shrink, voids the bound; the search then visits every survivor again.
+
+### A tie the next token refutes runs no window
+
+Before the tied openers' windows run, the next significant token prunes them. A tied mold whose right side faces no hole and that cannot end its form is followed by one of its own form's next tiles, so a token that none of those tiles is labelled with cannot follow it. The token's labels are its whole candidate menu, a reserved uppercase word's generic fallback labels included, so the check reads nothing of the state the opener would leave. A lone survivor wins without a window; when the token refutes every opener, every one stays and the windows decide as before. Over the corpus the trees are unchanged and parsing takes half the time.
+
+- Alternatives: one-token dry-run windows instead of the grammar check decide too few ties and disagree with the full windows on some; dropping the windows altogether loses the shared-prefix families the windows exist for.
+- Reversal: a grammar whose closed tile can be followed, within its form, by a tile that is not one of its same-form successors voids the check; the table's successor relation then has to carry that tile.
 
 ## A closer with a required operand after it is a mid tile
 
