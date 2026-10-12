@@ -36,6 +36,9 @@ use quenchant_shape::shape::Maybe;
 use crate::report::Report;
 use crate::report::Subject;
 use crate::report::Unsettlement;
+use crate::style::RenderStyle;
+use crate::style::Rendered;
+use crate::style::Verbosity;
 
 quenchant_shape::reason_enum! {
     /// Why a declaration has no entry.
@@ -58,6 +61,65 @@ pub enum Entry<'step>
     /// A ledger line: a settled fixture under `test`, a pending source's
     /// refusal under `test`, or a pending source the lowering read.
     Line(Line<'step>),
+}
+
+impl Entry<'_>
+{
+    /// The entry as a face prints it: a report rendered in `style` at
+    /// `verbosity`, a ledger line as itself or, at [`Verbosity::Json`], as one
+    /// line of JSON.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a report is [`Report::render`] under `style` and `verbosity`;
+    ///   a ledger line is its own text below [`Verbosity::Json`] and, at it,
+    ///   the object `{"level":"line","path":…,"line":…}` on one line.
+    /// - provides: the one call a face prints an entry through, at any level.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fixture ledger line under `test` prints as itself
+    ///   and as its JSON object; a report prints as its rendering.
+    /// - witness: `diagnostics::diagnostics::each_verb_prints_its_entries`
+    /// - witness: `diagnostics::diagnostics::one_refusal_renders_at_every_verbosity`
+    #[spec(ensures: |ref ret| match *self {
+        Entry::Report(_) => true,
+        Entry::Line(_) => (verbosity == Verbosity::Json) == ret.as_ref().starts_with('{'),
+    })]
+    #[inline]
+    #[must_use]
+    pub fn render(
+        &self,
+        style: RenderStyle,
+        verbosity: Verbosity,
+    ) -> Rendered
+    {
+        match *self {
+            | Entry::Report(ref report) => report.render(style, verbosity),
+            | Entry::Line(ref line) if verbosity == Verbosity::Json => {
+                let image = JsonLine {
+                    level: "line",
+                    path: line.path.display().to_string(),
+                    line: line.to_string(),
+                };
+                Rendered::from(serde_json::to_string(&image).unwrap_or_default())
+            },
+            | Entry::Line(ref line) => Rendered::from(line.to_string()),
+        }
+    }
+}
+
+/// A ledger line's JSON image.
+#[derive(Clone, Debug, serde::Serialize)]
+struct JsonLine
+{
+    /// Always `line`, where a report's image writes its level.
+    level: &'static str,
+    /// The source's path, as the walk reached it.
+    path: String,
+    /// The line, as it prints below the JSON level.
+    line: String,
 }
 
 /// A ledger line one source prints beside its reports.

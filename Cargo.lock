@@ -592,6 +592,7 @@ dependencies = [
  "gandr-surface-tui",
  "quenchant-anodized",
  "quenchant-shape",
+ "serde_json",
  "tracing",
  "tracing-subscriber",
 ]
@@ -685,6 +686,8 @@ dependencies = [
  "gandr-surface-syntax",
  "quenchant-anodized",
  "quenchant-shape",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -24,6 +24,7 @@ mod diagnostics
     use gandr_surface_diagnostics::Report;
     use gandr_surface_diagnostics::TerminalCapability;
     use gandr_surface_diagnostics::Unsettlement;
+    use gandr_surface_diagnostics::Verbosity;
     use gandr_surface_diagnostics::entries;
     use gandr_surface_diagnostics::report_context;
     use gandr_surface_diagnostics::report_identifier;
@@ -346,7 +347,9 @@ def wrong = "text" ;
             Maybe::Present(span_of(text, SourceText::from(r#""text""#))),
             "the checker's refusal is located at the mismatched term through the origin table"
         );
-        let rendered = report.render(RenderStyle::Plain).to_string();
+        let rendered = report
+            .render(RenderStyle::Plain, Verbosity::User)
+            .to_string();
         assert!(
             rendered.contains("mismatch.gandr:2:13"),
             "the report names its source at the term: {rendered}"
@@ -500,7 +503,10 @@ def wrong = "text" ;
             (&steps[1], include_str!("golden/nested-application.txt")),
         ] {
             assert_eq!(
-                format!("{}\n", only(step).render(RenderStyle::Plain)),
+                format!(
+                    "{}\n",
+                    only(step).render(RenderStyle::Plain, Verbosity::User)
+                ),
                 golden,
                 "the terminal layout is a public surface"
             );
@@ -553,7 +559,7 @@ def wrong = "text" ;
             "`int` shadows a builtin name; the source's binding wins"
         );
         assert_eq!(
-            format!("{}\n", declared.render(RenderStyle::Plain)),
+            format!("{}\n", declared.render(RenderStyle::Plain, Verbosity::User)),
             include_str!("golden/shadowed-builtin.txt"),
             "the terminal layout is a public surface"
         );
@@ -574,6 +580,62 @@ def wrong = "text" ;
             report.tally().settlement(),
             gandr_surface_corpus::Settlement::Settled,
             "a warning unsettles nothing"
+        );
+    }
+
+    #[test]
+    fn one_refusal_renders_at_every_verbosity()
+    {
+        let text = SourceText::from("def a : +U (-F Integer) ;\ndef a = thunk { force 1 } ;\n");
+        let step = unsettled(Path::new("force.gandr"), SourceRoot::Strict, text);
+        let [report] = *reports(&step, Verb::Check(Goals::Gated)).as_slice()
+        else {
+            panic!("one refusal, one report");
+        };
+        for (verbosity, golden) in [
+            (Verbosity::User, include_str!("golden/nested-force.txt")),
+            (
+                Verbosity::Detailed,
+                include_str!("golden/verbosity-detailed.txt"),
+            ),
+            (Verbosity::Debug, include_str!("golden/verbosity-debug.txt")),
+            (Verbosity::Json, include_str!("golden/verbosity-json.txt")),
+        ] {
+            assert_eq!(
+                format!("{}\n", report.render(RenderStyle::Plain, verbosity)),
+                golden,
+                "each level's layout is a public surface: {verbosity:?}"
+            );
+        }
+        let user = report
+            .render(RenderStyle::Plain, Verbosity::User)
+            .to_string();
+        let detailed = report
+            .render(RenderStyle::Plain, Verbosity::Detailed)
+            .to_string();
+        assert!(
+            !user.contains("class: ") && detailed.contains("class: malformed source"),
+            "the class shows from the detailed level"
+        );
+        assert!(
+            !detailed.contains("spans: "),
+            "byte spans wait for the debug level"
+        );
+        let image: serde_json::Value =
+            serde_json::from_str(report.render(RenderStyle::Styled, Verbosity::Json).as_ref())
+                .expect("the JSON image parses, whatever the style");
+        assert_eq!(image["name"], "ShapeMismatch");
+        assert_eq!(image["message"], report.message().to_string());
+        assert_eq!(image["title"], report.title().to_string());
+        assert_eq!(
+            (&image["primary"]["line"], &image["primary"]["column"]),
+            (&serde_json::json!(2_u64), &serde_json::json!(23_u64)),
+            "the primary locus is where the terminal points"
+        );
+        assert_eq!(
+            image["reasons"].as_array().map(Vec::len),
+            Some(report.reasons().len()),
+            "every nested reason is in the image"
         );
     }
 
@@ -625,7 +687,7 @@ def wrong = "text" ;
             );
             assert!(
                 report
-                    .render(RenderStyle::Plain)
+                    .render(RenderStyle::Plain, Verbosity::User)
                     .to_string()
                     .contains(label.as_str()),
                 "the terminal prints the label under the locus"
@@ -640,7 +702,9 @@ def wrong = "text" ;
         let step = unsettled(Path::new(""), SourceRoot::Strict, text);
         let reports = reports(&step, Verb::Check(Goals::Gated));
         assert_eq!(reports.len(), 1_usize, "one mismatch, one report");
-        let rendered = reports[0].render(RenderStyle::Plain).to_string();
+        let rendered = reports[0]
+            .render(RenderStyle::Plain, Verbosity::User)
+            .to_string();
         assert!(
             rendered.contains("<input>:2:13"),
             "a source with no path is named `<input>`: {rendered}"
@@ -663,7 +727,9 @@ def a = 1 ;
         let step = unsettled(Path::new("duplicate.gandr"), SourceRoot::Strict, text);
         let reports = reports(&step, Verb::Check(Goals::Gated));
         assert_eq!(reports.len(), 1_usize, "one duplicate, one report");
-        let rendered = reports[0].render(RenderStyle::Plain).to_string();
+        let rendered = reports[0]
+            .render(RenderStyle::Plain, Verbosity::User)
+            .to_string();
         assert!(
             rendered.contains(
                 "1 │ def a : Integer ;
@@ -707,8 +773,10 @@ def a = 1 ;
         let step = unsettled(Path::new("mismatch.gandr"), SourceRoot::Strict, text);
         let reports = reports(&step, Verb::Check(Goals::Gated));
         assert_eq!(reports.len(), 1_usize, "one mismatch, one report");
-        let plain = reports[0].render(RenderStyle::Plain).to_string();
-        let styled = reports[0].render(RenderStyle::Styled);
+        let plain = reports[0]
+            .render(RenderStyle::Plain, Verbosity::User)
+            .to_string();
+        let styled = reports[0].render(RenderStyle::Styled, Verbosity::User);
         assert!(
             !plain.contains('\u{1b}'),
             "plain rendering is escape-free: {plain}"
@@ -746,7 +814,9 @@ def wrong = "text" ;
                     seen.push((
                         report.class(),
                         report.span(),
-                        report.render(RenderStyle::Plain).to_string(),
+                        report
+                            .render(RenderStyle::Plain, Verbosity::User)
+                            .to_string(),
                     ));
                 }
             }
@@ -797,7 +867,10 @@ def wrong = "text" ;
             "the stated refusal was not produced"
         );
         assert_eq!(
-            format!("{}\n", reports[0].render(RenderStyle::Plain)),
+            format!(
+                "{}\n",
+                reports[0].render(RenderStyle::Plain, Verbosity::User)
+            ),
             include_str!("golden/unsettled.txt"),
             "the terminal layout is a public surface"
         );
@@ -824,7 +897,10 @@ def wrong = "text" ;
             "under `check --goals` it is a goal"
         );
         assert_eq!(
-            format!("{}\n", reported[0].render(RenderStyle::Plain)),
+            format!(
+                "{}\n",
+                reported[0].render(RenderStyle::Plain, Verbosity::User)
+            ),
             include_str!("golden/goal.txt"),
             "the terminal layout is a public surface"
         );
@@ -853,7 +929,9 @@ def broken = missing ;
             Maybe::Absent(report_span::Absent::OutsideText),
             "a span the text cannot answer is no locus"
         );
-        let rendered = reports[0].render(RenderStyle::Plain).to_string();
+        let rendered = reports[0]
+            .render(RenderStyle::Plain, Verbosity::User)
+            .to_string();
         assert!(
             rendered.contains("broken.gandr") && !rendered.contains('│'),
             "an unlocated report names its path and quotes no line: {rendered}"
@@ -904,6 +982,26 @@ def broken = missing ;
                                 .strip_prefix(&prefix)
                                 .expect("the ledger names its source");
                             assert!(!rendered.ends_with('\n'), "the ledger adds no terminator");
+                            assert_eq!(
+                                entry
+                                    .render(RenderStyle::Plain, Verbosity::User)
+                                    .to_string(),
+                                rendered,
+                                "below the JSON level a ledger line prints as itself"
+                            );
+                            let image: serde_json::Value = serde_json::from_str(
+                                entry.render(RenderStyle::Plain, Verbosity::Json).as_ref(),
+                            )
+                            .expect("a ledger line's JSON image parses");
+                            assert_eq!(
+                                image,
+                                serde_json::json!({
+                                    "level": "line",
+                                    "path": path.display().to_string(),
+                                    "line": rendered.as_str(),
+                                }),
+                                "the JSON image carries the path and the line"
+                            );
                             if path.ends_with("fixture/pending/whole.gandr") {
                                 assert!(payload.contains("ret_expression"));
                                 assert!(

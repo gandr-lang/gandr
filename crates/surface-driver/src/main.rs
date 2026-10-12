@@ -42,6 +42,7 @@ use anodized::spec;
 use gandr_surface_diagnostics::Entry;
 use gandr_surface_diagnostics::RenderStyle;
 use gandr_surface_diagnostics::TerminalCapability;
+use gandr_surface_diagnostics::Verbosity;
 use gandr_surface_diagnostics::entries;
 use gandr_surface_dispatcher::Evaluation;
 use gandr_surface_dispatcher::FormatStep;
@@ -128,6 +129,9 @@ enum Command
         /// rather than failing the run.
         #[arg(long)]
         goals: bool,
+        /// How much of each report to print.
+        #[arg(long, value_enum, default_value_t = Level::User)]
+        verbosity: Level,
         /// The threads the sources are parsed and lowered on.
         #[command(flatten)]
         jobs: Jobs,
@@ -141,6 +145,9 @@ enum Command
     /// Exits as `check` does.
     Test
     {
+        /// How much of each report to print.
+        #[arg(long, value_enum, default_value_t = Level::User)]
+        verbosity: Level,
         /// The threads the sources are parsed and lowered on.
         #[command(flatten)]
         jobs: Jobs,
@@ -295,6 +302,40 @@ impl From<Jobs> for Width
     }
 }
 
+/// How much of each report `check` and `test` print.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, clap::ValueEnum)]
+enum Level
+{
+    /// The message, the labels, the nested reasons and the note.
+    #[default]
+    User,
+    /// Adds the class, the producer's wording and the offending source text.
+    Detailed,
+    /// Adds byte spans and the producer's refusal as its implementers print
+    /// it.
+    Debug,
+    /// Every report, ledger line and the run's summary as one line of JSON.
+    Json,
+}
+
+impl From<Level> for Verbosity
+{
+    /// The verbosity `level` names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(level: Level) -> Self
+    {
+        match level {
+            | Level::User => Self::User,
+            | Level::Detailed => Self::Detailed,
+            | Level::Debug => Self::Debug,
+            | Level::Json => Self::Json,
+        }
+    }
+}
+
 /// Which face of the read-evaluate loop to run.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Face
@@ -375,40 +416,61 @@ fn main() -> ExitCode
     );
     #[cfg(feature = "tracing")]
     let _span = tracing::info_span!("driver").entered();
-    let invocation = match cli.command {
-        | None => Invocation::Status,
-        | Some(Command::Check { goals, jobs, paths }) => Invocation::Check {
-            goals: if goals { Goals::Reported } else { Goals::Gated },
+    let (invocation, verbosity) = match cli.command {
+        | None => (Invocation::Status, Verbosity::User),
+        | Some(Command::Check {
+            goals,
+            verbosity,
+            jobs,
             paths,
-            width: Width::from(jobs),
-        },
-        | Some(Command::Test { jobs, paths }) => Invocation::Test {
+        }) => (
+            Invocation::Check {
+                goals: if goals { Goals::Reported } else { Goals::Gated },
+                paths,
+                width: Width::from(jobs),
+            },
+            Verbosity::from(verbosity),
+        ),
+        | Some(Command::Test {
+            verbosity,
+            jobs,
             paths,
-            width: Width::from(jobs),
-        },
-        | Some(Command::Run { path }) => Invocation::Run { path },
-        | Some(Command::Stage { jobs, programs }) => Invocation::Stage {
-            programs,
-            width: Width::from(jobs),
-        },
+        }) => (
+            Invocation::Test {
+                paths,
+                width: Width::from(jobs),
+            },
+            Verbosity::from(verbosity),
+        ),
+        | Some(Command::Run { path }) => (Invocation::Run { path }, Verbosity::User),
+        | Some(Command::Stage { jobs, programs }) => (
+            Invocation::Stage {
+                programs,
+                width: Width::from(jobs),
+            },
+            Verbosity::User,
+        ),
         | Some(Command::Fmt {
             check,
             width,
             jobs,
             paths,
-        }) => Invocation::Format {
-            paths,
-            options: width.map_or_else(FormatOptions::default, |columns| FormatOptions {
-                page: PageWidth::from(columns),
-            }),
-            rewrite: if check {
-                Rewrite::Check
-            }
-            else {
-                Rewrite::InPlace
+        }) => (
+            Invocation::Format {
+                paths,
+                options: width.map_or_else(FormatOptions::default, |columns| FormatOptions {
+                    page: PageWidth::from(columns),
+                }),
+                rewrite: if check {
+                    Rewrite::Check
+                }
+                else {
+                    Rewrite::InPlace
+                },
+                width: Width::from(jobs),
             },
-            width: Width::from(jobs),
-        },
+            Verbosity::User,
+        ),
         | Some(Command::Lsp {
             capabilities: true, ..
         }) => return capabilities(),
@@ -448,6 +510,7 @@ fn main() -> ExitCode
     let mut stderr = std::io::stderr().lock();
     let rendered = render(
         gandr_surface_dispatcher::dispatch(invocation),
+        verbosity,
         &mut stdout,
         &mut stderr,
     );
@@ -877,6 +940,7 @@ fn usage(error: &clap::Error) -> ExitCode
             && (!status || *exit == ExitCode::SUCCESS)))]
 fn render(
     outcome: Outcome,
+    verbosity: Verbosity,
     stdout: &mut dyn std::io::Write,
     stderr: &mut dyn std::io::Write,
 ) -> std::io::Result<ExitCode>
@@ -886,7 +950,7 @@ fn render(
             writeln!(stdout, "gandr {} — {report}", env!("CARGO_PKG_VERSION"))?;
             Ok(ExitCode::SUCCESS)
         },
-        | Outcome::Run { verb, walk, width } => run(verb, walk, width, stdout, stderr),
+        | Outcome::Run { verb, walk, width } => run(verb, walk, width, verbosity, stdout, stderr),
         | Outcome::Script(mut runnable) => script(&mut runnable, stdout, stderr),
         | Outcome::Stage(staging) => stage(staging, stdout, stderr),
         | Outcome::Format(formatting) => fmt(formatting, stdout, stderr),
@@ -1019,19 +1083,21 @@ fn stage(
     })
 }
 
-/// Visit `walk` at `width` under `verb`, printing each step, then the report
-/// and the verdict.
+/// Visit `walk` at `width` under `verb`, printing each step at `verbosity`,
+/// then the report and the verdict.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: consumes the walk, writing each step in walk order: each entry
 ///   `gandr-surface-diagnostics` renders of a source step under `verb` to
-///   standard output — a report as a plain snippet followed by an empty line, a
-///   ledger line as itself — and each fault as one `gandr: <path>: <fault>`
-///   line to standard error; then the final report and verdict. The exit is
-///   zero for settled, one for unsettled and two for faulted, as the walk's
-///   final report decides under the offered verb. Every byte written and the
-///   exit are the same at every width.
+///   standard output at `verbosity` — below the JSON level a report as a plain
+///   snippet followed by an empty line and a ledger line as itself, at it each
+///   entry as one line of JSON — and each fault as one `gandr: <path>: <fault>`
+///   line to standard error; then the final report and verdict, at the JSON
+///   level as one object whose `level` is `summary`. The exit is zero for
+///   settled, one for unsettled and two for faulted, as the walk's final report
+///   decides under the offered verb, at every verbosity. Every byte written and
+///   the exit are the same at every width.
 /// - provides: ordered rendering and severity aggregation for check and test.
 /// - fails: the first write error, without visiting or writing anything after
 ///   it.
@@ -1051,12 +1117,14 @@ fn stage(
 /// - witness: `cli::cli::the_test_verb_prints_every_fixture_and_pending_source`
 /// - witness: `cli::cli::a_failed_diagnostic_stream_stops_later_output`
 /// - witness: `cli::cli::every_width_prints_the_serial_run`
+/// - witness: `cli::cli::verbosity_chooses_how_much_of_a_report_prints`
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |exit|
     *exit == ExitCode::SUCCESS || *exit == ExitCode::from(UNSETTLED) || *exit == ExitCode::from(FAULTED)))]
 fn run(
     verb: Verb,
     walk: Walk,
     width: Width,
+    verbosity: Verbosity,
     stdout: &mut dyn std::io::Write,
     stderr: &mut dyn std::io::Write,
 ) -> std::io::Result<ExitCode>
@@ -1065,12 +1133,18 @@ fn run(
         match step {
             | Step::Source { .. } => {
                 for entry in entries(&step, verb) {
-                    let written = match entry {
-                        | Entry::Report(report) => {
-                            writeln!(stdout, "{}\n", report.render(RenderStyle::Plain))
-                        },
-                        | Entry::Line(line) => writeln!(stdout, "{line}"),
+                    let separator = match (entry, verbosity) {
+                        | (
+                            Entry::Report(_),
+                            Verbosity::User | Verbosity::Detailed | Verbosity::Debug,
+                        ) => "\n",
+                        | (Entry::Report(_), Verbosity::Json) | (Entry::Line(_), _) => "",
                     };
+                    let written = writeln!(
+                        stdout,
+                        "{}{separator}",
+                        entry.render(RenderStyle::Plain, verbosity)
+                    );
                     if let Err(error) = written {
                         return ControlFlow::Break(error);
                     }
@@ -1089,8 +1163,18 @@ fn run(
         | ControlFlow::Break(error) => return Err(error),
     };
     let verdict = report.verdict(verb);
-    writeln!(stdout, "{report}")?;
-    writeln!(stdout, "verdict: {verdict}")?;
+    if verbosity == Verbosity::Json {
+        let summary = serde_json::json!({
+            "level": "summary",
+            "report": report.to_string(),
+            "verdict": verdict.to_string(),
+        });
+        writeln!(stdout, "{summary}")?;
+    }
+    else {
+        writeln!(stdout, "{report}")?;
+        writeln!(stdout, "verdict: {verdict}")?;
+    }
     Ok(match verdict {
         | RunVerdict::Settled => ExitCode::SUCCESS,
         | RunVerdict::Unsettled => ExitCode::from(UNSETTLED),
@@ -1154,7 +1238,11 @@ fn script(
             for entry in entries(&step, Verb::Check(Goals::Reported)) {
                 match entry {
                     | Entry::Report(report) => {
-                        writeln!(stderr, "{}\n", report.render(RenderStyle::Plain))?;
+                        writeln!(
+                            stderr,
+                            "{}\n",
+                            report.render(RenderStyle::Plain, Verbosity::User)
+                        )?;
                     },
                     | Entry::Line(line) => writeln!(stderr, "{line}")?,
                 }

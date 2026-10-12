@@ -15,7 +15,8 @@ publish.workspace = true
 # lowering's refusals and origin table, the checker's refusals and the failure
 # classes beneath them, the kernel's occurrence sites and descent rules those
 # refusals carry, and the source text spans are measured against. The
-# snippet backend stays behind the crate's API.
+# snippet backend stays behind the crate's API. The JSON verbosity level
+# derives its image through serde and encodes it through serde_json.
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled.
 [dependencies]
@@ -29,6 +30,8 @@ gandr-surface-dispatcher.workspace = true
 gandr-surface-lowering.workspace = true
 gandr-surface-syntax.workspace = true
 quenchant-shape.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 
 # The suite composes sources through the dispatcher's composition, which takes
 # the built-in grammar.

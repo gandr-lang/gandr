@@ -383,6 +383,56 @@ mod cli
     }
 
     #[test]
+    fn verbosity_chooses_how_much_of_a_report_prints()
+    {
+        let scratch = Scratch::new(Path::new("verbosity"));
+        let source = scratch.file(
+            Path::new("broken.gandr"),
+            Text::from("def answer = 42 ;\ndef broken = missing ;\n"),
+        );
+        let at = |level: &str| {
+            ran(gandr(&[
+                Path::new("check"),
+                Path::new("--verbosity"),
+                Path::new(level),
+                &source,
+            ]))
+        };
+        let user = at("user");
+        let detailed = at("detailed");
+        let debug = at("debug");
+        for output in [&user, &detailed, &debug] {
+            assert_eq!(code(output), Code(1_i32), "{}", stdout(output));
+            assert!(stdout(output).ends_with("verdict: unsettled\n"));
+        }
+        assert_eq!(
+            stdout(&user),
+            stdout(&ran(gandr(&[Path::new("check"), &source]))),
+            "the user level is the default"
+        );
+        assert!(!stdout(&user).contains("class: "));
+        assert!(stdout(&detailed).contains("class: malformed source"));
+        assert!(stdout(&detailed).contains("expression: `missing`"));
+        assert!(!stdout(&detailed).contains("spans: "));
+        assert!(stdout(&debug).contains("spans: primary 31..38"));
+        let json = at("json");
+        assert_eq!(code(&json), Code(1_i32), "the level changes no exit");
+        let lines: Vec<serde_json::Value> = stdout(&json)
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("every line is one JSON object"))
+            .collect();
+        let [ref report, ref summary] = *lines.as_slice()
+        else {
+            panic!("one report and the summary: {lines:?}");
+        };
+        assert_eq!(report["name"], "UnresolvedName");
+        assert_eq!(report["primary"]["line"], 2_u64);
+        assert_eq!(report["primary"]["column"], 14_u64);
+        assert_eq!(summary["level"], "summary");
+        assert_eq!(summary["verdict"], "unsettled");
+    }
+
+    #[test]
     fn goals_report_an_obligation_without_failing()
     {
         let scratch = Scratch::new(Path::new("goals"));

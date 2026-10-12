@@ -642,7 +642,10 @@ mod session
         let renderings = entries(&step, Verb::Check(Goals::Reported))
             .map(|entry| match entry {
                 | Entry::Report(report) => report
-                    .render(gandr_surface_diagnostics::RenderStyle::Plain)
+                    .render(
+                        gandr_surface_diagnostics::RenderStyle::Plain,
+                        gandr_surface_diagnostics::Verbosity::User,
+                    )
                     .to_string(),
                 | Entry::Line(line) => line.to_string(),
             })

@@ -23,6 +23,7 @@ mod tests
     use gandr_surface_diagnostics::Class;
     use gandr_surface_diagnostics::Entry;
     use gandr_surface_diagnostics::RenderStyle;
+    use gandr_surface_diagnostics::Verbosity;
     use gandr_surface_diagnostics::entries;
     use gandr_surface_dispatcher::Goals;
     use gandr_surface_dispatcher::SourceRoot;
@@ -273,7 +274,11 @@ mod tests
             .filter_map(|entry| match entry {
                 | Entry::Report(report) if report.class() != Class::Goal => Some((
                     OutKind::Diag,
-                    report.render(style).to_string().trim_end().to_owned(),
+                    report
+                        .render(style, Verbosity::User)
+                        .to_string()
+                        .trim_end()
+                        .to_owned(),
                 )),
                 | Entry::Report(_) | Entry::Line(_) => None,
             })
@@ -1005,7 +1010,7 @@ mod tests
         };
         write_block(&mut output, &block).expect("no operation can fail");
         assert_eq!((output.writes, output.flushes), (0, 0));
-        assert_eq!(output.bytes, []);
+        assert_eq!(output.bytes, [0_u8; 0]);
     }
 
     /// A partial write is not followed by a flush; flush errors take precedence
@@ -1032,7 +1037,7 @@ mod tests
                 run_batch(input, &mut output, RenderStyle::Plain).expect_err("flush is refused");
             assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
             assert_eq!(output.flushes, 1);
-            assert_eq!(output.bytes, []);
+            assert_eq!(output.bytes, [0_u8; 0]);
         }
     }
 
@@ -1066,7 +1071,7 @@ mod tests
                 matches!(source.reads.as_slice(), [Read::Line(text)] if text == "not consumed")
             );
             assert_eq!(source.prompts, [Prompt::Fresh]);
-            assert_eq!(output.bytes, []);
+            assert_eq!(output.bytes, [0_u8; 0]);
             assert_eq!(output.flushes, 1);
         }
     }

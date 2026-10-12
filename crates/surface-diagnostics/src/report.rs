@@ -57,6 +57,7 @@ use crate::locus::report_context;
 use crate::message::Plain;
 use crate::style::RenderStyle;
 use crate::style::Rendered;
+use crate::style::Verbosity;
 
 quenchant_shape::reason_enum! {
     /// Why a report claims no span.
@@ -655,7 +656,8 @@ impl<'step> Report<'step>
         }
     }
 
-    /// The report as a source snippet, laid out in `style`.
+    /// The report as a source snippet, laid out in `style` at `verbosity`, or
+    /// as one line of JSON.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -673,8 +675,17 @@ impl<'step> Report<'step>
     ///   is named `<input>`. Plain adds no styling; styled adds the backend's
     ///   colour sequences. Caller path controls remain literal in both modes.
     ///   No framing terminator is appended, but a trailing path line ending can
-    ///   end an unlocated rendering.
-    /// - provides: the plain text the driver prints and the tests compare.
+    ///   end an unlocated rendering. At [`Verbosity::Detailed`] and above the
+    ///   snippet closes with the report's class, the producer's own wording
+    ///   where it differs from the message, and the primary locus's source text
+    ///   when it is one line; at [`Verbosity::Debug`] then the byte span of
+    ///   every locus and the producer's refusal and judgements as their
+    ///   implementers print them. At [`Verbosity::Json`] the rendering is one
+    ///   line of JSON holding the level, the identifier, the class, the
+    ///   message, the title, the path, every locus with its bytes, line, column
+    ///   and label, and the note, whatever the style.
+    /// - provides: the plain text the driver prints and the tests compare, and
+    ///   the structured image a tool reads.
     /// - fails: never.
     /// - panics: none; every span reaches the snippet backend checked against
     ///   the text.
@@ -698,22 +709,30 @@ impl<'step> Report<'step>
     /// - witness: `report::tests::utf8_boundaries_are_checked_per_locus_without_clamping`
     /// - witness: `diagnostics::diagnostics::a_refusal_names_the_judgements_it_stood_inside`
     /// - witness: `diagnostics::diagnostics::a_shadowed_builtin_renders_as_a_warning`
-    #[spec(ensures: |ref ret| match style {
-        RenderStyle::Plain => match self.subject {
-            Subject::Goal(_) => ret.as_ref().starts_with("goal: "),
-            Subject::Unsettled { .. } => ret.as_ref().starts_with("error: "),
-            Subject::Refused { .. } | Subject::Source(_) => ret.as_ref().starts_with("error["),
-            Subject::Shadowed(_) => ret.as_ref().starts_with("warning["),
+    /// - witness: `diagnostics::diagnostics::one_refusal_renders_at_every_verbosity`
+    #[spec(ensures: |ref ret| match verbosity {
+        Verbosity::Json => ret.as_ref().starts_with('{') && !ret.as_ref().contains('\n'),
+        Verbosity::User | Verbosity::Detailed | Verbosity::Debug => match style {
+            RenderStyle::Plain => match self.subject {
+                Subject::Goal(_) => ret.as_ref().starts_with("goal: "),
+                Subject::Unsettled { .. } => ret.as_ref().starts_with("error: "),
+                Subject::Refused { .. } | Subject::Source(_) => ret.as_ref().starts_with("error["),
+                Subject::Shadowed(_) => ret.as_ref().starts_with("warning["),
+            },
+            RenderStyle::Styled => ret.as_ref().contains("\u{1b}["),
         },
-        RenderStyle::Styled => ret.as_ref().contains("\u{1b}["),
     })]
     #[inline]
     #[must_use]
     pub fn render(
         &self,
         style: RenderStyle,
+        verbosity: Verbosity,
     ) -> Rendered
     {
+        if verbosity == Verbosity::Json {
+            return self.json();
+        }
         let annotations = self.annotations();
         let reasons: Vec<(ByteSpan, String)> = self
             .reasons()
@@ -792,11 +811,202 @@ impl<'step> Report<'step>
         if let Maybe::Present(ref note) = note {
             group = group.element(Level::NOTE.message(note.as_str()));
         }
+        let details = self.details(verbosity);
+        for detail in &details {
+            group = group.element(
+                Level::NOTE
+                    .with_name(detail.name)
+                    .message(detail.text.as_str()),
+            );
+        }
         let renderer = match style {
             | RenderStyle::Plain => Renderer::plain(),
             | RenderStyle::Styled => Renderer::styled(),
         };
         Rendered::from(renderer.decor_style(DecorStyle::Unicode).render(&[group]))
+    }
+
+    /// The lines a rendering at `verbosity` closes with, after the note.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: none below [`Verbosity::Detailed`]; then the class, the
+    ///   producer's wording where it differs from the message, and the primary
+    ///   locus's text when it is one line; at [`Verbosity::Debug`] then the
+    ///   byte spans and, for a refusal, the producer's refusal and the
+    ///   judgements it stood inside. Every text is one line.
+    /// - provides: the detail [`Report::render`] adds above the user level.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one refusal rendered at each level shows the detail
+    ///   lines of its level and none of the next.
+    /// - witness: `diagnostics::diagnostics::one_refusal_renders_at_every_verbosity`
+    #[spec(ensures: |ref ret| (matches!(verbosity, Verbosity::User | Verbosity::Json) == ret.is_empty())
+        && ret.iter().all(|detail| !detail.text.contains('\n')))]
+    fn details(
+        &self,
+        verbosity: Verbosity,
+    ) -> Vec<Detail>
+    {
+        let mut details = Vec::new();
+        if matches!(verbosity, Verbosity::User | Verbosity::Json) {
+            return details;
+        }
+        details.push(Detail {
+            name: "class",
+            text: self.class().to_string(),
+        });
+        let title = self.title().to_string();
+        if title != self.message().to_string() && !title.contains('\n') {
+            details.push(Detail {
+                name: "detail",
+                text: title,
+            });
+        }
+        let annotations = self.annotations();
+        if let Maybe::Present(primary) = annotations.primary
+            && let Ok(fragment) = self.text.fragment(primary.span)
+            && !fragment.as_ref().contains('\n')
+        {
+            details.push(Detail {
+                name: "expression",
+                text: format!("`{}`", fragment.as_ref()),
+            });
+        }
+        if verbosity != Verbosity::Debug {
+            return details;
+        }
+        let mut spans = match annotations.primary {
+            | Maybe::Present(primary) => format!("primary {}", primary.span),
+            | Maybe::Absent(reason) => format!("primary unlocated ({reason:?})"),
+        };
+        for annotation in annotations.context {
+            if let Maybe::Present(annotation) = annotation {
+                spans.push_str("; context ");
+                spans.push_str(&annotation.span.to_string());
+            }
+        }
+        for reason in self.reasons() {
+            spans.push_str("; reason ");
+            spans.push_str(&reason.span.to_string());
+        }
+        details.push(Detail {
+            name: "spans",
+            text: spans,
+        });
+        match self.subject {
+            | Subject::Refused {
+                refusal, pending, ..
+            } => {
+                details.push(Detail {
+                    name: "refusal",
+                    text: format!("{refusal:?}"),
+                });
+                if !pending.is_empty() {
+                    details.push(Detail {
+                        name: "judgements",
+                        text: format!("{pending:?}"),
+                    });
+                }
+            },
+            | Subject::Source(refusal) => details.push(Detail {
+                name: "refusal",
+                text: format!("{refusal:?}"),
+            }),
+            | Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Shadowed(_) => {},
+        }
+        details
+    }
+
+    /// The report as one line of JSON.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one JSON object on one line: `level`, `name` (the refusal's
+    ///   vocabulary name, or null), `class`, `message`, `title`, `path`,
+    ///   `primary` (a locus, or null), `context` and `reasons` (loci), and
+    ///   `note` (or null); a locus holds its byte `start` and `end`, its
+    ///   one-based `line` and `column` in characters, and its `label`.
+    /// - provides: the [`Verbosity::Json`] rendering.
+    /// - fails: never; the image holds only strings, numbers, nulls and arrays,
+    ///   which always encode.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one refusal's image parses back with its name,
+    ///   message, primary locus and reasons.
+    /// - witness: `diagnostics::diagnostics::one_refusal_renders_at_every_verbosity`
+    #[spec(ensures: |ref ret| ret.as_ref().starts_with('{') && !ret.as_ref().contains('\n'))]
+    fn json(&self) -> Rendered
+    {
+        let text = self.text.as_ref();
+        let locus = |span: ByteSpan, label: String| {
+            let start = usize::from(span.start());
+            let before = text.get(.. start).unwrap_or_default();
+            let line = before.matches('\n').count().saturating_add(1);
+            let column = before
+                .rsplit('\n')
+                .next()
+                .map_or(0, |current| current.chars().count())
+                .saturating_add(1);
+            JsonLocus {
+                start,
+                end: usize::from(span.end()),
+                line,
+                column,
+                label,
+            }
+        };
+        let annotations = self.annotations();
+        let primary = match (annotations.primary, self.label()) {
+            | (Maybe::Present(primary), Maybe::Present(label)) => {
+                Some(locus(primary.span, label.to_string()))
+            },
+            | (Maybe::Present(_) | Maybe::Absent(_), Maybe::Absent(_))
+            | (Maybe::Absent(_), Maybe::Present(_)) => None,
+        };
+        let context = annotations
+            .context
+            .into_iter()
+            .filter_map(|annotation| match annotation {
+                | Maybe::Present(annotation) => {
+                    Some(locus(annotation.span, annotation.label.to_string()))
+                },
+                | Maybe::Absent(_) => None,
+            })
+            .collect();
+        let reasons = self
+            .reasons()
+            .into_iter()
+            .map(|reason| locus(reason.span, reason.to_string()))
+            .collect();
+        let image = JsonReport {
+            level: match self.subject {
+                | Subject::Goal(_) => "goal",
+                | Subject::Shadowed(_) => "warning",
+                | Subject::Refused { .. } | Subject::Unsettled { .. } | Subject::Source(_) => {
+                    "error"
+                },
+            },
+            name: match self.identifier() {
+                | Maybe::Present(spelling) => Some(spelling.as_ref().to_owned()),
+                | Maybe::Absent(_) => None,
+            },
+            class: self.class().to_string(),
+            message: self.message().to_string(),
+            title: self.title().to_string(),
+            path: self.path.display().to_string(),
+            primary,
+            context,
+            reasons,
+            note: match self.note() {
+                | Maybe::Present(note) => Some(note.to_string()),
+                | Maybe::Absent(_) => None,
+            },
+        };
+        Rendered::from(serde_json::to_string(&image).unwrap_or_default())
     }
 
     /// Every locus the report marks, each checked against the source's text.
@@ -928,6 +1138,58 @@ where
         | Maybe::Present(annotation) => annotation.label.to_string(),
         | Maybe::Absent(_) => String::new(),
     }
+}
+
+/// One line a rendering above the user level closes with.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Detail
+{
+    /// What the line states, written where a note writes `note`.
+    name: &'static str,
+    /// The line.
+    text: String,
+}
+
+/// A report's JSON image.
+#[derive(Clone, Debug, serde::Serialize)]
+struct JsonReport
+{
+    /// `error`, `warning` or `goal`.
+    level: &'static str,
+    /// The refusal's vocabulary name, when the report carries a refusal.
+    name: Option<String>,
+    /// The report's class.
+    class: String,
+    /// The message the report leads with.
+    message: String,
+    /// The producer's own wording.
+    title: String,
+    /// The source's path, as the walk reached it.
+    path: String,
+    /// The primary locus, when the report is located.
+    primary: Option<JsonLocus>,
+    /// The context loci.
+    context: Vec<JsonLocus>,
+    /// The nested reasons, outermost first.
+    reasons: Vec<JsonLocus>,
+    /// The note a refused declaration closes with.
+    note: Option<String>,
+}
+
+/// One locus of a report's JSON image.
+#[derive(Clone, Debug, serde::Serialize)]
+struct JsonLocus
+{
+    /// The first byte.
+    start: usize,
+    /// The byte past the last.
+    end: usize,
+    /// The one-based line of the first byte.
+    line: usize,
+    /// The one-based column of the first byte, in characters.
+    column: usize,
+    /// What the locus says.
+    label: String,
 }
 
 /// A report's title: the producer's message for a refusal, what the
@@ -1122,6 +1384,7 @@ mod tests
     use super::Report;
     use super::Subject;
     use super::Unsettlement;
+    use super::Verbosity;
     use super::report_context;
     use super::report_span;
     use crate::Entry;
@@ -1191,7 +1454,7 @@ mod tests
                 },
                 Maybe::Absent(report_context::Absent::Unnamed),
             ]);
-            let rendered = report.render(RenderStyle::Plain);
+            let rendered = report.render(RenderStyle::Plain, Verbosity::User);
             if primary_valid {
                 let column = if start == 4_usize { 3_usize } else { 1_usize };
                 assert!(
@@ -1218,7 +1481,7 @@ mod tests
         assert_eq!(report.span(), Maybe::Present(empty));
         assert!(
             report
-                .render(RenderStyle::Plain)
+                .render(RenderStyle::Plain, Verbosity::User)
                 .as_ref()
                 .contains("empty.gandr:1:1")
         );
@@ -1240,8 +1503,8 @@ mod tests
                     budget: 0_usize.into(),
                 }),
             );
-            let plain = report.render(RenderStyle::Plain);
-            let styled = report.render(RenderStyle::Styled);
+            let plain = report.render(RenderStyle::Plain, Verbosity::User);
+            let styled = report.render(RenderStyle::Styled, Verbosity::User);
             assert!(
                 plain.as_ref().ends_with(path),
                 "the literal path ends the unlocated report"

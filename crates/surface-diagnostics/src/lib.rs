@@ -22,14 +22,14 @@
 //! # The backend stays behind the API
 //!
 //! `annotate-snippets` lays the snippet out. None of its types crosses this
-//! crate's API: a consumer reads [`Report`], [`Class`], [`RenderStyle`] and
-//! [`Rendered`].
+//! crate's API: a consumer reads [`Report`], [`Class`], [`RenderStyle`],
+//! [`Verbosity`] and [`Rendered`].
 //!
 //! # Example
 //!
 //! ```
-//! use gandr_surface_diagnostics::Entry;
 //! use gandr_surface_diagnostics::RenderStyle;
+//! use gandr_surface_diagnostics::Verbosity;
 //! use gandr_surface_diagnostics::entries;
 //! use gandr_surface_dispatcher::Goals;
 //! use gandr_surface_dispatcher::Verb;
@@ -47,12 +47,11 @@
 //! let mut printed = Vec::new();
 //! while let Maybe::Present(step) = walk.step() {
 //!     for entry in entries(&step, verb) {
-//!         match entry {
-//!             | Entry::Report(report) => {
-//!                 printed.push(report.render(RenderStyle::Plain).to_string())
-//!             },
-//!             | Entry::Line(line) => printed.push(line.to_string()),
-//!         }
+//!         printed.push(
+//!             entry
+//!                 .render(RenderStyle::Plain, Verbosity::User)
+//!                 .to_string(),
+//!         );
 //!     }
 //! }
 //! std::fs::remove_dir_all(&directory)?;
@@ -97,3 +96,4 @@ pub use crate::report::report_span;
 pub use crate::style::RenderStyle;
 pub use crate::style::Rendered;
 pub use crate::style::TerminalCapability;
+pub use crate::style::Verbosity;
