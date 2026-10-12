@@ -14,6 +14,7 @@ The concrete syntax tree of the gandr surface language: a molded node vocabulary
 - [Arena position and content digest](#arena-position-and-content-digest)
 - [Digest preimage](#digest-preimage)
   - [A preimage is hashed in one call](#a-preimage-is-hashed-in-one-call)
+  - [A builder hashes each leaf once](#a-builder-hashes-each-leaf-once)
 - [Level-order layout](#level-order-layout)
 - [Builder identity](#builder-identity)
 - [Source text and fragments](#source-text-and-fragments)
@@ -138,6 +139,13 @@ Most nodes are leaves and small forms: over the corpus, 97% of the digested node
 
 - Alternatives: the incremental hasher for every node, which sets up its whole chunk state and copies each field through its buffer; a kilobyte stack buffer, which zeroes a kilobyte for every leaf and measured 101 ns; a heap buffer past the stack one, which allocates where the incremental hasher does not; reading the digest with `finalize` instead of the extendable output, which measured no different.
 - Reversal: a preimage layout whose common case outgrows four blocks moves the bound; hashing many nodes' preimages at once replaces the per-node call.
+
+### A builder hashes each leaf once
+
+A leaf's digest reads only its label and its text, and a source repeats both: its keywords, punctuation, layout and names. Of the 22,761 leaves a parse of the corpus stages, most repeat one staged earlier in the same source. A `TreeBuilder` keeps the digests of the leaves it has staged in a direct-mapped cache, one slot per eight bytes of source, rounded up to a power of two between 64 and 4096 slots, keyed by `foldhash`'s fixed-seed hash of the label and the text. A slot holds the last leaf that hashed to it, and a leaf whose slot holds another replaces it. A parse of the corpus hashes 9,178 leaves rather than 22,761 and takes 6% less time; every digest is unchanged.
+
+- Alternatives: a hash map keyed by label and text, which keeps every distinct leaf but degrades to a scan when the keys collide, and the keys are source text, which a caller chooses, while `foldhash` makes no claim against chosen collisions; a direct-mapped slot costs one hash and one comparison however the keys collide, and keys chosen to collide only make every lookup a miss, which hashes the leaf as before. A cache that outlives the builder, shared by successive parses of one document, would skip the leaves an edit leaves alone, at the cost of an owner for it across parses.
+- Reversal: a caller that reparses one document often enough to want the cache across parses moves it out of the builder; a corpus whose leaves repeat less, or a hash whose cost approaches BLAKE3's on a short leaf, removes it.
 
 ## Level-order layout
 
