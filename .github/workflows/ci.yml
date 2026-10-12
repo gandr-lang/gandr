@@ -613,7 +613,7 @@ jobs:
             printf '%s\n' "$OBLIGATIONS_PREVIOUS" > target/evidence/previous.md
             previous=(--previous target/evidence/previous.md)
           fi
-          mise run evidence:obligations HEAD^ "${previous[@]}"
+          mise run evidence:obligations "$(git rev-parse --short=12 HEAD^)" "${previous[@]}"
       - name: rerun the obligated witnesses
         env:
           NEXTEST_PROFILE: ci-enforcing
