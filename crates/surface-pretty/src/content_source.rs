@@ -135,9 +135,7 @@ impl Source for ContentSource<'_>
             summand == actual_side.into() && body == actual_body,
         (Some(&ContentNode::Injection(summand, _)), Former::Unreadable) => usize::from(summand) > 1,
         (Some(held), Former::Unit) => matches!(*held, ContentNode::Tuple(ref components) if components.is_empty()),
-        (Some(held), Former::Pair(c, d)) => matches!(*held, ContentNode::Tuple(ref components) if **components == [c, d]),
-        (Some(held), Former::Unreadable) if matches!(*held, ContentNode::Tuple(_)) =>
-            matches!(*held, ContentNode::Tuple(ref components) if !matches!(components.len(), 0 | 2)),
+        (Some(held), Former::Tuple(arity)) => matches!(*held, ContentNode::Tuple(ref components) if !components.is_empty() && components.len() == usize::from(arity)),
         (Some(&ContentNode::PathRefl(a)), Former::PathRefl(b))
         | (Some(&ContentNode::Quote(a)), Former::Quote(b))
         | (Some(&ContentNode::QuoteComputation(a)), Former::QuoteComputation(b))
@@ -210,12 +208,8 @@ impl Source for ContentSource<'_>
             | ContentNode::ListNil => Former::ListNil,
             | ContentNode::ListCons(head, tail) => Former::ListCons(head, tail),
             | ContentNode::Literal(ref literal) => Former::Literal(literal),
-            | ContentNode::Tuple(ref components) => match **components {
-                | [] => Former::Unit,
-                | [first, second] => Former::Pair(first, second),
-                // A tuple of any other arity has no spelling yet.
-                | _ => Former::Unreadable,
-            },
+            | ContentNode::Tuple(ref components) if components.is_empty() => Former::Unit,
+            | ContentNode::Tuple(ref components) => Former::Tuple(Arity::from(components.len())),
             | ContentNode::Injection(summand, body) => {
                 match gandr_kernel_term::Side::try_from(summand) {
                     | Ok(side) => Former::Injection(side, body),
@@ -273,23 +267,24 @@ impl Source for ContentSource<'_>
         }
     }
 
-    /// The index of component `index` of the product or the sum at `node`.
+    /// The index of component `index` of the product, the sum or the tuple at
+    /// `node`.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the index at `index` among a product's or a sum's components;
-    ///   none past them, for another node, or past the table.
-    /// - provides: the printer's reading of an n-ary product or sum.
+    /// - ensures: the index at `index` among a product's, a sum's or a tuple's
+    ///   components; none past them, for another node, or past the table.
+    /// - provides: the printer's reading of an n-ary product, sum or tuple.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the table fixture's products and sums of arity zero,
-    ///   two and three read every component in order and nothing past them; a
-    ///   base type reads none.
+    ///   two and three, and its tuples of arity one to three, read every
+    ///   component in order and nothing past them; a base type reads none.
     /// - witness: `content_source::tests::value_ty_covers_every_reachable_former`
     #[spec(ensures: |ret| ret == match self.0.get(usize::from(node)) {
-        | Some(&(ContentNode::Product(ref parts) | ContentNode::Sum(ref parts))) => parts.get(usize::from(index)).copied(),
+        | Some(&(ContentNode::Product(ref parts) | ContentNode::Sum(ref parts) | ContentNode::Tuple(ref parts))) => parts.get(usize::from(index)).copied(),
         | _ => None,
     })]
     #[inline]
@@ -300,9 +295,9 @@ impl Source for ContentSource<'_>
     ) -> Option<NodeIndex>
     {
         match *self.0.get(usize::from(node))? {
-            | ContentNode::Product(ref parts) | ContentNode::Sum(ref parts) => {
-                parts.get(usize::from(index)).copied()
-            },
+            | ContentNode::Product(ref parts)
+            | ContentNode::Sum(ref parts)
+            | ContentNode::Tuple(ref parts) => parts.get(usize::from(index)).copied(),
             | _ => None,
         }
     }

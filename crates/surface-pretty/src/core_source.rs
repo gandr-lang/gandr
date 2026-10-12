@@ -148,9 +148,7 @@ Former::Unreadable) | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::Li
         | (Some(&Value::Literal(ref literal)), Former::Literal(actual)) =>
             core::ptr::eq(core::ptr::from_ref(literal), core::ptr::from_ref(actual)),
         | (Some(&Value::Tuple(ref components)), Former::Unit) => components.is_empty(),
-        | (Some(&Value::Tuple(ref components)), Former::Pair(actual_first, actual_second)) =>
-            matches!(**components, [first, second] if actual_first == CoreNode::Value(first) && actual_second == CoreNode::Value(second)),
-        | (Some(&Value::Tuple(ref components)), Former::Unreadable) => !matches!(components.len(), 0 | 2),
+        | (Some(&Value::Tuple(ref components)), Former::Tuple(arity)) => !components.is_empty() && usize::from(arity) == components.len(),
         | (Some(&Value::PathProduct(first, second)), Former::PathProduct(actual_first, actual_second)) =>
             actual_first == CoreNode::Value(first) && actual_second == CoreNode::Value(second),
         | (Some(&Value::Injection(summand, body)), Former::Injection(actual_side, actual_body)) =>
@@ -197,13 +195,9 @@ Former::Unreadable) | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::Li
                 Former::ListCons(CoreNode::Value(head), CoreNode::Value(tail))
             },
             | Value::Literal(ref literal) => Former::Literal(literal),
-            // The surface reads only the kernel's arities until its tuples and
-            // sums are n-ary.
-            | Value::Tuple(ref components) => match **components {
-                | [] => Former::Unit,
-                | [first, second] => Former::Pair(CoreNode::Value(first), CoreNode::Value(second)),
-                | _ => Former::Unreadable,
-            },
+            | Value::Tuple(ref components) if components.is_empty() => Former::Unit,
+            | Value::Tuple(ref components) => Former::Tuple(Arity::from(components.len())),
+            // The surface writes only the first two summands.
             | Value::Injection(summand, body) => match gandr_kernel_term::Side::try_from(summand) {
                 | Ok(side) => Former::Injection(side, CoreNode::Value(body)),
                 | Err(_) => Former::Unreadable,
@@ -416,7 +410,7 @@ impl Source for CoreSource<'_>
         | CoreNode::ValueType(id) if self.arena.value_type(id).is_none() => matches!(ret, Former::Unreadable),
         | CoreNode::CompType(id) if self.arena.comp_type(id).is_none() => matches!(ret, Former::Unreadable),
         | CoreNode::Value(_) => matches!(ret, Former::Variable { .. } | Former::Constant(_) | Former::Unit
-            | Former::Literal(_) | Former::Pair(..) | Former::Injection(..) | Former::Thunk | Former::ValueLift
+            | Former::Literal(_) | Former::Tuple(_) | Former::Injection(..) | Former::Thunk | Former::ValueLift
             | Former::Reify | Former::ListNil | Former::ListCons(..)
             | Former::Quote(_) | Former::QuoteComputation(_) | Former::StaticLambda(_) | Former::StaticApplication(..)
             | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Unreadable),
@@ -466,30 +460,36 @@ impl Source for CoreSource<'_>
         }
     }
 
-    /// The handle of component `index` of the product or the sum `node`
-    /// names in the arena.
+    /// The handle of component `index` of the product, the sum or the tuple
+    /// `node` names in the arena.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the value type at `index` among a held product's or sum's
-    ///   components; none for an index past them, another former, another
-    ///   family or a missing handle.
-    /// - provides: the printer's reading of an n-ary product or sum.
+    ///   components, and the value at `index` among a held tuple's; none for an
+    ///   index past them, another former, another family or a missing handle.
+    /// - provides: the printer's reading of an n-ary product, sum or tuple.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the golden chains read every component of products
-    ///   and sums of arity two and three in order; a direct read past the arity
-    ///   and of a non-product observes the absence.
+    ///   and sums of arity two and three, and of tuples of arity one to three,
+    ///   in order; a direct read past the arity and of a non-product observes
+    ///   the absence.
     /// - witness: `goldens::tests::n_ary_products_and_sums_spell_as_one_chain`
+    /// - witness: `goldens::tests::n_ary_tuples_spell_with_their_commas`
     /// - witness: `core_source::tests::components_read_in_order_and_stop_at_the_arity`
     #[spec(ensures: |ret| ret == match node {
         | CoreNode::ValueType(id) => match self.arena.value_type(id) {
             | Some(&(ValueType::Product(ref parts) | ValueType::Sum(ref parts))) => parts.get(usize::from(index)).map(|&part| CoreNode::ValueType(part)),
             | _ => None,
         },
-        | CoreNode::Value(_) | CoreNode::Computation(_) | CoreNode::CompType(_) => None,
+        | CoreNode::Value(id) => match self.arena.value(id) {
+            | Some(&Value::Tuple(ref components)) => components.get(usize::from(index)).map(|&component| CoreNode::Value(component)),
+            | _ => None,
+        },
+        | CoreNode::Computation(_) | CoreNode::CompType(_) => None,
     })]
     #[inline]
     fn component(
@@ -498,15 +498,20 @@ impl Source for CoreSource<'_>
         index: Component,
     ) -> Option<CoreNode>
     {
-        let CoreNode::ValueType(id) = node
-        else {
-            return None;
-        };
-        match *self.arena.value_type(id)? {
-            | ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts
-                .get(usize::from(index))
-                .map(|&part| CoreNode::ValueType(part)),
-            | _ => None,
+        match node {
+            | CoreNode::ValueType(id) => match *self.arena.value_type(id)? {
+                | ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts
+                    .get(usize::from(index))
+                    .map(|&part| CoreNode::ValueType(part)),
+                | _ => None,
+            },
+            | CoreNode::Value(id) => match *self.arena.value(id)? {
+                | Value::Tuple(ref components) => components
+                    .get(usize::from(index))
+                    .map(|&component| CoreNode::Value(component)),
+                | _ => None,
+            },
+            | CoreNode::Computation(_) | CoreNode::CompType(_) => None,
         }
     }
 }
@@ -542,9 +547,19 @@ mod tests
         let value_type = arena.value_type_unit();
         let comp_type = arena.comp_type_returner(value_type);
         let source = CoreSource::new(&arena, &[]);
-        assert!(
-            matches!(source.read(CoreNode::Value(pair)), Former::Pair(left, right)
-            if left == CoreNode::Value(first) && right == CoreNode::Value(second))
+        assert!(matches!(
+            source.read(CoreNode::Value(pair)),
+            Former::Tuple(arity) if usize::from(arity) == 2
+        ));
+        assert_eq!(
+            [
+                Some(CoreNode::Value(first)),
+                Some(CoreNode::Value(second)),
+                None
+            ],
+            [0_usize, 1, 2]
+                .map(|index| source.component(CoreNode::Value(pair), Component::from(index))),
+            "a tuple's components read in order and stop at its arity"
         );
         assert!(matches!(
             source.read(CoreNode::Computation(computation)),

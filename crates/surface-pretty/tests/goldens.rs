@@ -48,6 +48,7 @@ mod tests
     use gandr_kernel_term::Side;
     use gandr_kernel_term::Sign;
     use gandr_kernel_term::StringLiteral;
+    use gandr_kernel_term::Summand;
     use gandr_surface_pretty::Arity;
     use gandr_surface_pretty::Component;
     use gandr_surface_pretty::CoreNode;
@@ -710,6 +711,45 @@ mod tests
                 "{root:?} spells as one chain"
             );
         }
+    }
+
+    /// A tuple of any arity spells its components between parentheses, a
+    /// 1-tuple with its trailing comma; a nested tuple stays a component. The
+    /// surface writes no 1-ary product type and no injection past the second
+    /// summand, so each spells `?`.
+    #[test]
+    fn n_ary_tuples_spell_with_their_commas()
+    {
+        let mut core = CoreArena::new();
+        let one = integer(&mut core, Sign::NonNegative, Written("1"));
+        let two = text(&mut core, Written("two"));
+        let unit = core.value_unit();
+        let single = core.value_tuple(&[one]);
+        let triple = core.value_tuple(&[one, two, unit]);
+        let pair = core.value_tuple(&[one, two]);
+        let nested = core.value_tuple(&[single, pair]);
+        let third = core.value_injection(Summand::from(2_usize), one);
+        let tuples = [single, triple, nested, third].map(|value| normal_form(&mut core, value));
+        let integer_type = core.value_type_base(BaseType::Integer);
+        let lonely = core.value_type_product(&[integer_type]);
+        let source = CoreSource::new(&core, &[]);
+        for (root, expected) in tuples.into_iter().zip([
+            faithful(Written("(1,)")),
+            faithful(Written("(1, \"two\", unit)")),
+            faithful(Written("((1,), (1, \"two\"))")),
+            approximate(Written("?")),
+        ]) {
+            assert_eq!(
+                spelled(&source, Root::Value(root)),
+                expected,
+                "{root:?} spells with its commas"
+            );
+        }
+        assert_eq!(
+            spelled(&source, Root::Type(CoreNode::ValueType(lonely))),
+            approximate(Written("?")),
+            "the 1-ary product has no spelling"
+        );
     }
 
     /// Every value-type and computation-type former of the core spells as the
