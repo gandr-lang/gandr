@@ -17,9 +17,11 @@
 //! admission finds is published in their place.
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use core::fmt;
 use std::io::BufRead;
 use std::io::Write;
+use std::sync::mpsc::Sender;
 
 use anodized::spec;
 use gandr_surface_render_remote::LineIndex;
@@ -212,48 +214,202 @@ impl Outcome
     }
 }
 
-/// The server's state: where it stands in the lifecycle, and every open
-/// document.
-pub struct Server
+/// One connection among those a workspace serves.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Peer(u64);
+
+impl From<u64> for Peer
 {
-    /// Where the server stands in the lifecycle.
-    phase: Phase,
+    /// The connection numbered `number`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(number: u64) -> Self
+    {
+        Self(number)
+    }
+}
+
+/// What every connection to one server shares: the open documents, which
+/// connections hold each open, and where to send a connection what another's
+/// synchronisation published.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a document is held while at least one connection holds it open,
+///   and is forgotten with its session once none does.
+/// - panics: none.
+/// - executable: none — this state carrier has no call boundary; the server's
+///   handling carries the executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two connections opening, editing, querying and closing
+///   one document, and one leaving while the other stays, observe one text, one
+///   session and each publication at every holder.
+/// - witness: `server::tests::two_connections_share_one_document`
+/// - witness: `server::tests::a_departing_connection_leaves_the_others_served`
+#[derive(Default)]
+pub struct Workspace
+{
     /// Every open document, by its URI.
     documents: BTreeMap<DocumentUri, Document>,
+    /// The connections holding each open document open.
+    holders: BTreeMap<DocumentUri, BTreeSet<Peer>>,
+    /// Where each joined connection takes messages another's handling made.
+    outboxes: BTreeMap<Peer, Sender<Outgoing>>,
+}
+
+impl Workspace
+{
+    /// Admit `peer`, whose messages from other connections' handling go to
+    /// `outbox`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn join(
+        &mut self,
+        peer: Peer,
+        outbox: Sender<Outgoing>,
+    )
+    {
+        let _prior = self.outboxes.insert(peer, outbox);
+    }
+
+    /// Let `peer` go: it holds nothing open any more, takes no message, and a
+    /// document no other connection holds is forgotten with its session.
+    ///
+    /// # Specification
+    /// - requires: nothing; a peer that never joined or held nothing is
+    ///   admitted.
+    /// - ensures: `peer` has no outbox and holds no document; every document
+    ///   left is held by another connection.
+    /// - provides: a connection's end, clean or not.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one of two connections holding a document leaving,
+    ///   then the other, observe the document kept, then forgotten.
+    /// - witness: `server::tests::a_departing_connection_leaves_the_others_served`
+    #[spec(ensures: !self.outboxes.contains_key(&peer)
+        && self.holders.values().all(|holders| !holders.contains(&peer) && !holders.is_empty())
+        && self.documents.keys().all(|uri| self.holders.contains_key(uri)))]
+    #[inline]
+    pub fn depart(
+        &mut self,
+        peer: Peer,
+    )
+    {
+        let _outbox = self.outboxes.remove(&peer);
+        self.holders.retain(|uri, holders| {
+            let _held = holders.remove(&peer);
+            if holders.is_empty() {
+                let _forgotten = self.documents.remove(uri);
+                false
+            }
+            else {
+                true
+            }
+        });
+    }
+
+    /// Send `message`, a publication, to every connection but `peer` that
+    /// holds its document open.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a diagnostic notification is sent once to the outbox of each
+    ///   other holder of its URI that has one; anything else is sent nowhere.
+    ///   An outbox whose connection is gone takes nothing, silently.
+    /// - panics: none.
+    /// - executable: none — the sends land in channels whose receiving ends
+    ///   this call does not hold, so nothing it can read states them.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a change by one of two holders publishes to the other
+    ///   and not back to itself.
+    /// - witness: `server::tests::two_connections_share_one_document`
+    fn tell_others(
+        &self,
+        peer: Peer,
+        message: &Outgoing,
+    )
+    {
+        let Outgoing::Notification { ref params, .. } = *message
+        else {
+            return;
+        };
+        let Some(holders) = self.holders.get(&params.uri)
+        else {
+            return;
+        };
+        for holder in holders.iter().filter(|&&holder| holder != peer) {
+            if let Some(outbox) = self.outboxes.get(holder) {
+                let _gone = outbox.send(message.clone());
+            }
+        }
+    }
+}
+
+/// One connection's state: where it stands in the lifecycle, and which
+/// connection it is.
+pub struct Server
+{
+    /// Where the connection stands in the lifecycle.
+    phase: Phase,
+    /// Which connection it is.
+    peer: Peer,
 }
 
 impl Default for Server
 {
-    /// A server waiting for `initialize`, with no document open.
+    /// The first connection, waiting for `initialize`.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     fn default() -> Self
     {
-        Self {
-            phase: Phase::Waiting,
-            documents: BTreeMap::new(),
-        }
+        Self::new(Peer(0))
     }
 }
 
 impl Server
 {
-    /// Handle one message body.
+    /// The connection `peer`, waiting for `initialize`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(peer: Peer) -> Self
+    {
+        Self {
+            phase: Phase::Waiting,
+            peer,
+        }
+    }
+
+    /// Handle one message body over `workspace`.
     ///
     /// # Specification
     /// - requires: nothing; any body is admissible input.
     /// - ensures: a request is answered exactly once, under its own identifier,
-    ///   as the lifecycle and the method decide; a notification is never
+    ///   as the lifecycle and the method decide, from the documents `workspace`
+    ///   holds, whichever connection opened them; a notification is never
     ///   answered, and a document synchronisation publishes the document's
     ///   diagnostics off its session's judgement of the whole text and logs one
     ///   timing line, its admission left for [`Server::admit`] — opening and
-    ///   changing it publish its diagnostics at its new version, closing it
-    ///   publishes none and forgets it. A body that is not a message is
-    ///   answered with the error the protocol owes it. `exit` ends the session.
-    /// - provides: the whole of the server's behaviour but the admission
-    ///   [`Server::admit`] runs after it; [`serve`] only moves bytes.
+    ///   changing it publish its diagnostics at its new version, to this
+    ///   connection and to every other holding it open, and closing it
+    ///   publishes none to this connection and forgets it once no connection
+    ///   holds it. A body that is not a message is answered with the error the
+    ///   protocol owes it. `exit` ends the session.
+    /// - provides: the whole of a connection's behaviour but the admission
+    ///   [`Server::admit`] runs after it; [`serve`] and the hub only move
+    ///   bytes.
     /// - fails: never; every refusal is a message to the client.
     /// - panics: none.
     ///
@@ -281,6 +437,7 @@ impl Server
     #[must_use]
     pub fn handle(
         &mut self,
+        workspace: &mut Workspace,
         body: &Body,
     ) -> Outcome
     {
@@ -288,9 +445,11 @@ impl Server
             | Err(malformed) => Outcome::say(malformed.response()),
             | Ok(Incoming::Response) => Outcome::quiet(),
             | Ok(Incoming::Request { id, method, params }) => {
-                Outcome::say(self.request(id, &method, params))
+                Outcome::say(self.request(workspace, id, &method, params))
             },
-            | Ok(Incoming::Notification { method, params }) => self.notification(&method, params),
+            | Ok(Incoming::Notification { method, params }) => {
+                self.notification(workspace, &method, params)
+            },
         }
     }
 
@@ -327,11 +486,12 @@ impl Server
     /// # Specification
     /// - requires: `log` is the log of the outcome [`Server::handle`] returned
     ///   last, its messages already written.
-    /// - ensures: each line naming a held document at its held version runs the
-    ///   admission that document's session holds, as [`admit`] states, and
-    ///   carries its wall; a kernel disagreement adds one diagnostic
-    ///   notification at the line's URI and version whose one diagnostic names
-    ///   it. Every other line is left as it was.
+    /// - ensures: each line naming a document `workspace` holds at its held
+    ///   version runs the admission that document's session holds, as [`admit`]
+    ///   states, and carries its wall; a kernel disagreement adds one
+    ///   diagnostic notification at the line's URI and version whose one
+    ///   diagnostic names it, also sent to every other connection holding the
+    ///   document. Every other line is left as it was.
     /// - provides: the second half of every synchronisation; [`serve`] writes
     ///   what it returns, then logs the lines.
     /// - fails: never; a disagreement is a diagnostic.
@@ -350,13 +510,14 @@ impl Server
     #[inline]
     #[must_use]
     pub fn admit(
-        &mut self,
+        &self,
+        workspace: &mut Workspace,
         log: &mut [Logged],
     ) -> Vec<Outgoing>
     {
         let mut corrections = Vec::new();
         for logged in &mut *log {
-            let Some(document) = self
+            let Some(document) = workspace
                 .documents
                 .get_mut(&logged.uri)
                 .filter(|document| document.version == logged.version)
@@ -366,11 +527,13 @@ impl Server
             let admitted = admit(&mut document.session, logged.timing);
             logged.timing = admitted.timing;
             if let Maybe::Present(fault) = admitted.fault {
-                corrections.push(publish(PublishParams {
+                let correction = publish(PublishParams {
                     uri: logged.uri.clone(),
                     version: Some(logged.version),
                     diagnostics: vec![fault],
-                }));
+                });
+                workspace.tell_others(self.peer, &correction);
+                corrections.push(correction);
             }
         }
         corrections
@@ -381,9 +544,9 @@ impl Server
     /// # Specification
     /// - requires: nothing.
     /// - ensures: initialization and shutdown advance the lifecycle once; other
-    ///   requests preserve it and every request preserves open documents. The
-    ///   response echoes the identifier and carries the method result or its
-    ///   lifecycle, unknown-method or invalid-parameter error.
+    ///   requests preserve it, and no request changes `workspace`. The response
+    ///   echoes the identifier and carries the method result or its lifecycle,
+    ///   unknown-method or invalid-parameter error.
     /// - provides: one response per request.
     /// - fails: refusals are error responses, never Rust errors.
     /// - panics: none.
@@ -399,8 +562,8 @@ impl Server
     /// - witness: `server::tests::a_hover_answers_a_known_declaration`
     /// - witness: `server::tests::formatting_answers_the_edits_that_lay_a_document_out`
     #[spec(
-        captures: [phase = self.phase, documents = self.documents.len()],
-        ensures: |ret| self.documents.len() == documents && match (phase, method.as_ref()) {
+        captures: phase = self.phase,
+        ensures: |ret| match (phase, method.as_ref()) {
             (Phase::Waiting, "initialize") => self.phase == Phase::Running
                 && matches!(ret, Outgoing::Success { result: Answer::Initialize(_), .. }),
             (Phase::Waiting, _) => self.phase == phase && matches!(ret,
@@ -446,6 +609,7 @@ impl Server
     )]
     fn request(
         &mut self,
+        workspace: &Workspace,
         id: RequestId,
         method: &Method,
         params: Value,
@@ -476,9 +640,10 @@ impl Server
             },
             | (Phase::Running, "textDocument/semanticTokens/full") => {
                 match serde_json::from_value::<DocumentParams>(params) {
-                    | Ok(params) => {
-                        success(id, self.tokens(&params.text_document.uri, Window::Whole))
-                    },
+                    | Ok(params) => success(
+                        id,
+                        workspace.tokens(&params.text_document.uri, Window::Whole),
+                    ),
                     | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
@@ -486,16 +651,17 @@ impl Server
                 match serde_json::from_value::<RangeParams>(params) {
                     | Ok(params) => success(
                         id,
-                        self.tokens(&params.text_document.uri, Window::Within(params.range)),
+                        workspace.tokens(&params.text_document.uri, Window::Within(params.range)),
                     ),
                     | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
             | (Phase::Running, "textDocument/inlineCompletion") => {
                 match serde_json::from_value::<PositionParams>(params) {
-                    | Ok(params) => {
-                        success(id, self.inline(&params.text_document.uri, params.position))
-                    },
+                    | Ok(params) => success(
+                        id,
+                        workspace.inline(&params.text_document.uri, params.position),
+                    ),
                     | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
@@ -503,7 +669,7 @@ impl Server
                 match serde_json::from_value::<DocumentParams>(params) {
                     | Ok(params) => success(
                         id,
-                        self.outline(&params.text_document.uri, |text| {
+                        workspace.outline(&params.text_document.uri, |text| {
                             Answer::Symbols(symbols(text))
                         }),
                     ),
@@ -514,7 +680,8 @@ impl Server
                 match serde_json::from_value::<DocumentParams>(params) {
                     | Ok(params) => success(
                         id,
-                        self.outline(&params.text_document.uri, |text| Answer::Folds(folds(text))),
+                        workspace
+                            .outline(&params.text_document.uri, |text| Answer::Folds(folds(text))),
                     ),
                     | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
@@ -523,7 +690,7 @@ impl Server
                 match serde_json::from_value::<SelectionRangeParams>(params) {
                     | Ok(params) => success(
                         id,
-                        self.outline(&params.text_document.uri, |text| {
+                        workspace.outline(&params.text_document.uri, |text| {
                             Answer::Selections(selections(text, &params.positions))
                         }),
                     ),
@@ -532,23 +699,26 @@ impl Server
             },
             | (Phase::Running, "textDocument/hover") => {
                 match serde_json::from_value::<PositionParams>(params) {
-                    | Ok(params) => {
-                        success(id, self.hover(&params.text_document.uri, params.position))
-                    },
+                    | Ok(params) => success(
+                        id,
+                        workspace.hover(&params.text_document.uri, params.position),
+                    ),
                     | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
             | (Phase::Running, "textDocument/formatting") => {
                 match serde_json::from_value::<DocumentParams>(params) {
-                    | Ok(params) => self.format(id, &params.text_document.uri, Window::Whole),
+                    | Ok(params) => workspace.format(id, &params.text_document.uri, Window::Whole),
                     | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
             | (Phase::Running, "textDocument/rangeFormatting") => {
                 match serde_json::from_value::<RangeParams>(params) {
-                    | Ok(params) => {
-                        self.format(id, &params.text_document.uri, Window::Within(params.range))
-                    },
+                    | Ok(params) => workspace.format(
+                        id,
+                        &params.text_document.uri,
+                        Window::Within(params.range),
+                    ),
                     | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
@@ -572,11 +742,16 @@ impl Server
     /// - ensures: notifications preserve the lifecycle and never send
     ///   responses. Exit ends the session; running-state opens and changes
     ///   publish the held document at its supplied version and log one timing
-    ///   line. An open starts the document's session afresh; a change applies
-    ///   each content change in order, as [`apply`] states. An empty change
-    ///   list preserves text. Close forgets the named document and publishes a
-    ///   versionless empty diagnostic list, even for an unknown URI. Unknown,
-    ///   malformed and out-of-phase notifications leave documents alone.
+    ///   line, and send the same publication to every other connection holding
+    ///   the document open. An open of a document no connection holds starts
+    ///   its session; an open of one another connection holds takes the
+    ///   opener's text and version into the held session. Either way this
+    ///   connection then holds it. A change applies each content change in
+    ///   order, as [`apply`] states; an empty change list preserves text. Close
+    ///   lets this connection's hold go, forgets the document once no
+    ///   connection holds it, and publishes a versionless empty diagnostic list
+    ///   to this connection, even for an unknown URI. Unknown, malformed and
+    ///   out-of-phase notifications leave documents alone.
     /// - provides: document synchronization and termination.
     /// - fails: unreadable parameters and changes to unknown documents are
     ///   ignored.
@@ -592,18 +767,22 @@ impl Server
     /// - witness: `server::tests::ignored_messages_and_empty_changes_preserve_document_text`
     /// - witness: `server::tests::ranged_changes_edit_the_held_text_in_order`
     #[spec(
-        captures: [phase = self.phase, count = self.documents.len()],
+        captures: [phase = self.phase, count = workspace.documents.len()],
         ensures: |ret| self.phase == phase && ret.messages.len() <= 1
             && ret.log.len() == usize::from(matches!(method.as_ref(), "textDocument/didOpen" | "textDocument/didChange")
                 && !ret.messages.is_empty())
             && ret.flow == if method.as_ref() == "exit" { Flow::Exit(self.closed()) } else { Flow::Continue }
-            && if ret.messages.is_empty() { self.documents.len() == count } else {
+            && if ret.messages.is_empty() { workspace.documents.len() == count } else {
                 phase == Phase::Running && ret.messages.iter().all(|message| match *message {
                     Outgoing::Notification { ref params, .. } => match method.as_ref() {
-                        "textDocument/didOpen" | "textDocument/didChange" =>
-                            self.documents.get(&params.uri).is_some_and(|document| params.version == Some(document.version)),
+                        "textDocument/didOpen" =>
+                            workspace.documents.get(&params.uri).is_some_and(|document| params.version == Some(document.version))
+                            && workspace.holders.get(&params.uri).is_some_and(|holders| holders.contains(&self.peer)),
+                        "textDocument/didChange" =>
+                            workspace.documents.get(&params.uri).is_some_and(|document| params.version == Some(document.version)),
                         "textDocument/didClose" => params.version.is_none() && params.diagnostics.is_empty()
-                            && !self.documents.contains_key(&params.uri),
+                            && !workspace.holders.get(&params.uri).is_some_and(|holders| holders.contains(&self.peer))
+                            && workspace.documents.contains_key(&params.uri) == workspace.holders.contains_key(&params.uri),
                         _ => false,
                     },
                     _ => false,
@@ -611,7 +790,8 @@ impl Server
             },
     )]
     fn notification(
-        &mut self,
+        &self,
+        workspace: &mut Workspace,
         method: &Method,
         params: Value,
     ) -> Outcome
@@ -627,13 +807,22 @@ impl Server
                 else {
                     return Outcome::quiet();
                 };
-                let mut document = Document {
-                    version: text_document.version,
-                    text: text_document.text,
-                    session: open(&text_document.uri),
-                };
-                let outcome = synchronised(&text_document.uri, &mut document);
-                let _prior = self.documents.insert(text_document.uri, document);
+                let uri = text_document.uri;
+                let document = workspace
+                    .documents
+                    .entry(uri.clone())
+                    .or_insert_with(|| Document {
+                        version: text_document.version,
+                        text: String::new(),
+                        session: open(&uri),
+                    });
+                document.version = text_document.version;
+                document.text = text_document.text;
+                let outcome = synchronised(&uri, document);
+                let _first = workspace.holders.entry(uri).or_default().insert(self.peer);
+                for message in &outcome.messages {
+                    workspace.tell_others(self.peer, message);
+                }
                 outcome
             },
             | (Phase::Running, "textDocument/didChange") => {
@@ -644,7 +833,7 @@ impl Server
                 else {
                     return Outcome::quiet();
                 };
-                let Some(document) = self.documents.get_mut(&text_document.uri)
+                let Some(document) = workspace.documents.get_mut(&text_document.uri)
                 else {
                     return Outcome::quiet();
                 };
@@ -652,14 +841,24 @@ impl Server
                 for change in content_changes {
                     apply(&mut document.text, change);
                 }
-                synchronised(&text_document.uri, document)
+                let outcome = synchronised(&text_document.uri, document);
+                for message in &outcome.messages {
+                    workspace.tell_others(self.peer, message);
+                }
+                outcome
             },
             | (Phase::Running, "textDocument/didClose") => {
                 let Ok(DocumentParams { text_document }) = serde_json::from_value(params)
                 else {
                     return Outcome::quiet();
                 };
-                let _closed = self.documents.remove(&text_document.uri);
+                if let Some(holders) = workspace.holders.get_mut(&text_document.uri) {
+                    let _held = holders.remove(&self.peer);
+                    if holders.is_empty() {
+                        let _released = workspace.holders.remove(&text_document.uri);
+                        let _closed = workspace.documents.remove(&text_document.uri);
+                    }
+                }
                 Outcome::say(publish(PublishParams {
                     uri: text_document.uri,
                     version: None,
@@ -669,7 +868,10 @@ impl Server
             | (Phase::Waiting | Phase::Running | Phase::ShuttingDown, _) => Outcome::quiet(),
         }
     }
+}
 
+impl Workspace
+{
     /// The tokens of the document at `uri` in `window`.
     ///
     /// # Specification
@@ -1012,6 +1214,7 @@ where
     Output: Write,
     Log: Write,
 {
+    let mut workspace = Workspace::default();
     let mut server = Server::default();
     loop {
         let read = read_frame(input)?;
@@ -1019,12 +1222,12 @@ where
         else {
             return Ok(server.closed());
         };
-        let mut outcome = server.handle(&body);
+        let mut outcome = server.handle(&mut workspace, &body);
         for message in &outcome.messages {
             let encoded = serde_json::to_vec(message).map_err(TransportFault::Encode)?;
             write_frame(output, &Body::from(encoded))?;
         }
-        for message in &server.admit(&mut outcome.log) {
+        for message in &server.admit(&mut workspace, &mut outcome.log) {
             let encoded = serde_json::to_vec(message).map_err(TransportFault::Encode)?;
             write_frame(output, &Body::from(encoded))?;
         }
@@ -1040,13 +1243,68 @@ where
 #[cfg(test)]
 mod tests
 {
+    use std::sync::mpsc::Receiver;
+    use std::sync::mpsc::channel;
+
     use anodized::spec;
     use serde_json::Value;
 
     use super::Flow;
+    use super::Outcome;
+    use super::Peer;
     use super::Served;
     use super::Server;
+    use super::Workspace;
+    use crate::rpc::Outgoing;
+    use crate::server::Logged;
     use crate::transport::Body;
+
+    /// One connection over a workspace of its own, as [`super::serve`] runs
+    /// one.
+    #[derive(Default)]
+    struct Connected
+    {
+        /// The connection.
+        server: Server,
+        /// Its workspace.
+        workspace: Workspace,
+    }
+
+    impl Connected
+    {
+        /// What the connection makes of `body`.
+        ///
+        /// # Specification
+        /// trivial.
+        fn handle(
+            &mut self,
+            body: &Body,
+        ) -> Outcome
+        {
+            self.server.handle(&mut self.workspace, body)
+        }
+
+        /// The admissions `log` left, run.
+        ///
+        /// # Specification
+        /// trivial.
+        fn admit(
+            &mut self,
+            log: &mut [Logged],
+        ) -> Vec<Outgoing>
+        {
+            self.server.admit(&mut self.workspace, log)
+        }
+
+        /// How the connection ends if its stream closes now.
+        ///
+        /// # Specification
+        /// trivial.
+        const fn closed(&self) -> Served
+        {
+            self.server.closed()
+        }
+    }
 
     /// A message or a value, spelled as JSON text.
     #[repr(transparent)]
@@ -1099,7 +1357,7 @@ mod tests
         messages.len() <= 1 && messages.iter().all(|message|
             message.get("jsonrpc").and_then(Value::as_str) == Some("2.0"))))]
     fn send(
-        server: &mut Server,
+        server: &mut Connected,
         Json(text): Json<'_>,
     ) -> Value
     {
@@ -1127,10 +1385,10 @@ mod tests
     /// - hypothesis: L3 — subsequent known-document requests distinguish a
     ///   waiting or closed fixture from the required running state.
     /// - witness: `server::tests::semantic_tokens_full_answers_a_known_document`
-    #[spec(ensures: |ret| ret.phase == super::Phase::Running && ret.documents.is_empty())]
-    fn initialized() -> Server
+    #[spec(ensures: |ret| ret.server.phase == super::Phase::Running && ret.workspace.documents.is_empty())]
+    fn initialized() -> Connected
     {
-        let mut server = Server::default();
+        let mut server = Connected::default();
         let answered = send(
             &mut server,
             Json(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{}}}"#),
@@ -1160,10 +1418,10 @@ mod tests
     ///   lookup.
     /// - witness: `server::tests::semantic_tokens_full_answers_a_known_document`
     /// - witness: `server::tests::a_range_returns_only_the_tokens_it_covers`
-    #[spec(ensures: |ret| ret.phase == super::Phase::Running
-        && ret.documents.len() == 1
-        && ret.documents.values().all(|document| document.text == "def f = 42 ;\n"))]
-    fn server_over_the_known_document() -> Server
+    #[spec(ensures: |ret| ret.server.phase == super::Phase::Running
+        && ret.workspace.documents.len() == 1
+        && ret.workspace.documents.values().all(|document| document.text == "def f = 42 ;\n"))]
+    fn server_over_the_known_document() -> Connected
     {
         let mut server = initialized();
         let _published = send(
@@ -1215,7 +1473,7 @@ mod tests
     #[test]
     fn initialize_advertises_the_token_legend()
     {
-        let mut server = Server::default();
+        let mut server = Connected::default();
         assert_eq!(
             send(
                 &mut server,
@@ -1294,7 +1552,7 @@ mod tests
                      "text":"def x = f(1\n"}}}"#,
             ),
         );
-        let ask = |server: &mut Server, uri: &str, character: u32| {
+        let ask = |server: &mut Connected, uri: &str, character: u32| {
             let request = format!(
                 r#"{{"jsonrpc":"2.0","id":7,"method":"textDocument/inlineCompletion","params":{{
                     "textDocument":{{"uri":"{uri}"}},
@@ -1328,7 +1586,7 @@ mod tests
     fn the_outline_requests_answer_a_known_document()
     {
         let mut server = server_over_the_known_document();
-        let ask = |server: &mut Server, method: &str, uri: &str, extra: &str| {
+        let ask = |server: &mut Connected, method: &str, uri: &str, extra: &str| {
             let request = format!(
                 r#"{{"jsonrpc":"2.0","id":9,"method":"{method}","params":{{
                     "textDocument":{{"uri":"{uri}"}}{extra}}}}}"#
@@ -1395,7 +1653,7 @@ mod tests
                      "text":"def  f =  42 ;\n"}}}"#,
             ),
         );
-        let ask = |server: &mut Server, method: &str, uri: &str, range: &str| {
+        let ask = |server: &mut Connected, method: &str, uri: &str, range: &str| {
             let request = format!(
                 r#"{{"jsonrpc":"2.0","id":7,"method":"{method}","params":{{
                     "textDocument":{{"uri":"{uri}"}},{range}
@@ -1458,7 +1716,7 @@ mod tests
     fn a_hover_answers_a_known_declaration()
     {
         let mut server = server_over_the_known_document();
-        let ask = |server: &mut Server, uri: &str, character: u32| {
+        let ask = |server: &mut Connected, uri: &str, character: u32| {
             let request = format!(
                 r#"{{"jsonrpc":"2.0","id":5,"method":"textDocument/hover","params":{{
                     "textDocument":{{"uri":"{uri}"}},
@@ -1602,7 +1860,7 @@ mod tests
             );
             assert!(messages.pointer("/0/result").is_none());
         };
-        let mut server = Server::default();
+        let mut server = Connected::default();
         assert_error(
             send(
                 &mut server,
@@ -1675,9 +1933,12 @@ mod tests
             (super::Phase::Running, Served::Abrupt),
             (super::Phase::ShuttingDown, Served::Clean),
         ] {
-            let mut server = Server {
-                phase,
-                ..Server::default()
+            let mut server = Connected {
+                server: Server {
+                    phase,
+                    ..Server::default()
+                },
+                workspace: Workspace::default(),
             };
             let outcome = server.handle(&exit);
             assert_eq!(outcome.flow, Flow::Exit(expected));
@@ -1786,8 +2047,9 @@ mod tests
     {
         let mut server = server_over_the_known_document();
         let uri = crate::protocol::DocumentUri::from("file:///tmp/example.gandr");
-        let held = |server: &Server| {
+        let held = |server: &Connected| {
             server
+                .workspace
                 .documents
                 .get(&uri)
                 .map(|document| document.text.clone())
@@ -1905,5 +2167,190 @@ mod tests
             serde_json::json!([])
         );
         assert_eq!(server.closed(), Served::Clean);
+    }
+
+    /// Two running connections, numbered 1 and 2, over one workspace, each
+    /// joined with the receiving end of its outbox returned.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: both connections are running, both joined, no document is
+    ///   open and both outboxes are empty.
+    /// - provides: the fixture the shared-workspace witnesses start from.
+    /// - fails: never.
+    /// - panics: an unanswered `initialize` fails the witness.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the witnesses' first publications distinguish a
+    ///   connection that never joined.
+    /// - witness: `server::tests::two_connections_share_one_document`
+    #[spec(ensures: |ret| ret.0.documents.is_empty() && ret.0.outboxes.len() == 2
+        && ret.1.iter().all(|connection| connection.0.phase == super::Phase::Running))]
+    fn two_connections() -> (Workspace, [(Server, Receiver<Outgoing>); 2])
+    {
+        let mut workspace = Workspace::default();
+        let initialize =
+            Body::from(br#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#.to_vec());
+        let connections = [1_u64, 2_u64].map(|number| {
+            let peer = Peer::from(number);
+            let (outbox, inbox) = channel();
+            workspace.join(peer, outbox);
+            let mut server = Server::new(peer);
+            assert_eq!(server.handle(&mut workspace, &initialize).messages.len(), 1);
+            (server, inbox)
+        });
+        (workspace, connections)
+    }
+
+    /// The body of a synchronisation of `file:///tmp/shared.gandr`: `method`
+    /// with the parameters `params` spells.
+    ///
+    /// # Specification
+    /// trivial.
+    fn shared(
+        method: Json<'_>,
+        params: Json<'_>,
+    ) -> Body
+    {
+        let Json(method) = method;
+        let Json(params) = params;
+        Body::from(
+            format!(
+                r#"{{"jsonrpc":"2.0","method":"{method}","params":{{"textDocument":{{"uri":"file:///tmp/shared.gandr"{params}}}}}"#
+            )
+            .into_bytes(),
+        )
+    }
+
+    /// The versions of the publications waiting in `inbox`, in order, `None`
+    /// for a versionless one.
+    ///
+    /// # Specification
+    /// trivial.
+    fn published(inbox: &Receiver<Outgoing>) -> Vec<Option<Value>>
+    {
+        inbox
+            .try_iter()
+            .map(|message| {
+                serde_json::to_value(message)
+                    .expect("a message encodes")
+                    .pointer("/params/version")
+                    .cloned()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn two_connections_share_one_document()
+    {
+        let (mut workspace, [(mut first, first_inbox), (mut second, second_inbox)]) =
+            two_connections();
+        let open = Json(r#","version":1,"text":"def f = 42 ;\n"}"#);
+        let opened = first.handle(&mut workspace, &shared(Json("textDocument/didOpen"), open));
+        assert_eq!(opened.messages.len(), 1, "the opener hears its publication");
+        assert_eq!(
+            published(&second_inbox),
+            Vec::new(),
+            "a connection not holding the document hears nothing"
+        );
+        let reopened = second.handle(&mut workspace, &shared(Json("textDocument/didOpen"), open));
+        let [ref logged] = *reopened.log.as_slice()
+        else {
+            panic!("one timing line per synchronisation");
+        };
+        assert!(
+            logged.to_string().contains(": 0/1 forms molded"),
+            "opening a held document reuses its session, molding nothing: {logged}"
+        );
+        assert_eq!(
+            published(&first_inbox),
+            vec![Some(serde_json::json!(1_i32))],
+            "the other holder hears the publication"
+        );
+        let changed = first.handle(
+            &mut workspace,
+            &shared(
+                Json("textDocument/didChange"),
+                Json(r#","version":2},"contentChanges":[{"text":"def g = 1 ;\n"}]"#),
+            ),
+        );
+        assert_eq!(changed.messages.len(), 1);
+        assert_eq!(
+            published(&first_inbox),
+            Vec::new(),
+            "never back to the changer"
+        );
+        assert_eq!(published(&second_inbox), vec![Some(serde_json::json!(
+            2_i32
+        ))]);
+        let hover = Body::from(
+            br#"{"jsonrpc":"2.0","id":5,"method":"textDocument/hover","params":{
+                "textDocument":{"uri":"file:///tmp/shared.gandr"},"position":{"line":0,"character":4}}}"#
+                .to_vec(),
+        );
+        let hovered = serde_json::to_value(&second.handle(&mut workspace, &hover).messages)
+            .expect("a message encodes");
+        assert_eq!(
+            hovered.pointer("/0/result/contents/value"),
+            Some(&serde_json::json!("```gandr\ng : Integer\n```")),
+            "the second connection reads the first's change"
+        );
+        let close = Json("}");
+        let closed = first.handle(
+            &mut workspace,
+            &shared(Json("textDocument/didClose"), close),
+        );
+        assert_eq!(closed.messages.len(), 1, "the closer hears its clearing");
+        assert_eq!(
+            published(&second_inbox),
+            Vec::new(),
+            "the other holder keeps its diagnostics"
+        );
+        assert_eq!(
+            workspace.documents.len(),
+            1,
+            "the second connection still holds it"
+        );
+        let _closed = second.handle(
+            &mut workspace,
+            &shared(Json("textDocument/didClose"), close),
+        );
+        assert!(workspace.documents.is_empty() && workspace.holders.is_empty());
+    }
+
+    #[test]
+    fn a_departing_connection_leaves_the_others_served()
+    {
+        let (mut workspace, [(mut first, _first_inbox), (mut second, second_inbox)]) =
+            two_connections();
+        let open = Json(r#","version":1,"text":"def f = 42 ;\n"}"#);
+        drop(first.handle(&mut workspace, &shared(Json("textDocument/didOpen"), open)));
+        drop(second.handle(&mut workspace, &shared(Json("textDocument/didOpen"), open)));
+        workspace.depart(Peer::from(1_u64));
+        assert_eq!(
+            workspace.documents.len(),
+            1,
+            "the second connection still holds it"
+        );
+        assert!(!workspace.outboxes.contains_key(&Peer::from(1_u64)));
+        let changed = second.handle(
+            &mut workspace,
+            &shared(
+                Json("textDocument/didChange"),
+                Json(r#","version":2},"contentChanges":[{"text":"def g = 1 ;\n"}]"#),
+            ),
+        );
+        assert_eq!(changed.messages.len(), 1, "the one left is still served");
+        assert_eq!(published(&second_inbox), Vec::new());
+        workspace.depart(Peer::from(2_u64));
+        assert!(
+            workspace.documents.is_empty() && workspace.holders.is_empty(),
+            "a document no connection holds is forgotten"
+        );
+        workspace.depart(Peer::from(3_u64));
+        assert!(
+            workspace.outboxes.is_empty(),
+            "a stranger's departure changes nothing"
+        );
     }
 }

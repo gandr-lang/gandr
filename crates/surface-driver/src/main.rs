@@ -10,7 +10,8 @@
 //! - `0`: every declaration settled, or a script's run returned a value, or
 //!   every staged certificate was readmitted, or every source was laid out;
 //!   also `--help`, `--version`, a bare invocation, `lsp --capabilities`, a
-//!   language-server session ended by `exit` after `shutdown`, a read-evaluate
+//!   language-server session ended by `exit` after `shutdown`, an engine hub
+//!   that lingered out or found another serving its socket, a read-evaluate
 //!   loop that reached the end of its input or `:quit`, a terminal face the
 //!   user left, and `tui --smoke`.
 //! - `1`: at least one declaration is unsettled, or a source was not read as
@@ -20,17 +21,22 @@
 //!   `shutdown`.
 //! - `2`: an engine fault, an unreadable source or a path naming none, a
 //!   malformed invocation, output the driver could not write, a language-server
-//!   stream that failed, a read-evaluate loop or a terminal face stopped by a
-//!   fault, a terminal face asked for without a terminal, a script that never
-//!   reached the machine, a staged program that could not be checked, or a
-//!   source the formatter refused or could not write back.
+//!   stream that failed, an engine hub that could not be reached, bound or
+//!   served, a read-evaluate loop or a terminal face stopped by a fault, a
+//!   terminal face asked for without a terminal, a script that never reached
+//!   the machine, a staged program that could not be checked, or a source the
+//!   formatter refused or could not write back.
 
 use core::num::NonZeroUsize;
 use core::ops::ControlFlow;
+#[cfg(unix)]
+use core::time::Duration;
 use std::io::IsTerminal as _;
 use std::io::Write as _;
 use std::path::PathBuf;
 use std::process::ExitCode;
+#[cfg(unix)]
+use std::time::Instant;
 
 use anodized::spec;
 use gandr_surface_diagnostics::Entry;
@@ -62,6 +68,8 @@ use gandr_surface_format::PageWidth;
 use gandr_surface_lsp::Capabilities;
 use gandr_surface_lsp::Served;
 use gandr_surface_repl::Ended;
+#[cfg(unix)]
+use quenchant_shape::shape::Maybe;
 
 mod allocator;
 
@@ -142,14 +150,49 @@ enum Command
     },
     /// Serve the Language Server Protocol over standard input and output.
     ///
-    /// Exits 0 when `exit` follows `shutdown`, 1 when the session ends
-    /// before `shutdown`, and 2 when a stream fails.
+    /// On Unix the session is carried to the engine hub serving the current
+    /// directory's workspace, started when none runs, so every client of one
+    /// workspace shares its open documents. Exits 0 when `exit` follows
+    /// `shutdown`, 1 when the session ends before `shutdown`, and 2 when a
+    /// stream fails or no hub can be reached.
     Lsp
     {
         /// Print the capabilities the server advertises, as one line of JSON,
         /// and exit.
         #[arg(long)]
         capabilities: bool,
+        /// Serve in this process, sharing nothing with other clients.
+        #[cfg(unix)]
+        #[arg(long)]
+        standalone: bool,
+        /// The hub's socket, rather than the one the current directory names.
+        #[cfg(unix)]
+        #[arg(long, value_name = "PATH", conflicts_with = "standalone")]
+        socket: Option<PathBuf>,
+        /// How long a hub this client starts waits for a client, once its
+        /// last has left, before it exits. Defaults to a minute.
+        #[cfg(unix)]
+        #[arg(long, value_name = "MILLISECONDS", conflicts_with = "standalone")]
+        linger_ms: Option<u64>,
+    },
+    /// Run the engine hub: serve the Language Server Protocol to every client
+    /// of one workspace over a Unix socket, the clients sharing the documents
+    /// they open.
+    ///
+    /// `gandr lsp` starts one when none runs. Exits 0 when the hub has had no
+    /// client for its linger or another hub already serves the socket, and 2
+    /// when the socket cannot be bound or served.
+    #[cfg(unix)]
+    Serve
+    {
+        /// The socket to serve, rather than the one the current directory
+        /// names.
+        #[arg(long, value_name = "PATH")]
+        socket: Option<PathBuf>,
+        /// How long to wait for a client, once the last has left, before
+        /// exiting. Defaults to a minute.
+        #[arg(long, value_name = "MILLISECONDS")]
+        linger_ms: Option<u64>,
     },
     /// Run the read-evaluate loop over standard input and output.
     ///
@@ -367,9 +410,28 @@ fn main() -> ExitCode
             width: Width::from(jobs),
         },
         | Some(Command::Lsp {
-            capabilities: false,
-        }) => return lsp(),
-        | Some(Command::Lsp { capabilities: true }) => return capabilities(),
+            capabilities: true, ..
+        }) => return capabilities(),
+        #[cfg(unix)]
+        | Some(Command::Lsp {
+            standalone: false,
+            socket,
+            linger_ms,
+            ..
+        }) => {
+            return relayed(
+                socket,
+                linger_ms.map_or(gandr_surface_lsp::LINGER, Duration::from_millis),
+            );
+        },
+        | Some(Command::Lsp { .. }) => return lsp(),
+        #[cfg(unix)]
+        | Some(Command::Serve { socket, linger_ms }) => {
+            return hub(
+                socket,
+                linger_ms.map_or(gandr_surface_lsp::LINGER, Duration::from_millis),
+            );
+        },
         | Some(Command::Repl { batch }) => {
             return repl(if batch { Face::Batch } else { Face::ByInput });
         },
@@ -412,9 +474,8 @@ fn main() -> ExitCode
 /// - ensures: client frames are fed to `gandr-surface-lsp` and its protocol
 ///   responses written to standard output until exit or EOF; notifications do
 ///   not acquire request replies; each synchronisation's timing line goes to
-///   standard error. A session exits `0` after shutdown and `1` before it. A
-///   failed stream is noted on standard error when writable and exits `2`.
-/// - provides: the editor's entry point.
+///   standard error. The session ends as [`ended`] states.
+/// - provides: the editor's entry point without a hub.
 /// - fails: never by panic; every failure is an exit code.
 /// - panics: none.
 ///
@@ -430,7 +491,28 @@ fn lsp() -> ExitCode
     let mut input = std::io::stdin().lock();
     let mut output = std::io::stdout().lock();
     let mut log = std::io::stderr();
-    match gandr_surface_lsp::serve(&mut input, &mut output, &mut log) {
+    ended(gandr_surface_lsp::serve(&mut input, &mut output, &mut log))
+}
+
+/// The exit code a language-server session that ended as `served` owes.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `0` after shutdown, `1` before it; a failed stream is noted on
+///   standard error when writable and exits `2`.
+/// - provides: one mapping for the standalone server and the relay.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — clean, abrupt and broken sessions, standalone and
+///   relayed, exit with distinct codes.
+/// - witness: `cli::cli::lsp_serves_a_session_over_the_standard_streams`
+/// - witness: `cli::cli::lsp_clients_share_one_engine_hub`
+#[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(ABRUPT) || ret == ExitCode::from(FAULTED))]
+fn ended(served: Result<Served, gandr_surface_lsp::TransportFault>) -> ExitCode
+{
+    match served {
         | Ok(Served::Clean) => ExitCode::SUCCESS,
         | Ok(Served::Abrupt) => ExitCode::from(ABRUPT),
         | Err(fault) => {
@@ -443,6 +525,149 @@ fn lsp() -> ExitCode
                 | Ok(()) | Err(_) => ExitCode::from(FAULTED),
             }
         },
+    }
+}
+
+/// The socket `socket` names, or the one the current directory's workspace
+/// names when it names none.
+///
+/// # Specification
+/// trivial.
+#[cfg(unix)]
+fn hub_socket(socket: Option<PathBuf>) -> std::io::Result<PathBuf>
+{
+    match socket {
+        | Some(socket) => Ok(socket),
+        | None => gandr_surface_lsp::socket_for(&std::env::current_dir()?),
+    }
+}
+
+/// Note `error`, what stopped reaching or running the hub, on standard error
+/// when writable, and exit `2`.
+///
+/// # Specification
+/// trivial.
+#[cfg(unix)]
+fn hub_fault(error: &std::io::Error) -> ExitCode
+{
+    match writeln!(std::io::stderr(), "gandr: the engine hub: {error}") {
+        // When standard error is unwritable too, the exit code is the one
+        // channel left.
+        | Ok(()) | Err(_) => ExitCode::from(FAULTED),
+    }
+}
+
+/// Carry the language-server session on the standard streams to the hub at
+/// `socket`, starting one lingering `linger` when none answers, and choose
+/// the exit code.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the session runs against the hub as `gandr_surface_lsp::relay`
+///   carries it, and ends as [`ended`] states. With no hub answering, this
+///   executable is started detached as `gandr serve` on the socket, and the
+///   socket is tried every 20 ms for five seconds; a hub never reached is noted
+///   on standard error and exits `2`.
+/// - provides: the editor's entry point on Unix.
+/// - fails: never by panic; every failure is an exit code.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a client finding no hub starts one that outlives it by
+///   its linger; two clients of one hub both end cleanly.
+/// - witness: `cli::cli::lsp_clients_share_one_engine_hub`
+#[cfg(unix)]
+#[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(ABRUPT) || ret == ExitCode::from(FAULTED))]
+fn relayed(
+    socket: Option<PathBuf>,
+    linger: Duration,
+) -> ExitCode
+{
+    use std::os::unix::net::UnixStream;
+    use std::os::unix::process::CommandExt as _;
+
+    let reached = hub_socket(socket).and_then(|socket| {
+        if let Ok(stream) = UnixStream::connect(&socket) {
+            return Ok(stream);
+        }
+        let child = std::process::Command::new(std::env::current_exe()?)
+            .arg("serve")
+            .arg("--socket")
+            .arg(&socket)
+            .arg("--linger-ms")
+            .arg(linger.as_millis().to_string())
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .process_group(0_i32)
+            .spawn()?;
+        // The hub outlives this client by its linger; it is never waited on.
+        drop(child);
+        let started = Instant::now();
+        loop {
+            std::thread::sleep(Duration::from_millis(20));
+            match UnixStream::connect(&socket) {
+                | Ok(stream) => return Ok(stream),
+                | Err(error) if started.elapsed() >= Duration::from_secs(5) => return Err(error),
+                | Err(_) => {},
+            }
+        }
+    });
+    match reached {
+        | Ok(stream) => ended(gandr_surface_lsp::relay(
+            std::io::stdin(),
+            &mut std::io::stdout().lock(),
+            stream,
+        )),
+        | Err(error) => hub_fault(&error),
+    }
+}
+
+/// Run the engine hub on `socket`, lingering `linger` once its last client
+/// leaves, and choose the exit code.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the hub runs as `gandr_surface_lsp::run_hub` states, its timing
+///   lines on standard error, and exits `0` when it lingers out; a socket
+///   another hub serves exits `0` at once, noted on standard error. A socket
+///   that cannot be bound or served is noted and exits `2`.
+/// - provides: `gandr serve`.
+/// - fails: never by panic; every failure is an exit code.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a hub serving a client exits `0` after its linger and
+///   removes its socket.
+/// - witness: `cli::cli::lsp_clients_share_one_engine_hub`
+#[cfg(unix)]
+#[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(FAULTED))]
+fn hub(
+    socket: Option<PathBuf>,
+    linger: Duration,
+) -> ExitCode
+{
+    let socket = match hub_socket(socket) {
+        | Ok(socket) => socket,
+        | Err(error) => return hub_fault(&error),
+    };
+    match gandr_surface_lsp::bind(&socket) {
+        | Ok(Maybe::Present(listener)) => {
+            match gandr_surface_lsp::run_hub(&listener, &socket, linger, std::io::stderr()) {
+                | Ok(()) => ExitCode::SUCCESS,
+                | Err(error) => hub_fault(&error),
+            }
+        },
+        | Ok(Maybe::Absent(gandr_surface_lsp::bind::Absent::Served)) => {
+            match writeln!(
+                std::io::stderr(),
+                "gandr: a hub already serves {}",
+                socket.display()
+            ) {
+                | Ok(()) | Err(_) => ExitCode::SUCCESS,
+            }
+        },
+        | Err(error) => hub_fault(&error),
     }
 }
 

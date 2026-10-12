@@ -22,6 +22,7 @@ publish.workspace = true
 # logic/BigInt stays disabled.
 [dependencies]
 anodized.workspace = true
+blake3.workspace = true
 gandr-core-incremental.workspace = true
 gandr-storage-records.workspace = true
 gandr-surface-diagnostics.workspace = true

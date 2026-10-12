@@ -34,6 +34,14 @@
 //! `exit`. [`Capabilities`] is what `initialize` answers, for a client that
 //! reads it before starting a session.
 //!
+//! # One hub serves a workspace's clients
+//!
+//! On Unix, `run_hub` serves every connection a socket accepts over one
+//! workspace: each document is held once, whichever connections hold it open,
+//! and each synchronisation is published to every holder. `socket_for` names
+//! a workspace's socket, `bind` claims it unless another hub serves it, and
+//! `relay` carries a client's streams to the hub and back.
+//!
 //! # Example
 //!
 //! ```
@@ -76,6 +84,8 @@ use core::fmt;
 
 mod format;
 mod hover;
+#[cfg(unix)]
+mod hub;
 mod inline;
 mod outline;
 mod position;
@@ -86,6 +96,16 @@ mod server;
 mod tokens;
 mod transport;
 
+#[cfg(unix)]
+pub use crate::hub::LINGER;
+#[cfg(unix)]
+pub use crate::hub::bind;
+#[cfg(unix)]
+pub use crate::hub::relay;
+#[cfg(unix)]
+pub use crate::hub::run_hub;
+#[cfg(unix)]
+pub use crate::hub::socket_for;
 pub use crate::server::Served;
 pub use crate::server::serve;
 pub use crate::tokens::TOKEN_MODIFIERS;
