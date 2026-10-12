@@ -756,7 +756,7 @@ mod tests
         let product = arena.value_type_product(&[integer, integer]);
         let zero = arena.value_literal(integer_literal());
         let unit = arena.value_unit();
-        let pair = arena.value_pair(zero, unit);
+        let pair = arena.value_tuple(&[zero, unit]);
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
         let expected = form_value_type(&mut context, product).unwrap();
 
@@ -775,7 +775,10 @@ mod tests
             expected,
             "a check produces its expected type"
         );
-        let Some(&Value::Pair(first, second)) = context.arena().value(elaboration.root())
+        let Some(&[first, second]) = context
+            .arena()
+            .value(elaboration.root())
+            .and_then(Value::components)
         else {
             panic!("the elaborated root is still the pair");
         };
@@ -802,10 +805,10 @@ mod tests
         let product = arena.value_type_product(&[integer, integer]);
         let zero = arena.value_literal(integer_literal());
         let unit = arena.value_unit();
-        let pair = arena.value_pair(zero, unit);
+        let pair = arena.value_tuple(&[zero, unit]);
         let forced = arena.computation_force(zero);
         let thunk = arena.value_thunk(forced);
-        let unsynthesisable = arena.value_pair(zero, thunk);
+        let unsynthesisable = arena.value_tuple(&[zero, thunk]);
         let returns_integer = arena.comp_type_returner(integer);
         let suspended = arena.value_type_thunk(returns_integer);
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
@@ -953,7 +956,7 @@ mod tests
         let hole = HoleId::from(0_u32);
         let standing = arena.value_hole(hole);
         let zero = arena.value_literal(integer_literal());
-        let program = arena.value_pair(standing, zero);
+        let program = arena.value_tuple(&[standing, zero]);
         let declarations = [Declaration::new(
             ConstantIndex::from(0_usize),
             Maybe::Absent(signature::Absent::Unsigned),
@@ -1011,7 +1014,9 @@ mod tests
             program,
         )
         .unwrap();
-        let Some(&DomainValue::Pair { first, .. }) = domain.value(evaluated)
+        let Some(&[first, _]) = domain
+            .value(evaluated)
+            .and_then(|held| domain.components(held))
         else {
             panic!("the pair evaluates around the hole");
         };

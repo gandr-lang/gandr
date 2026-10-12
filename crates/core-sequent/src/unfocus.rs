@@ -608,7 +608,7 @@ impl Unfocusing<'_>
             | Task::Pair => {
                 let second = self.pop_value()?;
                 let first = self.pop_value()?;
-                let pair = self.core.value_pair(first, second);
+                let pair = self.core.value_tuple(&[first, second]);
                 self.values.push(pair);
                 Ok(())
             },
@@ -620,7 +620,7 @@ impl Unfocusing<'_>
             },
             | Task::Injection(side) => {
                 let body = self.pop_value()?;
-                let injection = self.core.value_injection(side, body);
+                let injection = self.core.value_injection(side.into(), body);
                 self.values.push(injection);
                 Ok(())
             },
@@ -690,7 +690,7 @@ impl Unfocusing<'_>
                 let on_right = self.pop_computation()?;
                 let on_left = self.pop_computation()?;
                 let scrutinee = self.pop_value()?;
-                let cased = self.core.computation_case(scrutinee, on_left, on_right);
+                let cased = self.core.computation_case(scrutinee, &[on_left, on_right]);
                 self.computations.push(cased);
                 Ok(())
             },
@@ -1749,7 +1749,7 @@ mod tests
         let second = core.value_constant(7_usize.into());
         let closing = [first, second];
         for (zone, index, producers, length, expected) in [
-            (Zone::Intuitionistic, 0_u32, 0_u32, 2_usize, Value::Unit),
+            (Zone::Intuitionistic, 0_u32, 0_u32, 2_usize, Value::unit()),
             (
                 Zone::Intuitionistic,
                 1,
@@ -1765,7 +1765,7 @@ mod tests
                 zone: Zone::Intuitionistic,
                 index: 0_u32.into(),
             }),
-            (Zone::Intuitionistic, 1, 1, 2, Value::Unit),
+            (Zone::Intuitionistic, 1, 1, 2, Value::unit()),
             (
                 Zone::Intuitionistic,
                 2,
@@ -1801,7 +1801,7 @@ mod tests
             let value = walk.pop_value().expect("one variable reading");
             assert_eq!(Some(&expected), walk.core.value(value));
             match expected {
-                | Value::Unit => assert_eq!(first, value),
+                | Value::Tuple(_) => assert_eq!(first, value),
                 | Value::Constant(_) => assert_eq!(second, value),
                 | _ => {},
             }

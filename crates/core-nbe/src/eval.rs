@@ -97,7 +97,6 @@ use gandr_core_term::Zone;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GlobalIndex;
-use gandr_kernel_term::Side;
 
 use crate::arena::CompClosureId;
 use crate::arena::DomainArena;
@@ -218,6 +217,11 @@ pub enum EvalFault
     UnknownConstructor
     {
         tag: gandr_core_term::ConstructorTag,
+    },
+    /// The injected summand has no branch in the supplied sum case.
+    UnknownSummand
+    {
+        summand: gandr_kernel_term::Summand
     },
     /// Record projection received a non-record, non-neutral value.
     ProjectedNonRecord,
@@ -604,11 +608,11 @@ enum Task
         /// The environment it is read in.
         env: EnvId,
     },
-    /// Assemble a pair from the two values its own tasks produced.
-    Pair
+    /// Assemble a tuple from the values its own tasks produced.
+    Tuple
     {
-        /// The source node, which supplies both the children to compare faces
-        /// against and the face to keep when they match.
+        /// The source node, which supplies the arity, the children to compare
+        /// faces against and the face to keep when they match.
         term: ValueId,
     },
     /// Assemble a native list cell from its evaluated head and tail.
@@ -663,10 +667,8 @@ enum Task
     /// Choose a branch once the scrutinee has a value.
     Case
     {
-        /// The left branch's source node.
-        on_left: ComputationId,
-        /// The right branch's source node.
-        on_right: ComputationId,
+        /// The source case, which supplies its branches.
+        term: ComputationId,
         /// The environment the branches are read in.
         env: EnvId,
     },
@@ -676,15 +678,9 @@ enum Task
     /// Sequence into an already-captured continuation once the bound
     /// computation has a weak head: a spine's bind, re-applied.
     BindClosure(CompClosureId),
-    /// Choose between two already-captured branches once the scrutinee has a
+    /// Choose among already-captured branches once the scrutinee has a
     /// value: a spine's case, re-applied.
-    CaseClosures
-    {
-        /// The left branch.
-        on_left: CompClosureId,
-        /// The right branch.
-        on_right: CompClosureId,
-    },
+    CaseBranches(crate::arena::BranchSpan),
     /// Remember the weak head on the stack as the evaluation of a pending
     /// configuration.
     Remember(PendingId),
@@ -2042,7 +2038,7 @@ impl<'run> Evaluation<'run>
     /// - witness: `eval::tests::ill_shaped_reapplied_spines_return_machine_faults`
     /// - witness: `eval::tests::native_transport_sequences_product_components`
     #[spec(
-        requires: matches!(spine.first(), Some(Elimination::ListFold { .. } | Elimination::DataCase(_) | Elimination::RecordProjection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::Force | Elimination::Case { .. } | Elimination::StaticApply(_) | Elimination::Fixpoint(_))),
+        requires: matches!(spine.first(), Some(Elimination::ListFold { .. } | Elimination::DataCase(_) | Elimination::RecordProjection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::Force | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint(_))),
         ensures: |ret| ret.machine.values.as_slice() == [head] && ret.machine.comps.is_empty()
             && ret.machine.fuel.0 == 0_u32 && {
                 let mut tasks = ret.machine.tasks.iter().rev();
@@ -2066,9 +2062,9 @@ impl<'run> Evaluation<'run>
                         answer = Answer::Computation;
                         matches!(tasks.next(), Some(Task::ListFold { element: e, result: r, on_nil: n, on_cons: c }) if (*e,*r,*n,*c) == (element,result,on_nil,on_cons))
                     },
-                    Elimination::Case { on_left, on_right } => {
+                    Elimination::Case(branches) => {
                         answer = Answer::Computation;
-                        matches!(tasks.next(), Some(Task::CaseClosures { on_left: left, on_right: right }) if *left == on_left && *right == on_right)
+                        matches!(tasks.next(), Some(Task::CaseBranches(held)) if *held == branches)
                     },
                     Elimination::Fixpoint(recursive) => { answer = Answer::Computation; matches!(tasks.next(), Some(Task::FixpointClosure(held)) if *held == recursive) },
                 });
@@ -2133,9 +2129,9 @@ impl<'run> Evaluation<'run>
                     answer = Answer::Computation;
                     machine.tasks.push(Task::BindClosure(body));
                 },
-                | Elimination::Case { on_left, on_right } => {
+                | Elimination::Case(branches) => {
                     answer = Answer::Computation;
-                    machine.tasks.push(Task::CaseClosures { on_left, on_right });
+                    machine.tasks.push(Task::CaseBranches(branches));
                 },
                 | Elimination::Fixpoint(recursive) => {
                     answer = Answer::Computation;
@@ -2442,7 +2438,7 @@ fn run(
         && (ret.is_err() || match task {
             Task::Constructor { .. } | Task::Record(_) => machine.comps.len() == entry_comps && machine.tasks.len() == entry_tasks && machine.values.last().is_some_and(|id| domain.value(*id).is_some()),
             Task::DataCase { .. } | Task::DataCaseClosure(_) | Task::RecordProjection(_) | Task::Force | Task::Apply | Task::StaticApply | Task::Bind { .. } | Task::Case { .. }
-            | Task::BindClosure(_) | Task::CaseClosures { .. } | Task::Transport | Task::ProductTransport(_) | Task::FixpointClosure(_) | Task::ListFold { .. } => machine.tasks.len() >= entry_tasks,
+            | Task::BindClosure(_) | Task::CaseBranches(_) | Task::Transport | Task::ProductTransport(_) | Task::FixpointClosure(_) | Task::ListFold { .. } => machine.tasks.len() >= entry_tasks,
             Task::Value { .. } => machine.comps.len() == entry_comps
                 && ((machine.values.len() == entry_values.saturating_add(1_usize) && machine.tasks.len() >= entry_tasks)
                     || (machine.values.len() == entry_values && machine.tasks.len() > entry_tasks)),
@@ -2452,7 +2448,7 @@ fn run(
             Task::Body { body: crate::closure::CompBody::Pair(first), env } => machine.values.len() == entry_values
                 && machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps.saturating_add(1)
                 && matches!(machine.comps.last().and_then(|&id| domain.computation(id)), Some(&DomainComp::Return { value, .. })
-                    if matches!(domain.value(value), Some(&DomainValue::Pair { first: held, second, .. })
+                    if matches!(domain.value(value).and_then(|held| domain.components(held)), Some(&[held, second])
                         if held == first && machine.env(env).is_ok_and(|environment| environment.lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32)) == Some(second)))),
             Task::Body { body: crate::closure::CompBody::TransportPair { path, value }, .. } => machine.comps.len() == entry_comps
                 && machine.values.len() == entry_values.saturating_add(2) && machine.values.ends_with(&[path, value])
@@ -2466,15 +2462,14 @@ fn run(
                 && entry_values.checked_sub(1_usize) == Some(machine.values.len())
                 && matches!(machine.values.last().and_then(|value| domain.value(*value)),
                     Some(DomainValue::ListCons { first, second, .. }) if Some(*first) == entry_first && Some(*second) == entry_value),
-            Task::Pair { .. } => machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps
-                && entry_values.checked_sub(1_usize) == Some(machine.values.len())
-                && matches!(machine.values.last().and_then(|value| domain.value(*value)),
-                    Some(DomainValue::Pair { first, second, .. }) if Some(*first) == entry_first && Some(*second) == entry_value),
+            Task::Tuple { term } => machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps
+                && core.value(term).and_then(Value::components).is_some_and(|source| entry_values.checked_sub(source.len()).and_then(|left| left.checked_add(1_usize)) == Some(machine.values.len())
+                    && machine.values.last().and_then(|value| domain.value(*value)).and_then(|value| domain.components(value)).is_some_and(|held| held.len() == source.len())),
             Task::Inject { term } => machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps
                 && machine.values.len() == entry_values
                 && matches!(machine.values.last().and_then(|value| domain.value(*value)),
-                    Some(DomainValue::Injection { side, body, .. }) if Some(*body) == entry_value
-                        && matches!(core.value(term), Some(Value::Injection(source_side, _)) if source_side == side)),
+                    Some(DomainValue::Injection { summand, body, .. }) if Some(*body) == entry_value
+                        && matches!(core.value(term), Some(Value::Injection(source_summand, _)) if source_summand == summand)),
             Task::Lift { target, .. } => machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps
                 && machine.values.len() == entry_values
                 && matches!(machine.values.last().and_then(|value| domain.value(*value)),
@@ -2549,7 +2544,7 @@ fn step(
             match body {
                 | crate::closure::CompBody::Source(_) => Err(EvalFault::MachineInvariant),
                 | crate::closure::CompBody::Pair(first) => {
-                    let pair = domain.value_pair(first, bound, TermFace::Reduced);
+                    let pair = domain.value_tuple([first, bound], TermFace::Reduced);
                     machine
                         .comps
                         .push(domain.comp_return(pair, CompTermFace::Reduced));
@@ -2657,28 +2652,39 @@ fn step(
             }
             Ok(())
         },
-        | Task::Pair { term } => {
-            let second = machine.pop_value()?;
-            let first = machine.pop_value()?;
-            let Some(&Value::Pair(left, right)) = core.value(term)
+        | Task::Tuple { term } => {
+            let Some(source) = core.value(term).and_then(Value::components)
             else {
                 return Err(EvalFault::DanglingTerm);
             };
-            let kept = denotes(domain, first, left).and(denotes(domain, second, right));
+            let start = machine
+                .values
+                .len()
+                .checked_sub(source.len())
+                .ok_or(EvalFault::MachineInvariant)?;
+            let evaluated = machine.values.get(start ..).unwrap_or_default();
+            let kept = evaluated
+                .iter()
+                .zip(source)
+                .fold(SourceKept::Kept, |kept, (&value, &component)| {
+                    kept.and(denotes(domain, value, component))
+                });
             let face = composite_face(kept, term);
-            machine.values.push(domain.value_pair(first, second, face));
+            let tuple = domain.value_tuple(evaluated.iter().copied(), face);
+            machine.values.truncate(start);
+            machine.values.push(tuple);
             Ok(())
         },
         | Task::Inject { term } => {
             let body = machine.pop_value()?;
-            let Some(&Value::Injection(side, source)) = core.value(term)
+            let Some(&Value::Injection(summand, source)) = core.value(term)
             else {
                 return Err(EvalFault::DanglingTerm);
             };
             let face = composite_face(denotes(domain, body, source), term);
             machine
                 .values
-                .push(domain.value_injection(side, body, face));
+                .push(domain.value_injection(summand, body, face));
             Ok(())
         },
         | Task::Lift { term, target } => {
@@ -2705,19 +2711,13 @@ fn step(
         | Task::Apply => step_apply(core, domain, machine),
         | Task::StaticApply => step_static_apply(core, domain, machine),
         | Task::Bind { body, env } => step_bind(core, domain, machine, body, env),
-        | Task::Case {
-            on_left,
-            on_right,
-            env,
-        } => step_case(domain, machine, on_left, on_right, env),
+        | Task::Case { term, env } => step_case(core, domain, machine, term, env),
         | Task::Supply(value) => {
             machine.values.push(value);
             Ok(())
         },
         | Task::BindClosure(body) => step_bind_closure(core, domain, machine, body),
-        | Task::CaseClosures { on_left, on_right } => {
-            step_case_closures(domain, machine, on_left, on_right)
-        },
+        | Task::CaseBranches(branches) => step_case_branches(domain, machine, branches),
         | Task::Remember(pending) => machine.remember(pending),
         | Task::FixpointClosure(recursive) => {
             machine
@@ -2848,22 +2848,27 @@ fn step_value(
             machine.values.push(stood);
             Ok(())
         },
-        | Value::Unit => {
-            machine
-                .values
-                .push(domain.value_unit(TermFace::Source(term)));
-            Ok(())
-        },
         | Value::Literal(ref payload) => {
             machine
                 .values
                 .push(domain.value_literal(term, payload, TermFace::Source(term)));
             Ok(())
         },
-        | Value::Pair(first, second) => {
-            machine.tasks.push(Task::Pair { term });
-            machine.tasks.push(Task::Value { term: second, env });
-            machine.tasks.push(Task::Value { term: first, env });
+        // The empty tuple is the unit, a leaf: it has no assembly to defer.
+        | Value::Tuple(ref components) if components.is_empty() => {
+            machine
+                .values
+                .push(domain.value_unit(TermFace::Source(term)));
+            Ok(())
+        },
+        | Value::Tuple(ref components) => {
+            machine.tasks.push(Task::Tuple { term });
+            for &component in components.iter().rev() {
+                machine.tasks.push(Task::Value {
+                    term: component,
+                    env,
+                });
+            }
             Ok(())
         },
         | Value::Injection(_, body) => {
@@ -3149,16 +3154,8 @@ fn step_comp(
             machine.tasks.push(Task::Comp { term: bound, env });
             Ok(())
         },
-        | Computation::Case {
-            scrutinee,
-            on_left,
-            on_right,
-        } => {
-            machine.tasks.push(Task::Case {
-                on_left,
-                on_right,
-                env,
-            });
+        | Computation::Case { scrutinee, .. } => {
+            machine.tasks.push(Task::Case { term, env });
             machine.tasks.push(Task::Value {
                 term: scrutinee,
                 env,
@@ -3316,9 +3313,8 @@ fn step_force(
         | DomainValue::Constructor { .. }
         | DomainValue::Record { .. }
         | DomainValue::PathProduct { .. }
-        | DomainValue::Unit { .. }
+        | DomainValue::Tuple { .. }
         | DomainValue::Literal { .. }
-        | DomainValue::Pair { .. }
         | DomainValue::ListNil { .. }
         | DomainValue::ListCons { .. }
         | DomainValue::Injection { .. }
@@ -3441,9 +3437,8 @@ fn step_apply(
                 | DomainValue::Record { .. }
                 | DomainValue::PathCertificate { .. }
                 | DomainValue::PathProduct { .. }
-                | DomainValue::Unit { .. }
+                | DomainValue::Tuple { .. }
                 | DomainValue::Literal { .. }
-                | DomainValue::Pair { .. }
                 | DomainValue::Injection { .. }
                 | DomainValue::Thunk { .. }
                 | DomainValue::Lift { .. }
@@ -3604,9 +3599,8 @@ fn step_static_apply(
         | DomainValue::Constructor { .. }
         | DomainValue::Record { .. }
         | DomainValue::PathProduct { .. }
-        | DomainValue::Unit { .. }
+        | DomainValue::Tuple { .. }
         | DomainValue::Literal { .. }
-        | DomainValue::Pair { .. }
         | DomainValue::ListNil { .. }
         | DomainValue::ListCons { .. }
         | DomainValue::Injection { .. }
@@ -3733,36 +3727,43 @@ fn step_bind(
                     && machine.tasks.len() == entry_tasks))),
 )]
 fn step_case(
+    core: &CoreArena,
     domain: &mut DomainArena,
     machine: &mut Machine<'_>,
-    on_left: ComputationId,
-    on_right: ComputationId,
+    term: ComputationId,
     env: EnvId,
 ) -> Result<(), EvalFault>
 {
+    let Some(case) = core.computation(term)
+    else {
+        return Err(EvalFault::DanglingTerm);
+    };
+    let Computation::Case { ref branches, .. } = *case
+    else {
+        return Err(EvalFault::DanglingTerm);
+    };
     let scrutinee = machine.pop_value()?;
     let Some(node) = domain.value(scrutinee)
     else {
         return Err(EvalFault::Domain(DomainFault::Dangling));
     };
     match *node {
-        | DomainValue::Injection { side, body, .. } => {
-            let term = match side {
-                | Side::Left => on_left,
-                | Side::Right => on_right,
-            };
+        | DomainValue::Injection { summand, body, .. } => {
+            let term = *branches
+                .get(usize::from(summand))
+                .ok_or(EvalFault::UnknownSummand { summand })?;
             let env = machine.extended(env, Zone::Intuitionistic, body)?;
             machine.tasks.push(Task::Comp { term, env });
             Ok(())
         },
         | DomainValue::Neutral { neutral, .. } => {
             let captured = machine.capture(env)?;
-            let left = domain.comp_closure_node(on_left, captured.clone());
-            let right = domain.comp_closure_node(on_right, captured);
-            let grown = extend_spine(domain, neutral, Elimination::Case {
-                on_left: left,
-                on_right: right,
-            })?;
+            let mut closures = Vec::with_capacity(branches.len());
+            for &branch in branches {
+                closures.push(domain.comp_closure_node(branch, captured.clone()));
+            }
+            let held = domain.hold_branches(closures);
+            let grown = extend_spine(domain, neutral, Elimination::Case(held))?;
             machine
                 .comps
                 .push(domain.comp_neutral(grown, CompTermFace::Reduced));
@@ -3772,9 +3773,8 @@ fn step_case(
         | DomainValue::Constructor { .. }
         | DomainValue::Record { .. }
         | DomainValue::PathProduct { .. }
-        | DomainValue::Unit { .. }
+        | DomainValue::Tuple { .. }
         | DomainValue::Literal { .. }
-        | DomainValue::Pair { .. }
         | DomainValue::ListNil { .. }
         | DomainValue::ListCons { .. }
         | DomainValue::Thunk { .. }
@@ -3889,11 +3889,10 @@ fn step_bind_closure(
                 && ((machine.tasks.len() == entry_tasks.saturating_add(1_usize) && machine.comps.len() == entry_comps)
                     || (machine.comps.len() == entry_comps.saturating_add(1_usize) && machine.tasks.len() == entry_tasks)))),
 )]
-fn step_case_closures(
+fn step_case_branches(
     domain: &mut DomainArena,
     machine: &mut Machine<'_>,
-    on_left: CompClosureId,
-    on_right: CompClosureId,
+    branches: crate::arena::BranchSpan,
 ) -> Result<(), EvalFault>
 {
     let scrutinee = machine.pop_value()?;
@@ -3902,11 +3901,12 @@ fn step_case_closures(
         return Err(EvalFault::Domain(DomainFault::Dangling));
     };
     match *node {
-        | DomainValue::Injection { side, body, .. } => {
-            let chosen = match side {
-                | Side::Left => on_left,
-                | Side::Right => on_right,
-            };
+        | DomainValue::Injection { summand, body, .. } => {
+            let chosen = *domain
+                .branches(branches)
+                .map_err(EvalFault::Domain)?
+                .get(usize::from(summand))
+                .ok_or(EvalFault::UnknownSummand { summand })?;
             let closure = domain
                 .comp_closure(chosen)
                 .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
@@ -3918,7 +3918,7 @@ fn step_case_closures(
             Ok(())
         },
         | DomainValue::Neutral { neutral, .. } => {
-            let grown = extend_spine(domain, neutral, Elimination::Case { on_left, on_right })?;
+            let grown = extend_spine(domain, neutral, Elimination::Case(branches))?;
             machine
                 .comps
                 .push(domain.comp_neutral(grown, CompTermFace::Reduced));
@@ -3928,9 +3928,8 @@ fn step_case_closures(
         | DomainValue::Constructor { .. }
         | DomainValue::Record { .. }
         | DomainValue::PathProduct { .. }
-        | DomainValue::Unit { .. }
+        | DomainValue::Tuple { .. }
         | DomainValue::Literal { .. }
-        | DomainValue::Pair { .. }
         | DomainValue::ListNil { .. }
         | DomainValue::ListCons { .. }
         | DomainValue::Thunk { .. }
@@ -4013,11 +4012,11 @@ fn step_transport(
                 .copied()
                 .ok_or(EvalFault::Domain(DomainFault::Dangling))?
             {
-                | DomainValue::Pair {
-                    first: left,
-                    second: right,
-                    ..
-                } => {
+                | DomainValue::Tuple { fields, .. } => {
+                    let &[left, right] = domain.fields(fields).map_err(EvalFault::Domain)?
+                    else {
+                        return Err(EvalFault::TransportedNonPath);
+                    };
                     let continuation =
                         domain.transport_continuation(crate::closure::CompBody::TransportPair {
                             path: second,
@@ -4450,7 +4449,7 @@ mod tests
         let mut core = CoreArena::new();
         let first = core.value_unit();
         let second = core.value_unit();
-        let pair = core.value_pair(first, second);
+        let pair = core.value_tuple(&[first, second]);
 
         let (chain, environment) = nothing_unfolds();
         let scope = environment.root();
@@ -4469,11 +4468,9 @@ mod tests
             face_of(&domain, evaluated),
             "nothing inside reduced, so the pair still denotes its own source node"
         );
-        let Some(&DomainValue::Pair {
-            first: left,
-            second: right,
-            ..
-        }) = domain.value(evaluated)
+        let Some(&[left, right]) = domain
+            .value(evaluated)
+            .and_then(|held| domain.components(held))
         else {
             panic!("the result is a pair");
         };
@@ -4496,7 +4493,7 @@ mod tests
         let lifted = core.value_unit();
         let target = Level::zero().succ().expect("level one exists");
         let lift = core.value_lift(target.clone(), lifted);
-        let pair = core.value_pair(literal, lift);
+        let pair = core.value_tuple(&[literal, lift]);
 
         let (chain, environment) = nothing_unfolds();
         let scope = environment.root();
@@ -4515,7 +4512,9 @@ mod tests
             face_of(&domain, evaluated),
             "nothing inside reduced, so both arms kept their faces and the pair kept its own"
         );
-        let Some(&DomainValue::Pair { first, second, .. }) = domain.value(evaluated)
+        let Some(&[first, second]) = domain
+            .value(evaluated)
+            .and_then(|held| domain.components(held))
         else {
             panic!("the result is a pair");
         };
@@ -4601,7 +4600,7 @@ mod tests
         let mut stranger = other.value_unit();
         let mut remaining = 8_usize;
         while remaining > 0 {
-            stranger = other.value_pair(stranger, stranger);
+            stranger = other.value_tuple(&[stranger, stranger]);
             remaining = remaining.saturating_sub(1);
         }
 
@@ -4664,7 +4663,7 @@ mod tests
         let argument = core.value_unit();
         let held = core.value_unit();
         let bound = core.value_variable(Zone::Intuitionistic, innermost());
-        let pair = core.value_pair(bound, held);
+        let pair = core.value_tuple(&[bound, held]);
         let body = core.computation_return(pair);
         let lambda = core.computation_lambda(body);
         let redex = core.computation_application(lambda, argument);
@@ -4690,7 +4689,7 @@ mod tests
             face_of(&domain, value),
             "the variable resolved out of the environment, so the pair no longer denotes its source"
         );
-        let Some(&DomainValue::Pair { first, .. }) = domain.value(value)
+        let Some(&[first, _]) = domain.value(value).and_then(|held| domain.components(held))
         else {
             panic!("the returned value is a pair");
         };
@@ -4749,7 +4748,7 @@ mod tests
         let inner = core.computation_lambda(returner);
         let outer = core.computation_lambda(inner);
         let applied = core.computation_application(outer, argument);
-        let different = core.value_pair(argument, argument);
+        let different = core.value_tuple(&[argument, argument]);
         let applied_twice = core.computation_application(applied, different);
 
         let (chain, environment) = nothing_unfolds();
@@ -4945,9 +4944,9 @@ mod tests
                 refl
             };
             let path = core.value_path_product(first_path, second_path);
-            let left = core.value_injection(Side::Left, unit);
-            let right = core.value_injection(Side::Right, unit);
-            let operand = core.value_pair(left, right);
+            let left = core.value_injection(Side::Left.into(), unit);
+            let right = core.value_injection(Side::Right.into(), unit);
+            let operand = core.value_tuple(&[left, right]);
             let transported = core.computation_transport(path, operand);
             let first = if first_stuck {
                 core.value_variable(
@@ -4964,7 +4963,7 @@ mod tests
             else {
                 right
             };
-            let pair = core.value_pair(first, second);
+            let pair = core.value_tuple(&[first, second]);
             let mut expected = core.computation_return(pair);
             if second_stuck {
                 let transport = core.computation_transport(second_path, right);
@@ -5015,8 +5014,8 @@ mod tests
         let definitions = Definitions::new(&chain, &environment, scope);
 
         for (side, expected) in [(Side::Left, injected), (Side::Right, untaken)] {
-            let scrutinee = core.value_injection(side, injected);
-            let cased = core.computation_case(scrutinee, on_left, on_right);
+            let scrutinee = core.value_injection(side.into(), injected);
+            let cased = core.computation_case(scrutinee, &[on_left, on_right]);
             let mut domain = DomainArena::new();
             let evaluated = eval_computation(&core, &mut domain, definitions, ample(), cased)
                 .expect("a case over an injection picks a branch");
@@ -5305,7 +5304,7 @@ mod tests
         let forced_unit = core.computation_force(unit);
         let applied_returner = core.computation_application(returner, unit);
         let bound_lambda = core.computation_bind(lambda, returner);
-        let cased_unit = core.computation_case(unit, returner, returner);
+        let cased_unit = core.computation_case(unit, &[returner, returner]);
 
         let (chain, environment) = nothing_unfolds();
         let scope = environment.root();
@@ -5725,7 +5724,7 @@ mod tests
         let mut core = CoreArena::new();
         let argument = core.value_unit();
         let occurrence = core.value_variable(Zone::Intuitionistic, innermost());
-        let doubled = core.value_pair(occurrence, occurrence);
+        let doubled = core.value_tuple(&[occurrence, occurrence]);
         let returned = core.computation_return(doubled);
         let lambda = core.computation_lambda(returned);
         let redex = core.computation_application(lambda, argument);
@@ -5780,7 +5779,7 @@ mod tests
         let identity = core.computation_return(occurrence);
         let lambda = core.computation_lambda(identity);
         let function_body = core.value_thunk(lambda);
-        let injected_body = core.value_injection(Side::Left, unit);
+        let injected_body = core.value_injection(Side::Left.into(), unit);
 
         let function_reference = core.value_constant(function);
         let forced = core.computation_force(function_reference);
@@ -5790,7 +5789,7 @@ mod tests
         let injected_reference = core.value_constant(injected);
         let on_left = core.computation_return(occurrence);
         let on_right = core.computation_return(unit);
-        let cased = core.computation_case(injected_reference, on_left, on_right);
+        let cased = core.computation_case(injected_reference, &[on_left, on_right]);
 
         let mut chain = DefinitionChain::new();
         for (constant, body) in [(function, 0_u32), (injected, 1_u32)] {
@@ -5843,7 +5842,10 @@ mod tests
                 panic!("every spine here ends in a returner once its head unfolds");
             };
             assert!(
-                matches!(domain.value(value), Some(&DomainValue::Unit { .. })),
+                domain
+                    .value(value)
+                    .and_then(|held| domain.components(held))
+                    .is_some_and(<[_]>::is_empty),
                 "the force, the application, the bind and the case each fired on the \
                  unfolded head in order"
             );
@@ -5872,11 +5874,10 @@ mod tests
             panic!("draining on the last available step finishes rather than pauses");
         };
         assert_eq!(
-            Some(&DomainValue::Unit {
-                face: TermFace::Source(unit)
-            }),
-            domain.value(value)
+            Some([].as_slice()),
+            domain.value(value).and_then(|held| domain.components(held))
         );
+        assert_eq!(Some(TermFace::Source(unit)), face_of(&domain, value));
     }
 
     #[test]
@@ -5885,28 +5886,28 @@ mod tests
         let mut core = CoreArena::new();
         let argument = core.value_variable(Zone::Intuitionistic, innermost());
         let captured = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
-        let pair = core.value_pair(captured, argument);
+        let pair = core.value_tuple(&[captured, argument]);
         let body = core.computation_return(pair);
         let pass = core.computation_return(argument);
         let (chain, environment) = nothing_unfolds();
         let definitions = Definitions::new(&chain, &environment, environment.root());
         let mut domain = DomainArena::new();
         let first = domain.value_unit(TermFace::Reduced);
-        let second = domain.value_injection(Side::Left, first, TermFace::Reduced);
-        let supplied = domain.value_injection(Side::Right, first, TermFace::Reduced);
+        let second = domain.value_injection(Side::Left.into(), first, TermFace::Reduced);
+        let supplied = domain.value_injection(Side::Right.into(), first, TermFace::Reduced);
         let mut left_capture = Environment::new();
         left_capture.extend(Zone::Intuitionistic, first);
         let mut right_capture = Environment::new();
         right_capture.extend(Zone::Intuitionistic, second);
         let on_left = domain.comp_closure_node(body, left_capture);
         let on_right = domain.comp_closure_node(body, right_capture);
-        let left = domain.value_injection(Side::Left, supplied, TermFace::Reduced);
-        let right = domain.value_injection(Side::Right, supplied, TermFace::Reduced);
+        let left = domain.value_injection(Side::Left.into(), supplied, TermFace::Reduced);
+        let right = domain.value_injection(Side::Right.into(), supplied, TermFace::Reduced);
         let mut returned_capture = Environment::new();
         returned_capture.extend(Zone::Intuitionistic, supplied);
         let returning = domain.comp_closure_node(pass, returned_capture);
         let thunk = domain.value_thunk(returning, TermFace::Reduced);
-        let case = [Elimination::Case { on_left, on_right }];
+        let case = [Elimination::Case(domain.hold_branches([on_left, on_right]))];
         let bind = [Elimination::Force, Elimination::Bind(on_right)];
         for (head, spine, expected_capture) in [
             (left, case.as_slice(), first),
@@ -5926,14 +5927,11 @@ mod tests
                 panic!("the selected continuation returns its pair");
             };
             assert_eq!(
-                Some(&DomainValue::Pair {
-                    first: expected_capture,
-                    second: supplied,
-                    face: TermFace::Reduced,
-                }),
-                domain.value(value),
+                Some([expected_capture, supplied].as_slice()),
+                domain.value(value).and_then(|held| domain.components(held)),
                 "the old capture stays outside the new argument, in the selected environment"
             );
+            assert_eq!(Some(TermFace::Reduced), face_of(&domain, value));
         }
     }
 
@@ -5950,15 +5948,12 @@ mod tests
         let mut captured = Environment::new();
         captured.extend(Zone::Intuitionistic, value);
         let live = domain.comp_closure_node(body, captured);
-        let left = domain.value_injection(Side::Left, value, TermFace::Reduced);
-        let right = domain.value_injection(Side::Right, value, TermFace::Reduced);
+        let left = domain.value_injection(Side::Left.into(), value, TermFace::Reduced);
+        let right = domain.value_injection(Side::Right.into(), value, TermFace::Reduced);
         let boundary = domain.watermark();
         let missing = domain.comp_closure_node(body, Environment::new());
         domain.truncate_to(boundary);
-        let spine = [Elimination::Case {
-            on_left: missing,
-            on_right: live,
-        }];
+        let spine = [Elimination::Case(domain.hold_branches([missing, live]))];
         let mut selected_live = Evaluation::eliminate(definitions, right, &spine);
         let (progress, _spent) = selected_live
             .resume(&core, &mut domain, ample())
@@ -5987,7 +5982,7 @@ mod tests
         let mut core = CoreArena::new();
         let intuitionistic = core.value_variable(Zone::Intuitionistic, innermost());
         let linear = core.value_variable(Zone::Linear, innermost());
-        let pair = core.value_pair(intuitionistic, linear);
+        let pair = core.value_tuple(&[intuitionistic, linear]);
         let term = super::CoreTerm::Value(pair);
         let mut indices = crate::free::FreeIndices::default();
         let free = indices
@@ -6000,7 +5995,7 @@ mod tests
         machine.sharing.legs.insert(term, free);
         let mut domain = DomainArena::new();
         let unit = domain.value_unit(TermFace::Reduced);
-        let injection = domain.value_injection(Side::Left, unit, TermFace::Reduced);
+        let injection = domain.value_injection(Side::Left.into(), unit, TermFace::Reduced);
         for (first, second, unused, steps) in [
             (unit, injection, unit, 5_u32),
             (unit, injection, injection, 1_u32),
@@ -6015,13 +6010,12 @@ mod tests
             machine.fuel = ample();
             super::run(&core, &mut domain, &mut machine).expect("both free bindings are supplied");
             let result = machine.pop_value().expect("the leg produced its pair");
+            assert_eq!(Some(TermFace::Reduced), face_of(&domain, result));
             assert_eq!(
-                Some(&DomainValue::Pair {
-                    first,
-                    second,
-                    face: TermFace::Reduced
-                }),
-                domain.value(result)
+                Some([first, second].as_slice()),
+                domain
+                    .value(result)
+                    .and_then(|held| domain.components(held))
             );
             assert_eq!(
                 steps,
@@ -6036,7 +6030,7 @@ mod tests
         let mut core = CoreArena::new();
         let unit = core.value_unit();
         let loose = core.value_variable(Zone::Linear, innermost());
-        let pair = core.value_pair(unit, loose);
+        let pair = core.value_tuple(&[unit, loose]);
         let (chain, environment) = nothing_unfolds();
         let definitions = Definitions::new(&chain, &environment, environment.root());
         let mut domain = DomainArena::new();
@@ -6048,19 +6042,15 @@ mod tests
             }),
             eval_value(&core, &mut domain, definitions, ample(), pair)
         );
-        assert_eq!(
-            Some(&DomainValue::Unit {
-                face: TermFace::Reduced
-            }),
-            domain.value(existing)
-        );
+        assert_eq!(Some(TermFace::Reduced), face_of(&domain, existing));
         let retried = eval_value(&core, &mut domain, definitions, ample(), unit)
             .expect("a refused run does not poison later evaluation");
+        assert_eq!(Some(TermFace::Source(unit)), face_of(&domain, retried));
         assert_eq!(
-            Some(&DomainValue::Unit {
-                face: TermFace::Source(unit)
-            }),
-            domain.value(retried)
+            Some([].as_slice()),
+            domain
+                .value(retried)
+                .and_then(|held| domain.components(held))
         );
     }
 
@@ -6098,10 +6088,10 @@ mod tests
                 Elimination::StaticApply(argument),
                 Elimination::Bind(continuation),
             ],
-            [Elimination::Force, Elimination::Case {
-                on_left: continuation,
-                on_right: continuation,
-            }],
+            [
+                Elimination::Force,
+                Elimination::Case(domain.hold_branches([continuation, continuation])),
+            ],
         ] {
             let mut evaluation = Evaluation::eliminate(definitions, head, &spine);
             assert_eq!(
@@ -6118,7 +6108,7 @@ mod tests
         let mut core = CoreArena::new();
         let unit = core.value_unit();
         let returned = core.computation_return(unit);
-        let pair = core.value_pair(unit, unit);
+        let pair = core.value_tuple(&[unit, unit]);
         let paired = core.computation_return(pair);
         let lambda = core.computation_lambda(returned);
         let suspended_lambda = core.value_thunk(lambda);
@@ -6139,16 +6129,17 @@ mod tests
             .value_neutral(neutral, TermFace::Reduced)
             .expect("the prefix still denotes a value");
         let bind = [Elimination::Force, Elimination::Bind(on_left)];
-        let case = [Elimination::Case { on_left, on_right }];
+        let branches = domain.hold_branches([on_left, on_right]);
+        let case = [Elimination::Case(branches)];
         let bound = [
             Elimination::StaticApply(argument),
             Elimination::Force,
             Elimination::Bind(on_left),
         ];
-        let cased = [Elimination::StaticApply(argument), Elimination::Case {
-            on_left,
-            on_right,
-        }];
+        let cased = [
+            Elimination::StaticApply(argument),
+            Elimination::Case(branches),
+        ];
         for (spine, expected) in [
             (bind.as_slice(), bound.as_slice()),
             (case.as_slice(), cased.as_slice()),
@@ -6197,9 +6188,9 @@ mod tests
         use gandr_core_term::FieldLabel;
         let mut core = CoreArena::new();
         let unit = core.value_unit();
-        let left = core.value_injection(Side::Left, unit);
-        let right = core.value_injection(Side::Right, unit);
-        let pair = core.value_pair(unit, unit);
+        let left = core.value_injection(Side::Left.into(), unit);
+        let right = core.value_injection(Side::Right.into(), unit);
+        let pair = core.value_tuple(&[unit, unit]);
         let empty = core.value_record(BTreeMap::new());
         let labels = ["a", "b", "c", "d", "e"].map(|label| FieldLabel::from(String::from(label)));
         let source = core.value_record(
@@ -6270,21 +6261,23 @@ mod tests
         };
         assert!(record.keys().eq(labels.iter()));
         let mut actual = record.values().copied();
+        assert!(
+            core.value(actual.next().unwrap())
+                .and_then(Value::components)
+                .is_some_and(<[_]>::is_empty)
+        );
         assert!(matches!(
             core.value(actual.next().unwrap()),
-            Some(Value::Unit)
+            Some(&Value::Injection(summand, _)) if summand == Side::Left.into()
         ));
         assert!(matches!(
             core.value(actual.next().unwrap()),
-            Some(Value::Injection(Side::Left, _))
+            Some(&Value::Injection(summand, _)) if summand == Side::Right.into()
         ));
         assert!(matches!(
-            core.value(actual.next().unwrap()),
-            Some(Value::Injection(Side::Right, _))
-        ));
-        assert!(matches!(
-            core.value(actual.next().unwrap()),
-            Some(Value::Pair(_, _))
+            core.value(actual.next().unwrap())
+                .and_then(Value::components),
+            Some(&[_, _])
         ));
         assert!(
             matches!(core.value(actual.next().unwrap()),Some(Value::Record(fields)) if fields.is_empty())
@@ -6298,10 +6291,7 @@ mod tests
         };
         assert!(matches!(
             domain.value(value),
-            Some(DomainValue::Injection {
-                side: Side::Right,
-                ..
-            })
+            Some(&DomainValue::Injection { summand, .. }) if summand == Side::Right.into()
         ));
         let absent =
             core.computation_record_projection(source, FieldLabel::from(String::from("absent")));
@@ -6346,7 +6336,7 @@ mod tests
         .unwrap();
         assert!(matches!(
             core.value(normal),
-            Some(Value::Injection(Side::Right, _))
+            Some(&Value::Injection(summand, _)) if summand == Side::Right.into()
         ));
         let argument = core.value_variable(Zone::Intuitionistic, innermost());
         let identity = core.computation_return(argument);
@@ -6368,10 +6358,7 @@ mod tests
         };
         assert!(matches!(
             domain.value(value),
-            Some(DomainValue::Injection {
-                side: Side::Right,
-                ..
-            })
+            Some(&DomainValue::Injection { summand, .. }) if summand == Side::Right.into()
         ));
         let poisoned = core.computation_record_projection(module, labels[0].clone());
         let poisoned = core.computation_bind(poisoned, forced);
@@ -6429,7 +6416,7 @@ mod tests
         };
         assert_eq!(*declaration, ConstantIndex::from(3_usize));
         assert!(
-            matches!(arguments.as_slice(),[argument] if matches!(core.value(*argument),Some(Value::Unit)))
+            matches!(arguments.as_slice(),[argument] if core.value(*argument) == Some(&Value::unit()))
         );
         assert!(
             matches!(fields.as_slice(),[field] if matches!(core.value(*field),Some(Value::Record(record)) if record.keys().eq(labels.iter())))
@@ -6446,8 +6433,8 @@ mod tests
         use gandr_core_term::FieldLabel;
         let mut core = CoreArena::new();
         let unit = core.value_unit();
-        let captured = core.value_injection(Side::Left, unit);
-        let field = core.value_injection(Side::Right, unit);
+        let captured = core.value_injection(Side::Left.into(), unit);
+        let field = core.value_injection(Side::Right.into(), unit);
         let label = FieldLabel::from(String::from("field"));
         let data = core.value_type_data(ConstantIndex::from(2_usize), Vec::new());
         let constructor =
@@ -6459,7 +6446,7 @@ mod tests
         let motive = core.comp_type_returner(motive_type);
         let index = core.value_constructor(data, ConstructorTag::from(0_usize), Vec::from([bound]));
         let result_type = core.value_type_data(ConstantIndex::from(3_usize), Vec::from([index]));
-        let pair = core.value_pair(outer, bound);
+        let pair = core.value_tuple(&[outer, bound]);
         let result = core.value_constructor(
             result_type,
             ConstructorTag::from(0_usize),
@@ -6562,23 +6549,17 @@ mod tests
         else {
             panic!("one result field");
         };
-        let Some(&DomainValue::Pair { first, second, .. }) = domain.value(*pair)
+        let Some(&[first, second]) = domain.value(*pair).and_then(|held| domain.components(held))
         else {
             panic!("capture and payload pair");
         };
         assert!(matches!(
             domain.value(first),
-            Some(DomainValue::Injection {
-                side: Side::Left,
-                ..
-            })
+            Some(&DomainValue::Injection { summand, .. }) if summand == Side::Left.into()
         ));
         assert!(matches!(
             domain.value(second),
-            Some(DomainValue::Injection {
-                side: Side::Right,
-                ..
-            })
+            Some(&DomainValue::Injection { summand, .. }) if summand == Side::Right.into()
         ));
         let projected =
             eval_computation(&core, &mut domain, definitions, ample(), projected).unwrap();
@@ -6601,10 +6582,7 @@ mod tests
         };
         assert!(matches!(
             domain.value(value),
-            Some(DomainValue::Injection {
-                side: Side::Right,
-                ..
-            })
+            Some(&DomainValue::Injection { summand, .. }) if summand == Side::Right.into()
         ));
     }
 }

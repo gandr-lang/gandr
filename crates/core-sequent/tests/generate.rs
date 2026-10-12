@@ -741,12 +741,12 @@ impl Generator
                 | Task::Pair => {
                     let second = self.values.pop().expect("an operand");
                     let first = self.values.pop().expect("an operand");
-                    let pair = self.core.value_pair(first, second);
+                    let pair = self.core.value_tuple(&[first, second]);
                     self.values.push(pair);
                 },
                 | Task::Injection(side) => {
                     let body = self.values.pop().expect("an operand");
-                    let injection = self.core.value_injection(side, body);
+                    let injection = self.core.value_injection(side.into(), body);
                     self.values.push(injection);
                 },
                 | Task::Thunk => {
@@ -785,7 +785,7 @@ impl Generator
                     let on_right = self.computations.pop().expect("an operand");
                     let on_left = self.computations.pop().expect("an operand");
                     let scrutinee = self.values.pop().expect("an operand");
-                    let cased = self.core.computation_case(scrutinee, on_left, on_right);
+                    let cased = self.core.computation_case(scrutinee, &[on_left, on_right]);
                     self.computations.push(cased);
                 },
             }
@@ -988,7 +988,7 @@ fn typed_builders_preserve_product_sum_and_function_roles()
             .push(Task::Value(product, Scope::Empty, Fuel(0)));
         generator.drive();
         let pair = generator.values.pop().expect("one generated value");
-        let Some(&Value::Pair(first, second)) = generator.core.value(pair)
+        let Some(&[first, second]) = generator.core.value(pair).and_then(Value::components)
         else {
             panic!("a product introduction");
         };
@@ -996,7 +996,7 @@ fn typed_builders_preserve_product_sum_and_function_roles()
             generator.core.value(first),
             Some(&Value::Literal(Literal::Integer(_)))
         ));
-        assert_eq!(Some(&Value::Unit), generator.core.value(second));
+        assert_eq!(Some(&Value::unit()), generator.core.value(second));
         let sum = generator.intern(Ty::Sum(unit, integer));
         generator
             .tasks
@@ -1007,8 +1007,8 @@ fn typed_builders_preserve_product_sum_and_function_roles()
         else {
             panic!("a sum introduction");
         };
-        match side {
-            | Side::Left => assert_eq!(Some(&Value::Unit), generator.core.value(body)),
+        match Side::try_from(side).expect("the generator's sums are binary") {
+            | Side::Left => assert_eq!(Some(&Value::unit()), generator.core.value(body)),
             | Side::Right => assert!(matches!(
                 generator.core.value(body),
                 Some(&Value::Literal(Literal::Integer(_)))

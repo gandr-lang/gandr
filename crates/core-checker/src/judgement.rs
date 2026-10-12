@@ -1980,7 +1980,6 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Maybe::Present(declared) => produced(declared),
                 | Maybe::Absent(_) => Err(CheckRefusal::UnknownConstant { at: term, constant }),
             },
-            | Value::Unit => produced(self.context.atom(Atom::Unit)),
             | Value::Literal(ref literal) => match literal.base_type() {
                 | BaseType::Integer => produced(self.context.atom(Atom::Integer)),
                 | BaseType::String => produced(self.context.atom(Atom::String)),
@@ -1993,12 +1992,16 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::Thunk(_) => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Thunk(term),
             }),
-            | Value::Pair(first, second) => {
-                self.frames.push(Frame::PairFirstSynthesised { second });
-                Ok(Step::Descend(Goal::Value {
-                    term: first,
-                    direction: Direction::Synthesise,
-                }))
+            | Value::Tuple(ref components) => match **components {
+                | [] => produced(self.context.atom(Atom::Unit)),
+                | [first, second] => {
+                    self.frames.push(Frame::PairFirstSynthesised { second });
+                    Ok(Step::Descend(Goal::Value {
+                        term: first,
+                        direction: Direction::Synthesise,
+                    }))
+                },
+                | _ => Err(unadmitted_value(term, UnadmittedFormer::ProductArity)),
             },
             | Value::Injection(..) => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Injection(term),
@@ -2114,7 +2117,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(body_type),
                 }))
             },
-            | Value::Pair(first, second) => {
+            | Value::Tuple(ref components) if components.len() == 2 => {
+                let &[first, second] = &**components
+                else {
+                    return Err(CheckRefusal::MachineInvariant);
+                };
                 let (first_factor, second_factor) = self.product_expected(term, expected)?;
                 self.frames.push(Frame::PairSecond {
                     second,
@@ -2141,7 +2148,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::Primitive { .. }
             | Value::Variable { .. }
             | Value::Constant(_)
-            | Value::Unit
+            | Value::Tuple(_)
             | Value::Literal(_)
             | Value::Quote(_)
             | Value::QuoteComputation(_)
@@ -2152,11 +2159,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
-            | Value::Injection(side, value) => {
+            | Value::Injection(summand, value) => {
                 let (left, right) = self.sum_expected(term, expected)?;
-                let summand = match side {
-                    | gandr_kernel_term::Side::Left => left,
-                    | gandr_kernel_term::Side::Right => right,
+                let summand = match usize::from(summand) {
+                    | 0 => left,
+                    | 1 => right,
+                    | _ => return Err(unadmitted_value(term, UnadmittedFormer::SumArity)),
                 };
                 Ok(Step::Descend(Goal::Value {
                     term: value,
@@ -2285,11 +2293,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::PathProduct(..)
             | Value::PathEquiv { .. }
             | Value::Variable { .. }
-            | Value::Unit
+            | Value::Tuple(_)
             | Value::ListNil
             | Value::ListCons(..)
             | Value::Literal(_)
-            | Value::Pair(..)
             | Value::Injection(..)
             | Value::Thunk(_)
             | Value::Lift { .. }
@@ -2615,9 +2622,15 @@ impl<'context, 'arena> Machine<'context, 'arena>
             },
             | Computation::Case {
                 scrutinee,
-                on_left,
-                on_right,
+                ref branches,
             } => {
+                let &[on_left, on_right] = &**branches
+                else {
+                    return Err(CheckRefusal::OutOfFragment {
+                        at: CoreNode::Term(TermNode::Computation(term)),
+                        former: UnadmittedFormer::SumArity,
+                    });
+                };
                 self.frames.push(Frame::CaseScrutinee {
                     scrutinee,
                     on_left,
@@ -4427,7 +4440,7 @@ mod tests
         let numeric = arena.value_literal(numeric_literal());
         let returned = arena.computation_return(integer_value);
         let thunk = arena.value_thunk(returned);
-        let injection = arena.value_injection(Side::Left, unit);
+        let injection = arena.value_injection(Side::Left.into(), unit);
         let lift = arena.value_lift(Level::zero(), unit);
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
         seed(&mut context, &[thunk_arrow]);
@@ -4522,8 +4535,8 @@ mod tests
         let zero = arena.value_literal(integer_literal());
         let returned = arena.computation_return(zero);
         let thunk = arena.value_thunk(returned);
-        let pair = arena.value_pair(unit, zero);
-        let with_thunk = arena.value_pair(thunk, zero);
+        let pair = arena.value_tuple(&[unit, zero]);
+        let with_thunk = arena.value_tuple(&[thunk, zero]);
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
         let synthesised = synthesise_value(&mut context, pair)
             .map(|found| found.produced().id())
@@ -4641,7 +4654,7 @@ mod tests
         let application = arena.computation_application(force, integer_value);
         let returned = arena.computation_return(integer_value);
         let bind = arena.computation_bind(application, force);
-        let case = arena.computation_case(unit, returned, returned);
+        let case = arena.computation_case(unit, &[returned, returned]);
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
         seed(&mut context, &[thunk_arrow]);
         let crossed = |crossings: usize| Ok(ConversionCount::from(crossings));
@@ -4806,13 +4819,13 @@ mod tests
         }
         let nil = arena.value_list_nil();
         let strings = arena.value_list_cons(string, nil);
-        let mode = arena.value_pair(strings, string);
-        let command = arena.value_pair(string, mode);
+        let mode = arena.value_tuple(&[strings, string]);
+        let command = arena.value_tuple(&[string, mode]);
         let good = arena.computation_perform(host.exec.clone(), "exec".into(), command);
         let integer = arena.value_literal(integer_literal());
         let integers = arena.value_list_cons(integer, nil);
-        let mode = arena.value_pair(integers, string);
-        let command = arena.value_pair(string, mode);
+        let mode = arena.value_tuple(&[integers, string]);
+        let command = arena.value_tuple(&[string, mode]);
         let bad = arena.computation_perform(host.exec, "exec".into(), command);
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
         let inferred = synthesise_comp(&mut context, good)
@@ -6576,15 +6589,15 @@ mod tests
         let unit = arena.value_unit();
         let returned = arena.computation_return(zero);
         let thunk = arena.value_thunk(returned);
-        let pair = arena.value_pair(zero, thunk);
-        let injected = arena.value_injection(Side::Left, pair);
+        let pair = arena.value_tuple(&[zero, thunk]);
+        let injected = arena.value_injection(Side::Left.into(), pair);
         let static_lambda = arena.value_static_lambda(zero);
         let innermost = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
         let returns_innermost = arena.computation_return(innermost);
         let lambda = arena.computation_lambda(returns_innermost);
         let forced = arena.computation_force(unit);
         let ill_thunk = arena.value_thunk(forced);
-        let ill_pair = arena.value_pair(zero, ill_thunk);
+        let ill_pair = arena.value_tuple(&[zero, ill_thunk]);
         let nil = arena.value_list_nil();
         let cons = arena.value_list_cons(zero, nil);
         let stack = arena.value_reify(
@@ -6693,7 +6706,10 @@ mod tests
                         Err(CheckRefusal::NotSynthesisable { form: CheckingForm::Thunk(term) }),
                         "a thunk does not synthesise"
                     ),
-                    | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Unit | Value::Literal(_) => {
+                    | Value::Tuple(ref components) if !components.is_empty() => {
+                        prop_assert!(false, "the recipe mints no pair");
+                    },
+                    | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Tuple(_) => {
                         let bridged = synthesised.and_then(|found| {
                             let mut tally = found.conversions();
                             value_bridge(&mut context, term, found.produced().id(), expected_value.id(), &mut tally)
@@ -6710,7 +6726,6 @@ mod tests
                     | Value::Reify(_)
                     | Value::PathProduct(..)
                     | Value::PathEquiv {..}
-                    | Value::Pair(..)
                     | Value::ListNil | Value::ListCons(..)
                     | Value::Injection(..)
                     | Value::Lift { .. }

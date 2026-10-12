@@ -212,7 +212,7 @@ fn a_constructor_scrutinee_refutes_the_head_and_suspends_the_payload()
     let unit = core.value_type_unit();
     let sum = core.value_type_sum(&[unit, unit]);
     let hole = core.value_hole(HoleId::from(0_u32));
-    let value = core.value_injection(Side::Left, hole);
+    let value = core.value_injection(Side::Left.into(), hole);
     let checkpoint = checkpoint(&core, value);
     let mut patterns = Patterns::new();
     let any = patterns.mint(Pattern::Wildcard);
@@ -242,7 +242,7 @@ fn a_pattern_hole_downgrades_the_residue()
     let unit = core.value_type_unit();
     let sum = core.value_type_sum(&[unit, unit]);
     let value = core.value_unit();
-    let value = core.value_injection(Side::Left, value);
+    let value = core.value_injection(Side::Left.into(), value);
     let checkpoint = checkpoint(&core, value);
     let mut patterns = Patterns::new();
     let any = patterns.mint(Pattern::Wildcard);
@@ -376,7 +376,7 @@ fn filling_a_hole_refines_a_possible_verdict()
         );
     }
     let body = core.value_unit();
-    let filled = core.value_injection(Side::Right, body);
+    let filled = core.value_injection(Side::Right.into(), body);
     let chain = LoweredChain::new();
     let environment = DefinitionalEnvironment::new();
     let definitions = Definitions::new(&chain, &environment, environment.root());
@@ -459,7 +459,7 @@ fn the_eliminator_still_fires_on_a_hole_payload()
     let unit = core.value_type_unit();
     let sum = core.value_type_sum(&[unit, unit]);
     let hole = core.value_hole(HoleId::from(0_u32));
-    let left = core.value_injection(Side::Left, hole);
+    let left = core.value_injection(Side::Left.into(), hole);
     let mut checkpoint = checkpoint(&core, left);
     let mut patterns = Patterns::new();
     let binder = patterns.mint(Pattern::Binder);

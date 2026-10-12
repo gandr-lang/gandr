@@ -1245,10 +1245,10 @@ impl fmt::Display for Former
             | UnadmittedFormer::StaticLambda => "a type operator",
             | UnadmittedFormer::EffectRow => "a nonempty effect row at the pure kernel boundary",
             | UnadmittedFormer::ProductArity => {
-                "a product of neither zero nor two components at the kernel boundary"
+                "a product or tuple of neither zero nor two components at the kernel boundary"
             },
             | UnadmittedFormer::SumArity => {
-                "a sum of other than two summands at the kernel boundary"
+                "a sum, injection or case of other than two summands at the kernel boundary"
             },
         })
     }

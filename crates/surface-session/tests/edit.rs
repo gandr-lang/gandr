@@ -591,14 +591,14 @@ struct Leaf(usize);
                 matches!(item.declaration(), gandr_surface_session::DeclarationTree::Value {signature:Maybe::Absent(signature::Absent::Unsigned),..})
                     && item.body().is_some_and(|tree| match tree.nodes() {
                                 &[ContentNode::Thunk(thunk),
-                                ContentNode::Case { scrutinee, on_left, on_right },
-                                ContentNode::Pair(pair_first, pair_second),
+                                ContentNode::Case { scrutinee, branches: ref case_branches },
+                                ContentNode::Tuple(ref pair),
                                 ContentNode::Bind(bound, rest), ContentNode::Force(forced),
                                 ContentNode::Literal(Literal::Text(ref zero)),
-                                ContentNode::Injection(Side::Left, injected),
+                                ContentNode::Injection(summand, injected),
                                 ContentNode::Return(two),
                                 ContentNode::Application(lambda, four),
-                                ContentNode::Pair(five, variable),
+                                ContentNode::Tuple(ref fifth),
                                 ContentNode::Literal(Literal::Text(ref one)),
                                 ContentNode::Literal(Literal::Text(ref two_text)),
                                 ContentNode::Lambda(returned),
@@ -607,7 +607,12 @@ struct Leaf(usize);
                                 ContentNode::Variable { zone: Zone::Intuitionistic, index },
                                 ContentNode::Return(three),
                                 ContentNode::Literal(Literal::Text(ref three_text))] => {
-                                    [
+                                    let (&[on_left, on_right], &[pair_first, pair_second], &[five, variable]) =
+                                        (case_branches.as_slice(), pair.as_slice(), fifth.as_slice())
+                                    else {
+                                        return false;
+                                    };
+                                    summand == Side::Left.into() && [
                                         thunk,
                                         scrutinee,
                                         on_left,
@@ -657,8 +662,8 @@ fn hand_built(changed: Option<Leaf>) -> Snapshot
     let leaf = |arena: &mut CoreArena, at: Leaf| arena.value_literal(leaf_content(at, changed));
     let zero = leaf(&mut arena, Leaf(0_usize));
     let one = leaf(&mut arena, Leaf(1_usize));
-    let injected = arena.value_injection(Side::Left, one);
-    let scrutinee = arena.value_pair(zero, injected);
+    let injected = arena.value_injection(Side::Left.into(), one);
+    let scrutinee = arena.value_tuple(&[zero, injected]);
     let two = leaf(&mut arena, Leaf(2_usize));
     let bound = arena.computation_return(two);
     let three = leaf(&mut arena, Leaf(3_usize));
@@ -670,9 +675,9 @@ fn hand_built(changed: Option<Leaf>) -> Snapshot
     let five = leaf(&mut arena, Leaf(5_usize));
     let index = u32::from(changed == Some(Leaf(6_usize)));
     let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index));
-    let forced = arena.value_pair(five, variable);
+    let forced = arena.value_tuple(&[five, variable]);
     let on_right = arena.computation_force(forced);
-    let case = arena.computation_case(scrutinee, on_left, on_right);
+    let case = arena.computation_case(scrutinee, &[on_left, on_right]);
     let body = arena.value_thunk(case);
     let declaration = Declaration::new(
         ConstantIndex::from(0_usize),

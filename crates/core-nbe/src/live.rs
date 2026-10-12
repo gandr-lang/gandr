@@ -37,6 +37,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_term::CoreArena;
+use gandr_core_term::Summand;
 use gandr_core_term::Value;
 use gandr_core_term::fill_hole;
 use gandr_core_term::hole::HoleId;
@@ -295,8 +296,18 @@ pub fn match_pattern(
             .value(value)
             .ok_or(MatchFault::Domain(DomainFault::Dangling))?;
         let local = match (shape, node) {
-            | (&Pattern::Wildcard, _) | (&Pattern::Unit, DomainValue::Unit { .. }) => {
-                BranchStatus::Satisfied
+            | (&Pattern::Wildcard, _) => BranchStatus::Satisfied,
+            | (&Pattern::Unit, DomainValue::Tuple { fields, .. }) => {
+                if domain
+                    .fields(fields)
+                    .map_err(MatchFault::Domain)?
+                    .is_empty()
+                {
+                    BranchStatus::Satisfied
+                }
+                else {
+                    return Err(MatchFault::Mismatched);
+                }
             },
             | (&Pattern::Binder, _) => {
                 bindings.push(value);
@@ -329,14 +340,11 @@ pub fn match_pattern(
                 | Some(&Value::Literal(_)) => BranchStatus::Refuted,
                 | Some(_) | None => return Err(MatchFault::LiteralPayload),
             },
-            | (
-                &Pattern::Pair(first, second),
-                DomainValue::Pair {
-                    first: left,
-                    second: right,
-                    ..
-                },
-            ) => {
+            | (&Pattern::Pair(first, second), DomainValue::Tuple { fields, .. }) => {
+                let &[left, right] = domain.fields(fields).map_err(MatchFault::Domain)?
+                else {
+                    return Err(MatchFault::Mismatched);
+                };
                 pending.push((second, right));
                 pending.push((first, left));
                 BranchStatus::Satisfied
@@ -344,12 +352,12 @@ pub fn match_pattern(
             | (
                 &Pattern::Injection(side, body),
                 DomainValue::Injection {
-                    side: found,
+                    summand: found,
                     body: inner,
                     ..
                 },
             ) => {
-                if side == found {
+                if Summand::from(side) == found {
                     pending.push((body, inner));
                     BranchStatus::Satisfied
                 }
@@ -387,9 +395,8 @@ pub fn match_pattern(
                 | DomainValue::Record { .. }
                 | DomainValue::PathCertificate { .. }
                 | DomainValue::PathProduct { .. }
-                | DomainValue::Unit { .. }
+                | DomainValue::Tuple { .. }
                 | DomainValue::Literal { .. }
-                | DomainValue::Pair { .. }
                 | DomainValue::Injection { .. }
                 | DomainValue::Thunk { .. }
                 | DomainValue::Code { .. }
@@ -767,8 +774,8 @@ mod tests
         let six = literal_six(&mut core);
         let hole = core.value_hole(HoleId::from(0_u32));
         let other = core.value_hole(HoleId::from(0_u32));
-        let left_pair = core.value_pair(hole, five);
-        let right_pair = core.value_pair(other, six);
+        let left_pair = core.value_tuple(&[hole, five]);
+        let right_pair = core.value_tuple(&[other, six]);
         let chain = LoweredChain::new();
         let environment = DefinitionalEnvironment::new();
         let definitions = Definitions::new(&chain, &environment, environment.root());
@@ -924,7 +931,7 @@ mod tests
         let second = HoleId::from(1_u32);
         let written = core.value_hole(first);
         let standing = core.value_hole(second);
-        let pair = core.value_pair(written, standing);
+        let pair = core.value_tuple(&[written, standing]);
         let returned = core.computation_return(pair);
         let lambda = core.computation_lambda(returned);
         let program = core.computation_application(lambda, five);
@@ -959,7 +966,7 @@ mod tests
             filled,
         )
         .expect("the filled result reads back");
-        let expected_pair = core.value_pair(five, standing);
+        let expected_pair = core.value_tuple(&[five, standing]);
         let Some(&Computation::Return(read_pair)) = core.computation(read)
         else {
             panic!("the result still returns");
@@ -977,7 +984,7 @@ mod tests
         let mut core = CoreArena::new();
         let three = Literal::Text(StringLiteral::new(String::from("three")));
         let hole = core.value_hole(HoleId::from(0_u32));
-        let injected = core.value_injection(Side::Left, hole);
+        let injected = core.value_injection(Side::Left.into(), hole);
         let chain = LoweredChain::new();
         let environment = DefinitionalEnvironment::new();
         let definitions = Definitions::new(&chain, &environment, environment.root());
@@ -1045,14 +1052,16 @@ mod tests
         let mut core = CoreArena::new();
         let five = literal_five(&mut core);
         let six = literal_six(&mut core);
-        let pair = core.value_pair(five, six);
+        let pair = core.value_tuple(&[five, six]);
         let chain = LoweredChain::new();
         let environment = DefinitionalEnvironment::new();
         let definitions = Definitions::new(&chain, &environment, environment.root());
         let mut domain = DomainArena::new();
         let scrutinee =
             eval_value(&core, &mut domain, definitions, ample(), pair).expect("a pair evaluates");
-        let Some(&DomainValue::Pair { first, second, .. }) = domain.value(scrutinee)
+        let Some(&[first, second]) = domain
+            .value(scrutinee)
+            .and_then(|held| domain.components(held))
         else {
             panic!("a pair evaluates to a pair");
         };

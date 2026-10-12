@@ -359,6 +359,8 @@ enum EliminationShape<'core>
     Ordinary(core::mem::Discriminant<Elimination>),
     /// A nominal case with this many ordinary branch functions.
     DataCase(usize),
+    /// A sum case with this many branches.
+    Case(usize),
     /// An exact record label.
     Projection(&'core gandr_core_term::FieldLabel),
 }
@@ -478,7 +480,8 @@ pub fn projection_label(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: nominal arity and exact labels remain part of shape equality.
+/// - ensures: nominal and sum-case arity and exact labels remain part of shape
+///   equality.
 /// - fails: malformed native captures, as the source readers report.
 /// - panics: none.
 ///
@@ -489,6 +492,7 @@ pub fn projection_label(
 #[spec(ensures:|ret| match elimination {
     Elimination::DataCase(closure) => ret == case_source(core,domain,closure).map(|(_,branches)| EliminationShape::DataCase(branches.len())),
     Elimination::RecordProjection(source) => ret == projection_label(core,source).map(EliminationShape::Projection),
+    Elimination::Case(branches) => ret == domain.branches(branches).map(|held| EliminationShape::Case(held.len())).map_err(ConversionFault::Domain),
     _ => ret == Ok(EliminationShape::Ordinary(core::mem::discriminant(&elimination))),
 })]
 fn elimination_shape<'core>(
@@ -503,6 +507,10 @@ fn elimination_shape<'core>(
         | Elimination::RecordProjection(source) => {
             projection_label(core, source).map(EliminationShape::Projection)
         },
+        | Elimination::Case(branches) => domain
+            .branches(branches)
+            .map(|held| EliminationShape::Case(held.len()))
+            .map_err(ConversionFault::Domain),
         | _ => Ok(EliminationShape::Ordinary(core::mem::discriminant(
             &elimination,
         ))),
@@ -624,7 +632,8 @@ pub enum Spines
             let added = match shape {
                 EliminationShape::DataCase(branches) => branches.saturating_add(1_usize),
                 EliminationShape::Projection(_) => 0_usize,
-                EliminationShape::Ordinary(_) => match a { Elimination::Force => 0_usize,Elimination::ListFold { .. } | Elimination::Case { .. } => 2_usize,_ => 1_usize },
+                EliminationShape::Case(branches) => branches,
+                EliminationShape::Ordinary(_) => match a { Elimination::Force => 0_usize,Elimination::ListFold { .. } => 2_usize,_ => 1_usize },
             };
             Ok((true,count.saturating_add(added)))
         });
@@ -704,18 +713,16 @@ pub fn spine_subgoals(
                 subgoals.push(Subgoal::Entered(ln, rn));
                 subgoals.push(Subgoal::OpenedTwice(lc, rc));
             },
-            | (
-                Elimination::Case {
-                    on_left: left_on_left,
-                    on_right: left_on_right,
-                },
-                Elimination::Case {
-                    on_left: right_on_left,
-                    on_right: right_on_right,
-                },
-            ) => {
-                subgoals.push(Subgoal::Opened(left_on_left, right_on_left));
-                subgoals.push(Subgoal::Opened(left_on_right, right_on_right));
+            | (Elimination::Case(left_branches), Elimination::Case(right_branches)) => {
+                let left_branches = domain
+                    .branches(left_branches)
+                    .map_err(ConversionFault::Domain)?;
+                let right_branches = domain
+                    .branches(right_branches)
+                    .map_err(ConversionFault::Domain)?;
+                subgoals.extend(left_branches.iter().zip(right_branches).map(
+                    |(&left_branch, &right_branch)| Subgoal::Opened(left_branch, right_branch),
+                ));
             },
             | (
                 Elimination::Transport(_)
@@ -725,7 +732,7 @@ pub fn spine_subgoals(
                 | Elimination::Apply(_)
                 | Elimination::Force
                 | Elimination::Bind(_)
-                | Elimination::Case { .. }
+                | Elimination::Case(_)
                 | Elimination::ListFold { .. }
                 | Elimination::StaticApply(_)
                 | Elimination::Fixpoint(_),
@@ -1059,9 +1066,8 @@ fn value_neutrality(
         | DomainValue::Constructor { .. }
         | DomainValue::Record { .. }
         | DomainValue::PathProduct { .. }
-        | DomainValue::Unit { .. }
+        | DomainValue::Tuple { .. }
         | DomainValue::Literal { .. }
-        | DomainValue::Pair { .. }
         | DomainValue::ListNil { .. }
         | DomainValue::ListCons { .. }
         | DomainValue::Injection { .. }
@@ -1344,7 +1350,38 @@ fn plan_values(
                 Settled::NotConvertible
             },
         ),
-        | (DomainValue::Unit { .. }, DomainValue::Unit { .. }) => Plan::Leaf(Settled::Convertible),
+        | (
+            DomainValue::Tuple {
+                fields: left_fields,
+                ..
+            },
+            DomainValue::Tuple {
+                fields: right_fields,
+                ..
+            },
+        ) => {
+            let left_fields = domain
+                .fields(left_fields)
+                .map_err(ConversionFault::Domain)?;
+            let right_fields = domain
+                .fields(right_fields)
+                .map_err(ConversionFault::Domain)?;
+            if left_fields.len() != right_fields.len() {
+                Plan::Leaf(Settled::NotConvertible)
+            }
+            else if left_fields.is_empty() {
+                Plan::Leaf(Settled::Convertible)
+            }
+            else {
+                Plan::Decompose(
+                    left_fields
+                        .iter()
+                        .zip(right_fields)
+                        .map(|(a, b)| Subgoal::Values(*a, *b))
+                        .collect(),
+                )
+            }
+        },
         | (DomainValue::ListNil { .. }, DomainValue::ListNil { .. }) => {
             Plan::Leaf(Settled::Convertible)
         },
@@ -1377,35 +1414,23 @@ fn plan_values(
                 second: right_second,
                 ..
             },
-        )
-        | (
-            DomainValue::Pair {
-                first: left_first,
-                second: left_second,
-                ..
-            },
-            DomainValue::Pair {
-                first: right_first,
-                second: right_second,
-                ..
-            },
         ) => Plan::Decompose(Vec::from([
             Subgoal::Values(left_first, right_first),
             Subgoal::Values(left_second, right_second),
         ])),
         | (
             DomainValue::Injection {
-                side: left_side,
+                summand: left_summand,
                 body: left_body,
                 ..
             },
             DomainValue::Injection {
-                side: right_side,
+                summand: right_summand,
                 body: right_body,
                 ..
             },
         ) => {
-            if left_side == right_side {
+            if left_summand == right_summand {
                 Plan::Decompose(Vec::from([Subgoal::Values(left_body, right_body)]))
             }
             else {
@@ -1505,9 +1530,8 @@ fn plan_values(
             | DomainValue::Constructor { .. }
             | DomainValue::Record { .. }
             | DomainValue::PathProduct { .. }
-            | DomainValue::Unit { .. }
+            | DomainValue::Tuple { .. }
             | DomainValue::Literal { .. }
-            | DomainValue::Pair { .. }
             | DomainValue::ListNil { .. }
             | DomainValue::ListCons { .. }
             | DomainValue::Injection { .. }

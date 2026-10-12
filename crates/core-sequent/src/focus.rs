@@ -221,6 +221,15 @@ pub enum FocusRefusal
     UniverseTransport(ComputationId),
     /// A structural record has no command-IL producer form.
     Record(ValueId),
+    /// A tuple of an arity other than zero or two has no command-IL producer
+    /// form until the command IL is n-ary.
+    TupleArity(ValueId),
+    /// An injection past the second summand has no command-IL producer form
+    /// until the command IL is n-ary.
+    SummandArity(ValueId),
+    /// A sum case of other than two branches has no command-IL destructor
+    /// until the command IL is n-ary.
+    CaseArity(ComputationId),
     /// A record projection has no command-IL destructor.
     RecordProjection(ComputationId),
     /// A core value id names no node of the core arena.
@@ -262,6 +271,15 @@ impl fmt::Display for FocusRefusal
                 f.write_str("universe transport has no command-IL destructor")
             },
             | Self::Record(_) => f.write_str("a record has no command-IL producer"),
+            | Self::TupleArity(_) => f.write_str(
+                "a tuple of other than zero or two components has no command-IL producer",
+            ),
+            | Self::SummandArity(_) => {
+                f.write_str("an injection past the second summand has no command-IL producer")
+            },
+            | Self::CaseArity(_) => {
+                f.write_str("a case of other than two branches has no command-IL destructor")
+            },
             | Self::RecordProjection(_) => {
                 f.write_str("a record projection has no command-IL destructor")
             },
@@ -1152,6 +1170,8 @@ impl<'run> Focusing<'run>
             | Some(&Value::Quote(_) | &Value::QuoteComputation(_)) => ret == Err(FocusRefusal::Code(id)),
             | Some(&Value::Hole(_) | &Value::Mark { .. }) => ret == Err(FocusRefusal::IncompleteValue(id)),
             | Some(&Value::Record(_)) => ret == Err(FocusRefusal::Record(id)),
+            | Some(&Value::Tuple(ref components)) if !matches!(components.len(), 0 | 2) => ret == Err(FocusRefusal::TupleArity(id)),
+            | Some(&Value::Injection(summand, _)) if usize::from(summand) > 1 => ret == Err(FocusRefusal::SummandArity(id)),
             | Some(_) => ret.is_err() || self.tasks.len() > work || self.producers.len() > results,
         },
     )]
@@ -1208,18 +1228,23 @@ impl<'run> Focusing<'run>
             | Value::Variable { zone, index } => ProducerNode::Variable { zone, index },
             | Value::Constant(constant) => ProducerNode::Constant(constant),
             | Value::Literal(ref literal) => ProducerNode::Literal(literal.clone()),
-            | Value::Unit => ProducerNode::Constructor {
-                tag: ConstructorTag::Unit,
-                producers: alloc::boxed::Box::from([]),
-                consumers: alloc::boxed::Box::from([]),
+            | Value::Tuple(ref components) => match **components {
+                | [] => ProducerNode::Constructor {
+                    tag: ConstructorTag::Unit,
+                    producers: alloc::boxed::Box::from([]),
+                    consumers: alloc::boxed::Box::from([]),
+                },
+                | [first, second] => {
+                    self.tasks.push(Task::Pair);
+                    self.tasks.push(Task::Value(second));
+                    self.tasks.push(Task::Value(first));
+                    return Ok(());
+                },
+                | _ => return Err(FocusRefusal::TupleArity(id)),
             },
-            | Value::Pair(first, second) => {
-                self.tasks.push(Task::Pair);
-                self.tasks.push(Task::Value(second));
-                self.tasks.push(Task::Value(first));
-                return Ok(());
-            },
-            | Value::Injection(side, body) => {
+            | Value::Injection(summand, body) => {
+                let side =
+                    Side::try_from(summand).map_err(|_beyond| FocusRefusal::SummandArity(id))?;
                 self.tasks.push(Task::Injection(side));
                 self.tasks.push(Task::Value(body));
                 return Ok(());
@@ -1290,6 +1315,7 @@ impl<'run> Focusing<'run>
             | None => ret == Err(FocusRefusal::DanglingComputation(id)),
             | Some(&Computation::Hole(_) | &Computation::Mark { .. }) => ret == Err(FocusRefusal::IncompleteComputation(id)),
             | Some(&Computation::RecordProjection(..)) => ret == Err(FocusRefusal::RecordProjection(id)),
+            | Some(&Computation::Case { ref branches, .. }) if branches.len() != 2 => ret == Err(FocusRefusal::CaseArity(id)),
             | Some(_) => ret.is_err() || self.tasks.len() > work,
         },
     )]
@@ -1523,9 +1549,12 @@ impl<'run> Focusing<'run>
             },
             | Computation::Case {
                 scrutinee,
-                on_left,
-                on_right,
+                ref branches,
             } => {
+                let &[on_left, on_right] = &**branches
+                else {
+                    return Err(FocusRefusal::CaseArity(id));
+                };
                 let inner = self.share_or_name(FocusOrigin::Case, continuation)?;
                 self.tasks.push(Task::Case);
                 self.tasks.push(Task::Value(scrutinee));
@@ -1867,7 +1896,7 @@ mod tests
     /// - witness: `focus::tests::a_refused_focusing_leaves_the_arena_at_its_mark`
     #[spec(ensures: |ret| match core.computation(ret) {
         | Some(&Computation::Lambda(bind)) => match core.computation(bind) {
-            | Some(&Computation::Bind(bound, body)) => matches!(core.computation(bound), Some(&Computation::Return(unit)) if core.value(unit) == Some(&Value::Unit))
+            | Some(&Computation::Bind(bound, body)) => matches!(core.computation(bound), Some(&Computation::Return(unit)) if core.value(unit) == Some(&Value::unit()))
                 && matches!(core.computation(body), Some(&Computation::Return(code)) if matches!(core.value(code), Some(&Value::Quote(quoted)) if core.value_type(quoted).is_some())),
             | _ => false,
         },

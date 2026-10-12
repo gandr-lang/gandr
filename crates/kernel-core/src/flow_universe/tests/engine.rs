@@ -131,9 +131,11 @@ fn translate(
                     | &Value::Unit => core.value_unit(),
                     | &Value::Variable(index) => core.value_variable(Zone::Intuitionistic, index),
                     | &Value::Pair(first, second) => {
-                        core.value_pair(values[&first], values[&second])
+                        core.value_tuple(&[values[&first], values[&second]])
                     },
-                    | &Value::Injection(side, value) => core.value_injection(side, values[&value]),
+                    | &Value::Injection(side, value) => {
+                        core.value_injection(side.into(), values[&value])
+                    },
                     | &Value::Thunk(body) => core.value_thunk(computations[&body]),
                     | &Value::Literal(ref value) => core.value_literal(value.clone()),
                     | _ => panic!("unsupported fixture value"),
@@ -155,11 +157,10 @@ fn translate(
                         scrutinee,
                         on_left,
                         on_right,
-                    } => core.computation_case(
-                        values[&scrutinee],
+                    } => core.computation_case(values[&scrutinee], &[
                         computations[&on_left],
                         computations[&on_right],
-                    ),
+                    ]),
                     | Computation::ListFold { .. }
                     | Computation::Absurd(_)
                     | Computation::Transport(..)

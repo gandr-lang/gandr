@@ -450,9 +450,11 @@ fn translate(
                     | Value::Unit => core.value_unit(),
                     | Value::Literal(ref literal) => core.value_literal(literal.clone()),
                     | Value::Pair(first, second) => {
-                        core.value_pair(values[&first], values[&second])
+                        core.value_tuple(&[values[&first], values[&second]])
                     },
-                    | Value::Injection(side, body) => core.value_injection(side, values[&body]),
+                    | Value::Injection(side, body) => {
+                        core.value_injection(side.into(), values[&body])
+                    },
                     | Value::Thunk(body) => core.value_thunk(computations[&body]),
                     | Value::Lift { ref target, body } => {
                         core.value_lift(target.clone(), values[&body])
@@ -503,11 +505,10 @@ fn translate(
                         scrutinee,
                         on_left,
                         on_right,
-                    } => core.computation_case(
-                        values[&scrutinee],
+                    } => core.computation_case(values[&scrutinee], &[
                         computations[&on_left],
                         computations[&on_right],
-                    ),
+                    ]),
                 };
                 computations.insert(id, computation);
             },

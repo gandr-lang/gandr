@@ -283,18 +283,16 @@ impl ExactSizeIterator for ArgumentFields<'_>
 #[derive(Debug)]
 enum FirstOrder<'run>
 {
-    /// The unique unit value.
-    Unit,
     /// The empty native list.
     ListNil,
     /// A native list cell, retaining both ordered children.
     ListCons(Node, Node),
     /// An exact literal payload in the core arena.
     Literal(ValueId),
-    /// An ordered product.
-    Pair(Node, Node),
+    /// An ordered tuple of any arity, the unit among them.
+    Tuple(ArgumentFields<'run>),
     /// A tagged sum value.
-    Injection(gandr_kernel_term::Side, Node),
+    Injection(gandr_kernel_term::Summand, Node),
     /// A constructor with its complete nominal classifier.
     Constructor
     {
@@ -566,7 +564,7 @@ Value::QuoteComputation(quoted) => ret == Ok(Atom::QuoteComputation(quoted, plac
 Value::Lift { .. } => ret == Ok(Atom::Lift(code, place)),
 Value::StaticLambda(_) => ret == Ok(Atom::Operator(code, place)),
 Value::StaticApplication(head, argument) => ret == Ok(Atom::Applied(Node::Code(head, place), Node::Code(argument, place))),
-Value::Constructor { .. } | Value::Record(_) | Value::Unit | Value::ListNil | Value::ListCons(..) | Value::Literal(_) | Value::Pair(..) | Value::Injection(..) => ret == Ok(Atom::FirstOrder(node)),
+Value::Constructor { .. } | Value::Record(_) | Value::Tuple(_) | Value::ListNil | Value::ListCons(..) | Value::Literal(_) | Value::Injection(..) => ret == Ok(Atom::FirstOrder(node)),
 _ => ret == Ok(Atom::Other(node)),
 }),
         Node::Held(value) => self.domain.value(value).map_or_else(|| ret == Err(ConversionFault::Domain(DomainFault::Dangling)), |matched_native_node| match *matched_native_node {
@@ -588,7 +586,7 @@ DomainValue::Code { code, .. } => self.domain.value_closure(code).map_or_else(
 DomainValue::StaticLambda { lambda, .. } => self.domain.value_closure(lambda).map_or_else(
                 || ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
                 |closure| match closure.body() { crate::ValueBody::Source(body) => ret == Ok(Atom::Operator(body,Self::opened(lambda))), _ => ret == Err(ConversionFault::MachineInvariant) }),
-DomainValue::Constructor { .. } | DomainValue::Record { .. } | DomainValue::Unit { .. } | DomainValue::ListNil { .. } | DomainValue::ListCons { .. } | DomainValue::Literal { .. } | DomainValue::Pair { .. } | DomainValue::Injection { .. } => ret == Ok(Atom::FirstOrder(node)),
+DomainValue::Constructor { .. } | DomainValue::Record { .. } | DomainValue::Tuple { .. } | DomainValue::ListNil { .. } | DomainValue::ListCons { .. } | DomainValue::Literal { .. } | DomainValue::Injection { .. } => ret == Ok(Atom::FirstOrder(node)),
 _ => ret == Ok(Atom::Other(node)),
 }),
         Node::Stuck(neutral, prefix) => ret == self.stuck(neutral, prefix),
@@ -609,11 +607,10 @@ _ => ret == Ok(Atom::Other(node)),
                 match *written {
                     | Value::Constructor { .. }
                     | Value::Record(_)
-                    | Value::Unit
+                    | Value::Tuple(_)
                     | Value::ListNil
                     | Value::ListCons(..)
                     | Value::Literal(_)
-                    | Value::Pair(..)
                     | Value::Injection(..) => return Ok(Atom::FirstOrder(node)),
                     | Value::Variable { zone, index } => {
                         let free = match zone {
@@ -662,11 +659,10 @@ _ => ret == Ok(Atom::Other(node)),
         match *self.domain.value(held).ok_or(dangling)? {
             | DomainValue::Constructor { .. }
             | DomainValue::Record { .. }
-            | DomainValue::Unit { .. }
+            | DomainValue::Tuple { .. }
             | DomainValue::ListNil { .. }
             | DomainValue::ListCons { .. }
             | DomainValue::Literal { .. }
-            | DomainValue::Pair { .. }
             | DomainValue::Injection { .. } => Ok(Atom::FirstOrder(stood)),
             | DomainValue::Neutral { neutral, .. } => {
                 let stuck = self.domain.neutral(neutral).ok_or(dangling)?;
@@ -700,9 +696,8 @@ _ => ret == Ok(Atom::Other(node)),
                         | Value::Reify(_)
                         | Value::ListNil
                         | Value::ListCons(..)
-                        | Value::Unit
+                        | Value::Tuple(_)
                         | Value::Literal(_)
-                        | Value::Pair(..)
                         | Value::Injection(..)
                         | Value::Thunk(_)
                         | Value::Lift { .. }
@@ -1540,17 +1535,16 @@ if left.len() == right.len() { children_correct = pending.get(entry_nodes..).is_
         let dangling = ConversionFault::Domain(DomainFault::Dangling);
         match node {
             | Node::Code(value, place) => match *(self.core.value(value).ok_or(malformed)?) {
-                | Value::Unit => Ok(FirstOrder::Unit),
                 | Value::ListNil => Ok(FirstOrder::ListNil),
                 | Value::ListCons(first, second) => Ok(FirstOrder::ListCons(
                     Node::Code(first, place),
                     Node::Code(second, place),
                 )),
                 | Value::Literal(_) => Ok(FirstOrder::Literal(value)),
-                | Value::Pair(ref a, ref b) => Ok(FirstOrder::Pair(
-                    Node::Code(*a, place),
-                    Node::Code(*b, place),
-                )),
+                | Value::Tuple(ref components) => Ok(FirstOrder::Tuple(ArgumentFields::Source(
+                    components.iter(),
+                    place,
+                ))),
                 | Value::Injection(ref side, ref body) => {
                     Ok(FirstOrder::Injection(*side, Node::Code(*body, place)))
                 },
@@ -1570,17 +1564,19 @@ if left.len() == right.len() { children_correct = pending.get(entry_nodes..).is_
                 | _ => Err(malformed),
             },
             | Node::Held(value) => match *self.domain.value(value).ok_or(dangling)? {
-                | DomainValue::Unit { .. } => Ok(FirstOrder::Unit),
                 | DomainValue::ListNil { .. } => Ok(FirstOrder::ListNil),
                 | DomainValue::ListCons { first, second, .. } => {
                     Ok(FirstOrder::ListCons(Node::Held(first), Node::Held(second)))
                 },
                 | DomainValue::Literal { literal, .. } => Ok(FirstOrder::Literal(literal)),
-                | DomainValue::Pair { first, second, .. } => {
-                    Ok(FirstOrder::Pair(Node::Held(first), Node::Held(second)))
-                },
-                | DomainValue::Injection { side, body, .. } => {
-                    Ok(FirstOrder::Injection(side, Node::Held(body)))
+                | DomainValue::Tuple { fields, .. } => Ok(FirstOrder::Tuple(ArgumentFields::Held(
+                    self.domain
+                        .fields(fields)
+                        .map_err(ConversionFault::Domain)?
+                        .iter(),
+                ))),
+                | DomainValue::Injection { summand, body, .. } => {
+                    Ok(FirstOrder::Injection(summand, Node::Held(body)))
                 },
                 | DomainValue::Constructor {
                     datatype,
@@ -1654,7 +1650,11 @@ if left.len() == right.len() { children_correct = pending.get(entry_nodes..).is_
     ) -> Result<Alike, ConversionFault>
     {
         match (self.first_order(left)?, self.first_order(right)?) {
-            | (FirstOrder::Unit, FirstOrder::Unit) | (FirstOrder::ListNil, FirstOrder::ListNil) => {
+            | (FirstOrder::ListNil, FirstOrder::ListNil) => Ok(Alike::Same),
+            | (FirstOrder::Tuple(left_fields), FirstOrder::Tuple(right_fields))
+                if left_fields.len() == right_fields.len() =>
+            {
+                pending.extend(left_fields.zip(right_fields));
                 Ok(Alike::Same)
             },
             | (FirstOrder::Literal(a), FirstOrder::Literal(b)) => {
@@ -1672,7 +1672,6 @@ if left.len() == right.len() { children_correct = pending.get(entry_nodes..).is_
                 };
                 Ok(Alike::between(a, b))
             },
-            | (FirstOrder::Pair(a, b), FirstOrder::Pair(c, d))
             | (FirstOrder::ListCons(a, b), FirstOrder::ListCons(c, d)) => {
                 pending.extend([(a, c), (b, d)]);
                 Ok(Alike::Same)
@@ -1853,8 +1852,8 @@ if left.len() == right.len() { children_correct = pending.get(entry_nodes..).is_
             while let Some(atom) = atoms.pop() {
                 match atom {
                     | Atom::FirstOrder(node) => match self.first_order(node)? {
-                        | FirstOrder::Unit | FirstOrder::ListNil | FirstOrder::Literal(_) => {},
-                        | FirstOrder::Pair(a, b) | FirstOrder::ListCons(a, b) => {
+                        | FirstOrder::ListNil | FirstOrder::Literal(_) => {},
+                        | FirstOrder::ListCons(a, b) => {
                             atoms.push(self.atom(a)?);
                             atoms.push(self.atom(b)?);
                         },
@@ -1867,7 +1866,7 @@ if left.len() == right.len() { children_correct = pending.get(entry_nodes..).is_
                                 atoms.push(self.atom(field)?);
                             }
                         },
-                        | FirstOrder::Record { fields, .. } => {
+                        | FirstOrder::Record { fields, .. } | FirstOrder::Tuple(fields) => {
                             for field in fields {
                                 atoms.push(self.atom(field)?);
                             }

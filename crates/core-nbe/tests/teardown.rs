@@ -70,7 +70,6 @@ mod teardown
     use gandr_core_nbe::Bound;
     use gandr_core_nbe::Definitions;
     use gandr_core_nbe::DomainArena;
-    use gandr_core_nbe::DomainValue;
     use gandr_core_nbe::DomainValueId;
     use gandr_core_nbe::DuplicationFault;
     use gandr_core_nbe::DuplicationPolicy;
@@ -174,12 +173,12 @@ mod teardown
         ensures: |ret| {
             let mut top = ret.1;
             for _ in 0..CHAIN_LINKS {
-                match ret.0.value(top) {
-                    Some(&DomainValue::Pair { first, second, face: TermFace::Reduced }) if first == second => top = first,
+                match ret.0.value(top).filter(|held| held.face() == TermFace::Reduced).and_then(|held| ret.0.components(held)) {
+                    Some(&[first, second]) if first == second => top = first,
                     _ => return false,
                 }
             }
-            matches!(ret.0.value(top), Some(DomainValue::Unit { face: TermFace::Reduced }))
+            ret.0.value(top).is_some_and(|held| held.face() == TermFace::Reduced && ret.0.components(held).is_some_and(<[_]>::is_empty))
         }
     )]
     fn deep_chain(
@@ -202,7 +201,7 @@ mod teardown
                 Unfolding::Rigid,
             );
             assert!(spined.is_ok(), "a declaration head mints rigid");
-            top = arena.value_pair(top, top, TermFace::Reduced);
+            top = arena.value_tuple([top, top], TermFace::Reduced);
             remaining = remaining.saturating_sub(1);
         }
         (arena, top)
@@ -411,8 +410,8 @@ mod teardown
             let mut top = ret.1;
             let mut lifted = ret.2;
             for _ in 0..CHAIN_LINKS {
-                match ret.0.value(top) {
-                    Some(&Value::Pair(first, second)) if first == second => top = first,
+                match ret.0.value(top).and_then(Value::components) {
+                    Some(&[first, second]) if first == second => top = first,
                     _ => return false,
                 }
                 match ret.0.value_type(lifted) {
@@ -420,7 +419,7 @@ mod teardown
                     _ => return false,
                 }
             }
-            matches!(ret.0.value(top), Some(Value::Unit))
+            ret.0.value(top) == Some(&Value::unit())
                 && ret.0.value_type(lifted).is_some_and(|held| matches!(*held, ValueType::Product(ref parts) if parts.is_empty()))
         }
     )]
@@ -432,7 +431,7 @@ mod teardown
         let target = Level::zero().succ().expect("level one exists");
         let mut remaining = CHAIN_LINKS;
         while remaining > 0 {
-            top = core.value_pair(top, top);
+            top = core.value_tuple(&[top, top]);
             lifted = core.value_type_lift(lifted, target.clone());
             remaining = remaining.saturating_sub(1);
         }

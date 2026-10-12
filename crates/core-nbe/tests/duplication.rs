@@ -466,7 +466,7 @@ mod duplication
                                 .core
                                 .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index));
                             let unit = self.core.value_unit();
-                            Plan::OpaqueValue(self.core.value_pair(variable, unit))
+                            Plan::OpaqueValue(self.core.value_tuple(&[variable, unit]))
                         },
                         | (2, _) => Plan::OpaqueValue(self.core.value_unit()),
                         | _ => Plan::Unit,

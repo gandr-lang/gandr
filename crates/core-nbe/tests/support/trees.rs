@@ -69,7 +69,8 @@ pub enum Trees
     ensures: |ret| match (left, right) {
         (Term::Value(left), Term::Value(right)) => match (left_arena.value(left), right_arena.value(right)) {
             (Some(a), Some(b)) => match *a {
-                Value::Unit | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) => (ret == Trees::Same) == (a == b),
+                Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) => (ret == Trees::Same) == (a == b),
+                Value::Tuple(ref components) if components.is_empty() => (ret == Trees::Same) == (a == b),
                 _ => ret == Trees::Different || core::mem::discriminant(a) == core::mem::discriminant(b),
             },
             _ => ret == Trees::Different,
@@ -130,7 +131,6 @@ pub fn same_tree(
                         &Value::PathProduct(first, second),
                         &Value::PathProduct(other_first, other_second),
                     )
-                    | (&Value::Pair(first, second), &Value::Pair(other_first, other_second))
                     | (
                         &Value::ListCons(first, second),
                         &Value::ListCons(other_first, other_second),
@@ -170,10 +170,16 @@ pub fn same_tree(
                     | (&Value::QuoteComputation(body), &Value::QuoteComputation(other_body)) => {
                         pending.push((Term::CompType(body), Term::CompType(other_body)));
                     },
+                    | (&Value::Tuple(ref components), &Value::Tuple(ref others))
+                        if components.len() == others.len() =>
+                    {
+                        pending.extend(components.iter().zip(others.iter()).rev().map(
+                            |(&component, &other)| (Term::Value(component), Term::Value(other)),
+                        ));
+                    },
                     | (
                         &(Value::Variable { .. }
                         | Value::Constant(_)
-                        | Value::Unit
                         | Value::ListNil
                         | Value::Literal(_)),
                         _,
@@ -241,17 +247,18 @@ pub fn same_tree(
                     | (
                         &Computation::Case {
                             scrutinee,
-                            on_left,
-                            on_right,
+                            ref branches,
                         },
                         &Computation::Case {
                             scrutinee: other_scrutinee,
-                            on_left: other_left,
-                            on_right: other_right,
+                            branches: ref others,
                         },
-                    ) => {
-                        pending.push((Term::Computation(on_right), Term::Computation(other_right)));
-                        pending.push((Term::Computation(on_left), Term::Computation(other_left)));
+                    ) if branches.len() == others.len() => {
+                        pending.extend(branches.iter().zip(others.iter()).rev().map(
+                            |(&branch, &other)| {
+                                (Term::Computation(branch), Term::Computation(other))
+                            },
+                        ));
                         pending.push((Term::Value(scrutinee), Term::Value(other_scrutinee)));
                     },
                     | _ => return Trees::Different,

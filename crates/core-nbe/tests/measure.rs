@@ -543,7 +543,7 @@ mod measure
     {
         let mut core = CoreArena::new();
         let held_unit = core.value_unit();
-        let opaque = core.value_pair(held_unit, held_unit);
+        let opaque = core.value_tuple(&[held_unit, held_unit]);
         let before = core.clone();
         let mark = core.watermark();
 

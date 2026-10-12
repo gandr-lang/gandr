@@ -571,9 +571,9 @@ mod tests
         let mut core = CoreArena::new();
         let one = integer(&mut core, Sign::NonNegative, Written("1"));
         let two = text(&mut core, Written("two"));
-        let left = core.value_injection(Side::Left, one);
-        let right = core.value_injection(Side::Right, two);
-        let pair = core.value_pair(left, right);
+        let left = core.value_injection(Side::Left.into(), one);
+        let right = core.value_injection(Side::Right.into(), two);
+        let pair = core.value_tuple(&[left, right]);
         let read = normal_form(&mut core, pair);
         pin(&CoreSource::new(&core, &[]), Root::Value(read), Pinned {
             name: "pair_injections",
@@ -592,7 +592,7 @@ mod tests
         let mut core = CoreArena::new();
         let mut value = core.value_unit();
         for _ in 0 .. limit.saturating_add(8) {
-            value = core.value_injection(Side::Left, value);
+            value = core.value_injection(Side::Left.into(), value);
         }
         let read = normal_form(&mut core, value);
         let flat = format!("{}<deep>{}", "Inl(".repeat(limit), ")".repeat(limit));
@@ -613,8 +613,8 @@ mod tests
         let machine = text(&mut core, Written("analytical engine"));
         let name = text(&mut core, Written("ada lovelace"));
         let year = integer(&mut core, Sign::NonNegative, Written("1843"));
-        let rest = core.value_pair(name, year);
-        let record = core.value_pair(machine, rest);
+        let rest = core.value_tuple(&[name, year]);
+        let record = core.value_tuple(&[machine, rest]);
         let read = normal_form(&mut core, record);
         pin(&CoreSource::new(&core, &[]), Root::Value(read), Pinned {
             name: "record_value",
@@ -631,7 +631,7 @@ mod tests
         let mut core = CoreArena::new();
         let first = text(&mut core, Written("abcdefghijklmnopq"));
         let second = text(&mut core, Written("rstuvwxyzabcdefgh"));
-        let pair = core.value_pair(first, second);
+        let pair = core.value_tuple(&[first, second]);
         let read = normal_form(&mut core, pair);
         let presentation = presented(
             &CoreSource::new(&core, &[]),

@@ -68,10 +68,10 @@ fn each_dispatch_arm_binds_its_own_payload()
 {
     let mut core = CoreArena::new();
     let unit = core.value_unit();
-    let scrutinee = core.value_injection(Side::Left, unit);
+    let scrutinee = core.value_injection(Side::Left.into(), unit);
     let variable = core.value_variable(Zone::Intuitionistic, 0_u32.into());
     let arm = core.computation_return(variable);
-    let root = core.computation_case(scrutinee, arm, arm);
+    let root = core.computation_case(scrutinee, &[arm, arm]);
     let image = lower_computation(&core, root).expect("case");
     let indices: Vec<_> = image
         .nodes()
@@ -90,7 +90,7 @@ fn a_pair_lowers_to_its_tag_with_two_fields()
     let mut core = CoreArena::new();
     let one = integer(&mut core, 1_i64.into());
     let two = integer(&mut core, 2_i64.into());
-    let pair = core.value_pair(one, two);
+    let pair = core.value_tuple(&[one, two]);
     let root = core.computation_return(pair);
     let image = lower_computation(&core, root).expect("pair");
     let pair = image.nodes().get(2).expect("pair node");
@@ -182,7 +182,7 @@ fn a_computation_the_checker_refuses_never_reaches_the_lowering()
     let mut core = CoreArena::new();
     let three = integer(&mut core, 3_i64.into());
     let arm = core.computation_return(three);
-    let root = core.computation_case(three, arm, arm);
+    let root = core.computation_case(three, &[arm, arm]);
     assert!(lower_computation(&core, root).is_ok());
     let integer = core.value_type_base(BaseType::Integer);
     let expected = core.comp_type_returner(integer);

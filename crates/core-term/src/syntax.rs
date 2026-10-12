@@ -50,6 +50,7 @@ use gandr_kernel_term::FieldLabel;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Side;
+use gandr_kernel_term::Summand;
 
 use crate::arena::CompTypeId;
 use crate::arena::ComputationId;
@@ -118,14 +119,13 @@ pub enum Value
     },
     /// A reference to a prior declaration by its admission position.
     Constant(ConstantIndex),
-    /// The unique inhabitant of the unit type.
-    Unit,
     /// A base-type literal.
     Literal(Literal),
-    /// A pair, introducing the product `A × B`.
-    Pair(ValueId, ValueId),
-    /// A sum injection, introducing `A + B` on the given side.
-    Injection(Side, ValueId),
+    /// A tuple, introducing a product with one value per component, in
+    /// order. The empty tuple is the unit value.
+    Tuple(alloc::boxed::Box<[ValueId]>),
+    /// A sum injection, introducing a sum at the given summand.
+    Injection(Summand, ValueId),
     /// The empty native list, checked against its element type.
     ListNil,
     /// A native list cell with its head and list tail.
@@ -187,6 +187,51 @@ pub enum Value
     Reify(alloc::sync::Arc<[crate::control::StackFrame]>),
 }
 
+impl Value
+{
+    /// The unit value: the tuple of no components.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Tuple([])`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the unit built here and the one the arena mints are
+    ///   the same node, and a tuple of two components is not the unit.
+    /// - witness: `syntax::tests::the_unit_is_the_empty_tuple`
+    #[spec(ensures: |ret| matches!(ret, Self::Tuple(ref components) if components.is_empty()))]
+    #[inline]
+    #[must_use]
+    pub fn unit() -> Self
+    {
+        Self::Tuple(alloc::boxed::Box::default())
+    }
+
+    /// The components of a tuple, in order; nothing for any other former.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the tuple's own component list for a tuple, and nothing for
+    ///   every other former.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a tuple of two components, the empty tuple and an
+    ///   injection separate the tuple reading from every other former.
+    /// - witness: `syntax::tests::the_unit_is_the_empty_tuple`
+    #[spec(ensures: |ret| match *self { Self::Tuple(ref components) => ret == Some(&**components), _ => ret.is_none() })]
+    #[inline]
+    #[must_use]
+    pub fn components(&self) -> Option<&[ValueId]>
+    {
+        match *self {
+            | Self::Tuple(ref components) => Some(components),
+            | _ => None,
+        }
+    }
+}
+
 /// A computation: the negative fragment of the core term vocabulary.
 ///
 /// The eliminators — application, force, bind, case — synthesize; the
@@ -227,15 +272,15 @@ pub enum Computation
     Bind(ComputationId, ComputationId),
     /// A force `force v` of a thunk value `v : U C`, running it as `C`.
     Force(ValueId),
-    /// A sum elimination, binding the injected value into each branch.
+    /// A sum elimination, binding the injected value into the branch of its
+    /// summand.
     Case
     {
         /// The scrutinee value, of a sum type.
         scrutinee: ValueId,
-        /// The left branch, checked with the left summand bound.
-        on_left: ComputationId,
-        /// The right branch, checked with the right summand bound.
-        on_right: ComputationId,
+        /// One branch per summand, in order, each checked with its summand
+        /// bound.
+        branches: alloc::boxed::Box<[ComputationId]>,
     },
     /// A nominal case with a motive under one scrutinee binder.
     DataCase
@@ -328,8 +373,8 @@ pub enum ValueType
     /// A rigid base-type atom.
     Base(BaseType),
     /// The product of its components, in order: `Product([])` is the unit
-    /// type, inhabited by [`Value::Unit`] alone, and `Product([A, B])` the
-    /// pair type `A × B`.
+    /// type, inhabited by the empty [`Value::Tuple`] alone, and
+    /// `Product([A, B])` the pair type `A × B`.
     Product(alloc::boxed::Box<[ValueTypeId]>),
     /// The sum of its summands, in order: `Sum([])` is the empty type and
     /// `Sum([A, B])` the binary sum `A + B`, with left and right injections.
@@ -523,7 +568,7 @@ pub enum CertificateEquality
 ///   an administrative translator redex changes the certificate.
 /// - witness: `syntax::tests::certificate_syntax_erases_only_evidence`
 #[spec(ensures: |ret| match (arena.value(left), arena.value(right)) {
-    (Some(&Value::Unit), Some(&Value::Unit)) => ret == CertificateEquality::Equal,
+    (Some(a), Some(b)) if matches!(*a, Value::Tuple(ref x) if x.is_empty()) && matches!(*b, Value::Tuple(ref y) if y.is_empty()) => ret == CertificateEquality::Equal,
     (Some(a), Some(b)) => ret != CertificateEquality::Equal || core::mem::discriminant(a) == core::mem::discriminant(b),
     _ => ret == CertificateEquality::Different,
 })]
@@ -705,12 +750,11 @@ fn equal_syntax(
                             pending.extend([V(a, c), V(b, d)]);
                         }
                     }
-                    else if let Value::Pair(a, b) = *matched_left_value
-                        && let Value::Pair(c, d) = *matched_right_value
+                    else if let Value::Tuple(ref a) = *matched_left_value
+                        && let Value::Tuple(ref b) = *matched_right_value
+                        && a.len() == b.len()
                     {
-                        {
-                            pending.extend([V(a, c), V(b, d)]);
-                        }
+                        pending.extend(a.iter().zip(b.iter()).map(|(a, b)| V(*a, *b)));
                     }
                     else if let Value::StaticApplication(a, b) = *matched_left_value
                         && let Value::StaticApplication(c, d) = *matched_right_value
@@ -794,7 +838,6 @@ fn equal_syntax(
                         *matched_left_value,
                         Value::Variable { .. }
                             | Value::Constant(_)
-                            | Value::Unit
                             | Value::Literal(_)
                             | Value::Hole(_)
                     ) && (a == b))
@@ -948,19 +991,21 @@ fn equal_syntax(
                     | (
                         &Computation::Case {
                             scrutinee: left_scrutinee,
-                            on_left: left_branch,
-                            on_right: right_branch,
+                            branches: ref left_branches,
                         },
                         &Computation::Case {
                             scrutinee: right_scrutinee,
-                            on_left: other_left_branch,
-                            on_right: other_right_branch,
+                            branches: ref right_branches,
                         },
-                    ) => pending.extend([
-                        V(left_scrutinee, right_scrutinee),
-                        C(left_branch, other_left_branch),
-                        C(right_branch, other_right_branch),
-                    ]),
+                    ) if left_branches.len() == right_branches.len() => {
+                        pending.push(V(left_scrutinee, right_scrutinee));
+                        pending.extend(
+                            left_branches
+                                .iter()
+                                .zip(right_branches.iter())
+                                .map(|(a, b)| C(*a, *b)),
+                        );
+                    },
                     | (&Computation::Hole(left), &Computation::Hole(right)) if left == right => {},
                     | (
                         &Computation::Mark {
@@ -1195,6 +1240,45 @@ mod tests
         );
         assert_eq!(
             equal_type_syntax(&arena, unit, pair),
+            CertificateEquality::Different,
+            "and no arity but zero is the unit"
+        );
+    }
+
+    #[test]
+    fn the_unit_is_the_empty_tuple()
+    {
+        let mut arena = crate::CoreArena::new();
+        let unit = arena.value_unit();
+        let other = arena.value_tuple(&[]);
+        let pair = arena.value_tuple(&[unit, other]);
+        let injected = arena.value_injection(Summand::from(0_usize), unit);
+        assert_eq!(
+            arena.value(unit),
+            Some(&Value::unit()),
+            "the minted unit is the empty tuple"
+        );
+        assert_eq!(
+            arena.value(pair).and_then(Value::components),
+            Some([unit, other].as_slice()),
+            "a tuple reads back its components in order"
+        );
+        assert_eq!(
+            arena.value(unit).and_then(Value::components),
+            Some([].as_slice())
+        );
+        assert_eq!(
+            arena.value(injected).and_then(Value::components),
+            None,
+            "an injection has no components"
+        );
+        assert_eq!(
+            equal_certificate_syntax(&arena, unit, other),
+            CertificateEquality::Equal,
+            "two units are one value"
+        );
+        assert_eq!(
+            equal_certificate_syntax(&arena, unit, pair),
             CertificateEquality::Different,
             "and no arity but zero is the unit"
         );

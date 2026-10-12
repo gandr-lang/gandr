@@ -422,8 +422,8 @@ pub fn every_former(noise: Noise) -> Program
         Magnitude::from_decimal_text(String::from("3")).expect("decimal digits"),
         FractionDigits::from_decimal_text(String::from("25")).expect("decimal digits"),
     )));
-    let injected = arena.value_injection(Side::Right, numeric);
-    let pair = arena.value_pair(negative, injected);
+    let injected = arena.value_injection(Side::Right.into(), numeric);
+    let pair = arena.value_tuple(&[negative, injected]);
     push("data", Maybe::Present(product), Maybe::Present(pair));
 
     // 1: U (Integer → F Integer) checked by λ. return v0.
@@ -463,7 +463,7 @@ pub fn every_former(noise: Noise) -> Program
     let unit = arena.value_unit();
     let on_left = arena.computation_return(unit);
     let on_right = arena.computation_return(unit);
-    let case = arena.computation_case(scrutinee, on_left, on_right);
+    let case = arena.computation_case(scrutinee, &[on_left, on_right]);
     let lambda = arena.computation_lambda(case);
     let case_thunk = arena.value_thunk(lambda);
     push("case", Maybe::Present(pi_type), Maybe::Present(case_thunk));
@@ -667,7 +667,7 @@ pub fn every_former(noise: Noise) -> Program
     let reflexivity = arena.value_path_refl(code);
     let path = arena.value_path_product(certificate, reflexivity);
     let unit = arena.value_unit();
-    let pair = arena.value_pair(unit, unit);
+    let pair = arena.value_tuple(&[unit, unit]);
     let transport = arena.computation_transport(path, pair);
     let thunk = arena.value_thunk(transport);
     let product = arena.value_type_product(&[unit_type, unit_type]);

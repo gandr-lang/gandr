@@ -674,7 +674,7 @@ impl Scalar
             | Self::Integer(integer) => arena.value_literal(Literal::Integer(integer)),
             | Self::Boolean(side) => {
                 let unit = arena.value_unit();
-                arena.value_injection(side, unit)
+                arena.value_injection(side.into(), unit)
             },
         }
     }

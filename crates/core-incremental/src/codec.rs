@@ -60,6 +60,7 @@ use gandr_kernel_term::ParameterPosition;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::Sign;
 use gandr_kernel_term::StringLiteral;
+use gandr_kernel_term::Summand;
 use quenchant_shape::shape::Maybe;
 
 use crate::boundary::NodeIndex;
@@ -83,9 +84,9 @@ use crate::typing::Site;
 use crate::typing::Typing;
 
 /// The magic and version a persisted checkpoint set opens with.
-const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x08";
+const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x09";
 /// The magic and version a program's address is computed over.
-const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x06";
+const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x07";
 /// The decoder's cap on a level atom's offset.
 ///
 /// A level holds `x + o` only as `o` successors of `x`, so decoding an offset
@@ -1413,22 +1414,17 @@ where
             writer.tag(Tag(0x02));
             write_reference(writer, reference)?;
         },
-        | ContentNode::Unit => writer.tag(Tag(0x03)),
         | ContentNode::Literal(ref literal) => {
             writer.tag(Tag(0x04));
             write_literal(writer, literal)?;
         },
-        | ContentNode::Pair(first, second) => {
+        | ContentNode::Tuple(ref components) => {
             writer.tag(Tag(0x05));
-            write_index(writer, first)?;
-            write_index(writer, second)?;
+            write_indices(writer, components)?;
         },
-        | ContentNode::Injection(side, body) => {
+        | ContentNode::Injection(summand, body) => {
             writer.tag(Tag(0x06));
-            writer.tag(match side {
-                | Side::Left => Tag(0),
-                | Side::Right => Tag(1),
-            });
+            writer.count(Count(usize::from(summand)))?;
             write_index(writer, body)?;
         },
         | ContentNode::Thunk(body) => {
@@ -1490,13 +1486,11 @@ where
         },
         | ContentNode::Case {
             scrutinee,
-            on_left,
-            on_right,
+            ref branches,
         } => {
             writer.tag(Tag(0x15));
             write_index(writer, scrutinee)?;
-            write_index(writer, on_left)?;
-            write_index(writer, on_right)?;
+            write_indices(writer, branches)?;
         },
         | ContentNode::ComputationHole(hole) => {
             writer.tag(Tag(0x17));
@@ -2041,9 +2035,8 @@ fn read_effect_row(
                     | ContentNode::Transport(..) => tag == 0x44,
                     | ContentNode::Variable { .. } => tag == 0x01,
                     | ContentNode::Constant(_) => tag == 0x02,
-                    | ContentNode::Unit => tag == 0x03,
                     | ContentNode::Literal(_) => tag == 0x04,
-                    | ContentNode::Pair(..) => tag == 0x05,
+                    | ContentNode::Tuple(_) => tag == 0x05,
                     | ContentNode::Injection(..) => tag == 0x06,
                     | ContentNode::Thunk(_) => tag == 0x07,
                     | ContentNode::ValueLift { .. } => tag == 0x08,
@@ -2231,25 +2224,15 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             let reference = read_reference(reader)?;
             ContentNode::Constant(reference)
         },
-        | 0x03 => ContentNode::Unit,
         | 0x04 => {
             let literal = read_literal(reader)?;
             ContentNode::Literal(literal)
         },
-        | 0x05 => {
-            let first = read_index(reader)?;
-            let second = read_index(reader)?;
-            ContentNode::Pair(first, second)
-        },
+        | 0x05 => ContentNode::Tuple(read_indices(reader)?),
         | 0x06 => {
-            let side = reader.tag()?;
-            let side = match side.0 {
-                | 0 => Side::Left,
-                | 1 => Side::Right,
-                | _ => return Err(CodecError::Corrupt),
-            };
+            let summand = Summand::from(reader.count()?.0);
             let body = read_index(reader)?;
-            ContentNode::Injection(side, body)
+            ContentNode::Injection(summand, body)
         },
         | 0x07 => {
             let body = read_index(reader)?;
@@ -2307,12 +2290,9 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
         },
         | 0x15 => {
             let scrutinee = read_index(reader)?;
-            let on_left = read_index(reader)?;
-            let on_right = read_index(reader)?;
             ContentNode::Case {
                 scrutinee,
-                on_left,
-                on_right,
+                branches: read_indices(reader)?,
             }
         },
         | 0x17 => ContentNode::ComputationHole(read_hole(reader)?),
@@ -5481,7 +5461,10 @@ mod tests
             })
         };
         assert_eq!(decode(vec![]), Err(CodecError::Corrupt));
-        assert_eq!(decode(vec![ContentNode::Unit]), Err(CodecError::Corrupt));
+        assert_eq!(
+            decode(vec![ContentNode::Tuple(Vec::new())]),
+            Err(CodecError::Corrupt)
+        );
         assert_eq!(
             decode(vec![ContentNode::Product(vec![
                 NodeIndex::from(1_usize),
@@ -5492,7 +5475,7 @@ mod tests
         assert_eq!(
             decode(vec![
                 ContentNode::Product(vec![NodeIndex::from(1_usize), NodeIndex::from(1_usize)]),
-                ContentNode::Unit,
+                ContentNode::Tuple(Vec::new()),
             ]),
             Err(CodecError::Corrupt)
         );
@@ -5563,7 +5546,7 @@ mod tests
     {
         let checkpoints = Checkpoints::new(CheckBudget::from(0x0102_0304_usize), vec![]);
         let expected = [
-            b'G', b'C', b'K', b'P', b'T', 0, 0, 8, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            b'G', b'C', b'K', b'P', b'T', 0, 0, 9, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ];
         assert_eq!(
             encode_checkpoints(&checkpoints)
@@ -5573,14 +5556,14 @@ mod tests
         );
         assert_eq!(decode_checkpoints(Bytes(&expected)), Ok(checkpoints));
         let mut wrong_version = expected;
-        *wrong_version.get_mut(7).expect("version byte") = 7;
+        *wrong_version.get_mut(7).expect("version byte") = 8;
         assert_eq!(
             decode_checkpoints(Bytes(&wrong_version)),
             Err(CodecError::Corrupt)
         );
         let mut program = CheckpointBytes::default();
         write_program(&mut program, &[]).expect("empty program");
-        assert_eq!(program.as_ref(), b"GPROG\0\0\x06\0\0\0\0\0\0\0\0");
+        assert_eq!(program.as_ref(), b"GPROG\0\0\x07\0\0\0\0\0\0\0\0");
         assert_eq!(
             decode_checkpoints(Bytes(program.as_ref())),
             Err(CodecError::Corrupt)
@@ -5643,7 +5626,7 @@ mod tests
         );
         assert_eq!(
             encode(
-                vec![ContentNode::Unit],
+                vec![ContentNode::Tuple(Vec::new())],
                 Answer::Typed(unresolved(Sort::ValueType)),
                 Typing::Synthesised {
                     produced: unresolved(Sort::CompType),
@@ -5654,7 +5637,7 @@ mod tests
         );
         assert_eq!(
             encode(
-                vec![ContentNode::Unit],
+                vec![ContentNode::Tuple(Vec::new())],
                 Answer::Untyped,
                 Typing::Synthesised {
                     produced: unresolved(Sort::CompType),
@@ -5665,7 +5648,7 @@ mod tests
         );
         assert_eq!(
             encode(
-                vec![ContentNode::Unit],
+                vec![ContentNode::Tuple(Vec::new())],
                 Answer::Untyped,
                 mismatch(unresolved(Sort::CompType), unresolved(Sort::Computation)),
             ),
@@ -5673,7 +5656,7 @@ mod tests
         );
         assert_eq!(
             encode(
-                vec![ContentNode::Unit],
+                vec![ContentNode::Tuple(Vec::new())],
                 Answer::Untyped,
                 mismatch(
                     TypeContent::from_nodes(vec![ContentNode::Product(Vec::new())]),
@@ -5708,7 +5691,7 @@ mod tests
             assert_eq!(reader.cursor, 1, "unknown tags stop before any payload");
         }
 
-        for (tag, invalid_field) in [(0x01, 2), (0x06, 2), (0x20, 3)] {
+        for (tag, invalid_field) in [(0x01, 2), (0x20, 3)] {
             let mut bytes = [0_u8; 10];
             *bytes.first_mut().expect("node tag") = tag;
             *bytes.get_mut(1).expect("field tag") = invalid_field;
@@ -5717,10 +5700,7 @@ mod tests
                 cursor: 0,
             };
             assert_eq!(super::read_node(&mut reader), Err(CodecError::Corrupt));
-            assert_eq!(
-                reader.cursor, 2,
-                "zone, side and base tags reject at their field"
-            );
+            assert_eq!(reader.cursor, 2, "zone and base tags reject at their field");
         }
 
         for (prefix, consumed) in [(&[2, 0xFF][..], 2), (&[5, 1, 2][..], 3)] {
@@ -5773,7 +5753,7 @@ mod tests
         for _ in 0 .. super::MAX_DECODED_LEVEL_OFFSET {
             level = level.succ().expect("representable offset");
         }
-        let unit = || vec![ContentNode::Unit];
+        let unit = || vec![ContentNode::Tuple(Vec::new())];
         let valid_type = || TypeContent::from_nodes(vec![ContentNode::Product(Vec::new())]);
         let at = Site::Unreached;
         let cases = [
@@ -5783,7 +5763,7 @@ mod tests
                         target: level.clone(),
                         body: NodeIndex::from(1_usize),
                     },
-                    ContentNode::Unit,
+                    ContentNode::Tuple(Vec::new()),
                 ],
                 Answer::Untyped,
                 Typing::Owed,
@@ -5805,7 +5785,7 @@ mod tests
                         code: NodeIndex::from(1_usize),
                         target: level.clone(),
                     },
-                    ContentNode::Unit,
+                    ContentNode::Tuple(Vec::new()),
                 ]),
                 conversions: ConversionCount::from(0_usize),
             }),
@@ -5832,7 +5812,7 @@ mod tests
                             code: NodeIndex::from(1_usize),
                             target: level,
                         },
-                        ContentNode::Unit,
+                        ContentNode::Tuple(Vec::new()),
                     ]),
                 }),
             ),
@@ -5952,7 +5932,7 @@ mod tests
                     signature: Maybe::Absent(signature::Absent::Unsigned),
                     body: Maybe::Present(NodeIndex::from(0_usize)),
                 },
-                vec![ContentNode::Unit],
+                vec![ContentNode::Tuple(Vec::new())],
             );
             let item = ItemCheckpoint::new(
                 content,

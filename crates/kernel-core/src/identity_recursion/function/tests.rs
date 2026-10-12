@@ -255,8 +255,10 @@ fn translate(
                 let value = match *arena.value(id).expect("value") {
                     | Value::Unit => core.value_unit(),
                     | Value::Variable(index) => core.value_variable(Zone::Intuitionistic, index),
-                    | Value::Pair(a, b) => core.value_pair(values[&a], values[&b]),
-                    | Value::Injection(side, value) => core.value_injection(side, values[&value]),
+                    | Value::Pair(a, b) => core.value_tuple(&[values[&a], values[&b]]),
+                    | Value::Injection(side, value) => {
+                        core.value_injection(side.into(), values[&value])
+                    },
                     | Value::Thunk(body) => core.value_thunk(computations[&body]),
                     | _ => panic!("unsupported value"),
                 };
@@ -277,11 +279,10 @@ fn translate(
                         scrutinee,
                         on_left,
                         on_right,
-                    } => core.computation_case(
-                        values[&scrutinee],
+                    } => core.computation_case(values[&scrutinee], &[
                         computations[&on_left],
                         computations[&on_right],
-                    ),
+                    ]),
                     | Computation::Transport(..) => panic!("no native transport in fixtures"),
                     | Computation::DataCase { .. } | Computation::RecordProjection(..) => {
                         panic!("no nominal or record eliminator in this fixture")

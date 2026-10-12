@@ -329,8 +329,8 @@ fn items_visited_for_a_head_edit_grow_linearly()
                     && usize::from(declaration.origin()) == 0
                     && *signature == Maybe::Absent(signature::Absent::Unsigned)
                     && match *body {
-                        | Maybe::Present(root) => match ret.arena().value(root) {
-                            | Some(&gandr_core_term::Value::Pair(first, second)) => {
+                        | Maybe::Present(root) => match ret.arena().value(root).and_then(gandr_core_term::Value::components) {
+                            | Some(&[first, second]) => {
                                 ret.arena().value(first).is_some()
                                     && ret.arena().value(second).is_none()
                             },
@@ -350,7 +350,7 @@ fn opaque_program() -> Program
     let foreign = foreign.value_unit();
     let mut arena = CoreArena::new();
     let literal = arena.value_literal(integer(Natural(1)));
-    let pair = arena.value_pair(literal, foreign);
+    let pair = arena.value_tuple(&[literal, foreign]);
     Program::new(arena, vec![Item::new(
         ItemKey::from("opaque"),
         Declaration::new(

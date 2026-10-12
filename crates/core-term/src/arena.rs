@@ -37,7 +37,7 @@ use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Literal;
-use gandr_kernel_term::Side;
+use gandr_kernel_term::Summand;
 
 use crate::classifier::Sort;
 use crate::hole::HoleId;
@@ -692,14 +692,22 @@ impl CoreArena
         self.alloc_value(Value::Constant(index))
     }
 
-    /// Mint the unit value.
+    /// Mint the unit value, the tuple of no components.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: appends `Tuple([])` and returns its fresh id.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the unit is the empty tuple, not a former of its own,
+    ///   so the two spellings mint equal nodes.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.value(ret).is_some_and(|held| matches!(*held, Value::Tuple(ref components) if components.is_empty())))]
     #[inline]
     pub fn value_unit(&mut self) -> ValueId
     {
-        self.alloc_value(Value::Unit)
+        self.value_tuple(&[])
     }
 
     /// Mint a base-type literal value.
@@ -715,31 +723,31 @@ impl CoreArena
         self.alloc_value(Value::Literal(literal))
     }
 
-    /// Mint a pair over two already-allocated value children.
+    /// Mint a tuple over already-allocated value children, in order.
     ///
     /// # Specification
-    /// - requires: `first` and `second` name value nodes already allocated in
-    ///   this arena.
-    /// - ensures: appends the pair and returns a fresh id strictly above both
-    ///   children.
+    /// - requires: every component names a value node already allocated in this
+    ///   arena.
+    /// - ensures: appends the tuple of `components`, in order, and returns a
+    ///   fresh id strictly above every component.
     /// - provides: the only way to mint this former, which is what keeps a
     ///   child id below its parent's.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
-    ///   injection sides distinguish swapped or dropped children and confused
-    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - hypothesis: L3 — distinct child ids at arities zero, two and three,
+    ///   unequal branch bodies and distinct summands distinguish swapped,
+    ///   dropped or merged children and confused formers. Readback observes the
+    ///   minted node rather than merely its id.
     /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
-    #[spec(ensures: |ret| self.value(ret) == Some(&Value::Pair(first, second)))]
+    #[spec(ensures: |ret| self.value(ret).is_some_and(|held| matches!(*held, Value::Tuple(ref minted) if **minted == *components)))]
     #[inline]
-    pub fn value_pair(
+    pub fn value_tuple(
         &mut self,
-        first: ValueId,
-        second: ValueId,
+        components: &[ValueId],
     ) -> ValueId
     {
-        self.alloc_value(Value::Pair(first, second))
+        self.alloc_value(Value::Tuple(components.into()))
     }
 
     /// Mint a sum injection over an already-allocated value body.
@@ -753,19 +761,19 @@ impl CoreArena
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
-    ///   injection sides distinguish swapped or dropped children and confused
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and
+    ///   distinct summands distinguish swapped or dropped children and confused
     ///   formers. Readback observes the minted node rather than merely its id.
     /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
-    #[spec(ensures: |ret| self.value(ret) == Some(&Value::Injection(side, body)))]
+    #[spec(ensures: |ret| self.value(ret) == Some(&Value::Injection(summand, body)))]
     #[inline]
     pub fn value_injection(
         &mut self,
-        side: Side,
+        summand: Summand,
         body: ValueId,
     ) -> ValueId
     {
-        self.alloc_value(Value::Injection(side, body))
+        self.alloc_value(Value::Injection(summand, body))
     }
 
     /// Mint a thunk over an already-allocated computation body.
@@ -1090,35 +1098,34 @@ impl CoreArena
         self.alloc_computation(Computation::Force(value))
     }
 
-    /// Mint a case over an already-allocated scrutinee and two branches.
+    /// Mint a case over an already-allocated scrutinee and one branch per
+    /// summand.
     ///
     /// # Specification
-    /// - requires: `scrutinee` names a value node, and `on_left` and `on_right`
-    ///   computation nodes, all already allocated in this arena.
-    /// - ensures: appends the case and returns a fresh id strictly above both
-    ///   branches.
+    /// - requires: `scrutinee` names a value node, and every branch a
+    ///   computation node, all already allocated in this arena.
+    /// - ensures: appends the case with `branches` in order and returns a fresh
+    ///   id strictly above every branch.
     /// - provides: the only way to mint this former, which is what keeps a
     ///   child id below its parent's.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
-    ///   injection sides distinguish swapped or dropped children and confused
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and
+    ///   distinct summands distinguish swapped or dropped children and confused
     ///   formers. Readback observes the minted node rather than merely its id.
     /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
-    #[spec(ensures: |ret| self.computation(ret) == Some(&Computation::Case { scrutinee, on_left, on_right }))]
+    #[spec(ensures: |ret| self.computation(ret).is_some_and(|held| matches!(*held, Computation::Case { scrutinee: minted, branches: ref minted_branches } if minted == scrutinee && **minted_branches == *branches)))]
     #[inline]
     pub fn computation_case(
         &mut self,
         scrutinee: ValueId,
-        on_left: ComputationId,
-        on_right: ComputationId,
+        branches: &[ComputationId],
     ) -> ComputationId
     {
         self.alloc_computation(Computation::Case {
             scrutinee,
-            on_left,
-            on_right,
+            branches: branches.into(),
         })
     }
 
@@ -1965,7 +1972,7 @@ mod tests
     {
         let mut arena = CoreArena::new();
         let unit = arena.value_unit();
-        let pair = arena.value_pair(unit, unit);
+        let pair = arena.value_tuple(&[unit, unit]);
         assert!(
             unit < pair,
             "constructor-only minting orders child below parent"
@@ -2005,7 +2012,7 @@ mod tests
         let returner = arena.comp_type_returner(unit_type);
         let before = arena.watermark();
         let product = arena.value_type_product(&[unit_type, unit_type]);
-        let pair = arena.value_pair(unit, unit);
+        let pair = arena.value_tuple(&[unit, unit]);
         let bound = arena.computation_bind(returned, returned);
         let thunked = arena.value_type_thunk(returner);
         let lifted = arena.comp_type_returner(thunked);
@@ -2181,7 +2188,7 @@ mod tests
             arena.comp_type(dropped_comp_type)
         );
         arena.truncate_to(mark);
-        assert_eq!(Some(&Value::Unit), arena.value(kept_value));
+        assert_eq!(Some(&Value::unit()), arena.value(kept_value));
         assert_eq!(Some(&ValueType::unit()), arena.value_type(kept_type));
         assert_eq!(
             Some(&crate::Computation::Return(kept_value)),
@@ -2200,10 +2207,10 @@ mod tests
         assert_eq!(None, arena.comp_type(dropped_comp_type));
         arena.truncate_to(later);
         assert_eq!(mark, arena.watermark());
-        let replacement = arena.value_pair(kept_value, kept_value);
+        let replacement = arena.value_tuple(&[kept_value, kept_value]);
         assert_eq!(dropped_value, replacement);
         assert_eq!(
-            Some(&Value::Pair(kept_value, kept_value)),
+            Some(&Value::Tuple([kept_value, kept_value].into())),
             arena.value(replacement)
         );
         arena.truncate_to(ArenaWatermark::default());
@@ -2228,14 +2235,17 @@ mod tests
         let result = arena.comp_type_returner(other);
         let level = Level::zero().succ().expect("one");
         let values = [
-            (arena.value_pair(first, second), Value::Pair(first, second)),
             (
-                arena.value_injection(gandr_kernel_term::Side::Left, first),
-                Value::Injection(gandr_kernel_term::Side::Left, first),
+                arena.value_tuple(&[first, second]),
+                Value::Tuple([first, second].into()),
             ),
             (
-                arena.value_injection(gandr_kernel_term::Side::Right, second),
-                Value::Injection(gandr_kernel_term::Side::Right, second),
+                arena.value_injection(gandr_kernel_term::Side::Left.into(), first),
+                Value::Injection(gandr_kernel_term::Side::Left.into(), first),
+            ),
+            (
+                arena.value_injection(gandr_kernel_term::Side::Right.into(), second),
+                Value::Injection(gandr_kernel_term::Side::Right.into(), second),
             ),
             (arena.value_thunk(right), Value::Thunk(right)),
             (arena.value_lift(level.clone(), second), Value::Lift {
@@ -2291,11 +2301,10 @@ mod tests
                 crate::Computation::Force(second),
             ),
             (
-                arena.computation_case(first, left, right),
+                arena.computation_case(first, &[left, right]),
                 crate::Computation::Case {
                     scrutinee: first,
-                    on_left: left,
-                    on_right: right,
+                    branches: [left, right].into(),
                 },
             ),
         ];

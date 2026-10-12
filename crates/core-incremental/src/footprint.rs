@@ -499,7 +499,7 @@ mod tests
         let a = arena.value_constant(ConstantIndex::from(0_usize));
         let b = arena.value_constant(ConstantIndex::from(1_usize));
         let element = arena.value_type_element(a, Level::zero());
-        let pair = arena.value_pair(b, a);
+        let pair = arena.value_tuple(&[b, a]);
         let keys = vec![ItemKey::from("a"), ItemKey::from("b")];
         let footprint = last_footprint(arena, &keys, Maybe::Present(element), Maybe::Present(pair));
         let [ref a_key, ref b_key] = *keys.as_slice()
@@ -563,10 +563,10 @@ mod tests
                 body: Maybe::Present(crate::boundary::NodeIndex::from(0_usize)),
             },
             vec![
-                crate::content::ContentNode::Pair(
+                crate::content::ContentNode::Tuple(vec![
                     crate::boundary::NodeIndex::from(0_usize),
                     crate::boundary::NodeIndex::from(1_usize),
-                ),
+                ]),
                 crate::content::ContentNode::Constant(named(&key)),
                 crate::content::ContentNode::Constant(named(&ItemKey::from("unreachable"))),
                 crate::content::ContentNode::Unresolved(super::Sort::Value),

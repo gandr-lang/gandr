@@ -413,7 +413,9 @@ impl FreeIndices
                 free.intuitionistic.counts.as_slice() == [index] && free.linear.counts.is_empty(),
             Value::Variable { zone: Zone::Linear, index } =>
                 free.linear.counts.as_slice() == [index] && free.intuitionistic.counts.is_empty(),
-            Value::Unit | Value::Constant(_) | Value::Literal(_) =>
+            Value::Tuple(ref components) if components.is_empty() =>
+                free.intuitionistic.counts.is_empty() && free.linear.counts.is_empty(),
+            Value::Constant(_) | Value::Literal(_) =>
                 free.intuitionistic.counts.is_empty() && free.linear.counts.is_empty(),
             _ => true,
         }),
@@ -592,6 +594,8 @@ enum ExtraChildren<'arena>
     Values(core::slice::Iter<'arena, ValueId>),
     /// Case field functions; their own lambdas introduce their binders.
     Computations(core::slice::Iter<'arena, ComputationId>),
+    /// Sum case branches, each beneath its one payload binder.
+    Branches(core::slice::Iter<'arena, ComputationId>),
     /// Record literal fields in label order.
     RecordValues(
         alloc::collections::btree_map::Values<'arena, gandr_core_term::FieldLabel, ValueId>,
@@ -622,6 +626,9 @@ impl Iterator for ExtraChildren<'_>
             | Self::Computations(ref mut values) => values
                 .next()
                 .map(|id| (Reached::Term(CoreTerm::Computation(*id)), Lowering::NONE)),
+            | Self::Branches(ref mut branches) => branches
+                .next()
+                .map(|id| (Reached::Term(CoreTerm::Computation(*id)), Lowering::ONE)),
             | Self::RecordValues(ref mut values) => values
                 .next()
                 .map(|id| (Reached::Term(CoreTerm::Value(*id)), Lowering::NONE)),
@@ -651,6 +658,9 @@ impl DoubleEndedIterator for ExtraChildren<'_>
             | Self::Computations(ref mut values) => values
                 .next_back()
                 .map(|id| (Reached::Term(CoreTerm::Computation(*id)), Lowering::NONE)),
+            | Self::Branches(ref mut branches) => branches
+                .next_back()
+                .map(|id| (Reached::Term(CoreTerm::Computation(*id)), Lowering::ONE)),
             | Self::RecordValues(ref mut values) => values
                 .next_back()
                 .map(|id| (Reached::Term(CoreTerm::Value(*id)), Lowering::NONE)),
@@ -804,6 +814,10 @@ Err(_) => false,
                         extra = ExtraChildren::Values(fields.iter());
                         one(Reached::ValueType(datatype), Lowering::NONE)
                     },
+                    | Value::Tuple(ref components) => {
+                        extra = ExtraChildren::Values(components.iter());
+                        [None, None, None, None, None]
+                    },
                     | Value::Record(ref fields) => {
                         extra = ExtraChildren::RecordValues(fields.values());
                         [None, None, None, None, None]
@@ -815,7 +829,6 @@ Err(_) => false,
                     | Value::Variable { .. }
                     | Value::Primitive { .. }
                     | Value::Constant(_)
-                    | Value::Unit
                     | Value::ListNil
                     | Value::Literal(_)
                     | Value::Hole(_) => [None, None, None, None, None],
@@ -834,7 +847,6 @@ Err(_) => false,
                     ],
                     | Value::PathRefl(code) => one(value(code), Lowering::NONE),
                     | Value::PathProduct(first, second)
-                    | Value::Pair(first, second)
                     | Value::ListCons(first, second)
                     | Value::StaticApplication(first, second) => {
                         two(value(first), value(second), Lowering::NONE)
@@ -930,15 +942,11 @@ Err(_) => false,
                     },
                     | Computation::Case {
                         scrutinee,
-                        on_left,
-                        on_right,
-                    } => [
-                        Some((value(scrutinee), Lowering::NONE)),
-                        Some((computation(on_left), Lowering::ONE)),
-                        Some((computation(on_right), Lowering::ONE)),
-                        None,
-                        None,
-                    ],
+                        ref branches,
+                    } => {
+                        extra = ExtraChildren::Branches(branches.iter());
+                        one(value(scrutinee), Lowering::NONE)
+                    },
                     | Computation::Hole(_) => [None, None, None, None, None],
                     | Computation::Mark { body, .. } => one(computation(body), Lowering::NONE),
                 }
@@ -1096,8 +1104,8 @@ mod tests
         let linear = core.value_variable(Zone::Linear, DeBruijnIndex::from(2_u32));
         let decoded = core.value_type_element(far, Level::zero());
         let quote = core.value_quote(decoded);
-        let shared = core.value_pair(quote, linear);
-        let body = core.value_pair(near, shared);
+        let shared = core.value_tuple(&[quote, linear]);
+        let body = core.value_tuple(&[near, shared]);
         let returned = core.computation_return(body);
         let lambda = core.computation_lambda(returned);
         let static_lambda = core.value_static_lambda(body);
@@ -1213,7 +1221,7 @@ mod tests
         .unwrap();
         let performed = core.computation_perform(signature.clone(), operation.clone(), two);
         let on_return = core.computation_return(one);
-        let pair = core.value_pair(one, three);
+        let pair = core.value_tuple(&[one, three]);
         let clause = core.computation_return(pair);
         let handled = core.computation_handle(
             signature,
@@ -1224,7 +1232,7 @@ mod tests
                 body: clause,
             }]),
         );
-        let pair = core.value_pair(zero, four);
+        let pair = core.value_tuple(&[zero, four]);
         let body = core.computation_return(pair);
         let stack = core.value_reify(alloc::sync::Arc::from([
             StackFrame::Apply(two),

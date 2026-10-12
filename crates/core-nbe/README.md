@@ -110,7 +110,7 @@ use gandr_core_term::DefinitionalEnvironment;
 fn round_trip() {
     let mut core = CoreArena::new();
     let unit = core.value_unit();
-    let source = core.value_pair(unit, unit);
+    let source = core.value_tuple(&[unit, unit]);
 
     let chain = LoweredChain::new();
     let environment = DefinitionalEnvironment::new();

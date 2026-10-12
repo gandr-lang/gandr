@@ -57,7 +57,7 @@ mod tests
         assert!(before.contains("arm 0: possibly") && before.contains("arm 1: possibly"));
         assert!(before.contains("held at arm 0"));
         let value = core.value_unit();
-        let value = core.value_injection(Side::Right, value);
+        let value = core.value_injection(Side::Right.into(), value);
         checkpoint
             .fill(
                 &mut core,
@@ -87,10 +87,13 @@ mod tests
         else {
             panic!("the selected arm returns")
         };
-        assert!(matches!(
-            checkpoint.domain().value(value),
-            Some(&gandr_core_nbe::DomainValue::Unit { .. })
-        ));
+        assert!(
+            checkpoint
+                .domain()
+                .value(value)
+                .and_then(|held| checkpoint.domain().components(held))
+                .is_some_and(<[_]>::is_empty)
+        );
         let mut transcript = Vec::new();
         write_block(&mut transcript, &encode_match(&after)).unwrap();
         let after = String::from_utf8(transcript).unwrap();

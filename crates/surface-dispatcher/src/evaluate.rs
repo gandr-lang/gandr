@@ -1002,7 +1002,7 @@ impl<'source> Program<'source>
             Some(&Value::Record(_)) => ret.0.starts_with("#{") && ret.0.ends_with('}'),
             Some(&Value::Reify(_)) => ret.0 == "<stack>",
             Some(&Value::Primitive { primitive, .. }) => ret.0 == primitive.name().as_ref(),
-            Some(&Value::Unit) => ret.0 == "unit",
+            Some(held) if held.components().is_some_and(<[_]>::is_empty) => ret.0 == "unit",
             Some(&Value::ListNil) => ret.0 == "nil",
             Some(&Value::ListCons(..)) => ret.0.starts_with("cons(") && ret.0.ends_with(')'),
             Some(&Value::Thunk(_)) => ret.0 == "<thunk>",
@@ -1028,8 +1028,11 @@ impl<'source> Program<'source>
                 let text: &str = text.as_ref();
                 ret.0.chars().eq(core::iter::once('"').chain(text.escape_debug()).chain(core::iter::once('"')))
             },
-            Some(&Value::Pair(..)) => ret.0.starts_with('(') && ret.0.ends_with(')'),
-            Some(&Value::Injection(side, _)) => ret.0.starts_with(match side { Side::Left => "inl(", Side::Right => "inr(" }) && ret.0.ends_with(')'),
+            Some(&Value::Tuple(_)) => ret.0.starts_with('(') && ret.0.ends_with(')'),
+            Some(&Value::Injection(summand, _)) => Side::try_from(summand).map_or_else(
+                |_beyond| ret.0 == "<injection>",
+                |side| ret.0.starts_with(match side { Side::Left => "inl(", Side::Right => "inr(" }) && ret.0.ends_with(')'),
+            ),
             Some(&(Value::Lift { .. } | Value::Mark { .. })) => true,
             Some(&Value::Hole(_)) => ret.0 == "?",
             None => ret.0 == "<dangling>",
@@ -1142,7 +1145,6 @@ None => ret.0 == "<computation>",
                     spelled.extend(text.escape_debug());
                     spelled.push('"');
                 },
-                | Some(&Value::Unit) => spelled.push_str("unit"),
                 | Some(&Value::ListNil) => spelled.push_str("nil"),
                 | Some(&Value::ListCons(head, tail)) => pending.extend([
                     Piece::Text(")"),
@@ -1151,21 +1153,32 @@ None => ret.0 == "<computation>",
                     Piece::Value(head),
                     Piece::Text("cons("),
                 ]),
-                | Some(&Value::Pair(first, second)) => pending.extend([
-                    Piece::Text(")"),
-                    Piece::Value(second),
-                    Piece::Text(", "),
-                    Piece::Value(first),
-                    Piece::Text("("),
-                ]),
-                | Some(&Value::Injection(side, body)) => pending.extend([
-                    Piece::Text(")"),
-                    Piece::Value(body),
-                    Piece::Text(match side {
-                        | Side::Left => "inl(",
-                        | Side::Right => "inr(",
-                    }),
-                ]),
+                | Some(&Value::Tuple(ref components)) => match **components {
+                    | [] => spelled.push_str("unit"),
+                    | [only] => {
+                        pending.extend([Piece::Text(",)"), Piece::Value(only), Piece::Text("(")]);
+                    },
+                    | [ref leading @ .., last] => {
+                        pending.extend([Piece::Text(")"), Piece::Value(last)]);
+                        for &component in leading.iter().rev() {
+                            pending.extend([Piece::Text(", "), Piece::Value(component)]);
+                        }
+                        pending.push(Piece::Text("("));
+                    },
+                },
+                | Some(&Value::Injection(summand, body)) => match Side::try_from(summand) {
+                    | Ok(side) => pending.extend([
+                        Piece::Text(")"),
+                        Piece::Value(body),
+                        Piece::Text(match side {
+                            | Side::Left => "inl(",
+                            | Side::Right => "inr(",
+                        }),
+                    ]),
+                    // An injection past the second summand has no spelling until
+                    // the surface's sums are n-ary.
+                    | Err(_) => spelled.push_str("<injection>"),
+                },
                 | Some(&(Value::Lift { body, .. } | Value::Mark { body, .. })) => {
                     pending.push(Piece::Value(body));
                 },
@@ -1243,13 +1256,13 @@ enum Piece<'core>
 #[spec(ensures: |ref ret| match core.value(body) {
     Some(&Value::Constant(constant)) => ret.iter().copied().eq([constant]),
     Some(&Value::Primitive { .. } |
-&(Value::ListNil | Value::Variable { .. } | Value::Unit | Value::Literal(_) | Value::Quote(_) |
+&(Value::ListNil | Value::Variable { .. } | Value::Literal(_) | Value::Quote(_) |
 Value::QuoteComputation(_) | Value::StaticLambda(_) |
 Value::StaticApplication(..) | Value::Hole(_))) | None => ret.is_empty(),
     Some(&(Value::Constructor { .. } | Value::Record(_)) |
 &Value::Reify(_) |
 &(Value::ListCons(..) | Value::PathRefl(_) | Value::PathProduct(..) |
-Value::PathEquiv { .. } | Value::Pair(..) | Value::Injection(..) |
+Value::PathEquiv { .. } | Value::Tuple(_) | Value::Injection(..) |
 Value::Lift { .. } | Value::Thunk(_) | Value::Mark { .. })) => true,
 })]
 fn references(
@@ -1297,10 +1310,12 @@ fn references(
                         backward: second,
                         ..
                     }
-                    | Value::ListCons(first, second)
-                    | Value::Pair(first, second)),
+                    | Value::ListCons(first, second)),
                 ) => {
                     pending.extend([Node::Value(first), Node::Value(second)]);
+                },
+                | Some(&Value::Tuple(ref components)) => {
+                    pending.extend(components.iter().map(|&component| Node::Value(component)));
                 },
                 | Some(
                     &(Value::PathRefl(inner)
@@ -1314,7 +1329,6 @@ fn references(
                 | Some(
                     &Value::Primitive { .. }
                     | &(Value::Variable { .. }
-                    | Value::Unit
                     | Value::ListNil
                     | Value::Literal(_)
                     | Value::Quote(_)
@@ -1387,13 +1401,11 @@ fn references(
                 },
                 | Some(&Computation::Case {
                     scrutinee,
-                    on_left,
-                    on_right,
-                }) => pending.extend([
-                    Node::Value(scrutinee),
-                    Node::Computation(on_left),
-                    Node::Computation(on_right),
-                ]),
+                    ref branches,
+                }) => {
+                    pending.push(Node::Value(scrutinee));
+                    pending.extend(branches.iter().map(|&branch| Node::Computation(branch)));
+                },
                 | Some(&(Computation::Mark { body, .. } | Computation::Fixpoint { body, .. })) => {
                     pending.push(Node::Computation(body));
                 },
@@ -1754,8 +1766,8 @@ def bad : Integer ; def bad = "text" ; def small : Type ; def small = Integer ;"
         let unit = core.value_unit();
         let first = core.value_constant(ConstantIndex::from(0_usize));
         let second = core.value_constant(ConstantIndex::from(1_usize));
-        let nested = core.value_pair(second, first);
-        let outer = core.value_pair(unit, nested);
+        let nested = core.value_tuple(&[second, first]);
+        let outer = core.value_tuple(&[unit, nested]);
         let returned = core.computation_return(outer);
         let mut commands = gandr_core_sequent::CommandArena::default();
         let mut provenance = gandr_core_sequent::Provenance::new();
@@ -1779,8 +1791,8 @@ def bad : Integer ; def bad = "text" ; def small : Type ; def small = Integer ;"
         let mut core = gandr_core_term::CoreArena::new();
         let first = core.value_constant(ConstantIndex::from(0_usize));
         let second = core.value_constant(ConstantIndex::from(1_usize));
-        let nested = core.value_pair(second, first);
-        let outer = core.value_pair(first, nested);
+        let nested = core.value_tuple(&[second, first]);
+        let outer = core.value_tuple(&[first, nested]);
         let mut referred = super::references(&core, outer);
         referred.sort_unstable();
         assert_eq!(referred.as_slice(), &[
@@ -1797,7 +1809,7 @@ def bad : Integer ; def bad = "text" ; def small : Type ; def small = Integer ;"
             (gandr_kernel_term::Side::Left, "inl(second)"),
             (gandr_kernel_term::Side::Right, "inr(second)"),
         ] {
-            let injected = core.value_injection(side, second);
+            let injected = core.value_injection(side.into(), second);
             let returned = core.computation_return(injected);
             assert_eq!(names.spell(&core, returned).as_ref(), expected);
         }

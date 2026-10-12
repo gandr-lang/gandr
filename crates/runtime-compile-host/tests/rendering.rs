@@ -53,14 +53,14 @@ fn a_nested_value_renders_in_source_order()
     let one = integer(&mut core, 1_i64.into());
     let two = integer(&mut core, 2_i64.into());
     let unit = core.value_unit();
-    let right = core.value_pair(two, unit);
-    let left = core.value_injection(Side::Left, one);
-    let root = core.value_pair(left, right);
+    let right = core.value_tuple(&[two, unit]);
+    let left = core.value_injection(Side::Left.into(), one);
+    let root = core.value_tuple(&[left, right]);
     assert_eq!(
         canonical(&core, root).expect("nested").as_ref(),
         "(pair (inl (int 1)) (pair (int 2) (unit)))"
     );
-    let right = core.value_injection(Side::Right, one);
+    let right = core.value_injection(Side::Right.into(), one);
     assert_eq!(
         canonical(&core, right).expect("right").as_ref(),
         "(inr (int 1))"
@@ -73,7 +73,7 @@ fn a_value_outside_the_slice_has_no_spelling()
     let text = core.value_literal(Literal::Text(StringLiteral::new(String::from("text"))));
     assert_eq!(canonical(&core, text), Err(RenderError::OutsideSlice));
     let unit = core.value_unit();
-    let nested = core.value_pair(unit, text);
+    let nested = core.value_tuple(&[unit, text]);
     assert_eq!(canonical(&core, nested), Err(RenderError::OutsideSlice));
 }
 #[test]

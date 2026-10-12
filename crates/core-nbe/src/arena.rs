@@ -74,7 +74,7 @@ use gandr_core_term::ComputationId;
 use gandr_core_term::ValueId;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::Literal;
-use gandr_kernel_term::Side;
+use gandr_kernel_term::Summand;
 
 use crate::closure::CompClosure;
 use crate::closure::Environment;
@@ -244,7 +244,17 @@ pub struct FieldSpan
     end: usize,
 }
 
-/// A snapshot of the six family lengths.
+/// A half-open range of case-branch closures in one domain arena.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct BranchSpan
+{
+    /// First branch offset.
+    start: usize,
+    /// Exclusive final branch offset.
+    end: usize,
+}
+
+/// A snapshot of the six family lengths and the two side tables.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RunWatermark
 {
@@ -262,6 +272,8 @@ pub struct RunWatermark
     levels: usize,
     /// The native field-table length.
     fields: usize,
+    /// The case-branch table length.
+    branches: usize,
 }
 
 /// The per-run arena owning every glued node one evaluation run produces.
@@ -286,8 +298,11 @@ pub struct DomainArena
     comp_closures: Vec<CompClosure>,
     /// The levels a lift names.
     levels: Vec<LevelEntry>,
-    /// Native constructor and record fields, stored without per-node vectors.
+    /// Native constructor, record and tuple fields, stored without per-node
+    /// vectors.
     fields: Vec<DomainValueId>,
+    /// Stuck sum cases' branch closures, stored without per-node vectors.
+    branches: Vec<CompClosureId>,
 }
 
 impl DomainArena
@@ -332,6 +347,7 @@ impl DomainArena
         && ret.value_closures == self.value_closures.len()
         && ret.comp_closures == self.comp_closures.len()
         && ret.fields == self.fields.len()
+        && ret.branches == self.branches.len()
         && ret.levels == self.levels.len())]
     pub fn watermark(&self) -> RunWatermark
     {
@@ -343,6 +359,7 @@ impl DomainArena
             comp_closures: self.comp_closures.len(),
             levels: self.levels.len(),
             fields: self.fields.len(),
+            branches: self.branches.len(),
         }
     }
 
@@ -382,6 +399,7 @@ impl DomainArena
             && self.value_closures.len() == watermark.value_closures.min(entry_mark.value_closures)
             && self.comp_closures.len() == watermark.comp_closures.min(entry_mark.comp_closures)
             && self.fields.len() == watermark.fields.min(entry_mark.fields)
+            && self.branches.len() == watermark.branches.min(entry_mark.branches)
             && self.levels.len() == watermark.levels.min(entry_mark.levels),
     )]
     pub fn truncate_to(
@@ -399,6 +417,7 @@ impl DomainArena
         self.comp_closures.truncate(watermark.comp_closures);
         self.levels.truncate(watermark.levels);
         self.fields.truncate(watermark.fields);
+        self.branches.truncate(watermark.branches);
     }
 
     /// Resolve a domain value id, or `None` when it dangles.
@@ -1092,12 +1111,12 @@ impl DomainArena
         id
     }
 
-    /// Mint the unit value.
+    /// Mint the unit value: the tuple of no components.
     ///
     /// # Specification
     /// - requires: nothing; unit carries no component that could dangle.
-    /// - ensures: a fresh value node standing for unit at `face`, appended
-    ///   after every value this arena already holds.
+    /// - ensures: a fresh tuple node over an empty field span at `face`,
+    ///   appended after every value this arena already holds.
     /// - provides: the domain form a unit introduction evaluates to.
     /// - fails: never.
     /// - panics: none.
@@ -1108,14 +1127,13 @@ impl DomainArena
     ///   observed term.
     /// - witness: `readback::tests::a_pair_and_an_injection_rebuild_from_their_children`
     #[inline]
-    #[spec(ensures: |ret| self.value(ret) == Some(&DomainValue::Unit { face }))]
+    #[spec(ensures: |ret| self.value(ret).and_then(|value| self.components(value)).is_some_and(<[DomainValueId]>::is_empty))]
     pub fn value_unit(
         &mut self,
         face: TermFace,
     ) -> DomainValueId
     {
-        let guard = Guard::compose(GuardTag::Unit, &(), &[]);
-        self.alloc_value(DomainValue::Unit { face }, guard)
+        self.value_tuple([], face)
     }
 
     /// Mint a literal value, whose payload stays in the core arena.
@@ -1149,13 +1167,13 @@ impl DomainArena
         self.alloc_value(DomainValue::Literal { literal, face }, guard)
     }
 
-    /// Mint a pair over two already-allocated components.
+    /// Mint a tuple over already-allocated components, in their given order.
     ///
     /// # Specification
-    /// - requires: `first` and `second` name live value nodes of this arena.
-    /// - ensures: a fresh value node carrying both component ids in that order
-    ///   and `face`.
-    /// - provides: the domain form a pair introduction evaluates to, with the
+    /// - requires: every component names a live value node of this arena.
+    /// - ensures: a fresh value node whose field span holds exactly the
+    ///   components in order, at `face`.
+    /// - provides: the domain form a tuple introduction evaluates to, with the
     ///   components shared rather than copied.
     /// - fails: never — a component that dangles surfaces at readback, not
     ///   here.
@@ -1167,26 +1185,51 @@ impl DomainArena
     ///   changes the observed term.
     /// - witness: `readback::tests::a_pair_and_an_injection_rebuild_from_their_children`
     #[inline]
-    #[spec(ensures: |ret| self.value(ret) == Some(&DomainValue::Pair { first, second, face }))]
-    pub fn value_pair(
+    #[spec(captures: start = self.fields.len(), ensures: |ret| self.value(ret).and_then(|value| self.components(value)).is_some_and(|held| held.len() == self.fields.len().saturating_sub(start)))]
+    pub fn value_tuple<Components>(
         &mut self,
-        first: DomainValueId,
-        second: DomainValueId,
+        components: Components,
         face: TermFace,
     ) -> DomainValueId
+    where
+        Components: IntoIterator<Item = DomainValueId>,
     {
-        let guard = Guard::compose(GuardTag::Pair, &(), &[
-            self.folded_value_guard(first),
-            self.folded_value_guard(second),
-        ]);
-        self.alloc_value(
-            DomainValue::Pair {
-                first,
-                second,
-                face,
-            },
-            guard,
-        )
+        let fields = self.hold_fields(components);
+        let held = self
+            .fields
+            .get(fields.start .. fields.end)
+            .unwrap_or_default();
+        let guard = Guard::compose(
+            GuardTag::Tuple,
+            &held.len(),
+            held.iter().map(|&id| self.folded_value_guard(id)),
+        );
+        self.alloc_value(DomainValue::Tuple { fields, face }, guard)
+    }
+
+    /// The components of a tuple, in order.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the tuple's held fields for a tuple whose span is live, and
+    ///   nothing for every other former or an invalidated span.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — as [`Self::value_tuple`].
+    /// - witness: `readback::tests::a_pair_and_an_injection_rebuild_from_their_children`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| match *value { DomainValue::Tuple { fields, .. } => ret == self.fields(fields).ok(), _ => ret.is_none() })]
+    pub fn components(
+        &self,
+        value: &DomainValue,
+    ) -> Option<&[DomainValueId]>
+    {
+        match *value {
+            | DomainValue::Tuple { fields, .. } => self.fields(fields).ok(),
+            | _ => None,
+        }
     }
 
     /// Mint the empty native list with its source face.
@@ -1248,10 +1291,10 @@ impl DomainArena
     ///
     /// # Specification
     /// - requires: `body` names a live value node of this arena.
-    /// - ensures: a fresh value node carrying the side, the body id, and
+    /// - ensures: a fresh value node carrying the summand, the body id, and
     ///   `face`.
-    /// - provides: the domain form a sum introduction evaluates to; the side is
-    ///   what a case elimination selects on.
+    /// - provides: the domain form a sum introduction evaluates to; the summand
+    ///   is what a case elimination selects on.
     /// - fails: never — a body that dangles surfaces at readback, not here.
     /// - panics: none.
     ///
@@ -1261,16 +1304,25 @@ impl DomainArena
     ///   term.
     /// - witness: `readback::tests::a_pair_and_an_injection_rebuild_from_their_children`
     #[inline]
-    #[spec(ensures: |ret| self.value(ret) == Some(&DomainValue::Injection { side, body, face }))]
+    #[spec(ensures: |ret| self.value(ret) == Some(&DomainValue::Injection { summand, body, face }))]
     pub fn value_injection(
         &mut self,
-        side: Side,
+        summand: Summand,
         body: DomainValueId,
         face: TermFace,
     ) -> DomainValueId
     {
-        let guard = Guard::compose(GuardTag::Injection, &side, &[self.folded_value_guard(body)]);
-        self.alloc_value(DomainValue::Injection { side, body, face }, guard)
+        let guard = Guard::compose(GuardTag::Injection, &summand, &[
+            self.folded_value_guard(body)
+        ]);
+        self.alloc_value(
+            DomainValue::Injection {
+                summand,
+                body,
+                face,
+            },
+            guard,
+        )
     }
 
     /// Mint a thunk over an already-allocated computation closure.
@@ -1415,6 +1467,61 @@ impl DomainArena
     ) -> Result<&[DomainValueId], DomainFault>
     {
         self.fields
+            .get(span.start .. span.end)
+            .ok_or(DomainFault::Dangling)
+    }
+
+    /// Store a stuck sum case's branch closures once, in summand order.
+    ///
+    /// # Specification
+    /// - requires: closure ids belong to this arena.
+    /// - ensures: the span covers exactly the newly appended branches.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a retained span reads back its branches, a span
+    ///   minted past a watermark dangles after truncation, and a replacement
+    ///   leaves the retained span intact.
+    /// - witness: `arena::tests::case_branch_spans_obey_truncation`
+    #[spec(captures: start = self.branches.len(), ensures: |ret| ret.start == start && ret.end == self.branches.len())]
+    #[inline]
+    pub fn hold_branches<Branches>(
+        &mut self,
+        branches: Branches,
+    ) -> BranchSpan
+    where
+        Branches: IntoIterator<Item = CompClosureId>,
+    {
+        let start = self.branches.len();
+        self.branches.extend(branches);
+        BranchSpan {
+            start,
+            end: self.branches.len(),
+        }
+    }
+
+    /// Resolve a case-branch span, refusing an invalidated range.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the branches the span covers, in summand order.
+    /// - fails: [`DomainFault::Dangling`] when the span reaches past the table.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`DomainFault::Dangling`] — the span was invalidated by truncation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::hold_branches`].
+    /// - witness: `arena::tests::case_branch_spans_obey_truncation`
+    #[spec(ensures: |ret| ret.as_ref().ok().copied() == self.branches.get(span.start..span.end))]
+    #[inline]
+    pub fn branches(
+        &self,
+        span: BranchSpan,
+    ) -> Result<&[CompClosureId], DomainFault>
+    {
+        self.branches
             .get(span.start .. span.end)
             .ok_or(DomainFault::Dangling)
     }
@@ -1873,7 +1980,7 @@ mod tests
     {
         let mut arena = DomainArena::new();
         let unit = arena.value_unit(TermFace::Reduced);
-        let pair = arena.value_pair(unit, unit, TermFace::Reduced);
+        let pair = arena.value_tuple([unit, unit], TermFace::Reduced);
         assert!(
             unit < pair,
             "constructor-only minting orders child below parent"
@@ -2179,10 +2286,7 @@ mod tests
             [Elimination::Apply(flexible), Elimination::Apply(rigid)],
             [Elimination::StaticApply(flexible), Elimination::Force],
             [
-                Elimination::Case {
-                    on_left: closure,
-                    on_right: closure,
-                },
+                Elimination::Case(arena.hold_branches([closure, closure])),
                 Elimination::Force,
             ],
         ] {
@@ -2202,7 +2306,7 @@ mod tests
     {
         let mut arena = DomainArena::new();
         let first = arena.value_unit(TermFace::Reduced);
-        let second = arena.value_pair(first, first, TermFace::Reduced);
+        let second = arena.value_tuple([first, first], TermFace::Reduced);
         let kept = arena.hold_fields([first, second]);
         let mark = arena.watermark();
         let discarded = arena.hold_fields([second, first, second]);
@@ -2214,6 +2318,28 @@ mod tests
         assert_eq!(arena.fields(kept), Ok([first, second].as_slice()));
         arena.truncate_to(mark);
         assert_eq!(arena.fields(replacement), Err(DomainFault::Dangling));
+    }
+
+    #[test]
+    fn case_branch_spans_obey_truncation()
+    {
+        let mut core = CoreArena::new();
+        let unit = core.value_unit();
+        let body = core.computation_return(unit);
+        let mut arena = DomainArena::new();
+        let first = arena.comp_closure_node(body, Environment::new());
+        let second = arena.comp_closure_node(body, Environment::new());
+        let kept = arena.hold_branches([first, second]);
+        let mark = arena.watermark();
+        let discarded = arena.hold_branches([second, first, second]);
+        arena.truncate_to(mark);
+        assert_eq!(arena.branches(kept), Ok([first, second].as_slice()));
+        assert_eq!(arena.branches(discarded), Err(DomainFault::Dangling));
+        let replacement = arena.hold_branches([second]);
+        assert_eq!(arena.branches(replacement), Ok([second].as_slice()));
+        assert_eq!(arena.branches(kept), Ok([first, second].as_slice()));
+        arena.truncate_to(mark);
+        assert_eq!(arena.branches(replacement), Err(DomainFault::Dangling));
     }
 
     #[test]

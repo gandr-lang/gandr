@@ -49,6 +49,7 @@ mod syntax;
 
 pub use gandr_kernel_term::ConstructorTag;
 pub use gandr_kernel_term::FieldLabel;
+pub use gandr_kernel_term::Summand;
 
 pub use crate::arena::ArenaWatermark;
 pub use crate::arena::CompTypeId;

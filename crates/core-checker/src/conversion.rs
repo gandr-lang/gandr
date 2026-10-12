@@ -827,22 +827,20 @@ fn convert(
                         {
                             let (matched_left_value, matched_right_value) =
                                 (read(left)?, read(right)?);
-                            if (matches!(*matched_left_value, Value::Unit)
-                                && matches!(*matched_right_value, Value::Unit))
-                            {
-                                true
-                            }
-                            else if let Value::Literal(ref a) = *matched_left_value
+                            if let Value::Literal(ref a) = *matched_left_value
                                 && let Value::Literal(ref b) = *matched_right_value
                             {
                                 a == b
                             }
-                            else if let Value::Pair(ref a, ref b) = *matched_left_value
-                                && let Value::Pair(ref c, ref d) = *matched_right_value
+                            else if let Value::Tuple(ref a) = *matched_left_value
+                                && let Value::Tuple(ref b) = *matched_right_value
                             {
-                                {
-                                    pending
-                                        .extend([Pairing::Codes(*a, *c), Pairing::Codes(*b, *d)]);
+                                a.len() == b.len() && {
+                                    pending.extend(
+                                        a.iter()
+                                            .zip(b.iter())
+                                            .map(|(&left, &right)| Pairing::Codes(left, right)),
+                                    );
                                     true
                                 }
                             }
@@ -955,9 +953,8 @@ fn convert(
                                         | Value::PathEquiv { .. }
                                         | Value::Variable { .. }
                                         | Value::Constant(_)
-                                        | Value::Unit
+                                        | Value::Tuple(_)
                                         | Value::Literal(_)
-                                        | Value::Pair(..)
                                         | Value::Injection(..)
                                         | Value::Thunk(_)
                                         | Value::Lift { .. }
