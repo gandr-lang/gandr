@@ -398,6 +398,7 @@ fn walk(
                 },
                 | Some(
                     &(Computation::RecordProjection(value, _)
+                    | Computation::TupleProjection(value, _)
                     | Computation::Return(value)
                     | Computation::Force(value)),
                 ) => {

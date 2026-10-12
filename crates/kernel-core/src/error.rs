@@ -523,6 +523,11 @@ pub enum KernelError
     {
         label: gandr_kernel_term::FieldLabel,
     },
+    /// A tuple projection names a component past the product's last.
+    AbsentTupleComponent
+    {
+        component: gandr_kernel_term::Component,
+    },
     /// Session formation or finite relation replay failed.
     Session(crate::session::SessionError),
     /// A native universe-path formation or replay obligation failed.
@@ -768,6 +773,9 @@ impl core::fmt::Display for KernelError
                 f.write_str("a fixpoint's structural-descent claim did not replay")
             },
             | Self::AbsentRecordField { .. } => f.write_str("a required record field was absent"),
+            | Self::AbsentTupleComponent { .. } => {
+                f.write_str("a tuple projection named a component the product does not have")
+            },
             | Self::Session(ref error) => error.fmt(f),
             | Self::Path(ref error) => error.fmt(f),
             | Self::UnboundVariable { .. } => f.write_str("a variable escaped its context"),

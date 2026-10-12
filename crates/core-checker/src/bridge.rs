@@ -2963,7 +2963,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         };
         let unadmitted = |former| Refusal::OutOfFragment { at: node, former };
         let (frame, child) = match *computation {
-            | Computation::DataCase { .. } | Computation::RecordProjection(..) => {
+            | Computation::DataCase { .. }
+            | Computation::RecordProjection(..)
+            | Computation::TupleProjection(..) => {
                 return self.prepare_native(target, node);
             },
             | Computation::Perform { .. } => return Err(unadmitted(UnadmittedFormer::Perform)),

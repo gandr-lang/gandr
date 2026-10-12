@@ -636,4 +636,82 @@ mod native_formers
         assert_eq!(absent.constant(), constant);
         assert!(absent.signature().is_none());
     }
+
+    #[test]
+    fn tuple_projection_reads_each_component()
+    {
+        use gandr_core_term::Component;
+        let mut arena = CoreArena::new();
+        let unit_type = arena.value_type_unit();
+        let empty_type = arena.value_type_record(BTreeMap::new());
+        let pair_type = arena.value_type_product(&[unit_type, unit_type]);
+        let unit = arena.value_unit();
+        let empty = arena.value_record(BTreeMap::new());
+        let pair = arena.value_tuple(&[unit, unit]);
+        let tuple = arena.value_tuple(&[unit, empty, pair]);
+        let mut declarations = Vec::new();
+        for (position, classifier) in [unit_type, empty_type, pair_type].into_iter().enumerate() {
+            let projection = arena.computation_tuple_projection(tuple, Component::from(position));
+            let body = arena.value_thunk(projection);
+            let returner = arena.comp_type_returner(classifier);
+            let declared = arena.value_type_thunk(returner);
+            declarations.push(definition(ConstantIndex::from(position), declared, body));
+        }
+        let returner = arena.comp_type_returner(unit_type);
+        let declared = arena.value_type_thunk(returner);
+        let absent = arena.computation_tuple_projection(tuple, Component::from(3_usize));
+        let absent_body = arena.value_thunk(absent);
+        declarations.push(definition(
+            ConstantIndex::from(3_usize),
+            declared,
+            absent_body,
+        ));
+        let second = arena.computation_tuple_projection(tuple, Component::from(1_usize));
+        let second_body = arena.value_thunk(second);
+        declarations.push(definition(
+            ConstantIndex::from(4_usize),
+            declared,
+            second_body,
+        ));
+        let record = arena.value_record(BTreeMap::from([(
+            FieldLabel::from(String::from("a")),
+            unit,
+        )]));
+        let of_record = arena.computation_tuple_projection(record, Component::from(0_usize));
+        let of_record_body = arena.value_thunk(of_record);
+        declarations.push(definition(
+            ConstantIndex::from(5_usize),
+            declared,
+            of_record_body,
+        ));
+        let (report, crossed) = run(&mut arena, &declarations);
+        for position in 0 .. 3_usize {
+            assert!(
+                matches!(report.judged()[position].verdict(), Verdict::Checked { .. }),
+                "{position}: {:?}",
+                report.judged()[position].verdict()
+            );
+            assert!(
+                matches!(
+                    crossed.readmitted()[position].outcome(),
+                    Outcome::Defined { .. }
+                ),
+                "{position}: {:?}",
+                crossed.readmitted()[position].outcome()
+            );
+        }
+        assert_eq!(
+            report.judged()[3].verdict(),
+            Verdict::Refused(CheckRefusal::AbsentTupleComponent(absent))
+        );
+        assert!(matches!(
+            report.judged()[4].verdict(),
+            Verdict::Refused(CheckRefusal::TypeMismatch(_))
+        ));
+        assert!(matches!(
+            report.judged()[5].verdict(),
+            Verdict::Refused(CheckRefusal::ShapeMismatch { .. })
+        ));
+        assert!(crossed.audit().axioms().is_empty());
+    }
 }

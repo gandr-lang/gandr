@@ -93,7 +93,8 @@ pub enum ExpectedShape
     /// An arrow `A → C`: what a lambda is checked against and what the head of
     /// an application must synthesise.
     Arrow,
-    /// An eager product `A × B`: what a pair is checked against.
+    /// An eager product `A₀ × … × Aₙ`: what a tuple is checked against and
+    /// what a tuple projection's operand must synthesise.
     Product,
     /// A native List, required by nil and cons introductions.
     List,
@@ -309,6 +310,9 @@ pub enum CheckRefusal
     NonExhaustiveDataCase(ComputationId),
     /// A projection names no field in its operand's record type.
     AbsentRecordField(ComputationId),
+    /// A tuple projection names a component past its operand's product
+    /// arity.
+    AbsentTupleComponent(ComputationId),
     /// A record literal lacks a required field.
     MissingRecordField
     {
@@ -586,7 +590,7 @@ impl CheckRefusal
         | Self::MachineInvariant
         | Self::Undecided { .. } => matches!(ret, FailureClass::EngineFault),
         | Self::PathCode(_)
-        | Self::NotADataType(_) | Self::DataKindNotUniverse(_) | Self::DataFieldLevel { .. } | Self::DataArgumentArity(_) | Self::UnknownConstructor { .. } | Self::ConstructorArity(_) | Self::NonExhaustiveDataCase(_) | Self::AbsentRecordField(_) | Self::MissingRecordField { .. }
+        | Self::NotADataType(_) | Self::DataKindNotUniverse(_) | Self::DataFieldLevel { .. } | Self::DataArgumentArity(_) | Self::UnknownConstructor { .. } | Self::ConstructorArity(_) | Self::NonExhaustiveDataCase(_) | Self::AbsentRecordField(_) | Self::AbsentTupleComponent(_) | Self::MissingRecordField { .. }
         | Self::TypeMismatch(_)
         | Self::EffectSignatureConflict { .. }
         | Self::UnknownOperation { .. } | Self::HandlerCoverage { .. }
@@ -617,6 +621,7 @@ impl CheckRefusal
             | Self::ConstructorArity(_)
             | Self::NonExhaustiveDataCase(_)
             | Self::AbsentRecordField(_)
+            | Self::AbsentTupleComponent(_)
             | Self::MissingRecordField { .. }
             | Self::TypeMismatch(_)
             | Self::EffectSignatureConflict { .. }
@@ -737,6 +742,7 @@ impl CheckRefusal
             | Self::ConstructorArity(_)
             | Self::NonExhaustiveDataCase(_)
             | Self::AbsentRecordField(_)
+            | Self::AbsentTupleComponent(_)
             | Self::MissingRecordField { .. }
             | Self::UnknownOperation { .. }
             | Self::HandlerCoverage { .. }

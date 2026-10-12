@@ -858,7 +858,8 @@ impl LooseDepths
                             tasks.push(ReachTask::OpenCompType(motive));
                             tasks.extend(branches.iter().copied().map(ReachTask::OpenComp));
                         },
-                        | Computation::RecordProjection(record, _) => {
+                        | Computation::RecordProjection(record, _)
+                        | Computation::TupleProjection(record, _) => {
                             tasks.push(ReachTask::OpenValue(record));
                         },
                         | Computation::ListFold {
@@ -1368,7 +1369,7 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
     /// - witness: `support::tests::an_unreadable_node_reaches_widest`
     #[spec(ensures: |ret| ret == match arena.computation(id) {
         Some(&Computation::DataCase { scrutinee, motive, ref branches }) => branches.iter().fold(self.cached_value(scrutinee).join(self.cached_comp_type(motive).under_binder()), |depth, id| depth.join(self.cached_comp(*id))),
-        Some(&Computation::RecordProjection(record, _)) => self.cached_value(record),
+        Some(&(Computation::RecordProjection(record, _) | Computation::TupleProjection(record, _))) => self.cached_value(record),
         None => LooseDepth::WIDEST,
         Some(&Computation::ListFold { element, result, list, on_nil, on_cons }) => self.cached_value_type(element).join(self.cached_value_type(result)).join(self.cached_value(list)).join(self.cached_comp(on_nil)).join(self.cached_comp(on_cons).under_binder().under_binder()),
         Some(&Computation::Transport(path, value)) => self.cached_value(path).join(self.cached_value(value)),
@@ -1398,7 +1399,8 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
                     .join(self.cached_comp_type(motive).under_binder()),
                 |depth, id| depth.join(self.cached_comp(*id)),
             ),
-            | Computation::RecordProjection(record, _) => self.cached_value(record),
+            | Computation::RecordProjection(record, _)
+            | Computation::TupleProjection(record, _) => self.cached_value(record),
             | Computation::ListFold {
                 element,
                 result,

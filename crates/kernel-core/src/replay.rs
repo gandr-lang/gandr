@@ -844,6 +844,8 @@ enum Elimination
     DataCase(ComputationId),
     /// Record projection; the arena node retains its exact label.
     RecordProjection(ComputationId),
+    /// Tuple projection; the arena node retains its component.
+    TupleProjection(ComputationId),
     /// Transport under a neutral path head, retaining its operand.
     Transport(ValueId),
     /// Product transport waiting for a neutral pair operand.
@@ -2132,6 +2134,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         &(Computation::Transport(..)
                         | Computation::DataCase { .. }
                         | Computation::RecordProjection(..)
+                        | Computation::TupleProjection(..)
                         | Computation::Lambda(_)
                         | Computation::Fixpoint { .. }
                         | Computation::ListFold { .. }
@@ -2255,6 +2258,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     Computation::Case { .. } => spine.as_slice() == [Elimination::Case(computation)],
                     Computation::DataCase { .. } => spine.as_slice() == [Elimination::DataCase(computation)],
                     Computation::RecordProjection(..) => spine.as_slice() == [Elimination::RecordProjection(computation)],
+                    Computation::TupleProjection(..) => spine.as_slice() == [Elimination::TupleProjection(computation)],
                     Computation::ListFold { on_nil, on_cons, .. } => spine.as_slice() == [Elimination::ListFold(on_nil, on_cons)],
                     _ => false,
                 },
@@ -2327,6 +2331,10 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 | Some(&Computation::RecordProjection(record, _)) => {
                     spine.push(Elimination::RecordProjection(focus));
                     break self.value_head(record, frozen, side)?;
+                },
+                | Some(&Computation::TupleProjection(tuple, _)) => {
+                    spine.push(Elimination::TupleProjection(focus));
+                    break self.value_head(tuple, frozen, side)?;
                 },
                 | Some(&Computation::ListFold {
                     list,
@@ -2562,6 +2570,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     break self
                         .arena
                         .computation_record_projection(body, label.clone());
+                },
+                | Some(&Computation::TupleProjection(_, component)) => {
+                    break self.arena.computation_tuple_projection(body, component);
                 },
                 | Some(&Computation::ListFold {
                     element,
@@ -2810,6 +2821,19 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                             progress = Progress::Reduced;
                         },
                         | Some(_) => break,
+                        | None => return Err(unreadable()),
+                    }
+                },
+                | Some(&Computation::TupleProjection(tuple, component)) => {
+                    match self.arena.value(tuple).map(Value::components) {
+                        | Some(Some(components)) => {
+                            let value = *components
+                                .get(usize::from(component))
+                                .ok_or_else(unreadable)?;
+                            focus = self.arena.computation_return(value);
+                            progress = Progress::Reduced;
+                        },
+                        | Some(None) => break,
                         | None => return Err(unreadable()),
                     }
                 },
@@ -3251,6 +3275,7 @@ fn rule(
 #[spec(ensures: |ret| {
     let compatible = left.len() == right.len() && left.iter().zip(right).all(|(one, other)| match (*one,*other) {
         (Elimination::RecordProjection(a),Elimination::RecordProjection(b)) => matches!((arena.computation(a),arena.computation(b)), (Some(Computation::RecordProjection(_,a)),Some(Computation::RecordProjection(_,b))) if a == b),
+        (Elimination::TupleProjection(a),Elimination::TupleProjection(b)) => matches!((arena.computation(a),arena.computation(b)), (Some(Computation::TupleProjection(_,a)),Some(Computation::TupleProjection(_,b))) if a == b),
         (Elimination::DataCase(a),Elimination::DataCase(b)) => matches!((arena.computation(a),arena.computation(b)), (Some(Computation::DataCase{branches:a,..}),Some(Computation::DataCase{branches:b,..})) if a.len() == b.len()),
         (Elimination::Case(a),Elimination::Case(b)) => {
             let width = |case: ComputationId| match *arena.computation(case)? { Computation::Case { ref branches, .. } => Some(branches.len()), _ => None };
@@ -3262,11 +3287,11 @@ fn rule(
 Err(Stop::Refused(ReplayRefusal::Unreadable)) => true,
 Err(_) => false,
 Ok(Structure::Leaf(Expect::NotConvertible)) => !compatible,
-Ok(Structure::Leaf(Expect::Convertible)) => compatible && left.iter().all(|one| matches!(*one, Elimination::Force | Elimination::RecordProjection(_)) || matches!(*one, Elimination::Case(case) if arena.computation(case).is_some_and(|node| matches!(*node, Computation::Case { ref branches, .. } if branches.is_empty())))),
+Ok(Structure::Leaf(Expect::Convertible)) => compatible && left.iter().all(|one| matches!(*one, Elimination::Force | Elimination::RecordProjection(_) | Elimination::TupleProjection(_)) || matches!(*one, Elimination::Case(case) if arena.computation(case).is_some_and(|node| matches!(*node, Computation::Case { ref branches, .. } if branches.is_empty())))),
 Ok(Structure::Premises(ref premises)) => compatible && !premises.is_empty() && {
             let mut pending = premises.iter();
             let ordered = left.iter().zip(right).all(|(one, other)| match (*one, *other) {
-                (Elimination::Force, Elimination::Force) | (Elimination::RecordProjection(_),Elimination::RecordProjection(_)) => true,
+                (Elimination::Force, Elimination::Force) | (Elimination::RecordProjection(_),Elimination::RecordProjection(_)) | (Elimination::TupleProjection(_),Elimination::TupleProjection(_)) => true,
                 (Elimination::Case(a),Elimination::Case(b)) => {
 if let Some(left_node) = arena.computation(a) && let Computation::Case{branches:ref a,..} = *left_node && let Some(right_node) = arena.computation(b) && let Computation::Case{branches:ref b,..} = *right_node { a.iter().zip(b.iter()).all(|(a,b)| pending.next() == Some(&Premise::computations(*a,*b))) }
  else { false }
@@ -3363,6 +3388,24 @@ fn spines(
                     return Ok(Structure::Leaf(Expect::NotConvertible));
                 }
             },
+            | (Elimination::TupleProjection(a), Elimination::TupleProjection(b)) => {
+                let (Some(left_node), Some(right_node)) =
+                    (arena.computation(a), arena.computation(b))
+                else {
+                    return Err(unreadable());
+                };
+                let Computation::TupleProjection(_, a) = *left_node
+                else {
+                    return Err(unreadable());
+                };
+                let Computation::TupleProjection(_, b) = *right_node
+                else {
+                    return Err(unreadable());
+                };
+                if a != b {
+                    return Ok(Structure::Leaf(Expect::NotConvertible));
+                }
+            },
             // Two sum cases of one arity compare branch by branch; the empty
             // sum's elimination contributes nothing.
             | (Elimination::Case(a_case), Elimination::Case(b_case)) => {
@@ -3405,6 +3448,7 @@ fn spines(
             | (
                 Elimination::DataCase(_)
                 | Elimination::RecordProjection(_)
+                | Elimination::TupleProjection(_)
                 | Elimination::Transport(_)
                 | Elimination::ProductTransport(_)
                 | Elimination::Force

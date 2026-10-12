@@ -828,7 +828,8 @@ fn checked(
         }
         | CheckRefusal::DescentNotReplayed { at, .. }
         | CheckRefusal::NonExhaustiveDataCase(at)
-        | CheckRefusal::AbsentRecordField(at) => (spanned(origins.computation(at)), UNNAMED),
+        | CheckRefusal::AbsentRecordField(at)
+        | CheckRefusal::AbsentTupleComponent(at) => (spanned(origins.computation(at)), UNNAMED),
         | CheckRefusal::OutOfFragment { at: core, .. }
         | CheckRefusal::DanglingNode { node: core } => (node(origins, core), UNNAMED),
         | CheckRefusal::NotADataType(_)
@@ -1021,6 +1022,7 @@ impl fmt::Display for Checked
             CheckRefusal::ConstructorArity(_) => f.write_str("the constructor has the wrong field count"),
             CheckRefusal::NonExhaustiveDataCase(_) => f.write_str("the data case must cover every constructor exactly once"),
             CheckRefusal::AbsentRecordField(_) => f.write_str("the record type has no such field"),
+            CheckRefusal::AbsentTupleComponent(_) => f.write_str("the product type has no such component"),
             CheckRefusal::MissingRecordField {..} => f.write_str("the record omits a required field"),
             | CheckRefusal::UnknownOperation { .. } => f.write_str("the operation is absent from its inline interface"),
             | CheckRefusal::HandlerCoverage { .. } => f.write_str("handler clauses must cover their interface exactly once"),

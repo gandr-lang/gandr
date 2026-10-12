@@ -35,6 +35,8 @@ pub enum Form
     DataCase,
     /// Named record projection.
     RecordProjection,
+    /// Positional tuple projection.
+    TupleProjection,
     /// An effect or continuation former belongs to the control runtime, not
     /// this image.
     Control(gandr_core_term::control::ControlFormer),
@@ -106,6 +108,7 @@ impl core::fmt::Display for Form
             | Self::Record => "a structural record",
             | Self::DataCase => "a nominal case",
             | Self::RecordProjection => "a record projection",
+            | Self::TupleProjection => "a tuple projection",
             | Self::Control(former) => match former {
                 | ControlFormer::Reify => "a stack literal",
                 | ControlFormer::Perform => "a perform",
@@ -323,6 +326,9 @@ pub fn lower_computation(
                     },
                     | Computation::RecordProjection(..) => {
                         return Err(LowerError::OutsideSlice(Form::RecordProjection));
+                    },
+                    | Computation::TupleProjection(..) => {
+                        return Err(LowerError::OutsideSlice(Form::TupleProjection));
                     },
                     | Computation::Perform { .. } => {
                         return Err(LowerError::OutsideSlice(Form::Control(

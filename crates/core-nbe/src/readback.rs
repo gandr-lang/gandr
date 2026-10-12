@@ -662,8 +662,8 @@ enum Task
     RecordType(ValueTypeId),
     /// Assemble a case with a normalized motive and ambient branch functions.
     DataCase(ComputationId),
-    /// Assemble a projection with the source's exact label.
-    RecordProjection(ComputationId),
+    /// Assemble a projection with the source's exact label or component.
+    Projection(ComputationId),
     /// Read back a value type a quote carries, in a frame.
     QuotedValueType
     {
@@ -2096,10 +2096,9 @@ fn run(
             && entry_comp_types.checked_sub(1) == Some(machine.comp_types.len())
             && entry_comps.checked_sub(branches.len()).and_then(|n| n.checked_add(1)) == Some(machine.comps.len())
             && machine.comps.last().is_some_and(|&id| matches!(core.computation(id), Some(Computation::DataCase { branches: actual, .. }) if actual.len() == branches.len()))),
-        | Task::RecordProjection(source) => matches!(core.computation(source), Some(Computation::RecordProjection(_, label))
-            if entry_values.checked_sub(1) == Some(machine.values.len())
+        | Task::Projection(source) => entry_values.checked_sub(1) == Some(machine.values.len())
             && machine.comps.len() == entry_comps.saturating_add(1)
-            && machine.comps.last().is_some_and(|&id| matches!(core.computation(id), Some(Computation::RecordProjection(_, actual)) if actual == label))),
+            && crate::rules::projection_key(core, source).is_ok_and(|key| machine.comps.last().is_some_and(|&id| crate::rules::projection_key(core, id).ok() == Some(key))),
         | Task::Value { .. } | Task::Comp { .. } | Task::Spine(_) | Task::QuotedValueType { .. }
         | Task::QuotedCompType { .. } | Task::QuotedCode { .. } | Task::Suspended { .. } => true,
         | Task::Substitute { body, count } => machine.tasks.len() == entry_tasks
@@ -2245,20 +2244,22 @@ fn step(
                 .push(core.computation_data_case(scrutinee, motive, branches));
             Ok(())
         },
-        | Task::RecordProjection(source) => {
+        | Task::Projection(source) => {
             let Some(matched_native_node) = core.computation(source)
             else {
                 return Err(ReadbackFault::MachineInvariant);
             };
-            let Computation::RecordProjection(_, ref label) = *matched_native_node
-            else {
-                return Err(ReadbackFault::MachineInvariant);
+            let projection = match *matched_native_node {
+                | Computation::RecordProjection(_, ref label) => Ok(label.clone()),
+                | Computation::TupleProjection(_, component) => Err(component),
+                | _ => return Err(ReadbackFault::MachineInvariant),
             };
-            let label = label.clone();
-            let record = machine.pop_value()?;
-            machine
-                .comps
-                .push(core.computation_record_projection(record, label));
+            let projected = machine.pop_value()?;
+            let assembled = match projection {
+                | Ok(label) => core.computation_record_projection(projected, label),
+                | Err(component) => core.computation_tuple_projection(projected, component),
+            };
+            machine.comps.push(assembled);
             Ok(())
         },
         | Task::PathProduct => {
@@ -3511,7 +3512,7 @@ fn step_neutral(
                         | Elimination::ListFold { .. }
                         | Elimination::Case { .. }
                         | Elimination::DataCase(_)
-                        | Elimination::RecordProjection(_)
+                        | Elimination::Projection(_)
                         | Elimination::Fixpoint(_) => None,
                     })
                     .collect()
@@ -3674,10 +3675,10 @@ fn step_spine(
     };
     let onward = Task::Spine(spine.onward(Polarity::Computation));
     match elimination {
-        | Elimination::RecordProjection(source) => {
+        | Elimination::Projection(source) => {
             expect_polarity(spine.polarity, Polarity::Value, neutral)?;
             machine.tasks.push(onward);
-            machine.tasks.push(Task::RecordProjection(source));
+            machine.tasks.push(Task::Projection(source));
             Ok(())
         },
         // The fold holds the stuck argument; the fixpoint reads back as

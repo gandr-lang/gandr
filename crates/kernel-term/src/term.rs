@@ -349,6 +349,8 @@ pub enum Computation
     },
     /// Return one named field of a structural record.
     RecordProjection(ValueId, crate::FieldLabel),
+    /// Return the component of a tuple at a position, counting from zero.
+    TupleProjection(ValueId, Component),
     /// A lambda `λ. M`, binding one value variable; introduces `A → C`.
     Lambda(ComputationId),
     /// An application `M v` of a computation to a value argument.
@@ -676,6 +678,37 @@ impl From<ConstructorTag> for usize
     fn from(tag: ConstructorTag) -> Self
     {
         tag.0
+    }
+}
+
+/// Position of a component within one product type, counting from zero.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Component(usize);
+
+impl From<usize> for Component
+{
+    /// Preserve the component ordinal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(index: usize) -> Self
+    {
+        Self(index)
+    }
+}
+
+impl From<Component> for usize
+{
+    /// Read the component ordinal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(component: Component) -> Self
+    {
+        component.0
     }
 }
 

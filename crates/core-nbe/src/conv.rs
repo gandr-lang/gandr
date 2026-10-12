@@ -1412,9 +1412,9 @@ impl<'run> Walk<'run>
                     }
                     queued.push(Goal::Closures(left, right));
                 },
-                | (Elimination::RecordProjection(left), Elimination::RecordProjection(right)) => {
-                    if crate::rules::projection_label(self.core, left)?
-                        != crate::rules::projection_label(self.core, right)?
+                | (Elimination::Projection(left), Elimination::Projection(right)) => {
+                    if crate::rules::projection_key(self.core, left)?
+                        != crate::rules::projection_key(self.core, right)?
                     {
                         return Ok(mismatch);
                     }
@@ -1473,7 +1473,7 @@ impl<'run> Walk<'run>
                 | (
                     Elimination::Transport(_)
                     | Elimination::DataCase(_)
-                    | Elimination::RecordProjection(_)
+                    | Elimination::Projection(_)
                     | Elimination::ProductTransport(_)
                     | Elimination::Apply(_)
                     | Elimination::Force

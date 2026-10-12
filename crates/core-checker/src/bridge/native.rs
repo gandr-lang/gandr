@@ -95,7 +95,8 @@ impl Erasure<'_, '_>
                             ))));
                         self.frames.push(value(*scrutinee));
                     },
-                    | Computation::RecordProjection(ref record, _) => {
+                    | Computation::RecordProjection(ref record, _)
+                    | Computation::TupleProjection(ref record, _) => {
                         self.frames.push(value(*record));
                     },
                     | Computation::Case {
@@ -231,6 +232,9 @@ impl Erasure<'_, '_>
                     },
                     | Computation::RecordProjection(ref record, ref label) => {
                         target.computation_record_projection(value(*record)?, label.clone())
+                    },
+                    | Computation::TupleProjection(ref tuple, component) => {
+                        target.computation_tuple_projection(value(*tuple)?, component)
                     },
                     | Computation::Case {
                         ref scrutinee,

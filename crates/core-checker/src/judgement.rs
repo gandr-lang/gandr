@@ -693,7 +693,7 @@ enum Frame
         /// Its scrutinee classifier.
         datatype: ValueTypeId,
     },
-    /// Await a projection operand's record classifier.
+    /// Await a projection operand's record or product classifier.
     NativeProjection(ComputationId),
     /// Check an operation payload after forming its interface.
     PerformPayload
@@ -2372,7 +2372,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
-            | Computation::RecordProjection(record, _) => {
+            | Computation::RecordProjection(record, _)
+            | Computation::TupleProjection(record, _) => {
                 self.frames.push(Frame::NativeProjection(term));
                 Ok(Step::Descend(Goal::Value {
                     term: record,
@@ -2626,6 +2627,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Computation::Primitive { .. }
             | Computation::DataCase { .. }
             | Computation::RecordProjection(..)
+            | Computation::TupleProjection(..)
             | Computation::Perform { .. }
             | Computation::Resume(..)
             | Computation::Project(..)
@@ -6923,7 +6925,7 @@ mod tests
                             "a synthesising computation checks exactly as it synthesises, then crosses the computation bridge"
                         );
                     },
-                    | Computation::Transport(..) | Computation::Bind(..) | Computation::DataCase { .. } | Computation::RecordProjection(..) => {
+                    | Computation::Transport(..) | Computation::Bind(..) | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) => {
                         prop_assert!(false, "the free recipe mints no bind or native eliminator");
                     },
                     | Computation::ListFold { .. } | Computation::Case { .. }

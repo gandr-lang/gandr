@@ -519,6 +519,7 @@ fn checking_row(
         | CheckRefusal::ConstructorArity(_)
         | CheckRefusal::NonExhaustiveDataCase(_)
         | CheckRefusal::AbsentRecordField(_)
+        | CheckRefusal::AbsentTupleComponent(_)
         | CheckRefusal::MissingRecordField { .. }
         | CheckRefusal::ShapeMismatch {
             wanted: ExpectedShape::Data | ExpectedShape::Record,
@@ -796,7 +797,10 @@ fn formers(
                     worklist.push(Node::Value(scrutinee));
                     worklist.extend(branches.iter().copied().map(Node::Computation));
                 },
-                | Some(&Computation::RecordProjection(record, _)) => {
+                | Some(
+                    &(Computation::RecordProjection(record, _)
+                    | Computation::TupleProjection(record, _)),
+                ) => {
                     worklist.push(Node::Value(record));
                 },
                 | Some(&Computation::Perform { payload, .. }) => {

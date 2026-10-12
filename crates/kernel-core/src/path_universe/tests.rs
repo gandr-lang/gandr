@@ -153,7 +153,10 @@ fn children(
                 .into_iter()
                 .chain(branches.iter().copied().map(M))
                 .collect(),
-            | Computation::RecordProjection(record, _) => vec![V(record)],
+            | Computation::RecordProjection(record, _)
+            | Computation::TupleProjection(record, _) => {
+                vec![V(record)]
+            },
             | Computation::ListFold { .. } => {
                 panic!("list elimination is outside the path fixture fragment")
             },
@@ -485,6 +488,9 @@ fn translate(
                     ),
                     | Computation::RecordProjection(record, ref label) => {
                         core.computation_record_projection(values[&record], label.clone())
+                    },
+                    | Computation::TupleProjection(tuple, component) => {
+                        core.computation_tuple_projection(values[&tuple], component)
                     },
                     | Computation::ListFold { .. } => {
                         panic!("list elimination is outside the path fixture fragment")

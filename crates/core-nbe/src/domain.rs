@@ -245,8 +245,9 @@ pub enum Elimination
 {
     /// A nominal case, retaining its motive and field functions over a capture.
     DataCase(CompClosureId),
-    /// A record projection, retaining its exact source label.
-    RecordProjection(gandr_core_term::ComputationId),
+    /// A record or tuple projection, retaining its source term, which names
+    /// the field's label or the component's position.
+    Projection(gandr_core_term::ComputationId),
     /// Transport under a neutral path head.
     Transport(DomainValueId),
     /// Product transport waiting for a neutral pair operand.

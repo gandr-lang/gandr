@@ -47,6 +47,7 @@ pub mod primitive;
 mod rewrite;
 mod syntax;
 
+pub use gandr_kernel_term::Component;
 pub use gandr_kernel_term::ConstructorTag;
 pub use gandr_kernel_term::FieldLabel;
 pub use gandr_kernel_term::Summand;

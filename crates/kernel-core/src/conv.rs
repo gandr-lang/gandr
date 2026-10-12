@@ -905,6 +905,15 @@ fn converge(
                         stack.push(ConversionGoal::Value(a, b));
                     },
                     | (
+                        &Computation::TupleProjection(a, one),
+                        &Computation::TupleProjection(b, other),
+                    ) => {
+                        if one != other {
+                            return Convertibility::Distinct;
+                        }
+                        stack.push(ConversionGoal::Value(a, b));
+                    },
+                    | (
                         &Computation::ListFold {
                             element: left_element,
                             result: left_result,
@@ -981,6 +990,7 @@ fn converge(
                     | (
                         &Computation::DataCase { .. }
                         | &Computation::RecordProjection(..)
+                        | &Computation::TupleProjection(..)
                         | &Computation::Transport(..)
                         | &Computation::Lambda(_)
                         | &Computation::Fixpoint { .. }

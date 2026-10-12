@@ -1183,6 +1183,8 @@ enum Frame
     },
     /// Project a field once the record's classifier is known.
     RecordProjection(gandr_kernel_term::FieldLabel),
+    /// Project a component once the tuple's classifier is known.
+    TupleProjection(gandr_kernel_term::Component),
     /// Check a motive and constructor-specific branches after scrutinee
     /// synthesis.
     DataCase(ComputationId),
@@ -2073,6 +2075,11 @@ where
                         goal = Goal::SynthValue(record);
                         continue 'expand;
                     },
+                    | Computation::TupleProjection(tuple, component) => {
+                        frames.push(Frame::TupleProjection(component));
+                        goal = Goal::SynthValue(tuple);
+                        continue 'expand;
+                    },
                     | Computation::ListFold {
                         element,
                         result,
@@ -2232,6 +2239,7 @@ where
                     },
                     | Computation::DataCase { .. }
                     | Computation::RecordProjection(..)
+                    | Computation::TupleProjection(..)
                     | Computation::Transport(..)
                     | Computation::ListFold { .. }
                     | Computation::Application(..)
@@ -2296,6 +2304,21 @@ where
                         .get(&label)
                         .ok_or(KernelError::AbsentRecordField { label })?;
                     produced = Produced::CompType(arena.comp_type_returner(field));
+                },
+                | Frame::TupleProjection(component) => {
+                    let actual = produced.value_type()?;
+                    let Some(parts) = arena.value_type(actual).and_then(ValueType::product_parts)
+                    else {
+                        return Err(value_shape_mismatch(
+                            arena,
+                            ExpectedValueShape::Product,
+                            actual,
+                        ));
+                    };
+                    let part = *parts
+                        .get(usize::from(component))
+                        .ok_or(KernelError::AbsentTupleComponent { component })?;
+                    produced = Produced::CompType(arena.comp_type_returner(part));
                 },
                 | Frame::DataCase(case) => {
                     let datatype = produced.value_type()?;

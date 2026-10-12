@@ -363,58 +363,65 @@ impl Machine<'_, '_>
         Ok(Step::Ascend(Produced::Checked))
     }
 
-    /// Synthesize the returner of the exact projected field.
+    /// Synthesize the returner of the exact projected field or component.
     ///
     /// # Specification
     /// - requires: `term` is a projection with a synthesized operand type.
-    /// - ensures: only an existing label yields its declared field classifier.
-    /// - fails: non-record operands and absent labels refuse separately.
+    /// - ensures: only an existing label yields its declared field classifier,
+    ///   and only a component short of the product's arity yields that
+    ///   component's classifier.
+    /// - fails: a record projection of a non-record, a tuple projection of a
+    ///   non-product, absent labels and absent components refuse separately.
     /// - panics: none.
     ///
     /// # Errors
-    /// [`CheckRefusal::ShapeMismatch`] or [`CheckRefusal::AbsentRecordField`].
+    /// [`CheckRefusal::ShapeMismatch`], [`CheckRefusal::AbsentRecordField`] or
+    /// [`CheckRefusal::AbsentTupleComponent`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — unequal fields and an absent label expose exact
-    ///   lookup.
+    ///   lookup; each component of a three-component product and the component
+    ///   past its last expose positional lookup.
     /// - witness: `native_formers::native_formers::record_width_depth_and_projection`
+    /// - witness: `native_formers::native_formers::tuple_projection_reads_each_component`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Ascend(Produced::CompType(_)))))]
     pub(super) fn native_projection(
         &mut self,
         term: ComputationId,
-        record: ValueTypeId,
+        projected: ValueTypeId,
     ) -> Result<Step, CheckRefusal>
     {
-        let head = self.context.whnf_value_type(record)?;
-        let Some(matched_native_node) = self.context.arena().value_type(head)
-        else {
-            return Err(CheckRefusal::ShapeMismatch {
-                at: TermNode::Computation(term),
-                wanted: ExpectedShape::Record,
-                found: TypeNode::Value(record),
-            });
+        let head = self.context.whnf_value_type(projected)?;
+        let arena = self.context.arena();
+        let mismatch = |wanted| CheckRefusal::ShapeMismatch {
+            at: TermNode::Computation(term),
+            wanted,
+            found: TypeNode::Value(projected),
         };
-        let ValueType::Record(ref fields) = *matched_native_node
-        else {
-            return Err(CheckRefusal::ShapeMismatch {
-                at: TermNode::Computation(term),
-                wanted: ExpectedShape::Record,
-                found: TypeNode::Value(record),
-            });
+        let part = match (arena.computation(term), arena.value_type(head)) {
+            | (
+                Some(&Computation::RecordProjection(_, ref label)),
+                Some(&ValueType::Record(ref fields)),
+            ) => fields
+                .get(label)
+                .copied()
+                .ok_or(CheckRefusal::AbsentRecordField(term))?,
+            | (Some(&Computation::RecordProjection(..)), _) => {
+                return Err(mismatch(ExpectedShape::Record));
+            },
+            | (
+                Some(&Computation::TupleProjection(_, component)),
+                Some(&ValueType::Product(ref parts)),
+            ) => parts
+                .get(usize::from(component))
+                .copied()
+                .ok_or(CheckRefusal::AbsentTupleComponent(term))?,
+            | (Some(&Computation::TupleProjection(..)), _) => {
+                return Err(mismatch(ExpectedShape::Product));
+            },
+            | _ => return Err(CheckRefusal::MachineInvariant),
         };
-        let Some(matched_native_node) = self.context.arena().computation(term)
-        else {
-            return Err(CheckRefusal::MachineInvariant);
-        };
-        let Computation::RecordProjection(_, ref label) = *matched_native_node
-        else {
-            return Err(CheckRefusal::MachineInvariant);
-        };
-        let field = fields
-            .get(label)
-            .copied()
-            .ok_or(CheckRefusal::AbsentRecordField(term))?;
-        let result = self.context.arena_mut().comp_type_returner(field);
+        let result = self.context.arena_mut().comp_type_returner(part);
         Ok(Step::Ascend(Produced::CompType(result)))
     }
 }

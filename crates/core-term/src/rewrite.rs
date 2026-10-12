@@ -667,7 +667,7 @@ Computation::Handle { ref signature, ref clauses, .. } => 2_usize.saturating_add
 Computation::ListFold { .. } => 5,
 Computation::Primitive { ref arguments, .. } => arguments.len(),
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
-Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::RecordProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 1,
+Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 1,
 Computation::Resume(..) | Computation::With(..) | Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) => 2,
 Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
 Computation::Hole(_) => 0_usize,
@@ -868,7 +868,10 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                         .push(open(Node::CompType(motive), depth.deeper()));
                     self.tasks.push(open(Node::Value(scrutinee), depth));
                 },
-                | Some(&Computation::RecordProjection(record, _)) => {
+                | Some(
+                    &(Computation::RecordProjection(record, _)
+                    | Computation::TupleProjection(record, _)),
+                ) => {
                     self.tasks.push(open(Node::Value(record), depth));
                 },
                 | None | Some(&Computation::Hole(_)) => {},
@@ -1491,7 +1494,7 @@ Computation::Handle { ref signature, ref clauses, .. } => 2_usize.saturating_add
 Computation::ListFold { .. } => 5,
 Computation::Primitive { ref arguments, .. } => arguments.len(),
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
-Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::RecordProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 1,
+Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 1,
 Computation::Resume(..) | Computation::With(..) | Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) => 2,
 Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
 Computation::Hole(_) => 0_usize,
@@ -1694,6 +1697,16 @@ Computation::Hole(_) => 0_usize,
                 else {
                     self.arena
                         .computation_record_projection(rewritten, label.clone())
+                }
+            },
+            | Computation::TupleProjection(tuple, component) => {
+                let rewritten = Self::value(&mut self.results, tuple);
+                if rewritten == tuple {
+                    id
+                }
+                else {
+                    self.arena
+                        .computation_tuple_projection(rewritten, component)
                 }
             },
             | Computation::Transport(path, value) => {

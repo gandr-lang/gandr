@@ -55,7 +55,7 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 
 ## Provided features
 
-- `Value`, `Computation`, `ValueType` and `CompType`: core syntax, including dependent arrows, both universe towers, quotes and decodes, static operators, nominal Data applications and constructors, structural records, dependent cases, record projections, the fixpoint `Computation::Fixpoint` with its `FixpointEvidence`, and native `PathUniverse`, `PathRefl`, `PathEquiv`, `PathProduct` and `Transport`.
+- `Value`, `Computation`, `ValueType` and `CompType`: core syntax, including dependent arrows, both universe towers, quotes and decodes, static operators, nominal Data applications and constructors, structural records, dependent cases, record projections, positional tuple projections, the fixpoint `Computation::Fixpoint` with its `FixpointEvidence`, and native `PathUniverse`, `PathRefl`, `PathEquiv`, `PathProduct` and `Transport`.
 - `Classifier`, `Sort` and `SortParameter`: a type's ground sort and level, and the sort a universe is written at.
 - `shift_value_type`, `shift_comp_type`, `instantiate_comp_type`, `instantiate_value` and `strengthen_comp_type`, with `Binders`: the binder machines over types and codes.
 - `CoreArena` with `ValueId`, `ComputationId`, `ValueTypeId` and `CompTypeId`: one constructor per former, a checked lookup per family, and `ArenaWatermark` with `CoreArena::truncate_to` and the per-family suffixes minted since a mark (`values_since`, `computations_since`, `value_types_since`, `comp_types_since`). Witness: `arena::tests::allocation_suffixes_keep_their_family`.
@@ -203,7 +203,7 @@ The kernel remains pure: it gains neither primitive syntax nor an arithmetic eva
 
 A `DataSignature` owns a parameter telescope, constructor field lists in tag order and a positive universe bound. `ValueType::Data` retains the declaration identity and term-valued arguments; `Value::Constructor` retains its full classifier, tag and ordered fields. Parameter classifiers bind their predecessors. Constructor fields see all parameters but do not bind one another. A `DataCase` motive binds one scrutinee; its branches are functions in the ambient context. Iterative rewrites preserve these distinct scopes.
 
-Record types and values use ordered field maps. Labels identify fields, not offsets, and `RecordProjection` is a computation returning the selected value. All native children participate in syntax equality, rewriting and ownership; arities are not limited to three.
+Record types and values use ordered field maps. Labels identify fields, not offsets, and `RecordProjection` is a computation returning the selected value. `TupleProjection` is its positional counterpart over a tuple, naming a `Component` by index. All native children participate in syntax equality, rewriting and ownership; arities are not limited to three.
 
 **Choice.** Dedicated native forms rather than abstract atoms or a structural sum/product encoding. Typed code parameters and value indices share term-valued slots; the checker keeps every slot invariant. **Reversal.** Certified definitional index conversion requires its own evidence reader. The current checker/kernel boundary and the named [parity floor](../core-checker/README.md#data-and-record-floor) are recorded together.
 

@@ -124,9 +124,10 @@ impl Image
                 ref mut motive,
                 ..
             }) => [Some(V(scrutinee)), Some(CT(motive)), None, None, None],
-            | Self::Computation(Computation::RecordProjection(ref mut record, _)) => {
-                [Some(V(record)), None, None, None, None]
-            },
+            | Self::Computation(
+                Computation::RecordProjection(ref mut record, _)
+                | Computation::TupleProjection(ref mut record, _),
+            ) => [Some(V(record)), None, None, None, None],
             | Self::Value(Value::Record(_) | Value::Tuple(_))
             | Self::ValueType(ValueType::Data { .. } | ValueType::Record(_)) => {
                 [None, None, None, None, None]

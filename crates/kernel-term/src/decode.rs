@@ -1823,6 +1823,16 @@ fn decode_entry(
                 Family::Computation,
             )
         },
+        | tags::NODE_C_TUPLE_PROJECTION => {
+            let component = crate::Component::from(usize::from(reader.read_usize()?));
+            let tuple = read_value(reader, table, this, &mut children)?;
+            (
+                DecodedNode::Computation(
+                    table.arena.computation_tuple_projection(tuple, component),
+                ),
+                Family::Computation,
+            )
+        },
         | tags::NODE_VT_SESSION => {
             let graph = session::graph(reader)?;
             let payloads = read_value_type(reader, table, this, &mut children)?;

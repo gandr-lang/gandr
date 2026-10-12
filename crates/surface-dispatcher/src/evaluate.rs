@@ -1039,7 +1039,7 @@ impl<'source> Program<'source>
         },
         Some(&Computation::Primitive { .. } |
 &(Computation::Transport(..) | Computation::Application(..) |
-Computation::DataCase {..} | Computation::RecordProjection(..) | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) |
+Computation::DataCase {..} | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) |
 Computation::ListFold { .. } | Computation::Bind(..) | Computation::Force(_) | Computation::Case { .. }
 | Computation::Hole(_) | Computation::Mark { .. } | Computation::Fixpoint { .. })) |
 None => ret.0 == "<computation>",
@@ -1069,6 +1069,7 @@ None => ret.0 == "<computation>",
                 | Computation::Force(_)
                 | Computation::DataCase { .. }
                 | Computation::RecordProjection(..)
+                | Computation::TupleProjection(..)
                 | Computation::ListFold { .. }
                 | Computation::Case { .. }
                 | Computation::Hole(_)
@@ -1348,7 +1349,10 @@ fn references(
                     pending.push(Node::Value(scrutinee));
                     pending.extend(branches.iter().copied().map(Node::Computation));
                 },
-                | Some(&Computation::RecordProjection(record, _)) => {
+                | Some(
+                    &(Computation::RecordProjection(record, _)
+                    | Computation::TupleProjection(record, _)),
+                ) => {
                     pending.push(Node::Value(record));
                 },
                 | Some(&Computation::Perform { payload, .. }) => pending.push(Node::Value(payload)),

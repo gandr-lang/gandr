@@ -43,6 +43,7 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
+use gandr_kernel_term::Component;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
@@ -294,6 +295,9 @@ pub enum Computation
     },
     /// Select a named field, returning it in the computation fragment.
     RecordProjection(ValueId, FieldLabel),
+    /// Select a tuple's component by position, returning it in the
+    /// computation fragment.
+    TupleProjection(ValueId, Component),
     /// A typed hole in computation position. It synthesises
     /// [`CompType::Unknown`] and checks against any computation type.
     Hole(HoleId),
@@ -874,6 +878,10 @@ fn equal_syntax(
                         &Computation::RecordProjection(a, ref al),
                         &Computation::RecordProjection(b, ref bl),
                     ) if al == bl => pending.push(V(a, b)),
+                    | (
+                        &Computation::TupleProjection(a, ac),
+                        &Computation::TupleProjection(b, bc),
+                    ) if ac == bc => pending.push(V(a, b)),
                     | (
                         &Computation::Perform {
                             signature: ref left,

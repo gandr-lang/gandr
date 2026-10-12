@@ -167,6 +167,8 @@ pub enum Refusal
     NonExhaustiveDataCase(Site),
     /// A projection names no field in its operand's type.
     AbsentRecordField(Site),
+    /// A tuple projection names a component past its operand's arity.
+    AbsentTupleComponent(Site),
     /// A record omits a required field.
     MissingRecordField
     {
@@ -615,6 +617,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
  else if let CheckRefusal::ConstructorArity(at) = matched_left_value && let Refusal::ConstructorArity(projected) = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::NonExhaustiveDataCase(at) = matched_left_value && let Refusal::NonExhaustiveDataCase(projected) = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
  else if let CheckRefusal::AbsentRecordField(at) = matched_left_value && let Refusal::AbsentRecordField(projected) = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
+ else if let CheckRefusal::AbsentTupleComponent(at) = matched_left_value && let Refusal::AbsentTupleComponent(projected) = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
  else if let CheckRefusal::MissingRecordField {at,expected} = matched_left_value && let Refusal::MissingRecordField {at:projected,expected:ref stored} = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && *stored == self.value_type(expected) }
  else if let CheckRefusal::DependentStack { at, synthesised } = matched_left_value && let Refusal::DependentStack { at: projected, synthesised: ref actual } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && *actual == self.type_node(TypeNode::Computation(synthesised)) }
  else if let CheckRefusal::EffectSignatureConflict { at, first, second } = matched_left_value && let Refusal::EffectSignatureConflict { at: projected, first: ref actual_first, second: ref actual_second } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) && *actual_first == self.type_node(TypeNode::Computation(first)) && *actual_second == self.type_node(TypeNode::Computation(second)) }
@@ -754,6 +757,9 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
             },
             | CheckRefusal::AbsentRecordField(at) => {
                 Refusal::AbsentRecordField(self.site(ArenaNode::Computation(at)))
+            },
+            | CheckRefusal::AbsentTupleComponent(at) => {
+                Refusal::AbsentTupleComponent(self.site(ArenaNode::Computation(at)))
             },
             | CheckRefusal::MissingRecordField { at, expected } => Refusal::MissingRecordField {
                 at: self.site(ArenaNode::Value(at)),

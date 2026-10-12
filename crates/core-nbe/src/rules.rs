@@ -361,8 +361,19 @@ enum EliminationShape<'core>
     DataCase(usize),
     /// A sum case with this many branches.
     Case(usize),
-    /// An exact record label.
-    Projection(&'core gandr_core_term::FieldLabel),
+    /// An exact record label or tuple component.
+    Projection(ProjectionKey<'core>),
+}
+
+/// The selector a native projection retains: a record's exact label or a
+/// tuple's component.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProjectionKey<'core>
+{
+    /// A record projection's exact label.
+    Label(&'core gandr_core_term::FieldLabel),
+    /// A tuple projection's component.
+    Component(gandr_core_term::Component),
 }
 
 /// Resolve the motive and branch functions retained by a native case capture.
@@ -445,35 +456,40 @@ pub fn fixpoint_source(
     };
     Ok(body)
 }
-/// Read the exact source label of a native projection.
+/// Read the exact selector of a native projection: a record's label or a
+/// tuple's component.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: returns the projection's label, with no spelling normalization.
+/// - ensures: returns the projection's label, with no spelling normalization,
+///   or its component.
 /// - fails: a missing source or a non-projection body.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — unlike labels remain unlike even on one neutral record.
+/// - hypothesis: L3 — unlike labels remain unlike even on one neutral record,
+///   and unlike components on one neutral tuple.
 /// - witness: `machine::tests::native_records_cases_and_traces_agree`
+/// - witness: `machine::tests::tuple_projections_of_one_neutral_compare_by_component`
 #[spec(ensures:|ret| core.computation(source).map_or_else(|| ret == Err(ConversionFault::MachineInvariant), |matched_native_node| match *matched_native_node {
-gandr_core_term::Computation::RecordProjection(_,ref label) => ret == Ok(label),
+gandr_core_term::Computation::RecordProjection(_,ref label) => ret == Ok(ProjectionKey::Label(label)),
+gandr_core_term::Computation::TupleProjection(_,component) => ret == Ok(ProjectionKey::Component(component)),
 _ => ret == Err(ConversionFault::MachineInvariant),
 }))]
-pub fn projection_label(
+pub fn projection_key(
     core: &CoreArena,
     source: gandr_core_term::ComputationId,
-) -> Result<&gandr_core_term::FieldLabel, ConversionFault>
+) -> Result<ProjectionKey<'_>, ConversionFault>
 {
-    let Some(matched_native_node) = core.computation(source)
-    else {
-        return Err(ConversionFault::MachineInvariant);
-    };
-    let gandr_core_term::Computation::RecordProjection(_, ref label) = *matched_native_node
-    else {
-        return Err(ConversionFault::MachineInvariant);
-    };
-    Ok(label)
+    match core.computation(source) {
+        | Some(&gandr_core_term::Computation::RecordProjection(_, ref label)) => {
+            Ok(ProjectionKey::Label(label))
+        },
+        | Some(&gandr_core_term::Computation::TupleProjection(_, component)) => {
+            Ok(ProjectionKey::Component(component))
+        },
+        | _ => Err(ConversionFault::MachineInvariant),
+    }
 }
 
 /// Read only metadata that controls a neutral elimination's premise shape.
@@ -491,7 +507,7 @@ pub fn projection_label(
 /// - witness: `machine::tests::native_records_cases_and_traces_agree`
 #[spec(ensures:|ret| match elimination {
     Elimination::DataCase(closure) => ret == case_source(core,domain,closure).map(|(_,branches)| EliminationShape::DataCase(branches.len())),
-    Elimination::RecordProjection(source) => ret == projection_label(core,source).map(EliminationShape::Projection),
+    Elimination::Projection(source) => ret == projection_key(core,source).map(EliminationShape::Projection),
     Elimination::Case(branches) => ret == domain.branches(branches).map(|held| EliminationShape::Case(held.len())).map_err(ConversionFault::Domain),
     _ => ret == Ok(EliminationShape::Ordinary(core::mem::discriminant(&elimination))),
 })]
@@ -504,8 +520,8 @@ fn elimination_shape<'core>(
     match elimination {
         | Elimination::DataCase(closure) => case_source(core, domain, closure)
             .map(|(_, branches)| EliminationShape::DataCase(branches.len())),
-        | Elimination::RecordProjection(source) => {
-            projection_label(core, source).map(EliminationShape::Projection)
+        | Elimination::Projection(source) => {
+            projection_key(core, source).map(EliminationShape::Projection)
         },
         | Elimination::Case(branches) => domain
             .branches(branches)
@@ -678,7 +694,7 @@ pub fn spine_subgoals(
                     tag: gandr_core_term::ConstructorTag::from(index),
                 }));
             },
-            | (Elimination::RecordProjection(_), Elimination::RecordProjection(_))
+            | (Elimination::Projection(_), Elimination::Projection(_))
             | (Elimination::Force, Elimination::Force) => {},
             | (Elimination::Transport(left_argument), Elimination::Transport(right_argument))
             | (
@@ -727,7 +743,7 @@ pub fn spine_subgoals(
             | (
                 Elimination::Transport(_)
                 | Elimination::DataCase(_)
-                | Elimination::RecordProjection(_)
+                | Elimination::Projection(_)
                 | Elimination::ProductTransport(_)
                 | Elimination::Apply(_)
                 | Elimination::Force

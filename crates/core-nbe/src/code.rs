@@ -800,7 +800,7 @@ _ => ret == Ok(Atom::Other(node)),
             | Some(
                 &(Elimination::Transport(_)
                 | Elimination::DataCase(_)
-                | Elimination::RecordProjection(_)
+                | Elimination::Projection(_)
                 | Elimination::ProductTransport(_)
                 | Elimination::Apply(_)
                 | Elimination::Force

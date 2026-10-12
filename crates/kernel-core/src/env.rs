@@ -1488,7 +1488,10 @@ fn collect_reachable(
                         .into_iter()
                         .chain(branches.iter().copied().map(AnyNode::Computation)),
                 ),
-                | Some(&Computation::RecordProjection(record, _)) => {
+                | Some(
+                    &(Computation::RecordProjection(record, _)
+                    | Computation::TupleProjection(record, _)),
+                ) => {
                     pending.extend(core::iter::once(AnyNode::Value(record)));
                 },
                 | Some(&Computation::ListFold {
