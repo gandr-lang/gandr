@@ -1153,6 +1153,13 @@ pattern = "crates/quenchant-dylints"
 [profile.release]
 opt-level = "s"
 
+# BLAKE3's compression function is the node digest's inner loop. Built at
+# opt-level 3 it takes a corpus parse 2% less time; it is one small crate, so
+# the build barely moves. A workspace at opt-level 3 builds markedly slower
+# for a few percent more.
+[profile.release.package.blake3]
+opt-level = 3
+
 # Build and tests share size-optimized code without debuginfo. Keep debug
 # assertions and overflow checks: arithmetic boundary tests rely on them to
 # expose defects. Specification enforcement remains graph-wide and separate
