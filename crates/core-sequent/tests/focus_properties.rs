@@ -30,6 +30,7 @@ use gandr_core_term::Zone;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::Side;
+use gandr_kernel_term::Summand;
 use proptest::prelude::*;
 
 use crate::compare::Agreement;
@@ -337,6 +338,35 @@ fn cases() -> Vec<Case>
         core,
         root,
         origin: FocusOrigin::Return,
+    });
+
+    let mut core = CoreArena::new();
+    let unit = core.value_unit();
+    let one = integer(&mut core, Integer(1));
+    let two = integer(&mut core, Integer(2));
+    let triple = core.value_tuple(&[one, unit, two]);
+    let scrutinee = core.value_injection(Summand::from(2_usize), triple);
+    let on_first = core.computation_return(one);
+    let on_second = core.computation_return(two);
+    let own = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+    let on_third = core.computation_return(own);
+    let root = core.computation_case(scrutinee, &[on_first, on_second, on_third]);
+    cases.push(Case {
+        label: "a third summand of a triple, cased three ways",
+        core,
+        root,
+        origin: FocusOrigin::Case,
+    });
+
+    let mut core = CoreArena::new();
+    let absurd = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+    let empty = core.computation_case(absurd, &[]);
+    let root = core.computation_lambda(empty);
+    cases.push(Case {
+        label: "an empty case",
+        core,
+        root,
+        origin: FocusOrigin::Lambda,
     });
 
     let mut core = CoreArena::new();

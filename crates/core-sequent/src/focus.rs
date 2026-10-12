@@ -41,6 +41,7 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::Side;
+use gandr_kernel_term::Summand;
 use gandr_theory_cell_complexes::Polarity;
 
 use crate::boundary::NodeCount;
@@ -221,15 +222,6 @@ pub enum FocusRefusal
     UniverseTransport(ComputationId),
     /// A structural record has no command-IL producer form.
     Record(ValueId),
-    /// A tuple of an arity other than zero or two has no command-IL producer
-    /// form until the command IL is n-ary.
-    TupleArity(ValueId),
-    /// An injection past the second summand has no command-IL producer form
-    /// until the command IL is n-ary.
-    SummandArity(ValueId),
-    /// A sum case of other than two branches has no command-IL destructor
-    /// until the command IL is n-ary.
-    CaseArity(ComputationId),
     /// A record projection has no command-IL destructor.
     RecordProjection(ComputationId),
     /// A core value id names no node of the core arena.
@@ -271,15 +263,6 @@ impl fmt::Display for FocusRefusal
                 f.write_str("universe transport has no command-IL destructor")
             },
             | Self::Record(_) => f.write_str("a record has no command-IL producer"),
-            | Self::TupleArity(_) => f.write_str(
-                "a tuple of other than zero or two components has no command-IL producer",
-            ),
-            | Self::SummandArity(_) => {
-                f.write_str("an injection past the second summand has no command-IL producer")
-            },
-            | Self::CaseArity(_) => {
-                f.write_str("a case of other than two branches has no command-IL destructor")
-            },
             | Self::RecordProjection(_) => {
                 f.write_str("a record projection has no command-IL destructor")
             },
@@ -546,12 +529,12 @@ enum Task
         /// The continuation it returns to.
         continuation: ConsumerId,
     },
-    /// Pop two producers and mint their pair.
-    Pair,
+    /// Pop this many producers and mint their tuple.
+    Tuple(ProducerArity),
     /// Pop head and tail producers and mint their native cell.
     ListCons,
-    /// Pop one producer and mint its injection.
-    Injection(Side),
+    /// Pop one producer and mint its injection into this summand.
+    Injection(Summand),
     /// Pop one producer and mint its lift.
     Lift(Level),
     /// Pop a datatype constructor's fields and mint it.
@@ -597,9 +580,13 @@ enum Task
         /// The bound computation.
         head: ComputationId,
     },
-    /// Pop the arms' commands and the scrutinee's producer, and mint the cut
-    /// of the scrutinee against the match.
-    Case,
+    /// Pop the scrutinee's producer and the arms' commands, one per summand,
+    /// and mint the cut of the scrutinee against the match.
+    Case
+    {
+        /// The number of arms.
+        branches: NodeCount,
+    },
     /// Pop the branches' thunks and the scrutinee's producer, and mint the
     /// cut of the scrutinee against the nominal match.
     DataCase
@@ -729,11 +716,12 @@ impl<'run> Focusing<'run>
                 _ => true,
             }),
             | &Task::Primitive { arguments, .. } => self.producers.len() >= arguments.len(),
-            | &Task::Pair | &Task::ListCons => self.producers.len() >= 2,
+            | &Task::ListCons => self.producers.len() >= 2,
             | &Task::Injection(_) | &Task::Lift(_) | &Task::Cut { .. } | &Task::Apply { .. } => !self.producers.is_empty(),
             | &Task::Thunk | &Task::Fixpoint(_) | &Task::Lambda { .. } | &Task::Bind { .. } | &Task::Name { .. } => !self.commands.is_empty(),
-            | &Task::Case | &Task::ListFold { .. } => !self.producers.is_empty() && self.commands.len() >= 2,
-            | &Task::Native { arity, .. } => self.producers.len() >= usize::from(arity),
+            | &Task::ListFold { .. } => !self.producers.is_empty() && self.commands.len() >= 2,
+            | &Task::Case { branches } => !self.producers.is_empty() && self.commands.len() >= usize::from(branches),
+            | &Task::Tuple(arity) | &Task::Native { arity, .. } => self.producers.len() >= usize::from(arity),
             | &Task::DataCase { branches, .. } => self.producers.len() > usize::from(branches),
             | &Task::Value(_) | &Task::Computation { .. } => true,
         },
@@ -780,19 +768,24 @@ impl<'run> Focusing<'run>
                 computation,
                 continuation,
             } => self.computation(computation, continuation),
-            | Task::Pair => {
-                let second = self.pop_producer()?;
-                let first = self.pop_producer()?;
-                self.constructor(ConstructorTag::Pair, &[first, second])
+            | Task::Tuple(arity) => {
+                let start = self
+                    .producers
+                    .len()
+                    .checked_sub(usize::from(arity))
+                    .ok_or(FocusRefusal::TranslationInvariant)?;
+                let components: alloc::vec::Vec<ProducerId> =
+                    self.producers.drain(start ..).collect();
+                self.constructor(ConstructorTag::Tuple(arity), &components)
             },
             | Task::ListCons => {
                 let tail = self.pop_producer()?;
                 let head = self.pop_producer()?;
                 self.constructor(ConstructorTag::ListCons, &[head, tail])
             },
-            | Task::Injection(side) => {
+            | Task::Injection(summand) => {
                 let body = self.pop_producer()?;
-                self.constructor(ConstructorTag::Injection(side), &[body])
+                self.constructor(ConstructorTag::Injection(summand), &[body])
             },
             | Task::Lift(level) => {
                 let body = self.pop_producer()?;
@@ -883,22 +876,23 @@ impl<'run> Focusing<'run>
                 });
                 Ok(())
             },
-            | Task::Case => {
+            | Task::Case { branches } => {
                 let scrutinee = self.pop_producer()?;
-                let on_right = self.pop_command()?;
-                let on_left = self.pop_command()?;
-                let matcher = self.arena.mint_consumer(ConsumerNode::Case {
-                    arms: alloc::boxed::Box::from([
-                        PatternArm {
-                            constructor: ConstructorTag::Injection(Side::Left),
-                            body: on_left,
-                        },
-                        PatternArm {
-                            constructor: ConstructorTag::Injection(Side::Right),
-                            body: on_right,
-                        },
-                    ]),
-                })?;
+                let start = self
+                    .commands
+                    .len()
+                    .checked_sub(usize::from(branches))
+                    .ok_or(FocusRefusal::TranslationInvariant)?;
+                let arms = self
+                    .commands
+                    .drain(start ..)
+                    .enumerate()
+                    .map(|(summand, body)| PatternArm {
+                        constructor: ConstructorTag::Injection(Summand::from(summand)),
+                        body,
+                    })
+                    .collect();
+                let matcher = self.arena.mint_consumer(ConsumerNode::Case { arms })?;
                 self.cut(FocusOrigin::Case, Polarity::Positive, scrutinee, matcher)
             },
             | Task::DataCase {
@@ -1170,8 +1164,6 @@ impl<'run> Focusing<'run>
             | Some(&Value::Quote(_) | &Value::QuoteComputation(_)) => ret == Err(FocusRefusal::Code(id)),
             | Some(&Value::Hole(_) | &Value::Mark { .. }) => ret == Err(FocusRefusal::IncompleteValue(id)),
             | Some(&Value::Record(_)) => ret == Err(FocusRefusal::Record(id)),
-            | Some(&Value::Tuple(ref components)) if !matches!(components.len(), 0 | 2) => ret == Err(FocusRefusal::TupleArity(id)),
-            | Some(&Value::Injection(summand, _)) if usize::from(summand) > 1 => ret == Err(FocusRefusal::SummandArity(id)),
             | Some(_) => ret.is_err() || self.tasks.len() > work || self.producers.len() > results,
         },
     )]
@@ -1228,24 +1220,21 @@ impl<'run> Focusing<'run>
             | Value::Variable { zone, index } => ProducerNode::Variable { zone, index },
             | Value::Constant(constant) => ProducerNode::Constant(constant),
             | Value::Literal(ref literal) => ProducerNode::Literal(literal.clone()),
-            | Value::Tuple(ref components) => match **components {
-                | [] => ProducerNode::Constructor {
-                    tag: ConstructorTag::Unit,
-                    producers: alloc::boxed::Box::from([]),
-                    consumers: alloc::boxed::Box::from([]),
-                },
-                | [first, second] => {
-                    self.tasks.push(Task::Pair);
-                    self.tasks.push(Task::Value(second));
-                    self.tasks.push(Task::Value(first));
-                    return Ok(());
-                },
-                | _ => return Err(FocusRefusal::TupleArity(id)),
+            | Value::Tuple(ref components) if components.is_empty() => ProducerNode::Constructor {
+                tag: ConstructorTag::Tuple(ProducerArity::ZERO),
+                producers: alloc::boxed::Box::from([]),
+                consumers: alloc::boxed::Box::from([]),
+            },
+            | Value::Tuple(ref components) => {
+                self.tasks
+                    .push(Task::Tuple(ProducerArity::from(components.len())));
+                for &component in components.iter().rev() {
+                    self.tasks.push(Task::Value(component));
+                }
+                return Ok(());
             },
             | Value::Injection(summand, body) => {
-                let side =
-                    Side::try_from(summand).map_err(|_beyond| FocusRefusal::SummandArity(id))?;
-                self.tasks.push(Task::Injection(side));
+                self.tasks.push(Task::Injection(summand));
                 self.tasks.push(Task::Value(body));
                 return Ok(());
             },
@@ -1315,7 +1304,6 @@ impl<'run> Focusing<'run>
             | None => ret == Err(FocusRefusal::DanglingComputation(id)),
             | Some(&Computation::Hole(_) | &Computation::Mark { .. }) => ret == Err(FocusRefusal::IncompleteComputation(id)),
             | Some(&Computation::RecordProjection(..)) => ret == Err(FocusRefusal::RecordProjection(id)),
-            | Some(&Computation::Case { ref branches, .. }) if branches.len() != 2 => ret == Err(FocusRefusal::CaseArity(id)),
             | Some(_) => ret.is_err() || self.tasks.len() > work,
         },
     )]
@@ -1551,21 +1539,17 @@ impl<'run> Focusing<'run>
                 scrutinee,
                 ref branches,
             } => {
-                let &[on_left, on_right] = &**branches
-                else {
-                    return Err(FocusRefusal::CaseArity(id));
-                };
                 let inner = self.share_or_name(FocusOrigin::Case, continuation)?;
-                self.tasks.push(Task::Case);
+                self.tasks.push(Task::Case {
+                    branches: NodeCount::from(branches.len()),
+                });
                 self.tasks.push(Task::Value(scrutinee));
-                self.tasks.push(Task::Computation {
-                    computation: on_right,
-                    continuation: inner,
-                });
-                self.tasks.push(Task::Computation {
-                    computation: on_left,
-                    continuation: inner,
-                });
+                for &branch in branches.iter().rev() {
+                    self.tasks.push(Task::Computation {
+                        computation: branch,
+                        continuation: inner,
+                    });
+                }
             },
         }
         Ok(())

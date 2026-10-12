@@ -886,7 +886,7 @@ mod tests
     {
         arena
             .mint_producer(ProducerNode::Constructor {
-                tag: ConstructorTag::Unit,
+                tag: ConstructorTag::Tuple(ProducerArity::ZERO),
                 producers: Box::from([]),
                 consumers: Box::from([]),
             })
@@ -927,7 +927,7 @@ mod tests
             | CommandNode::Cut { polarity, producer, consumer } => polarity == Polarity::Positive
                 && arena.consumer(consumer).is_some_and(|node| core::mem::discriminant(node) == kind)
                 && arena.producer(producer).is_some_and(|node| matches!(*node,
-                    ProducerNode::Constructor { tag: ConstructorTag::Unit, ref producers, ref consumers }
+                    ProducerNode::Constructor { tag: ConstructorTag::Tuple(ProducerArity::ZERO), ref producers, ref consumers }
                     if producers.is_empty() && consumers.is_empty())),
             | _ => false,
         }),
@@ -1105,7 +1105,7 @@ mod tests
     {
         let mut arena = CommandArena::new();
         let root = cut_against_top(&mut arena, ProducerNode::Constructor {
-            tag: ConstructorTag::Unit,
+            tag: ConstructorTag::Tuple(ProducerArity::ZERO),
             producers: Box::from([]),
             consumers: Box::from([]),
         });
@@ -1178,7 +1178,7 @@ mod tests
             .expect("a leaf mints");
         let pair = arena
             .mint_producer(ProducerNode::Constructor {
-                tag: ConstructorTag::Pair,
+                tag: ConstructorTag::Tuple(ProducerArity::TWO),
                 producers: Box::from([own, outer]),
                 consumers: Box::from([]),
             })
@@ -1250,7 +1250,7 @@ mod tests
             .expect("the body resolves");
         let other = unit(&mut arena);
         let root = cut_against_top(&mut arena, ProducerNode::Constructor {
-            tag: ConstructorTag::Pair,
+            tag: ConstructorTag::Tuple(ProducerArity::TWO),
             producers: Box::from([capture, other]),
             consumers: Box::from([]),
         });
@@ -1301,13 +1301,13 @@ mod tests
         let mut arena = CommandArena::new();
         let only = unit(&mut arena);
         let root = cut_against_top(&mut arena, ProducerNode::Constructor {
-            tag: ConstructorTag::Pair,
+            tag: ConstructorTag::Tuple(ProducerArity::TWO),
             producers: Box::from([only]),
             consumers: Box::from([]),
         });
         assert_eq!(
             Err(CheckRefusal::ProducerArity {
-                head: ArityHead::Constructor(ConstructorTag::Pair),
+                head: ArityHead::Constructor(ConstructorTag::Tuple(ProducerArity::TWO)),
                 expected: ProducerArity::TWO,
                 found: ProducerArity::ONE,
             }),
@@ -1323,13 +1323,13 @@ mod tests
         let mut arena = CommandArena::new();
         let stray = top(&mut arena);
         let root = cut_against_top(&mut arena, ProducerNode::Constructor {
-            tag: ConstructorTag::Unit,
+            tag: ConstructorTag::Tuple(ProducerArity::ZERO),
             producers: Box::from([]),
             consumers: Box::from([stray]),
         });
         assert_eq!(
             Err(CheckRefusal::ConsumerArity {
-                head: ArityHead::Constructor(ConstructorTag::Unit),
+                head: ArityHead::Constructor(ConstructorTag::Tuple(ProducerArity::ZERO)),
                 expected: ConsumerArity::ZERO,
                 found: ConsumerArity::ONE,
             }),
@@ -1394,7 +1394,7 @@ mod tests
             "one consumer child meets the frame's declaration"
         );
         let root = cut_against_top(&mut arena, ProducerNode::Constructor {
-            tag: ConstructorTag::Unit,
+            tag: ConstructorTag::Tuple(ProducerArity::ZERO),
             producers: Box::from([]),
             consumers: Box::from([]),
         });
@@ -1403,7 +1403,7 @@ mod tests
             "no consumer child meets the constructor's declaration"
         );
         let root = cut_against_top(&mut arena, ProducerNode::Constructor {
-            tag: ConstructorTag::Unit,
+            tag: ConstructorTag::Tuple(ProducerArity::ZERO),
             producers: Box::from([]),
             consumers: Box::from([one]),
         });
@@ -1439,7 +1439,7 @@ mod tests
         let body = arena
             .mint_cut(Polarity::Positive, value, inner_top)
             .expect("children resolve");
-        let left = ConstructorTag::Injection(Side::Left);
+        let left = ConstructorTag::Injection(Side::Left.into());
         let root = cut_against_unit(&mut arena, ConsumerNode::Case {
             arms: Box::from([
                 PatternArm {
@@ -1544,7 +1544,7 @@ mod tests
             ),
             (
                 ProducerNode::Constructor {
-                    tag: ConstructorTag::Unit,
+                    tag: ConstructorTag::Tuple(ProducerArity::ZERO),
                     producers: Box::from([]),
                     consumers: Box::from([]),
                 },
@@ -1735,7 +1735,7 @@ mod tests
                 CheckRefusal::NonValueArgument(capture),
             ),
             (
-                ArityHead::Constructor(ConstructorTag::Pair),
+                ArityHead::Constructor(ConstructorTag::Tuple(ProducerArity::TWO)),
                 ProducerArity::TWO,
                 ConsumerArity::ZERO,
                 [capture, missing_producer].as_slice(),
@@ -1743,7 +1743,7 @@ mod tests
                 CheckRefusal::NonValueArgument(capture),
             ),
             (
-                ArityHead::Constructor(ConstructorTag::Pair),
+                ArityHead::Constructor(ConstructorTag::Tuple(ProducerArity::TWO)),
                 ProducerArity::TWO,
                 ConsumerArity::ZERO,
                 [missing_producer, capture].as_slice(),

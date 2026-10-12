@@ -44,7 +44,7 @@ use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Literal;
-use gandr_kernel_term::Side;
+use gandr_kernel_term::Summand;
 use gandr_theory_cell_complexes::Polarity;
 
 use crate::boundary::ConsumerArity;
@@ -78,23 +78,23 @@ index_wrapper! {
 
 /// A constructor head `K` of a positive type.
 ///
-/// The vocabulary is the core language's positive introductions: the unit,
-/// the pair, the two injections, the explicit universe lift and a nominal
-/// datatype's constructors. Each head declares its arity; the typed-IL check
+/// The vocabulary is the core language's positive introductions: a tuple of
+/// any arity (the unit its empty case), an injection into a summand by
+/// position, the explicit universe lift and a nominal datatype's
+/// constructors. Each head declares its arity; the typed-IL check
 /// and the machine read the declaration rather than a constant.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ConstructorTag
 {
-    /// The unit `()`, of no fields.
-    Unit,
-    /// The pair `(p₁, p₂)`.
-    Pair,
+    /// The tuple `(p₁, …, pₙ)` of this many fields; the unit `()` is the
+    /// tuple of none.
+    Tuple(ProducerArity),
     /// The empty native list.
     ListNil,
     /// A native list cell with head and tail fields.
     ListCons,
-    /// A sum injection on the given side, of one field.
-    Injection(Side),
+    /// A sum injection into the summand at this position, of one field.
+    Injection(Summand),
     /// An explicit lift to the target level, of one field.
     Lift(Level),
     /// A nominal datatype's constructor, by its ordinal in the declaration,
@@ -115,8 +115,9 @@ impl ConstructorTag
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: `0` for the unit, `2` for the pair, `1` for an injection and
-    ///   a lift, and a datatype constructor's own field count.
+    /// - ensures: a tuple's and a datatype constructor's own field count, `0`
+    ///   for the empty list, `2` for a list cell, `1` for an injection and a
+    ///   lift.
     /// - provides: the one arity table a constructor node is held to.
     /// - fails: never.
     /// - panics: none.
@@ -130,18 +131,18 @@ impl ConstructorTag
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| match *self {
-        | Self::Unit | Self::ListNil => matches!(ret, ProducerArity::ZERO),
-        | Self::Pair | Self::ListCons => matches!(ret, ProducerArity::TWO),
+        | Self::ListNil => matches!(ret, ProducerArity::ZERO),
+        | Self::ListCons => matches!(ret, ProducerArity::TWO),
         | Self::Injection(_) | Self::Lift(_) => matches!(ret, ProducerArity::ONE),
-        | Self::Data { arity, .. } => ret == arity,
+        | Self::Tuple(arity) | Self::Data { arity, .. } => ret == arity,
     })]
     pub fn producer_arity(&self) -> ProducerArity
     {
         match *self {
-            | Self::Unit | Self::ListNil => ProducerArity::ZERO,
-            | Self::Pair | Self::ListCons => ProducerArity::TWO,
+            | Self::ListNil => ProducerArity::ZERO,
+            | Self::ListCons => ProducerArity::TWO,
             | Self::Injection(_) | Self::Lift(_) => ProducerArity::ONE,
-            | Self::Data { arity, .. } => arity,
+            | Self::Tuple(arity) | Self::Data { arity, .. } => arity,
         }
     }
 
@@ -167,8 +168,7 @@ impl ConstructorTag
     pub const fn consumer_arity(&self) -> ConsumerArity
     {
         match *self {
-            | Self::Unit
-            | Self::Pair
+            | Self::Tuple(_)
             | Self::ListNil
             | Self::ListCons
             | Self::Injection(_)
@@ -1396,6 +1396,7 @@ mod tests
 
     use gandr_kernel_term::IntegerLiteral;
     use gandr_kernel_term::Magnitude;
+    use gandr_kernel_term::Side;
     use gandr_kernel_term::Sign;
 
     use super::*;
@@ -1425,10 +1426,12 @@ mod tests
     {
         let level = Level::zero();
         let cases = [
-            (ConstructorTag::Unit, 0_usize),
-            (ConstructorTag::Pair, 2_usize),
-            (ConstructorTag::Injection(Side::Left), 1_usize),
-            (ConstructorTag::Injection(Side::Right), 1_usize),
+            (ConstructorTag::Tuple(ProducerArity::ZERO), 0_usize),
+            (ConstructorTag::Tuple(ProducerArity::TWO), 2_usize),
+            (ConstructorTag::Injection(Side::Left.into()), 1_usize),
+            (ConstructorTag::Injection(Side::Right.into()), 1_usize),
+            (ConstructorTag::Tuple(ProducerArity::from(3_usize)), 3_usize),
+            (ConstructorTag::Injection(Summand::from(2_usize)), 1_usize),
             (ConstructorTag::Lift(level), 1_usize),
             (
                 ConstructorTag::Data {
@@ -1474,10 +1477,10 @@ mod tests
     fn tag_consumer_arities_are_declared()
     {
         for tag in [
-            ConstructorTag::Unit,
-            ConstructorTag::Pair,
-            ConstructorTag::Injection(Side::Left),
-            ConstructorTag::Injection(Side::Right),
+            ConstructorTag::Tuple(ProducerArity::ZERO),
+            ConstructorTag::Tuple(ProducerArity::TWO),
+            ConstructorTag::Injection(Side::Left.into()),
+            ConstructorTag::Injection(Side::Right.into()),
             ConstructorTag::Lift(Level::zero()),
             ConstructorTag::Data {
                 tag: gandr_kernel_term::ConstructorTag::from(0_usize),
@@ -1618,7 +1621,7 @@ mod tests
         let mark = arena.watermark();
         let unit = arena
             .mint_producer(ProducerNode::Constructor {
-                tag: ConstructorTag::Unit,
+                tag: ConstructorTag::Tuple(ProducerArity::ZERO),
                 producers: Box::from([]),
                 consumers: Box::from([]),
             })
@@ -1761,7 +1764,7 @@ mod tests
             ProducerNode::Constant(1_usize.into()),
             ProducerNode::Literal(integer(Digits("17"))),
             ProducerNode::Constructor {
-                tag: ConstructorTag::Pair,
+                tag: ConstructorTag::Tuple(ProducerArity::TWO),
                 producers: Box::from([leaf]),
                 consumers: Box::from([top]),
             },
@@ -1790,7 +1793,7 @@ mod tests
             },
             ConsumerNode::Case {
                 arms: Box::from([PatternArm {
-                    constructor: ConstructorTag::Unit,
+                    constructor: ConstructorTag::Tuple(ProducerArity::ZERO),
                     body,
                 }]),
             },
@@ -1829,11 +1832,11 @@ mod tests
             ConsumerNode::Case {
                 arms: Box::from([
                     PatternArm {
-                        constructor: ConstructorTag::Unit,
+                        constructor: ConstructorTag::Tuple(ProducerArity::ZERO),
                         body,
                     },
                     PatternArm {
-                        constructor: ConstructorTag::Pair,
+                        constructor: ConstructorTag::Tuple(ProducerArity::TWO),
                         body: missing,
                     },
                 ]),
@@ -1875,7 +1878,7 @@ mod tests
             assert_eq!(
                 Err(expected),
                 arena.mint_producer(ProducerNode::Constructor {
-                    tag: ConstructorTag::Pair,
+                    tag: ConstructorTag::Tuple(ProducerArity::TWO),
                     producers: Box::from(producers),
                     consumers: Box::from(consumers),
                 })

@@ -32,6 +32,7 @@ use gandr_core_term::Zone;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Side;
+use gandr_kernel_term::Summand;
 
 use crate::boundary::NodeCount;
 use crate::boundary::ProducerArity;
@@ -390,10 +391,10 @@ enum Task
     Command(CommandId, Depth),
     /// Extend the computation on top by the spine of `consumer`.
     Spine(ConsumerId, Depth),
-    /// Pop two values and build their pair.
-    Pair,
-    /// Pop one value and build its injection.
-    Injection(Side),
+    /// Pop this many values and build their tuple.
+    Tuple(ProducerArity),
+    /// Pop one value and build its injection into this summand.
+    Injection(Summand),
     /// Pop one value and build its lift.
     Lift(Level),
     /// Pop a datatype constructor's field values and build it.
@@ -419,8 +420,9 @@ enum Task
     Application,
     /// Pop a body and a head computation and build the bind.
     Bind,
-    /// Pop the right and left branches and the scrutinee and build the case.
-    Case,
+    /// Pop this many branches, one per summand, and the scrutinee and build
+    /// the case.
+    Case(NodeCount),
     /// Pop the branches and the scrutinee and build the nominal case.
     DataCase(NodeCount),
 }
@@ -547,12 +549,12 @@ impl Unfocusing<'_>
             | &Task::With | &Task::Bind => self.computations.len() >= 2,
             | &Task::Project(_) | &Task::Thunk | &Task::Fixpoint(_) | &Task::Lambda | &Task::Spine(..) => !self.computations.is_empty(),
             | &Task::Primitive(_, arguments) => self.values.len() >= arguments.len(),
-            | &Task::Pair | &Task::ListCons => self.values.len() >= 2,
+            | &Task::ListCons => self.values.len() >= 2,
             | &Task::Injection(_) | &Task::Lift(_) | &Task::Return | &Task::Force => !self.values.is_empty(),
             | &Task::Application => !self.values.is_empty() && !self.computations.is_empty(),
-            | &Task::Case | &Task::ListFold(..) => !self.values.is_empty() && self.computations.len() >= 2,
-            | &Task::Native { arity, .. } => self.values.len() >= usize::from(arity),
-            | &Task::DataCase(branches) => !self.values.is_empty() && self.computations.len() >= usize::from(branches),
+            | &Task::ListFold(..) => !self.values.is_empty() && self.computations.len() >= 2,
+            | &Task::Tuple(arity) | &Task::Native { arity, .. } => self.values.len() >= usize::from(arity),
+            | &Task::Case(branches) | &Task::DataCase(branches) => !self.values.is_empty() && self.computations.len() >= usize::from(branches),
             | &Task::Value(..) | &Task::Command(..) => true,
         },
         ensures: |ret| ret.is_err() || (self.values.last().is_none_or(|id| self.core.value(*id).is_some())
@@ -605,11 +607,15 @@ impl Unfocusing<'_>
             | Task::Value(producer, depth) => self.value(producer, depth),
             | Task::Command(command, depth) => self.command(command, depth),
             | Task::Spine(consumer, depth) => self.spine(consumer, depth),
-            | Task::Pair => {
-                let second = self.pop_value()?;
-                let first = self.pop_value()?;
-                let pair = self.core.value_tuple(&[first, second]);
-                self.values.push(pair);
+            | Task::Tuple(arity) => {
+                let start = self
+                    .values
+                    .len()
+                    .checked_sub(usize::from(arity))
+                    .ok_or(UnfocusRefusal::DecodeInvariant)?;
+                let components: Vec<ValueId> = self.values.drain(start ..).collect();
+                let tuple = self.core.value_tuple(&components);
+                self.values.push(tuple);
                 Ok(())
             },
             | Task::ListCons => {
@@ -618,9 +624,9 @@ impl Unfocusing<'_>
                 self.values.push(self.core.value_list_cons(head, tail));
                 Ok(())
             },
-            | Task::Injection(side) => {
+            | Task::Injection(summand) => {
                 let body = self.pop_value()?;
-                let injection = self.core.value_injection(side.into(), body);
+                let injection = self.core.value_injection(summand, body);
                 self.values.push(injection);
                 Ok(())
             },
@@ -686,11 +692,15 @@ impl Unfocusing<'_>
                 self.computations.push(bound);
                 Ok(())
             },
-            | Task::Case => {
-                let on_right = self.pop_computation()?;
-                let on_left = self.pop_computation()?;
+            | Task::Case(count) => {
+                let start = self
+                    .computations
+                    .len()
+                    .checked_sub(usize::from(count))
+                    .ok_or(UnfocusRefusal::DecodeInvariant)?;
+                let branches: Vec<ComputationId> = self.computations.drain(start ..).collect();
                 let scrutinee = self.pop_value()?;
-                let cased = self.core.computation_case(scrutinee, &[on_left, on_right]);
+                let cased = self.core.computation_case(scrutinee, &branches);
                 self.computations.push(cased);
                 Ok(())
             },
@@ -1028,7 +1038,7 @@ impl Unfocusing<'_>
                     return Err(UnfocusRefusal::ProducerOutsideTheImage(id));
                 }
                 match (tag, producers.as_ref()) {
-                    | (&ConstructorTag::Unit, &[]) => self.core.value_unit(),
+                    | (&ConstructorTag::Tuple(ProducerArity::ZERO), &[]) => self.core.value_unit(),
                     | (&ConstructorTag::ListNil, &[]) => self.core.value_list_nil(),
                     | (&ConstructorTag::ListCons, &[head, tail]) => {
                         self.tasks.push(Task::ListCons);
@@ -1036,14 +1046,17 @@ impl Unfocusing<'_>
                         self.tasks.push(Task::Value(head, depth));
                         return Ok(());
                     },
-                    | (&ConstructorTag::Pair, &[first, second]) => {
-                        self.tasks.push(Task::Pair);
-                        self.tasks.push(Task::Value(second, depth));
-                        self.tasks.push(Task::Value(first, depth));
+                    | (&ConstructorTag::Tuple(arity), components)
+                        if usize::from(arity) == components.len() =>
+                    {
+                        self.tasks.push(Task::Tuple(arity));
+                        for &component in components.iter().rev() {
+                            self.tasks.push(Task::Value(component, depth));
+                        }
                         return Ok(());
                     },
-                    | (&ConstructorTag::Injection(side), &[body]) => {
-                        self.tasks.push(Task::Injection(side));
+                    | (&ConstructorTag::Injection(summand), &[body]) => {
+                        self.tasks.push(Task::Injection(summand));
                         self.tasks.push(Task::Value(body, depth));
                         return Ok(());
                     },
@@ -1300,20 +1313,17 @@ impl Unfocusing<'_>
                 self.tasks.push(Task::Force);
             },
             | ConsumerNode::Case { ref arms } => {
-                let [ref left, ref right] = **arms
-                else {
-                    return Err(UnfocusRefusal::ConsumerOutsideTheImage(consumer));
-                };
-                if left.constructor != ConstructorTag::Injection(Side::Left)
-                    || right.constructor != ConstructorTag::Injection(Side::Right)
-                {
+                let in_order = arms.iter().enumerate().all(|(summand, arm)| {
+                    arm.constructor == ConstructorTag::Injection(Summand::from(summand))
+                });
+                if !in_order {
                     return Err(UnfocusRefusal::ConsumerOutsideTheImage(consumer));
                 }
-                self.tasks.push(Task::Case);
-                self.tasks
-                    .push(Task::Command(right.body, depth.under_producer()));
-                self.tasks
-                    .push(Task::Command(left.body, depth.under_producer()));
+                self.tasks.push(Task::Case(NodeCount::from(arms.len())));
+                for arm in arms.iter().rev() {
+                    self.tasks
+                        .push(Task::Command(arm.body, depth.under_producer()));
+                }
             },
             | ConsumerNode::DataCase { ref branches, then } => {
                 self.tasks.push(Task::Spine(then, depth));
@@ -1605,7 +1615,7 @@ mod tests
         let mut arena = CommandArena::new();
         let unit = arena
             .mint_producer(ProducerNode::Constructor {
-                tag: ConstructorTag::Unit,
+                tag: ConstructorTag::Tuple(ProducerArity::ZERO),
                 producers: Box::from([]),
                 consumers: Box::from([]),
             })
@@ -1651,7 +1661,7 @@ mod tests
         let mut arena = CommandArena::new();
         let unit = arena
             .mint_producer(ProducerNode::Constructor {
-                tag: ConstructorTag::Unit,
+                tag: ConstructorTag::Tuple(ProducerArity::ZERO),
                 producers: Box::from([]),
                 consumers: Box::from([]),
             })
@@ -1667,7 +1677,7 @@ mod tests
             .expect("the body resolves");
         let pair = arena
             .mint_producer(ProducerNode::Constructor {
-                tag: ConstructorTag::Pair,
+                tag: ConstructorTag::Tuple(ProducerArity::TWO),
                 producers: Box::from([capture, unit]),
                 consumers: Box::from([]),
             })
@@ -1682,7 +1692,7 @@ mod tests
         let matcher = arena
             .mint_consumer(ConsumerNode::Case {
                 arms: Box::from([crate::il::PatternArm {
-                    constructor: ConstructorTag::Unit,
+                    constructor: ConstructorTag::Tuple(ProducerArity::ZERO),
                     body: inner,
                 }]),
             })
@@ -1894,7 +1904,7 @@ mod tests
         assert_eq!(mark, core.watermark());
         let unit = arena
             .mint_producer(ProducerNode::Constructor {
-                tag: ConstructorTag::Unit,
+                tag: ConstructorTag::Tuple(ProducerArity::ZERO),
                 producers: Box::from([]),
                 consumers: Box::from([]),
             })
@@ -1912,17 +1922,17 @@ mod tests
         );
         for node in [
             ProducerNode::Constructor {
-                tag: ConstructorTag::Unit,
+                tag: ConstructorTag::Tuple(ProducerArity::ZERO),
                 producers: Box::from([unit]),
                 consumers: Box::from([]),
             },
             ProducerNode::Constructor {
-                tag: ConstructorTag::Pair,
+                tag: ConstructorTag::Tuple(ProducerArity::TWO),
                 producers: Box::from([]),
                 consumers: Box::from([]),
             },
             ProducerNode::Constructor {
-                tag: ConstructorTag::Injection(Side::Left),
+                tag: ConstructorTag::Injection(Side::Left.into()),
                 producers: Box::from([]),
                 consumers: Box::from([]),
             },
@@ -1932,7 +1942,7 @@ mod tests
                 consumers: Box::from([]),
             },
             ProducerNode::Constructor {
-                tag: ConstructorTag::Unit,
+                tag: ConstructorTag::Tuple(ProducerArity::ZERO),
                 producers: Box::from([]),
                 consumers: Box::from([top]),
             },
@@ -1982,11 +1992,11 @@ mod tests
             ConsumerNode::Case {
                 arms: Box::from([
                     crate::il::PatternArm {
-                        constructor: ConstructorTag::Injection(Side::Right),
+                        constructor: ConstructorTag::Injection(Side::Right.into()),
                         body,
                     },
                     crate::il::PatternArm {
-                        constructor: ConstructorTag::Injection(Side::Left),
+                        constructor: ConstructorTag::Injection(Side::Left.into()),
                         body,
                     },
                 ]),
@@ -2104,7 +2114,7 @@ mod tests
         let mut arena = CommandArena::new();
         let unit = arena
             .mint_producer(ProducerNode::Constructor {
-                tag: ConstructorTag::Unit,
+                tag: ConstructorTag::Tuple(ProducerArity::ZERO),
                 producers: Box::from([]),
                 consumers: Box::from([]),
             })

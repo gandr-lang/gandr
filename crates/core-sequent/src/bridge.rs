@@ -484,10 +484,16 @@ mod tests
     fn core_resolver() -> ConstructorResolver
     {
         let mut resolver = ConstructorResolver::new();
-        resolver.insert(Sym::new("Unit"), ConstructorTag::Unit);
-        resolver.insert(Sym::new("Pair"), ConstructorTag::Pair);
-        resolver.insert(Sym::new("Inl"), ConstructorTag::Injection(Side::Left));
-        resolver.insert(Sym::new("Inr"), ConstructorTag::Injection(Side::Right));
+        resolver.insert(Sym::new("Unit"), ConstructorTag::Tuple(ProducerArity::ZERO));
+        resolver.insert(Sym::new("Pair"), ConstructorTag::Tuple(ProducerArity::TWO));
+        resolver.insert(
+            Sym::new("Inl"),
+            ConstructorTag::Injection(Side::Left.into()),
+        );
+        resolver.insert(
+            Sym::new("Inr"),
+            ConstructorTag::Injection(Side::Right.into()),
+        );
         resolver
     }
 

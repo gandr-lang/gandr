@@ -48,6 +48,7 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_theory_cell_complexes::Polarity;
 
+use crate::boundary::ProducerArity;
 use crate::boundary::StepCount;
 use crate::il::CommandArena;
 use crate::il::CommandId;
@@ -2289,11 +2290,11 @@ impl<'program> Machine<'program>
                         ))?,
                         | Scalar::Boolean(side) => {
                             let unit = self.store.allocate(HeapValue::Constructed {
-                                tag: ConstructorTag::Unit,
+                                tag: ConstructorTag::Tuple(ProducerArity::ZERO),
                                 fields: Box::from([]),
                             })?;
                             self.store.allocate(HeapValue::Constructed {
-                                tag: ConstructorTag::Injection(side),
+                                tag: ConstructorTag::Injection(side.into()),
                                 fields: Box::from([unit]),
                             })?
                         },
@@ -2383,11 +2384,12 @@ impl<'program> Machine<'program>
                 Ok(Scalar::Integer(integer))
             },
             | Some(&HeapValue::Constructed {
-                tag: ConstructorTag::Injection(side),
+                tag: ConstructorTag::Injection(summand),
                 ref fields,
             }) => {
                 if let &[body] = fields.as_ref()
-                    && matches!(self.store.value(body), Some(&HeapValue::Constructed { tag: ConstructorTag::Unit, ref fields }) if fields.is_empty())
+                    && matches!(self.store.value(body), Some(&HeapValue::Constructed { tag: ConstructorTag::Tuple(ProducerArity::ZERO), ref fields }) if fields.is_empty())
+                    && let Ok(side) = gandr_kernel_term::Side::try_from(summand)
                 {
                     Ok(Scalar::Boolean(side))
                 }
@@ -3115,7 +3117,7 @@ mod tests
                 | Answer::Unit => HostReply::Resume(
                     values
                         .allocate(HeapValue::Constructed {
-                            tag: ConstructorTag::Unit,
+                            tag: ConstructorTag::Tuple(ProducerArity::ZERO),
                             fields: Box::new([]),
                         })
                         .expect("reply fits"),
@@ -3197,14 +3199,14 @@ mod tests
         let mut foreign = Store::new();
         let mut missing = foreign
             .allocate(HeapValue::Constructed {
-                tag: ConstructorTag::Unit,
+                tag: ConstructorTag::Tuple(ProducerArity::ZERO),
                 fields: Box::new([]),
             })
             .expect("foreign value");
         for _ in 0_u32 .. 32_u32 {
             missing = foreign
                 .allocate(HeapValue::Constructed {
-                    tag: ConstructorTag::Unit,
+                    tag: ConstructorTag::Tuple(ProducerArity::ZERO),
                     fields: Box::new([]),
                 })
                 .expect("foreign value");
@@ -4300,7 +4302,7 @@ mod tests
         let mut arena = CommandArena::new();
         let unit = arena
             .mint_producer(ProducerNode::Constructor {
-                tag: crate::il::ConstructorTag::Unit,
+                tag: crate::il::ConstructorTag::Tuple(ProducerArity::ZERO),
                 producers: Box::from([]),
                 consumers: Box::from([]),
             })
@@ -4316,7 +4318,7 @@ mod tests
             .expect("the body resolves");
         let pair = arena
             .mint_producer(ProducerNode::Constructor {
-                tag: crate::il::ConstructorTag::Pair,
+                tag: crate::il::ConstructorTag::Tuple(ProducerArity::TWO),
                 producers: Box::from([capture, unit]),
                 consumers: Box::from([]),
             })
@@ -4354,7 +4356,7 @@ mod tests
         let mut arena = CommandArena::new();
         let unit = arena
             .mint_producer(ProducerNode::Constructor {
-                tag: crate::il::ConstructorTag::Unit,
+                tag: crate::il::ConstructorTag::Tuple(ProducerArity::ZERO),
                 producers: Box::from([]),
                 consumers: Box::from([]),
             })
@@ -4414,7 +4416,7 @@ mod tests
         };
         assert_eq!(
             Some(&HeapValue::Constructed {
-                tag: crate::il::ConstructorTag::Unit,
+                tag: crate::il::ConstructorTag::Tuple(ProducerArity::ZERO),
                 fields: Box::from([])
             }),
             machine.store.value(strict)
@@ -4425,7 +4427,7 @@ mod tests
         };
         assert_eq!(
             Some(&HeapValue::Constructed {
-                tag: crate::il::ConstructorTag::Unit,
+                tag: crate::il::ConstructorTag::Tuple(ProducerArity::ZERO),
                 fields: Box::from([])
             }),
             machine.store.value(delayed)
@@ -4440,7 +4442,7 @@ mod tests
         };
         assert_eq!(
             Some(&HeapValue::Constructed {
-                tag: crate::il::ConstructorTag::Unit,
+                tag: crate::il::ConstructorTag::Tuple(ProducerArity::ZERO),
                 fields: Box::from([])
             }),
             machine.store.value(forced)
@@ -4455,7 +4457,7 @@ mod tests
         let mut arena = CommandArena::new();
         let unit = arena
             .mint_producer(ProducerNode::Constructor {
-                tag: crate::il::ConstructorTag::Unit,
+                tag: crate::il::ConstructorTag::Tuple(ProducerArity::ZERO),
                 producers: Box::from([]),
                 consumers: Box::from([]),
             })
@@ -4490,7 +4492,7 @@ mod tests
             .expect("empty arms");
         let non_value = arena
             .mint_producer(ProducerNode::Constructor {
-                tag: crate::il::ConstructorTag::Unit,
+                tag: crate::il::ConstructorTag::Tuple(ProducerArity::ZERO),
                 producers: Box::from([]),
                 consumers: Box::from([top]),
             })
@@ -4612,7 +4614,7 @@ mod tests
             .expect("leaf");
         let result = arena
             .mint_producer(ProducerNode::Constructor {
-                tag: crate::il::ConstructorTag::Pair,
+                tag: crate::il::ConstructorTag::Tuple(ProducerArity::TWO),
                 producers: Box::from([outer, inner]),
                 consumers: Box::from([]),
             })
@@ -4624,14 +4626,14 @@ mod tests
         let matched = arena
             .mint_consumer(ConsumerNode::Case {
                 arms: Box::from([crate::il::PatternArm {
-                    constructor: crate::il::ConstructorTag::Pair,
+                    constructor: crate::il::ConstructorTag::Tuple(ProducerArity::TWO),
                     body,
                 }]),
             })
             .expect("body resolves");
         let pair = arena
             .mint_producer(ProducerNode::Constructor {
-                tag: crate::il::ConstructorTag::Pair,
+                tag: crate::il::ConstructorTag::Tuple(ProducerArity::TWO),
                 producers: Box::from([first, last]),
                 consumers: Box::from([]),
             })
@@ -4666,7 +4668,7 @@ mod tests
         let mut arena = CommandArena::new();
         let unit = arena
             .mint_producer(ProducerNode::Constructor {
-                tag: crate::il::ConstructorTag::Unit,
+                tag: crate::il::ConstructorTag::Tuple(ProducerArity::ZERO),
                 producers: Box::from([]),
                 consumers: Box::from([]),
             })
@@ -4727,7 +4729,7 @@ mod tests
         assert_eq!(Some(MemoState::Forced(value)), machine.store.cell(cell));
         assert_eq!(
             Some(&HeapValue::Constructed {
-                tag: crate::il::ConstructorTag::Unit,
+                tag: crate::il::ConstructorTag::Tuple(ProducerArity::ZERO),
                 fields: Box::from([])
             }),
             machine.store.value(value)
