@@ -398,7 +398,7 @@ mod session
             | Maybe::Present(note) => format!("\nnote: {note}"),
             | Maybe::Absent(_) => String::new(),
         };
-        let message = format!("{}{label}{note}", report.title());
+        let message = format!("{}{label}{note}", report.message());
         json!({"range": range, "code": code, "message": message, "related": related})
     }
 

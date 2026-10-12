@@ -313,7 +313,7 @@ pub struct Rechecked
 /// - ensures: the text is judged once, and each entry `gandr check --goals`
 ///   prints for the judgement's step becomes one diagnostic, in the order
 ///   printed: a report at the range its span projects to, with the refusal's
-///   vocabulary name as its code, its title, primary label and note as its
+///   vocabulary name as its code, its message, primary label and note as its
 ///   message, each context locus as a related location carrying its label, then
 ///   each nested reason, outermost first, as a related location carrying the
 ///   judgement it stands for, and the severity of a goal as information, of a
@@ -543,8 +543,8 @@ pub fn highlight(text: SourceText<'_>) -> Vec<HlSpan>
 /// - requires: `index` was built from the text `report` is about.
 /// - ensures: as [`recheck`] states for one report. A span the renderer locates
 ///   lies inside the text on character boundaries, so it always projects; the
-///   origin stands in for one that would not. The message is the report's
-///   title, then the primary locus's label on its own line when the report is
+///   origin stands in for one that would not. The message is the report's plain
+///   message, then the primary locus's label on its own line when the report is
 ///   located, then its note on a line of its own after `note: ` when it closes
 ///   with one: what the terminal prints, in the one text field the protocol
 ///   gives a diagnostic.
@@ -567,7 +567,7 @@ pub fn highlight(text: SourceText<'_>) -> Vec<HlSpan>
 #[spec(ensures: |ret| ret.source == "gandr"
     && ret.severity == match report.class() { Class::Goal => Severity::INFORMATION, Class::Warning => Severity::WARNING, _ => Severity::ERROR }
     && ret.code.is_some() == matches!(report.identifier(), Maybe::Present(_))
-    && ret.message.starts_with(&report.title().to_string())
+    && ret.message.starts_with(&report.message().to_string())
     && ret.related_information.len() == report.context().into_iter()
         .filter(|slot| matches!(slot, Maybe::Present(_))).count().saturating_add(report.reasons().len())
     && ret.related_information.iter().all(|related| related.location.uri == *uri))]
@@ -594,7 +594,7 @@ fn diagnostic(
         | Class::Warning => Severity::WARNING,
         | Class::Refusal(_) | Class::Unsettled(_) => Severity::ERROR,
     };
-    let mut message = report.title().to_string();
+    let mut message = report.message().to_string();
     if let Maybe::Present(label) = report.label() {
         message.push('\n');
         message.push_str(&label.to_string());
@@ -748,7 +748,7 @@ mod tests
         assert_eq!(
             diagnostic.message.lines().nth(1),
             Some("its type does not convert: expected `Integer`, found `String`"),
-            "the editor's message spells both types under the title: {:?}",
+            "the editor's message spells both types under the message line: {:?}",
             diagnostic.message
         );
         let [ref related] = *diagnostic.related_information.as_slice()
@@ -854,14 +854,14 @@ mod tests
             panic!("one unresolved type head");
         };
         let lines: Vec<&str> = diagnostic.message.lines().collect();
-        let [title, label, note] = *lines.as_slice()
+        let [message, label, note] = *lines.as_slice()
         else {
-            panic!("a title, a label and a note: {:?}", diagnostic.message);
+            panic!("a message, a label and a note: {:?}", diagnostic.message);
         };
-        assert!(title.contains("`List`"), "the title names the head");
+        assert!(message.contains("`List`"), "the message names the head");
         assert!(
-            !title.contains(".."),
-            "the range locates the head; the title repeats no byte range"
+            !message.contains(".."),
+            "the range locates the head; the message repeats no byte range"
         );
         assert!(
             !label.is_empty() && label != "malformed source",

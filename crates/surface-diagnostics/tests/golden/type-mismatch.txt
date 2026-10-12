@@ -1,4 +1,4 @@
-error[TypeMismatch]: the type this term synthesises does not convert to the type it is checked against
+error[TypeMismatch]: mismatched types
   ╭▸ mismatch.gandr:2:13
   │
 1 │ def wrong : Integer ;

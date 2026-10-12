@@ -1,0 +1,749 @@
+//! The message a report leads with: what went wrong, in the words of the
+//! language a user writes.
+//!
+//! # The message is the user's; the title is the producer's
+//!
+//! Every producer words its refusals for whoever reads its own code: the
+//! lowering names the grammar's sorts (`` `thunk_expression` has an operand
+//! where it takes none ``), the checker names its rules and positions. A
+//! report keeps that text as its [`Title`](crate::Title) and leads with its
+//! [`Message`](crate::Message) instead: one per refusal variant, chosen by an
+//! exhaustive match, naming forms in the words the source is written in, and
+//! naming no grammar sort, admission position or node. A refusal no source can
+//! reach — a run fault or a producer's broken invariant — says so, as an
+//! internal error.
+
+use core::fmt;
+
+use gandr_core_checker::CheckRefusal;
+use gandr_core_checker::CheckingForm;
+use gandr_surface_corpus::CorpusRefusal;
+use gandr_surface_corpus::Refusal;
+use gandr_surface_lowering::FormFault;
+use gandr_surface_lowering::FormName;
+use gandr_surface_lowering::FragmentBoundary;
+use gandr_surface_lowering::LoweringRefusal;
+use gandr_surface_lowering::Repair;
+use gandr_surface_syntax::ClosingClass;
+use gandr_surface_syntax::GroutShape;
+use quenchant_shape::shape::Maybe;
+
+use crate::locus::Descent;
+use crate::locus::Former;
+use crate::locus::Shape;
+use crate::locus::Site;
+
+/// A refusal's plain message.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+pub struct Plain<'step>(pub Refusal<'step>);
+
+impl fmt::Display for Plain<'_>
+{
+    /// Writes the refusal's plain message.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: writes one message per refusal variant, naming the source's
+    ///   own names and forms and no grammar sort or node; propagates a write
+    ///   failure.
+    /// - provides: the message of every refusal report.
+    /// - fails: if the formatter rejects a write.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no output buffer or
+    ///   independent observation of the destination's failure.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one refusal of every vocabulary name writes a
+    ///   nonempty, single-line message with no underscore-joined grammar sort.
+    /// - witness: `message::tests::every_refusal_name_has_a_plain_message`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match self.0 {
+            | Refusal::Lowering(refusal) => lowered(refusal, f),
+            | Refusal::Checking(refusal) => checked(refusal, f),
+            | Refusal::Corpus(CorpusRefusal::ExpectationOutsideFixtureRoot { schema, .. }) => {
+                write!(
+                    f,
+                    "`{schema}` is an expectation only a fixture may state; outside the fixture \
+                     root a declaration states `checks` or `runs`"
+                )
+            },
+        }
+    }
+}
+
+/// A form's name in the words a user reads: the grammar's kind with its
+/// underscores spaced.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct Spoken(FormName);
+
+impl fmt::Display for Spoken
+{
+    /// Writes the form's kind with each underscore a space.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        for word in self.0.as_ref().split('_').enumerate() {
+            if word.0 > 0_usize {
+                f.write_str(" ")?;
+            }
+            f.write_str(word.1)?;
+        }
+        Ok(())
+    }
+}
+
+/// Writes the plain message of a lowering refusal.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: writes one message per variant, the form a malformed or
+///   unadmitted form names spoken in words; propagates a write failure.
+/// - provides: the lowering half of [`Plain`].
+/// - fails: if the formatter rejects a write.
+/// - panics: none.
+/// - executable: none — the formatter exposes no output buffer.
+///
+/// # Errors
+/// The formatter's.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one refusal of every lowering name writes a nonempty,
+///   single-line message with no grammar sort.
+/// - witness: `message::tests::every_refusal_name_has_a_plain_message`
+fn lowered(
+    refusal: LoweringRefusal<'_>,
+    f: &mut fmt::Formatter<'_>,
+) -> fmt::Result
+{
+    match refusal {
+        | LoweringRefusal::UnresolvedName { name, .. } => write!(f, "`{name}` is not defined"),
+        | LoweringRefusal::UnresolvedDocLink { name, .. } => {
+            write!(
+                f,
+                "the documentation links to `{name}`, which is not defined"
+            )
+        },
+        | LoweringRefusal::UnresolvedTypeHead { name, arity, .. } => {
+            write!(f, "no type named `{name}` is written {arity}")
+        },
+        | LoweringRefusal::DuplicateSignature { name, .. } => {
+            write!(f, "`{name}` is given a type twice")
+        },
+        | LoweringRefusal::DuplicateDefinition { name, .. } => {
+            write!(f, "`{name}` is defined twice")
+        },
+        | LoweringRefusal::DuplicateImportAlias { alias, .. } => {
+            write!(f, "two imports are both named `{alias}`")
+        },
+        | LoweringRefusal::ShadowedBuiltin { name, .. } => {
+            write!(
+                f,
+                "`{name}` is a builtin name, which this source may not rebind"
+            )
+        },
+        | LoweringRefusal::OutOfFragment {
+            form,
+            sort,
+            boundary,
+            ..
+        } => {
+            let form = Spoken(form);
+            match boundary {
+                | FragmentBoundary::Reserved => {
+                    write!(f, "the {form} is reserved, and not available yet")
+                },
+                | FragmentBoundary::Unadmitted => write!(f, "the {form} is not supported yet"),
+                | FragmentBoundary::WrongSort => {
+                    write!(f, "a {form} cannot stand where {sort} is expected")
+                },
+                | FragmentBoundary::Arity(operands) => {
+                    write!(f, "the {form} cannot take {operands} operands")
+                },
+                | FragmentBoundary::Indexed => {
+                    f.write_str("indexed datatype families are not supported yet")
+                },
+                | FragmentBoundary::Unannotated => write!(f, "the {form} needs a type annotation"),
+                | FragmentBoundary::NonUniform => f.write_str(
+                    "a recursive call must pass the earlier parameters unchanged; only the last \
+                     one descends",
+                ),
+            }
+        },
+        | LoweringRefusal::GradedBridge { grade, .. } => write!(
+            f,
+            "the grade `{grade}` is not supported; only the default grade `ω` is"
+        ),
+        | LoweringRefusal::MalformedLiteral { form, .. } => {
+            write!(f, "this is not a well-formed {}", Spoken(form))
+        },
+        | LoweringRefusal::MalformedForm { form, fault, .. } => {
+            let form = Spoken(form);
+            match fault {
+                | FormFault::Repaired(Repair::Grout(GroutShape::Convex)) => {
+                    write!(f, "a term is missing in this {form}")
+                },
+                | FormFault::Repaired(Repair::Grout(GroutShape::Prefix | GroutShape::Postfix))
+                | FormFault::MissingOperand => write!(f, "an operand is missing in this {form}"),
+                | FormFault::Repaired(Repair::Grout(GroutShape::Infix)) => {
+                    write!(f, "an operator is missing in this {form}")
+                },
+                | FormFault::Repaired(Repair::GhostClose(close)) => {
+                    write!(f, "this {form} is missing its closing `{}`", match close {
+                        | ClosingClass::Paren => ")",
+                        | ClosingClass::Bracket => "]",
+                        | ClosingClass::Brace => "}",
+                    })
+                },
+                | FormFault::ExtraOperand => {
+                    write!(f, "this {form} has an operand it does not take")
+                },
+                | FormFault::MisplacedTile => {
+                    write!(f, "a keyword or symbol of this {form} is out of place")
+                },
+            }
+        },
+        | LoweringRefusal::UnknownAttribute {
+            name, suggestion, ..
+        } => match suggestion {
+            | Maybe::Present(nearest) => {
+                write!(
+                    f,
+                    "there is no attribute `{name}`; did you mean `{nearest}`?"
+                )
+            },
+            | Maybe::Absent(_) => write!(f, "there is no attribute `{name}`"),
+        },
+        | LoweringRefusal::DuplicateAttribute { name, .. } => {
+            write!(f, "the attribute `{name}` is written twice")
+        },
+        | LoweringRefusal::MissingPayload { name, expected, .. } => {
+            write!(f, "the attribute `{name}` needs {expected}")
+        },
+        | LoweringRefusal::NonValuePayload { name, .. } => {
+            write!(f, "the argument of the attribute `{name}` must be a value")
+        },
+        | LoweringRefusal::IllTypedPayload {
+            name,
+            expected,
+            written,
+            ..
+        } => write!(f, "the attribute `{name}` takes {expected}, not {written}"),
+        | LoweringRefusal::ForwardMemberReference { name, .. } => {
+            write!(f, "the member `{name}` is used before it is declared")
+        },
+        | LoweringRefusal::UnknownMember { module, member, .. } => {
+            write!(f, "the module `{module}` has no member `{member}`")
+        },
+        | LoweringRefusal::UnreadAscription { name, form, .. } => {
+            write!(f, "`{name}` {form}, which is not supported yet")
+        },
+        | LoweringRefusal::LowercaseModuleName { name, .. } => write!(
+            f,
+            "the module `{name}` must start with an uppercase letter at the top level"
+        ),
+        | LoweringRefusal::NonExhaustiveMatch { .. } => {
+            f.write_str("this match does not cover every value it can be given")
+        },
+        | LoweringRefusal::UnmarkedSelfReference { name, .. } => write!(
+            f,
+            "`{name}` calls itself without saying how it recurses; write `{name}[<](…)`"
+        ),
+        | LoweringRefusal::BudgetExceeded { budget } => write!(
+            f,
+            "the source is too large to read within the allowance of {budget} steps"
+        ),
+        | LoweringRefusal::GrammarMismatch { .. } => f.write_str(
+            "internal error: the source was parsed under a different grammar than it was read \
+             with",
+        ),
+        | LoweringRefusal::UnknownMold { .. } => {
+            f.write_str("internal error: the parser produced a form its grammar does not hold")
+        },
+    }
+}
+
+/// Writes the plain message of a checker refusal.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: writes one message per variant, naming no node and no admission
+///   position; a refusal only a producer fault reaches is an internal error;
+///   propagates a write failure.
+/// - provides: the checker half of [`Plain`].
+/// - fails: if the formatter rejects a write.
+/// - panics: none.
+/// - executable: none — the formatter exposes no output buffer.
+///
+/// # Errors
+/// The formatter's.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one refusal of every checker name writes a nonempty,
+///   single-line message with no admission position.
+/// - witness: `message::tests::every_refusal_name_has_a_plain_message`
+fn checked(
+    refusal: CheckRefusal,
+    f: &mut fmt::Formatter<'_>,
+) -> fmt::Result
+{
+    match refusal {
+        | CheckRefusal::NotADataType(_) => f.write_str("this is not a datatype"),
+        | CheckRefusal::DataKindNotUniverse(_) => {
+            f.write_str("a datatype's kind must be a universe")
+        },
+        | CheckRefusal::DataFieldLevel { .. } => {
+            f.write_str("a constructor field lives in a larger universe than its datatype")
+        },
+        | CheckRefusal::DataArgumentArity(_) => {
+            f.write_str("the datatype is given the wrong number of arguments")
+        },
+        | CheckRefusal::UnknownConstructor { .. } => {
+            f.write_str("the datatype has no such constructor")
+        },
+        | CheckRefusal::ConstructorArity(_) => {
+            f.write_str("the constructor is given the wrong number of fields")
+        },
+        | CheckRefusal::NonExhaustiveDataCase(_) => {
+            f.write_str("the case must handle every constructor exactly once")
+        },
+        | CheckRefusal::AbsentRecordField(_) => f.write_str("the record has no such field"),
+        | CheckRefusal::MissingRecordField { .. } => f.write_str("the record is missing a field"),
+        | CheckRefusal::UnknownOperation { .. } => {
+            f.write_str("the interface has no such operation")
+        },
+        | CheckRefusal::HandlerCoverage { .. } => {
+            f.write_str("the handler must handle every operation of its interface exactly once")
+        },
+        | CheckRefusal::ShiftWithoutReset { .. } => {
+            f.write_str("`shift` needs an enclosing `reset`")
+        },
+        | CheckRefusal::DependentStack { .. } => {
+            f.write_str("the stack's result type depends on the value it consumes")
+        },
+        | CheckRefusal::EffectSignatureConflict { .. } => {
+            f.write_str("two effects give the same operation different types")
+        },
+        | CheckRefusal::PathCode(_) => {
+            f.write_str("a universe path needs a quoted, closed, first-order code at each end")
+        },
+        | CheckRefusal::TypeMismatch(_) => f.write_str("mismatched types"),
+        | CheckRefusal::ShapeMismatch { wanted, .. } => write!(f, "expected {}", Shape(wanted)),
+        | CheckRefusal::NotSynthesisable { form } => write!(
+            f,
+            "the type of {} cannot be inferred where it stands",
+            match form {
+                | CheckingForm::Reify(_) => "a stack literal",
+                | CheckingForm::Handle(_) => "a handler",
+                | CheckingForm::Reset(_) => "a reset",
+                | CheckingForm::Shift(_) => "a shift",
+                | CheckingForm::With(_) => "a lazy pair",
+                | CheckingForm::Injection(_) => "an injection",
+                | CheckingForm::List(_) => "a list",
+                | CheckingForm::Case(_) => "a case",
+                | CheckingForm::Thunk(_) => "a thunk",
+                | CheckingForm::Lambda(_) => "a function",
+                | CheckingForm::Return(_) => "a return",
+                | CheckingForm::Hole(_) => "a hole",
+                | CheckingForm::StaticLambda(_) => "a type operator",
+                | CheckingForm::Fixpoint(_) => "a recursive definition",
+            }
+        ),
+        | CheckRefusal::UnknownConstant { .. } => {
+            f.write_str("this names a declaration whose type is not known")
+        },
+        | CheckRefusal::OutOfFragment { former, .. } => {
+            write!(f, "{} is not supported here", Former(former))
+        },
+        | CheckRefusal::UnboundIndex { .. } => {
+            f.write_str("internal error: a variable refers past every binder around it")
+        },
+        | CheckRefusal::BudgetExceeded { budget } => write!(
+            f,
+            "checking this ran out of its allowance of {budget} steps"
+        ),
+        | CheckRefusal::DanglingNode { .. } => {
+            f.write_str("internal error: a term refers to something the checker cannot find")
+        },
+        | CheckRefusal::AdmissionOrder { .. } => {
+            f.write_str("internal error: the declarations were checked out of order")
+        },
+        | CheckRefusal::MachineInvariant => {
+            f.write_str("internal error: the checker's bookkeeping disagreed with itself")
+        },
+        | CheckRefusal::SortMismatch { .. } => {
+            f.write_str("a value type's code and a computation type's code are confused here")
+        },
+        | CheckRefusal::LevelMismatch { .. } => {
+            f.write_str("this code lives in a larger universe than the one expected")
+        },
+        | CheckRefusal::DependentBind { .. } => {
+            f.write_str("the result type of this `run` depends on the value it binds")
+        },
+        | CheckRefusal::Undecided { .. } => {
+            f.write_str("the checker could not decide what this code unfolds to")
+        },
+        | CheckRefusal::FamilyArity {
+            expected, actual, ..
+        } => write!(
+            f,
+            "the type operator takes {} arguments but is given {}",
+            u32::from(expected),
+            u32::from(actual)
+        ),
+        | CheckRefusal::FamilyArgumentClassifier { position, .. } => write!(
+            f,
+            "argument {} of the type operator has the wrong kind",
+            u32::from(position)
+        ),
+        | CheckRefusal::StaticLambdaArgument { .. } => {
+            f.write_str("a type operator is given where a value is needed")
+        },
+        | CheckRefusal::StaticClassifierExpected { .. } => {
+            f.write_str("a type operator's parameter must range over a universe or a kind")
+        },
+        | CheckRefusal::NegativeOccurrence(site) => write!(
+            f,
+            "the datatype occurs to the left of an arrow in its {}",
+            Site(site)
+        ),
+        | CheckRefusal::NestedOccurrence(site) => write!(
+            f,
+            "the datatype occurs nested inside another type in its {}",
+            Site(site)
+        ),
+        | CheckRefusal::IndexOccurrence(site) => {
+            write!(f, "the datatype occurs inside a term in its {}", Site(site))
+        },
+        | CheckRefusal::NonUniformOccurrence(site) => write!(
+            f,
+            "the datatype is applied to other arguments than its parameters in its {}",
+            Site(site)
+        ),
+        | CheckRefusal::CrossBlockReference { site, .. } => write!(
+            f,
+            "the datatype's {} refers to a declaration written after it",
+            Site(site)
+        ),
+        | CheckRefusal::DescentNotReplayed { reason, .. } => {
+            write!(f, "the recursion is not structural: {}", Descent(reason))
+        },
+    }
+}
+
+/// Every refusal name's message, read through one constructed refusal each.
+#[cfg(test)]
+mod tests
+{
+    use gandr_core_checker::ArgumentPosition;
+    use gandr_core_checker::CheckBudget;
+    use gandr_core_checker::CheckRefusal;
+    use gandr_core_checker::CheckingForm;
+    use gandr_core_checker::CoreNode;
+    use gandr_core_checker::ExpectedShape;
+    use gandr_core_checker::Mismatch;
+    use gandr_core_checker::StaticArity;
+    use gandr_core_checker::TermNode;
+    use gandr_core_checker::TypeNode;
+    use gandr_core_checker::UnadmittedFormer;
+    use gandr_core_term::BinderDepth;
+    use gandr_core_term::CoreArena;
+    use gandr_core_term::Zone;
+    use gandr_kernel_term::ConstantIndex;
+    use gandr_kernel_term::ConstructorTag;
+    use gandr_kernel_term::DeBruijnIndex;
+    use gandr_kernel_term::DescentRefusal;
+    use gandr_kernel_term::OccurrenceSite;
+    use gandr_kernel_term::ParameterPosition;
+    use gandr_surface_corpus::CorpusRefusal;
+    use gandr_surface_corpus::ExpectationSchema;
+    use gandr_surface_corpus::Refusal;
+    use gandr_surface_corpus::RefusalName;
+    use gandr_surface_lowering::AscriptionForm;
+    use gandr_surface_lowering::AttributeRegistry;
+    use gandr_surface_lowering::AttributeSchema;
+    use gandr_surface_lowering::FormFault;
+    use gandr_surface_lowering::FormName;
+    use gandr_surface_lowering::FragmentBoundary;
+    use gandr_surface_lowering::FragmentSort;
+    use gandr_surface_lowering::HeadArity;
+    use gandr_surface_lowering::LoweringRefusal;
+    use gandr_surface_lowering::PayloadForm;
+    use gandr_surface_lowering::SurfaceName;
+    use gandr_surface_syntax::ByteOffset;
+    use gandr_surface_syntax::ByteSpan;
+    use gandr_surface_syntax::GrammarFingerprint;
+    use gandr_surface_syntax::MoldId;
+
+    use super::Plain;
+
+    #[test]
+    fn every_refusal_name_has_a_plain_message()
+    {
+        let mut arena = CoreArena::new();
+        let value = arena.value_unit();
+        let computation = arena.computation_return(value);
+        let value_type = arena.value_type_unit();
+        let comp_type = arena.comp_type_returner(value_type);
+        let span = ByteSpan::new(ByteOffset::from(0_usize), ByteOffset::from(1_usize))
+            .expect("an ordered span");
+        let name = SurfaceName::from("x");
+        let form = FormName::HOLE;
+        let registered = AttributeRegistry::names()
+            .first()
+            .copied()
+            .expect("the registry holds a name");
+        let site = OccurrenceSite::Parameter(ParameterPosition::from(0_usize));
+        let lowering = [
+            LoweringRefusal::UnresolvedName { span, name },
+            LoweringRefusal::UnresolvedDocLink { span, name },
+            LoweringRefusal::UnresolvedTypeHead {
+                span,
+                name,
+                arity: HeadArity::Nullary,
+            },
+            LoweringRefusal::DuplicateSignature {
+                span,
+                name,
+                first: span,
+            },
+            LoweringRefusal::DuplicateDefinition {
+                span,
+                name,
+                first: span,
+            },
+            LoweringRefusal::DuplicateImportAlias {
+                span,
+                alias: name,
+                first: span,
+            },
+            LoweringRefusal::ShadowedBuiltin { span, name },
+            LoweringRefusal::OutOfFragment {
+                span,
+                form,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::WrongSort,
+            },
+            LoweringRefusal::GradedBridge { span, grade: name },
+            LoweringRefusal::MalformedLiteral { span, form },
+            LoweringRefusal::MalformedForm {
+                span,
+                form,
+                fault: FormFault::ExtraOperand,
+            },
+            LoweringRefusal::UnknownAttribute {
+                span,
+                name,
+                suggestion: AttributeRegistry::suggestion(SurfaceName::from("check")),
+            },
+            LoweringRefusal::DuplicateAttribute {
+                span,
+                name,
+                first: span,
+            },
+            LoweringRefusal::MissingPayload {
+                span,
+                name: registered,
+                expected: AttributeSchema::Integer,
+            },
+            LoweringRefusal::NonValuePayload {
+                span,
+                name: registered,
+                form,
+            },
+            LoweringRefusal::IllTypedPayload {
+                span,
+                name: registered,
+                expected: AttributeSchema::Integer,
+                written: PayloadForm::Text,
+            },
+            LoweringRefusal::ForwardMemberReference {
+                span,
+                name,
+                declared: span,
+            },
+            LoweringRefusal::UnknownMember {
+                span,
+                module: name,
+                member: name,
+            },
+            LoweringRefusal::UnreadAscription {
+                span,
+                name,
+                form: AscriptionForm::Opaque,
+            },
+            LoweringRefusal::LowercaseModuleName { span, name },
+            LoweringRefusal::NonExhaustiveMatch { span },
+            LoweringRefusal::UnmarkedSelfReference { span, name },
+            LoweringRefusal::BudgetExceeded {
+                budget: 0_usize.into(),
+            },
+            LoweringRefusal::GrammarMismatch {
+                tree: GrammarFingerprint::from(1_u64),
+                grammar: GrammarFingerprint::from(2_u64),
+            },
+            LoweringRefusal::UnknownMold {
+                span,
+                mold: MoldId::from(0_u32),
+            },
+        ]
+        .map(Refusal::Lowering);
+        let checking = [
+            CheckRefusal::NotADataType(ConstantIndex::from(0_usize)),
+            CheckRefusal::DataKindNotUniverse(value_type),
+            CheckRefusal::DataFieldLevel {
+                field: value_type,
+                kind: value_type,
+            },
+            CheckRefusal::DataArgumentArity(value_type),
+            CheckRefusal::UnknownConstructor {
+                at: value,
+                tag: ConstructorTag::from(0_usize),
+            },
+            CheckRefusal::ConstructorArity(value),
+            CheckRefusal::NonExhaustiveDataCase(computation),
+            CheckRefusal::AbsentRecordField(computation),
+            CheckRefusal::MissingRecordField {
+                at: value,
+                expected: value_type,
+            },
+            CheckRefusal::UnknownOperation { at: computation },
+            CheckRefusal::HandlerCoverage { at: computation },
+            CheckRefusal::ShiftWithoutReset { at: computation },
+            CheckRefusal::DependentStack {
+                at: value,
+                synthesised: comp_type,
+            },
+            CheckRefusal::PathCode(value),
+            CheckRefusal::TypeMismatch(Mismatch::Value {
+                at: value,
+                synthesised: value_type,
+                expected: value_type,
+            }),
+            CheckRefusal::EffectSignatureConflict {
+                at: computation,
+                first: comp_type,
+                second: comp_type,
+            },
+            CheckRefusal::ShapeMismatch {
+                at: TermNode::Value(value),
+                wanted: ExpectedShape::Thunk,
+                found: TypeNode::Value(value_type),
+            },
+            CheckRefusal::NotSynthesisable {
+                form: CheckingForm::Thunk(value),
+            },
+            CheckRefusal::UnknownConstant {
+                at: value,
+                constant: ConstantIndex::from(0_usize),
+            },
+            CheckRefusal::OutOfFragment {
+                at: CoreNode::Term(TermNode::Computation(computation)),
+                former: UnadmittedFormer::Shift,
+            },
+            CheckRefusal::UnboundIndex {
+                at: value,
+                zone: Zone::Intuitionistic,
+                index: DeBruijnIndex::from(0_u32),
+                depth: BinderDepth::from(0_usize),
+            },
+            CheckRefusal::BudgetExceeded {
+                budget: CheckBudget::from(0_usize),
+            },
+            CheckRefusal::DanglingNode {
+                node: CoreNode::Type(TypeNode::Computation(comp_type)),
+            },
+            CheckRefusal::AdmissionOrder {
+                constant: ConstantIndex::from(0_usize),
+                admitted: ConstantIndex::from(1_usize),
+            },
+            CheckRefusal::MachineInvariant,
+            CheckRefusal::SortMismatch {
+                at: value,
+                synthesised: value_type,
+                expected: value_type,
+            },
+            CheckRefusal::LevelMismatch {
+                at: value,
+                synthesised: value_type,
+                expected: value_type,
+            },
+            CheckRefusal::DependentBind {
+                at: computation,
+                synthesised: comp_type,
+            },
+            CheckRefusal::Undecided { at: value },
+            CheckRefusal::FamilyArity {
+                at: value,
+                expected: StaticArity::from(1_u32),
+                actual: StaticArity::from(2_u32),
+            },
+            CheckRefusal::FamilyArgumentClassifier {
+                at: value,
+                position: ArgumentPosition::from(0_u32),
+                synthesised: value_type,
+                expected: value_type,
+            },
+            CheckRefusal::StaticLambdaArgument { at: value },
+            CheckRefusal::StaticClassifierExpected {
+                at: value_type,
+                found: value_type,
+            },
+            CheckRefusal::NegativeOccurrence(site),
+            CheckRefusal::NestedOccurrence(site),
+            CheckRefusal::IndexOccurrence(site),
+            CheckRefusal::NonUniformOccurrence(site),
+            CheckRefusal::CrossBlockReference {
+                site,
+                index: ConstantIndex::from(1_usize),
+            },
+            CheckRefusal::DescentNotReplayed {
+                at: computation,
+                reason: DescentRefusal::NotOverData,
+            },
+        ]
+        .map(Refusal::Checking);
+        let corpus = Refusal::Corpus(CorpusRefusal::ExpectationOutsideFixtureRoot {
+            span,
+            schema: ExpectationSchema::Owes,
+        });
+        let refusals: Vec<Refusal<'_>> = lowering
+            .into_iter()
+            .chain(checking)
+            .chain([corpus])
+            .collect();
+        let named: Vec<RefusalName> = refusals.iter().map(Refusal::name).collect();
+        let missing: Vec<RefusalName> = RefusalName::VOCABULARY
+            .into_iter()
+            .filter(|vocabulary| !named.contains(vocabulary))
+            .collect();
+        assert!(missing.is_empty(), "every name is exercised: {missing:?}");
+        for refusal in refusals {
+            let message = Plain(refusal).to_string();
+            assert!(!message.is_empty(), "{:?} has a message", refusal.name());
+            assert!(!message.contains('\n'), "one line: {message}");
+            assert!(
+                !message
+                    .split(|character: char| character.is_whitespace() || character == '`')
+                    .any(|word| word.contains('_')),
+                "no grammar sort: {message}"
+            );
+            assert!(
+                !message.contains("admission position") && !message.contains("node "),
+                "no producer bookkeeping: {message}"
+            );
+        }
+    }
+}

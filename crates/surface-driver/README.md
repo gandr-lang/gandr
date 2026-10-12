@@ -93,7 +93,7 @@ run: settled
 seal: sealed
 verdict: settled
 $ gandr check broken.gandr
-error[UnresolvedName]: no declaration or binder answers `missing`
+error[UnresolvedName]: `missing` is not defined
   ╭▸ broken.gandr:1:14
   │
 1 │ def broken = missing ;
