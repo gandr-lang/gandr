@@ -399,6 +399,31 @@ pub enum ContentNode
     },
     /// Native transport.
     Transport(NodeIndex, NodeIndex),
+    /// An element path type over its carrier and two endpoints.
+    PathType
+    {
+        /// The carrier.
+        carrier: NodeIndex,
+        /// The left endpoint.
+        left: NodeIndex,
+        /// The right endpoint.
+        right: NodeIndex,
+    },
+    /// Element reflexivity at its point.
+    Here(NodeIndex),
+    /// A compound endpoint: the computation whose returned value it stands
+    /// for.
+    Returned(NodeIndex),
+    /// Transport along an element path in a motive under one binder.
+    ElementTransport
+    {
+        /// The motive, under one binder.
+        motive: NodeIndex,
+        /// The path.
+        path: NodeIndex,
+        /// The transported value.
+        value: NodeIndex,
+    },
     /// A bound variable.
     Variable
     {
@@ -781,6 +806,8 @@ impl ContentNode
         | Self::Record(_)
         | Self::Reify(_)
         | Self::PathRefl(_)
+        | Self::Here(_)
+        | Self::Returned(_)
         | Self::PrimitiveValue(_)
         | Self::PathProduct(..)
         | Self::PathEquiv { .. }
@@ -811,6 +838,7 @@ impl ContentNode
         | Self::With(..)
         | Self::Project(..)
         | Self::Transport(..)
+        | Self::ElementTransport { .. }
         | Self::Primitive(..)
         | Self::Lambda(_)
         | Self::Application(..)
@@ -826,6 +854,7 @@ impl ContentNode
         | Self::RecordType(_)
         | Self::Stack { .. }
         | Self::PathUniverse(..)
+        | Self::PathType { .. }
         | Self::Base(_)
         | Self::Product(_)
         | Self::Sum(_)
@@ -858,6 +887,8 @@ impl ContentNode
             | Self::Record(_)
             | Self::Reify(_)
             | Self::PathRefl(_)
+            | Self::Here(_)
+            | Self::Returned(_)
             | Self::PrimitiveValue(_)
             | Self::PathProduct(..)
             | Self::PathEquiv { .. }
@@ -888,6 +919,7 @@ impl ContentNode
             | Self::With(..)
             | Self::Project(..)
             | Self::Transport(..)
+            | Self::ElementTransport { .. }
             | Self::Primitive(..)
             | Self::Lambda(_)
             | Self::Application(..)
@@ -903,6 +935,7 @@ impl ContentNode
             | Self::RecordType(_)
             | Self::Stack { .. }
             | Self::PathUniverse(..)
+            | Self::PathType { .. }
             | Self::Base(_)
             | Self::Product(_)
             | Self::Sum(_)
@@ -983,7 +1016,11 @@ impl ContentNode
                 actual == Some(&[(a, V), (b, V)][..])
             },
             | Self::PathEquiv { path_type, forward, backward, .. } => actual == Some(&[(path_type, A), (forward, V), (backward, V)][..]),
+            | Self::PathType { carrier, left, right } => actual == Some(&[(carrier, A), (left, V), (right, V)][..]),
+            | Self::ElementTransport { motive, path, value } => actual == Some(&[(motive, A), (path, V), (value, V)][..]),
+            | Self::Returned(a) => actual == Some(&[(a, M)][..]),
             | Self::PathRefl(a)
+            | Self::Here(a)
             | Self::StaticLambda(a)
             | Self::Injection(_, a)
             | Self::ValueLift { body: a, .. }
@@ -1089,6 +1126,16 @@ impl ContentNode
                 backward,
                 ..
             } => Children::of(&[(path_type, A), (forward, V), (backward, V)]),
+            | Self::PathType {
+                carrier,
+                left,
+                right,
+            } => Children::of(&[(carrier, A), (left, V), (right, V)]),
+            | Self::ElementTransport {
+                motive,
+                path,
+                value,
+            } => Children::of(&[(motive, A), (path, V), (value, V)]),
             | Self::PrimitiveValue(_)
             | Self::Variable { .. }
             | Self::Constant(_)
@@ -1109,6 +1156,7 @@ impl ContentNode
             | Self::ListCons(first, second)
             | Self::StaticApplication(first, second) => Children::of(&[(first, V), (second, V)]),
             | Self::PathRefl(body)
+            | Self::Here(body)
             | Self::StaticLambda(body)
             | Self::Injection(_, body)
             | Self::ValueLift { body, .. }
@@ -1117,6 +1165,7 @@ impl ContentNode
             | Self::ValueMark { body, .. } => Children::of(&[(body, V)]),
             | Self::ComputationMark { body, .. }
             | Self::Thunk(body)
+            | Self::Returned(body)
             | Self::Lambda(body)
             | Self::Fixpoint { body, .. } => Children::of(&[(body, M)]),
             | Self::Application(head, argument) => Children::of(&[(head, M), (argument, V)]),
@@ -1215,6 +1264,10 @@ impl ContentNode
             | Self::PrimitiveValue(_)
             | Self::Primitive(..)
             | Self::PathRefl(_)
+            | Self::Here(_)
+            | Self::Returned(_)
+            | Self::PathType { .. }
+            | Self::ElementTransport { .. }
             | Self::PathProduct(..)
             | Self::PathEquiv { .. }
             | Self::Transport(..)
@@ -2167,6 +2220,10 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
             ),
             | Value::Primitive { primitive, .. } => ContentNode::PrimitiveValue(primitive),
             | Value::PathRefl(code) => ContentNode::PathRefl(self.discover(ArenaNode::Value(code))),
+            | Value::Here(point) => ContentNode::Here(self.discover(ArenaNode::Value(point))),
+            | Value::Returned(computation) => {
+                ContentNode::Returned(self.discover(ArenaNode::Computation(computation)))
+            },
             | Value::PathProduct(first, second) => {
                 let first = self.discover(ArenaNode::Value(first));
                 ContentNode::PathProduct(first, self.discover(ArenaNode::Value(second)))
@@ -2370,6 +2427,15 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 let path = self.discover(ArenaNode::Value(path));
                 ContentNode::Transport(path, self.discover(ArenaNode::Value(value)))
             },
+            | Computation::PathTransport {
+                motive,
+                path,
+                value,
+            } => ContentNode::ElementTransport {
+                motive: self.discover(ArenaNode::ValueType(motive)),
+                path: self.discover(ArenaNode::Value(path)),
+                value: self.discover(ArenaNode::Value(value)),
+            },
             | Computation::Lambda(body) => {
                 ContentNode::Lambda(self.discover(ArenaNode::Computation(body)))
             },
@@ -2459,6 +2525,15 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
             | ValueType::PathUniverse(source, target) => {
                 let source = self.discover(ArenaNode::Value(source));
                 ContentNode::PathUniverse(source, self.discover(ArenaNode::Value(target)))
+            },
+            | ValueType::Path {
+                carrier,
+                left,
+                right,
+            } => ContentNode::PathType {
+                carrier: self.discover(ArenaNode::ValueType(carrier)),
+                left: self.discover(ArenaNode::Value(left)),
+                right: self.discover(ArenaNode::Value(right)),
             },
             | ValueType::Base(base) => ContentNode::Base(base),
             | ValueType::List(element) => {
@@ -2789,6 +2864,26 @@ where
             ContentNode::PathUniverse(source, image(target))
         },
         | ContentNode::PathRefl(code) => ContentNode::PathRefl(image(code)),
+        | ContentNode::Here(point) => ContentNode::Here(image(point)),
+        | ContentNode::Returned(computation) => ContentNode::Returned(image(computation)),
+        | ContentNode::PathType {
+            carrier,
+            left,
+            right,
+        } => ContentNode::PathType {
+            carrier: image(carrier),
+            left: image(left),
+            right: image(right),
+        },
+        | ContentNode::ElementTransport {
+            motive,
+            path,
+            value,
+        } => ContentNode::ElementTransport {
+            motive: image(motive),
+            path: image(path),
+            value: image(value),
+        },
         | ContentNode::PathProduct(first, second) => {
             let first = image(first);
             ContentNode::PathProduct(first, image(second))
@@ -3169,7 +3264,7 @@ fn minted_comp_type(
         Maybe::Absent(reason) => if matches!(*node, ContentNode::Unresolved(_)) {
             reason == seating::Absent::Unresolved
         } else if matches!(node.sort(), Sort::Value | Sort::Computation)
-            || matches!(*node, ContentNode::Element { .. } | ContentNode::ComputationElement { .. } | ContentNode::PathUniverse(..))
+            || matches!(*node, ContentNode::Element { .. } | ContentNode::ComputationElement { .. } | ContentNode::PathUniverse(..) | ContentNode::PathType { .. })
             || matches!(node,ContentNode::Data { arguments,.. } if !arguments.is_empty()) {
             reason == seating::Absent::Unseatable
         } else {
@@ -3333,6 +3428,10 @@ fn mint_node(
         },
         | ContentNode::Unresolved(_) => Maybe::Absent(seating::Absent::Unresolved),
         | ContentNode::PathUniverse(..)
+        | ContentNode::PathType { .. }
+        | ContentNode::Here(_)
+        | ContentNode::Returned(_)
+        | ContentNode::ElementTransport { .. }
         | ContentNode::Constructor { .. }
         | ContentNode::Record(_)
         | ContentNode::DataCase { .. }

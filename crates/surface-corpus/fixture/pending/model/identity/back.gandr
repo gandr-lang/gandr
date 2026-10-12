@@ -1,3 +1,0 @@
-def p = here(7);
-
-walk(p, fn(x, y, q) { (? : -F(Path(Integer, y, x))) }, fn(x) { return here(x) })

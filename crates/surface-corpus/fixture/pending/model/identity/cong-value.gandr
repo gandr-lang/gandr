@@ -1,9 +1,0 @@
-def cong_list = thunk {
-  fn(p: Path(Integer, 4, 4)) {
-    become walk(p,
-      fn(x, y, q) { return Path(?, [x], [y]) },
-      fn(x) { return here(([x] : List(Integer))) })
-  }
-};
-
-cong_list(here(4))

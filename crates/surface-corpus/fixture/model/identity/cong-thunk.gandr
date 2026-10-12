@@ -1,0 +1,23 @@
+@[ checks ]
+def double(x: Integer) -> -F Integer {
+  become x + x
+}
+
+@[ checks ]
+def delay(x: Integer) -> -F (+U (-F Integer)) {
+  return thunk { become double(x) }
+}
+
+@[ checks ]
+def delayed(a: Integer) -> -F Path(+U (-F Integer), thunk { become double(a) }, thunk { become double(a) }) {
+  return here(thunk { become double(a) })
+}
+
+@[ checks ]
+def cong_delay(a: Integer, b: Integer, p: Path(Integer, a, b)) -> -F Path(+U (-F Integer), delay(a), delay(b)) {
+  become cong(delay, p)
+}
+
+@[ checks ]
+def delayed_four : +U (-F Path(+U (-F Integer), delay(4), delay(4)));
+def delayed_four = thunk { become cong_delay(4, 4, here(4)) };

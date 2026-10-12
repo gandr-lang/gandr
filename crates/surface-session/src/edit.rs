@@ -2711,6 +2711,8 @@ fn read(
                 Value::Reify(_) => matches!(ret, ContentNode::Reify(_)),
                 Value::Primitive { primitive, .. } => ret == ContentNode::PrimitiveValue(primitive),
                 Value::PathRefl(_) => matches!(ret, ContentNode::PathRefl(_)),
+                Value::Here(_) => matches!(ret, ContentNode::Here(_)),
+                Value::Returned(_) => matches!(ret, ContentNode::Returned(_)),
                 Value::PathProduct(..) => matches!(ret, ContentNode::PathProduct(..)),
                 Value::PathEquiv { ref evidence, .. } => {
                     matches!(
@@ -2812,6 +2814,10 @@ where
         ),
         | Some(&Value::Primitive { primitive, .. }) => ContentNode::PrimitiveValue(primitive),
         | Some(&Value::PathRefl(code)) => ContentNode::PathRefl(child(Root::Value(code))),
+        | Some(&Value::Here(point)) => ContentNode::Here(child(Root::Value(point))),
+        | Some(&Value::Returned(computation)) => {
+            ContentNode::Returned(child(Root::Computation(computation)))
+        },
         | Some(&Value::PathProduct(first, second)) => {
             let first = child(Root::Value(first));
             ContentNode::PathProduct(first, child(Root::Value(second)))
@@ -2908,6 +2914,7 @@ where
                 Computation::Project(side, _) => matches!(ret, ContentNode::Project(actual, _) if actual == side),
                 Computation::Primitive { primitive, .. } => matches!(ret, ContentNode::Primitive(actual, _) if actual == primitive),
                 Computation::Transport(..) => matches!(ret, ContentNode::Transport(..)),
+                Computation::PathTransport { .. } => matches!(ret, ContentNode::ElementTransport { .. }),
                 Computation::Lambda(..) => matches!(ret, ContentNode::Lambda(..)),
                 Computation::Application(..) => {
                     matches!(ret, ContentNode::Application(..))
@@ -3046,6 +3053,19 @@ where
             let path = child(Root::Value(path));
             ContentNode::Transport(path, child(Root::Value(value)))
         },
+        | Some(&Computation::PathTransport {
+            motive,
+            path,
+            value,
+        }) => {
+            let motive = child(Root::ValueType(motive));
+            let path = child(Root::Value(path));
+            ContentNode::ElementTransport {
+                motive,
+                path,
+                value: child(Root::Value(value)),
+            }
+        },
         | Some(&Computation::Lambda(body)) => ContentNode::Lambda(child(Root::Computation(body))),
         | Some(&Computation::Application(head, argument)) => {
             let head = child(Root::Computation(head));
@@ -3118,6 +3138,7 @@ where
                 ValueType::PathUniverse(..) => {
                     matches!(ret, ContentNode::PathUniverse(..))
                 }
+                ValueType::Path { .. } => matches!(ret, ContentNode::PathType { .. }),
                 ValueType::Base(base) => {
                     matches!(ret, ContentNode::Base(found) if found == base)
                 }
@@ -3190,6 +3211,19 @@ where
         | Some(&ValueType::PathUniverse(source, target)) => {
             let source = child(Root::Value(source));
             ContentNode::PathUniverse(source, child(Root::Value(target)))
+        },
+        | Some(&ValueType::Path {
+            carrier,
+            left,
+            right,
+        }) => {
+            let carrier = child(Root::ValueType(carrier));
+            let left = child(Root::Value(left));
+            ContentNode::PathType {
+                carrier,
+                left,
+                right: child(Root::Value(right)),
+            }
         },
         | Some(&ValueType::Base(base)) => ContentNode::Base(base),
         | Some(&ValueType::Product(ref parts)) => ContentNode::Product(

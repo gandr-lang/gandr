@@ -235,6 +235,7 @@ use alloc::collections::btree_map::Entry;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::ComponentCount;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
@@ -247,6 +248,7 @@ use gandr_core_term::ScopeId;
 use gandr_core_term::Transparency;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
+use gandr_core_term::ValueType;
 use gandr_core_term::Zone;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
@@ -389,6 +391,9 @@ pub enum EvalFault
     SplitNonTuple,
     /// A split binds a number of components other than its tuple's.
     SplitArity,
+    /// A compound endpoint's computation reached a weak head that is neither
+    /// a returner nor stuck, so it returns no value.
+    ReturnedNonReturner,
 }
 
 /// A definition chain with every body lowered into the core arena a run
@@ -765,6 +770,23 @@ enum Task
     Transport,
     /// Transport a neutral pair through the held product path.
     ProductTransport(DomainValueId),
+    /// Transport the operand above the element path on the value stack in a
+    /// motive.
+    PathTransport(crate::arena::ValueClosureId),
+    /// Return the tuple of this many component transports, the computations
+    /// on top of the computation stack in component order.
+    TransportTuple(gandr_core_term::ComponentCount),
+    /// Return the injection of a component transport's value at a summand.
+    TransportInjection(gandr_kernel_term::Summand),
+    /// Assemble reflexivity from its evaluated point.
+    Here
+    {
+        /// The source node.
+        term: ValueId,
+    },
+    /// Read the value the computation on the stack returns: a compound
+    /// endpoint's value.
+    Returned,
     /// Evaluate a core value.
     Value
     {
@@ -2211,7 +2233,7 @@ impl<'run> Evaluation<'run>
     /// - witness: `eval::tests::ill_shaped_reapplied_spines_return_machine_faults`
     /// - witness: `eval::tests::native_transport_sequences_product_components`
     #[spec(
-        requires: matches!(spine.first(), Some(Elimination::ListFold { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::Force | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint(_))),
+        requires: matches!(spine.first(), Some(Elimination::ListFold { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::Force | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint(_))),
         ensures: |ret| ret.machine.values.as_slice() == [head] && ret.machine.comps.is_empty()
             && ret.machine.fuel.0 == 0_u32 && {
                 let mut tasks = ret.machine.tasks.iter().rev();
@@ -2224,6 +2246,8 @@ impl<'run> Evaluation<'run>
                         matches!(tasks.next(), Some(Task::Supply(held)) if *held == value) && matches!(tasks.next(), Some(Task::Transport)) },
                     Elimination::ProductTransport(path) => { answer = Answer::Computation;
                         matches!(tasks.next(), Some(Task::ProductTransport(held)) if *held == path) },
+                    Elimination::PathTransport { motive, value } => { answer = Answer::Computation;
+                        matches!(tasks.next(), Some(Task::Supply(held)) if *held == value) && matches!(tasks.next(), Some(Task::PathTransport(held)) if *held == motive) },
                     Elimination::StaticApply(argument) => matches!(tasks.next(), Some(Task::Supply(value)) if *value == argument)
                         && matches!(tasks.next(), Some(Task::StaticApply)),
                     Elimination::Apply(argument) => {
@@ -2252,71 +2276,7 @@ impl<'run> Evaluation<'run>
     ) -> Self
     {
         let mut machine = Machine::new(definitions, Fuel(0_u32));
-        let mut answer = Answer::Value;
-        for elimination in spine.iter().rev() {
-            match *elimination {
-                | Elimination::DataCase(closure) => {
-                    answer = Answer::Computation;
-                    machine.tasks.push(Task::DataCaseClosure(closure));
-                },
-                | Elimination::Split(closure) => {
-                    answer = Answer::Computation;
-                    machine.tasks.push(Task::SplitClosure(closure));
-                },
-                | Elimination::Projection(term) => {
-                    answer = Answer::Computation;
-                    machine.tasks.push(Task::Projection(term));
-                },
-                | Elimination::ListFold {
-                    element,
-                    result,
-                    on_nil,
-                    on_cons,
-                } => {
-                    answer = Answer::Computation;
-                    machine.tasks.push(Task::ListFold {
-                        element,
-                        result,
-                        on_nil,
-                        on_cons,
-                    });
-                },
-                | Elimination::Transport(value) => {
-                    answer = Answer::Computation;
-                    machine.tasks.push(Task::Transport);
-                    machine.tasks.push(Task::Supply(value));
-                },
-                | Elimination::ProductTransport(path) => {
-                    answer = Answer::Computation;
-                    machine.tasks.push(Task::ProductTransport(path));
-                },
-                | Elimination::StaticApply(argument) => {
-                    machine.tasks.push(Task::StaticApply);
-                    machine.tasks.push(Task::Supply(argument));
-                },
-                | Elimination::Apply(argument) => {
-                    answer = Answer::Computation;
-                    machine.tasks.push(Task::Apply);
-                    machine.tasks.push(Task::Supply(argument));
-                },
-                | Elimination::Force => {
-                    answer = Answer::Computation;
-                    machine.tasks.push(Task::Force);
-                },
-                | Elimination::Bind(body) => {
-                    answer = Answer::Computation;
-                    machine.tasks.push(Task::BindClosure(body));
-                },
-                | Elimination::Case(branches) => {
-                    answer = Answer::Computation;
-                    machine.tasks.push(Task::CaseBranches(branches));
-                },
-                | Elimination::Fixpoint(recursive) => {
-                    answer = Answer::Computation;
-                    machine.tasks.push(Task::FixpointClosure(recursive));
-                },
-            }
-        }
+        let answer = push_eliminations(&mut machine, spine);
         machine.values.push(head);
         Self { machine, answer }
     }
@@ -2618,7 +2578,15 @@ fn run(
         && (ret.is_err() || match task {
             Task::Constructor { .. } | Task::Record(_) => machine.comps.len() == entry_comps && machine.tasks.len() == entry_tasks && machine.values.last().is_some_and(|id| domain.value(*id).is_some()),
             Task::DataCase { .. } | Task::DataCaseClosure(_) | Task::Split { .. } | Task::SplitClosure(_) | Task::Projection(_) | Task::Force | Task::Apply | Task::StaticApply | Task::Bind { .. } | Task::Case { .. }
-            | Task::BindClosure(_) | Task::CaseBranches(_) | Task::Transport | Task::ProductTransport(_) | Task::FixpointClosure(_) | Task::ListFold { .. } => machine.tasks.len() >= entry_tasks,
+            | Task::BindClosure(_) | Task::CaseBranches(_) | Task::Transport | Task::ProductTransport(_) | Task::FixpointClosure(_) | Task::ListFold { .. }
+            | Task::PathTransport(_) | Task::TransportTuple(_) | Task::TransportInjection(_) => machine.tasks.len() >= entry_tasks,
+            Task::Here { .. } => machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps
+                && machine.values.len() == entry_values
+                && matches!(machine.values.last().and_then(|value| domain.value(*value)),
+                    Some(DomainValue::Here { point, .. }) if Some(*point) == entry_value),
+            Task::Returned => entry_comps.checked_sub(1_usize) == Some(machine.comps.len())
+                && ((machine.tasks.len() == entry_tasks && machine.values.len() == entry_values.saturating_add(1_usize))
+                    || machine.tasks.len() > entry_tasks),
             Task::Value { .. } => machine.comps.len() == entry_comps
                 && ((machine.values.len() == entry_values.saturating_add(1_usize) && machine.tasks.len() >= entry_tasks)
                     || (machine.values.len() == entry_values && machine.tasks.len() > entry_tasks)),
@@ -2773,6 +2741,47 @@ fn step(
             let value = machine.pop_value()?;
             machine.values.extend([path, value]);
             step_transport(core, domain, machine)
+        },
+        | Task::PathTransport(motive) => step_path_transport(core, domain, machine, motive),
+        | Task::TransportTuple(count) => {
+            let start = machine
+                .comps
+                .len()
+                .checked_sub(usize::from(count))
+                .ok_or(EvalFault::MachineInvariant)?;
+            let mut components = Vec::with_capacity(usize::from(count));
+            for &component in machine.comps.get(start ..).unwrap_or_default() {
+                components.push(returned_value(domain, component)?);
+            }
+            machine.comps.truncate(start);
+            let tuple = domain.value_tuple(components, TermFace::Reduced);
+            machine
+                .comps
+                .push(domain.comp_return(tuple, CompTermFace::Reduced));
+            Ok(())
+        },
+        | Task::TransportInjection(summand) => {
+            let component = machine.pop_comp()?;
+            let body = returned_value(domain, component)?;
+            let injected = domain.value_injection(summand, body, TermFace::Reduced);
+            machine
+                .comps
+                .push(domain.comp_return(injected, CompTermFace::Reduced));
+            Ok(())
+        },
+        | Task::Here { term } => {
+            let point = machine.pop_value()?;
+            let Some(&Value::Here(source)) = core.value(term)
+            else {
+                return Err(EvalFault::DanglingTerm);
+            };
+            let face = composite_face(denotes(domain, point, source), term);
+            machine.values.push(domain.value_here(point, face));
+            Ok(())
+        },
+        | Task::Returned => {
+            let produced = machine.pop_comp()?;
+            resume_returned(domain, machine, produced)
         },
         | Task::ListCons(term) => {
             let second = machine.pop_value()?;
@@ -3013,6 +3022,21 @@ fn step_value(
             machine
                 .values
                 .push(domain.value_path_certificate(term, TermFace::Source(term)));
+            Ok(())
+        },
+        | Value::Here(point) => {
+            machine.tasks.push(Task::Here { term });
+            machine.tasks.push(Task::Value { term: point, env });
+            Ok(())
+        },
+        // A compound endpoint runs its computation and stands for what it
+        // returns, or for the stuck computation when it does not return.
+        | Value::Returned(computation) => {
+            machine.tasks.push(Task::Returned);
+            machine.tasks.push(Task::Comp {
+                term: computation,
+                env,
+            });
             Ok(())
         },
         | Value::PathProduct(first, second) => {
@@ -3312,6 +3336,18 @@ fn step_comp(
             machine.tasks.push(Task::Value { term: path, env });
             Ok(())
         },
+        | Computation::PathTransport {
+            motive,
+            path,
+            value,
+        } => {
+            let captured = machine.capture(env)?;
+            let motive = domain.value_closure_node(crate::ValueBody::ValueType(motive), captured);
+            machine.tasks.push(Task::PathTransport(motive));
+            machine.tasks.push(Task::Value { term: value, env });
+            machine.tasks.push(Task::Value { term: path, env });
+            Ok(())
+        },
         | Computation::Lambda(body) => {
             let captured = machine.capture(env)?;
             let closed = capture_keeps_source(&captured);
@@ -3513,6 +3549,7 @@ fn step_force(
         | DomainValue::Constructor { .. }
         | DomainValue::Record { .. }
         | DomainValue::PathProduct { .. }
+        | DomainValue::Here { .. }
         | DomainValue::Tuple { .. }
         | DomainValue::Literal { .. }
         | DomainValue::ListNil { .. }
@@ -3637,6 +3674,7 @@ fn step_apply(
                 | DomainValue::Record { .. }
                 | DomainValue::PathCertificate { .. }
                 | DomainValue::PathProduct { .. }
+                | DomainValue::Here { .. }
                 | DomainValue::Tuple { .. }
                 | DomainValue::Literal { .. }
                 | DomainValue::Injection { .. }
@@ -3705,6 +3743,7 @@ fn unfold(
     machine.tasks.push(Task::Comp { term: body, env });
     Ok(())
 }
+
 /// Apply the operator beneath the top of the value stack to the argument on
 /// top of it.
 ///
@@ -3799,6 +3838,7 @@ fn step_static_apply(
         | DomainValue::Constructor { .. }
         | DomainValue::Record { .. }
         | DomainValue::PathProduct { .. }
+        | DomainValue::Here { .. }
         | DomainValue::Tuple { .. }
         | DomainValue::Literal { .. }
         | DomainValue::ListNil { .. }
@@ -3973,6 +4013,7 @@ fn step_case(
         | DomainValue::Constructor { .. }
         | DomainValue::Record { .. }
         | DomainValue::PathProduct { .. }
+        | DomainValue::Here { .. }
         | DomainValue::Tuple { .. }
         | DomainValue::Literal { .. }
         | DomainValue::ListNil { .. }
@@ -4128,6 +4169,7 @@ fn step_case_branches(
         | DomainValue::Constructor { .. }
         | DomainValue::Record { .. }
         | DomainValue::PathProduct { .. }
+        | DomainValue::Here { .. }
         | DomainValue::Tuple { .. }
         | DomainValue::Literal { .. }
         | DomainValue::ListNil { .. }
@@ -4245,6 +4287,354 @@ fn step_transport(
             Ok(())
         },
         | _ => Err(EvalFault::TransportedNonPath),
+    }
+}
+
+/// Transport the operand above an element path along it, in a motive.
+///
+/// # Specification
+/// - requires: the path, then the operand, occupy the top of the value stack;
+///   `motive` closes a value type under one binder over the environment the
+///   transport was read in.
+/// - ensures: reflexivity returns the operand unchanged; a product motive read
+///   against a tuple of its arity transports each component in its own motive
+///   and returns their tuple; a sum motive read against an injection transports
+///   the payload in its summand's motive and returns it injected; any other
+///   configuration over a stuck path stacks the transport on the path's spine.
+/// - provides: transport's computation rules — identity on `here`, and through
+///   the motive's constructors — and its stuck form.
+/// - fails: [`EvalFault::MachineInvariant`] for a missing operand or a motive
+///   closure holding no type; [`EvalFault::TransportedNonPath`] for a path that
+///   is neither reflexivity nor stuck; domain faults for dangling nodes.
+/// - panics: none.
+///
+/// # Errors
+/// An `EvalFault`, as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — reflexivity, a stuck path in a product motive over a
+///   tuple, a stuck path in a sum motive over an injection, and a stuck path in
+///   a base motive each reach their own arm; dropping the reflexivity rule,
+///   reordering components or losing the summand changes the read-back term.
+/// - witness: `identity::tests::transport_along_here_is_the_identity`
+/// - witness: `identity::tests::transport_through_a_product_is_componentwise`
+/// - witness: `identity::tests::transport_through_a_sum_keeps_the_summand`
+/// - witness: `identity::tests::transport_along_a_stuck_path_is_stuck`
+#[spec(
+    captures: [values = machine.values.len(), comps = machine.comps.len(), tasks = machine.tasks.len()],
+    ensures: |ret| ret.is_err() || (machine.values.len() == values.saturating_sub(2_usize)
+        && ((machine.comps.len() == comps.saturating_add(1_usize) && machine.tasks.len() == tasks)
+            || (machine.comps.len() == comps && machine.tasks.len() > tasks))),
+)]
+fn step_path_transport(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    motive: crate::arena::ValueClosureId,
+) -> Result<(), EvalFault>
+{
+    let value = machine.pop_value()?;
+    let path = machine.pop_value()?;
+    let dangling = EvalFault::Domain(DomainFault::Dangling);
+    let carried = *domain.value(path).ok_or(dangling)?;
+    if let DomainValue::Here { .. } = carried {
+        machine
+            .comps
+            .push(domain.comp_return(value, CompTermFace::Reduced));
+        return Ok(());
+    }
+    let closure = domain.value_closure(motive).ok_or(dangling)?;
+    let crate::ValueBody::ValueType(family) = closure.body()
+    else {
+        return Err(EvalFault::MachineInvariant);
+    };
+    let environment = closure.environment().clone();
+    match (
+        core.value_type(family),
+        *domain.value(value).ok_or(dangling)?,
+    ) {
+        | (Some(&ValueType::Product(ref components)), DomainValue::Tuple { fields, .. }) => {
+            let fields = domain.fields(fields).map_err(EvalFault::Domain)?.to_vec();
+            if fields.len() == components.len() {
+                machine
+                    .tasks
+                    .push(Task::TransportTuple(ComponentCount::from(fields.len())));
+                for (&component, &field) in components.iter().zip(&fields).rev() {
+                    let motive = domain.value_closure_node(
+                        crate::ValueBody::ValueType(component),
+                        environment.clone(),
+                    );
+                    machine.tasks.push(Task::PathTransport(motive));
+                    machine.tasks.push(Task::Supply(field));
+                    machine.tasks.push(Task::Supply(path));
+                }
+                return Ok(());
+            }
+        },
+        | (
+            Some(&ValueType::Sum(ref summands)),
+            DomainValue::Injection {
+                summand,
+                body: payload,
+                ..
+            },
+        ) => {
+            if let Some(&component) = summands.get(usize::from(summand)) {
+                let motive =
+                    domain.value_closure_node(crate::ValueBody::ValueType(component), environment);
+                machine.tasks.push(Task::TransportInjection(summand));
+                machine.tasks.push(Task::PathTransport(motive));
+                machine.tasks.push(Task::Supply(payload));
+                machine.tasks.push(Task::Supply(path));
+                return Ok(());
+            }
+        },
+        | _ => {},
+    }
+    let DomainValue::Neutral { neutral, .. } = carried
+    else {
+        return Err(EvalFault::TransportedNonPath);
+    };
+    let grown = extend_spine(domain, neutral, Elimination::PathTransport {
+        motive,
+        value,
+    })?;
+    machine
+        .comps
+        .push(domain.comp_neutral(grown, CompTermFace::Reduced));
+    Ok(())
+}
+
+/// Queue the eliminations of `spine` over the value the machine produces next,
+/// innermost elimination first, and say which polarity they leave.
+///
+/// # Specification
+/// - requires: nothing; an ill-shaped spine is refused by the step reaching it.
+/// - ensures: one frame per elimination — a supplied operand and its consumer
+///   for an application, a static application, a transport and a path transport
+///   — queued so the innermost runs first; the answer is a value exactly when
+///   every elimination is a static application.
+/// - provides: the re-application of a neutral's spine once its head unfolds,
+///   shared by the conversion's unfolding channel and a compound endpoint run
+///   through its head's definition.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a mixed force/application/bind spine reduces after
+///   unfolding, and two case branches retain different captures; reversing
+///   frames changes the answer.
+/// - witness: `eval::tests::a_reapplied_spine_fires_once_the_head_unfolds`
+/// - witness: `eval::tests::reapplied_eliminations_preserve_captures_and_argument_order`
+/// - witness: `identity::tests::a_compound_endpoint_runs_through_a_definition`
+#[spec(
+    captures: entry_tasks = machine.tasks.len(),
+    ensures: |ret| machine.tasks.len() >= entry_tasks.saturating_add(spine.len())
+        && (ret == Answer::Value) == spine.iter().all(|elimination| matches!(elimination, Elimination::StaticApply(_))),
+)]
+fn push_eliminations(
+    machine: &mut Machine<'_>,
+    spine: &[Elimination],
+) -> Answer
+{
+    let mut answer = Answer::Value;
+    for elimination in spine.iter().rev() {
+        match *elimination {
+            | Elimination::DataCase(closure) => {
+                answer = Answer::Computation;
+                machine.tasks.push(Task::DataCaseClosure(closure));
+            },
+            | Elimination::Split(closure) => {
+                answer = Answer::Computation;
+                machine.tasks.push(Task::SplitClosure(closure));
+            },
+            | Elimination::Projection(term) => {
+                answer = Answer::Computation;
+                machine.tasks.push(Task::Projection(term));
+            },
+            | Elimination::ListFold {
+                element,
+                result,
+                on_nil,
+                on_cons,
+            } => {
+                answer = Answer::Computation;
+                machine.tasks.push(Task::ListFold {
+                    element,
+                    result,
+                    on_nil,
+                    on_cons,
+                });
+            },
+            | Elimination::Transport(value) => {
+                answer = Answer::Computation;
+                machine.tasks.push(Task::Transport);
+                machine.tasks.push(Task::Supply(value));
+            },
+            | Elimination::ProductTransport(path) => {
+                answer = Answer::Computation;
+                machine.tasks.push(Task::ProductTransport(path));
+            },
+            | Elimination::PathTransport { motive, value } => {
+                answer = Answer::Computation;
+                machine.tasks.push(Task::PathTransport(motive));
+                machine.tasks.push(Task::Supply(value));
+            },
+            | Elimination::StaticApply(argument) => {
+                machine.tasks.push(Task::StaticApply);
+                machine.tasks.push(Task::Supply(argument));
+            },
+            | Elimination::Apply(argument) => {
+                answer = Answer::Computation;
+                machine.tasks.push(Task::Apply);
+                machine.tasks.push(Task::Supply(argument));
+            },
+            | Elimination::Force => {
+                answer = Answer::Computation;
+                machine.tasks.push(Task::Force);
+            },
+            | Elimination::Bind(body) => {
+                answer = Answer::Computation;
+                machine.tasks.push(Task::BindClosure(body));
+            },
+            | Elimination::Case(branches) => {
+                answer = Answer::Computation;
+                machine.tasks.push(Task::CaseBranches(branches));
+            },
+            | Elimination::Fixpoint(recursive) => {
+                answer = Answer::Computation;
+                machine.tasks.push(Task::FixpointClosure(recursive));
+            },
+        }
+    }
+    answer
+}
+
+/// Deliver the value a compound endpoint's computation returns, running a
+/// computation stuck on a manifest definition on through that definition.
+///
+/// # Specification
+/// - requires: nothing; a dangling id is refused.
+/// - ensures: a computation stuck on a neutral whose head has a body here —
+///   forced already, or lowered in this run's chain — queues the head's body,
+///   the neutral's spine over it and this delivery again, so the endpoint runs
+///   on until it returns or sticks on a rigid head; any other computation
+///   delivers [`returned_value`] at once.
+/// - provides: the reading of a compound endpoint as what its computation
+///   returns: `dbl(x)` and `x + x` are one endpoint once `dbl` unfolds. The run
+///   is strict where a value position is lazy, because an endpoint is compared
+///   by its returned value, and the driver's fuel bounds it.
+/// - fails: as [`returned_value`].
+/// - panics: none.
+///
+/// # Errors
+/// An `EvalFault`, as [`returned_value`] raises.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an endpoint applying a definition to a variable runs to
+///   the variable, and an endpoint stuck on native addition over a variable
+///   stays the compound endpoint; skipping the unfolding or the spine changes
+///   the read-back term.
+/// - witness: `identity::tests::a_compound_endpoint_runs_through_a_definition`
+/// - witness: `identity::tests::a_compound_endpoint_stands_for_what_it_returns`
+#[spec(
+    captures: [entry_tasks = machine.tasks.len(), entry_values = machine.values.len()],
+    ensures: |ret| ret.is_err()
+        || (machine.tasks.len() == entry_tasks && machine.values.len() == entry_values.saturating_add(1_usize))
+        || machine.tasks.len() > entry_tasks,
+)]
+fn resume_returned(
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    produced: DomainCompId,
+) -> Result<(), EvalFault>
+{
+    if let DomainComp::Neutral { neutral, .. } = *domain
+        .computation(produced)
+        .ok_or(EvalFault::Domain(DomainFault::Dangling))?
+    {
+        let held = domain
+            .neutral(neutral)
+            .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+        let head = match held.unfolding() {
+            | Unfolding::Forced(Glued::Value(body)) => Some(Task::Supply(body)),
+            | Unfolding::Unforced(entry) => {
+                machine
+                    .definitions
+                    .bodies()
+                    .get(&entry)
+                    .map(|&term| Task::Value {
+                        term,
+                        env: Machine::root_env(),
+                    })
+            },
+            | Unfolding::Rigid | Unfolding::Forced(Glued::Computation(_)) => None,
+        };
+        if let Some(head) = head {
+            machine.tasks.push(Task::Returned);
+            let _answer = push_eliminations(machine, held.spine());
+            machine.tasks.push(head);
+            return Ok(());
+        }
+    }
+    let value = returned_value(domain, produced)?;
+    machine.values.push(value);
+    Ok(())
+}
+
+/// The value a computation's weak head returns: a returner's value, or a
+/// neutral standing for the stuck computation.
+///
+/// # Specification
+/// - requires: nothing; a dangling id is refused.
+/// - ensures: a returner's own value; for a stuck computation, a fresh
+///   value-position neutral whose head is that computation and whose spine is
+///   empty.
+/// - provides: what a compound endpoint and a component transport stand for in
+///   value position, so neither is erased when it does not return.
+/// - fails: [`EvalFault::ReturnedNonReturner`] for a lambda or a fixpoint;
+///   [`EvalFault::Domain`] for a dangling computation.
+/// - panics: none.
+///
+/// # Errors
+/// An `EvalFault`, as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a compound endpoint that returns reads back as its value
+///   and one stuck on a variable reads back as the compound endpoint; erasing
+///   either or mistaking a lambda for a returner changes the read-back term.
+/// - witness: `identity::tests::a_compound_endpoint_stands_for_what_it_returns`
+#[spec(ensures: |ret| match domain.computation(computation) {
+    | Some(&DomainComp::Return { value, .. }) => ret == Ok(value),
+    | Some(&DomainComp::Neutral { .. }) => ret.is_ok(),
+    | Some(&(DomainComp::Lambda { .. } | DomainComp::Fixpoint { .. })) => ret == Err(EvalFault::ReturnedNonReturner),
+    | None => ret == Err(EvalFault::Domain(DomainFault::Dangling)),
+})]
+fn returned_value(
+    domain: &mut DomainArena,
+    computation: DomainCompId,
+) -> Result<DomainValueId, EvalFault>
+{
+    match *domain
+        .computation(computation)
+        .ok_or(EvalFault::Domain(DomainFault::Dangling))?
+    {
+        | DomainComp::Return { value, .. } => Ok(value),
+        | DomainComp::Neutral { .. } => {
+            let stuck = domain
+                .neutral_node(
+                    NeutralHead::Returned(computation),
+                    Vec::new(),
+                    Unfolding::Rigid,
+                )
+                .map_err(EvalFault::Domain)?;
+            domain
+                .value_neutral(stuck, TermFace::Reduced)
+                .map_err(EvalFault::Domain)
+        },
+        | DomainComp::Lambda { .. } | DomainComp::Fixpoint { .. } => {
+            Err(EvalFault::ReturnedNonReturner)
+        },
     }
 }
 
@@ -4576,6 +4966,7 @@ fn step_projection(
         .push(domain.comp_return(value, CompTermFace::Reduced));
     Ok(())
 }
+
 #[cfg(test)]
 mod tests
 {

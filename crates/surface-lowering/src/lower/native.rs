@@ -1393,7 +1393,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   pattern holding it; each name bound once, numbered in source order.
     /// - fails: a pattern the fragment does not read, by its own name; a
     ///   constructor no earlier family declares, as unresolved; a constructor
-    ///   applied to other than its arity; a variable bound twice; a repair.
+    ///   applied to other than its arity; a variable bound twice; a repair;
+    ///   [`LoweringRefusal::WithoutK`] for `here`, reflexivity as a pattern.
     /// - panics: none.
     ///
     /// # Errors
@@ -1404,6 +1405,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   decline the others.
     /// - witness: `lower::native::tests::patterns_outside_the_fragment_are_declined_by_name`
     /// - witness: `lower::native::tests::nested_constructor_patterns_compile_to_nested_cases`
+    /// - witness: `lower::identity::tests::matching_reflexivity_is_refused_as_k`
     #[spec(
         captures: before = patterns.shapes.len(),
         ensures: |ret| ret.as_ref().map_or(true, |&root| root == PatternAt(before) && patterns.shapes.len() > before),
@@ -1490,6 +1492,9 @@ impl<'source> Lowerer<'_, 'source>
         }
         if name == FormName::IDENTIFIER {
             let spelled = self.text_at(at);
+            if spelled.as_ref() == super::identity::HERE {
+                return Err(LoweringRefusal::WithoutK { span: at.span });
+            }
             if let Some(&earlier) = named
                 .iter()
                 .find(|&&binder| self.text_at(binder) == spelled)
@@ -2249,7 +2254,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   motive of a nested tree.
     /// - witness: `lower::native::tests::a_match_takes_its_answer_from_the_function_result`
     #[spec(ensures: |ret| arena.comp_type(ret).is_some() || ret == ty)]
-    fn relocate(
+    pub(super) fn relocate(
         &self,
         arena: &mut CoreArena,
         ty: CompTypeId,
@@ -2748,7 +2753,7 @@ where
         | Maybe::Present((held, written)) if held == id => sink.origins.computation(id) == Maybe::Present(written),
         | _ => sink.origins.computation(id) == Maybe::Present(origin),
     }))]
-fn record_since(
+pub(super) fn record_since(
     sink: &mut Sink<'_>,
     mark: gandr_core_term::ArenaWatermark,
     origin: Origin,

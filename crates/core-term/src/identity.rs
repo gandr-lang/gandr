@@ -1,0 +1,354 @@
+//! The derived operations on element identity: `back`, `then` and `cong`,
+//! each a transport in a family of paths, never a node of its own.
+//!
+//! # One eliminator, three derivations
+//!
+//! The vocabulary has one way to use a path, [`Computation::PathTransport`]:
+//! `tr(P, p, x)` carries `x : P[a]` along `p : Path(A, a, b)` to `P[b]`. The
+//! three operations a program reaches for are transports whose motive is
+//! itself a path type, the based family `y. Path(A, a, y)` being the second
+//! component of the singleton `Σ y. Path(A, a, y)`:
+//!
+//! | operation | motive | from |
+//! |---|---|---|
+//! | `back(p) : Path(A, b, a)` | `y. Path(A, y, a)` | `here(a)` |
+//! | `then(p, q) : Path(A, a, c)` | `y. Path(A, a, y)`, along `q` | `p` |
+//! | `cong(f, p) : Path(B, f a, f b)` | `y. Path(B, f a, f y)` | `here(f a)` |
+//!
+//! Each builds its transport over the arena and returns it, so the evaluator,
+//! the checker and the kernel boundary meet only `tr`, `here` and `Path`.
+//! Transport computes on `here`, so every law the three obey at reflexivity —
+//! `then` associates and is unital, `back` inverts, `cong` respects `then` —
+//! holds by normalisation. At a path that is not reflexivity only the right
+//! unit of `then` holds definitionally; the rest are paths between paths, the
+//! business of identity between identities.
+//!
+//! # Decisions
+//!
+//! - **Derived, not primitive.** The choice is three arena functions over `tr`.
+//!   The alternatives were a node per operation, which would give each its own
+//!   evaluation rule, typing rule and kernel tag, three places for the laws to
+//!   drift apart, and a primitive `J`, whose motive ranges over the path as
+//!   well as its endpoint and which transport derives in the singleton.
+//!   Reversal: an operation whose derived form costs too much to normalise
+//!   earns a node, with its law as the node's evaluation rule.
+//! - **The motive is first order.** [`Computation::PathTransport`]'s motive is
+//!   one value type under one binder, the moving endpoint. The dependent-arrow
+//!   extension, a motive `y. U((x : B[y]) → C[x, y])`, transports a function by
+//!   carrying its argument back along the path and its result forward over both
+//!   binders, so it needs a motive under two binders and the function clause of
+//!   the recursion beyond first-order arguments. Reversal: that extension adds
+//!   a second motive former beside this one.
+//! - **The motive is written, not inferred.** A caller names the carrier and
+//!   the fixed endpoint, which a checking position reads off its expected path
+//!   type. The alternative, inferring them from the path's own type, needs the
+//!   checker to elaborate, and the vocabulary has no elaboration-only former
+//!   for it. Reversal: implicit arguments in the core would let the motive be
+//!   read off the path instead.
+//! - **`cong` applies through a compound endpoint.** `f y` inside the motive is
+//!   [`Value::Returned`] over `force f y`, so the image of the moving endpoint
+//!   is compared by what `f` computes. A first-order map is all it needs; a
+//!   function of a function is the same construction one level up.
+
+use anodized::spec;
+use gandr_kernel_term::DeBruijnIndex;
+
+use crate::CoreArena;
+use crate::arena::ComputationId;
+use crate::arena::ValueId;
+use crate::arena::ValueTypeId;
+use crate::rewrite::Binders;
+use crate::rewrite::shift_value;
+use crate::rewrite::shift_value_type;
+#[cfg(doc)]
+use crate::syntax::Computation;
+#[cfg(doc)]
+use crate::syntax::Value;
+use crate::syntax::Zone;
+
+/// The moving endpoint of a motive: the innermost intuitionistic binder.
+///
+/// # Specification
+/// trivial.
+fn moving(arena: &mut CoreArena) -> ValueId
+{
+    arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32))
+}
+
+/// `back(p) : Path(A, b, a)` for `p : Path(A, a, b)`: transport of `here(a)`
+/// along `p` in the family `y. Path(A, y, a)`.
+///
+/// # Specification
+/// - requires: `carrier` and `fixed` are read in the context the result stands
+///   in, `fixed` being the path's left endpoint, which is the derived path's
+///   right one.
+/// - ensures: the transport `tr(y. Path(A↑, y, a↑), path, here(a))`, the
+///   carrier and the endpoint shifted past the motive's binder.
+/// - provides: the inverse of a path, derived.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — over a carrier and an endpoint that read an outer
+///   variable, the motive reads them one binder further out and its own binder
+///   as the left endpoint, and the base is reflexivity at the unshifted
+///   endpoint; dropping a shift, swapping the endpoints or starting from the
+///   path changes the built term.
+/// - witness: `identity::tests::back_transports_reflexivity_into_the_reversed_family`
+#[spec(ensures: |ret| matches!(arena.computation(ret), Some(&crate::syntax::Computation::PathTransport { motive, path: along, value })
+    if along == path
+        && arena.value(value) == Some(&crate::syntax::Value::Here(fixed))
+        && matches!(arena.value_type(motive), Some(&crate::syntax::ValueType::Path { left, .. })
+            if arena.value(left) == Some(&crate::syntax::Value::Variable { zone: Zone::Intuitionistic, index: DeBruijnIndex::from(0_u32) }))))]
+#[inline]
+#[must_use]
+pub fn back(
+    arena: &mut CoreArena,
+    carrier: ValueTypeId,
+    fixed: ValueId,
+    path: ValueId,
+) -> ComputationId
+{
+    let lifted_carrier = shift_value_type(arena, carrier, Binders::ONE);
+    let lifted_fixed = shift_value(arena, fixed, Binders::ONE);
+    let endpoint = moving(arena);
+    let motive = arena.value_type_path(lifted_carrier, endpoint, lifted_fixed);
+    let base = arena.value_here(fixed);
+    arena.computation_path_transport(motive, path, base)
+}
+
+/// `then(p, q) : Path(A, a, c)` for `p : Path(A, a, b)` and `q : Path(A, b,
+/// c)`: transport of `p` along `q` in the family `y. Path(A, a, y)`.
+///
+/// # Specification
+/// - requires: `carrier` and `start` are read in the context the result stands
+///   in, `start` being the first path's left endpoint.
+/// - ensures: the transport `tr(y. Path(A↑, a↑, y), second, first)`.
+/// - provides: the composite of two paths, derived.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — over a carrier and a start that read an outer variable,
+///   the motive fixes the shifted start and moves its right endpoint, and the
+///   transport runs along the second path from the first; transporting along
+///   the first path or fixing the wrong endpoint changes the built term.
+/// - witness: `identity::tests::then_transports_the_first_path_along_the_second`
+#[spec(ensures: |ret| matches!(arena.computation(ret), Some(&crate::syntax::Computation::PathTransport { motive, path, value })
+    if path == second && value == first
+        && matches!(arena.value_type(motive), Some(&crate::syntax::ValueType::Path { right, .. })
+            if arena.value(right) == Some(&crate::syntax::Value::Variable { zone: Zone::Intuitionistic, index: DeBruijnIndex::from(0_u32) }))))]
+#[inline]
+#[must_use]
+pub fn then(
+    arena: &mut CoreArena,
+    carrier: ValueTypeId,
+    start: ValueId,
+    first: ValueId,
+    second: ValueId,
+) -> ComputationId
+{
+    let lifted_carrier = shift_value_type(arena, carrier, Binders::ONE);
+    let lifted_start = shift_value(arena, start, Binders::ONE);
+    let endpoint = moving(arena);
+    let motive = arena.value_type_path(lifted_carrier, lifted_start, endpoint);
+    arena.computation_path_transport(motive, second, first)
+}
+
+/// `cong(f, p) : Path(B, f a, f b)` for `f : U(A → F B)` and `p : Path(A, a,
+/// b)`: transport of `here(f a)` along `p` in the family `y. Path(B, f a, f
+/// y)`.
+///
+/// # Specification
+/// - requires: `codomain`, `function` and `start` are read in the context the
+///   result stands in; `start` is the image of the path's left endpoint, the
+///   derived path's left endpoint, and the transport's typing checks that it
+///   converts to `f a`.
+/// - ensures: the transport `tr(y. Path(B↑, start↑, ⟨force f↑ y⟩), path,
+///   here(start))`, the moving image a compound endpoint.
+/// - provides: the action of a function on a path, derived.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — over a map and a start that read an outer variable, the
+///   motive's right endpoint is the shifted map applied to its own binder, and
+///   the base is reflexivity at the unshifted start; applying the unshifted map
+///   or binding the wrong index changes the built term.
+/// - witness: `identity::tests::cong_applies_the_map_to_the_moving_endpoint`
+#[spec(ensures: |ret| matches!(arena.computation(ret), Some(&crate::syntax::Computation::PathTransport { motive, path: along, value })
+    if along == path
+        && arena.value(value) == Some(&crate::syntax::Value::Here(start))
+        && matches!(arena.value_type(motive), Some(&crate::syntax::ValueType::Path { right, .. })
+            if matches!(arena.value(right), Some(&crate::syntax::Value::Returned(_))))))]
+#[inline]
+#[must_use]
+pub fn cong(
+    arena: &mut CoreArena,
+    codomain: ValueTypeId,
+    function: ValueId,
+    start: ValueId,
+    path: ValueId,
+) -> ComputationId
+{
+    let lifted_codomain = shift_value_type(arena, codomain, Binders::ONE);
+    let lifted_start = shift_value(arena, start, Binders::ONE);
+    let lifted_function = shift_value(arena, function, Binders::ONE);
+    let forced = arena.computation_force(lifted_function);
+    let endpoint = moving(arena);
+    let applied = arena.computation_application(forced, endpoint);
+    let image = arena.value_returned(applied);
+    let motive = arena.value_type_path(lifted_codomain, lifted_start, image);
+    let base = arena.value_here(start);
+    arena.computation_path_transport(motive, path, base)
+}
+
+#[cfg(test)]
+mod tests
+{
+    use gandr_kernel_term::BaseType;
+    use gandr_kernel_term::DeBruijnIndex;
+
+    use crate::CertificateEquality;
+    use crate::CoreArena;
+    use crate::arena::ValueId;
+    use crate::arena::ValueTypeId;
+    use crate::syntax::Zone;
+    use crate::syntax::equal_certificate_syntax;
+
+    /// The intuitionistic variable at `index`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn variable(
+        arena: &mut CoreArena,
+        index: DeBruijnIndex,
+    ) -> ValueId
+    {
+        arena.value_variable(Zone::Intuitionistic, index)
+    }
+
+    /// A carrier that reads the variable at `index`: `El(#index)`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn open_carrier(
+        arena: &mut CoreArena,
+        index: DeBruijnIndex,
+    ) -> ValueTypeId
+    {
+        let code = variable(arena, index);
+        arena.value_type_element(code, gandr_kernel_strata::Level::zero())
+    }
+
+    /// How two built terms compare as syntax.
+    ///
+    /// # Specification
+    /// trivial.
+    fn compared(
+        arena: &CoreArena,
+        left: crate::arena::ComputationId,
+        right: crate::arena::ComputationId,
+    ) -> CertificateEquality
+    {
+        let mut probe = arena.clone();
+        let left = probe.value_thunk(left);
+        let right = probe.value_thunk(right);
+        equal_certificate_syntax(&probe, left, right)
+    }
+
+    #[test]
+    fn back_transports_reflexivity_into_the_reversed_family()
+    {
+        let mut arena = CoreArena::new();
+        let carrier = open_carrier(&mut arena, 1_u32.into());
+        let fixed = variable(&mut arena, 0_u32.into());
+        let path = variable(&mut arena, 2_u32.into());
+        let built = super::back(&mut arena, carrier, fixed, path);
+
+        let lifted_carrier = open_carrier(&mut arena, 2_u32.into());
+        let moving = variable(&mut arena, 0_u32.into());
+        let lifted_fixed = variable(&mut arena, 1_u32.into());
+        let motive = arena.value_type_path(lifted_carrier, moving, lifted_fixed);
+        let base = arena.value_here(fixed);
+        let expected = arena.computation_path_transport(motive, path, base);
+        assert_eq!(
+            compared(&arena, built, expected),
+            CertificateEquality::Equal,
+            "back reverses the family past one binder"
+        );
+
+        let unshifted = arena.value_type_path(carrier, moving, fixed);
+        let capturing = arena.computation_path_transport(unshifted, path, base);
+        assert_eq!(
+            compared(&arena, built, capturing),
+            CertificateEquality::Different,
+            "an unshifted motive captures the outer variables"
+        );
+    }
+
+    #[test]
+    fn then_transports_the_first_path_along_the_second()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let start = variable(&mut arena, 0_u32.into());
+        let first = variable(&mut arena, 1_u32.into());
+        let second = variable(&mut arena, 2_u32.into());
+        let built = super::then(&mut arena, integer, start, first, second);
+
+        let lifted_start = variable(&mut arena, 1_u32.into());
+        let moving = variable(&mut arena, 0_u32.into());
+        let motive = arena.value_type_path(integer, lifted_start, moving);
+        let expected = arena.computation_path_transport(motive, second, first);
+        assert_eq!(
+            compared(&arena, built, expected),
+            CertificateEquality::Equal,
+            "then moves the right endpoint along the second path"
+        );
+
+        let swapped = arena.computation_path_transport(motive, first, second);
+        assert_eq!(
+            compared(&arena, built, swapped),
+            CertificateEquality::Different,
+            "transporting along the first path is another term"
+        );
+    }
+
+    #[test]
+    fn cong_applies_the_map_to_the_moving_endpoint()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let function = variable(&mut arena, 0_u32.into());
+        let start = variable(&mut arena, 1_u32.into());
+        let path = variable(&mut arena, 2_u32.into());
+        let built = super::cong(&mut arena, integer, function, start, path);
+
+        let lifted_start = variable(&mut arena, 2_u32.into());
+        let lifted_function = variable(&mut arena, 1_u32.into());
+        let forced = arena.computation_force(lifted_function);
+        let moving = variable(&mut arena, 0_u32.into());
+        let applied = arena.computation_application(forced, moving);
+        let image = arena.value_returned(applied);
+        let motive = arena.value_type_path(integer, lifted_start, image);
+        let base = arena.value_here(start);
+        let expected = arena.computation_path_transport(motive, path, base);
+        assert_eq!(
+            compared(&arena, built, expected),
+            CertificateEquality::Equal,
+            "cong maps the moving endpoint through the function"
+        );
+
+        let unshifted = arena.computation_force(function);
+        let captured = arena.computation_application(unshifted, moving);
+        let captured = arena.value_returned(captured);
+        let capturing = arena.value_type_path(integer, lifted_start, captured);
+        let capturing = arena.computation_path_transport(capturing, path, base);
+        assert_eq!(
+            compared(&arena, built, capturing),
+            CertificateEquality::Different,
+            "an unshifted map reads the motive's own binder"
+        );
+    }
+}

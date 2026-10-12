@@ -141,7 +141,7 @@ impl<'arena> CoreSource<'arena>
         | (Some(&Value::Constant(index)), Former::Constant(name)) => self.names.get(usize::from(index))
             .is_some_and(|held| held.as_ref() == name.as_ref()),
         | (Some(&Value::Constant(index)), Former::Unreadable) => usize::from(index) >= self.names.len(),
-        (Some(&Value::Constructor { .. } | &Value::Record(_) | &Value::Hole(_) | &Value::Mark { .. }) | None,
+        (Some(&Value::Constructor { .. } | &Value::Record(_) | &Value::Hole(_) | &Value::Mark { .. } | &Value::Here(_) | &Value::Returned(_)) | None,
 Former::Unreadable) | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::ListNil), Former::ListNil) |
 (Some(&Value::Thunk(_)), Former::Thunk) |
 (Some(&Value::Lift { .. }), Former::ValueLift) => true,
@@ -171,12 +171,15 @@ Former::Unreadable) | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::Li
             return Former::Unreadable;
         };
         match *value {
-            // The source grammar has no native data or record reader, and a
-            // hole or a mark is displayed by the session, not spelled here.
+            // The source grammar has no native data or record reader, a hole
+            // or a mark is displayed by the session, not spelled here, and
+            // reflexivity and a compound endpoint have no former of their own.
             | Value::Constructor { .. }
             | Value::Record(_)
             | Value::Hole(_)
-            | Value::Mark { .. } => Former::Unreadable,
+            | Value::Mark { .. }
+            | Value::Here(_)
+            | Value::Returned(_) => Former::Unreadable,
             | Value::Reify(_) => Former::Reify,
             | Value::Primitive { primitive, .. } => {
                 Former::Constant(Name::from(<&'static str>::from(primitive.name())))
@@ -241,7 +244,7 @@ Former::Unreadable) | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::Li
     #[spec(ensures: |ret| match (self.arena.value_type(id), ret) {
         | (Some(&ValueType::Stack { input, output }), Former::Stack(a, b)) => a == CoreNode::CompType(input) && b == CoreNode::CompType(output),
         | (Some(&ValueType::PathUniverse(source, target)), Former::PathUniverse(actual_source, actual_target)) => actual_source == CoreNode::Value(source) && actual_target == CoreNode::Value(target),
-        (Some(&ValueType::Data { .. } | &ValueType::Record(_) | &ValueType::Unknown) | None,
+        (Some(&ValueType::Data { .. } | &ValueType::Record(_) | &ValueType::Unknown | &ValueType::Path { .. }) | None,
 Former::Unreadable) |
 (Some(&ValueType::Lift { .. }), Former::TypeLift) => true,
         | (Some(&ValueType::Product(ref parts) | &ValueType::Sum(ref parts)), Former::Unreadable) => parts.len() == 1,
@@ -274,6 +277,7 @@ Former::Unreadable) |
             | ValueType::Data { .. } | ValueType::Record(_) | ValueType::Unknown => {
                 Former::Unreadable
             },
+            | ValueType::Path { .. } => Former::Unreadable,
             // The 1-ary product and sum have no spelling yet.
             | ValueType::Product(ref parts) | ValueType::Sum(ref parts) if parts.len() == 1 => {
                 Former::Unreadable
@@ -432,6 +436,7 @@ impl Source for CoreSource<'_>
             | CoreNode::Computation(id) => match self.arena.computation(id) {
                 | Some(
                     &(Computation::Transport(..)
+                    | Computation::PathTransport { .. }
                     | Computation::Primitive { .. }
                     | Computation::DataCase { .. }
                     | Computation::RecordProjection(..)

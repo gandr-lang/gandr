@@ -630,6 +630,15 @@ enum Task
     Transport,
     /// Assemble product transport beneath a neutral pair.
     ProductTransport,
+    /// Assemble element-path transport beneath a neutral path, from its
+    /// motive and operand.
+    PathTransport,
+    /// Assemble reflexivity over the value term on the stack.
+    Here,
+    /// Assemble a compound endpoint over the computation term on the stack.
+    Returned,
+    /// Assemble an element identity from its carrier and two endpoints.
+    PathType,
     /// Assemble a tuple from its components, this many on the stack.
     Tuple(usize),
     /// Assemble a native list cell.
@@ -1566,7 +1575,7 @@ fn open_static(
             })
         })
     },
-    | NeutralHead::Hole { .. } | NeutralHead::Mark { .. } => ret == Err(ReadbackFault::MachineInvariant),
+    | NeutralHead::Hole { .. } | NeutralHead::Mark { .. } | NeutralHead::Returned(_) => ret == Err(ReadbackFault::MachineInvariant),
 })]
 fn head_term(
     core: &mut CoreArena,
@@ -1585,7 +1594,7 @@ fn head_term(
         | NeutralHead::Constant(constant) | NeutralHead::Module(constant) => {
             Ok(core.value_constant(constant))
         },
-        | NeutralHead::Hole { .. } | NeutralHead::Mark { .. } => {
+        | NeutralHead::Hole { .. } | NeutralHead::Mark { .. } | NeutralHead::Returned(_) => {
             Err(ReadbackFault::MachineInvariant)
         },
     }
@@ -1986,7 +1995,7 @@ fn run(
             && entry_comps.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comps.len())
             && entry_value_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.value_types.len())
             && entry_comp_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comp_types.len()),
-        | Task::Inject { .. } | Task::Lift { .. } | Task::StaticLambda => machine.tasks.len() == entry_tasks
+        | Task::Inject { .. } | Task::Lift { .. } | Task::StaticLambda | Task::Here => machine.tasks.len() == entry_tasks
             && entry_values.checked_sub(1_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.values.len())
             && machine.values.last().is_some_and(|id| core.value(*id).is_some())
             && entry_comps.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comps.len())
@@ -2009,6 +2018,22 @@ fn run(
             && machine.comps.len() == entry_comps.saturating_add(1)
             && machine.comps.last().is_some_and(|&id| core.computation(id).is_some())
             && machine.value_types.len() == entry_value_types && machine.comp_types.len() == entry_comp_types,
+        | Task::PathTransport => machine.tasks.len() == entry_tasks
+            && entry_values.checked_sub(2) == Some(machine.values.len())
+            && entry_value_types.checked_sub(1) == Some(machine.value_types.len())
+            && machine.comps.len() == entry_comps.saturating_add(1)
+            && machine.comps.last().is_some_and(|&id| core.computation(id).is_some())
+            && machine.comp_types.len() == entry_comp_types,
+        | Task::Returned => machine.tasks.len() == entry_tasks
+            && machine.values.len() == entry_values.saturating_add(1)
+            && entry_comps.checked_sub(1) == Some(machine.comps.len())
+            && machine.values.last().is_some_and(|&id| core.value(id).is_some())
+            && machine.value_types.len() == entry_value_types && machine.comp_types.len() == entry_comp_types,
+        | Task::PathType => machine.tasks.len() == entry_tasks
+            && entry_values.checked_sub(2) == Some(machine.values.len())
+            && machine.value_types.len() == entry_value_types
+            && machine.value_types.last().is_some_and(|&id| core.value_type(id).is_some())
+            && machine.comps.len() == entry_comps && machine.comp_types.len() == entry_comp_types,
         | Task::Return | Task::Force => machine.tasks.len() == entry_tasks
             && entry_values.checked_sub(1_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.values.len())
             && entry_comps.checked_sub(0_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.comps.len())
@@ -2315,6 +2340,34 @@ fn step(
             let path = machine.pop_value()?;
             let value = machine.pop_value()?;
             machine.comps.push(core.computation_transport(path, value));
+            Ok(())
+        },
+        | Task::PathTransport => {
+            let value = machine.pop_value()?;
+            let path = machine.pop_value()?;
+            let motive = machine.pop_value_type()?;
+            machine
+                .comps
+                .push(core.computation_path_transport(motive, path, value));
+            Ok(())
+        },
+        | Task::Here => {
+            let point = machine.pop_value()?;
+            machine.values.push(core.value_here(point));
+            Ok(())
+        },
+        | Task::Returned => {
+            let computation = machine.pop_comp()?;
+            machine.values.push(core.value_returned(computation));
+            Ok(())
+        },
+        | Task::PathType => {
+            let right = machine.pop_value()?;
+            let left = machine.pop_value()?;
+            let carrier = machine.pop_value_type()?;
+            machine
+                .value_types
+                .push(core.value_type_path(carrier, left, right));
             Ok(())
         },
         | Task::Tuple(count) => {
@@ -2781,6 +2834,9 @@ ValueType::Record(ref fields) => machine.value_types.len() == entry_results
             && new_tasks.first() == Some(&Task::RecordType(quoted))
             && new_tasks.len() == fields.len().saturating_add(1)
             && new_tasks.iter().skip(1).zip(fields.values().rev()).all(|(task, field)| *task == Task::QuotedValueType { quoted: *field, frame, binders }),
+ValueType::Path { carrier, left, right } => machine.value_types.len() == entry_results
+            && matches!(new_tasks, [Task::PathType, Task::QuotedCode { code: second, .. }, Task::QuotedCode { code: first, .. }, Task::QuotedValueType { quoted: child, .. }]
+                if *second == right && *first == left && *child == carrier),
 },
 None => false,
 }) },
@@ -2821,6 +2877,24 @@ fn step_quoted_value_type(
         | ValueType::List(element) => {
             machine.tasks.push(Task::ListType);
             machine.tasks.push(at(element));
+        },
+        | ValueType::Path {
+            carrier,
+            left,
+            right,
+        } => {
+            machine.tasks.push(Task::PathType);
+            machine.tasks.push(Task::QuotedCode {
+                code: right,
+                frame,
+                binders,
+            });
+            machine.tasks.push(Task::QuotedCode {
+                code: left,
+                frame,
+                binders,
+            });
+            machine.tasks.push(at(carrier));
         },
         | ValueType::PathUniverse(..)
         | ValueType::Base(_)
@@ -3189,6 +3263,14 @@ fn step_value(
             });
             Ok(())
         },
+        | DomainValue::Here { point, .. } => {
+            machine.tasks.push(Task::Here);
+            machine.tasks.push(Task::Value {
+                value: point,
+                binders,
+            });
+            Ok(())
+        },
         | DomainValue::Literal { literal, .. } => {
             // The payload was never copied into the domain: the node names the
             // core value that holds it, and that id is valid whatever the face
@@ -3551,6 +3633,7 @@ fn step_neutral(
                         | Elimination::StaticApply(argument) => Some(argument),
                         | Elimination::Transport(_)
                         | Elimination::ProductTransport(_)
+                        | Elimination::PathTransport { .. }
                         | Elimination::Apply(_)
                         | Elimination::Force
                         | Elimination::Bind(_)
@@ -3602,7 +3685,8 @@ fn step_neutral(
             }
             | NeutralHead::Variable { .. }
             | NeutralHead::Constant(_)
-            | NeutralHead::Module(_) => Polarity::Value,
+            | NeutralHead::Module(_)
+            | NeutralHead::Returned(_) => Polarity::Value,
         },
         | Some(Glued::Value(_)) => Polarity::Value,
         | Some(Glued::Computation(_)) => Polarity::Computation,
@@ -3626,6 +3710,13 @@ fn step_neutral(
                 kind: SuspendedKind::Mark,
                 binders,
             }),
+            | NeutralHead::Returned(computation) => {
+                machine.tasks.push(Task::Returned);
+                machine.tasks.push(Task::Comp {
+                    comp: computation,
+                    binders,
+                });
+            },
             | NeutralHead::Variable { .. } | NeutralHead::Constant(_) | NeutralHead::Module(_) => {
                 let term = head_term(core, head, binders)?;
                 machine.values.push(term);
@@ -3888,6 +3979,47 @@ fn step_spine(
             machine.tasks.push(Task::Value {
                 value: path,
                 binders,
+            });
+            Ok(())
+        },
+        // The motive reads its own binder past the capture, so it is read
+        // back under a fresh variable, as a nominal case's motive is.
+        | Elimination::PathTransport { motive, value } => {
+            expect_polarity(spine.polarity, Polarity::Value, neutral)?;
+            let held = domain
+                .value_closure(motive)
+                .ok_or(ReadbackFault::Domain(DomainFault::Dangling))?;
+            let crate::ValueBody::ValueType(family) = held.body()
+            else {
+                return Err(ReadbackFault::MachineInvariant);
+            };
+            let zone = Zone::Intuitionistic;
+            let deeper = binders
+                .opened(zone)
+                .ok_or(ReadbackFault::BinderCeiling { zone })?;
+            let mut environment = held.environment().clone();
+            let fresh = domain
+                .neutral_node(
+                    NeutralHead::Variable {
+                        zone,
+                        level: binders.fresh(zone),
+                    },
+                    Vec::new(),
+                    Unfolding::Rigid,
+                )
+                .map_err(ReadbackFault::Domain)?;
+            let bound = domain
+                .value_neutral(fresh, TermFace::Reduced)
+                .map_err(ReadbackFault::Domain)?;
+            environment.extend(zone, bound);
+            let frame = machine.hold_frame(environment);
+            machine.tasks.push(onward);
+            machine.tasks.push(Task::PathTransport);
+            machine.tasks.push(Task::Value { value, binders });
+            machine.tasks.push(Task::QuotedValueType {
+                quoted: family,
+                frame,
+                binders: deeper,
             });
             Ok(())
         },

@@ -21,6 +21,9 @@
 //!   subterm-table entry index, and its unfolding height.
 //! - [`DefinitionalEnvironment`] decides, scope by scope, whether a definition
 //!   is manifest.
+//! - [`identity`] derives `back`, `then` and `cong` as transports in families
+//!   of paths, so element identity has one eliminator, `tr`, beside its type
+//!   `Path` and its reflexivity `here`.
 //! - [`FailureClass`] is the four-class vocabulary every refusal of the core
 //!   pipeline answers to, whichever crate produced it.
 //!
@@ -109,6 +112,7 @@ pub mod description;
 pub mod effect;
 mod failure;
 pub mod hole;
+pub mod identity;
 mod import;
 pub mod pattern;
 pub mod primitive;

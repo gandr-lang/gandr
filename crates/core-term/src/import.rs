@@ -174,7 +174,11 @@ impl Image
                     ..
                 },
             ) => [Some(V(stack)), Some(C(body)), None, None, None],
-            | Self::Value(Value::Primitive { ref mut body, .. } | Value::Thunk(ref mut body))
+            | Self::Value(
+                Value::Primitive { ref mut body, .. }
+                | Value::Thunk(ref mut body)
+                | Value::Returned(ref mut body),
+            )
             | Self::Computation(
                 Computation::Lambda(ref mut body)
                 | Computation::Fixpoint { ref mut body, .. }
@@ -185,6 +189,7 @@ impl Image
             ) => [Some(C(body)), None, None, None, None],
             | Self::Value(
                 Value::PathRefl(ref mut body)
+                | Value::Here(ref mut body)
                 | Value::Injection(_, ref mut body)
                 | Value::Lift { ref mut body, .. }
                 | Value::StaticLambda(ref mut body)
@@ -225,6 +230,16 @@ impl Image
                 None,
                 None,
             ],
+            | Self::Computation(Computation::PathTransport {
+                ref mut motive,
+                ref mut path,
+                ref mut value,
+            }) => [Some(VT(motive)), Some(V(path)), Some(V(value)), None, None],
+            | Self::ValueType(ValueType::Path {
+                ref mut carrier,
+                ref mut left,
+                ref mut right,
+            }) => [Some(VT(carrier)), Some(V(left)), Some(V(right)), None, None],
             | Self::Value(Value::Quote(ref mut ty))
             | Self::ValueType(
                 ValueType::List(ref mut ty)

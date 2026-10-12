@@ -374,6 +374,7 @@ fn walk(
                 },
                 | Some(
                     &(Value::PathRefl(body)
+                    | Value::Here(body)
                     | Value::Injection(_, body)
                     | Value::Lift { body, .. }
                     | Value::Mark { body, .. }),
@@ -383,7 +384,7 @@ fn walk(
                 | Some(&Value::StaticLambda(body)) => {
                     pending.push((AnyNode::Value(body), deeper, results));
                 },
-                | Some(&Value::Thunk(body)) => {
+                | Some(&(Value::Thunk(body) | Value::Returned(body))) => {
                     pending.push((AnyNode::Computation(body), depth, results));
                 },
                 | Some(&Value::Quote(quoted)) => {
@@ -552,6 +553,15 @@ fn walk(
                     pending.push((AnyNode::Value(path), depth, results));
                     pending.push((AnyNode::Value(value), depth, results));
                 },
+                | Some(&Computation::PathTransport {
+                    motive,
+                    path,
+                    value,
+                }) => {
+                    pending.push((AnyNode::ValueType(motive), deeper, results));
+                    pending.push((AnyNode::Value(path), depth, results));
+                    pending.push((AnyNode::Value(value), depth, results));
+                },
                 | Some(&Computation::Hole(_)) | None => {},
             },
             | AnyNode::ValueType(id) => match arena.value_type(id) {
@@ -586,6 +596,15 @@ fn walk(
                 | Some(&ValueType::PathUniverse(source, target)) => {
                     pending.push((AnyNode::Value(source), depth, results));
                     pending.push((AnyNode::Value(target), depth, results));
+                },
+                | Some(&ValueType::Path {
+                    carrier,
+                    left,
+                    right,
+                }) => {
+                    pending.push((AnyNode::ValueType(carrier), depth, results));
+                    pending.push((AnyNode::Value(left), depth, results));
+                    pending.push((AnyNode::Value(right), depth, results));
                 },
                 | Some(&ValueType::Thunk(body)) => {
                     pending.push((AnyNode::CompType(body), depth, results));

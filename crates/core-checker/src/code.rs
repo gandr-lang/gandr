@@ -83,6 +83,7 @@ use gandr_core_term::ValueType;
 use gandr_core_term::Zone;
 use gandr_core_term::instantiate_value;
 use gandr_kernel_conversion_trace::ConversionDecision;
+use gandr_kernel_conversion_trace::NullSink;
 use gandr_kernel_conversion_trace::TraceLog;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
@@ -545,6 +546,8 @@ impl CodeDefinitions
                 (Unfolded::Definition(constant), body)
             },
             | Value::PathRefl(_)
+            | Value::Here(_)
+            | Value::Returned(_)
             | Value::Constructor { .. }
             | Value::Record(_)
             | Value::Reify(_)
@@ -690,6 +693,93 @@ impl CodeDefinitions
             | MachineVerdict::NotConvertible | MachineVerdict::Declined(_) => Err(undecided),
         }
     }
+
+    /// Decide whether two values standing under the same binders are the same
+    /// term: each evaluated with the free binders either reaches read as rigid
+    /// variables, every definition this table holds unfolding.
+    ///
+    /// # Specification
+    /// - requires: every body this table holds, and both values, live in
+    ///   `core`; the two values stand under the same binders.
+    /// - ensures: the machine's verdict on the pair, each side evaluated in one
+    ///   environment of rigid variables, one per binder the farther side
+    ///   reaches.
+    /// - provides: the conversion a path type's endpoints meet: reflexivity
+    ///   checks against a path type exactly when its point converts to both
+    ///   endpoints.
+    /// - fails: [`CheckRefusal::Undecided`] at `left` when either side does not
+    ///   evaluate or the machine faults; [`CheckRefusal::DanglingNode`] for a
+    ///   node `core` does not hold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal::Undecided`], [`CheckRefusal::DanglingNode`] — as
+    ///   above.
+    ///
+    /// # Termination
+    /// - reason: the `for` loop binds one rigid variable per binder the sides
+    ///   reach, not recursion; the machine runs under its own fuel.
+    /// - measure: the binders left to bind.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a definition applied to a variable converts with the
+    ///   body it unfolds to, two distinct literals are apart, and an arithmetic
+    ///   redex over a variable is apart from the variable; skipping the
+    ///   unfolding or the rigid environment changes a verdict.
+    /// - witness: `judgement::tests::reflexivity_checks_by_endpoint_conversion`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::Undecided { at } ) if at == left)
+        || matches!(ret, Err(CheckRefusal::DanglingNode { .. } | CheckRefusal::MachineInvariant)))]
+    #[inline]
+    pub fn convert_terms(
+        &self,
+        core: &CoreArena,
+        left: ValueId,
+        right: ValueId,
+    ) -> Result<MachineVerdict, CheckRefusal>
+    {
+        let undecided = CheckRefusal::Undecided { at: left };
+        let definitions =
+            Definitions::new(&self.lowered, &self.environment, self.environment.root());
+        let mut domain = DomainArena::new();
+        let mut environment = Environment::new();
+        let reach =
+            usize::from(loose_reach(core, left)?).max(usize::from(loose_reach(core, right)?));
+        let open = u32::try_from(reach).map_err(|_overflow| CheckRefusal::MachineInvariant)?;
+        for level in 0 .. open {
+            let neutral = domain
+                .neutral_node(
+                    NeutralHead::Variable {
+                        zone: Zone::Intuitionistic,
+                        level: BinderLevel::from(level),
+                    },
+                    Vec::new(),
+                    Unfolding::Rigid,
+                )
+                .map_err(|_fault| undecided)?;
+            let bound = domain
+                .value_neutral(neutral, TermFace::Reduced)
+                .map_err(|_fault| undecided)?;
+            environment.extend(Zone::Intuitionistic, bound);
+        }
+        let fuel = Fuel::from(CODE_FUEL);
+        let evaluate = |domain: &mut DomainArena, term: ValueId| {
+            eval_value_within(core, domain, definitions, fuel, term, environment.clone())
+                .map(|(value, _remaining)| value)
+                .map_err(|_fault| undecided)
+        };
+        let one = evaluate(&mut domain, left)?;
+        let other = evaluate(&mut domain, right)?;
+        decide::<NullSink, ResharingMemo>(
+            core,
+            &mut domain,
+            definitions,
+            MachineSettings::default(),
+            Problem::values(one, other).under(BinderLevel::from(open)),
+            &mut NullSink,
+        )
+        .map(|report| report.verdict())
+        .map_err(|_fault| undecided)
+    }
 }
 
 /// How many binders outside `root` its free intuitionistic variables reach:
@@ -817,6 +907,7 @@ pub fn loose_reach(
                         work.push((CoreNode::Term(TermNode::Value(second)), depth));
                     },
                     | Value::PathRefl(body)
+                    | Value::Here(body)
                     | Value::Injection(_, body)
                     | Value::Lift { body, .. }
                     | Value::Mark { body, .. } => {
@@ -825,7 +916,7 @@ pub fn loose_reach(
                     | Value::StaticLambda(body) => {
                         work.push((CoreNode::Term(TermNode::Value(body)), under));
                     },
-                    | Value::Thunk(body) => {
+                    | Value::Thunk(body) | Value::Returned(body) => {
                         work.push((CoreNode::Term(TermNode::Computation(body)), depth));
                     },
                     | Value::Quote(quoted) => {
@@ -948,6 +1039,15 @@ pub fn loose_reach(
                         work.push((CoreNode::Term(TermNode::Value(path)), depth));
                         work.push((CoreNode::Term(TermNode::Value(value)), depth));
                     },
+                    | Computation::PathTransport {
+                        motive,
+                        path,
+                        value,
+                    } => {
+                        work.push((CoreNode::Type(TypeNode::Value(motive)), under));
+                        work.push((CoreNode::Term(TermNode::Value(path)), depth));
+                        work.push((CoreNode::Term(TermNode::Value(value)), depth));
+                    },
                     | Computation::Application(head, argument) => {
                         work.push((CoreNode::Term(TermNode::Computation(head)), depth));
                         work.push((CoreNode::Term(TermNode::Value(argument)), depth));
@@ -993,6 +1093,15 @@ pub fn loose_reach(
                         work.push((CoreNode::Term(TermNode::Value(source)), depth));
                         work.push((CoreNode::Term(TermNode::Value(target)), depth));
                     },
+                    | ValueType::Path {
+                        carrier,
+                        left,
+                        right,
+                    } => work.extend([
+                        (CoreNode::Type(TypeNode::Value(carrier)), depth),
+                        (CoreNode::Term(TermNode::Value(left)), depth),
+                        (CoreNode::Term(TermNode::Value(right)), depth),
+                    ]),
                     | ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
                         work.extend(
                             parts

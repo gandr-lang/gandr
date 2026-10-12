@@ -1121,10 +1121,11 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
 /// - requires: `verdicts` was judged over `arena`.
 /// - ensures: succeeds with the readmission when every accepted declaration
 ///   crossed as a definition or an axiom, or stays on the checker's side as a
-///   static definition; a refused declaration crosses as its mark, a
-///   declaration withheld because it names a refused one carries that one's
-///   reason, and a declaration holding a term hole or the unknown type stays
-///   behind as the user absence it is, so none of these is a disagreement.
+///   static definition; a refused declaration crosses as its mark, a reason, a
+///   declaration holding a term hole or the unknown type stays behind as the
+///   user absence it is, and a declaration carrying element identity stays
+///   behind on the checker's side until the kernel checks it, so none of these
+///   is a disagreement.
 /// - provides: the kernel's repetition of every acceptance a run reports, and
 ///   the environment the run's kernel artifact is exported from.
 /// - fails: the readmission of the first declaration the kernel rejected or the
@@ -1150,7 +1151,8 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
                     | bridge::Outcome::Data { .. }
                     | bridge::Outcome::Marked(_) | bridge::Outcome::Static
                     | bridge::Outcome::Refused(bridge::Refusal::Withheld { .. } | bridge::Refusal::WithheldData { .. }
-                        | bridge::Refusal::Hole { .. } | bridge::Refusal::Unknown { .. }))),
+                        | bridge::Refusal::Hole { .. } | bridge::Refusal::Unknown { .. }
+                        | bridge::Refusal::ElementIdentity { .. }))),
     Err(ref fault) =>
         verdicts.judged().iter().any(|judged| judged.constant() == fault.constant())
             && matches!(*fault.outcome(), bridge::Outcome::Rejected(_)
@@ -1176,7 +1178,8 @@ fn readmitted(
                 bridge::Refusal::Withheld { .. }
                 | bridge::Refusal::WithheldData { .. }
                 | bridge::Refusal::Hole { .. }
-                | bridge::Refusal::Unknown { .. },
+                | bridge::Refusal::Unknown { .. }
+                | bridge::Refusal::ElementIdentity { .. },
             ) => {},
             | bridge::Outcome::Refused(
                 bridge::Refusal::OutOfFragment { .. }

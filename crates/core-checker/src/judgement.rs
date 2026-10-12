@@ -283,9 +283,9 @@
 //!
 //! `bridge::tests::native_path_module_round_trips` exports all five forms,
 //! persists and imports four declarations, then replays imported product
-//! transport. The surface parser has no path syntax. Element identity, the
-//! bridge mode, higher fields, funext, `Flow_U` and guarded List inhabitants
-//! stay at their kernel rule-language boundaries.
+//! transport. The surface has no notation for these forms. The bridge mode,
+//! higher fields, funext, `Flow_U` and guarded List inhabitants stay at their
+//! kernel rule-language boundaries.
 //!
 //! **Choice.** Preserve untrusted native evidence across the export boundary
 //! instead of treating successful frontend checking as certification.
@@ -294,6 +294,53 @@
 //! equality verdict. **Reversal.** Broader endpoint codes or a source notation
 //! must acquire their own typing and kernel replay rules before this boundary
 //! widens.
+//!
+//! # Element identity
+//!
+//! `Path(A, a, b)` forms when its carrier forms and both endpoints check
+//! against it; it stands at the carrier's level. Reflexivity `here(a)`
+//! synthesises `Path(A, a, a)` from the type its point synthesises, and
+//! checks against `Path(A, l, r)` when its point checks against `A` and is
+//! both `l` and `r`: the same syntax with evidence erased, or convertible
+//! with every definition unfolded and the free binders read as rigid
+//! variables. Anything else is [`CheckRefusal::EndpointMismatch`], naming the
+//! point and both endpoints. A conversion the machine cannot decide — a
+//! native operation over a variable, `0 + x` against `x` — is a mismatch too:
+//! the rule admits what it shows and refutes nothing it cannot.
+//!
+//! A compound endpoint is a computation standing where an endpoint is read,
+//! taken as the value it returns. It synthesises the result of the pure
+//! returner its computation synthesises, and is
+//! [`CheckRefusal::CompoundEndpoint`] when that is no returner or performs an
+//! effect: an effect has no value to compare.
+//!
+//! Transport `tr(P, p, x)` synthesises. The path synthesises `Path(A, a, b)`,
+//! the motive forms under a binder of `A`, the operand checks against `P[a]`,
+//! and the transport has `F P[b]`. The motive is first order: one value type
+//! under one binder. A motive over a dependent arrow, `y. U((x : B[y]) →
+//! C[x, y])`, transports the argument back along the path and the result
+//! forward over both binders; that is the dependent-arrow extension, and this
+//! rule does not take it.
+//!
+//! **Identity at an open type is the owner's obligation.** A sealed atom, the
+//! decode of a code no quote reaches and the unknown type expose no structure
+//! for the identity recursion to unfold, so the judgement invents no
+//! transport through them: a transport at such a carrier is
+//! [`CheckRefusal::IdentityAtOpenType`], naming the transport and the
+//! carrier. Forming the path type and reflexivity there stay admitted, since
+//! neither reads the structure; whoever owns the type supplies its identity
+//! before anything moves along it.
+//!
+//! K is not derivable: no rule matches a path against reflexivity, and the
+//! lowering refuses a `here` pattern before a term reaches the judgement, as
+//! it refuses an endpoint whose head names nothing.
+//!
+//! **Choice.** One eliminator, typed in its written motive, with `back`,
+//! `then` and `cong` arriving as transports. The alternatives were a
+//! primitive `J`, whose motive ranges over the path as well as its endpoint,
+//! and a typing rule per derived operation, three places for their laws to
+//! drift. **Reversal.** The dependent-arrow extension and identity between
+//! identities each add a rule beside this one rather than widening it.
 
 use alloc::vec::Vec;
 
@@ -322,6 +369,7 @@ use gandr_core_term::hole::matched_thunk;
 use gandr_core_term::hole::matched_with;
 use gandr_core_term::hole::matching;
 use gandr_core_term::instantiate_comp_type;
+use gandr_core_term::instantiate_value_type;
 use gandr_core_term::shift_comp_type;
 use gandr_core_term::shift_value_type;
 use gandr_core_term::strengthen_comp_type;
@@ -354,6 +402,7 @@ use crate::view::comp_type_view;
 use crate::view::value_type_view;
 
 mod elaboration;
+
 mod native;
 
 use self::elaboration::Anchor;
@@ -827,6 +876,25 @@ enum Codomain
     Dependent(CompTypeId),
 }
 
+/// The path type a term is judged against or synthesised, read at its weak
+/// head.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum PathReading
+{
+    /// A path type with its carrier and endpoints.
+    Known
+    {
+        /// The carrier.
+        carrier: ValueTypeId,
+        /// The left endpoint.
+        left: ValueId,
+        /// The right endpoint.
+        right: ValueId,
+    },
+    /// The unknown type, which stands for a path type of unknown parts.
+    Unknown(ValueTypeId),
+}
+
 /// The completed premise of a native List fold rule.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum ListPhase
@@ -1050,6 +1118,57 @@ enum Frame
     {
         /// The target returner.
         result: CompTypeId,
+    },
+    /// Await the type reflexivity's point synthesises; reflexivity has the
+    /// path type from the point to itself in it.
+    HereSynthesised
+    {
+        /// The point.
+        point: ValueId,
+    },
+    /// Await the check of reflexivity's point against the carrier, then meet
+    /// the point with both endpoints of the path type it is checked against.
+    HereEndpoints
+    {
+        /// The reflexivity.
+        at: ValueId,
+        /// Its point.
+        point: ValueId,
+        /// The path type's left endpoint.
+        left: ValueId,
+        /// The path type's right endpoint.
+        right: ValueId,
+    },
+    /// Await the type a compound endpoint's computation synthesises, which
+    /// must be a pure returner.
+    ReturnedEndpoint
+    {
+        /// The compound endpoint.
+        at: ValueId,
+    },
+    /// Await the element path's classifier; the motive is then formed under a
+    /// binder of its carrier.
+    ElementTransportPath
+    {
+        /// The transport.
+        at: ComputationId,
+        /// The motive, under one binder.
+        motive: ValueTypeId,
+        /// The transported operand.
+        value: ValueId,
+    },
+    /// Await the motive's formation under its binder, closed again; the operand
+    /// then checks against the motive at the left endpoint.
+    ElementTransportMotive
+    {
+        /// The motive, under one binder.
+        motive: ValueTypeId,
+        /// The transported operand.
+        value: ValueId,
+        /// The path's left endpoint.
+        left: ValueId,
+        /// The path's right endpoint.
+        right: ValueId,
     },
     /// Await the sum scrutinee classifier of the case `at`.
     CaseScrutinee
@@ -2061,8 +2180,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   a mark the unknown type, minted; a quote awaits its type's formation;
     ///   a pair awaits its components' types and has their eager product; a
     ///   static application awaits its head's type and meets each argument in
-    ///   turn. A leaf ascends with the frames as found; every other rule
-    ///   descends above a new frame.
+    ///   turn; reflexivity awaits its point's type `A` and has `Path(A, a, a)`
+    ///   at its point `a`; a compound endpoint awaits its computation's type,
+    ///   which must be a pure returner `F A`, and has `A`. A leaf ascends with
+    ///   the frames as found; every other rule descends above a new frame.
     /// - fails: [`CheckRefusal::NotSynthesisable`] for a thunk and a static
     ///   lambda; [`CheckRefusal::UnboundIndex`] for a variable past its zone's
     ///   binders; [`CheckRefusal::UnknownConstant`] for a constant with no
@@ -2214,6 +2335,20 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 form: CheckingForm::StaticLambda(term),
             }),
             | Value::StaticApplication(..) => self.static_application(term),
+            | Value::Here(point) => {
+                self.frames.push(Frame::HereSynthesised { point });
+                Ok(Step::Descend(Goal::Value {
+                    term: point,
+                    direction: Direction::Synthesise,
+                }))
+            },
+            | Value::Returned(computation) => {
+                self.frames.push(Frame::ReturnedEndpoint { at: term });
+                Ok(Step::Descend(Goal::Computation {
+                    term: computation,
+                    direction: Direction::Synthesise,
+                }))
+            },
             | Value::Hole(_) | Value::Mark { .. } => {
                 let unknown = self.context.arena_mut().value_type_unknown();
                 Ok(Step::Ascend(Produced::ValueType(unknown)))
@@ -2357,7 +2492,30 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(codomain),
                 }))
             },
+            | Value::Here(point) => match self.path_expected(TermNode::Value(term), expected)? {
+                | PathReading::Known {
+                    carrier,
+                    left,
+                    right,
+                } => {
+                    self.frames.push(Frame::HereEndpoints {
+                        at: term,
+                        point,
+                        left,
+                        right,
+                    });
+                    Ok(Step::Descend(Goal::Value {
+                        term: point,
+                        direction: Direction::Check(carrier),
+                    }))
+                },
+                | PathReading::Unknown(unknown) => Ok(Step::Descend(Goal::Value {
+                    term: point,
+                    direction: Direction::Check(unknown),
+                })),
+            },
             | Value::PathRefl(_)
+            | Value::Returned(_)
             | Value::Constructor { .. }
             | Value::PathProduct(..)
             | Value::PathEquiv { .. }
@@ -2508,6 +2666,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 matches!(self.context.definitions().body(constant), Maybe::Present(_))
             },
             | Value::PathRefl(_)
+            | Value::Here(_)
+            | Value::Returned(_)
             | Value::Constructor { .. }
             | Value::Record(_)
             | Value::Reify(_)
@@ -2678,6 +2838,21 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(first_domain),
                 }))
             },
+            | Computation::PathTransport {
+                motive,
+                path,
+                value,
+            } => {
+                self.frames.push(Frame::ElementTransportPath {
+                    at: term,
+                    motive,
+                    value,
+                });
+                Ok(Step::Descend(Goal::Value {
+                    term: path,
+                    direction: Direction::Synthesise,
+                }))
+            },
             | Computation::Transport(path, value) => {
                 self.frames.push(Frame::TransportPath { path, value });
                 Ok(Step::Descend(Goal::Value {
@@ -2836,6 +3011,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Computation::Project(..)
             | Computation::ListFold { .. }
             | Computation::Transport(..)
+            | Computation::PathTransport { .. }
             | Computation::Force(_)
             | Computation::Application(..) => {
                 self.frames.push(Frame::CompBridge { at: term, expected });
@@ -3224,9 +3400,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   type, then awaits the raise; a decode awaits its code's synthesised
     ///   type; an eager product and a sum form each component, an empty sum at
     ///   once; a static Pi forms both classifiers, then awaits their check as
-    ///   static classifiers. A former formed at once leaves the frames as
-    ///   found, but for a data type, a record, a product and a sum, which queue
-    ///   their components; one that descends leaves them no shorter.
+    ///   static classifiers; a path type forms its carrier, then checks each
+    ///   endpoint against it, left first. A former formed at once leaves the
+    ///   frames as found, but for a data type, a record, a product and a sum,
+    ///   which queue their components; one that descends leaves them no
+    ///   shorter.
     /// - fails: the view's refusal for a former outside the fragment or a
     ///   dangling id; [`CheckRefusal::OutOfFragment`] naming
     ///   [`UnadmittedFormer::TopUniverse`].
@@ -3263,6 +3441,21 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 self.frames
                     .push(Frame::FormNext(TypeNode::Computation(output)));
                 Ok(Step::Descend(Goal::Form(TypeNode::Computation(input))))
+            },
+            | ValueTypeView::Path {
+                carrier,
+                left,
+                right,
+            } => {
+                self.frames.push(Frame::Next(Goal::Value {
+                    term: right,
+                    direction: Direction::Check(carrier),
+                }));
+                self.frames.push(Frame::Next(Goal::Value {
+                    term: left,
+                    direction: Direction::Check(carrier),
+                }));
+                Ok(Step::Descend(Goal::Form(TypeNode::Value(carrier))))
             },
             | ValueTypeView::PathUniverse(source, target) => {
                 let _source = crate::formation::path_code(self.context.arena(), source)?;
@@ -3565,6 +3758,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::StaticPi { .. }
                 | ValueTypeView::Unknown => {},
                 | ValueTypeView::PathUniverse(..)
+                | ValueTypeView::Path { .. }
                 | ValueTypeView::Data { .. }
                 | ValueTypeView::Record(_)
                 | ValueTypeView::Sum(..)
@@ -3625,6 +3819,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     (code, target.clone(), GroundSort::Value)
                 },
                 | ValueTypeView::PathUniverse(..)
+                | ValueTypeView::Path { .. }
                 | ValueTypeView::Data { .. }
                 | ValueTypeView::Record(_)
                 | ValueTypeView::Sum(..)
@@ -3980,6 +4175,92 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(source),
                 }))
             },
+            | (Frame::HereSynthesised { point }, Produced::ValueType(carrier)) => {
+                let path = self
+                    .context
+                    .arena_mut()
+                    .value_type_path(carrier, point, point);
+                Ok(Step::Ascend(Produced::ValueType(path)))
+            },
+            | (
+                Frame::HereEndpoints {
+                    at,
+                    point,
+                    left,
+                    right,
+                },
+                Produced::Checked,
+            ) => {
+                self.reaches(at, point, left, right)?;
+                Ok(Step::Ascend(Produced::Checked))
+            },
+            | (Frame::ReturnedEndpoint { at }, Produced::CompType(synthesised)) => {
+                let head = self.context.whnf_comp_type(synthesised)?;
+                match comp_type_view(self.context.arena(), head)? {
+                    | CompTypeView::Returner { result, effects }
+                        if effects.purity() == gandr_core_term::effect::Purity::Pure =>
+                    {
+                        Ok(Step::Ascend(Produced::ValueType(result)))
+                    },
+                    | CompTypeView::Unknown => {
+                        let unknown = self.context.arena_mut().value_type_unknown();
+                        Ok(Step::Ascend(Produced::ValueType(unknown)))
+                    },
+                    | CompTypeView::Returner { .. }
+                    | CompTypeView::With(..)
+                    | CompTypeView::Arrow { .. }
+                    | CompTypeView::Pi { .. }
+                    | CompTypeView::Element { .. } => {
+                        Err(CheckRefusal::CompoundEndpoint { at, synthesised })
+                    },
+                }
+            },
+            | (
+                Frame::ElementTransportPath { at, motive, value },
+                Produced::ValueType(classifier),
+            ) => {
+                let PathReading::Known {
+                    carrier,
+                    left,
+                    right,
+                } = self.path_expected(TermNode::Computation(at), classifier)?
+                else {
+                    return Err(CheckRefusal::ShapeMismatch {
+                        at: TermNode::Computation(at),
+                        wanted: ExpectedShape::Path,
+                        found: TypeNode::Value(classifier),
+                    });
+                };
+                self.transported_carrier(at, carrier)?;
+                self.context.binders().open(Zone::Intuitionistic, carrier);
+                self.frames.push(Frame::ElementTransportMotive {
+                    motive,
+                    value,
+                    left,
+                    right,
+                });
+                self.frames.push(Frame::FormBinder);
+                Ok(Step::Descend(Goal::Form(TypeNode::Value(motive))))
+            },
+            | (
+                Frame::ElementTransportMotive {
+                    motive,
+                    value,
+                    left,
+                    right,
+                },
+                Produced::Checked,
+            ) => {
+                let arena = self.context.arena_mut();
+                let source = instantiate_value_type(arena, motive, left);
+                let target = instantiate_value_type(arena, motive, right);
+                let result = arena.comp_type_returner(target);
+                self.frames.push(Frame::TransportOperand { result });
+                Ok(Step::Descend(Goal::Value {
+                    term: value,
+                    direction: Direction::Check(source),
+                }))
+            },
             | (
                 Frame::CaseScrutinee {
                     at,
@@ -4300,6 +4581,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::Resume { .. }
                 | Frame::PathProductSecond { .. }
                 | Frame::TransportPath { .. }
+                | Frame::HereSynthesised { .. }
+                | Frame::ElementTransportPath { .. }
                 | Frame::CaseScrutinee { .. }
                 | Frame::SplitScrutinee { .. }
                 | Frame::Force { .. }
@@ -4312,6 +4595,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | (
                 Frame::ApplicationHead { .. }
                 | Frame::CompBridge { .. }
+                | Frame::ReturnedEndpoint { .. }
                 | Frame::BindBound { .. }
                 | Frame::Project { .. }
                 | Frame::HandlerSubject { .. }
@@ -4332,6 +4616,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::PrimitiveResult { .. }
                 | Frame::ListFold { .. }
                 | Frame::TransportOperand { .. }
+                | Frame::HereEndpoints { .. }
+                | Frame::ElementTransportMotive { .. }
                 | Frame::CaseBranch { .. }
                 | Frame::SplitBody(_)
                 | Frame::ApplicationArgument { .. }
@@ -4465,6 +4751,178 @@ impl<'context, 'arena> Machine<'context, 'arena>
             crate::formation::path_code(self.context.arena(), source)?,
             crate::formation::path_code(self.context.arena(), target)?,
         ))
+    }
+
+    /// Read the element path type `classifier` names at its weak head.
+    ///
+    /// # Specification
+    /// - requires: nothing; a classifier of another former is refused.
+    /// - ensures: the carrier and both endpoints of a path type; the unknown
+    ///   type, standing for a path type of unknown parts, as itself.
+    /// - provides: what reflexivity is checked against and what a transported
+    ///   path's type is read as.
+    /// - fails: [`CheckRefusal::ShapeMismatch`] at `at`, wanting a path type,
+    ///   for any other former; the unfolding's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — reflexivity against a path type, the unknown type and
+    ///   an atom separates the three readings.
+    /// - witness: `judgement::tests::reflexivity_checks_by_endpoint_conversion`
+    #[spec(ensures: |ret| match ret {
+        | Err(CheckRefusal::ShapeMismatch { at: site, wanted, found }) => site == at && wanted == ExpectedShape::Path && found == TypeNode::Value(classifier),
+        | Ok(PathReading::Known { .. } | PathReading::Unknown(_)) | Err(_) => true,
+    })]
+    fn path_expected(
+        &mut self,
+        at: TermNode,
+        classifier: ValueTypeId,
+    ) -> Result<PathReading, CheckRefusal>
+    {
+        let head = self.context.whnf_value_type(classifier)?;
+        match value_type_view(self.context.arena(), head)? {
+            | ValueTypeView::Path {
+                carrier,
+                left,
+                right,
+            } => Ok(PathReading::Known {
+                carrier,
+                left,
+                right,
+            }),
+            | ValueTypeView::Unknown => Ok(PathReading::Unknown(head)),
+            | _ => Err(CheckRefusal::ShapeMismatch {
+                at,
+                wanted: ExpectedShape::Path,
+                found: TypeNode::Value(classifier),
+            }),
+        }
+    }
+
+    /// Meet reflexivity's point with both endpoints of the path type it is
+    /// checked against.
+    ///
+    /// # Specification
+    /// - requires: `point` checked against the path type's carrier, and the
+    ///   three values stand under the judgement's binders.
+    /// - ensures: success exactly when the point converts to the left endpoint
+    ///   and to the right one: the same node or the same syntax at once, a hole
+    ///   or a mark consistently with anything, and otherwise by the
+    ///   normaliser's conversion with every definition admitted so far
+    ///   unfolding. A side the normaliser cannot run — a native primitive,
+    ///   which only the runtime computes — converts by syntax alone.
+    /// - provides: the endpoint condition of reflexivity's rule.
+    /// - fails: [`CheckRefusal::EndpointMismatch`] naming `at` and both
+    ///   endpoints when either conversion is refuted, declined or undecided; a
+    ///   dangling node or a machine invariant as the conversion raises it.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — reflexivity at equal literals, at a definition
+    ///   applied to a variable against what it unfolds to, and at an arithmetic
+    ///   redex over a variable against the variable separate the syntactic, the
+    ///   normalising and the refuting outcomes.
+    /// - witness: `judgement::tests::reflexivity_checks_by_endpoint_conversion`
+    #[spec(ensures: |ret| match ret {
+        | Err(CheckRefusal::EndpointMismatch { at: site, left: named_left, right: named_right }) => site == at && named_left == left && named_right == right,
+        | Ok(()) | Err(_) => true,
+    })]
+    fn reaches(
+        &self,
+        at: ValueId,
+        point: ValueId,
+        left: ValueId,
+        right: ValueId,
+    ) -> Result<(), CheckRefusal>
+    {
+        for endpoint in [left, right] {
+            let arena = self.context.arena();
+            let consistent = point == endpoint
+                || gandr_core_term::equal_certificate_syntax(arena, point, endpoint)
+                    == gandr_core_term::CertificateEquality::Equal
+                || [point, endpoint].into_iter().any(|side| {
+                    matches!(arena.value(side), Some(Value::Hole(_) | Value::Mark { .. }))
+                })
+                || match self
+                    .context
+                    .definitions()
+                    .convert_terms(arena, point, endpoint)
+                {
+                    | Ok(verdict) => verdict == gandr_core_nbe::MachineVerdict::Convertible,
+                    | Err(CheckRefusal::Undecided { .. }) => false,
+                    | Err(fault) => return Err(fault),
+                };
+            if !consistent {
+                return Err(CheckRefusal::EndpointMismatch { at, left, right });
+            }
+        }
+        Ok(())
+    }
+
+    /// Refuse transport at a carrier whose identity the recursion cannot
+    /// unfold.
+    ///
+    /// # Specification
+    /// - requires: `carrier` is formed.
+    /// - ensures: success unless the carrier, read at its weak head through
+    ///   every decode of a quote, is an open carrier — a decode of a code no
+    ///   quote reaches, or the unknown type.
+    /// - provides: the open-type boundary of transport: identity at an open
+    ///   type is the owner's obligation, and the judgement invents no transport
+    ///   data for it.
+    /// - fails: [`CheckRefusal::IdentityAtOpenType`] naming the transport and
+    ///   the carrier; the unfolding's refusal; [`CheckRefusal::DanglingNode`]
+    ///   for a carrier the arena does not hold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal`] — as above.
+    ///
+    /// # Termination
+    /// - reason: the `while let` loop reads one quote per turn, not recursion.
+    /// - measure: the arena position of the carrier, which a quote holds below
+    ///   its own and an unfolding reaches by a certified step.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a transport at the decode of a type variable is
+    ///   refused by name, and one at a closed carrier and at the decode of a
+    ///   quoted closed carrier check.
+    /// - witness: `judgement::tests::transport_at_an_open_carrier_is_refused_by_name`
+    #[spec(ensures: |ret| match ret {
+        | Err(CheckRefusal::IdentityAtOpenType { at: site, carrier: named }) => site == at && named == carrier,
+        | Ok(()) | Err(_) => true,
+    })]
+    fn transported_carrier(
+        &mut self,
+        at: ComputationId,
+        carrier: ValueTypeId,
+    ) -> Result<(), CheckRefusal>
+    {
+        let mut head = self.context.whnf_value_type(carrier)?;
+        while let ValueTypeView::Element { code, .. } = value_type_view(self.context.arena(), head)?
+        {
+            let code = self.context.whnf_code(code)?;
+            let Value::Quote(quoted) = *self.value(code)?
+            else {
+                break;
+            };
+            head = self.context.whnf_value_type(quoted)?;
+        }
+        match gandr_core_nbe::identity::clause(self.context.arena(), head) {
+            | Ok(gandr_core_nbe::identity::Clause::Open) => {
+                Err(CheckRefusal::IdentityAtOpenType { at, carrier })
+            },
+            | Ok(_) => Ok(()),
+            | Err(_) => Err(CheckRefusal::DanglingNode {
+                node: CoreNode::Type(TypeNode::Value(head)),
+            }),
+        }
     }
 
     /// Form the thunked translator from a closed source to a closed target.
@@ -4684,6 +5142,7 @@ const fn unadmitted_value(
         former,
     }
 }
+
 #[cfg(test)]
 mod tests
 {
@@ -7198,6 +7657,198 @@ mod tests
         );
     }
 
+    /// The integers the identity fixtures below compare.
+    #[derive(Clone, Copy)]
+    enum Numeral
+    {
+        /// `5`.
+        Five,
+        /// `6`.
+        Six,
+    }
+
+    /// The integer literal `numeral` spells.
+    ///
+    /// # Specification
+    /// trivial.
+    fn integer(numeral: Numeral) -> gandr_kernel_term::Literal
+    {
+        let digits = match numeral {
+            | Numeral::Five => "5",
+            | Numeral::Six => "6",
+        };
+        let magnitude = gandr_kernel_term::Magnitude::from_decimal_text(digits.into())
+            .expect("the digits are decimal");
+        gandr_kernel_term::Literal::Integer(gandr_kernel_term::IntegerLiteral::new(
+            gandr_kernel_term::Sign::NonNegative,
+            magnitude,
+        ))
+    }
+
+    #[test]
+    fn reflexivity_checks_by_endpoint_conversion()
+    {
+        // def id : U (Integer -> F Integer) = thunk { \x. return x } ;
+        let mut arena = CoreArena::new();
+        let integer_type = arena.value_type_base(BaseType::Integer);
+        let returns_integer = arena.comp_type_returner(integer_type);
+        let arrow = arena.comp_type_arrow(integer_type, returns_integer);
+        let thunk_arrow = arena.value_type_thunk(arrow);
+        let parameter = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let identity_return = arena.computation_return(parameter);
+        let identity_lambda = arena.computation_lambda(identity_return);
+        let identity_body = arena.value_thunk(identity_lambda);
+        let five = arena.value_literal(integer(Numeral::Five));
+        let also_five = arena.value_literal(integer(Numeral::Five));
+        let six = arena.value_literal(integer(Numeral::Six));
+        let here_five = arena.value_here(five);
+        let same = arena.value_type_path(integer_type, also_five, also_five);
+        let apart = arena.value_type_path(integer_type, five, six);
+        // \y. return here(y), against (y : Integer) -> F Path(Integer, e, y).
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let here_bound = arena.value_here(bound);
+        let returns_here = arena.computation_return(here_bound);
+        let reflexive = arena.computation_lambda(returns_here);
+        let identity = arena.value_constant(ConstantIndex::from(0_usize));
+        let forced = arena.computation_force(identity);
+        let applied = arena.computation_application(forced, bound);
+        let unfolds = arena.value_returned(applied);
+        let add = gandr_core_term::primitive::PRELUDE
+            .iter()
+            .copied()
+            .find(|primitive| primitive.name().as_ref() == "add")
+            .expect("native add");
+        let zero = arena.value_literal(integer_literal());
+        let redex = arena.computation_primitive(
+            add,
+            gandr_core_term::primitive::Arguments::Binary([bound, zero]),
+        );
+        let stuck = arena.value_returned(redex);
+        let pis = [unfolds, stuck].map(|endpoint| {
+            let path = arena.value_type_path(integer_type, endpoint, bound);
+            let returns_path = arena.comp_type_returner(path);
+            arena.comp_type_pi(integer_type, returns_path)
+        });
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        seed(&mut context, &[thunk_arrow]);
+        let declared = form_value_type(&mut context, thunk_arrow).unwrap();
+        context.define(ConstantIndex::from(0_usize), declared, identity_body);
+        let same = form_value_type(&mut context, same).unwrap();
+        assert!(
+            check_value(&mut context, here_five, same).is_ok(),
+            "equal literals are the same syntax at either endpoint"
+        );
+        let apart = form_value_type(&mut context, apart).unwrap();
+        assert_eq!(
+            check_value(&mut context, here_five, apart),
+            Err(CheckRefusal::EndpointMismatch {
+                at: here_five,
+                left: five,
+                right: six,
+            }),
+            "a point apart from one endpoint is refused naming both endpoints"
+        );
+        let [unfolding, refuting] = pis.map(|pi| form_comp_type(&mut context, pi).unwrap());
+        let unfolded = check_comp(&mut context, reflexive, unfolding);
+        assert!(
+            unfolded.is_ok(),
+            "a definition applied to the variable converts to the variable by unfolding: \
+             {unfolded:?}"
+        );
+        assert_eq!(
+            check_comp(&mut context, reflexive, refuting),
+            Err(CheckRefusal::EndpointMismatch {
+                at: here_bound,
+                left: stuck,
+                right: bound,
+            }),
+            "native addition does not reduce on a variable, so `y + 0` is not `y`"
+        );
+        assert_eq!(
+            CheckRefusal::EndpointMismatch {
+                at: here_bound,
+                left: stuck,
+                right: bound,
+            }
+            .classify(),
+            FailureClass::MalformedSource,
+            "an endpoint mismatch is the author's"
+        );
+        assert_eq!(
+            context.binders().depth(Zone::Intuitionistic),
+            BinderDepth::from(0_usize),
+            "the refused check closed the binder it opened"
+        );
+    }
+
+    #[test]
+    fn transport_at_an_open_carrier_is_refused_by_name()
+    {
+        let mut arena = CoreArena::new();
+        let integer_type = arena.value_type_base(BaseType::Integer);
+        let returns_integer = arena.comp_type_returner(integer_type);
+        let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let zero = arena.value_literal(integer_literal());
+        let five = arena.value_literal(integer(Numeral::Five));
+        // tr(Integer, here(5), 0) at the closed carrier Integer.
+        let here_five = arena.value_here(five);
+        let closed = arena.computation_path_transport(integer_type, here_five, zero);
+        // \x. tr(Integer, here(x), 0) at the decode of a quoted Integer.
+        let quoted = arena.value_quote(integer_type);
+        let decoded = arena.value_type_element(quoted, Level::zero());
+        let point = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let here_point = arena.value_here(point);
+        let through_quote = arena.computation_path_transport(integer_type, here_point, zero);
+        let through_quote_lambda = arena.computation_lambda(through_quote);
+        let quoted_pi = arena.comp_type_pi(decoded, returns_integer);
+        // \a. \x. tr(Integer, here(x), 0) at the decode of the variable `a`.
+        let code = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let open = arena.value_type_element(code, Level::zero());
+        let open_transport = arena.computation_path_transport(integer_type, here_point, zero);
+        let inner = arena.computation_lambda(open_transport);
+        let outer = arena.computation_lambda(inner);
+        let point_pi = arena.comp_type_pi(open, returns_integer);
+        let code_pi = arena.comp_type_pi(small, point_pi);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let synthesised = synthesise_comp(&mut context, closed).unwrap();
+        assert!(
+            matches!(
+                context.arena().comp_type(synthesised.produced().id()),
+                Some(&CompType::Returner { result, .. }) if result == integer_type
+            ),
+            "a transport at a closed carrier returns the motive at the right endpoint"
+        );
+        let quoted_pi = form_comp_type(&mut context, quoted_pi).unwrap();
+        assert!(
+            check_comp(&mut context, through_quote_lambda, quoted_pi).is_ok(),
+            "the decode of a quoted closed carrier is read through to the carrier"
+        );
+        let code_pi = form_comp_type(&mut context, code_pi).unwrap();
+        let refusal = check_comp(&mut context, outer, code_pi).unwrap_err();
+        let CheckRefusal::IdentityAtOpenType { at, carrier } = refusal
+        else {
+            panic!("the decode of a type variable is an open carrier: {refusal:?}");
+        };
+        assert_eq!(at, open_transport, "the refusal names the transport");
+        assert!(
+            matches!(
+                context.arena().value_type(carrier),
+                Some(&ValueType::Element { .. })
+            ),
+            "the refusal names the open carrier, the decode of the variable"
+        );
+        assert_eq!(
+            refusal.classify(),
+            FailureClass::Unrepresentable,
+            "identity at an open type is outside what the judgement represents"
+        );
+        assert_eq!(
+            context.binders().depth(Zone::Intuitionistic),
+            BinderDepth::from(0_usize),
+            "the refused check closed the binders it opened"
+        );
+    }
+
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(256))]
 
@@ -7247,7 +7898,7 @@ mod tests
                             "a synthesising value checks exactly as it synthesises, then crosses the value bridge"
                         );
                     },
-                    | Value::PathRefl(_)
+                    | Value::PathRefl(_) | Value::Here(_) | Value::Returned(_)
                     | Value::Constructor { .. } | Value::Record(_)
                     | Value::Reify(_)
                     | Value::PathProduct(..)
@@ -7304,7 +7955,7 @@ mod tests
                             "a synthesising computation checks exactly as it synthesises, then crosses the computation bridge"
                         );
                     },
-                    | Computation::Transport(..) | Computation::Bind(..) | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) => {
+                    | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Bind(..) | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) => {
                         prop_assert!(false, "the free recipe mints no bind or native eliminator");
                     },
                     | Computation::ListFold { .. } | Computation::Case { .. } | Computation::Split { .. }

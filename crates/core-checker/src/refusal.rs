@@ -100,6 +100,9 @@ pub enum ExpectedShape
     With,
     /// A native universe-path classifier.
     PathUniverse,
+    /// An element path type `Path(A, a, b)`: what reflexivity is checked
+    /// against and what a transported path must synthesise.
+    Path,
     /// A sum classifier.
     Sum,
     /// A thunk type `U C`: what a thunk is checked against and what a forced
@@ -369,6 +372,37 @@ pub enum CheckRefusal
     },
     /// A native path endpoint was not a quoted closed first-order code.
     PathCode(ValueId),
+    /// Reflexivity was checked against a path type whose endpoints its point
+    /// does not both convert to.
+    EndpointMismatch
+    {
+        /// The reflexivity.
+        at: ValueId,
+        /// The path type's left endpoint.
+        left: ValueId,
+        /// The path type's right endpoint.
+        right: ValueId,
+    },
+    /// A transport along a path whose carrier exposes no structure — a sealed
+    /// atom, the decode of a code no quote reaches, the unknown type — so the
+    /// identity recursion has nothing to transport by: identity at an open
+    /// type.
+    IdentityAtOpenType
+    {
+        /// The transport.
+        at: ComputationId,
+        /// The open carrier.
+        carrier: ValueTypeId,
+    },
+    /// A compound endpoint stands for a computation that returns no pure
+    /// value: its type is no returner, or its returner performs effects.
+    CompoundEndpoint
+    {
+        /// The compound endpoint.
+        at: ValueId,
+        /// The type its computation synthesised.
+        synthesised: CompTypeId,
+    },
     /// A synthesising term in checking position synthesised a type the expected
     /// type does not convert to.
     TypeMismatch(Mismatch),
@@ -587,11 +621,13 @@ impl CheckRefusal
     ///   wrong classifier, a static lambda at a dynamic parameter, a static Pi
     ///   over a type that classifies no codes, an occurrence of a data
     ///   declaration's own family outside a strictly positive, uniform field, a
-    ///   reference past its block and a descent claim that does not replay are
-    ///   malformed source; a former outside the fragment is unrepresentable; an
-    ///   unbound index, an exhausted allowance, a dangling id, an admission out
-    ///   of order, a machine invariant and an undecided unfolding are engine
-    ///   faults; nothing is a user absence.
+    ///   reference past its block, a descent claim that does not replay,
+    ///   reflexivity at endpoints its point does not reach and a compound
+    ///   endpoint that returns no pure value are malformed source; a former
+    ///   outside the fragment and identity at an open type are unrepresentable;
+    ///   an unbound index, an exhausted allowance, a dangling id, an admission
+    ///   out of order, a machine invariant and an undecided unfolding are
+    ///   engine faults; nothing is a user absence.
     /// - provides: the fact a report groups by and an exit code reads.
     /// - fails: never.
     /// - panics: none.
@@ -602,14 +638,14 @@ impl CheckRefusal
     ///   than turning the rejection into an obligation.
     /// - witness: `judgement::tests::a_mismatched_literal_is_refused_with_both_types`
     #[spec(ensures: |ret| match *self {
-        | Self::OutOfFragment { .. } => matches!(ret, FailureClass::Unrepresentable),
+        | Self::OutOfFragment { .. } | Self::IdentityAtOpenType { .. } => matches!(ret, FailureClass::Unrepresentable),
         | Self::UnboundIndex { .. }
         | Self::BudgetExceeded { .. }
         | Self::DanglingNode { .. }
         | Self::AdmissionOrder { .. }
         | Self::MachineInvariant
         | Self::Undecided { .. } => matches!(ret, FailureClass::EngineFault),
-        | Self::PathCode(_)
+        | Self::PathCode(_) | Self::EndpointMismatch { .. } | Self::CompoundEndpoint { .. }
         | Self::NotADataType(_) | Self::DataKindNotUniverse(_) | Self::DataFieldLevel { .. } | Self::DataArgumentArity(_) | Self::UnknownConstructor { .. } | Self::ConstructorArity(_) | Self::NonExhaustiveDataCase(_) | Self::AbsentRecordField(_) | Self::AbsentTupleComponent(_) | Self::MissingRecordField { .. }
         | Self::TypeMismatch(_)
         | Self::EffectSignatureConflict { .. }
@@ -633,6 +669,8 @@ impl CheckRefusal
     {
         match *self {
             | Self::PathCode(_)
+            | Self::EndpointMismatch { .. }
+            | Self::CompoundEndpoint { .. }
             | Self::NotADataType(_)
             | Self::DataKindNotUniverse(_)
             | Self::DataFieldLevel { .. }
@@ -665,7 +703,9 @@ impl CheckRefusal
             | Self::NonUniformOccurrence(_)
             | Self::CrossBlockReference { .. }
             | Self::DescentNotReplayed { .. } => FailureClass::MalformedSource,
-            | Self::OutOfFragment { .. } => FailureClass::Unrepresentable,
+            | Self::OutOfFragment { .. } | Self::IdentityAtOpenType { .. } => {
+                FailureClass::Unrepresentable
+            },
             | Self::UnboundIndex { .. }
             | Self::BudgetExceeded { .. }
             | Self::DanglingNode { .. }
@@ -681,10 +721,11 @@ impl CheckRefusal
     /// - requires: nothing; the function is total over the vocabulary.
     /// - ensures: a type, sort, level or family-argument mismatch expects the
     ///   type it was checked at and found the type it synthesised; a shape
-    ///   mismatch found the type it met, a dependent bind or stack the type its
-    ///   body synthesised, and a static Pi over no classifier of codes the
-    ///   child it stands over, each expecting a former the refusal names rather
-    ///   than a type; every other refusal compares no types.
+    ///   mismatch found the type it met, a dependent bind or stack and a
+    ///   compound endpoint the type its body synthesised, identity at an open
+    ///   type the carrier it met, and a static Pi over no classifier of codes
+    ///   the child it stands over, each expecting a former the refusal names
+    ///   rather than a type; every other refusal compares no types.
     /// - provides: the type nodes a face spells beside the refusal's locus.
     /// - fails: never; a side the refusal sets no type on is the
     ///   [`compared::Absent::Unnamed`] absence.
@@ -704,8 +745,10 @@ impl CheckRefusal
         | Self::TypeMismatch(Mismatch::Computation { synthesised, expected, .. }) =>
             ret == Compared { expected: Maybe::Present(TypeNode::Computation(expected)), found: Maybe::Present(TypeNode::Computation(synthesised)) },
         | Self::ShapeMismatch { found, .. } => ret.found == Maybe::Present(found) && ret.expected == UNNAMED,
-        | Self::DependentBind { synthesised, .. } | Self::DependentStack { synthesised, .. } =>
+        | Self::DependentBind { synthesised, .. } | Self::DependentStack { synthesised, .. } | Self::CompoundEndpoint { synthesised, .. } =>
             ret.found == Maybe::Present(TypeNode::Computation(synthesised)) && ret.expected == UNNAMED,
+        | Self::IdentityAtOpenType { carrier, .. } =>
+            ret.found == Maybe::Present(TypeNode::Value(carrier)) && ret.expected == UNNAMED,
         | Self::StaticClassifierExpected { found, .. } =>
             ret.found == Maybe::Present(TypeNode::Value(found)) && ret.expected == UNNAMED,
         | _ => ret == Compared { expected: UNNAMED, found: UNNAMED },
@@ -748,8 +791,12 @@ impl CheckRefusal
             ),
             | Self::ShapeMismatch { found, .. } => (UNNAMED, Maybe::Present(found)),
             | Self::DependentBind { synthesised, .. }
-            | Self::DependentStack { synthesised, .. } => {
+            | Self::DependentStack { synthesised, .. }
+            | Self::CompoundEndpoint { synthesised, .. } => {
                 (UNNAMED, Maybe::Present(TypeNode::Computation(synthesised)))
+            },
+            | Self::IdentityAtOpenType { carrier, .. } => {
+                (UNNAMED, Maybe::Present(TypeNode::Value(carrier)))
             },
             | Self::StaticClassifierExpected { found, .. } => {
                 (UNNAMED, Maybe::Present(TypeNode::Value(found)))
@@ -768,6 +815,7 @@ impl CheckRefusal
             | Self::HandlerCoverage { .. }
             | Self::ShiftWithoutReset { .. }
             | Self::PathCode(_)
+            | Self::EndpointMismatch { .. }
             | Self::EffectSignatureConflict { .. }
             | Self::NotSynthesisable { .. }
             | Self::UnknownConstant { .. }
@@ -893,6 +941,31 @@ mod tests
                 found: unnamed,
             },
             "a checking-only form compares nothing"
+        );
+        assert_eq!(
+            CheckRefusal::IdentityAtOpenType {
+                at: body,
+                carrier: unit,
+            }
+            .compared(),
+            Compared {
+                expected: unnamed,
+                found: Maybe::Present(TypeNode::Value(unit)),
+            },
+            "identity at an open type found the carrier, and expects a former"
+        );
+        assert_eq!(
+            CheckRefusal::EndpointMismatch {
+                at: term,
+                left: term,
+                right: term,
+            }
+            .compared(),
+            Compared {
+                expected: unnamed,
+                found: unnamed,
+            },
+            "an endpoint mismatch names terms, not types"
         );
     }
 }

@@ -9,6 +9,7 @@
 //! count: each root is asserted to export a declaration, so a source added to
 //! either moves a count and reddens nothing.
 
+use alloc::collections::BTreeSet;
 use alloc::vec;
 use alloc::vec::Vec;
 use std::fs;
@@ -25,6 +26,7 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::FailureClass;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::EncodedArtifact;
+use gandr_kernel_term::NameSegment;
 use gandr_kernel_term::StructuredName;
 use gandr_storage_artifact::ArtifactManifest;
 use gandr_storage_artifact::ArtifactRecordSet;
@@ -115,6 +117,10 @@ enum Class
     /// The checker accepted it with a hole or the unknown type, which the
     /// kernel has no image of: an unfinished program crosses nothing.
     Unfinished,
+    /// The checker accepted it with an element-identity former, which the
+    /// kernel has no tag to receive: it crosses nothing until the kernel
+    /// carries identity.
+    Identity,
     /// The lowering refused it, under this name, and nothing was offered.
     NeverOffered(RefusalName),
 }
@@ -149,6 +155,10 @@ struct Exported
     classes: Vec<(ConstantIndex, Class)>,
     /// Each withheld declaration's position beside the position it names.
     withheld: Vec<(ConstantIndex, ConstantIndex)>,
+    /// The structured name of each native operation the source uses, which
+    /// crosses as an audited assumption before any declaration, in primitive
+    /// order.
+    natives: Vec<StructuredName>,
     /// The structured name of each declaration that crossed, in admission
     /// order.
     crossed_names: Vec<StructuredName>,
@@ -256,18 +266,20 @@ fn sources(root: Root) -> Vec<PathBuf>
 /// # Specification
 /// - requires: the checker verdict and kernel readmission agree: accepted
 ///   definitions or static operators, owed assumptions, matching refusal marks,
-///   accepted/owed declarations withheld by a dependency, or accepted/owed
-///   declarations holding a hole or the unknown type.
+///   accepted/owed declarations withheld by a dependency, accepted/owed
+///   declarations holding a hole or the unknown type, or accepted/owed
+///   declarations holding an element-identity former.
 /// - ensures: returns exactly the corresponding boundary class, retaining the
 ///   checker refusal’s canonical name for a mark.
 /// - panics: when the fixture’s verdict and readmission disagree.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the current corpus supplies readmitted definitions,
-///   assumptions, refusal marks, static declarations, withheld dependencies and
-///   holed declarations. Exact partition-to-artifact membership distinguishes
-///   admitting excluded declarations or losing admitted names; the predicate
-///   additionally states pair compatibility and exact class selection.
+///   assumptions, refusal marks, static declarations, withheld dependencies,
+///   holed declarations and declarations holding a path type or reflexivity.
+///   Exact partition-to-artifact membership distinguishes admitting excluded
+///   declarations or losing admitted names; the predicate additionally states
+///   pair compatibility and exact class selection.
 /// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds`
 /// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest`
 #[spec(
@@ -280,6 +292,7 @@ fn sources(root: Root) -> Vec<PathBuf>
             bridge::Refusal::Withheld { .. }
             | bridge::Refusal::Hole { .. }
             | bridge::Refusal::Unknown { .. }
+            | bridge::Refusal::ElementIdentity { .. }
         )),
     )
     | (
@@ -289,6 +302,7 @@ fn sources(root: Root) -> Vec<PathBuf>
             bridge::Refusal::Withheld { .. }
             | bridge::Refusal::Hole { .. }
             | bridge::Refusal::Unknown { .. }
+            | bridge::Refusal::ElementIdentity { .. }
         )),
     )
     | (Verdict::Data, &bridge::Outcome::Data { .. }) => true,
@@ -309,6 +323,10 @@ fn sources(root: Root) -> Vec<PathBuf>
         _,
         &bridge::Outcome::Refused(bridge::Refusal::Hole { .. } | bridge::Refusal::Unknown { .. }),
         Class::Unfinished,
+    ) | (
+        _,
+        &bridge::Outcome::Refused(bridge::Refusal::ElementIdentity { .. }),
+        Class::Identity,
     ) => true,
     (Verdict::Refused(refusal), &bridge::Outcome::Marked(mark), Class::Marked(name)) => {
         refusal == mark && name == Refusal::Checking(refusal).name()
@@ -345,6 +363,10 @@ fn class_of(
                 bridge::Refusal::Hole { .. } | bridge::Refusal::Unknown { .. },
             ),
         ) => Class::Unfinished,
+        | (
+            Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Owed(_),
+            &bridge::Outcome::Refused(bridge::Refusal::ElementIdentity { .. }),
+        ) => Class::Identity,
         | (verdict, outcome) => panic!(
             "{}: the verdict {verdict:?} and the kernel's outcome {outcome:?} disagree",
             path.display()
@@ -452,6 +474,21 @@ fn export(
         &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
         &declarations(&module),
     );
+    let natives: Vec<StructuredName> = arena
+        .native_primitives()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .map(|primitive| {
+            StructuredName::from(
+                primitive
+                    .name()
+                    .as_ref()
+                    .split('.')
+                    .filter_map(|segment| NameSegment::from_text(segment.into()))
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect();
     let readmission = bridge::readmit(&mut arena, &verdicts);
     let names = module.structured_names();
     let mut judged = verdicts.judged().iter().zip(readmission.readmitted());
@@ -502,6 +539,7 @@ fn export(
         root,
         classes,
         withheld,
+        natives,
         crossed_names,
         artifact,
     })
@@ -702,14 +740,16 @@ mod kernel_corpus_partition
                 .filter(|&&(_, class)| {
                     matches!(class, Class::Defined | Class::Assumed | Class::Data)
                 })
-                .count();
+                .count()
+                .saturating_add(exported.natives.len());
             let (manifest, store) = commit(&exported.artifact);
             assert_eq!(
                 RecordCount(
                     u64::try_from(crossed.saturating_add(1)).expect("a count fits sixty-four bits")
                 ),
                 manifest.record_count(),
-                "{path}: the manifest counts the header and every declaration that crossed"
+                "{path}: the manifest counts the header, every native the source uses and every \
+                 declaration that crossed"
             );
             let read = manifest
                 .read_under(&store, TreeParams::current())
@@ -720,10 +760,14 @@ mod kernel_corpus_partition
                 .map(|marked| marked.declaration().name())
                 .collect();
             assert_eq!(
-                exported.crossed_names.iter().collect::<Vec<_>>(),
+                exported
+                    .natives
+                    .iter()
+                    .chain(&exported.crossed_names)
+                    .collect::<Vec<_>>(),
                 names,
-                "{path}: the artifact holds exactly the declarations that crossed, in admission \
-                 order, under their names"
+                "{path}: the artifact holds exactly the natives the source uses and the \
+                 declarations that crossed, in admission order, under their names"
             );
         }
     }

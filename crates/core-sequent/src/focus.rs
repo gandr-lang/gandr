@@ -302,6 +302,11 @@ pub enum FocusRefusal
 {
     /// Native universe transport has no command-IL destructor.
     UniverseTransport(ComputationId),
+    /// Element transport has no command-IL destructor.
+    ElementTransport(ComputationId),
+    /// Reflexivity or a compound endpoint: the command IL carries no paths,
+    /// so neither has a producer to become.
+    ElementPath(ValueId),
     /// A structural record has no command-IL producer form.
     Record(ValueId),
     /// A record projection has no command-IL destructor.
@@ -346,6 +351,12 @@ impl fmt::Display for FocusRefusal
         match *self {
             | Self::UniverseTransport(_) => {
                 f.write_str("universe transport has no command-IL destructor")
+            },
+            | Self::ElementTransport(_) => {
+                f.write_str("element transport has no command-IL destructor")
+            },
+            | Self::ElementPath(_) => {
+                f.write_str("reflexivity or a compound endpoint has no command-IL producer")
             },
             | Self::Record(_) => f.write_str("a record has no command-IL producer"),
             | Self::RecordProjection(_) => {
@@ -1361,6 +1372,7 @@ impl<'run> Focusing<'run>
             | Value::QuoteComputation(_)
             | Value::StaticLambda(_)
             | Value::StaticApplication(..) => return Err(FocusRefusal::Code(id)),
+            | Value::Here(_) | Value::Returned(_) => return Err(FocusRefusal::ElementPath(id)),
             | Value::Hole(_) | Value::Mark { .. } => {
                 return Err(FocusRefusal::IncompleteValue(id));
             },
@@ -1383,8 +1395,9 @@ impl<'run> Focusing<'run>
     ///   [`FocusRefusal::IncompleteComputation`] for a hole or a mark,
     ///   [`FocusRefusal::RecordProjection`] for a record projection,
     ///   [`FocusRefusal::TupleProjection`] for a tuple projection,
-    ///   [`FocusRefusal::UniverseTransport`] for a transport, or a refused
-    ///   mint.
+    ///   [`FocusRefusal::UniverseTransport`] for a universe transport,
+    ///   [`FocusRefusal::ElementTransport`] for an element transport, or a
+    ///   refused mint.
     /// - panics: none.
     ///
     /// # Errors
@@ -1594,6 +1607,9 @@ impl<'run> Focusing<'run>
                 }
             },
             | Computation::Transport(..) => return Err(FocusRefusal::UniverseTransport(id)),
+            | Computation::PathTransport { .. } => {
+                return Err(FocusRefusal::ElementTransport(id));
+            },
             | Computation::Hole(_) | Computation::Mark { .. } => {
                 return Err(FocusRefusal::IncompleteComputation(id));
             },

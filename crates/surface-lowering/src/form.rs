@@ -369,6 +369,8 @@ impl TileName
     pub const PAREN_CLOSE: Self = Self(")");
     /// A parenthesis opener `(`.
     pub const PAREN_OPEN: Self = Self("(");
+    /// The element path type's head `Path`.
+    pub const PATH: Self = Self("Path");
     /// The sort literal `+` of a universe: the value types.
     pub const PLUS: Self = Self("+");
     /// A double quote opening or closing a string written among a form's own
@@ -398,6 +400,8 @@ impl TileName
     pub const SEMICOLON: Self = Self(";");
     /// A run of plain text inside a string's own tiles.
     pub const STRING_FRAGMENT: Self = Self("string_fragment");
+    /// The infix composite of two paths, `then`.
+    pub const THEN: Self = Self("then");
     /// The thunk keyword `thunk`.
     pub const THUNK: Self = Self("thunk");
     /// The type-component keyword `type` of a module signature.
@@ -560,6 +564,9 @@ pub enum Former
     StaticAbstraction,
     /// A parenthesised type.
     ParenthesizedType,
+    /// The element path type `Path(A, a, b)`: a value type over a carrier
+    /// and two endpoint terms.
+    PathType,
     /// The declaration family `def name …`.
     Declaration,
     /// An attribute block standing on its own, decorating nothing.
@@ -597,7 +604,7 @@ impl Former
     ///   of successful table outcomes plus the miss outcome. The evidence is
     ///   bounded to the current closed enum and table.
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 37_usize] = [
+    pub const ALL: [Self; 38_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Hole,
@@ -628,6 +635,7 @@ impl Former
         Self::ValueFunctionType,
         Self::StaticAbstraction,
         Self::ParenthesizedType,
+        Self::PathType,
         Self::Declaration,
         Self::AttributeBlock,
         Self::Import,
@@ -657,7 +665,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 38_usize] = [
+pub const FORMERS: [(&str, Former); 39_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -690,6 +698,7 @@ pub const FORMERS: [(&str, Former); 38_usize] = [
     ("value_function_type", Former::ValueFunctionType),
     ("static_abstraction", Former::StaticAbstraction),
     ("parenthesized_type", Former::ParenthesizedType),
+    ("path_type", Former::PathType),
     ("def_value", Former::Declaration),
     ("attribute_block", Former::AttributeBlock),
     ("import_declaration", Former::Import),

@@ -718,12 +718,13 @@ Value::Tuple(ref components) => components.len(),
 Value::ListNil | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Hole(_) => 0_usize,
 Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) => 2,
 Value::PathEquiv { .. } => 3,
-Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::PathRefl(_) | Value::Mark { .. } => 1,
+Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::PathRefl(_) | Value::Here(_) | Value::Returned(_) | Value::Mark { .. } => 1,
 }),
         | Node::Computation(id) => self.arena.computation(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
 Computation::Perform { ref signature, .. } => 1_usize.saturating_add(signature.types().count()),
 Computation::Handle { ref signature, ref clauses, .. } => 2_usize.saturating_add(signature.types().count()).saturating_add(clauses.len()),
 Computation::ListFold { .. } => 5,
+Computation::PathTransport { .. } => 3,
 Computation::Primitive { ref arguments, .. } => arguments.len(),
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
 Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 1,
@@ -737,6 +738,7 @@ ValueType::Record(ref fields) => fields.len(),
 ValueType::Product(ref components) | ValueType::Sum(ref components) => components.len(),
 ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => 0_usize,
 ValueType::Stack { .. } | ValueType::StaticPi { .. } | ValueType::PathUniverse(..) => 2,
+ValueType::Path { .. } => 3,
 ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
 }),
         | Node::CompType(id) => match self.arena.comp_type(id) {
@@ -813,10 +815,14 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                 },
                 | Some(
                     &Value::PathRefl(body)
+                    | &Value::Here(body)
                     | &Value::Injection(_, body)
                     | &Value::Lift { body, .. }
                     | &Value::Mark { body, .. },
                 ) => self.tasks.push(open(Node::Value(body), depth)),
+                | Some(&Value::Returned(computation)) => {
+                    self.tasks.push(open(Node::Computation(computation), depth));
+                },
                 | Some(
                     &Value::ListCons(first, second)
                     | &Value::PathProduct(first, second)
@@ -947,6 +953,16 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                     self.tasks.push(open(Node::Value(value), depth));
                     self.tasks.push(open(Node::Value(path), depth));
                 },
+                | Some(&Computation::PathTransport {
+                    motive,
+                    path,
+                    value,
+                }) => {
+                    self.tasks.push(open(Node::Value(value), depth));
+                    self.tasks.push(open(Node::Value(path), depth));
+                    self.tasks
+                        .push(open(Node::ValueType(motive), depth.deeper()));
+                },
                 | Some(
                     &(Computation::Lambda(body)
                     | Computation::Fixpoint { body, .. }
@@ -1022,6 +1038,15 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                     | ValueType::PathUniverse(source, target) => {
                         self.tasks.push(open(Node::Value(target), depth));
                         self.tasks.push(open(Node::Value(source), depth));
+                    },
+                    | ValueType::Path {
+                        carrier,
+                        left,
+                        right,
+                    } => {
+                        self.tasks.push(open(Node::Value(right), depth));
+                        self.tasks.push(open(Node::Value(left), depth));
+                        self.tasks.push(open(Node::ValueType(carrier), depth));
                     },
                     | ValueType::Thunk(body) => {
                         self.tasks.push(open(Node::CompType(body), depth));
@@ -1299,7 +1324,7 @@ Value::Tuple(ref components) => components.len(),
 Value::ListNil | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Hole(_) => 0_usize,
 Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) => 2,
 Value::PathEquiv { .. } => 3,
-Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::PathRefl(_) | Value::Mark { .. } => 1,
+Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::PathRefl(_) | Value::Here(_) | Value::Returned(_) | Value::Mark { .. } => 1,
 })],
         ensures: |ret| self.results.len() == ready.saturating_sub(children)
             && (ret == id || self.arena.value(id).is_some_and(|original| self.arena.value(ret).is_some_and(|rewritten|
@@ -1395,6 +1420,24 @@ Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | 
                 }
                 else {
                     self.arena.value_path_refl(rewritten)
+                }
+            },
+            | Value::Here(point) => {
+                let rewritten = Self::value(&mut self.results, point);
+                if rewritten == point {
+                    id
+                }
+                else {
+                    self.arena.value_here(rewritten)
+                }
+            },
+            | Value::Returned(computation) => {
+                let rewritten = Self::computation(&mut self.results, computation);
+                if rewritten == computation {
+                    id
+                }
+                else {
+                    self.arena.value_returned(rewritten)
                 }
             },
             | Value::PathProduct(first, second) => {
@@ -1560,6 +1603,7 @@ Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | 
 Computation::Perform { ref signature, .. } => 1_usize.saturating_add(signature.types().count()),
 Computation::Handle { ref signature, ref clauses, .. } => 2_usize.saturating_add(signature.types().count()).saturating_add(clauses.len()),
 Computation::ListFold { .. } => 5,
+Computation::PathTransport { .. } => 3,
 Computation::Primitive { ref arguments, .. } => arguments.len(),
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
 Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 1,
@@ -1803,6 +1847,25 @@ Computation::Hole(_) => 0_usize,
                         .computation_transport(rewritten_path, rewritten_value)
                 }
             },
+            | Computation::PathTransport {
+                motive,
+                path,
+                value,
+            } => {
+                let rewritten_value = Self::value(&mut self.results, value);
+                let rewritten_path = Self::value(&mut self.results, path);
+                let rewritten_motive = Self::value_type(&mut self.results, motive);
+                if (rewritten_motive, rewritten_path, rewritten_value) == (motive, path, value) {
+                    id
+                }
+                else {
+                    self.arena.computation_path_transport(
+                        rewritten_motive,
+                        rewritten_path,
+                        rewritten_value,
+                    )
+                }
+            },
             | Computation::Lambda(body) => {
                 let rewritten = Self::computation(&mut self.results, body);
                 if rewritten == body {
@@ -1925,6 +1988,7 @@ ValueType::Record(ref fields) => fields.len(),
 ValueType::Product(ref components) | ValueType::Sum(ref components) => components.len(),
 ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => 0_usize,
 ValueType::Stack { .. } | ValueType::StaticPi { .. } | ValueType::PathUniverse(..) => 2,
+ValueType::Path { .. } => 3,
 ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
 })],
         ensures: |ret| self.results.len() == ready.saturating_sub(children)
@@ -2005,6 +2069,22 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                 else {
                     self.arena
                         .value_type_path_universe(rewritten_source, rewritten_target)
+                }
+            },
+            | ValueType::Path {
+                carrier,
+                left,
+                right,
+            } => {
+                let rewritten_right = Self::value(&mut self.results, right);
+                let rewritten_left = Self::value(&mut self.results, left);
+                let rewritten_carrier = Self::value_type(&mut self.results, carrier);
+                if (rewritten_carrier, rewritten_left, rewritten_right) == (carrier, left, right) {
+                    id
+                }
+                else {
+                    self.arena
+                        .value_type_path(rewritten_carrier, rewritten_left, rewritten_right)
                 }
             },
             | ValueType::Base(_)
@@ -3125,7 +3205,7 @@ mod tests
             | Some(&ValueType::Thunk(_)) => Token::Thunk,
             | Some(&ValueType::Product(..)) => Token::Product,
             Some(&ValueType::Stack { .. } | &ValueType::List(_) | &ValueType::Data { .. } | &ValueType::Record(_) |
-&ValueType::Sum(..) | &ValueType::PathUniverse(..) | &ValueType::Universe { ..
+&ValueType::Sum(..) | &ValueType::PathUniverse(..) | &ValueType::Path { .. } | &ValueType::Universe { ..
 } | &ValueType::Lift { .. } | &ValueType::Abstract(_) | &ValueType::StaticPi {
 .. } | &ValueType::Unknown) | None => Token::Other,
             },
@@ -3139,7 +3219,7 @@ mod tests
             | Some(&Value::StaticApplication(..)) => Token::StaticApplication,
             Some(&Value::Reify(_) | &Value::ListNil | &Value::ListCons(..) | &Value::Constructor { .. } | &Value::Record(_) | &Value::Primitive { .. }
 | &Value::Literal(_) | &Value::Injection(..) | &Value::Thunk(_)
-| &Value::Lift { .. } | &Value::PathRefl(_) | &Value::PathProduct(..) |
+| &Value::Lift { .. } | &Value::PathRefl(_) | &Value::Here(_) | &Value::Returned(_) | &Value::PathProduct(..) |
 &Value::PathEquiv { .. } | &Value::Hole(_) | &Value::Mark { .. }) | None => Token::Other,
             },
     }))]

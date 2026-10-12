@@ -1,4 +1,4 @@
-@[ refuses("OutOfFragment") ]
+@[ refuses("UnresolvedName") ]
 def refuted(x: Integer) -> -F Path(Integer, nosuch(x), x) {
   return here(x)
 }

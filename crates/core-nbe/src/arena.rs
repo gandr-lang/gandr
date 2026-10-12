@@ -772,10 +772,10 @@ impl DomainArena
     /// - witness: `conv::tests::family_spines_are_separated_by_head_index_and_arity`
     /// - witness: `arena::tests::a_hole_or_mark_head_is_never_rigid`
     #[spec(ensures: |ret| matches!(ret, Guard::Flexible) ==
-        (!matches!(unfolding, Unfolding::Rigid) || matches!(head, NeutralHead::Hole { .. } | NeutralHead::Mark { .. }) || spine.iter().any(|elimination| match *elimination {
+        (!matches!(unfolding, Unfolding::Rigid) || matches!(head, NeutralHead::Hole { .. } | NeutralHead::Mark { .. } | NeutralHead::Returned(_)) || spine.iter().any(|elimination| match *elimination {
             Elimination::Apply(argument) | Elimination::StaticApply(argument) =>
                 !matches!(self.value_guard(argument), Ok(Guard::Rigid(_))),
-            Elimination::ListFold { .. } | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::Bind(_) | Elimination::Case { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Fixpoint(_) => true,
+            Elimination::ListFold { .. } | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::Bind(_) | Elimination::Case { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Fixpoint(_) => true,
             Elimination::Force => false,
         })))]
     fn neutral_word(
@@ -787,7 +787,10 @@ impl DomainArena
     {
         let mut word = match (head, unfolding) {
             | (_, Unfolding::Unforced(_) | Unfolding::Forced(_))
-            | (NeutralHead::Hole { .. } | NeutralHead::Mark { .. }, Unfolding::Rigid) => {
+            | (
+                NeutralHead::Hole { .. } | NeutralHead::Mark { .. } | NeutralHead::Returned(_),
+                Unfolding::Rigid,
+            ) => {
                 return Guard::Flexible;
             },
             | (NeutralHead::Variable { zone, level }, Unfolding::Rigid) => {
@@ -818,6 +821,7 @@ impl DomainArena
                 | Elimination::Split(_)
                 | Elimination::Projection(_)
                 | Elimination::ProductTransport(_)
+                | Elimination::PathTransport { .. }
                 | Elimination::Bind(_)
                 | Elimination::ListFold { .. }
                 | Elimination::Case { .. }
@@ -995,7 +999,8 @@ impl DomainArena
             | NeutralHead::Variable { .. }
             | NeutralHead::Module(_)
             | NeutralHead::Hole { .. }
-            | NeutralHead::Mark { .. } => false,
+            | NeutralHead::Mark { .. }
+            | NeutralHead::Returned(_) => false,
         };
         let loaded = match unfolding {
             | Unfolding::Rigid => false,
@@ -1334,6 +1339,35 @@ impl DomainArena
             },
             guard,
         )
+    }
+
+    /// Mint reflexivity of an element path over an already-allocated point.
+    ///
+    /// # Specification
+    /// - requires: `point` names a live value node of this arena.
+    /// - ensures: a fresh value node carrying the point id and `face`, guarded
+    ///   by the point's own word under the reflexivity tag.
+    /// - provides: the domain form `here(a)` evaluates to, which transport
+    ///   reads as its identity case.
+    /// - fails: never — a point that dangles surfaces at readback, not here.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — transport along reflexivity returns its operand
+    ///   unchanged, and two reflexivities compare by their points; a wrong
+    ///   former or point changes the transported result or the verdict.
+    /// - witness: `identity::tests::transport_along_here_is_the_identity`
+    /// - witness: `identity::tests::reflexivities_convert_by_their_points`
+    #[inline]
+    #[spec(ensures: |ret| self.value(ret) == Some(&DomainValue::Here { point, face }))]
+    pub fn value_here(
+        &mut self,
+        point: DomainValueId,
+        face: TermFace,
+    ) -> DomainValueId
+    {
+        let guard = Guard::compose(GuardTag::Here, &(), &[self.folded_value_guard(point)]);
+        self.alloc_value(DomainValue::Here { point, face }, guard)
     }
 
     /// Mint a thunk over an already-allocated computation closure.

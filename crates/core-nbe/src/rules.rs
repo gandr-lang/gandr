@@ -187,6 +187,8 @@ pub enum Subgoal
     Classifiers(crate::arena::ValueClosureId, crate::arena::ValueClosureId),
     /// Two case motives, quoted under the same fresh scrutinee variable.
     CaseMotives(CompClosureId, CompClosureId),
+    /// Two transport motives, quoted under the same fresh endpoint variable.
+    Motives(crate::arena::ValueClosureId, crate::arena::ValueClosureId),
     /// Two ordinary branch functions at one constructor ordinal.
     CaseBranch
     {
@@ -513,6 +515,7 @@ pub fn fixpoint_source(
     };
     Ok(body)
 }
+
 /// Read the exact selector of a native projection: a record's label or a
 /// tuple's component.
 ///
@@ -636,7 +639,7 @@ pub const fn other(side: ConversionSide) -> ConversionSide
             ret == Ok(if frozen.holds(side, constant) == Membership::Held {
                 Head::Frozen(constant)
             } else { Head::Defined(constant) }),
-        (NeutralHead::Hole { .. } | NeutralHead::Mark { .. }, _) => ret == Ok(Head::Indeterminate),
+        (NeutralHead::Hole { .. } | NeutralHead::Mark { .. } | NeutralHead::Returned(_), _) => ret == Ok(Head::Indeterminate),
         _ => ret == Ok(Head::Rigid),
     },
 ))]
@@ -659,7 +662,9 @@ pub fn head(
         },
         | (NeutralHead::Constant(_), Unfolding::Rigid)
         | (NeutralHead::Variable { .. } | NeutralHead::Module(_), _) => Head::Rigid,
-        | (NeutralHead::Hole { .. } | NeutralHead::Mark { .. }, _) => Head::Indeterminate,
+        | (NeutralHead::Hole { .. } | NeutralHead::Mark { .. } | NeutralHead::Returned(_), _) => {
+            Head::Indeterminate
+        },
     })
 }
 
@@ -711,7 +716,7 @@ pub enum Spines
                 EliminationShape::Projection(_) => 0_usize,
                 EliminationShape::Case(branches) => branches,
                 EliminationShape::Split(_) => 1_usize,
-                EliminationShape::Ordinary(_) => match a { Elimination::Force => 0_usize,Elimination::ListFold { .. } => 2_usize,_ => 1_usize },
+                EliminationShape::Ordinary(_) => match a { Elimination::Force => 0_usize,Elimination::ListFold { .. } | Elimination::PathTransport { .. } => 2_usize,_ => 1_usize },
             };
             Ok((true,count.saturating_add(added)))
         });
@@ -770,6 +775,19 @@ pub fn spine_subgoals(
             ) => {
                 subgoals.push(Subgoal::Values(left_argument, right_argument));
             },
+            | (
+                Elimination::PathTransport {
+                    motive: left_motive,
+                    value: left_value,
+                },
+                Elimination::PathTransport {
+                    motive: right_motive,
+                    value: right_value,
+                },
+            ) => {
+                subgoals.push(Subgoal::Motives(left_motive, right_motive));
+                subgoals.push(Subgoal::Values(left_value, right_value));
+            },
             | (Elimination::Bind(left_body), Elimination::Bind(right_body)) => {
                 subgoals.push(Subgoal::Opened(left_body, right_body));
             },
@@ -815,6 +833,7 @@ pub fn spine_subgoals(
                 | Elimination::Split(_)
                 | Elimination::Projection(_)
                 | Elimination::ProductTransport(_)
+                | Elimination::PathTransport { .. }
                 | Elimination::Apply(_)
                 | Elimination::Force
                 | Elimination::Bind(_)
@@ -1152,6 +1171,7 @@ fn value_neutrality(
         | DomainValue::Constructor { .. }
         | DomainValue::Record { .. }
         | DomainValue::PathProduct { .. }
+        | DomainValue::Here { .. }
         | DomainValue::Tuple { .. }
         | DomainValue::Literal { .. }
         | DomainValue::ListNil { .. }
@@ -1616,6 +1636,7 @@ fn plan_values(
             | DomainValue::Constructor { .. }
             | DomainValue::Record { .. }
             | DomainValue::PathProduct { .. }
+            | DomainValue::Here { .. }
             | DomainValue::Tuple { .. }
             | DomainValue::Literal { .. }
             | DomainValue::ListNil { .. }

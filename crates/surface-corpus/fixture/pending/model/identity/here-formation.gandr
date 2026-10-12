@@ -1,9 +1,0 @@
-def four_eq_four = here(4);
-
-def cast(p: Path(Integer, 4, 4)) -> -F(Path(Integer, 4, 4)) {
-  return p
-}
-
-def checked = (here(4) : Path(Integer, 4, 4));
-
-cast(four_eq_four)

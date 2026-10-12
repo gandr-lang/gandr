@@ -30,21 +30,23 @@
 //! where its result is consumed, and every refusal carries the sort its own
 //! position demanded.
 //!
-//! # Five insertions, by the sort of the position
+//! # Six insertions, by the sort of the position
 //!
 //! Where the source writes a value and the position reads a computation, or
-//! the reverse, the fragment refuses — with five exceptions, each a site the
+//! the reverse, the fragment refuses — with six exceptions, each a site the
 //! grammar's own shape names. An application's head reads a computation, and
 //! a value standing there is forced; a function's result reads a computation
 //! type, and a value type standing there gains a returner; a function's body is
 //! a computation where the declaration takes a value, and is thunked; a type
-//! standing where a value is read is quoted into its code; and a name standing
-//! where a type is read, bound at a universe, is decoded out of it. Each
-//! bridge is decided by the position and the name's binder, never searched
-//! for, and its origin is the syntax node that demanded it, marked inserted,
-//! so a reader can be shown the cast they did not write. Everywhere else the
-//! mismatch stays a refusal: a lambda written where a value belongs is still
-//! the author's mistake to suspend.
+//! standing where a value is read is quoted into its code; a name standing
+//! where a type is read, bound at a universe, is decoded out of it; and a path
+//! type's endpoint, or the point of `here`, reads a value, and a computation
+//! standing there is the value it returns, a compound endpoint the checker
+//! compares by what it computes. Each bridge is decided by the position and
+//! the name's binder, never searched for, and its origin is the syntax node
+//! that demanded it, marked inserted, so a reader can be shown the cast they
+//! did not write. Everywhere else the mismatch stays a refusal: a lambda
+//! written where a value belongs is still the author's mistake to suspend.
 //!
 //! # A parameter a type names binds a dependent arrow
 //!
@@ -195,6 +197,8 @@ use crate::resolve::type_former;
 mod description;
 
 mod exits;
+
+mod identity;
 
 mod native;
 
@@ -785,6 +789,7 @@ fn ending(former: Former) -> Ending
         | Former::ValueFunctionType
         | Former::StaticAbstraction
         | Former::ParenthesizedType
+        | Former::PathType
         | Former::Declaration
         | Former::AttributeBlock
         | Former::Import
@@ -847,7 +852,8 @@ fn ending(former: Former) -> Ending
                     | Former::LazyProductType
                     | Former::ValueFunctionType
                     | Former::StaticAbstraction
-                    | Former::ParenthesizedType,
+                    | Former::ParenthesizedType
+                    | Former::PathType,
                 Family::Type
             ) | (
                 Former::Declaration
@@ -894,7 +900,8 @@ const fn family_of(former: Former) -> Family
         | Former::LazyProductType
         | Former::ValueFunctionType
         | Former::StaticAbstraction
-        | Former::ParenthesizedType => Family::Type,
+        | Former::ParenthesizedType
+        | Former::PathType => Family::Type,
         | Former::Declaration
         | Former::AttributeBlock
         | Former::Import
@@ -1427,6 +1434,13 @@ enum Plan
     /// A match, compiled to the decision tree at this position of the
     /// lowerer's match store.
     Case(native::CaseIndex),
+    /// An element path type over its carrier and its two endpoints.
+    Path(NodeIndex, NodeIndex, NodeIndex),
+    /// Reflexivity at its point.
+    Here(NodeIndex),
+    /// `back`, `then` or `cong`, unfolded to the transport it derives
+    /// against the path type its position answers.
+    Derived(identity::Derived),
 }
 
 /// A node's lowered core node, at the sort its own form produced.
@@ -1794,6 +1808,14 @@ struct Lowerer<'run, 'source>
     /// or a match's answer states it, or the block a statement's local ends
     /// continue answers.
     answers: BTreeMap<NodeIndex, native::Answer>,
+    /// The terms standing inside a type: a path type's endpoints and every
+    /// node under one, whose bound names count only the frames that bind in
+    /// the type's telescope and make the arrow binding them dependent.
+    in_type: BTreeSet<NodeIndex>,
+    /// The terms standing at an endpoint: a path type's endpoints,
+    /// reflexivity's point and every node under one, where a computation
+    /// standing as a value is the value it returns.
+    at_endpoint: BTreeSet<NodeIndex>,
     /// What every node's paths do with the body it stands in, surveyed before
     /// the classification reads it.
     leaves: Vec<exits::Leaves>,
@@ -2181,6 +2203,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 && ret.parameters.is_empty()
                 && ret.classifiers.is_empty()
                 && ret.answers.is_empty()
+                && ret.in_type.is_empty()
+                && ret.at_endpoint.is_empty()
                 && ret.cases.is_empty()
                 && ret.signatures.is_empty()
                 && ret.data.is_empty()
@@ -2234,6 +2258,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             scratch: Pieces::new(),
             classifiers: BTreeMap::new(),
             answers: BTreeMap::new(),
+            in_type: BTreeSet::new(),
+            at_endpoint: BTreeSet::new(),
             leaves,
             exits: BTreeSet::new(),
             exitable: BTreeSet::new(),
@@ -2728,6 +2754,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             self.inherit_owner(position);
             self.inherit_payload(position);
             self.inherit_scope(position);
+            self.inherit_type(position);
             if let Err(refusal) = self.classify_node(position) {
                 if refusal.classify() == FailureClass::EngineFault {
                     return Err(refusal);
@@ -2839,6 +2866,47 @@ impl<'run, 'source> Lowerer<'run, 'source>
             {
                 *held = Maybe::Present(seen);
             }
+        }
+    }
+
+    /// Mark every child of `position` as standing inside a type, and at an
+    /// endpoint, when `position` does.
+    ///
+    /// # Specification
+    /// - requires: `position` is visited in ascending arena order, so its own
+    ///   marks are already set when its children are reached.
+    /// - ensures: every node under a path type's endpoint carries both marks,
+    ///   and every node under reflexivity's point the endpoint mark, before it
+    ///   is classified.
+    /// - provides: the context a bound name inside a type resolves in, and the
+    ///   one a computation standing as a value is returned in.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a parameter named inside a compound endpoint of the
+    ///   result type binds dependently and is read at its telescope index, and
+    ///   a call nested in an endpoint's argument is returned.
+    /// - witness: `lower::identity::tests::a_computation_endpoint_is_the_value_it_returns`
+    #[spec(
+        captures: marked = (self.in_type.contains(&position), self.at_endpoint.contains(&position)),
+        ensures: |_| {
+            self.in_type.contains(&position) == marked.0
+                && self.at_endpoint.contains(&position) == marked.1
+                && (!marked.0 || self.tree.children(position).all(|child| self.in_type.contains(&child)))
+                && (!marked.1 || self.tree.children(position).all(|child| self.at_endpoint.contains(&child)))
+        },
+    )]
+    fn inherit_type(
+        &mut self,
+        position: NodeIndex,
+    )
+    {
+        if self.in_type.contains(&position) {
+            self.in_type.extend(self.tree.children(position));
+        }
+        if self.at_endpoint.contains(&position) {
+            self.at_endpoint.extend(self.tree.children(position));
         }
     }
 
@@ -3128,6 +3196,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Former::ValueFunctionType => self.value_function(site, cursor),
             | Former::StaticAbstraction => self.static_abstraction(site, cursor),
             | Former::ParenthesizedType => self.parenthesized_type(site, cursor),
+            | Former::PathType => self.path_type(site, cursor),
             | Former::Instantiation => self.instantiation(site, cursor),
             | Former::Declaration | Former::Module => self.function(site, cursor),
             | Former::AttributeBlock | Former::Import | Former::Data | Former::Unadmitted => {
@@ -3145,9 +3214,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   sort. An application's head reads a computation and reaches a value by
     ///   a force; a function's result reads a computation type and reaches a
     ///   value type by a returner; a value position reaches a type of either
-    ///   sort by a quote; the bridge is recorded for the form's node, and every
-    ///   other match records none.
-    /// - provides: the sort check every former takes, and the three insertions
+    ///   sort by a quote, and, at an endpoint, a computation as the value it
+    ///   returns; the bridge is recorded for the form's node, and every other
+    ///   match records none.
+    /// - provides: the sort check every former takes, and the four insertions
     ///   decided by the sort of a position.
     /// - fails: yields the wrong-sort refusal when the position reads another
     ///   sort no bridge reaches.
@@ -3165,6 +3235,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::an_author_written_force_is_not_marked_inserted`
     /// - witness: `lower::tests::a_positive_result_gains_a_returner_once`
     /// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
+    /// - witness: `lower::identity::tests::a_computation_endpoint_is_the_value_it_returns`
     #[spec(
         ensures: |ret| {
             let expected = match (site.reading, produced) {
@@ -3180,8 +3251,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | (Reading::Result(frame), Produced::ValueType) => {
                     Some((frame, Bridge::Inserted(Insertion::Returner)))
                 },
-                | (Reading::Value(frame), Produced::ValueType | Produced::CompType) => {
-                    Some((frame, Bridge::Inserted(Insertion::Quote)))
+                | (
+                    Reading::Value(frame),
+                    Produced::ValueType | Produced::CompType,
+                ) => Some((frame, Bridge::Inserted(Insertion::Quote))),
+                | (Reading::Value(frame), Produced::Computation)
+                    if self.at_endpoint.contains(&site.at.node) =>
+                {
+                    Some((frame, Bridge::Inserted(Insertion::Endpoint)))
                 },
                 | _ => None,
             };
@@ -3218,6 +3295,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             | (Reading::Value(frame), Produced::ValueType | Produced::CompType) => {
                 (frame, Bridge::Inserted(Insertion::Quote))
+            },
+            | (Reading::Value(frame), Produced::Computation)
+                if self.at_endpoint.contains(&site.at.node) =>
+            {
+                (frame, Bridge::Inserted(Insertion::Endpoint))
             },
             | _ => return Err(site.out(FragmentBoundary::WrongSort)),
         };
@@ -3370,7 +3452,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: `site` is an identifier in term position.
     /// - ensures: a name standing as a value resolves against the binder frame
     ///   first and the declarations strictly earlier than its own second, and
-    ///   is planned as the variable or constant it resolved to.
+    ///   is planned as the variable or constant it resolved to; a binder named
+    ///   inside a type is planned as [`Self::resolved_term`] plans it.
     /// - provides: the term-name half of resolution.
     /// - fails: yields the wrong-sort refusal for a name in computation
     ///   position, and the unresolved-name refusal when no scope answers;
@@ -3387,12 +3470,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_lambda_body_binds_its_own_de_bruijn_index`
     /// - witness: `lower::tests::an_undefined_term_name_is_refused`
     /// - witness: `modules::modules::a_backward_member_reference_resolves`
+    /// - witness: `lower::identity::tests::a_computation_endpoint_is_the_value_it_returns`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.plans.get(usize::from(site.at.node)),
-                    Some(&(Plan::Variable(_) | Plan::Constant(_) | Plan::Primitive(_)))
+                    Some(&(Plan::Variable(_) | Plan::Constant(_) | Plan::Primitive(_) | Plan::StaticApplication(..)))
                 )
         },
     )]
@@ -3405,7 +3489,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let name = self.name_at(site.at);
         match self.resolve_name(site, frame, name)? {
             | Maybe::Present(resolved) => {
-                self.plan(site, resolved.term());
+                let plan = self.resolved_term(site, frame, resolved);
+                self.plan(site, plan);
                 Ok(())
             },
             | Maybe::Absent(_) => {
@@ -3465,6 +3550,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     self.plans.get(usize::from(site.at.node)),
                     Some(
                         &(Plan::Variable(_)
+                            | Plan::StaticApplication(..)
                             | Plan::Constant(_)
                             | Plan::Atom(_)
                             | Plan::Universe(_)
@@ -3497,8 +3583,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 };
                 return self.family(site, constant, arity, none);
             }
-            let _frame = self.require(site, Produced::Value)?;
-            self.plan(site, resolved.term());
+            let frame = self.require(site, Produced::Value)?;
+            let plan = self.resolved_term(site, frame, resolved);
+            self.plan(site, plan);
             return Ok(());
         }
         let quoted = match type_atom(name) {
@@ -3512,6 +3599,59 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.plan(site, quoted);
 
         Ok(())
+    }
+
+    /// The plan a name that resolved to `resolved` stands as, read as a value
+    /// at `site` under `frame`.
+    ///
+    /// # Specification
+    /// - requires: `resolved` is what the name at `site` resolves to.
+    /// - ensures: a binder named inside a type is mentioned, so the arrow that
+    ///   binds it is dependent, and planned as the bare code it names, minted
+    ///   at its telescope index; any other resolution is the variable or the
+    ///   constant it names.
+    /// - provides: the one place a term name inside a type reads the type's
+    ///   telescope rather than the term context.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a parameter named in a result type's compound
+    ///   endpoint, and one named in a body, each checked.
+    /// - witness: `lower::identity::tests::a_computation_endpoint_is_the_value_it_returns`
+    #[spec(
+        ensures: |ret| match (resolved, self.in_type.contains(&site.at.node)) {
+            | (Resolved::Binder(bound), true) => {
+                matches!(ret, Plan::StaticApplication(Code::Bound { binder, .. }, arguments) if binder == bound.binder && arguments.start == arguments.end)
+                    && bool::from(self.scope.mentioned(bound.binder))
+            },
+            | _ => ret == resolved.term(),
+        },
+    )]
+    fn resolved_term(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        resolved: Resolved,
+    ) -> Plan
+    {
+        match resolved {
+            | Resolved::Binder(bound) if self.in_type.contains(&site.at.node) => {
+                self.scope.mention(bound.binder);
+                let none = Stretch {
+                    start: self.operands.len(),
+                    end: self.operands.len(),
+                };
+                Plan::StaticApplication(
+                    Code::Bound {
+                        from: frame,
+                        binder: bound.binder,
+                    },
+                    none,
+                )
+            },
+            | Resolved::Binder(_) | Resolved::Declaration { .. } => resolved.term(),
+        }
     }
 
     /// Classify a number literal.
@@ -4555,12 +4695,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: `site` is a call in term position.
     /// - ensures: a call whose head is a constructor of a data family declared
     ///   strictly earlier is that constructor applied to the arguments as its
-    ///   fields; any other call standing as a computation reads its head at the
-    ///   head position and each argument as a value, all in its own frame, and
-    ///   is planned as the head applied to the arguments left to right; a call
-    ///   whose head is an instantiation, a recursive call, records every
-    ///   argument for the head's claim to check and reads and applies its last
-    ///   alone, the one its fixpoint takes; a call of no arguments is its head.
+    ///   fields; a call whose head is `here`, `back` or `cong`, a name no
+    ///   binder and no earlier declaration carries, is that identity operation
+    ///   over the arguments; any other call standing as a computation reads its
+    ///   head at the head position and each argument as a value, all in its own
+    ///   frame, and is planned as the head applied to the arguments left to
+    ///   right; a call whose head is an instantiation, a recursive call,
+    ///   records every argument for the head's claim to check and reads and
+    ///   applies its last alone, the one its fixpoint takes; a call of no
+    ///   arguments is its head.
     /// - provides: the elimination of a lambda, curried over any argument
     ///   count.
     /// - fails: yields the wrong-sort refusal outside computation position, and
@@ -4579,6 +4722,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_value_head_is_forced_and_marked_inserted`
     /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
     /// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_last_parameter`
+    /// - witness: `lower::identity::tests::a_path_type_and_reflexivity_lower_to_their_formers`
+    /// - witness: `lower::identity::tests::a_bound_name_shadows_an_identity_operation`
     #[spec(
         captures: start = self.operands.len(),
         ensures: |ret| {
@@ -4603,6 +4748,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         constructed.fields.start == start
                             && constructed.fields.end == self.operands.len()
                     },
+                    | Some(&(Plan::Here(_) | Plan::Derived(_))) => true,
                     | _ => false,
                 }
         },
@@ -4624,6 +4770,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 end: self.operands.len(),
             };
             return self.construct(site, constructor, fields);
+        }
+        if let Run::One(head) = cursor.clone().operands()
+            && let Maybe::Present(operation) = self.identity_head(site, head)?
+        {
+            let _head = cursor.operands();
+            return self.identity_call(site, operation, cursor);
         }
         let frame = self.require(site, Produced::Computation)?;
         let head = site.one(cursor.operands())?;
@@ -4671,9 +4823,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// - ensures: the table row selected by the operator receives value
-    ///   operands in source order.
+    ///   operands in source order; the infix `then` is the composite of two
+    ///   paths, derived as [`Self::derive`] does.
     /// - fails: malformed tiles or operators outside the admitted vocabulary
-    ///   are refused.
+    ///   are refused; `then` refuses as [`Self::derive`] does.
     /// - panics: none.
     ///
     /// # Errors
@@ -4683,7 +4836,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — asymmetric operands separate order and operator
     ///   choice; unsupported operators are rejected.
     /// - witness: `lower::tests::native_operator_plans_preserve_order`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(Plan::PrimitiveCall(..))))]
+    /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(Plan::PrimitiveCall(..) | Plan::Derived(_))))]
     fn operator(
         &mut self,
         site: Site,
@@ -4705,6 +4859,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ] => (label, Arguments::Binary([first.node, second.node])),
             | _ => return Err(site.fault(site.at.span, FormFault::MisplacedTile)),
         };
+        if label == TileName::THEN
+            && let Arguments::Binary([first, second]) = arguments
+        {
+            return self.derive(site, frame, identity::Derivation::Then { first, second });
+        }
         let Some(&primitive) =
             PRELUDE
                 .iter()
@@ -6550,8 +6709,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Tuple(_)
                 | Plan::StaticLambda(_)
                 | Plan::Thunk(_)
+                | Plan::Here(_)
                 | Plan::Constructor(_) => Some(Produced::Value),
-                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(_) | Plan::Block(_) | Plan::Application(..) | Plan::Case(_) | Plan::EmptyCase(_) => {
+                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(_) | Plan::Block(_) | Plan::Application(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Derived(_) => {
                     Some(Produced::Computation)
                 },
                 | Plan::Atom(_)
@@ -6560,6 +6720,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::StaticPi(..)
                 | Plan::Product(..)
                 | Plan::Former(TypeFormer::Thunk, _)
+                | Plan::Path(..)
                 | Plan::Data(..) => Some(Produced::ValueType),
                 | Plan::Arrow(..) | Plan::Former(TypeFormer::Returner, _) => {
                     Some(Produced::CompType)
@@ -6724,10 +6885,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }),
             | Plan::Product(components) => self.mint_product(components, sink, origin),
             | Plan::Block(block) => self.mint_block(block, sink).map(Lowered::Computation),
+            | Plan::Derived(derived) => self.mint_derived(derived, sink, origin),
             | Plan::Arrow(..)
             | Plan::StaticPi(..)
+            | Plan::Path(..)
             | Plan::StaticLambda(_)
             | Plan::Thunk(_)
+            | Plan::Here(_)
             | Plan::Return(_)
             | Plan::Force(_)
             | Plan::Lambda(_) => self.mint_over(&plan, sink, origin),
@@ -7194,19 +7358,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - panics: none under the origin table’s ordered-identifier invariant.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — arrows, static products, pairs, abstraction and
-    ///   computation formers retain their distinct core constructors and child
-    ///   order. These witnesses cover the admitted fragment, not arbitrary
-    ///   foreign identifiers.
+    /// - hypothesis: L3 — arrows, static products, pairs, abstraction, path
+    ///   types, reflexivity and computation formers retain their distinct core
+    ///   constructors and child order. These witnesses cover the admitted
+    ///   fragment, not arbitrary foreign identifiers.
     /// - witness: `lower::tests::an_arrow_lowers_under_a_thunk_type`
     /// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
     /// - witness: `lower::tests::a_static_abstraction_binds_its_name_over_a_quoted_body`
     /// - witness: `lower::tests::force_and_application_lower_over_their_children`
+    /// - witness: `lower::identity::tests::a_path_type_and_reflexivity_lower_to_their_formers`
     #[spec(
         ensures: |ret| match ret {
             | Maybe::Absent(_) => true,
             | Maybe::Present(Lowered::Value(id)) => {
-                matches!(*plan, Plan::StaticLambda(_) | Plan::Thunk(_))
+                matches!(*plan, Plan::StaticLambda(_) | Plan::Thunk(_) | Plan::Here(_))
                     && sink.origins.value(id) == Maybe::Present(origin)
             },
             | Maybe::Present(Lowered::Computation(id)) => {
@@ -7214,7 +7379,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     && sink.origins.computation(id) == Maybe::Present(origin)
             },
             | Maybe::Present(Lowered::ValueType(id)) => {
-                matches!(*plan, Plan::StaticPi(_, _))
+                matches!(*plan, Plan::StaticPi(_, _) | Plan::Path(..))
                     && sink.origins.value_type(id) == Maybe::Present(origin)
             },
             | Maybe::Present(Lowered::CompType(id)) => {
@@ -7245,6 +7410,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     sink.origins.record_value_type(id, origin);
                     Lowered::ValueType(id)
                 })
+            }),
+            | Plan::Path(carrier, left, right) => self.value_type_at(carrier).and_then(|over| {
+                self.value_at(left).and_then(|from| {
+                    self.value_at(right).map(|to| {
+                        let id = sink.arena.value_type_path(over, from, to);
+                        sink.origins.record_value_type(id, origin);
+                        Lowered::ValueType(id)
+                    })
+                })
+            }),
+            | Plan::Here(point) => self.value_at(point).map(|at| {
+                let id = sink.arena.value_here(at);
+                sink.value(id, origin)
             }),
             | Plan::StaticLambda(body) => self.value_at(body).map(|under| {
                 let id = sink.arena.value_static_lambda(under);
@@ -7290,7 +7468,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Case(_)
             | Plan::EmptyCase(_)
             | Plan::Product(_)
-            | Plan::Block(_) => Maybe::Absent(lowered::Absent::Unminted),
+            | Plan::Block(_)
+            | Plan::Derived(_) => Maybe::Absent(lowered::Absent::Unminted),
         }
     }
 
@@ -8890,8 +9069,9 @@ impl Sink<'_>
     /// # Specification
     /// - requires: `minted` is what the node's own plan minted.
     /// - ensures: a bare node is `minted` unchanged; a forced value is minted
-    ///   as a force over it, a returned value type as a returner over it, and a
-    ///   quoted type as the quote of it at its own sort, each with `origin`
+    ///   as a force over it, a returned value type as a returner over it, a
+    ///   quoted type as the quote of it at its own sort, and a computation
+    ///   standing as an endpoint as the value it returns, each with `origin`
     ///   marked as the insertion it is; nothing when the node did not lower at
     ///   the sort its bridge leaves, which the classification makes
     ///   unreachable.
@@ -8908,6 +9088,7 @@ impl Sink<'_>
     /// - witness: `lower::tests::a_positive_result_gains_a_returner_once`
     /// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
     /// - witness: `lower::tests::an_author_written_force_is_not_marked_inserted`
+    /// - witness: `lower::identity::tests::a_computation_endpoint_is_the_value_it_returns`
     #[spec(
         ensures: |ret| match bridge {
             | Bridge::Bare => ret == minted,
@@ -8927,9 +9108,15 @@ impl Sink<'_>
                     Maybe::Present(Lowered::ValueType(_) | Lowered::CompType(_)),
                     Insertion::Quote,
                     Maybe::Present(Lowered::Value(id)),
+                )
+                | (
+                    Maybe::Present(Lowered::Computation(_)),
+                    Insertion::Endpoint,
+                    Maybe::Present(Lowered::Value(id)),
                 ) => self.origins.value(id) == Maybe::Present(origin.inserted(insertion)),
                 | (Maybe::Present(Lowered::Value(_)), Insertion::Force, _)
                 | (Maybe::Present(Lowered::ValueType(_)), Insertion::Returner, _)
+                | (Maybe::Present(Lowered::Computation(_)), Insertion::Endpoint, _)
                 | (
                     Maybe::Present(Lowered::ValueType(_) | Lowered::CompType(_)),
                     Insertion::Quote,
@@ -8969,6 +9156,10 @@ impl Sink<'_>
                 let id = self.arena.value_quote_computation(quoted);
                 Maybe::Present(self.value(id, inserted))
             },
+            | (Maybe::Present(Lowered::Computation(returned)), Insertion::Endpoint) => {
+                let id = self.arena.value_returned(returned);
+                Maybe::Present(self.value(id, inserted))
+            },
             | (
                 Maybe::Present(_),
                 Insertion::Force
@@ -8978,7 +9169,9 @@ impl Sink<'_>
                 | Insertion::Decode
                 | Insertion::Classifier
                 | Insertion::Match
-                | Insertion::Fixpoint,
+                | Insertion::Fixpoint
+                | Insertion::Endpoint
+                | Insertion::Identity,
             ) => Maybe::Absent(lowered::Absent::OtherSort),
             | (Maybe::Absent(reason), _) => Maybe::Absent(reason),
         }
@@ -9701,6 +9894,7 @@ pub fn parse_literal(
         | Former::ValueFunctionType
         | Former::StaticAbstraction
         | Former::ParenthesizedType
+        | Former::PathType
         | Former::Declaration
         | Former::AttributeBlock
         | Former::Import
@@ -13633,3 +13827,5 @@ mod tests
         }
     }
 }
+// weave: run 'weave explain crates/surface-lowering/src/lower.rs' for per-hunk
+// detail, 'weave check' to verify your resolution

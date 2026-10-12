@@ -67,7 +67,8 @@ impl LoweringRefusal<'_>
         ensures: |ret| match *self {
             | Self::OutOfFragment { .. }
             | Self::GradedBridge { .. }
-            | Self::UnreadAscription { .. } => matches!(ret, FailureClass::Unrepresentable),
+            | Self::UnreadAscription { .. }
+            | Self::WithoutK { .. } => matches!(ret, FailureClass::Unrepresentable),
             | Self::BudgetExceeded { .. }
             | Self::GrammarMismatch { .. }
             | Self::UnknownMold { .. } => matches!(ret, FailureClass::EngineFault),
@@ -124,7 +125,8 @@ impl LoweringRefusal<'_>
             | Self::Unreachable { .. } => FailureClass::MalformedSource,
             | Self::OutOfFragment { .. }
             | Self::GradedBridge { .. }
-            | Self::UnreadAscription { .. } => FailureClass::Unrepresentable,
+            | Self::UnreadAscription { .. }
+            | Self::WithoutK { .. } => FailureClass::Unrepresentable,
             | Self::BudgetExceeded { .. }
             | Self::GrammarMismatch { .. }
             | Self::UnknownMold { .. } => FailureClass::EngineFault,
@@ -163,7 +165,7 @@ mod tests
     ///
     /// # Specification
     /// - requires: the built-in attribute registry contains `owes`.
-    /// - ensures: the 26 current refusal variants have distinct
+    /// - ensures: the 27 current refusal variants have distinct
     ///   representatives; payloads are fixtures rather than evidence of a real
     ///   lowering failure.
     /// - provides: the domain of the finite classification checks.
@@ -186,7 +188,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 26_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 27_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -304,7 +306,10 @@ mod tests
                 name: SurfaceName::from("gone"),
             },
             LoweringRefusal::MissingExit { span: empty },
+            // refused_by: container_member · collision: `/// - ensures: the 23 current refusal
+            // variants have distinct` +1 more
             LoweringRefusal::Unreachable { span: empty },
+            LoweringRefusal::WithoutK { span: empty },
         ]
     }
 
@@ -337,7 +342,10 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
+            // refused_by: container_member · collision: none (1 contested hunk(s), neither side
+            // deleted the other's lines)
             FailureClass::MalformedSource,
+            FailureClass::Unrepresentable,
         ];
 
         for (refusal, class) in vocabulary().into_iter().zip(expected) {
@@ -393,3 +401,5 @@ mod tests
         }
     }
 }
+// weave: run 'weave explain crates/surface-lowering/src/classify.rs' for
+// per-hunk detail, 'weave check' to verify your resolution

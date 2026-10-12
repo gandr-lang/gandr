@@ -136,6 +136,16 @@ pub enum ValueTypeView<'arena>
     },
     /// A native universe-path classifier over two codes.
     PathUniverse(ValueId, ValueId),
+    /// Element identity `Path(A, a, b)`: the paths from `a` to `b` in `A`.
+    Path
+    {
+        /// The carrier `A`.
+        carrier: ValueTypeId,
+        /// The left endpoint.
+        left: ValueId,
+        /// The right endpoint.
+        right: ValueId,
+    },
     /// A sum of its summands, in order; the empty sum is the empty type.
     Sum(&'arena [ValueTypeId]),
     /// Finite lists over one element type.
@@ -240,9 +250,9 @@ pub enum CompTypeView<'arena>
 /// - ensures: the node's view when its former is the integer atom, the string
 ///   atom, the empty product (the unit type), a thunk type, a universe of a
 ///   ground sort, a lift, a decode, a product of one or more components, a sum
-///   of any number of summands or a static Pi; the children are the node's own.
-///   The unknown type, and a decode whose code is a hole or a mark, view as
-///   [`ValueTypeView::Unknown`].
+///   of any number of summands, a static Pi or a path type; the children are
+///   the node's own. The unknown type, and a decode whose code is a hole or a
+///   mark, view as [`ValueTypeView::Unknown`].
 /// - provides: the one decision of which value types the judgement and the
 ///   bridge reason about.
 /// - fails: [`FragmentRefusal::DanglingNode`] when the id names no node of
@@ -275,6 +285,7 @@ pub enum CompTypeView<'arena>
     | Ok(ValueTypeView::Unit) => arena.value_type(value_type).is_some_and(|held| matches!(*held, ValueType::Product(ref parts) if parts.is_empty())),
     | Ok(ValueTypeView::Thunk(held)) => matches!(arena.value_type(value_type), Some(ValueType::Thunk(inner)) if *inner == held),
     | Ok(ValueTypeView::PathUniverse(first, second)) => matches!(arena.value_type(value_type), Some(ValueType::PathUniverse(left, right)) if *left == first && *right == second),
+    | Ok(ValueTypeView::Path { carrier, left, right }) => matches!(arena.value_type(value_type), Some(&ValueType::Path { carrier: found, left: first, right: second }) if found == carrier && first == left && second == right),
     | Ok(ValueTypeView::Sum(summands)) => arena.value_type(value_type).is_some_and(|held| matches!(*held, ValueType::Sum(ref parts) if **parts == *summands)),
     | Ok(ValueTypeView::List(element)) => matches!(arena.value_type(value_type), Some(ValueType::List(found)) if *found == element),
     | Ok(ValueTypeView::Product(components)) => !components.is_empty() && arena.value_type(value_type).is_some_and(|held| matches!(*held, ValueType::Product(ref parts) if **parts == *components)),
@@ -317,6 +328,15 @@ pub fn value_type_view(
         | ValueType::PathUniverse(source, target) => {
             Ok(ValueTypeView::PathUniverse(source, target))
         },
+        | ValueType::Path {
+            carrier,
+            left,
+            right,
+        } => Ok(ValueTypeView::Path {
+            carrier,
+            left,
+            right,
+        }),
         | ValueType::Base(BaseType::Integer) => Ok(ValueTypeView::Integer),
         | ValueType::Base(BaseType::String) => Ok(ValueTypeView::String),
         | ValueType::Base(BaseType::Numeric) => Err(unadmitted(UnadmittedFormer::NumericAtom)),

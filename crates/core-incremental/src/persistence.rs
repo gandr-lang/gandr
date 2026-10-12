@@ -92,10 +92,13 @@ quenchant_shape::reason_enum! {
 
 /// The byte length of a file record's header.
 const FILE_HEADER_LEN: usize = 116;
+
 /// The magic a file record opens with.
 const FILE_MAGIC: &[u8; 8] = b"GCKFILE\0";
+
 /// The file record format's version.
 const FILE_VERSION: u32 = 1;
+
 /// How many private names a store tries before giving up.
 ///
 /// Each candidate draws a fresh 64-bit nonce, so a collision is already
@@ -1756,6 +1759,9 @@ mod tests
             | Typing::Synthesised { .. } => "synthesised",
             | Typing::Owed => "owed",
             | Typing::Refused(Refusal::PathCode(_)) => "path-code",
+            | Typing::Refused(Refusal::EndpointMismatch { .. }) => "endpoint-mismatch",
+            | Typing::Refused(Refusal::IdentityAtOpenType { .. }) => "identity-at-open-type",
+            | Typing::Refused(Refusal::CompoundEndpoint { .. }) => "compound-endpoint",
             | Typing::Refused(Refusal::EffectSignatureConflict { .. }) => {
                 "effect-signature-conflict"
             },

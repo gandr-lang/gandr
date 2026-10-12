@@ -1,0 +1,18 @@
+@[ checks ]
+data Box : Type {
+  Wrap : (n : Integer) --> Box;
+}
+
+@[ checks ]
+def wrap(x: Integer) -> -F Box {
+  return Wrap(x)
+}
+
+@[ checks ]
+def cong_wrap(a: Integer, b: Integer, p: Path(Integer, a, b)) -> -F Path(Box, Wrap(a), Wrap(b)) {
+  become cong(wrap, p)
+}
+
+@[ checks ]
+def wrapped : +U (-F Path(Box, Wrap(4), Wrap(4)));
+def wrapped = thunk { become cong_wrap(4, 4, here(4)) };

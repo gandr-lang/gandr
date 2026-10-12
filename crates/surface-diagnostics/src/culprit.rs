@@ -104,6 +104,8 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
             | FragmentBoundary::Indexed => "a family applied to an index",
             | FragmentBoundary::Unannotated => "needs a stated type",
             | FragmentBoundary::NonUniform => "not the parameter itself",
+            // refused_by: statement_fold · collision: none (1 contested hunk(s), neither side
+            // deleted the other's lines)
             | FragmentBoundary::NotInTail => "not on a path through a body",
             | FragmentBoundary::JoinsBlock => "an answer the arms do not give",
             | FragmentBoundary::EmptyList => "an empty list, not the unit",
@@ -135,6 +137,7 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         | LoweringRefusal::UnmarkedSelfReference { .. } => "recursion without a claim",
         | LoweringRefusal::MissingExit { .. } => "the body ends here without an exit",
         | LoweringRefusal::Unreachable { .. } => "no path reaches this",
+        | LoweringRefusal::WithoutK { .. } => "a path matched against reflexivity",
         | LoweringRefusal::BudgetExceeded { .. } => "the lowering's allowance ran out",
         | LoweringRefusal::GrammarMismatch { .. } => "molded under another grammar",
         | LoweringRefusal::UnknownMold { .. } => "a mold the grammar does not hold",
@@ -164,6 +167,9 @@ const fn checked(refusal: CheckRefusal) -> Culprit
         | CheckRefusal::DependentStack { .. } => "its result type mentions the discharged value",
         | CheckRefusal::EffectSignatureConflict { .. } => "effect rows that disagree",
         | CheckRefusal::PathCode(_) => "not a quoted closed first-order code",
+        | CheckRefusal::EndpointMismatch { .. } => "not both endpoints of the path",
+        | CheckRefusal::IdentityAtOpenType { .. } => "transport at a type with no structure",
+        | CheckRefusal::CompoundEndpoint { .. } => "an endpoint that returns no pure value",
         | CheckRefusal::TypeMismatch(Mismatch::Value { .. } | Mismatch::Computation { .. }) => {
             "its type does not convert"
         },
@@ -244,3 +250,5 @@ mod tests
         );
     }
 }
+// weave: run 'weave explain crates/surface-diagnostics/src/culprit.rs' for
+// per-hunk detail, 'weave check' to verify your resolution

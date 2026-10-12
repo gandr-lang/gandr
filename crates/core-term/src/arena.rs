@@ -1780,6 +1780,71 @@ impl CoreArena
         self.alloc_computation(Computation::Transport(path, value))
     }
 
+    /// Mint the element identity `Path(A, a, b)`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_path(
+        &mut self,
+        carrier: ValueTypeId,
+        left: ValueId,
+        right: ValueId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Path {
+            carrier,
+            left,
+            right,
+        })
+    }
+
+    /// Mint reflexivity `here(a)`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_here(
+        &mut self,
+        point: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Here(point))
+    }
+
+    /// Mint the value a pure computation returns, standing as a value.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_returned(
+        &mut self,
+        computation: ComputationId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Returned(computation))
+    }
+
+    /// Mint transport `tr(P, p, x)` along an element path, the motive under
+    /// one intuitionistic binder.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_path_transport(
+        &mut self,
+        motive: ValueTypeId,
+        path: ValueId,
+        value: ValueId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::PathTransport {
+            motive,
+            path,
+            value,
+        })
+    }
+
     /// Mint a typed hole in value position.
     ///
     /// # Specification

@@ -319,6 +319,16 @@ pub enum Value
         /// Both round-trip dialogues, checked again at kernel admission.
         evidence: alloc::sync::Arc<gandr_kernel_term::PathEvidence>,
     },
+    /// Reflexivity `here(a)`: the canonical element of the element identity
+    /// `Path(A, a, a)`, checked against a path type whose two endpoints convert
+    /// to `a`.
+    Here(ValueId),
+    /// The value a pure computation returns, standing where a value is read:
+    /// a compound path endpoint such as `n + 1` or `f(x)`. It types as the
+    /// computation's result when the computation is a returner with no
+    /// effects, and evaluates by running the computation, so the endpoint is
+    /// compared by what it computes rather than erased.
+    Returned(ComputationId),
     /// A bound value variable, in a named zone of the unified context.
     Variable
     {
@@ -492,6 +502,19 @@ pub enum Computation
     },
     /// Transport a value along a native universe path.
     Transport(ValueId, ValueId),
+    /// Transport `tr(P, p, x)` along an element path: given `p : Path(A, a,
+    /// b)` and `x : P[a]`, it returns `P[b]`. The motive `P` is a value type
+    /// under one intuitionistic binder of the carrier `A`.
+    PathTransport
+    {
+        /// The motive, under one intuitionistic binder: the moving endpoint.
+        motive: ValueTypeId,
+        /// The element path transported along.
+        path: ValueId,
+        /// The value transported, an inhabitant of the motive at the path's
+        /// left endpoint.
+        value: ValueId,
+    },
     /// A lambda `λ. M`, binding one intuitionistic value variable; introduces
     /// `A → C`.
     Lambda(ComputationId),
@@ -628,6 +651,19 @@ pub enum ValueType
     Record(BTreeMap<FieldLabel, ValueTypeId>),
     /// Certified equivalences between two quoted closed first-order codes.
     PathUniverse(ValueId, ValueId),
+    /// Element identity `Path(A, a, b)`: the type of paths from `a` to `b` in
+    /// the value type `A`. It is a type of its own, never unfolded into
+    /// another former; the evaluator's identity recursion classifies, carrier
+    /// by carrier, the type its paths correspond to.
+    Path
+    {
+        /// The carrier the two endpoints inhabit.
+        carrier: ValueTypeId,
+        /// The left endpoint.
+        left: ValueId,
+        /// The right endpoint.
+        right: ValueId,
+    },
     /// A rigid base-type atom.
     Base(BaseType),
     /// The product of its components, in order: `Product([])` is the unit
@@ -996,6 +1032,16 @@ fn equal_syntax(
                     {
                         pending.push(V(a, b));
                     }
+                    else if let Value::Here(a) = *matched_left_value
+                        && let Value::Here(b) = *matched_right_value
+                    {
+                        pending.push(V(a, b));
+                    }
+                    else if let Value::Returned(a) = *matched_left_value
+                        && let Value::Returned(b) = *matched_right_value
+                    {
+                        pending.push(C(a, b));
+                    }
                     else if let Value::StaticLambda(a) = *matched_left_value
                         && let Value::StaticLambda(b) = *matched_right_value
                     {
@@ -1231,6 +1277,22 @@ fn equal_syntax(
                         C(left_cons, right_cons),
                     ]),
                     | (
+                        &Computation::PathTransport {
+                            motive: left_motive,
+                            path: left_path,
+                            value: left_value,
+                        },
+                        &Computation::PathTransport {
+                            motive: right_motive,
+                            path: right_path,
+                            value: right_value,
+                        },
+                    ) => pending.extend([
+                        VT(left_motive, right_motive),
+                        V(left_path, right_path),
+                        V(left_value, right_value),
+                    ]),
+                    | (
                         &Computation::Primitive {
                             primitive: a,
                             arguments: ref aa,
@@ -1335,6 +1397,21 @@ fn equal_syntax(
                     ) = (matched_left_value, matched_right_value)
                     {
                         pending.extend([CT(a, c), CT(b, d)]);
+                    }
+                    else if let (
+                        &ValueType::Path {
+                            carrier: a,
+                            left: b,
+                            right: c,
+                        },
+                        &ValueType::Path {
+                            carrier: d,
+                            left: e,
+                            right: f,
+                        },
+                    ) = (matched_left_value, matched_right_value)
+                    {
+                        pending.extend([VT(a, d), V(b, e), V(c, f)]);
                     }
                     else if let (&ValueType::List(a), &ValueType::List(b)) =
                         (matched_left_value, matched_right_value)

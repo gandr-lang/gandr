@@ -1,0 +1,15 @@
+@[ checks ]
+def four_eq_four = here(4);
+
+@[ checks ]
+def cast(p: Path(Integer, 4, 4)) -> -F(Path(Integer, 4, 4)) {
+  return p
+}
+
+@[ checks ]
+def checked : Path(Integer, 4, 4);
+def checked = here(4);
+
+@[ checks ]
+def cast_four : +U (-F Path(Integer, 4, 4));
+def cast_four = thunk { become cast(four_eq_four) };

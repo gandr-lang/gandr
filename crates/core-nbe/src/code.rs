@@ -383,6 +383,7 @@ impl Iterator for ArgumentFields<'_>
         (count, Some(count))
     }
 }
+
 impl ExactSizeIterator for ArgumentFields<'_>
 {
 }
@@ -420,6 +421,7 @@ enum FirstOrder<'run>
         fields: ArgumentFields<'run>,
     },
 }
+
 /// The comparison's state: the shared binder chains and the binders numbered
 /// so far.
 struct Walk<'run>
@@ -750,6 +752,8 @@ _ => ret == Ok(Atom::Other(node)),
                         ));
                     },
                     | Value::PathRefl(_)
+                    | Value::Here(_)
+                    | Value::Returned(_)
                     | Value::Reify(_)
                     | Value::Primitive { .. }
                     | Value::PathProduct(..)
@@ -794,6 +798,8 @@ _ => ret == Ok(Atom::Other(node)),
                             Ok(Atom::QuoteComputation(quoted, place))
                         },
                         | Value::PathRefl(_)
+                        | Value::Here(_)
+                        | Value::Returned(_)
                         | Value::Primitive { .. }
                         | Value::Constructor { .. }
                         | Value::Record(_)
@@ -826,6 +832,7 @@ _ => ret == Ok(Atom::Other(node)),
             },
             | DomainValue::PathCertificate { .. }
             | DomainValue::PathProduct { .. }
+            | DomainValue::Here { .. }
             | DomainValue::Thunk { .. }
             | DomainValue::Lift { .. } => Ok(Atom::Other(stood)),
         }
@@ -865,7 +872,7 @@ _ => ret == Ok(Atom::Other(node)),
                 NeutralHead::Variable { zone, level } => ret == Ok(Atom::Variable(zone, level)),
                 NeutralHead::Constant(constant) => ret == Ok(Atom::Constant(constant,
                     if matches!(held.unfolding(), Unfolding::Rigid) { Rigidity::Rigid } else { Rigidity::Flexible })),
-                NeutralHead::Module(_) | NeutralHead::Hole { .. } | NeutralHead::Mark { .. } => ret == Ok(Atom::Other(Node::Stuck(neutral, prefix))),
+                NeutralHead::Module(_) | NeutralHead::Hole { .. } | NeutralHead::Mark { .. } | NeutralHead::Returned(_) => ret == Ok(Atom::Other(Node::Stuck(neutral, prefix))),
             }
         } else {
             match held.spine().get(prefix.0.saturating_sub(1)) {
@@ -895,9 +902,10 @@ _ => ret == Ok(Atom::Other(node)),
                     };
                     Atom::Constant(constant, rigidity)
                 },
-                | NeutralHead::Module(_) | NeutralHead::Hole { .. } | NeutralHead::Mark { .. } => {
-                    Atom::Other(Node::Stuck(neutral, prefix))
-                },
+                | NeutralHead::Module(_)
+                | NeutralHead::Hole { .. }
+                | NeutralHead::Mark { .. }
+                | NeutralHead::Returned(_) => Atom::Other(Node::Stuck(neutral, prefix)),
             });
         };
         match held.spine().get(last) {
@@ -911,6 +919,7 @@ _ => ret == Ok(Atom::Other(node)),
                 | Elimination::Split(_)
                 | Elimination::Projection(_)
                 | Elimination::ProductTransport(_)
+                | Elimination::PathTransport { .. }
                 | Elimination::Apply(_)
                 | Elimination::Force
                 | Elimination::Bind(_)
@@ -1112,6 +1121,7 @@ _ => ret == Ok(Atom::Other(node)),
                 {
                     | ValueType::Element { code, .. } => (code, place),
                     | ValueType::PathUniverse(..)
+                    | ValueType::Path { .. }
                     | ValueType::Data { .. }
                     | ValueType::Record(_)
                     | ValueType::Stack { .. }
@@ -1358,6 +1368,29 @@ if left.len() == right.len() { children_correct = pending.get(entry_nodes..).is_
                             Ok(Alike::Same)
                         }
                     }
+                    else if let ValueType::Path {
+                        carrier: a,
+                        left: b,
+                        right: c,
+                    } = *matched_left_value
+                        && let ValueType::Path {
+                            carrier: d,
+                            left: e,
+                            right: f,
+                        } = *matched_right_value
+                    {
+                        pending.push((Node::ValueType(a, here), Node::ValueType(d, there)));
+                        let left = (
+                            self.atom(Node::Code(b, here))?,
+                            self.atom(Node::Code(e, there))?,
+                        );
+                        let right = (
+                            self.atom(Node::Code(c, here))?,
+                            self.atom(Node::Code(f, there))?,
+                        );
+                        atoms.extend([left, right]);
+                        Ok(Alike::Same)
+                    }
                     else if let ValueType::Base(a) = *matched_left_value
                         && let ValueType::Base(b) = *matched_right_value
                     {
@@ -1453,6 +1486,7 @@ if left.len() == right.len() { children_correct = pending.get(entry_nodes..).is_
                         {
                             match *matched_left_value {
                                 | ValueType::PathUniverse(..)
+                                | ValueType::Path { .. }
                                 | ValueType::Data { .. }
                                 | ValueType::Record(_)
                                 | ValueType::Base(_)
@@ -2029,6 +2063,15 @@ if left.len() == right.len() { children_correct = pending.get(entry_nodes..).is_
                         | ValueType::PathUniverse(source, target) => {
                             atoms.push(self.atom(Node::Code(source, place))?);
                             atoms.push(self.atom(Node::Code(target, place))?);
+                        },
+                        | ValueType::Path {
+                            carrier,
+                            left,
+                            right,
+                        } => {
+                            types.push(Node::ValueType(carrier, place));
+                            atoms.push(self.atom(Node::Code(left, place))?);
+                            atoms.push(self.atom(Node::Code(right, place))?);
                         },
                         | ValueType::Product(ref components) | ValueType::Sum(ref components) => {
                             types.extend(
