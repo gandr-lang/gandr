@@ -6,6 +6,42 @@
 //! form, with the holes of the operators above it. [`ghost()`] reads that
 //! material at the cursor and spells it as a snippet: a tile as its text, a
 //! lexical class or a hole as a tab stop.
+//!
+//! # Inline completion is the parser's expected syntax
+//!
+//! An inline-completion request labels the text before the cursor, splits it at
+//! its predicted top-level form boundaries, molds the last form alone, and asks
+//! the parser's completion query what closes it: `Completion::innermost`, the
+//! holes of the operators above the innermost open form and that form's
+//! cheapest closing tiles. The answer is one item, inserted at the empty range
+//! at the cursor, whose text is a snippet. A tile is written as `tile_spelling`
+//! gives it, escaped for the snippet syntax; a lexical class such as
+//! `identifier` is a tab stop naming the class; a hole of an expression, a
+//! pattern or a type is a tab stop holding `?`, so accepting the ghost text
+//! unedited leaves holes the checker reports as goals. Items are separated by a
+//! space except after `(` or `[` and before `)`, `]`, `,`, `;` and a quote. So
+//! `def x = f(1` shows `)`, `def x = 1 +` shows `${1:?};`, and `run y <-` in a
+//! block shows `${1:?}; \}`. Over every line end of the corpus sources,
+//! accepting the ghost text with each tab stop filled closes a form and adds no
+//! repair.
+//!
+//! Nothing is shown when text other than whitespace follows the cursor on its
+//! line, since the closer may already be written there, or when the text before
+//! the cursor ends in a line comment, a shebang or an unclosed block comment.
+//! The text after the cursor is never labeled, so the parser's lookahead reads
+//! only what precedes it. The material is structure only — closers, required
+//! keywords, holes and classes — never a name; names come from completion over
+//! goals.
+//!
+//! - Alternatives: the whole completion to the end of the input, which closes
+//!   every enclosing form at once and reads as noise past the innermost;
+//!   molding the document from its start, which costs the whole prefix per
+//!   request where the form costs its own tokens; the session's parse of the
+//!   whole text, whose forms read the text after the cursor as lookahead and
+//!   are kept by identity rather than by position.
+//! - Reversal: a measured labeling cost on long documents moves the label pass
+//!   onto the session's held labeling; an observed preference for less ghost
+//!   text cuts the material at the first tile.
 
 use alloc::string::String;
 use core::fmt::Write as _;

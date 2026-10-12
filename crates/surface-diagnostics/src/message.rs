@@ -12,6 +12,28 @@
 //! naming no grammar sort, admission position or node. A refusal no source can
 //! reach — a run fault or a producer's broken invariant — says so, as an
 //! internal error.
+//!
+//! Each producer words its refusals for whoever reads its code: the lowering
+//! names the grammar's sorts (`` `hole` has an operand where it takes none ``),
+//! the checker its rules (`the rule here requires a thunk type`). A report
+//! keeps that text as `Report::title` and leads with `Report::message` instead:
+//! one plain message per refusal variant, chosen by an exhaustive match in
+//! `message.rs`, naming the source's own names and its forms in words (`this
+//! hole has an operand it does not take`, `expected a thunk type`, `` `missing`
+//! is not defined ``), and naming no grammar sort, node or admission position.
+//! A refusal only a producer's broken invariant reaches says `internal error:`.
+//! Every other report's message is its title, which is already the user's. The
+//! terminal and the language server both lead with the message; the title stays
+//! for a face that wants the producer's words, the verbosity levels in
+//! particular.
+//!
+//! The alternative was rewording each producer's `Display`, which would leave
+//! the implementer text nowhere: the lowering's and the checker's own tests,
+//! ledger lines and a detailed verbosity read it. Reversal: when no face reads
+//! the producer's text, the two collapse into one. Witness:
+//! `message::tests::every_refusal_name_has_a_plain_message`, which builds one
+//! refusal of every vocabulary name and holds each message to one line with no
+//! grammar sort.
 
 use core::fmt;
 

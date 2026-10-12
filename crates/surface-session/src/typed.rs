@@ -1,4 +1,33 @@
 //! The type the latest resume gives a declaration, spelled at a page width.
+//!
+//! # A declaration's type and documentation are read off the latest revision
+//!
+//! **Choice.** `type_of` spells the type the latest resume gives the last item
+//! of a name, the lookup a transcript makes; `type_at` spells the type of the
+//! item a `Reference` names, key and occurrence, the lookup a hover makes over
+//! one of several declarations of a name. Both read the item's checkpoint: a
+//! checked or owed value by its signature, a synthesised value by its produced
+//! type, a native declaration by its universe, each laid out through the
+//! printer's `ContentSource` at the caller's page width, and an absence names
+//! why — no resume, no such item, a refused item, an unsigned one, a refused
+//! layout. `Session::documentation` answers the documentation text the latest
+//! accepted lowering filed under a declaring form's content identity, which
+//! documentation does not reach, so an edit to the documentation alone keeps
+//! the key; a revision refused whole keeps the accepted one's, as the import
+//! scope does. The session keeps the text owned, so it outlives the revision it
+//! was read from.
+//!
+//! **Alternatives.** The lookup lived in the REPL's encoder, the one face that
+//! spelled a checkpoint's type; a second face, the language server's hover,
+//! would otherwise copy it and the two could spell one type differently.
+//! Documentation could be read again from the face's own parse, at the cost of
+//! a second reading of `///` lines and `doc("…")` entries that could disagree
+//! with the lowering's.
+//!
+//! **Reversal.** A face that needs the type of a node inside a body, not a
+//! whole item, needs a per-node typing the resume does not keep; documentation
+//! that must survive a revision refused at the declaration, not whole, needs
+//! the lowering to file it for refused forms too.
 
 use anodized::spec;
 use gandr_core_incremental::ContentNode;

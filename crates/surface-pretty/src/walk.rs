@@ -14,6 +14,105 @@
 //! names the term spells, so a dependent arrow's generated binder never reads
 //! as a constant or an abstract type the term mentions. Both passes bound
 //! their scheduled visits, including when the source changes between passes.
+//!
+//! # Products, sums and tuples are one chain of their components
+//!
+//! The core's product and sum hold a list of components
+//! ([#134](https://github.com/gandr-lang/gandr/issues/134)), and the printer
+//! writes each as one chain: `A * B * C` is a 3-ary product, and a product
+//! written inside a product keeps its parentheses on either side, so `(A * B) *
+//! C` and `A * (B * C)` are the 2-ary products they are. The 0-ary product is
+//! `Unit`, the 0-ary sum `Void`, and the sum of two units `Bool`, the fixed
+//! names the lowering resolves. The 1-ary product and sum have no surface
+//! spelling yet and are written `?`. A `Former` counts the components rather
+//! than holding them, and the printer asks the source for each one by position
+//! (`Source::component`), because the core's components are value-type ids
+//! while its handles are `CoreNode`s; a component the source does not answer is
+//! written `?`.
+//!
+//! - **Alternatives.** A former holding its components' handles would need
+//!   every source to keep them as a slice of its own handle type, which the
+//!   core arena does not. Keeping the binary former and printing other arities
+//!   as `?` would hide the n-ary types the core already holds. A tuple is read
+//!   the same way, its components values: `(a, b, c)` is a 3-tuple, a 1-tuple
+//!   keeps its trailing comma, `(a,)`, and the empty tuple is `unit`. An
+//!   injection past the second summand has no surface spelling, as the sums it
+//!   injects into have none, and is written `?`.
+//!
+//! - **Reversal.** A spelling for the 1-ary product, or for an injection past
+//!   the second summand, which
+//!   [#134](https://github.com/gandr-lang/gandr/issues/134) leaves open, gives
+//!   it a case here. A source whose components are costly to reach one at a
+//!   time, measured, answers them as a slice instead.
+//!
+//! # Native universe paths
+//!
+//! The native presentations are `Path_U(a, b)`, `refl(a)`, `equiv(f, g)` and
+//! `pathProduct(p, q)`. Endpoint, map and product order is retained. Each is
+//! explicitly `Fidelity::Approximate`: these forms have no surface parser
+//! syntax, and an equivalence’s display does not include its classifier or
+//! replay evidence. The core adapter and checkpoint adapter expose the same
+//! value-child positions.
+//!
+//! **Choice.** Show the structural constructor instead of an unreadable marker,
+//! while withholding a surface round-trip claim. The printer neither compares
+//! certified maps nor replays transport. **Reversal.** A faithful notation
+//! requires parser and lowering rules that preserve all required information.
+//! `native_paths_preserve_ordered_endpoints_and_maps` checks the order and
+//! approximation boundary through public presentation.
+//!
+//! # Break points
+//!
+//! A break point is a choice between the byte the one-line spelling carries
+//! there and a line break: after an arrow, an infix symbol and a comma, a space
+//! or a break indented two columns; before a bracket's closer, nothing or a
+//! break. The broken branch stands first, matching the layout engine's
+//! left-biased fallback when both alternatives are width-tainted. Each choice
+//! is independent of the others, so the least-cost layout may break inside a
+//! parenthesized operand where that alone fits the page: the narrow page of the
+//! example above breaks inside `+U (a -> -F b)`.
+//!
+//! - **Alternatives.** A group per arrow chain would break all arrows or none,
+//!   outer chains before inner ones. Under the cost order, overflow then line
+//!   count, this can take more lines than a single inner break. Independent
+//!   choices allow that shorter layout.
+//! - **Reversal.** A reader rules that a chain breaks whole; the walk then
+//!   builds chain groups and the goldens move with it.
+//!
+//! The computation width is twice the page, saturating at its maximum. Past it
+//! the engine resolves without its optimality guarantee: a frontier wins over a
+//! tainted promise, and two tainted promises retain the left alternative. At
+//! zero columns, both the inline space and the two-column continuation
+//! indentation exceed the computation width; the broken separator remains the
+//! fallback (`goldens::tests::doubly_tainted_pair_keeps_the_broken_separator`).
+//! A wider computation width admits more memoized states. The choice reverses
+//! when a wider computation width improves a presentation at an acceptable
+//! cost.
+//!
+//! # Binder names
+//!
+//! The core is nameless, so a dependent arrow's binder and a static
+//! abstraction's are generated: `a` through `z`, then `a1`, `b1`, and so on,
+//! the outermost binder first, skipping every constant or abstract-type name
+//! encountered by the scan. A new binder is refused when the candidate counter
+//! cannot advance; cached names remain available. Name avoidance refers to the
+//! scanned view, not an atomic snapshot of a changing source.
+//!
+//! - **Alternatives.** Printing a de Bruijn index reads as nothing the surface
+//!   parses; reusing a mentioned name would make the codomain ambiguous.
+//! - **Reversal.** The core carries a binder's source name as an origin hint,
+//!   and the printer prints it when no mentioned name collides.
+//!
+//! # Bounds
+//!
+//! Nothing here recurses. Values stop at `DEPTH_LIMIT`, 32 value formers, with
+//! one `<deep>` leaf; static-spine inspection obeys that depth limit too. The
+//! naming scan and scheduled document walk each allow at most 65,536 visits.
+//! The walk has its own budget because a source may change after the scan;
+//! either pass can refuse with `?`, approximate, rather than loop. A late walk
+//! refusal can leave unused documents charged to the builder. A layout ceiling
+//! returns `PresentationError`, never partial output. Witness:
+//! `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`.
 
 use alloc::collections::BTreeSet;
 use alloc::format;

@@ -76,7 +76,167 @@
 //! ```
 //!
 //! Each decision, with the alternative it was chosen over and what would
-//! reverse it, is in this crate's `README.md`.
+//! reverse it, is in the module that owns it.
+//!
+//! # Coverage of the specification
+//!
+//! Every feature of the protocol, 3.17 and 3.18, with whether this server
+//! serves it. Only a served feature is advertised: a capability with nothing
+//! behind it would invite requests the server can only refuse.
+//!
+//! | Feature | Methods | State |
+//! | ------- | ------- | ----- |
+//! | lifecycle | `initialize`, `initialized`, `shutdown`, `exit` | served |
+//! | document synchronisation | `textDocument/didOpen`, `didChange` (incremental), `didClose` | served |
+//! | save notifications | `textDocument/willSave`, `willSaveWaitUntil`, `didSave` | declined: every change is judged as it arrives, so a save changes nothing the server holds |
+//! | notebook synchronisation | `notebookDocument/*` | declined: gandr has no notebook format |
+//! | published diagnostics | `textDocument/publishDiagnostics` | served |
+//! | pulled diagnostics | `textDocument/diagnostic`, `workspace/diagnostic` | declined: every synchronisation publishes; reverses for a client that reads only pulled diagnostics |
+//! | semantic tokens | `textDocument/semanticTokens/full`, `range` | served |
+//! | semantic token deltas | `textDocument/semanticTokens/full/delta` | declined: a full answer per request; reverses when a measurement shows the transfer matters |
+//! | inline completion | `textDocument/inlineCompletion` | served |
+//! | document symbols | `textDocument/documentSymbol` | served |
+//! | folding ranges | `textDocument/foldingRange` | served |
+//! | selection ranges | `textDocument/selectionRange` | served |
+//! | hover | `textDocument/hover` | served |
+//! | inlay hints | `textDocument/inlayHint` | blocked: a binder's inferred type, which the resume records per item and not per binder |
+//! | signature help | `textDocument/signatureHelp` | blocked: the declaration a call applies, which needs the use-to-binder map below |
+//! | completion | `textDocument/completion` | blocked: goals whose types the checker spells |
+//! | definition, declaration, type definition, implementation | `textDocument/definition`, `declaration`, `typeDefinition`, `implementation` | blocked: the lowering resolves every name but does not expose a use's binder |
+//! | references, document highlight | `textDocument/references`, `documentHighlight` | blocked: the same use-to-binder map |
+//! | rename, linked editing | `textDocument/prepareRename`, `rename`, `linkedEditingRange` | blocked: the same use-to-binder map |
+//! | call hierarchy | `textDocument/prepareCallHierarchy`, `callHierarchy/*` | blocked: the same use-to-binder map |
+//! | type hierarchy | `textDocument/prepareTypeHierarchy`, `typeHierarchy/*` | declined: the core has no subtyping to arrange types by |
+//! | formatting | `textDocument/formatting`, `rangeFormatting` | served |
+//! | on-type formatting | `textDocument/onTypeFormatting` | declined: a form's layout is decided once the form is whole, which range formatting at the cursor already serves on request |
+//! | code actions, code lenses | `textDocument/codeAction`, `codeLens` | served for model proposals: a quick fix applying each checked fill, a lens counting a range's checked fills |
+//! | commands | `workspace/executeCommand` | blocked: no command the pipeline produces |
+//! | document links | `textDocument/documentLink` | blocked: imports bind an alias and resolve no address |
+//! | document colours | `textDocument/documentColor`, `colorPresentation` | declined: gandr has no colour literals |
+//! | inline values | `textDocument/inlineValue` | declined: they serve a debugger, and gandr has no debug adapter |
+//! | monikers | `textDocument/moniker` | declined: no cross-repository index reads them |
+//! | workspace symbols | `workspace/symbol` | blocked: a workspace of more than the open documents |
+//! | workspace folders, file watching, file operations | `workspace/didChangeWorkspaceFolders`, `didChangeWatchedFiles`, `willCreateFiles` and the other file operations | blocked: a workspace of more than the open documents |
+//! | configuration | `workspace/didChangeConfiguration` | served: the `gandr` section's `diagnostics.verbosity`, as the `recheck` module states |
+//! | pulled configuration | `workspace/configuration` | declined: the setting is pushed; reverses for a client that only answers pulls |
+//! | window messages and progress | `window/showMessage`, `logMessage`, `workDoneProgress/*` | declined: the timing line goes to the server's log; reverses for a client that reads only the protocol stream |
+//! | gandr's extensions | `gandr/goals`, `gandr/syntaxTree`, `gandr/serverStatus`, the render-bus attach through the language server's stream | blocked: each as the assessment in § Extensions beyond the specification names; the bus itself is served on the hub's socket (the `bus` module) |
+//!
+//! # What editors add beyond the protocol
+//!
+//! A client speaks the protocol; what it does with a method the protocol does
+//! not name decides where a gandr-specific view can live.
+//!
+//! | Editor | Beyond the protocol | What it means here |
+//! | ------ | ------------------- | ------------------ |
+//! | VS Code | an extension sends any request through its language client and draws a webview panel of its own HTML; proposed APIs are closed to published extensions | the one editor where a rich goal view is a panel; it needs an extension, and its panel reads whatever the extension fetches |
+//! | Neovim | a client sends any request and installs a handler for any notification; floating windows and virtual text draw the answer | a plain-text goal request is shown with a few lines of configuration and no extension |
+//! | Emacs | `eglot` and `lsp-mode` send any JSON-RPC request; a buffer draws the answer | as Neovim: a plain-text goal request suffices |
+//! | Helix | the standard protocol only; no plugin system yet | sees only the specification's features, so every extension must degrade to them |
+//! | Zed | extensions launch a server and label its completions and symbols | as Helix for anything beyond the specification |
+//!
+//! The table fixes two rules. A gandr extension answers plain, already-laid-out
+//! text first, so the editors that can send a custom request show it without a
+//! gandr extension of their own; a structured view rides beside it, never in
+//! place of it. And nothing an editor needs to read a document correctly lives
+//! only in an extension: diagnostics, goals as diagnostics, hover and tokens
+//! stay in the specification, which Helix and Zed read.
+//!
+//! # Extensions beyond the specification
+//!
+//! The assessment the language server's coverage owes: the extensions three
+//! servers of the closest kind add, and which gandr takes up.
+//!
+//! | Extension | Server | Recommendation | Why |
+//! | --------- | ------ | -------------- | --- |
+//! | a goal at a position: `$/lean/plainGoal`, `$/lean/plainTermGoal`; `proof/goals` | Lean 4; coq-lsp | **adopt** as `gandr/goals`: the goals the cursor's hole owes, each its expected type and its context, laid out by the printer as plain text, beside the same goals as `gandr-surface-render-remote`'s `GoalCard`s | the interaction model is holes and goals, which reach an editor only as information diagnostics; blocked with completion on goals whose types the checker spells |
+//! | the infoview: `$/lean/rpc/connect`, `$/lean/rpc/call`, user widgets | Lean 4 | **decline** the RPC session; the side view reads the render bus instead | a remote-procedure session per file worker, with references a client must release and keep alive, duplicates what the render bus frames already carry: versioned goal and diagnostic cards one renderer or many read |
+//! | file checking progress: `$/lean/fileProgress`; coq-lsp's progress and viewport | Lean 4; coq-lsp | **decline** | both check on demand or in order and report how far they got; every synchronisation here judges the whole document and publishes at once, and the timing line already says what it cost |
+//! | syntax tree view: `rust-analyzer/viewSyntaxTree` | rust-analyzer | **adopt** as `gandr/syntaxTree`: the molded tree of a document, its molds, tiles, layout and repairs, as text | the tree exists for every request already, and grammar and parser work reads it; a debugging aid, advertised as one |
+//! | snippet text edits | rust-analyzer | **adopt** with code actions: a repair the parser recorded becomes a fix whose holes are tab stops | inline completion already writes snippets, and code actions are served for model proposals; waits on the parser's repairs becoming fixes |
+//! | runnables: `experimental/runnables` | rust-analyzer | **decline** the method; a code lens over each declaration that evaluates, running it as `gandr run` does, once commands exist | the specification's lenses and commands carry it, so Helix and Zed see it too |
+//! | hover actions | rust-analyzer | **decline** until definition and references exist | its actions are go-to and find-references links, which wait on the use-to-binder map |
+//! | matching brace: `experimental/matchingBrace` | rust-analyzer | **decline** | selection ranges already grow from a tile to its form, and the client matches brackets itself |
+//! | join lines: `experimental/joinLines`; on enter | rust-analyzer | **decline** | layout belongs to the source formatter, which formatting serves |
+//! | server status: `experimental/serverStatus` | rust-analyzer | **adopt** as `gandr/serverStatus`: whether the latest revision's kernel admission is pending, done or refused | the admission runs after the diagnostics are published, and an editor cannot otherwise tell a revision the kernel has yet to admit from one it admitted |
+//!
+//! **The goal view is both.** `gandr/goals` is the portable answer: plain text
+//! any client that sends a custom request shows, and the structured cards a
+//! richer one draws. The live side view, which follows the cursor and the
+//! check, reads the render bus: a terminal pane beside the editor reads its
+//! frames directly, and a VS Code webview attaches to the same frames through
+//! the language server's render-bus attach, so the cards a goal view draws are
+//! the ones every renderer draws. An extension method answers once per request;
+//! the bus streams what changed, so the side view is not a poll.
+//!
+//! **Reversal.** A client that can show neither a custom request's text nor a
+//! side view, measured as the editor most authors use, moves goals into the
+//! specification's features alone — inlay hints at each hole, a hover over it.
+//! A render bus that cannot attach through the language server's stream moves
+//! the webview onto `gandr/goals` alone.
+//!
+//! # Specification evidence
+//!
+//! Executable predicates cover UTF-16 projection and errors, token kinds and
+//! grouping, half-open overlap, diagnostic shape, decoded URI bytes, request
+//! classification, lifecycle transitions and document publication. Captures
+//! retain only phase or counts; predicates do not clone server state, reparse
+//! documents or compose them twice.
+//!
+//! Adequacy separates bounded observations from broader obligations. The
+//! overlap witness exhausts ordered spans and all query endpoint pairs in a
+//! five-offset domain, preserving input order and rejecting empty
+//! intersections. Other witnesses cover Unicode and line endings, framing
+//! ceilings, partial writes and flush failures, decoder refusals, lifecycle
+//! errors and ignored updates. The corpus observers independently walk the
+//! checked-in sources and compare diagnostics, causal labels and token bytes
+//! with the dispatcher and renderer; agreement is evidence over that corpus,
+//! not a proof for all programs.
+//!
+//! Two effects cannot be observed by a useful return-value predicate: `serve`
+//! owns opaque generic input/output streams, and `Capabilities::fmt` writes
+//! through an opaque formatter. Their explicit exemptions are witnessed by
+//! framed sessions, the advertised JSON and a refused-write sink. Semantic
+//! diagnostic fields are asserted directly; diagnostic prose is compared with
+//! its renderer rather than pinned as English wording.
+//!
+//! # References
+//!
+//! - Microsoft. "Language Server Protocol Specification 3.17." <https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/>
+//!   — the base protocol, the lifecycle, document synchronisation, published
+//!   diagnostics, semantic tokens, document symbols, folding and selection
+//!   ranges, hover, document and range formatting, and the position encodings
+//!   this server serves.
+//! - Microsoft. "Language Server Protocol Specification 3.18." <https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification/>
+//!   — `textDocument/inlineCompletion`, its snippet `StringValue`, and the
+//!   snippet syntax a ghost text's tab stops are written in.
+//! - JSON-RPC Working Group. "JSON-RPC 2.0 Specification." 2010, revised 2013. <https://www.jsonrpc.org/specification>
+//!   — the envelope, the batch the server refuses, and the reserved error codes
+//!   it answers with.
+//! - Matthew Kerwin. "The 'file' URI Scheme." RFC 8089, February 2017.
+//!   `doi:10.17487/RFC8089` — the URI a document is named by, whose
+//!   percent-decoded path classifies its source root.
+//! - The rust-analyzer contributors. "LSP Extensions." <https://rust-analyzer.github.io/book/contributing/lsp-extensions.html>
+//!   — the `experimental/` and `rust-analyzer/` methods the extensions
+//!   assessment weighs.
+//! - The Lean developers. "Lean.Data.Lsp.Extra." <https://lean-lang.org/doc/api/Lean/Data/Lsp/Extra.html>
+//!   — `$/lean/plainGoal`, `$/lean/plainTermGoal`, `$/lean/fileProgress` and
+//!   the `$/lean/rpc/*` session the infoview runs on.
+//! - The rocq-lsp developers. "rocq-lsp protocol documentation." <https://github.com/ejgallego/coq-lsp/blob/main/etc/doc/PROTOCOL.md>
+//!   — the `proof/goals` request and the progress and viewport notifications.
+//! - Microsoft. "Webview API." <https://code.visualstudio.com/api/extension-guides/webview>
+//!   — the panel a VS Code extension draws its own view in.
+//! - The Neovim developers. "LSP." <https://neovim.io/doc/user/lsp.html> — a
+//!   client's `request` of any method and the handlers a notification is routed
+//!   to.
+//! - Free Software Foundation. "Eglot: The Emacs Client for the Language Server
+//!   Protocol." <https://www.gnu.org/software/emacs/manual/html_mono/eglot.html>
+//!   — the Emacs client, whose server connection is a JSON-RPC endpoint any
+//!   request reaches.
+//! - The Helix developers. "Helix." <https://helix-editor.com/> — no plugin
+//!   system yet, so the standard protocol only.
+//! - Zed Industries. "Language Extensions." <https://zed.dev/docs/extensions/languages>
+//!   — what a Zed extension adds to a language server.
 
 extern crate alloc;
 

@@ -13,6 +13,35 @@
 //! carries the spellings beside the origin table its loci are read through. A
 //! module that refuses nothing spells nothing.
 //!
+//! A checker refusal names type nodes of the arena its module was judged over,
+//! and `judge` moves that arena into the `Admission`, so a face rendering the
+//! composition — before the admission runs, or after it has consumed the arena
+//! — has no node to read. `judge` therefore spells every type a produced
+//! checker refusal compares, as `CheckRefusal::compared` names them, through
+//! `gandr-surface-pretty` on a 100-column page, and `Composed::Settled` carries
+//! them as `spellings` beside the origin table, keyed by node; `Spellings::get`
+//! answers a node with its spelling or `spelling::Absent::Unspelled`. A type
+//! the printer cannot lay out on one line is left unspelled, since its spelling
+//! stands in a one-line label. A module that refuses nothing spells nothing, so
+//! a clean run pays one scan of its reports.
+//!
+//! The alternatives were keeping the arena in the composition, which costs a
+//! copy of the whole arena per revision or makes the admission borrow what the
+//! face also reads, and spelling in the renderer from a cloned arena, which
+//! costs the same copy. The choice reverses when a face needs a type the
+//! refusal does not name — a binder's in the typing context at the failure, say
+//! — which needs the arena or a richer table at the judgement.
+//!
+//! The judgements a refused body stood inside are a refusal's nested reasons,
+//! and they name nodes of the same arena. `judge` copies the checker's trails
+//! out of its report as `Trails` before the report moves into the `Admission`,
+//! keyed by admission position, which each settled `DeclarationReport` names,
+//! and spells the type each judgement was checked against into the same
+//! `Spellings`. A clean module copies an empty map. The alternative was reading
+//! the trails off the admission's report, which a face rendering after the
+//! admission ran does not hold; the choice reverses with the arena's, when the
+//! face keeps the judgement's report.
+//!
 //! # A refusal's trail is kept by position
 //!
 //! The checker traces each refused body: the value and computation judgements

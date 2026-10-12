@@ -30,6 +30,62 @@
 //! where it is introduced ([`Recognition::note_binder`]) and reported under the
 //! same policy, but it binds nothing here: resolving a binder is the binder
 //! chain's job, and the outermost scope stays as it was.
+//!
+//! # Native prelude recognition
+//!
+//! `Recognition::default()` seeds `SeedTable::prelude()` in the outermost
+//! scope. The rows come from the core table (`gandr-core-term`'s `primitive`
+//! module), including namespace prefixes such as `int` and `prim`. A caller
+//! constructing `Recognition::new` supplies its seed tables explicitly and in
+//! order: later entries and tables shadow earlier ones. Source declarations and
+//! binders are resolved before a bare prelude name; the shadow policy still
+//! reports or rejects a source shadow.
+//!
+//! The table also owns `+`, binary and unary `-`, `*`, `==`, `!=`, `<`, `<=`,
+//! `>`, `>=`, `&&` and `||`. Operators lower to saturated native computations.
+//! Like ordinary calls, they take value operands: sequence computed operands
+//! through explicit block bindings. For example, `def answer : +U (-F Integer)
+//! ; def answer = thunk { 20 + 22 } ;` runs to `42`. A named native function
+//! can be passed or partially applied using the ordinary thunk and lambda
+//! rules. `Bool` names the canonical `Unit + Unit` classifier of comparisons
+//! and boolean operations: left is true, right is false.
+//!
+//! **Choice.** Seeded bindings rather than a fallback that fabricates a global
+//! when name resolution fails. This preserves namespace ordering, shadow policy
+//! and the distinction between a missing member and a missing prefix. Revisit
+//! only if prelude provisioning becomes an explicit module import.
+//!
+//! The prelude ordering floor is
+//! `namespace::recognition::tests::ordered_bindings_shadow_from_the_right`.
+//! Native seeding and prefix shadowing are witnessed by
+//! `native_prelude_seeds_names_and_shadowing`; the public dispatcher
+//! integration
+//! `builtins::tests::native_names_operators_and_partial_application_execute`
+//! covers parsing through execution. No prelude-floor test is deferred.
+//!
+//! # The outermost scope
+//!
+//! `Recognition` is the outermost scope. Ordered `SeedTable`s seed it, a later
+//! entry winning. `lower_module` declares every top-level declaration over it
+//! in admission order, then every top-level module as a namespace governing
+//! exactly the components it exports, each displacing the whole builtin subtree
+//! under its name, and reports every lambda, parameter and `run` binder against
+//! it without rebinding. Under `ShadowPolicy::WarnAndAllow` a source name over
+//! a builtin is recorded in `shadowed`; under `Reject` its declaration is
+//! refused as `ShadowedBuiltin`. `resolve_path` reports a path complete, an
+//! unknown member of the namespace governing its deepest resolved prefix, or
+//! ungoverned, and the lowering reads a module path through it. The rows a
+//! prelude, a host and a session seed are held; callers pass
+//! `Recognition::default()`.
+//!
+//! Recognition predicates check last-wins seed coordinates, governed-prefix
+//! classification and shadow-log transitions without cloning the namespace.
+//! Shadow policy follows the binding's site tag, independently of its
+//! recognized kind: a builtin-tagged arrival has no source span to record,
+//! while a source-tagged arrival over a builtin records its exact span under
+//! warning policy. Seeded roots do not bridge unbound prefixes. Rejected
+//! declarations preserve visible names; binder checks never bind; resumption
+//! preserves names and starts a fresh log.
 
 use alloc::vec::Vec;
 

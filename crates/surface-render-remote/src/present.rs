@@ -8,6 +8,77 @@
 //! renderer reads them directly.
 //!
 //! [`RenderFrame`]: crate::wire::RenderFrame
+//!
+//! # Validated byte ranges
+//!
+//! `ByteRange::new` refuses an end below the start with `InvertedRange` rather
+//! than reordering the endpoints, which would turn a mis-measured span into a
+//! plausible one; an empty range is a position. The range's fields are private,
+//! so every range a span or a card carries is ordered, and the serde decode
+//! runs the same check. The wire image is `{"start": s, "end": e}`.
+//!
+//! The alternative was the standard half-open `Range` with public fields, which
+//! admits an inverted range every renderer must defend against on every read.
+//! The choice reverses if a producer needs a directed range — a selection with
+//! an anchor — which would be a separate type rather than a relaxation of this
+//! one.
+//!
+//! # Two column units
+//!
+//! `pos_of_byte` counts the newlines before an offset for its row and the
+//! characters after the last of them for its column; a newline belongs to the
+//! row it ends. An offset at or past the end of the text is the position after
+//! its last character, so the empty text has the one position `0:0`. An offset
+//! strictly inside a multi-byte character is refused with `PosOfByteError`.
+//! `byte_of_pos` inverts it on every character start, clamping a column past
+//! its row's end to that row's newline and a row past the last to the end of
+//! the text.
+//!
+//! `LineIndex` records the offset each row of one text starts at and projects
+//! against those starts in UTF-16 code units. `utf16_pos_of_byte` finds an
+//! offset's row by binary search and counts the units of the characters between
+//! the row's start and the offset, two for a character beyond the basic plane;
+//! an offset inside a character is refused with `PosOfByteError`, and one at or
+//! past the end is the position after the last character. `byte_of_utf16_pos`
+//! inverts it on content-character starts and the first byte of a terminator,
+//! resolving a column between the two units of such a character to its first
+//! byte, a column past its row's end to the row's terminator, and a row past
+//! the last to the end of the text. The LF inside CRLF projects beyond the
+//! content column and maps back to the preceding CR. Its rows end at `\n`,
+//! `\r\n` and a lone `\r`, the three terminators the language server protocol
+//! fixes, where `pos_of_byte` ends a row at `\n` alone; `row_bytes` gives a
+//! row's bytes without its terminator, the extent a span crossing rows is split
+//! by.
+//!
+//! A character column is what an editor widget addresses; a UTF-16 column is
+//! what the language server protocol addresses by default and what every client
+//! accepts. Both projections live here so the language server reads its
+//! positions off the seam rather than re-deriving them. The alternatives were
+//! the language server converting character columns at its own boundary, which
+//! re-derives the projection in a second crate and walks each row twice, and
+//! one UTF-16 projection for every reader, which no editor widget addresses.
+//! The line index is built once per text because a language server projects
+//! every span of a document against the same text; `pos_of_byte` stays a
+//! per-query walk for a reader that projects one offset. The UTF-16 unit
+//! reverses if the language server negotiates UTF-8 or UTF-32 positions with a
+//! client that offers them, which adds that unit's column here.
+//!
+//! # Plain data built by name
+//!
+//! Spans, cards, transcript blocks, positions, document identities and reports
+//! are structs with public fields, built by naming each field. Two fields of
+//! one type — a range's endpoints aside — cannot be swapped by a positional
+//! call because there is none, and a reader matches on fields directly. A
+//! card's optional field is `Option`, the wire form of a value the producer did
+//! not supply: `null` in the image, never a guessed stand-in such as an
+//! enclosing range for an unlocated refusal. A mark's kind is the two-variant
+//! `MarkKind`, not a flag.
+//!
+//! The alternatives were positional constructors, which admit swapped arguments
+//! of one type, and private fields behind accessors, which add surface without
+//! an invariant to keep. The choice reverses for a type that gains an invariant
+//! between its fields, which then takes private fields and a checking
+//! constructor, as `ByteRange` has.
 
 use alloc::string::String;
 use alloc::vec;

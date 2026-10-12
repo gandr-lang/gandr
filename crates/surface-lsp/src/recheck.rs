@@ -10,6 +10,133 @@
 //! The diagnostics are read off the judgement, before the kernel is offered
 //! the revision; [`admit`] runs the admission afterwards and names a kernel
 //! disagreement, should it find one, as the diagnostic that replaces them.
+//!
+//! # Every synchronisation judges the document, publishes, then admits
+//!
+//! **Choice.** `didOpen` starts a session for the document and judges its text;
+//! `didChange` applies each content change to the held text in order — a ranged
+//! change replaces the bytes its two positions resolve to, an end before its
+//! start read as the start, and a change naming no range replaces the whole
+//! text — and judges the result in the same session. The session's form store
+//! takes up every top-level form the change left unchanged and molds the rest,
+//! and its judgement is the dispatcher's composition of the whole text, so the
+//! published diagnostics are what `gandr check` prints for it. Once the
+//! diagnostics are written, `serve` asks `Server::admit` to run the kernel
+//! admission the judgement left, so the client reads the reports before the
+//! kernel has re-derived the revision's acceptances. A disagreement the
+//! admission finds is published at the document's version in place of the
+//! reports, as one error at the origin naming the fault. A token request parses
+//! the whole text again.
+//!
+//! **The log.** Each synchronisation writes one line to the log `serve` is
+//! given — `<uri> at version <n>: <molded>/<forms> forms molded,
+//! <judged>/<items> items judged, <wall> ms, admitted in <wall> ms` — naming
+//! the forms the parse molded, the items the incremental checker judged, the
+//! recheck's wall from the judgement to the diagnostics, and the admission's
+//! wall after them; a document refused whole has nothing to admit, and its line
+//! ends at the recheck's wall. A line the log refuses is dropped; the protocol
+//! never depends on it. Over a generated document of two thousand forms, one
+//! edit molds one to eight forms and publishes what opening the edited text
+//! publishes.
+//!
+//! **Alternatives.** Full synchronisation alone ships the whole buffer per
+//! keystroke and leaves the session nothing a change names; it stays as the
+//! change that names no range. The timing line could go to `window/logMessage`,
+//! which a client shows in its own channel, at the cost of a notification per
+//! change on the protocol stream; the server's log is where an operator reads
+//! it without touching the protocol. The admission runs on the serving thread
+//! after the publication, so it delays the next frame's read but never the
+//! diagnostics. Running it on a worker that the next change cancels would take
+//! it off the next keystroke too, at the cost of a session shared across
+//! threads.
+//!
+//! **Reversal.** A client sending many small changes per notification, measured
+//! paying a line index per change, would batch them into one pass over the
+//! text; a client that reads only the protocol stream moves the timing line to
+//! `window/logMessage`; a measured wait of the next change on the admission
+//! moves the admission to a cancellable worker.
+//!
+//! # Diagnostics are the renderer's reports
+//!
+//! The one input is the dispatcher's step, read by `gandr-surface-diagnostics`'
+//! `entries` under the verb `check --goals`. A face that read refusals from a
+//! list kept beside the step could drop or duplicate one; reading the step
+//! means the editor receives exactly the reports the terminal prints, in the
+//! order it prints them.
+//!
+//! | Report | Range | Code | Severity | Message | Related information |
+//! | ------ | ----- | ---- | -------- | ------- | ------------------- |
+//! | a refusal | the primary span | the refusal's vocabulary name | error | the plain message, the primary label and the note | each context locus, with its label, then each nested reason, outermost first, with its `while` clause |
+//! | an unsettled declaration | the primary span | none | error | the message and the primary label | each context locus, with its label |
+//! | a goal | the primary span | none | information | the message and the primary label | none |
+//! | a shadowing warning | the shadowing name | `ShadowedBuiltin` | warning | the message and the primary label | none |
+//! | a report the renderer leaves unlocated | the document's origin | as its kind | as its kind | the message, and the note of a refusal | none |
+//! | a ledger line | the document's origin | none | error | the line | none |
+//! | a fault before composition | the document's origin | none | error | the fault | none |
+//!
+//! The message carries every line the terminal prints around the snippet: the
+//! report's message, then the primary locus's label on a line of its own, then
+//! a refused declaration's note after `note: `. The protocol gives a diagnostic
+//! one text field beside its range and related locations, so a label the
+//! underline carries in the terminal would otherwise never reach the editor.
+//! The alternative is the first line alone, which leaves an editor user without
+//! the one line that says what the span is. The choice reverses when the
+//! protocol gains a field for the primary locus's label.
+//!
+//! The `gandr.diagnostics.verbosity` setting chooses how much of each report
+//! the message carries, at the levels `gandr check --verbosity` names. Above
+//! `user`, the detail lines the terminal closes a snippet with follow the note,
+//! one `name: text` per line; at `json`, the message is the report's JSON
+//! image, the line `gandr check --verbosity json` prints. The range, the code,
+//! the severity and the related information do not change with the level. The
+//! server reads the setting from the `initialize` parameters'
+//! `initializationOptions.diagnostics.verbosity`, and from the `gandr` section
+//! of each `workspace/didChangeConfiguration`; a change to another level
+//! republishes every document the connection holds, at its held version, to
+//! that connection alone. A value that names no level changes nothing.
+//! Witnesses: `recheck::tests::one_refusal_is_published_at_every_verbosity`,
+//! `server::tests::a_configuration_change_republishes_at_its_verbosity`.
+//!
+//! The verbosity is a connection's, not the workspace's: each editor attached
+//! to one hub states its own. A synchronisation publishes at the verbosity of
+//! the connection whose open or change it follows, to every holder alike, so
+//! two editors at different levels on one document see the level of whichever
+//! changed it last. The alternative was a workspace-wide level, which would let
+//! one editor's setting rewrite another's diagnostics; and rendering every
+//! level for every holder, which would render each report four times for a case
+//! no client has asked for. The choice reverses when two holders at different
+//! levels are a use: each holder's publication is then rendered at its own
+//! level. The setting is pushed, not pulled with `workspace/configuration`: the
+//! server sends no request to the client, and a client that only answers pulls
+//! keeps the level it initialised with.
+//!
+//! Every diagnostic's `source` is `gandr`. The code is the spelling a corpus
+//! `refuses` attribute states and a snippet's first line carries, so a code
+//! copied from the editor is an expectation a test can state. The alternative
+//! was the renderer seam's `DiagnosticCode` registry; the pipeline maps no
+//! refusal onto a registry code yet, and mapping refusals onto it here would be
+//! a second decision made in a face. The choice reverses when the pipeline's
+//! session report maps its refusals onto registry codes: the diagnostic's code
+//! becomes that spelling.
+//!
+//! A goal is published at information severity because `check --goals` prints
+//! it as a report that does not fail the run. The alternative was the verb
+//! `check`, which withholds goals; an editor showing an open hole's goal beside
+//! it is the use the goal report exists for.
+//!
+//! A builtin the document shadows is published at warning severity: the
+//! source's binding wins under the default policy, the module checks, and
+//! `check` prints the report without failing the run. Its code is
+//! `ShadowedBuiltin`, the refusal the reject policy files for the same bytes.
+//! Witness: `recheck::tests::a_shadowed_builtin_is_published_as_a_warning`.
+//!
+//! The standing the renderer reads to choose what a pending source prints is
+//! the dispatcher's `Standing::of`, carried into the step by the session's
+//! submission: under the pending root, a source refused whole or carrying a
+//! refusal no expectation can state is pending, any other lowered; under the
+//! strict and fixture roots, a source refused whole is refused, any other
+//! settled or unsettled as its report's tally is. The L2 witness over every
+//! corpus source holds it to the walk's own reports.
 
 use core::fmt;
 use core::time::Duration;

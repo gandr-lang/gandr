@@ -9,6 +9,60 @@
 //! program; at one thread it is the checker's [`Serial`] fork and no pool is
 //! built. Every program of one invocation is checked through one memo, in
 //! order, so a later program drafts from the templates an earlier one left.
+//!
+//! # The stage verb checks staged programs on a stealing pool
+//!
+//! `ProgramSpec` reads `pow:LO..HI`, the power iterator at each exponent from
+//! `LO` through `HI` with its input left free under a quoted lambda, and
+//! `double:LO..HI`, the double-product iterator at each exponent and the inner
+//! inputs two and three. `Staging::run` builds each program into an arena of
+//! its own and checks it with `gandr-core-checker`'s `staging::check`:
+//! normalization by source, one merge, the harvest, and the readmissions beside
+//! the family admissions. Every program of a run goes through one `Memo`, in
+//! order, so a later program drafts from the templates an earlier one left. A
+//! `Staged` line counts the certificates readmitted and the families by
+//! admission class. `StageRun::verdict` is `Faulted` when a program was not
+//! built or its check stopped, `Refused` when a certificate was not readmitted,
+//! and `Readmitted` otherwise, so a fault outranks a refusal.
+//!
+//! **The digest is what the width must not change.** `StageRun::digest` folds
+//! each program's spelling, merged arena, certificates, readmissions and
+//! families, and each admission's class and schema. It folds no time, and no
+//! admission's origin or drafting, which the memo's controller decides from
+//! measured time. Every width digests alike: the stage tests compare one, three
+//! and the host's width, and the driver's suite compares both streams and the
+//! exit. The digest is a hash of each value's structural rendering and holds on
+//! one build; it is not a format.
+//!
+//! **`rayon`, built once per run.** The checker names no thread: it forks
+//! through `gandr_core_checker::fork::Fork`, and the dispatcher's fork is a
+//! `rayon` pool of the run's width, built once per run and entered once per
+//! program. Each forked stage spawns one task per worker, at most one per item;
+//! the tasks take items from one shared cursor, and each makes its worker state
+//! — an arena snapshot, a drafter — on its first item, so a stage clones no
+//! more snapshots than it has busy workers. The readmissions and the family
+//! admissions are the two halves of one `rayon::join`, and each half forks per
+//! item inside it. At one thread no pool is built, and the checker's serial
+//! fork is the reference every width is tested against.
+//!
+//! The check forks below the source and nests a per-item fork inside each half
+//! of a join, which is the walk's recorded reversal for `rayon`. The
+//! alternatives were these:
+//!
+//! - _`std::thread::scope` and a cursor per stage, the walk's pool._ A per-item
+//!   fork inside each half of a join starts a second set of threads beside the
+//!   first, so the halves either oversubscribe the cores or run one after the
+//!   other. Reversal: a check whose stages do not nest.
+//! - _[`chili`](https://crates.io/crates/chili), a heartbeat-scheduled `join`._
+//!   It offers `join` without a scope for the per-item fork, and one maintainer
+//!   carries it. Reversal: a scope and a release history in it, and a measured
+//!   gain on this verb.
+//!
+//! `rayon` is the ecosystem's standard data-parallel pool, maintained by many
+//! contributors, with default features off; it brings `rayon-core` and the
+//! `crossbeam` deque and epoch crates. The choice reverses on an advisory
+//! against `rayon` or `rayon-core` that no release fixes, an unmaintained mark,
+//! or a measured loss against scoped threads on this verb.
 
 use core::fmt;
 use core::fmt::Write as _;

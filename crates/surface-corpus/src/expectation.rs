@@ -10,11 +10,45 @@
 //! one. A payload outside its schema's range states no verdict either, and
 //! is reported with the bytes it covers.
 //!
+//! A declared name carries at most one expectation. Two on one name — `checks`
+//! beside `owes`, or one on the signature and another on the definition — state
+//! no verdict: `ExpectationFault::ConflictingExpectations` names the first two,
+//! and the name is unsettled even when one of them would hold. A form that
+//! writes both halves, a signed function tail, is one form with one set of
+//! attributes, read once. A payload outside its schema's range — a negative
+//! `owes`, or one past every ledger size — likewise states nothing, with the
+//! bytes it covers. The lowering already refuses one attribute written twice;
+//! this crate refuses two different expectations. The alternative was a
+//! precedence among schemas, which makes a contradiction pass silently on
+//! whichever side wins. The choice reverses if a schema is added that refines
+//! another rather than contradicting it.
+//!
 //! # A run outcome refines *checks*
 //!
 //! `runs("…")` states that the declaration checks, owing nothing, and that
 //! running it produces the outcome the payload spells. It refines `checks`
 //! rather than contradicting it, so the strict root admits it.
+//!
+//! `runs("spelling")` states that the declaration checks, owing nothing, and
+//! that running it comes to `spelling`: the one spelling `gandr run` prints,
+//! compared byte for byte. A declaration the checker accepted is run through
+//! the `Runner` the caller passes to `settle`, and its outcome is _runs to_
+//! what the runner spelled; one the checker did not accept keeps its produced
+//! verdict — a refusal, or an obligation — so a `runs` stated over it is
+//! unsettled against that verdict. Nothing is run for a declaration that states
+//! no run outcome. The runner is a trait so this crate stays free of the
+//! machine: the dispatcher's program implements it, and the suite here spells
+//! runs by position.
+//!
+//! The alternative was outcome snapshots: one sidecar file per source,
+//! recording each item's outcome under a digest of the source's bytes,
+//! rewritten by a generator behind an environment switch. The expectation here
+//! rides the declaration it is about, as `refuses` does: there is no digest to
+//! refresh and no generator to run, an outcome changed by a change to the
+//! language shows in the diff of the source it changes, and one name carries
+//! one expectation. The choice reverses if an outcome outgrows one spelled line
+//! — a structured value compared up to sharing, say — when a file of outcomes
+//! beside the source would return with its own comparison.
 //!
 //! # Under the strict root
 //!
@@ -24,6 +58,24 @@
 //! verdict. A declaration carrying neither is read as under the fixture root,
 //! where the two schemas it can carry — `checks` and `runs` — both state that
 //! it checks, owing nothing.
+//!
+//! Under the strict root an `owes` or `refuses` attribute is itself a refusal:
+//! `CorpusRefusal::ExpectationOutsideFixtureRoot`, classed `MalformedSource`,
+//! naming the schema and the bytes it covers. The first such attribute in
+//! reading order — the signature's attributes, then the definition's — stands
+//! in place of whatever the declaration produced, and the declaration still
+//! states _checks, owing 0_, so it is unsettled. Naming the guard's own refusal
+//! in a `refuses` payload therefore settles nothing under the strict root: the
+//! stated verdict there is never read from an attribute. The verdict's
+//! obligations are kept, so the ledger size is unchanged by the guard.
+//!
+//! The refusal is owned here because this crate sits below the driver and the
+//! dispatcher and is the first that knows what a root is. The alternatives were
+//! reading strict-root expectations like fixture ones, which lets a regression
+//! migrate into the gate by describing itself as expected, and ignoring them,
+//! which leaves a misleading annotation in a gating source. The choice reverses
+//! if the strict root grows an expectation that asserts something stricter than
+//! _checks, owing 0_; that schema is admitted beside `checks`, as `runs` is.
 
 use alloc::string::String;
 use alloc::vec::Vec;

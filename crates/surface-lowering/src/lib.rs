@@ -139,7 +139,56 @@
 //! ```
 //!
 //! Each of the seven decisions, with the alternative it was chosen over and
-//! what would reverse it, is in this crate's `README.md`.
+//! what would reverse it, is in the module that owns it.
+//!
+//! # References
+//!
+//! - Paul Blain Levy. "Call-by-Push-Value: A Subsuming Paradigm." _Typed Lambda
+//!   Calculi and Applications (TLCA 1999)_, LNCS 1581, Springer (1999). <https://doi.org/10.1007/3-540-48959-2_17>
+//!   — the value and computation sorts, thunks and returners (`U` and `F`), and
+//!   the arrow as a computation type, which fix every sort a position demands.
+//! - N. G. de Bruijn. "Lambda calculus notation with nameless dummies."
+//!   _Indagationes Mathematicae_ 75(5) (1972).
+//!   <https://doi.org/10.1016/1385-7258(72)90034-0> — the binder indices a
+//!   lambda's parameter lowers to.
+//! - Thierry Coquand and Christine Paulin. "Inductively defined types."
+//!   _COLOG-88_, LNCS 417, Springer (1990), 50–66.
+//!   <https://doi.org/10.1007/3-540-52335-9_47> — the uniform parameters a
+//!   recursive function's leading parameters are, passed unchanged by every
+//!   recursive call.
+//! - Eduardo Giménez. "Structural recursive definitions in type theory." _ICALP
+//!   1998_, LNCS 1443, Springer (1998). <https://doi.org/10.1007/BFb0055070> —
+//!   the guarded fixpoint `fix x. λy. case y` a recursive function lowers to,
+//!   every recursive call at a field of the scrutinised constructor.
+//! - Conor `McBride`. "Elimination with a Motive." _Types for Proofs and Programs
+//!   (TYPES 2000)_, LNCS 2277, Springer (2002).
+//!   <https://doi.org/10.1007/3-540-45842-5_13> — the alternative not taken:
+//!   later parameters pushed into the motive, which would let a recursive call
+//!   vary them.
+//! - Pierre-Marie Pédrot and Nicolas Tabareau. "The Fire Triangle: How to Mix
+//!   Substitution, Dependent Elimination, and Effects." _Proceedings of the ACM
+//!   on Programming Languages_ 4 (POPL), 2020. `doi:10.1145/3371126` — ∂CBPV's
+//!   universe of value types and universe of computation types, a type's code
+//!   as a value, and dependency on values only, which fix what a quote, a
+//!   decode and a dependent arrow lower to.
+//! - Thorsten Altenkirch, James Chapman and Tarmo Uustalu. "Monads Need Not Be
+//!   Endofunctors." _Logical Methods in Computer Science_ 11(1) (2015).
+//!   <https://doi.org/10.2168/LMCS-11(1:3)2015> — the relative monad, whose raw
+//!   signature is the type operator `static_operators` declares in both
+//!   spellings.
+//! - David Moon, Andrew Blinn, Thomas J. Porter and Cyrus Omar. "Syntactic
+//!   Completions with Material Obligations." _Proceedings of the ACM on
+//!   Programming Languages_ 9, OOPSLA2 (2025).
+//!   <https://doi.org/10.1145/3763182>, arXiv:2508.16848 — molds, grout and the
+//!   minted closing tiles a repaired tree carries, which the lowering reads and
+//!   refuses.
+//! - V. I. Levenshtein. "Binary codes capable of correcting deletions,
+//!   insertions, and reversals." _Soviet Physics Doklady_ 10(8) (1966) — the
+//!   edit distance that bounds an unknown attribute's suggestion.
+//! - `RedPRL`. _yuujinchou_ 5.2.0. <https://github.com/RedPRL/yuujinchou> — the
+//!   namespace design: tries of hierarchical names, the modifier language, the
+//!   not-found, shadow and hook events a handler settles, and scopes with
+//!   sections.
 
 #![no_std]
 

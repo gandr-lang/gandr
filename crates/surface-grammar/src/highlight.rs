@@ -8,6 +8,102 @@
 //! role per mold, and [`RoleTable::highlight`] reads a tree's tiles through
 //! the table. Layout carries no mold: a comment and a shebang take their role
 //! from the bytes the labeler cut them by, and whitespace takes no span.
+//!
+//! # Highlighter
+//!
+//! `RoleTable::build` reads one `HlRole` per mold off a grammar, and
+//! `RoleTable::highlight` reads a molded tree's tiles through it into `HlSpan`s
+//! over `ByteRange`, the renderer seam's vocabulary. A mold is a tile
+//! occurrence's zipper into its form, so a role is a function of the mold
+//! alone: its label, the named kind of its rule, the symbols its form places
+//! beside it, and the bracket of its form it stands inside. Every role is
+//! decided once, at build, and a span costs one table read. A tree molded under
+//! another grammar is refused with both fingerprints, and a tile past the table
+//! with its id; like `Pbg::named_kind`, the table reads rule provenance the
+//! fingerprint does not fold, so it is read under the grammar it was built
+//! from.
+//!
+//! The classification, in order:
+//!
+//! - The comment and shebang rules' tiles are `Comment` and `Directive`; every
+//!   tile of a shell list separator or a redirection is `Operator`.
+//! - Literals, string pieces, escapes, constructors, type names, type
+//!   variables, hole names, shell variables, environment assignments and shell
+//!   words take their class by label; keywords, operators and primitive types
+//!   take theirs by spelling.
+//! - A label several rules share is told apart by its rule or its neighbours:
+//!   `?` is a `Hole`, the gradual type or a receive; `!` is part of `fork!` and
+//!   an operator elsewhere; `+` and `-` are keywords, the sort literals, inside
+//!   a universe's bracket and operators elsewhere; `_` is a parameter inside a
+//!   parenthesised list and a variable elsewhere.
+//! - An `identifier` takes the role of its place: a definition after `def`,
+//!   `rec`, `op`, `oper`, `rule` or `data`; a binding after `as`, `for`,
+//!   `leta`, `unpack`, `module`, `node` or `feed`; a parameter inside a
+//!   parenthesised list or an implicit `@[…]` binder; a member after `.`,
+//!   inside a record `#{…}` or a block of fields; a label for a world or a
+//!   `select`'s label; a call for the operation a circuit node applies; a
+//!   number for a grade in `+U[…]` and `thunk[…]`; an attribute or decoration
+//!   name is `Other`.
+//! - Every other tile — a bracket, a separator, a delimiter — is `Other`.
+//!
+//! Layout has no mold: a layout node opening with `//` or `/*` is a `Comment`,
+//! one opening with `#!` a `Directive`, and whitespace, grout and a minted
+//! close take no span. Every tile is one span, and adjacent spans of one role
+//! stay two. The enclosing bracket is read by one walk over the rules' forms in
+//! mold-id order, the order the mold table numbers them, with the open brackets
+//! of the current form on a stack: an opener pushes, a closer pops, and each
+//! branch of an alternative starts from the brackets open before it. The walk
+//! is checked against the mold table occurrence by occurrence.
+//!
+//! Spans are sorted by range, without clamping or merging. Disjoint input tiles
+//! yield disjoint spans; a tree assembled with overlapping or duplicate tile
+//! ranges retains them. `highlight_preserves_overlapping_tile_spans` in the
+//! `tests/highlight.rs` integration tests witnesses the projection's
+//! multiplicity, overlap and ordering. The highlighter classifies the admitted
+//! tree; it does not validate a source partition.
+//!
+//! Every mold of the built-in surface has a role. Four places the grammar does
+//! not tell apart take a coarse role, which a semantic overlay refines: a
+//! definition's name is a `FunctionDef` whether it names a function or a value;
+//! the head of an application `f(x)` is an expression atom, so a `Variable`; a
+//! shell command's head and its arguments are one `shell_word` class, so all
+//! `Path`; and an entry's key is the atom its hole holds — a shorthand key in
+//! `#{ x = 1, … }` a `Variable`, a type entry's key in `#{ x : A, … }` or `+{
+//! ok : A, … }` a `TypeVariable` — where a leading-dot label is a `Member`.
+//!
+//! - Alternatives: a table keyed by a token's lexeme class, which cannot tell a
+//!   definition's name from a reference, or `?` the hole from `?` the receive,
+//!   since each pair is one label; tree-sitter highlight queries over the
+//!   surface's tree-sitter grammar, which keep a second parser and its query
+//!   files in step with this grammar by hand and cannot read the molded tree
+//!   the pipeline holds.
+//! - Reversal: a role that depends on more than the mold — a name's resolved
+//!   kind, a binding's uses — belongs to a semantic overlay over these spans;
+//!   the classification leaves the grammar when the grammar stops determining
+//!   it, as user-declared operators would make an operator's spelling a
+//!   run-time fact. Punctuation is `Other`; a renderer that styles it apart
+//!   adds a role to the seam.
+//!
+//! Consumers: the language server's semantic tokens, the REPL's echoed input
+//! and the terminal renderer's paint read these spans, each mapping a role to
+//! its own style.
+//!
+//! The role golden under `tests/highlight/` mirrors the corpus: one `.roles`
+//! file per source, both roots and the pending set, with a line per span —
+//! `start..end Role "text"` — and `unexercised.roles`, which names every mold
+//! no corpus tile exercises with its role, rule and neighbours, so every mold's
+//! role stands in a reviewed line. A source added to the corpus, moved between
+//! roots or removed moves its golden with it: `UPDATE_EXPECT=1 cargo nextest
+//! run -p gandr-surface-grammar` rewrites the goldens and deletes those whose
+//! source is gone, and without it a missing, stale or orphaned golden fails the
+//! suite.
+//!
+//! - Choice: `expect-test` compares and rewrites the goldens, a file compared
+//!   whole with a diff on mismatch.
+//! - Alternatives: `insta`, whose review tool and snapshot metadata this suite
+//!   does not need and whose dependency tree is several times larger; a
+//!   hand-written comparison, which reports no diff.
+//! - Reversal: a golden that needs redaction or per-snapshot metadata.
 
 use alloc::vec;
 use alloc::vec::Vec;

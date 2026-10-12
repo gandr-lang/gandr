@@ -30,6 +30,67 @@
 //! declaration that refers, directly or through others, to one that was
 //! refused or did not focus never reaches it: the reference is found by
 //! walking the program's references before any command runs.
+//!
+//! # The run stage follows the check
+//!
+//! `judge` builds the `Program` from the checker's verdicts, before the kernel
+//! is offered anything: nothing the program holds is read from the readmission.
+//! Each declaration the checker accepted has its body focused into the command
+//! IL by `gandr-core-sequent` and is held as a transparent definition; a
+//! declaration owed its body is held opaque, and a refused one, and a code — a
+//! type, of which the machine carries no image — are held as the reason they do
+//! not run. `Program::evaluate` mints `return c` for the declaration at `c`,
+//! runs it on a fresh L machine under a budget of 2²⁴ steps, forces the
+//! terminal when it is a thunk, so a suspended computation runs and a function
+//! answers `<fun>`, and reads the terminal back into the core. Nothing runs
+//! that no caller asked for: the settle comparison runs the declarations that
+//! state a `runs` outcome, the session runs what the user entered, and `gandr
+//! run` runs one declaration. The alternative was a run pipeline of its own
+//! that composed the source again, which lowers twice and could judge
+//! differently from the `check` it follows; the choice reverses if building the
+//! program shows on the check path's measurements, when it would move behind a
+//! request.
+//!
+//! | What the run came to | `RunStatus` | `gandr run` exits |
+//! | -------------------- | ----------- | ----------------- |
+//! | `Evaluation::Value`: a value, spelled | `Value` | `0` |
+//! | `Evaluation::Blamed`: the run reached a declaration owed its body — returned it outside any suspension, forced, applied or matched it | `Failed` | `1` |
+//! | `Evaluation::Stuck`, `Evaluation::Unfinished`: any other stop short of a value; the budget spent, the store refusing, a terminal with no reading | `Failed` | `1` |
+//! | `Evaluation::Unrunnable`: the declaration, or one it refers to, was refused or is a code | `Unreached` | `2` |
+//! | `Ran::Refused`, `Ran::NoProgram`: a declaration of the source was refused, or it declares no name | `Unreached` | `2` |
+//!
+//! The three statuses are the script contract: `0` for a value, `1` for blame
+//! or a stuck configuration, `2` for a source that never reached the machine. A
+//! source holding any refusal — the lowering's, the checker's or its root's —
+//! does not run even when the target never refers to the refused declaration; a
+//! goal is no refusal, and a run that reaches one is blamed on it. Unrunnable
+//! references are found by walking the program's references before any command
+//! runs, so a run never starts that would meet a declaration the machine cannot
+//! carry.
+//!
+//! **The run target is the last name declared.** The fragment has no top-level
+//! expression, so the target is the declaration at the highest admission
+//! position, and a source declaring no name is `Ran::NoProgram`. The
+//! alternative, a distinguished name such as `main`, is a convention the
+//! language does not state. The choice reverses when the modules linker lowers
+//! a final unnamed expression: that expression becomes the target.
+//!
+//! # Native universe-path boundaries
+//!
+//! Programmatic native `Path_U` declarations use ordinary checker export and
+//! kernel readmission; their portable evidence remains part of the artifact.
+//! The command IL does not execute native paths or transport: focusing reports
+//! `UniverseTransport` rather than treating a certificate as a runtime closure.
+//! The value renderer names a native path `<path>` and leaves unreduced
+//! transport under `<computation>`, without executing evidence while printing
+//! it. Dependency discovery traverses native classifiers, maps and product
+//! components.
+//!
+//! **Choice.** Keep admission, evaluation and presentation as separate
+//! observations. A path accepted by the kernel is not thereby executable in
+//! every downstream machine. **Reversal.** The run stage can acquire a native
+//! path image only with corresponding focusing, evaluation and readback rules;
+//! no parser syntax or coercion from `Flow_U` is implied here.
 
 use core::fmt;
 

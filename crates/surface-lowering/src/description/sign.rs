@@ -1,4 +1,49 @@
 //! Ruled signature members and their literal circuit bodies.
+//!
+//! # Signature blocks
+//!
+//! A `sign` block is a description judgment, not an ordinary native value
+//! family: it has no family classifier and creates no placeholder core value.
+//! It retains declared sorts and their index telescopes, operation boundaries
+//! with every output port, written faces and circuit rules. An operation
+//! `f : (m : N, n : N) --> (q : N, r : N)` is one monomial per output, as a
+//! `data` member's is (Spivak, Garner and Fairbanks, _Functorial Aggregation_,
+//! arXiv:2111.10968); a port name written twice on one boundary is two ports
+//! rather than one wire, and is refused by name. A rule member whose first side
+//! is a term is the face `rule name : lhs ==> rhs` it writes; one whose first
+//! side is a port group is a circuit rule. A rewrite port is instantiated at
+//! its written wiring, a frame binds one port per output of its head, and a
+//! body rooted at several outputs derives its sphere root by root, a many-out
+//! frame's application standing for its whole result tuple when its ports
+//! leave together in order. A cycle or a derivation ceiling refuses that
+//! derivation rather than fabricating a boundary. A feed back-edge is a wheel
+//! refusal, a bodiless cell between composites of cells a higher-cell refusal,
+//! an operation filler, in a block or as a top-level `oper`, a filler refusal,
+//! and the reversible glyphs `<->` and `<=>` are reserved; each is a fragment
+//! boundary rather than malformed source. Witnesses:
+//! `description::sign::tests::a_ruled_sign_block_lowers_its_members_into_a_description`,
+//! `description::sign::tests::a_many_out_frame_binds_every_port_and_roots_the_body`,
+//! `description::sign::tests::the_cat_shape_laws_are_written_faces`,
+//! `description::sign::tests::a_port_name_on_both_sides_is_two_ports`,
+//! `description::sign::tests::a_feed_statement_declines_naming_the_wheel_obligation`,
+//! `description::sign::tests::sign_declines_and_malformed_wiring_are_refused_apart`.
+//!
+//! **Choice.** A `sign` block or a top-level `oper` declares no core constant,
+//! so one that refuses nothing is no declaration. Each refusal raised inside it
+//! is a held declaration at its member's span whose signature half is the
+//! block, so the attribute blocks written before the block state it,
+//! `@[ refuses("OutOfFragment") ] sign …`, and every refusal of one block reads
+//! that expectation; its name enters no namespace. The alternatives were a
+//! declaration per block with an outcome of its own, which every consumer of a
+//! declaration outcome would have to learn before a block has anything to
+//! check, and refusals with no half, which no expectation can state and which
+//! kept every refused block's source pending. A decoration on a block that
+//! refuses nothing decorates no declaration and refuses the source as a stray
+//! block. The choice reverses when a block lowers to the signature its models
+//! are checked against: it then takes its slot whether or not a member refuses.
+//! Witnesses:
+//! `description::sign::tests::a_refused_sign_block_states_its_refusal`,
+//! `description::sign::tests::a_top_level_operation_declines_its_filler_by_name`.
 
 use alloc::collections::BTreeMap;
 use alloc::format;

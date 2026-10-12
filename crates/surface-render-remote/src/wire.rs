@@ -21,6 +21,30 @@
 //! The message set is the projection of one binary session,
 //! `?Attach . !Hello . μX. (!Frame . X & ?Resync . X & ?Detach . end)`, so a
 //! typed endpoint can carry the same frames as its messages.
+//!
+//! # The frame
+//!
+//! A `RenderFrame` is a `FrameBody` under a `FrameScope`. `Frame` and `Resync`
+//! are document-scoped: they carry the document's URI and the editor's version
+//! of it, the version the report describes, and a renderer paints a report only
+//! while that version matches the buffer it shows, asking for a resync
+//! otherwise, so a stale report is dropped rather than painted. `Hello`, the
+//! documents a server tracks, and `Detach` are connection-scoped. The four
+//! constructors are the only way to build a frame, so the scope always suits
+//! the body.
+//!
+//! The wire image is `{"schema_version", "doc_uri", "doc_version", "body"}`,
+//! the body adjacently tagged by `kind` and `data`, the two routing keys `null`
+//! for a connection-scoped frame. The decode refuses another schema version,
+//! one routing key without the other, and routing that disagrees with the body,
+//! each with a message naming the broken rule. `WIRE_SCHEMA_VERSION` is `1`; it
+//! moves when a wire field is renamed, removed or changes meaning, and an added
+//! field leaves it.
+//!
+//! The alternative was two optional routing fields on the frame itself, which
+//! admits a URI without a version in memory and leaves the check to every
+//! reader. The choice reverses if a body ever concerns several documents at
+//! once, which would replace the scope's single document with a set.
 
 use alloc::string::String;
 use alloc::vec::Vec;

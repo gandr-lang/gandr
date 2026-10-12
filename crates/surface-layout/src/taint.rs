@@ -3,6 +3,20 @@
 //! Taint is a semantic state, not an error or truncation marker. It preserves
 //! the exact context that fell outside the computation theorem and keeps the
 //! resolver able to produce a complete plan.
+//!
+//! # Width taint
+//!
+//! A state whose column or indentation exceeds the computation width is outside
+//! the optimality theorem. Resolution does not enter it: it answers a deferred
+//! promise that carries the state's exact node, column and indentation, and
+//! forces that promise only when no in-bound measure competes. A merge prefers
+//! any frontier over a promise, and of two promises keeps the left one
+//! unforced, so a document too wide to lay out falls back to its vertical form
+//! (`taint::tests::merge_frontier_wins_over_ready_taint`,
+//! `algebra::tests::render_tainted_root_uses_complete_left_biased_output`). A
+//! tainted result is complete output; `Rendered::width_tainted` reports the
+//! taint and never a truncation
+//! (`algebra::tests::tainted_contexts_preserve_taint_and_output`).
 
 use alloc::vec::Vec;
 

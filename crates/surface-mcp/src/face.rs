@@ -1,6 +1,23 @@
 //! The hub's second face: a connection speaking newline-delimited JSON,
 //! served over the workspace the editors' connections share; and the relay
 //! that carries a client's standard streams to it.
+//!
+//! # One socket, two faces
+//!
+//! **Choice.** The model's server is a face of the engine hub, on the hub's own
+//! socket. The hub reads a connection's first byte: a language-server frame
+//! begins with its `Content-Length` header, a model's message with `{`, and the
+//! hub hands the second kind to the face `run_hub` was given. The face is a
+//! parameter, so the language server's crate never depends on this one; the
+//! driver wires `serve` into the hub it runs. `gandr mcp` reaches the hub as
+//! `gandr lsp` does, starting it when none answers.
+//!
+//! **Alternatives.** A second socket per workspace would double the discovery
+//! and the stale-socket probe for one more listener. A separate model server
+//! process would hold a second workspace that the editors' edits never reach.
+//!
+//! **Reversal.** A third protocol whose first byte cannot be told from these
+//! two moves the hub to a socket per protocol.
 
 use alloc::string::String;
 use std::io;

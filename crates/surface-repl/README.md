@@ -3,26 +3,12 @@
 The read-evaluate loop over the interactive session: the completeness gate, the session loop and its meta-commands, the transcript encoder, and the batch and line-editor faces `gandr repl` runs.
 
 <!-- toc -->
-
 - [Synopsis](#synopsis)
-- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
-- [A verb of the driver](#a-verb-of-the-driver)
-- [The line editor](#the-line-editor)
-- [The loop reads declarations](#the-loop-reads-declarations)
-- [A chunk is kept only when nothing in it was refused](#a-chunk-is-kept-only-when-nothing-in-it-was-refused)
-- [Completeness is the parser's](#completeness-is-the-parsers)
-- [Types are spelled from the checkpoints](#types-are-spelled-from-the-checkpoints)
-- [Native universe-path presentation](#native-universe-path-presentation)
-- [Repairs are cards](#repairs-are-cards)
-- [The transcript](#the-transcript)
-- [A checked declaration prints what it runs to](#a-checked-declaration-prints-what-it-runs-to)
-- [Specification evidence](#specification-evidence)
-- [Deferred behavioral floor](#deferred-behavioral-floor)
+- [Where the detail lives](#where-the-detail-lives)
 - [License](#license)
-
 <!-- tocstop -->
 
 ## Synopsis
@@ -32,11 +18,6 @@ The read-evaluate loop over the interactive session: the completeness gate, the 
 **Why.** The session judges revisions; a person types lines. The loop is what stands between: it decides when a buffer is worth submitting, owns the text the session judges, decides what of a revision is new, and says it in the vocabulary every renderer reads, so the line editor, the terminal face `gandr tui` and a pipe show the same lines.
 
 **How.** The gate molds the buffer through the parser's push machine and submits when nothing is expected. The loop keeps the accepted text — every chunk kept so far — and submits it with the new chunk after it; the session runs the dispatcher's composition, so its verdicts are `gandr check --goals`'s for that text under the strict root. The encoder reads the step's reports through `gandr-surface-diagnostics`, the settle report's declarations for what changed, and the incremental checker's checkpoints for each declaration's type, which `spell` lays out through the presentation printer, `gandr-surface-pretty`. The chunk joins the accepted text only when nothing was refused.
-
-## References
-
-- David Moon, Andrew Blinn, Thomas J. Porter and Cyrus Omar. "Syntactic Completions with Material Obligations." _Proceedings of the ACM on Programming Languages_ 9, OOPSLA2 (2025). <https://doi.org/10.1145/3763182>, arXiv:2508.16848 — the expected set the gate reads, and the obligation classes a repair card names.
-- The rustyline contributors. `rustyline` 18.0.1. <https://docs.rs/rustyline/18.0.1/rustyline/> — the line editor of the terminal face.
 
 ## Provided features
 
@@ -69,94 +50,21 @@ answer : Integer
 
 The crate's tests run with `cargo nextest run -p gandr-surface-repl`.
 
-## A verb of the driver
+## Where the detail lives
 
-The loop is reached as `gandr repl`, beside `check`, `test`, `lsp` and `tui`; bare `gandr` keeps its status report. Making bare `gandr` the loop or treating a file path as a verb would change the driver specification. The choice reverses if bare `gandr` is designated the loop.
+Mechanism, decisions with their alternatives and reversals, and witnesses live in the rustdoc beside the code:
 
-## The line editor
+| Topic | Module |
+| ----- | ------ |
+| A verb of the driver, kept chunks, the transcript, specification evidence, references | [`src/lib.rs`](src/lib.rs) |
+| The line editor | [`interactive`](src/interactive.rs) |
+| The loop reads declarations | [`session_loop`](src/session_loop.rs) |
+| Completeness is the parser's | [`completeness`](src/completeness.rs) |
+| Types spelled from the checkpoints, native universe-path presentation | [`render`](src/render.rs) |
+| Repairs are cards | [`remote`](src/remote.rs) |
+| A checked declaration prints what it runs to | [`encode`](src/encode.rs) |
 
-The terminal face edits lines with `rustyline` 18.0.1, defaults off. Off are `with-file-history`, which writes history in plain text, `with-dirs`, which only locates that file, and `custom-bindings`, a keymap the face does not use; history lives in memory for the run. On this workspace the editor adds six crates to a build — itself, `nix`, `cfg_aliases`, `log`, `unicode-segmentation` and `utf8parse` — beside `libc`, `bitflags`, `cfg-if`, `memchr` and `unicode-width`, which the build already carries, and compiles in about a second.
-
-The alternative, `reedline`, supplies menus, multiline editing and a painter this face does not use. A raw-mode loop over `crossterm` would hand-write line editing that `rustyline` provides. The choice reverses on a high-risk advisory or an unmaintained mark against `rustyline`, or when the face needs completion menus or whole-buffer editing.
-
-The face is always built: `gandr repl` on a terminal needs it, so a feature gate would only make the default binary unable to do what its verb says.
-
-## The loop reads declarations
-
-The fragment's source is declarations. A bare expression such as `42` is refused whole by the lowering, and the loop shows that refusal as the diagnostics renderer writes it; `:type <expression>` answers an expression's type by submitting the probe `def it = <expression> ;` — under the first of `it`, `it1`, … that no accepted declaration carries — and keeping nothing. A goal is a declaration owing its body: a signature with no definition, answered with a goal line `name : T`; a later definition of the same name settles it, and its line becomes a type line. A hole inside a body is outside the fragment, so goals over sub-term holes arrive with the hole surface.
-
-## A chunk is kept only when nothing in it was refused
-
-The session judges whole revisions and keeps no text, so the loop owns the accepted text and submits it with each new chunk after it: a later line sees every declaration kept before it. A chunk is kept when its revision drew no refusal — no refusal, no unsettled declaration, no refusal of the revision as a whole — and is otherwise dropped, the accepted text and the declarations' standings unchanged. The encoder reports a declaration when the chunk introduced it, or when its outcome differs from the accepted revision's, which is how a definition settling an earlier signature is seen.
-
-Keeping every chunk would repeat a refused declaration at each later submission or require age filtering. Dropping it keeps accepted text clean. Reports count lines and columns from the first accepted line: `:load` submits one chunk whose reports address the session, not the file. The choice reverses when lowering accepts earlier declarations as a seed, allowing reports to address each chunk alone.
-
-## Completeness is the parser's
-
-A buffer is submitted when the parser's push machine, having molded its tokens, expects nothing more. Complete is not clean: a repaired buffer can be complete and is submitted with its diagnostics. Empty fresh input is ignored. Offered text may contain pasted line breaks, which are preserved; meta-commands dispatch only without a pending buffer. EOF submits a pending buffer regardless of completeness. An interrupt discards pending text without forgetting accepted declarations.
-
-## Types are spelled from the checkpoints
-
-A type line names its type through the session's `type_of` at the transcript's width, the one spelling every transcript line uses: the incremental checker's checkpoint holds a checked or owed item's signature, and a synthesised item's type, as content tables, and `spell` lays a table out through the presentation printer's `ContentSource`, `gandr-surface-pretty`'s reading of a content table, in its one spelling per former — `Integer`, `String`, `Unit`, `+U C`, `-F A`, `A -> C` right associative, `(x : A) -> C` with generated binder names, `Type`, `Type[-]`, `Type[+, l]`, a decode as the code it reads, a constant or an abstract type by its item key. A node the surface cannot write — the numeric atom, a lift, an unoccupied position, an unresolved node, a term — is written `?`, and the presentation is marked approximate, by the nodes it met rather than by the characters of a name. The printer keeps its own stack and a visit budget, so a malformed table spells `?` rather than looping. Over the strict corpus's `values`, `functions` and `classifier/universes` sources every signature spells exactly as its source wrote it. The table's reading and the checkpoint lookup live in the printer and the session rather than here so the language server's hover spells a type in the same words.
-
-Nonempty effect rows, Stack and With classifiers have diagnostic notation marked approximate, not parseable source. Stack literals display as opaque stack values rather than fabricated frames; computation forms remain computations. Empty effect rows retain the ordinary pure-returner spelling.
-
-The page is 100 columns, fixed rather than read off a terminal, so a transcript stays a function of its input. It bounds the type, not the `name :` before it, and a type wider than the page breaks onto continuation lines, which `rows` lays out as later rows of the type line. The choice reverses when a face lays types out at its own width: the terminal face once it reads the terminal's.
-
-Types come from checker checkpoints rather than surface-built stand-ins or `Debug` images. The shared printer handles universes and dependent arrows as well as ordinary arrows and polarity bridges.
-
-## Native universe-path presentation
-
-The checkpoint adapter passes native `Path_U` endpoints, reflexivity codes, forward/backward maps and product paths to `surface-pretty` in constructor order. Its [native notation](../surface-pretty/README.md#native-universe-paths) is approximate, not a new expression the REPL can parse. A transport computation is not presented as a value or a certificate verdict.
-
-**Choice.** Reuse the same source interface and fidelity result as ordinary core presentation, rather than render stored evidence with `Debug` or run it while printing. **Reversal.** Parsed path syntax and a certified run-stage image are prerequisites for an interactive introduction or elimination; merely storing a classifier is not enough.
-
-## Repairs are cards
-
-The session carries parse repairs beside its step. The encoder selects obligations starting at or after the chunk boundary and projects each onto a `DiagCard` under `W0012`, with its span shifted to chunk-relative bytes. An obligation starting earlier, even one crossing the boundary, is omitted; a zero-width obligation at the boundary is retained. Distinct obligation classes have distinguishable messages. A richer recovery vocabulary is the alternative when the renderer seam supports structured recovery actions.
-
-## The transcript
-
-A block's `rows` layout contains the echo followed by result lines, retaining kinds, leads, text and byte offsets. The first row takes the kind's mark; subsequent nonempty rows take its indentation, and empty rows take no indentation. Type and diagnostic rows have no mark. CRLF terminators are stripped; a lone carriage return is retained. `write_block` writes this layout without flushing; faces flush on normal or faulted endings, but not after write errors. A flush error takes precedence over the ending being returned.
-
-## A checked declaration prints what it runs to
-
-After a checked declaration's type line, the encoder writes its evaluation: a value, goal blame, or a note for a stuck or unrunnable result. The run stage owns the spelling shared with `gandr run` and `runs` expectations. Goal declarations are not evaluated; probes answer only a type. The declaration is the evaluation unit because the fragment has no top-level expression; see [the session evaluation specification](../surface-session/README.md#a-hole-free-item-is-evaluated).
-
-## Specification evidence
-
-The crate has 45 tests. Predicates observe branch decisions, empty-state boundaries, byte ranges, preserved payloads and transcript kinds; a type's absence reasons are the session's and witnessed there. They do not parse, print, evaluate or clone a whole session a second time. The corpus spelling witness covers one-line signatures in three selected strict sources, not every corpus file or arbitrary syntax. Diagnostic prose is not a golden interface.
-
-| Boundary | Witness |
-| -------- | ------- |
-| Empty, incomplete and complete input | `loop::tests::an_empty_buffer_is_complete`, `loop::tests::a_declaration_waits_for_its_terminator` |
-| Pasted lines, ignored blank input, interruption and retained declarations | `loop::tests::multiline_and_interrupted_buffers_preserve_accepted_declarations` |
-| Unicode literal coverage and scalar boundaries | `highlight::tests::unicode_literals_keep_their_byte_boundaries` |
-| Old, crossing and zero-width repairs; distinguishable repair classes | `remote::tests::repair_boundaries_preserve_locations_and_distinct_classes` |
-| Every output kind, UTF-8 byte offsets, empty rows, CRLF and lone carriage returns | `loop::tests::row_kinds_and_unicode_boundaries_keep_their_meaning` |
-| Empty transcript performs no write or flush | `loop::tests::empty_transcripts_do_not_touch_the_writer` |
-| Partial-write refusal, skipped flush and flush-error precedence | `loop::tests::write_and_flush_failures_keep_their_kind` |
-| End and failed reads leave later events unread and flush once | `loop::tests::terminal_endings_stop_reads_and_flush_once` |
-
-The terminal adapter additionally needs a pseudo-terminal smoke: fresh and continuing prompts, a completed definition, an interrupted buffer, a definition referring to accepted text, and EOF with a pending buffer. Scripted tests observe the same state transitions but cannot establish terminal-device behavior.
-
-Five items have explicit executable exemptions. Their boundary witnesses observe behavior that the signature cannot inspect without consuming it or adding an observer:
-
-| Item | Why no runtime predicate |
-| ---- | ------------------------ |
-| `rows::line_rows` | The opaque one-shot iterator has no row observer or clone; consuming it would change the caller's rows. |
-| `rows::rows` | The same opaque iterator boundary prevents observing rows before returning them. |
-| `LineSource::read` | An abstract source exposes no history observer; the caller's stopping obligation is not a return-value property. |
-| `interactive::drive` | Arbitrary sources can return any fault kind; generic writers expose neither transcript nor flush state. |
-| `interactive::converse` | The same generic source and writer prevent observing the transcript and read sequence. |
-
-Single-pass iterators and generic I/O remain the API instead of adding collection, cloning or observer traits solely for assertions. Reconsider an exemption if its API gains a non-consuming semantic observer. All predicates and witnesses run in the enforcing lane; executable checks are a bounded part of the specification, not proof of the whole protocol.
-
-## Deferred behavioral floor
-
-| Deferred witness | Missing former or reader |
-| ---------------- | ------------------------ |
-| `advertised_capabilities_match_the_live_path` | Render-bus capability advertisement |
+The deferred behavioural floor is tracked in [#205](https://github.com/gandr-lang/gandr/issues/205).
 
 ## License
 

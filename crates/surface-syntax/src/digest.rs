@@ -36,6 +36,43 @@
 //! node cannot pass for its sibling's child. A tree's preimage is its own
 //! domain, the root's label read the same way with the form count as its child
 //! count, and the forms' digests in order.
+//!
+//! # Digest preimage
+//!
+//! A form's preimage is the domain string `gandr.surface-syntax.form.v1`, then
+//! each significant node of the form in preorder: the label's pinned tag, the
+//! label's payload (a mold id as four little-endian bytes; a grout's sort as
+//! two and its shape as one; a minted close's sort as two and its family as
+//! one), the significant child count as four little-endian bytes, and, when the
+//! label is a leaf label, the text's length as four little-endian bytes and the
+//! text. Spans, positions, layout and documentation are excluded, so moving or
+//! reformatting text leaves the digest unchanged. Every variable-width field is
+//! preceded by its length and every node by its child count, so `ab` beside `c`
+//! and `a` beside `bc` hash differently, and `f (x y)` and `(f x) y` do too. A
+//! tree's preimage is `gandr.surface-syntax.tree.v1`, the root's label read the
+//! same way with the form count as its child count, and the forms' digests in
+//! order. The version suffix belongs to the domain: a change to the layout
+//! changes every identity, and two layouts never compare equal. The pinned form
+//! is asserted against an external BLAKE3 golden rather than a value this crate
+//! produced.
+//!
+//! ### A digest per form, not per node
+//!
+//! `TreeBuilder::finish` walks each top-level form in preorder once, ranking
+//! its nodes and writing their bytes into one buffer, and hashes the buffer in
+//! one `blake3::hash` call; the tree's digest hashes the forms' digests.
+//! Nothing is hashed while a node is staged.
+//!
+//! - Choice: one digest per top-level form, the only identity a consumer reads,
+//!   with a rank keying every node inside it.
+//! - Alternatives: a digest per node, hashed as each node is staged, with each
+//!   leaf hashed once per builder and a parser carrying a molded form's digests
+//!   across revisions; it cost about a sixth of a parse and nothing read a
+//!   digest below a form. Deferring the per-node digests until after lowering
+//!   kept that cost, off the critical path but not gone.
+//! - Reversal: a consumer that needs a node's own content identity below its
+//!   form — reuse of a sub-form's work across a move — needs a digest per node
+//!   again.
 
 use alloc::vec::Vec;
 

@@ -8,6 +8,29 @@
 //! driver runs: parse, lower, check, readmit, export. Nothing here pins a
 //! count: each root is asserted to export a declaration, so a source added to
 //! either moves a count and reddens nothing.
+//!
+//! # The kernel export suite
+//!
+//! `kernel_export` takes each readable source through parse, lower, check,
+//! readmission and export.
+//! `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds`
+//! checks repeat-sweep byte and identity determinism, decoder/re-encoder
+//! agreement, record-plane readback and admission from each root.
+//! `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest`
+//! checks that withheld dependencies did not cross, the manifest contains one
+//! record per crossed declaration beside its header, and the decoded
+//! declarations are exactly the admitted names in order. These are L3 witnesses
+//! over the current corpus; repeating the same pipeline is not an independent
+//! semantic oracle.
+//!
+//! The suite derives its expectations from admission and storage semantics
+//! rather than checked-in sizes, identities, class thresholds or corpus
+//! cardinalities. Exact kernel format goldens belong to `gandr-kernel-term`;
+//! this crate checks their composition with real surface sources. The
+//! alternative is a generated snapshot for each source, which would also freeze
+//! incidental counts. A snapshot becomes appropriate when it can detect a
+//! required invariant that admission, roundtrip and repeat-sweep checks cannot
+//! distinguish.
 
 use alloc::collections::BTreeSet;
 use alloc::vec;

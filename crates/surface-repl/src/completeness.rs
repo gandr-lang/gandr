@@ -1,5 +1,15 @@
 //! The completeness gate: a buffer is submitted once the parser expects no
 //! further token.
+//!
+//! # Completeness is the parser's
+//!
+//! A buffer is submitted when the parser's push machine, having molded its
+//! tokens, expects nothing more. Complete is not clean: a repaired buffer can
+//! be complete and is submitted with its diagnostics. Empty fresh input is
+//! ignored. Offered text may contain pasted line breaks, which are preserved;
+//! meta-commands dispatch only without a pending buffer. EOF submits a pending
+//! buffer regardless of completeness. An interrupt discards pending text
+//! without forgetting accepted declarations.
 
 use anodized::spec;
 use gandr_surface_grammar::Pbg;

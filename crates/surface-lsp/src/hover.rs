@@ -6,6 +6,41 @@
 //! declaration is; its documentation off the session's latest accepted
 //! lowering, under the declaring form's content identity, which its
 //! documentation does not reach.
+//!
+//! # A hover reads the session
+//!
+//! A hover request finds the declaration whose name the cursor is on — from the
+//! name's first character to just past its last — among the declarations the
+//! outline reads off the tree, so a parameter, a use, a keyword or a word in a
+//! comment hovers nothing. It answers a fenced `gandr` block with the name and,
+//! when the document's session spells it, ` : ` and its type, then the
+//! declaration's documentation after a blank line, about the name's range:
+//!
+//! - **The type** is the one the session's latest resume gives the declaration,
+//!   spelled by the session's `type_at` at 80 columns: a signature, a
+//!   synthesised type or a data declaration's universe, in the one spelling
+//!   every face writes. The item is the occurrence of the declaration's name it
+//!   is among the document's earlier non-module declarations, so two modules'
+//!   members of one name each hover their own type
+//!   (`tests::each_member_hovers_its_own_type`).
+//! - **The documentation** is what the session's latest accepted lowering filed
+//!   for the declaring form, read under the form's content identity, which
+//!   documentation does not reach: `///` lines and a `doc("…")` entry read to
+//!   one text.
+//!
+//! A declaration the session knows neither a type nor documentation for hovers
+//! nothing, and so does a document whose grammar did not build.
+//!
+//! The alternative was to look the name under the cursor up as a word, wherever
+//! it stands, and answer the type of the last declaration it names, which
+//! hovers a parameter or a comment with an unrelated declaration's type; and to
+//! lower the document again per hover, which pays a lowering for what the
+//! session already holds. The occurrence counts the document's declarations as
+//! the tree orders them, which is the order the lowering admits them; a
+//! declaration the lowering refuses whole takes no item, so a later one of its
+//! name reads the next. The choice reverses when the session maps a declaring
+//! form to its item directly: the hover then asks for the form's item and stops
+//! counting.
 
 use alloc::format;
 

@@ -143,7 +143,63 @@
 //! ```
 //!
 //! Each decision, with the alternative it was chosen over and what would
-//! reverse it, is in this crate's `README.md`.
+//! reverse it, is in the module that owns it.
+//!
+//! # Specification and adequacy
+//!
+//! Executable predicates cover root admission, schema and refusal mappings,
+//! payload interpretation, settlement precedence, ordered declaration
+//! alignment, directional obligation differences, saturating tally transitions
+//! and the kernel-export partition. Mutation predicates retain only scalar
+//! snapshots or addresses; settlement compares borrowed run spellings rather
+//! than cloning them. The private attribute iterator exposes its two borrowed
+//! slices so a predicate can check order without consuming the result. An
+//! opaque iterator becomes preferable again if specification instrumentation
+//! supports opaque return types.
+//!
+//! Adequacy names each witness and its finite input class. Source witnesses
+//! cover strict-root guards, conflicting and malformed attributes, run
+//! mismatches, refusal names and alignment failures; boundary witnesses cover
+//! numeric overflow, every tally channel and sink refusal. A later alignment
+//! error does not roll back or repeat earlier runner calls. Corpus export
+//! witnesses establish composition over the current sources, not a general
+//! semantic oracle.
+//!
+//! Exemptions identify the unavailable observation: data and vocabulary
+//! declarations have no call boundary; formatters expose no readable sink;
+//! runner semantics depend on the caller's module and machine. Source, arena
+//! and checker-report provenance remains a caller premise. `ClassCounts::count`
+//! preserves its public constant-evaluation support, but its foreign
+//! `DeclarationCount` result has no public const scalar observer; an
+//! owning-crate observer would permit that predicate without changing this API.
+//! The alternative is breaking constant callers to inspect a private
+//! representation, which this crate does not do.
+//!
+//! # Inputs, not a pipeline
+//!
+//! This crate reads a lowered module and its verdicts and depends on neither
+//! the parser nor the dispatcher; adapting the lowering's declarations to the
+//! checker's input and walking the roots belong to the dispatcher, and the exit
+//! codes to the driver. The suite depends on the parser and the grammar, and
+//! for its kernel export suite on the two storage crates, as development
+//! dependencies only: a `LoweredModule` and a `ModuleReport` have no public
+//! constructor that would let a test build one by hand, so each source-level
+//! witness parses, lowers and checks a source the way the dispatcher does, and
+//! adapts the declarations in the fixture exactly as the example above. The
+//! alternative was taking the source text and running the pipeline here, which
+//! would make this crate the driver. The choice reverses if the lowering and
+//! the checker gain a shared declaration type, at which point the adaptation,
+//! and with it the fixture's copy, goes away.
+//!
+//! # References
+//!
+//! - The Agda test suite, `test/Succeed` and `test/Fail` in <https://github.com/agda/agda>
+//!   — a test's expected outcome decided by the directory it sits in, the
+//!   arrangement the two corpus roots follow.
+//! - The Rust compiler development guide, "UI tests". <https://rustc-dev-guide.rust-lang.org/tests/ui.html>
+//!   — expected diagnostics written in the source they are about, with an
+//!   unexpected diagnostic and a missing expected one both failing the test;
+//!   the two directions in which a stated verdict here fails.
 
 #![no_std]
 

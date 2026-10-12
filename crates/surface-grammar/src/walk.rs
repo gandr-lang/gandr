@@ -22,6 +22,20 @@
 //! the depth. Per-group rows bound it by the precedence bands instead.
 //!
 //! [`PrecDag`]: gandr_theory_graphs::PrecDag
+//!
+//! # Walk index and comparison table
+//!
+//! `walk_index` builds a `gandr-theory-graphs` walk machine whose nonterminals
+//! are form groups — a sort at a precedence group — and whose stances are
+//! molds, with walks capped at `MAX_WALK_CHAIN_LEN` alternations, 64; an
+//! over-long walk is a typed refusal. `reachable_molds` lists the molds the
+//! index projects per label. `comparison_table` reads the operator-precedence
+//! relation between same-sort molds: `≐` relates consecutive tiles of one form
+//! and is read off `Pbg::adjacencies`, a grammar fact rather than a walk; `⋖`
+//! and `⋗` relate group representatives and are read off the index's `lt` and
+//! `gt` faces at the shared sort. The built-in surface's table is
+//! conflict-free. `seen_key_verdict` reports whether keying swing closure on
+//! sorts alone would change any row.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;

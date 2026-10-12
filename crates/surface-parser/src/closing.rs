@@ -8,6 +8,56 @@
 //! grammar requires before a tile. [`tile_spelling`] says how a label in that
 //! material is written: most labels are their tile's text, a few name a
 //! lexical class that any token of the class fills.
+//!
+//! # The completion query is a bound
+//!
+//! `finalize` (and its interaction-surface name `expected`) reports the
+//! material and the obligations closing the input here would introduce, without
+//! mutating the state. It reads the slope as it stands rather than replaying
+//! the commit, so it is a bound: every obligation a commit inserts is among
+//! those it names, and its only excess is a `MissingMeld` for an operator whose
+//! operand is a form still open, which the commit's force-close then turns into
+//! that operand. The molder uses this cost as one of its ranking keys, so the
+//! bound is part of the molding the corpus sources check.
+//!
+//! The alternative was an exact query: replay the commit on a copy of the
+//! slope. It costs a slope clone and a collapse per query, which the molder
+//! pays once per surviving candidate per token. Reversal: if a consumer needs
+//! the exact obligations at a prefix, it commits a checkpointed copy; if the
+//! molder's ranking ever needs exactness, the query replays, and the corpus
+//! sources say whether any molding moved.
+//!
+//! ### An open form expects its cheapest closing
+//!
+//! For each open form frontier the material is the cheapest way to close the
+//! form: the grammar's same-form adjacency names every tile that can follow the
+//! frontier, holes skipped, and a uniform-cost walk over it reaches the nearest
+//! tile that can end the form, one per tile and one per hole, ties to the lower
+//! mold id. A hole is charged before a tile when the predecessor's right
+//! context does not admit the tile directly, and after the last tile when it
+//! ends the form only once a required tail is filled; the first hole is dropped
+//! when anything already stands above the frontier. So `( x` expects `)`, `def
+//! x = [1, 2` expects `]` and `;`, and `run y <-` inside a block expects an
+//! expression, `;` and `}`. An operator's missing operand adds no hole when a
+//! form is open where the operand goes, since closing that form supplies it;
+//! its obligation still stands, keeping the bound above.
+//! `Completion::innermost` ends after the first frontier's closing, so an
+//! editor can show what closes the form the cursor is in.
+//!
+//! `tile_spelling` writes each tile: a label naming a lexical class
+//! (`identifier`, `constructor`, `number`, string content, a shell word, …) is
+//! filled by any token of the class, the shell subshell brackets and the
+//! command-substitution opener are written as the text the labeler reads them
+//! from, and every other label is its own text.
+//!
+//! - Alternatives: the first `≐`-successor in mold order, which names an
+//!   optional tile as often as the closer (`@[` after `def x`, `,` in a
+//!   parameter list, `;` after `run y <-` with no expression before it); a walk
+//!   that commits a copy and reads its ghost closes, which names closers but
+//!   not the keywords and holes between them.
+//! - Reversal: if one closing per frontier is not enough for a consumer — a
+//!   menu of alternatives, say — the walk keeps every end at the least cost
+//!   instead of the first.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;

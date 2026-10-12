@@ -1,4 +1,14 @@
 //! The transcript encoder: what one submission changed, as a transcript block.
+//!
+//! # A checked declaration prints what it runs to
+//!
+//! After a checked declaration's type line, the encoder writes its evaluation:
+//! a value, goal blame, or a note for a stuck or unrunnable result. The run
+//! stage owns the spelling shared with `gandr run` and `runs` expectations.
+//! Goal declarations are not evaluated; probes answer only a type. The
+//! declaration is the evaluation unit because the fragment has no top-level
+//! expression; see `gandr-surface-session`'s `session` module, § A hole-free
+//! item is evaluated.
 
 use alloc::collections::BTreeMap;
 use alloc::format;

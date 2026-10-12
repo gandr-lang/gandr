@@ -18,10 +18,44 @@
 //!   the grammar owns the tables they index.
 //!
 //! The crate holds **representation only**: it lexes and parses nothing, and
-//! reads a source only to answer what a span covers. Its one target
-//! requirement is an atomic compare-exchange, `target_has_atomic = "ptr"`,
-//! which the process-wide builder-identity counter needs. The design is stated
-//! in this crate's `README.md`, § Synopsis, and in the sections it links.
+//! reads a source only to answer what a span covers. Its one target requirement
+//! is an atomic compare-exchange, `target_has_atomic = "ptr"`, which the
+//! process-wide builder-identity counter needs. The design is stated in this
+//! crate's `README.md`, § Synopsis, and in each module's documentation.
+//!
+//! # Specification attributes
+//!
+//! Each nontrivial item's `# Specification` is paired with `# Adequacy`: the
+//! input boundaries, observable results, fault classes and same-crate
+//! witnesses. Executable `#[spec(...)]` clauses cover source slicing and
+//! refusal precedence, delimiter recognition, checked identifiers, builder
+//! transitions and arena walks. Enforcement captures scalar pre-state where an
+//! operation consumes or mutates its inputs; it does not copy the staging arena
+//! or repeat hashing.
+//!
+//! Constant functions use direct const-compatible predicates. The node
+//! constructor checks every offered part; layout adoption checks source,
+//! grammar and child-range geometry. Exact preservation of the moved node
+//! vector remains covered by witnesses because const specifications do not
+//! capture pre-state. Formatters expose a write-only sink; hashing's provenance
+//! and cross-call identity laws need independent witnesses rather than a
+//! repeated hash; type-level obligations are witnessed at construction and
+//! observation boundaries. These items state their remaining non-executable
+//! reasons. Run the suite both normally and with `--cfg anodized_panic` using
+//! the commands above.
+//!
+//! # References
+//!
+//! - Jack O'Connor, Jean-Philippe Aumasson, Samuel Neves and Zooko
+//!   Wilcox-O'Hearn. "BLAKE3: one function, fast everywhere." Specification, 9
+//!   January 2020.
+//!   <https://github.com/BLAKE3-team/BLAKE3-specs/blob/master/blake3.pdf> — the
+//!   hash a form digest is.
+//! - David Moon, Andrew Blinn, Thomas J. Porter and Cyrus Omar. "Syntactic
+//!   Completions with Material Obligations." _Proceedings of the ACM on
+//!   Programming Languages_ 9, OOPSLA2 (2025).
+//!   <https://doi.org/10.1145/3763182>, arXiv:2508.16848 — molds, grout and the
+//!   material a tree records.
 
 #![no_std]
 

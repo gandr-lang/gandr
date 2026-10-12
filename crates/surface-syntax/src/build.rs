@@ -34,6 +34,20 @@
 //! that a refusal belongs to has stopped, and unwinding the partial attachment
 //! would mean a second traversal whose only consumer is a caller that does not
 //! exist. The state is asserted rather than described.
+//!
+//! # Builder identity
+//!
+//! A parser mints bottom-up and the arena is laid out top-down, so a `StagedId`
+//! and a `NodeIndex` are different types: they are different permutations of
+//! the same nodes, and a `StagedId` stops at `TreeBuilder::finish`. A
+//! `StagedId` carries the process-unique identity of its builder, and every
+//! entry point checks it before the position, so a handle offered to another
+//! builder is refused with `SyntaxError::UnknownStagedNode` rather than
+//! resolving against whatever that builder staged at the same position. The
+//! identity counter refuses to wrap, with `SyntaxError::BuilderIdExhausted`,
+//! and `TreeBuilder` is not `Clone`, because either would restore the aliasing
+//! the identity removes. A staged node accepts one parent; a second is refused
+//! with `SyntaxError::ChildAlreadyAttached`.
 
 use alloc::vec::Vec;
 use core::fmt;

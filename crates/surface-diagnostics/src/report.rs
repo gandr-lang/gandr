@@ -11,6 +11,37 @@
 //! message, which names no byte offsets, and a refusal's vocabulary name is
 //! the report's identifier, spelled as a `refuses` payload spells it.
 //!
+//! | Kind | First line | Primary locus and label | Note |
+//! | ---- | ---------- | ----------------------- | ---- |
+//! | refusal | `error[<refusal>]: <message>` | the refusal's span, labelled with what the bytes there are | the declaration, what it states and its surviving obligations |
+//! | unsettled declaration | ``error: `<name>` states …; produced …`` | the declaration, labelled with how it is unsettled | none |
+//! | goal | ``goal: `<name>` states …; produced …`` | the declaration, labelled with its surviving obligations | none |
+//! | source refused as a whole | `error[<refusal>]: the source is not a list of declarations: …` | the refusal's span, labelled with what the bytes there are | none |
+//! | shadowed builtin | ``warning[ShadowedBuiltin]: `<path>` shadows a builtin name; the source's binding wins`` | the shadowing name, labelled `shadows a builtin` | none |
+//!
+//! The refusal name in the first line is the spelling the corpus's `refuses`
+//! attribute states, so a reader can copy it into an expectation. A type
+//! mismatch renders as:
+//!
+//! ```text
+//! error[TypeMismatch]: mismatched types
+//!   ╭▸ mismatch.gandr:2:13
+//!   │
+//! 1 │ def wrong : Integer ;
+//!   │             ─────── the type it is checked against
+//! 2 │ def wrong = "text" ;
+//!   │             ━━━━━━ its type does not convert: expected `Integer`, found `String`
+//!   │
+//!   ╰ note: unsettled `wrong` states checks owing 0
+//! ```
+//!
+//! No message carries a byte range: the snippet's path, line and column locate
+//! the refusal, and an offset beside them is noise. Mismatch labels name causal
+//! roles, such as checked-against or synthesised type, while origins locate
+//! those roles in source. Labels expose no core node addresses. An empty path
+//! renders as `<input>`. A pending source's ledger line has no snippet, so it
+//! keeps the refusal's byte range after the producer's text.
+//!
 //! # A shadowed builtin is a warning, named as the refusal it would be
 //!
 //! Under the warn-and-allow shadow policy, the default, a declaration or a
@@ -18,6 +49,45 @@
 //! report on it is a warning, which settles nothing and fails no run. Its
 //! identifier is `ShadowedBuiltin`, the refusal the reject policy files for
 //! the same bytes, so one name reads the same fact under either policy.
+//!
+//! Under the default warn-and-allow shadow policy, a top-level declaration or a
+//! binder named after a builtin wins, and the lowering records the shadowing
+//! with the bytes of the name. Under `check` each record is a `Report` of class
+//! `Class::Warning`, printed before the source's declaration reports in the
+//! order shadowed; `test` prints none, because its ledger records settlements.
+//! A warning settles nothing and unsettles nothing, so `gandr check` still
+//! exits zero on a source whose only reports are warnings:
+//!
+//! ```text
+//! warning[ShadowedBuiltin]: `add` shadows a builtin name; the source's binding wins
+//!   ╭▸ shadow.gandr:1:5
+//!   │
+//! 1 │ def add : Integer ;
+//!   ╰╴    ━━━ shadows a builtin
+//! ```
+//!
+//! The identifier is `ShadowedBuiltin`, the refusal the reject policy files for
+//! the same bytes, so one name reads the same fact under either policy. The
+//! warning names the shadowed path at the shadowing site. The alternative was a
+//! separate warning code, and a second vocabulary for one fact would have a
+//! reader learn two names. Reversal: a warning that is not a would-be refusal
+//! gets its own vocabulary. Witness:
+//! `diagnostics::diagnostics::a_shadowed_builtin_renders_as_a_warning`.
+//!
+//! # Native universe-path diagnostics
+//!
+//! A checker `PathCode` refusal retains its code-node locus and
+//! malformed-source class. Shape diagnostics can name the expected sum or
+//! `Path_U` classifier; injection and case remain checking forms, not
+//! unsupported language constructs. A missing origin remains an absent
+//! annotation rather than an invented source span.
+//!
+//! **Choice.** Project the same typed refusal and causal roles used by ordinary
+//! checking, rather than add a second universe-specific diagnostic pipeline.
+//! The renderer certifies neither the candidate path nor its evidence.
+//! **Reversal.** A source notation may supply more precise origins; it must not
+//! change the refusal’s semantic class or infer certificate equality from its
+//! displayed maps.
 
 use core::fmt;
 use std::path::Path;

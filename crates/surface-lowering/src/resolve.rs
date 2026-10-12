@@ -25,6 +25,56 @@
 //! falls through: a name neither scope answers is a refusal, and there is no
 //! atom former reachable from name resolution. The unit value is the keyword
 //! `unit`, a form of its own, so no name answers it.
+//!
+//! # Names resolve through tables with no fallthrough
+//!
+//! A type head answers first from the binders enclosing it and the declarations
+//! strictly earlier in admission order, as a term name does — a value name in
+//! type position is a code, and decodes (the `lower` module's § Five
+//! insertions, by the sort of the position) — and then from a table indexed by
+//! how it was written: bare, `Unit`, `Integer` and `String`; applied to one
+//! argument, `+U` and `-F`. `Type` is its own former, not a table entry. A head
+//! a binder or a declaration answers is answered there at every arity: applied
+//! to arguments it is a static application (the `lower` module's § Type
+//! operators are static functions over codes), and the table is never
+//! consulted. A head nothing answers is `UnresolvedTypeHead` carrying the arity
+//! it was written with, and a head applied to several arguments reports how
+//! many. Since the bridges are the compound tokens `+U` and `-F`, `U` and `F`
+//! alone are ordinary names that nothing declares. A term name answers from the
+//! binders enclosing it, innermost first, and then from the declarations
+//! strictly earlier in admission order; nothing answers otherwise. A
+//! capitalised name in term position answers the same way, and when nothing
+//! does, a type atom or `Type` stands as a type and is quoted; any other is a
+//! constructor, which the fragment does not admit. The unit value is the
+//! keyword `unit` and its type `Unit`; the empty parentheses `()` are an empty
+//! list, refused as a value or a type (`EmptyList`), and read only before `=>`,
+//! where `() => C` takes no argument and is `+U (-F C)`, distinct from `Unit =>
+//! C`. The `unit` pattern molds, and a match refuses it as unadmitted: it tests
+//! nothing, and the match compiler has no head that would hold its scrutinee to
+//! `Unit`.
+//!
+//! Choice: the unit value is a keyword, and `()` is never the unit. A product
+//! of no components and a domain list of no members are both the empty list, so
+//! reading `()` as the unit would make `() => C` and `Unit => C` the same type
+//! and give the eventual n-ary product two spellings of its nullary case.
+//! Alternatives: `()` as the unit, which conflates the empty domain list with
+//! the one-argument function over `Unit`; and a primitive term table answering
+//! the name `unit`, which a declaration could shadow. Reversal: if the n-ary
+//! product never lands and no source writes `() => C`, `()` may return as a
+//! second spelling of `unit`.
+//!
+//! Binder predicates check backward parent links, fresh frame positions, exact
+//! successful lookup and mention-filtered telescope counts. `ScopeId` is a
+//! scope-relative coordinate, not an ownership certificate: an equal coordinate
+//! from another scope addresses the receiving scope's frame, while an
+//! out-of-range mention is ignored. Lookup spends one charge per visited binder
+//! and none at the outermost frame. Telescope lookup counts from the use frame
+//! up to the target, excluding the target, or to the chain's end when the
+//! target is absent. Index conversion saturates at the index width; the
+//! caller-selected allowance is not limited to that width.
+//!
+//! Witness for the nullary table:
+//! `tests::every_nullary_type_head_answers_its_atom`.
 
 use alloc::vec::Vec;
 use core::fmt;

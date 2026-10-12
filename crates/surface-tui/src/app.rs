@@ -1,5 +1,21 @@
 //! The face's model: the loop, the line being edited, the lines the loop holds
 //! for the parser, and the transcript.
+//!
+//! # Keys
+//!
+//! | Key | Does |
+//! | --- | ---- |
+//! | a character | types it at the end of the line |
+//! | Backspace | removes the line's last character |
+//! | Enter | offers the line to the loop |
+//! | Ctrl-C | drops the line and the buffer the parser waits on |
+//! | Esc | leaves |
+//!
+//! The side view types nothing: `q`, Esc and Ctrl-C leave it, and every other
+//! key redraws.
+//!
+//! `:quit` and every other meta-command go to the loop as lines. The face keeps
+//! no history, offers no completion, and edits only at the end of the line.
 
 use alloc::string::String;
 use alloc::vec::Vec;

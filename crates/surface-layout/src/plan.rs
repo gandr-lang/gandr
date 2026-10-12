@@ -4,6 +4,21 @@
 //! frontier, and the render machine walks the winning one. A plan identity is
 //! generational, so a recycled slot is never mistaken for the node it held
 //! before, and every release walks its children on an explicit stack.
+//!
+//! # Plans and the render machine
+//!
+//! A measure names its layout as a plan: a first-order tree of text, verbatim,
+//! newline-with-indentation and sequence nodes in a generational arena. A plan
+//! identity carries its slot's generation, so a recycled slot never answers an
+//! old identity (`plan::tests::plan_generation_rejects_recycled_identity`).
+//! Plans are reference-counted; a dominated measure releases its plan when the
+//! frontier drops it, so the live-plan ceiling bounds what resolution retains.
+//!
+//! Rendering checks the winning plan's exact byte count against the output
+//! ceiling, reserves the buffer once, and executes the plan on an explicit
+//! stack of identities. Indentation is emitted in runs of spaces from one
+//! static string. No document tree, candidate string or closure is
+//! materialized.
 
 use alloc::vec::Vec;
 

@@ -101,6 +101,128 @@
 //! member its projection, with partial evidence until a descent judgment
 //! spans the bundle; this needs the members collected as declarations from
 //! inside one form, and is its own unit.
+//!
+//! `def rec f(p₁, …, pₖ, y) -> C { b }` lowers to `thunk (λp₁ … λpₖ. fix f. λy.
+//! b)`: the core fixpoint binds its own thunk, and the structural descent it
+//! may claim replays only over a fixpoint whose body takes one argument and
+//! cases on it, every recursive call at a field of the scrutinised constructor
+//! (Giménez). A recursive call is written `f[<](p₁, …, pₖ, a)` and lowers to
+//! `(force f) a`. `<` is the claim: a fixpoint carries `StructuralDescent`
+//! evidence when one of its calls writes it and `Partial` evidence when none
+//! does, so the checker and the kernel replay every claim the source makes and
+//! none it does not, and a call at anything but a field fails the replay as
+//! `DescentNotReplayed`. The lowering neither searches for a decreasing
+//! argument nor duplicates the check. The fixpoint is marked
+//! `Insertion::Fixpoint` at the function form's origin, since the source writes
+//! no `fix`.
+//!
+//! The function's own name is bound by one frame between the last parameter and
+//! the ones before it, typed by the declaration form so no signature telescope
+//! counts it, and it resolves only as the head of a claim: written bare, it is
+//! `UnmarkedSelfReference`, whose message spells the claim. A parameter of the
+//! same name shadows it. The parameters before the last are uniform (Coquand
+//! and Paulin): bound outside the fixpoint, so a recursive call must pass each
+//! as itself, and a call passing anything else is `OutOfFragment` with the
+//! `NonUniform` boundary, at the argument. A function with no parameter has
+//! nothing to recurse on and is declined. Every resident of the instantiation
+//! other than a lone `<` — `>` for productivity, a measure, a size, a cost — is
+//! reserved until its termination rung lands. A block stands as a match arm, so
+//! the four programs the corpus carries in
+//! `fixture/model/data/data-recursive.gandr` — `plus`, `length`, `append` and
+//! `map` — are written in the surface's intended spelling.
+//!
+//! The alternative was the recursive argument first, with every later parameter
+//! pushed into the case's motive and re-bound under each branch's fields, as an
+//! eliminator's methods take them (`McBride`); it admits a recursive call that
+//! varies them, an accumulator, at the cost of re-indexing every branch.
+//! Reversal: a recursive definition that must vary an earlier parameter.
+//!
+//! The mutual block `rec { def …; def … }` is declined. The grammar parses it
+//! as one item whose members are inline tiles of the block, so the module reads
+//! no declaration in it and refuses the whole source at the block's form.
+//! Reversal: one fixpoint over a bundle of the members' thunks, each member its
+//! projection, with partial evidence until a descent judgment spans the bundle.
+//! That needs the members collected as declarations from inside one form, and
+//! is its own unit.
+//!
+//! # Native data and the match
+//!
+//! `lower::native` lowers a `data` declaration at the root to the core's native
+//! `DataSignature`, a constructor to a native constructor value carrying its
+//! whole classifier, a `case` to a decision tree of native eliminations, and a
+//! `def rec` function to one fixpoint over its last parameter, recursive calls
+//! written with the descent claim `f[<](…)`.
+//!
+//! `data T(a : A) : Type { C : (x : X) --> T(a); … }` at the root lowers to the
+//! core's native `DataSignature`: the parameters as a telescope, each
+//! generator's fields as one constructor, in source order. A field may name the
+//! family it belongs to, applied to its own parameters, which is how `List(a)`
+//! holds its tail; whether every such occurrence is strictly positive is the
+//! checker's judgment, not the lowering's. `DeclarationOutcome::Data` carries a
+//! `DataIndex` into `LoweredModule::data`, so the outcome stays `Copy` and the
+//! signature is shared, not cloned, with the checker's declaration. A generator
+//! whose result applies the family to anything but its own parameters is an
+//! indexed family and is declined as `OutOfFragment` with the `Indexed`
+//! boundary; the constructor-block spelling and a field's attributes or grade
+//! are declined by name
+//! (`tests::members_outside_the_fragment_are_declined_by_name`); a constructor
+//! named twice is `DuplicateDefinition`. Each of these is decided while the
+//! declaration is collected, so the declaration records no half and its
+//! attributes are not filed: a corpus source holding one stays pending.
+//! Operation and rule members, `oper`, `op` and `rule`, are passed over: the
+//! description route (the `description` module) reads them and holds any
+//! refusal among them at the member, so the family keeps its generators.
+//! Reversal: the indexed boundary lifts when the core's data former carries
+//! indices.
+//!
+//! A constructor `C(e, …)` is a native constructor value, which names its whole
+//! classifier. A family with no parameters has one, which the lowering inserts;
+//! a family with parameters takes it from an annotation `(C(…) : T(…))` and is
+//! refused as unannotated without one. The alternative was inferring the
+//! arguments from the fields, which is the checker's work; the annotation
+//! becomes optional when the checker synthesises a constructor against an
+//! expected type.
+//!
+//! `case e -> T? { p => c, … }` compiles to a decision tree of native
+//! eliminations by the pattern-matrix construction of Maranget's _Compiling
+//! Pattern Matching to Good Decision Trees_ (ML 2008): a data case per
+//! constructor column, a sum case per boolean column, and the prelude's integer
+//! equality cased on per integer literal. Patterns nest: constructors,
+//! variables, `_`, integer and boolean literals, or-patterns binding nothing,
+//! and a pattern hole `?` or `?name` in any position, which leaves the leaf it
+//! reaches stuck on a hole whose identity is the pattern's syntax node. The
+//! scrutinee is never bound; each leaf substitutes its arm body's variables by
+//! the tree binders that settled them, so an arm reached twice is copied, not
+//! joined through a thunk whose type the checker would have to know. The data
+//! case's motive is the written answer or the result of the function whose body
+//! ends in the match, and a match that eliminates native data with neither is
+//! unannotated. Rows exhausted before a leaf are `NonExhaustiveMatch`, classed
+//! as malformed source; string patterns, as-patterns, an or-pattern binding a
+//! variable, the view `with e` and the arm-less `case e {}` are declined by
+//! name. Reversal: a join point earns its thunk once duplication costs more
+//! than binding the answer type at every join; the arm-less match lowers once
+//! the lowering reads a scrutinee's type.
+//!
+//! A match of no arms, `case e {}`, names no family to compile against, so it
+//! lowers to the case of no branches over its scrutinee, the eliminator of the
+//! empty sum `Void`, which checks at any answer. A written answer on it, `case
+//! e -> T {}`, is declined: no branch would answer it. A nominal family
+//! declared with no constructors is not the empty sum, so `case e {}` over one
+//! is refused by the checker as a shape mismatch.
+//!
+//! **Choice.** One reading of `case e {}`, the empty sum's eliminator, decided
+//! without the scrutinee's type. **Alternatives.** Reading the scrutinee's
+//! declared type to emit an empty data case over a nominal family, which needs
+//! the type the lowering does not compute; keeping the empty match declined,
+//! which leaves `Void` with no eliminator. **Reversal.** When the lowering
+//! learns its scrutinees' types, an empty nominal family takes the data case of
+//! no branches.
+//!
+//! The tree forgets its patterns, so `OriginTable::case` keeps them: per match,
+//! the `gandr_core_term` pattern table the arms are written in, one `ArmOrigin`
+//! per arm alternative, and the syntax nodes of the scrutinee and of each
+//! pattern and body, keyed by the tree's root. A live match and a hole report
+//! read that one seam rather than parsing the tree back.
 
 use alloc::sync::Arc;
 use alloc::vec::Vec;

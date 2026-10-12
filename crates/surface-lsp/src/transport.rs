@@ -5,6 +5,28 @@
 //! since nothing else in the block can carry one. `Content-Length` is matched
 //! case-insensitively and is required; every other header, `Content-Type`
 //! included, is read and ignored, as the protocol admits only UTF-8 JSON.
+//!
+//! # The transport is written here
+//!
+//! The framing, the envelope and the protocol types the server reads and writes
+//! are this crate's own, on `serde` and `serde_json` with `alloc` only. Each
+//! message the server writes is a typed value encoded once at the stream, so
+//! the field order on the wire is the struct's.
+//!
+//! | Candidate | Why it lost |
+//! | --------- | ----------- |
+//! | `lsp-server` 0.10.0 | a body that is not JSON ends the connection with an I/O error rather than a parse-error answer; a declared length is allocated before a byte of the body arrives, with no ceiling; its message constructors unwrap; it brings `crossbeam-channel` threads and `log` for a loop this server runs on one thread |
+//! | `lsp-types` 0.97.0 | the last release is from June 2024 and serves 3.16, with 3.17 behind an unstable feature; it carries the whole protocol, `bitflags` 1 and an old `fluent-uri` for the few types the server reads and writes |
+//! | `ls-types` 0.0.6 | a 0.0 pre-release; the same whole-protocol surface for the same few types |
+//! | `tower-lsp-server` 0.24.0-rc.1, `async-lsp` 0.2.4 | an async runtime and a service stack for a server that answers each request in order on one thread |
+//!
+//! The reader limits an incoming header line to 1 KiB and an incoming body to
+//! 64 MiB, allocating body storage as bytes arrive rather than trusting the
+//! declared length. The writer emits the supplied body without applying those
+//! reader limits. The choice reverses when the server serves enough of the
+//! protocol that the types it writes outgrow a maintained crate's surface, or
+//! when a request must be answered concurrently with a recheck: then
+//! `ls-types`, or the async stack over it, is next.
 
 use core::fmt;
 use std::io;

@@ -40,6 +40,198 @@
 //!   (canonical grammar order). Nothing process-varying reaches the decision,
 //!   so the molder is a pure function of the token stream — asserted identical
 //!   across 100 randomized runs.
+//!
+//! # The molder's search stops at its least key
+//!
+//! The work to reach the choice is bounded by the least key found. A
+//! candidate's key is at least a floor read without a dry-run — its rank bits
+//! and an empty delta — so candidates are visited floor by floor and the search
+//! stops once the least key found lies below every floor left. Pass two stops
+//! at the first empty completion, which nothing beats. Each window after the
+//! first is bounded by the best window delta so far, and is abandoned the
+//! moment its own delta reaches that bound, since a window's delta never
+//! shrinks as it molds. A dry-run does not copy the slope: a `Mark` records
+//! lengths, and the slope edits made under a live mark go to a trail that
+//! `rollback_to` undoes newest first, restoring only the cells the dry-run
+//! touched. The completion delta is counted without collecting the obligations,
+//! a push never builds a `MoldedTile`, and the grammar answers adjacency and
+//! membership from per-mold runs and flags.
+//!
+//! The tree and the obligations are identical, node by node, on every corpus
+//! source and on each one cut short and with one significant token dropped at
+//! eight positions.
+//!
+//! - Alternatives: dropping the whole-menu fallback inside windows removes most
+//!   of the cost but changes 20 sources' trees, so it is not this crate's to
+//!   make — the fallback is part of the molding the corpus checks. Memoizing
+//!   completions across tied candidates by the slope they leave finds no two
+//!   candidates leaving one slope on the corpus, and costs more than it saves.
+//! - Reversal: a ranking key whose floor cannot be read without a dry-run, or a
+//!   window delta that can shrink, voids the bound; the search then visits
+//!   every survivor again.
+//!
+//! ### A tie the next token refutes runs no window
+//!
+//! Before the tied openers' windows run, the next significant token prunes
+//! them. A tied mold whose right side faces no hole and that cannot end its
+//! form is followed by one of its own form's next tiles, so a token that none
+//! of those tiles is labelled with cannot follow it. A tied mold whose right
+//! side faces a hole is followed by whatever fills the hole, which opens with
+//! some form's first tile, so a token none of whose labels can begin a form
+//! cannot follow it. The token's labels are its whole candidate menu, a
+//! reserved uppercase word's generic fallback labels included, so the check
+//! reads nothing of the state the opener would leave. A lone survivor wins
+//! without a window; when the token refutes every opener, every one stays and
+//! the windows decide as before. Over the corpus the trees are unchanged and
+//! parsing takes half the time.
+//!
+//! The same pruning runs on every tie inside a window. A trailing separator
+//! ties its list's two readings, the separator an element follows and the one
+//! the closer follows, and a window has no window of its own to read past it.
+//! Unpruned, the window would take the lower mold, read the closer as out of
+//! place and charge the opener under test for it. No corpus tree depends on the
+//! in-window pruning, but it decides ties the window would otherwise settle by
+//! dry-running their completion.
+//!
+//! - Alternatives: one-token dry-run windows instead of the grammar check
+//!   decide too few ties and disagree with the full windows on some; dropping
+//!   the windows altogether loses the shared-prefix families the windows exist
+//!   for. Inside a window, a one-token dry-run window per tie costs a dry-run
+//!   per tied token for what the grammar check decides without one.
+//! - Reversal: a grammar whose closed tile can be followed, within its form, by
+//!   a tile that is not one of its same-form successors voids the check; the
+//!   table's successor relation then has to carry that tile. A form whose hole
+//!   can be filled by something that opens with a tile no form begins with
+//!   voids the hole check.
+//!
+//! ### A window counts eight tokens
+//!
+//! A tied opener's window molds the eight significant tokens after it, whatever
+//! they are. An attribute block is a form of its own before every declaration
+//! it decorates, a decision of `gandr-surface-grammar`, so `@[` opens one
+//! reading and its contents decide nothing between declarations. Two tied
+//! openers on the corpus are brackets, and their trees are the same with a
+//! window read past the closer.
+//!
+//! - Alternatives: a tied bracket opener whose contents and closer fill the
+//!   count could mold through its closer and count its eight tokens from there;
+//!   no tree on the corpus needs it, and it is a second window bound to keep
+//!   right.
+//! - Reversal: a family of readings that mold a bracket's contents alike and
+//!   diverge only after its closer needs a window bounded by the closer, or by
+//!   the grammar, instead of the token count.
+//!
+//! ### Interchangeable openers share one window
+//!
+//! A lowercase parameter name ties its `identifier` and `type_variable` molds:
+//! both stand at one position of one form, with the same neighbours, context,
+//! precedence and closing class, and only their labels differ. Everything the
+//! melder reads of a pushed tile but its label agrees, so their windows mold
+//! every later token alike and close with the same delta, and the window
+//! comparison keeps the lesser mold. `Pbg::least_interchangeable` names each
+//! mold's class, and of tied openers in one class only the least is kept before
+//! any window runs; a class that was the whole tie then has a lone opener and
+//! runs no window. Keeping one changes no corpus tree.
+//!
+//! - Alternatives: dropping the type-variable reading of a parameter name from
+//!   the grammar removes the tie at its source, but it is a grammar change the
+//!   lowering would have to follow; a window per class member molds every later
+//!   token a second time for a known answer.
+//! - Reversal: a melder that reads a pushed tile's label after the push — the
+//!   label becomes a component of the class, and the classes split.
+//!
+//! ### An opener the next token continues beats a one-tile form
+//!
+//! A type name ties its two readings: the complete type `List`, a form of that
+//! one tile, and the name that opens the application `List(T)`. When the next
+//! significant token is `(`, the application's own next tile, the molder takes
+//! the application without a window. A one-tile form is complete at its tile,
+//! so the token after it would have to stand after the whole form, in whatever
+//! encloses it, while the opener reads the token inside its own form: the
+//! longer reading wins, as maximal munch. The rule applies only when exactly
+//! one tied opener is continued that way and every other tied opener is a whole
+//! one-tile form; any other tie keeps its window. It decides the
+//! type-application family, the package type against a type variable, and
+//! `pack` against an identifier.
+//!
+//! The opener may be one that could also end its form at its tile: a
+//! constructor pattern's name opens `Some(x)`, whose arguments are optional,
+//! and ties the bare constructor `Some`. Before `(` it is continued all the
+//! same, and the corpus's windows chose it every time.
+//!
+//! A window can misread a long application. In `-F HomPlus(Integer, String, x,
+//! x)` a window of eight tokens ends inside the argument list, so it scores the
+//! unfinished application against the complete type `HomPlus` followed by a
+//! complete parenthesized type, and takes the latter: the definition's return
+//! type would be `-F HomPlus` with a stray tuple type beside it. The rule reads
+//! the application whole.
+//!
+//! - Alternatives: a static table of the token sequences that tell each tied
+//!   family apart, LL(k) over the same successor relation, which the corpus's
+//!   ties need only for families this rule does not reach (the data
+//!   declaration's two `:` readings); a longer window, which moves the
+//!   misreading to longer argument lists and costs every tie more.
+//! - Reversal: a grammar in which a one-tile form of some sort can itself be
+//!   followed by the tile that continues its tied opener, so that both readings
+//!   are well formed with different meanings — the rule then has to ask the
+//!   enclosing form, or yield to the window, for that family.
+//!
+//! ### Readings that end alike before the next token keep the least
+//!
+//! A constructor pattern's name before `=>` ties its two rules, the opener of
+//! `Some(x)` and the bare constructor; a parenthesized expression's `)` ties
+//! the closers of its two shapes; a primitive type's name ties a type variable.
+//! When every tied opener can end its form at its tile, none is continued by
+//! the next significant token, and every opener's rule has one sort and one
+//! precedence, the molder keeps the least opener without a window. Each reading
+//! then ends a whole form before the token, and the forms stand alike as
+//! operands to whatever follows, so every window closes with the same
+//! obligations and the exact-tie rule keeps the least: the rule makes the
+//! window's choice without molding it.
+//!
+//! - Alternatives: comparing the readings' whole outside view — closing class,
+//!   context contents and rule as well as sort and precedence — which is
+//!   stricter than any observed tie needs and would leave the primitive type
+//!   and constructor families to the window; LL(k) tables over the successor
+//!   relation, which these families do not need, since no reading goes on.
+//! - Reversal: a grammar in which the rule of a complete form, not only its
+//!   sort and precedence, changes how a later tile molds — a binder whose
+//!   operand's rule decides what it binds, say. The rule then has to compare
+//!   that too, or yield to the window.
+//!
+//! ### A shell string's text is its own lexeme
+//!
+//! A `"` opens an expression string in code and a double-quoted string in a
+//! shell block, and both forms open with the same `"` label. The labeler
+//! already scans the two interiors in different modes, so it gives a shell
+//! string's text its own lexeme, `ShellStringFragment`, labelled
+//! `double_string_fragment`, where an expression string's text stays a
+//! `StringFragment` labelled `string_fragment`. The token after the `"` then
+//! refutes the reading of the other context, and the tie runs no window.
+//! Carrying both labels on both fragments would mold the two readings alike,
+//! and the window would keep the lesser mold, the expression string, inside
+//! shell blocks too.
+//!
+//! - Alternatives: a distinct label for the shell `"` itself, which is a
+//!   grammar change for what the labeler already knows.
+//! - Reversal: a string form that admits both interiors, which would take both
+//!   labels again.
+//!
+//! ### A token's labels are derived once and held inline
+//!
+//! A token's candidate labels feed three steps: settling the holes it cannot
+//! continue, gathering its menu, and, past a tie, refuting the openers it
+//! cannot follow. `candidate_labels` returns them as `TokenLabels`, an array of
+//! at most six held inline, and the molder derives them once per token and
+//! passes them to each step. Deriving them again per step would cost two or
+//! three heap allocations per token.
+//!
+//! - Alternatives: a `smallvec`, which is the same array behind a dependency;
+//!   caching labels per token across windows, which re-reads a token's labels
+//!   no cheaper than deriving them from its lexeme.
+//! - Reversal: a lexeme whose menu outgrows the array; `candidate_labels`'s
+//!   postcondition bounds each menu at four labels, so such a lexeme fails that
+//!   check before it can lose a label.
 
 use alloc::vec::Vec;
 

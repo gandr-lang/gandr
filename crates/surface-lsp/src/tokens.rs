@@ -8,6 +8,43 @@
 //! its modifier bits — with a span crossing lines split into one token per
 //! line, its terminators dropped. Lengths and columns count UTF-16 code units,
 //! read through the renderer seam's [`LineIndex`].
+//!
+//! # Tokens are the highlighter's roles
+//!
+//! The tokens are the highlighter's `HlSpan`s, sorted and disjoint,
+//! delta-encoded as the protocol's five integers per token: line delta, start
+//! delta, length, type index, modifier bits. A span crossing a line splits into
+//! one token per line, its terminator dropped. A span the highlighter
+//! classified as nothing in particular, `HlRole::Other`, emits no token. Every
+//! other role maps onto the standard token types, so a client's theme colours
+//! gandr without a gandr-specific theme:
+//!
+//! | Role | Type | Modifier |
+//! | ---- | ---- | -------- |
+//! | `Keyword`, `Boolean` | `keyword` | |
+//! | `Operator` | `operator` | |
+//! | `FunctionDef` | `function` | `declaration` |
+//! | `FunctionCall` | `function` | |
+//! | `VariableDef` | `variable` | `declaration` |
+//! | `Variable` | `variable` | |
+//! | `VariableParam` | `parameter` | |
+//! | `Member` | `property` | |
+//! | `Constructor` | `enumMember` | |
+//! | `Type` | `type` | |
+//! | `TypeBuiltin` | `type` | `defaultLibrary` |
+//! | `TypeVariable` | `typeParameter` | |
+//! | `Number` | `number` | |
+//! | `StringLit`, `Character`, `Escape`, `Path` | `string` | |
+//! | `Comment` | `comment` | |
+//! | `Hole`, `Directive` | `macro` | |
+//! | `Label` | `label` | |
+//!
+//! A range request restricts which tokens are sent, never the coordinates they
+//! are sent in: the deltas still chain from the document's origin, and a token
+//! sharing at least one byte with the half-open range is sent whole rather than
+//! clipped, so a client can merge a range answer into a full one. Empty spans
+//! never intersect. An inverted or empty range answers no token. A request for
+//! a document the server does not hold answers `null`.
 
 use anodized::spec;
 use gandr_surface_render_remote::ByteOffset;

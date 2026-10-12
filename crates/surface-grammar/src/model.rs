@@ -1,6 +1,70 @@
 //! The checked grammar model: sorts, symbols, regular expressions over them,
 //! rules, the named precedence table, the refusal vocabulary, and [`Pbg`],
 //! the grammar that exists only once its three build-time gates have passed.
+//!
+//! # Regex layout
+//!
+//! A `Regex` is one vector of entries in pre-order, each holding its node and
+//! the length of its subtree, so a child is reached by offset and the type
+//! holds no pointer to its own type. `view` borrows a subtree and `shape` reads
+//! it one level deep; every walk over a form is an explicit work list.
+//!
+//! - Alternatives: a recursive enum with boxed children reads more directly,
+//!   but owns a pointer to its own type, which the workspace lint policy
+//!   refuses, and its natural walks and its drop recurse.
+//! - Reversal: a consumer that edits forms in place, which this layout turns
+//!   into a copy.
+//!
+//! # Successor runs and dense membership flags
+//!
+//! The table keeps same-form adjacency as one list of `(left, right)` pairs
+//! sorted by left then right, and form membership as the sorted `form_first`
+//! and `form_last` lists. The parser asks four questions of them on every
+//! candidate of every token: does this mold continue that one, what are this
+//! mold's successors, is it a form's first tile, does it end its form or
+//! require a tail. Answered by search, those questions are the molder's largest
+//! self-time cost. The build therefore also lays down, per mold, the start of
+//! its run in the pair list, and three dense flags for first, completing-last
+//! and required-tail. `Pbg::mold_successors` reads a run in constant time,
+//! `Pbg::molds_adjacent` searches only that run, and the membership queries
+//! read a flag. The lists stay the record and the fingerprint does not change:
+//! the run starts and flags are computed from them, and
+//! `tests::walk::form_membership_flags_agree_with_their_lists` checks every
+//! built-in mold, and the first id past the table, against them.
+//!
+//! - Alternatives: a hash set of pairs costs a hasher and `std`; a dense
+//!   mold-by-mold bit matrix is quadratic in a table of over two thousand
+//!   molds.
+//! - Reversal: a grammar whose successor runs grow long enough that a per-run
+//!   search costs more than the list search did.
+//!
+//! # A lookup builds its refusal only on a miss
+//!
+//! The lookups by mold and context id — `Pbg::mold`, `Pbg::bounds`, `Pbg::step`
+//! and `Pbg::rule_of` — run on every candidate of every token and almost never
+//! miss. `PbgError` has a variant that owns a vector, so a refusal built
+//! eagerly and dropped on the hit path (`Option::ok_or`) would run the error's
+//! drop glue on every call. Each lookup matches on the hit and builds the
+//! refusal in the miss arm; `RoleTable::role_of` and `PrecTable::prec` take the
+//! same shape.
+//!
+//! - Alternatives: `ok_or_else` is the same code behind a closure the lint wall
+//!   flags as needless for a variant of plain fields; making `PbgError`
+//!   trivially droppable would move its owned diagnostics behind indices into a
+//!   side table.
+//! - Reversal: a `PbgError` with no owning variant has no drop glue, and the
+//!   eager form costs nothing again.
+//!
+//! # Fingerprint
+//!
+//! `Pbg::fingerprint` is 64-bit FNV-1a over the frame byte `M`, the precedence
+//! DAG's fingerprint, the mold count, each mold as its label, a zero byte, its
+//! context, its group and its sort tag, then the context count and each context
+//! as its two sort-facing bytes and its two step lists — a list as its length,
+//! then each step as `S` and a sort tag or `T`, a label and a zero byte. Words
+//! are little-endian and counts 64-bit, so the value is the same on every
+//! platform. The accumulator is the shared `Fnv64` of `gandr-theory-graphs`. A
+//! fingerprint keys a cache and is no proof of equality.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;

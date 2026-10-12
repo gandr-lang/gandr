@@ -4,6 +4,16 @@
 //! as an obligation. Until the recovery engine publishes its own vocabulary,
 //! the renderer seam carries every repair as one [`DiagCard`] under
 //! [`DiagnosticCode::ParseRepair`], its class spelled into the message.
+//!
+//! # Repairs are cards
+//!
+//! The session carries parse repairs beside its step. The encoder selects
+//! obligations starting at or after the chunk boundary and projects each onto a
+//! `DiagCard` under `W0012`, with its span shifted to chunk-relative bytes. An
+//! obligation starting earlier, even one crossing the boundary, is omitted; a
+//! zero-width obligation at the boundary is retained. Distinct obligation
+//! classes have distinguishable messages. A richer recovery vocabulary is the
+//! alternative when the renderer seam supports structured recovery actions.
 
 use alloc::string::String;
 use alloc::string::ToString as _;

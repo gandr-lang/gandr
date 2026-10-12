@@ -8,6 +8,25 @@
 //! least one settled declaration carrying it. Nothing pins how many: adding a
 //! fixture changes a count and reddens nothing.
 //!
+//! `Exercised` counts, per row of the fragment's exercised table, the settled
+//! declarations carrying it: the four formers' directions read off the formers
+//! in each accepted body (the judgement fixes each former's mode, so a lambda
+//! or a return in an accepted body was checked, a force or an application
+//! synthesised), the subsumption bridge read off the evidence's conversion
+//! count, and each refusal row read off the produced refusal — the lowering's
+//! unresolved name, unresolved type head and declined reserved form; the
+//! checker's shape refusal of a return, its refusal of a lambda where a type is
+//! synthesised, and of a thunk that is an unsigned definition's whole body —
+//! and the obligation row off an owed verdict. A declaration counts once per
+//! row however often the former stands in it, and an unsettled one counts in no
+//! row.
+//!
+//! The corpus suite asserts every row is carried by the two roots, and that the
+//! strict root holds declarations; nothing pins how many. The alternative was a
+//! pinned count of fixtures per row, which turns adding a fixture into a
+//! failing test. The choice reverses if a row needs a minimum population above
+//! one, which would be stated as a bound, not a pin.
+//!
 //! # A former has one direction
 //!
 //! The judgement fixes each former's mode — a lambda and a return check, a

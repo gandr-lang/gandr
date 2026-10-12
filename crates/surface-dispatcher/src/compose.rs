@@ -16,6 +16,46 @@
 //! author's source. What crossed is exported once, as the kernel artifact a
 //! settled composition carries, each declaration under its structured name.
 //!
+//! After the checker judges a module, every declaration it accepted is offered
+//! to the kernel through the checker's bridge. A declaration the kernel
+//! rejects, or one the bridge refuses for any reason but a reference to a
+//! declaration that did not cross, is `ComposeFault::Readmission`: a
+//! disagreement between the two checkers is an engine fault, exit `2`, never a
+//! verdict about the author's source. A refused declaration crosses as its mark
+//! and a reference to it is withheld, and neither is a disagreement.
+//!
+//! This goes beyond the slice's plan, which settles the checker's verdicts
+//! alone. The kernel is the oracle the checker answers to, and the readmission
+//! costs one erasure per accepted declaration; running it on the pass that
+//! gates means no acceptance a run reports is the untrusted checker's word
+//! alone. The choice reverses if readmission's cost dominates a run, at which
+//! point it moves behind a flag that the gate still sets.
+//!
+//! What crossed is exported once on the same pass: `Composed::Settled` carries
+//! `kernel`, the canonical artifact of every declaration that crossed, in
+//! kernel admission order and under the module's structured names, so a caller
+//! that persists the kernel environment — the session's kernel checkpoint —
+//! never readmits the module itself. The export is one encoding of an
+//! environment the readmission already built. The alternative was carrying the
+//! readmission and leaving the export to a caller, which would make every
+//! caller own the name table and the encoding call. The choice reverses if the
+//! export's cost shows in a run that never reads it.
+//!
+//! **The admission can follow the report.** `judge` checks the module, builds
+//! its program and settles its verdicts, and returns them as `Judged` beside
+//! the module's `Admission`: the checker's arena, its verdicts and the
+//! structured names. `Admission::admit` readmits and exports, and
+//! `Judged::admit` completes the composition with the artifact. A disagreement
+//! outranks a settle fault there, as it does in `judge_module`. The settle
+//! comparison reads only the checker's verdicts, so a module settled before its
+//! admission settles to the report one settled after it gives;
+//! `a_judged_module_renders_before_its_admission` compares the two orders. The
+//! readmission and the export are linear in the module and the judgement of an
+//! edited revision need not be, so an interactive caller renders the report
+//! first and admits after. The batch verbs gate on the admission and keep
+//! `judge_module`. The split reverses if the settle comparison comes to read
+//! anything the readmission mints.
+//!
 //! # The admission runs after the composition is read
 //!
 //! [`judge`] checks, focuses and settles a module and returns the settled
@@ -27,6 +67,35 @@
 //! completes ([`Judged::admit`]). [`judge_module`] is the two in sequence, and
 //! a kernel disagreement takes precedence over a settle fault, as it did when
 //! the readmission ran first.
+//!
+//! # One composition serves both verbs
+//!
+//! `check` and `test` run the same walk and the same `compose`; they differ
+//! only in what `shown` prints and in what `--goals` does to the gate. A source
+//! is lowered exactly once per run, under one strictness, and each declaration
+//! gets exactly one verdict: the checker's, settled against what it states.
+//! `RunReport::lowerings` counts every lowering the crate performs, and the
+//! corpus suite asserts it equals the number of sources read. `run` composes
+//! its one source through the same `compose`, under the root its path
+//! classifies as.
+//!
+//! The alternative was a total session pass and a separate strict tier over the
+//! same sources, which lowers each source twice and gives each declaration two
+//! verdicts that can disagree. The choice reverses only if a verb needs a
+//! different lowering of the same source, which would arrive as a parameter of
+//! the one composition rather than a second one.
+//!
+//! The session (`gandr-surface-session`) is the one other caller. It runs the
+//! same two halves `compose` runs — the lowering, then `judge` with the
+//! `Admission` it leaves run after the face renders — and keeps the lowered
+//! module between them to hand the incremental checker, so a submission's
+//! verdicts are this composition's and the corpus agreement suite there
+//! compares them source by source. It parses through its own form store, which
+//! takes up the forms an edit left unchanged, and lowers that parse with
+//! `lower_parsed`, the lowering half of `lower_source` past its parse; the
+//! parse it hands over equals `parse` of the same text, so the lowering is the
+//! one `compose` runs. The halves are public rather than duplicated there
+//! because a second composition is exactly what this section rules out.
 
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;

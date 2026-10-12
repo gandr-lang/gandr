@@ -58,7 +58,81 @@
 //! universe — so every face names a declaration's type in the same words.
 //!
 //! Each decision, with the alternative it was chosen over and what would
-//! reverse it, is in this crate's `README.md`.
+//! reverse it, is in the module that owns it.
+//!
+//! # A crate of its own, above the dispatcher
+//!
+//! The session owns incremental state and checkpoints the batch pipeline has no
+//! use for, and three faces read it. It sits in `surface` after the dispatcher
+//! and the diagnostics renderer and depends on the dispatcher and below, never
+//! on a face.
+//!
+//! The alternatives were the dispatcher, which would carry state its `check`
+//! and `test` verbs never read, and the first face, which would leave the
+//! second to duplicate it. The choice reverses if one face remains the only
+//! reader; the session would then fold into it.
+//!
+//! # Contract evidence and its limits
+//!
+//! Nontrivial callable items carry executable `#[spec(...)]` predicates and
+//! bounded adequacy witnesses. The predicates observe recorded state: ordered
+//! rows, preserved payloads, exact absence reasons, source bounds, canonical
+//! tree numbering, and session transitions. They do not repeat parsing,
+//! callback invocation, evaluation, or storage effects. The private child
+//! iterator exposes its borrowed position to its predicates; `DeclarationTree`
+//! makes native declaration categories explicit in the snapshot API.
+//!
+//! Declarations with no callable boundary, opaque strategy constructors,
+//! formatter sinks, best-effort cleanup, and the consumed-input differential
+//! helper state precise executable exemptions. Their observable obligations are
+//! exercised where the inputs and effects exist. Every exemption names that
+//! boundary rather than treating a non-const comparison as an exemption.
+//!
+//! | Decision surface | Evidence and bounded domain | Rung |
+//! | ---------------- | --------------------------- | ---- |
+//! | Incremental reuse | Literal adoption and retyping fixtures, plus 200 generated edit chains; complete typings compared with a fresh checker. | L2 |
+//! | Corpus composition | Every source from both configured corpus roots compared with the walk; both paths share parsing and judgement. | L3 |
+//! | Edit reconstruction | Literal actions, 200 generated revision pairs, and a hand-built dynamic tree; applying the diff reconstructs the new image. | L3 |
+//! | Item alignment | All subset/permutation pairs of three references compared with exhaustive reference subsequences. | L2 |
+//! | Localization | Descent compared with a linear span oracle on generated trees, including ties; visited-node bounds cover the measured shapes only. | L2 |
+//! | Arena and origin boundaries | Missing item/body/child, unrecorded spans, absent roots of each sort, descendant hulls, and callback-once fixtures. | L3 |
+//! | Session and evaluation | Exact report rows, import retention, attempt counts, missing/refused/holed eligibility, and concrete integer/thunk results. | L3 |
+//! | Persistence and formatting | Real file-store reopen/cleanup, kernel readback, refusing checkpoint/block stores, and refusing output sinks. External failure modes beyond those fixtures are not claimed. | L3 |
+//!
+//! Diagnostics assert stable refusal categories and exact primary/context
+//! spans, not title wording or golden report text. The obligation suites
+//! preserve repair classes, loci, multiplicities, and ordering; agreement with
+//! the same parser is transfer evidence, not an independent repair oracle. Goal
+//! flags are compared with the corresponding checkpoint footprints.
+//!
+//! The generated source domain uses the supported scalar, declaration,
+//! reference, and nullary-function forms. Hand-built arena fixtures cover core
+//! child ordering without pretending those effect formers have surface syntax.
+//! These finite witnesses do not establish universal diff soundness, typing
+//! correctness, storage atomicity, or behavior of surface forms the grammar
+//! cannot express.
+//!
+//! The choice is cheap executable boundary checks plus independent or literal
+//! consumer observations. Re-running the full parser, evaluator, or store in a
+//! postcondition would duplicate work and effects; opaque test strategies are
+//! not sampled a second time. An exemption can be removed when the relevant
+//! state has a non-consuming observer. Broader grammars or new decision
+//! branches require broader witnesses, not a stronger claim about the samples
+//! in hand.
+//!
+//! # References
+//!
+//! - Microsoft. "Language Server Protocol Specification, version 3.17." 2022. <https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/>
+//!   — full-document synchronisation, the shape a submission takes: the client
+//!   owns the buffer and sends it whole.
+//! - Porter et al. "Incremental Bidirectional Typing via Order Maintenance."
+//!   arXiv:2504.08946, 2025. <https://arxiv.org/abs/2504.08946> — an
+//!   incremental checker that consumes structured edit actions rather than
+//!   text, the input edit reconstruction produces.
+//! - Hunt, J. W., and Szymanski, T. G. "A Fast Algorithm for Computing Longest
+//!   Common Subsequences." Communications of the ACM 20(5), 1977. — the
+//!   reduction of a longest common subsequence over distinct keys to a longest
+//!   increasing subsequence, which item alignment uses.
 
 extern crate alloc;
 

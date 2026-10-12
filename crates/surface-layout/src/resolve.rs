@@ -11,6 +11,29 @@
 //! it answers a deferred promise carrying its exact context, which is forced
 //! only when nothing in-bound competes with it. The memo table is an ordered
 //! map, bounded by the memo-state ceiling charged before each insertion.
+//!
+//! # Resolution and the cost order
+//!
+//! A layout's cost is the sum of squared overflow past the page width, then the
+//! number of line breaks, compared lexicographically
+//! (`algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`).
+//! A measure pairs a cost with the column the layout ends at and the plan that
+//! produces it. A state answers a frontier: measures sorted by cost, none
+//! dominated in both cost and ending column. A choice merges its branches'
+//! frontiers; a concatenation resolves its right operand at each of the left
+//! frontier's ending columns. Each in-bound state is resolved once and memoized
+//! for the rest of the resolution
+//! (`algebra::tests::shared_contexts_reuse_memo_states`).
+//!
+//! **Squared overflow, then line count.** Overflow dominates, so no layout
+//! trades a column past the page for fewer lines; squaring spreads overflow
+//! across lines rather than piling it on one.
+//!
+//! - **Alternatives.** Linear overflow prefers one very long line to two
+//!   slightly long ones. Line count first prints everything on one line
+//!   whenever any layout overflows.
+//! - **Reversal.** A client that needs another order; the order lives in
+//!   `measure` and no client may replace it.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;

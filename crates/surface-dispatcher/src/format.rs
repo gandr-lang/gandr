@@ -20,6 +20,36 @@
 //! [`Formatting::visit`] at a width above one lays the sources out on a pool,
 //! largest first, and hands the steps over in walk order once every source
 //! is laid out, so every step is the serial formatting's at every width.
+//!
+//! # The format verb lays out what a walk reaches
+//!
+//! `Formatting::step` reaches the paths it was given through the walk's own
+//! traversal — the same order, the same skipped links, the same fault for a
+//! path naming no source — so `gandr fmt` and `gandr check` over the same paths
+//! visit the same sources. Each source is read, parsed, and laid out by
+//! `gandr-surface-format` at the invocation's page; a source whose formatted
+//! text is its own is `FormatStep::Unchanged` and is never written, and one
+//! whose text differs is `FormatStep::Changed`, written back over the source
+//! first under `Rewrite::InPlace` and left untouched under `Rewrite::Check`. A
+//! source the formatter refuses, or the parse cannot commit, is a `FormatFault`
+//! and stays as written; the formatting continues past it.
+//!
+//! `Formatting::visit` forks the way `Walk::visit` does: at a width above one
+//! it reaches every path first, then lays the sources out on scoped threads,
+//! largest first, and hands the steps over in walk order, so every byte the
+//! driver prints, every source rewritten and the exit are the serial
+//! formatting's. A source's text lives only on the thread laying it out; what
+//! the calling thread holds is each path and whether its layout changed. The
+//! serial formatting costs a parse, a layout and the formatter's own reparse
+//! per source; forked, `fmt --check` takes what `check` takes at the default
+//! width. The alternative was the stepped formatting alone, which streams but
+//! leaves the formatter several times slower than the checker on the same tree;
+//! it reverses if a caller needs a source's line printed before the next is
+//! laid out. The formatted text is written with `std::fs::write`, which keeps
+//! the file's permissions and replaces its bytes in place; a write interrupted
+//! midway leaves a truncated source, which a temporary file renamed over the
+//! source would not. That alternative loses the file's permissions and any hard
+//! link to it, and reverses the choice if a truncated source is ever reported.
 
 use core::cmp::Reverse;
 use core::num::NonZeroUsize;

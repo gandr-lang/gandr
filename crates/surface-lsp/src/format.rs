@@ -14,6 +14,43 @@
 //! A range request answers an edit for each form the range overlaps, or holds
 //! the cursor of, whose layout changed, and leaves the blank lines between
 //! forms as the client wrote them.
+//!
+//! # Formatting answers the formatter's layout as edits
+//!
+//! A formatting request parses the held text under the process's grammar and
+//! lays it out through `gandr-surface-format` at its default page of 100
+//! columns, which keeps every token and comment, copies strings, shell blocks,
+//! holes and repaired forms as written, and refuses a layout whose parse
+//! differs from the text's. The answer is the edits that turn the held text
+//! into that layout; the server's copy changes only when the client applies
+//! them and synchronises back.
+//!
+//! - **The whole document** answers no edit when the layout is the text's own,
+//!   and otherwise one edit.
+//! - **A range** answers one edit per top-level form whose span overlaps it, or
+//!   holds it when the range is empty, and whose layout changed. A form carries
+//!   the comments standing directly before it, as the formatter places them;
+//!   the blank lines between forms are never edited. The formatter lays each
+//!   top-level form out on its own, so a form's layout does not depend on its
+//!   neighbours.
+//! - **Every edit is trimmed** to the span between the longest prefix and the
+//!   longest suffix the source and the layout share, both on character
+//!   boundaries, so a client keeps its cursor, marks and undo granularity on
+//!   every line the layout left alone.
+//! - **A refusal** — a grammar that did not build, a parse that did not commit,
+//!   or a layout the formatter refuses — answers `-32803` request failed with
+//!   the reason, so the client says why the document was not formatted rather
+//!   than silently leaving it.
+//!
+//! The client's `options` — tab size, spaces or tabs — are read and set aside:
+//! the formatter's layout is the one `gandr fmt` writes, and a second layout
+//! per editor setting would make the two disagree. The alternatives were one
+//! edit replacing the whole document, which every client applies but which
+//! moves a cursor anywhere in it, and a minimal diff per line, which costs a
+//! diff for edits a client merges anyway. The choice reverses when a client is
+//! measured paying for the trimmed edit's size, or when the formatter gains
+//! settings a project chooses, which the server then reads from the workspace
+//! configuration rather than from `options`.
 
 use core::fmt;
 

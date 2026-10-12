@@ -1,4 +1,56 @@
 //! The event loop, over the terminal or off it.
+//!
+//! # The renderer
+//!
+//! The face draws with `ratatui` 0.30.2, defaults off, with one feature:
+//! `crossterm`, the backend `gandr tui` draws through. Off are `all-widgets`,
+//! which adds the calendar widget and `time`; `layout-cache`, an LRU of solved
+//! layouts that the face's one three-pane layout does not need; `macros`, a
+//! crate of span and layout macros the face does not use; `underline-color`, a
+//! style the face does not paint; and the other backends, `serde`, `palette`,
+//! `portable-atomic`, `scrolling-regions` and the unstable features, which the
+//! face has no use for. `crossterm` 0.29.0 is reached through
+//! `ratatui::crossterm` rather than pinned beside it, so the graph holds the
+//! one crossterm the backend was built against: raw mode is enabled and
+//! restored through a single copy of crossterm's terminal state, and a second
+//! pin could not drift from the backend's.
+//!
+//! ratatui's crossterm backend takes crossterm with its default features and
+//! turns its own underline colour on, so crossterm's event reading, bracketed
+//! paste and its `derive_more` helpers build whatever the face asks; the
+//! feature set above is the smallest ratatui admits.
+//!
+//! The face brings into the driver ratatui's four crates; crossterm with `mio`,
+//! `signal-hook` and `rustix`; `parking_lot`; `kasuari`, the layout solver;
+//! `lru`, `compact_str`, `itertools`, `strum` and `unicode-truncate`; and eight
+//! procedural macro crates — `instability` with `darling`, `strum_macros`,
+//! `thiserror-impl`, `derive_more-impl`, `document-features`, `indoc` and
+//! `rustversion`. `kasuari` pins a third `hashbrown` and ratatui's default
+//! `hashbrown` a second `foldhash`; the workspace's duplicate-crate allowance
+//! names both with their reversal. The face is always built: `gandr tui` needs
+//! it, and a feature gate would only make the default binary unable to do what
+//! its verb says.
+//!
+//! The alternatives were `cursive`, which owns the event loop and its own view
+//! tree — the face's loop is `gandr-surface-repl`'s and must stay the driver of
+//! every submission — and has one maintainer and fewer than two hundred
+//! dependents; `termwiz`, the terminal layer of one terminal emulator, with one
+//! maintainer and a few dozen dependents; and `crossterm` alone, which would
+//! hand-write the layout, the styled text, the frame diffing and the headless
+//! backend ratatui provides. ratatui with crossterm is the pair the community's
+//! crate guides name for a terminal interface, ratatui maintained by a team and
+//! crossterm by some two hundred contributors, with no published advisory
+//! against either. The choice reverses on a high-risk advisory or an
+//! unmaintained mark against ratatui or crossterm, or when a face needs a
+//! backend ratatui does not carry.
+//!
+//! # The smoke face
+//!
+//! `run_smoke` drives the same event loop as `gandr tui` over ratatui's
+//! headless backend, 80 columns by 24 rows, with an input source that asks to
+//! leave at its first read, then prints `gandr tui: ready`. The gate exercises
+//! the grammar, the loop's construction, one full paint and the event loop
+//! without a terminal, and the driver's witness spawns it as a user would.
 
 use std::io;
 use std::io::Write;

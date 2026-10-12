@@ -32,6 +32,59 @@
 //! such shape back as [`LoweringRefusal::MalformedForm`], naming the form, the
 //! fault and the bytes the fault stands at, so a repaired tree is never
 //! lowered as if the source had written it.
+//!
+//! # Repairs are refused where they stand
+//!
+//! When the parser repairs a form, its tree can hold grout where the source
+//! wrote no term and closing tiles the source never wrote. The first repair
+//! among a form's children refuses the form as `MalformedForm` with the
+//! `Repaired` fault, at the repair's own span. A hole holding no operand, a
+//! hole holding a juxtaposition, and a tile out of its place are refused the
+//! same way, as `MissingOperand`, `ExtraOperand` and `MisplacedTile`.
+//!
+//! The alternative was to lower around a repair, reading grout as a hole term.
+//! It was declined because the core fragment has no hole, and a hole would be
+//! an obligation the classifier forbids a refusal to become. Reversal: when the
+//! core gains typed holes, grout lowers to one and the repair stops refusing.
+//!
+//! A minted close is usually an effect, not a cause: the parser closes an outer
+//! form at its opening because an inner form swallowed the closer the outer one
+//! needed. So when a form's first repair is a minted close and a form inside it
+//! holds a repair too, the refusal names the deepest such inner form, at its
+//! repair — the first in source order among equals. A source that ends after a
+//! case's last arm, the case and its definition both open, is refused as the
+//! case at the end of the arm rather than as the definition at its opening
+//! brace.
+//!
+//! The alternative was to report the outer close where the parser minted it,
+//! which is faithful to the tree but points at the one place the author did not
+//! err. Reversal: when the parser places a minted close at the bytes that
+//! caused it, the outer repair is the cause and the walk inward goes.
+//!
+//! # Four ways out of the fragment
+//!
+//! `OutOfFragment` names the boundary a form crossed. `Reserved`: the form
+//! parses and is declined by name — the lazy product, a recursive call's claim
+//! other than `<` — so the classifier's unrepresentable class is inhabited by
+//! design. `Unadmitted`: the grammar reads the form and this fragment does not
+//! — a statement other than `run`, an annotated or patterned `run` binder, a
+//! recursive function with no parameter to recurse on, a claim on a name that
+//! is not a recursive function or that heads no call, an explicit parameter
+//! block, a parameter named as a type variable, an annotation, a string
+//! interpolation, a grade on a returner, a capitalised name nothing answers, a
+//! selection no module governs, a level wider than a level constant, a type
+//! abstraction, a typed lambda parameter, a number with a fraction or an
+//! exponent, and every kind outside the dispatch table. `WrongSort`: the form
+//! produces another sort than its position demands. `Arity`: a lambda with
+//! other than one parameter, a block with no last computation, a recursive call
+//! with other than one argument per parameter. `NotInTail`: a `return` or
+//! `become` standing where no path through a body passes (the `lower` module's
+//! § A function exits where its body ends). `JoinsBlock`: a written answer on a
+//! match whose arms continue the block after it.
+//!
+//! `Unadmitted` and `Arity` exist because the grammar is the whole surface and
+//! the fragment is a small part of it; without them every form the surface has
+//! and the core lacks would be misreported as a sort error.
 
 use core::error::Error;
 use core::fmt;

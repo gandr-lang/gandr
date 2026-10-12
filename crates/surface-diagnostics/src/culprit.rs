@@ -7,6 +7,43 @@
 //! term whose type does not convert, the closer the source never wrote. Two
 //! refusals of one class at two different kinds of locus therefore carry two
 //! different labels.
+//!
+//! The title names the refusal and the class sorts it, so the primary label
+//! spends the underline on the bytes themselves: `not found in this scope`
+//! under a name nothing binds, `its type does not convert` under a mismatched
+//! term, `missing }` where a closer was never written. `Culprit` holds one
+//! label per refusal variant, chosen by an exhaustive match, so a new refusal
+//! cannot render until it says what its locus is. `Report::label` exposes the
+//! primary label as a `PrimaryLabel` and `Report::note` the declaration note,
+//! so a face that lays out its own message — the language server's — composes
+//! the same parts the terminal prints.
+//!
+//! The alternative was the failure class as the label, which repeats what the
+//! title already sorted and gives every malformed-source refusal one underline
+//! whatever its cause. Reversal: when refusals carry their own per-site labels,
+//! the table gives way to them.
+//!
+//! # A label names the types its refusal compares
+//!
+//! A checker refusal that sets a type against another — a type, sort, level or
+//! family-argument mismatch — or meets a type of the wrong shape names those
+//! types as nodes, and a type the checker synthesised has no origin to mark.
+//! The primary label therefore carries them after its text: ``its type does not
+//! convert: expected `Integer`, found `String` ``, ``its type is not of the
+//! required shape: found `Integer` ``. The types are the ones the dispatcher
+//! spelled at the judgement, through the printer the REPL and the language
+//! server's hover share, and `Report::comparison` exposes them as a
+//! `Comparison` of an expected and a found side, each absent when the refusal
+//! names no type there or none could be spelled on one line. A refusal that
+//! compares nothing keeps its label as it was.
+//!
+//! The alternatives were a note after the snippet, which the reader meets after
+//! the underline it explains, and the types in the title, which the checker's
+//! `Display` words without the spellings. Each nested reason (the `locus`
+//! module) spells the type its own judgement was checked against, so the
+//! primary label keeps only the failing comparison. Reversal: a type whose
+//! spelling needs more than one line, left unspelled, moves to a note under the
+//! snippet.
 
 use core::fmt;
 
