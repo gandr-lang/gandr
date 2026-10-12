@@ -495,6 +495,8 @@ pub struct Store
     last_serial: FrameSerial,
     /// The number of reset and handler delimiters in the active frame region.
     delimiters: usize,
+    /// The highest the frame region has stood since the store was made.
+    peak: usize,
 }
 
 impl Store
@@ -1112,6 +1114,7 @@ impl Store
         self.frames.push(FrameEntry { frame, serial });
         self.delimiters = self.delimiters.saturating_add(frame.delimiters().0);
         self.last_serial = serial;
+        self.peak = self.peak.max(self.frames.len());
         Ok(())
     }
 
@@ -1184,6 +1187,30 @@ impl Store
     pub fn frame_height(&self) -> FrameHeight
     {
         FrameHeight::from(self.frames.len())
+    }
+
+    /// The highest the frame region has stood since the store was made: the
+    /// most continuation any run on it held at once.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the largest height any push left, never below the current
+    ///   height.
+    /// - provides: the observation that a tail call runs in constant
+    ///   continuation.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — three pushes shrunk to a mark of one leave a peak of
+    ///   three, distinguishing the peak from the current height.
+    /// - witness: `store::tests::frames_shrink_to_a_mark`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| usize::from(ret) >= self.frames.len())]
+    pub fn peak_height(&self) -> FrameHeight
+    {
+        FrameHeight::from(self.peak)
     }
 
     /// The frames, bottom first: the walkable continuation.
@@ -1578,6 +1605,11 @@ mod tests
             FrameHeight::from(1_usize),
             store.frame_height(),
             "back at the mark"
+        );
+        assert_eq!(
+            FrameHeight::from(3_usize),
+            store.peak_height(),
+            "the peak keeps the highest the region stood"
         );
         assert_eq!(
             Some(MemoState::Unforced),

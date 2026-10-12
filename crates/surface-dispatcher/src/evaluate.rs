@@ -106,8 +106,9 @@ quenchant_shape::reason_enum! {
 }
 
 /// The transitions one run may spend: far past any run the fragment can
-/// write, which has no recursion and so always halts, and the bound that
-/// keeps a run of a later fragment from looping unobserved.
+/// write, whose only recursion descends structurally and so always halts,
+/// and the bound that keeps a run of a later fragment from looping
+/// unobserved.
 const RUN_BUDGET: usize = 1_usize << 24_u32;
 
 /// A checked module, focused and ready to run.
@@ -1853,6 +1854,80 @@ def bad : Integer ; def bad = "text" ; def small : Type ; def small = Integer ;"
         );
         assert!(
             matches!(run(&mut program, SurfaceName::from("answer")), Evaluation::Value(ref value) if value.as_ref() == "42")
+        );
+    }
+
+    /// The highest continuation a run of the thunk declared as `name` held:
+    /// the frame region's peak over the run of the declaration and the force
+    /// of its thunk, on a fresh machine; it panics unless both runs halt.
+    ///
+    /// # Specification
+    /// trivial.
+    fn peak(
+        program: &mut Program<'_>,
+        name: SurfaceName<'_>,
+    ) -> gandr_core_sequent::FrameHeight
+    {
+        let position = program
+            .declarations
+            .iter()
+            .position(|declared| declared.name == name)
+            .expect("the program declares the name");
+        let (returned, forced) = program
+            .entries(ConstantIndex::from(position))
+            .expect("the declaration focuses");
+        let budget = super::StepCount::from(super::RUN_BUDGET);
+        let mut machine = super::Machine::new(&program.arena, &program.definitions);
+        let commands: [_; 2] = (returned, forced).into();
+        for command in commands {
+            assert!(
+                matches!(machine.run(command, budget), Ok(super::Outcome::Halted(_))),
+                "`{name}` runs to a value"
+            );
+        }
+        machine.store().peak_height()
+    }
+
+    #[test]
+    fn a_become_loop_runs_in_constant_continuation()
+    {
+        let numeral = |depth: usize| {
+            let mut written = String::from("Zero");
+            for _ in 0 .. depth {
+                written = format!("Succ({written})");
+            }
+            written
+        };
+        let mut source = String::from(
+            "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n\
+             def rec down(n : Nat) -> -F Nat {\n  case n {\n    Zero => return n,\n    \
+             Succ(p) => become down[<](p)\n  }\n}\n\
+             def rec deep(n : Nat) -> -F Nat {\n  case n {\n    Zero => return n,\n    \
+             Succ(p) => { run m <- deep[<](p) ; return m }\n  }\n}\n",
+        );
+        for (name, depth) in [("short", 16_usize), ("long", 256_usize)] {
+            core::fmt::Write::write_fmt(
+                &mut source,
+                format_args!(
+                "def {name} : Nat ;\ndef {name} = {} ;\n\
+                 def {name}_tail : +U (-F Nat) ;\ndef {name}_tail = thunk {{ become down({name}) }} ;\n\
+                 def {name}_bound : +U (-F Nat) ;\ndef {name}_bound = thunk {{ become deep({name}) }} ;\n",
+                    numeral(depth)
+                ),
+            )
+            .expect("a string takes every write");
+        }
+        let mut program = program(source.as_str());
+        let mut peak = |name: &str| peak(&mut program, SurfaceName::from(name));
+        let (short_tail, long_tail) = (peak("short_tail"), peak("long_tail"));
+        let (short_bound, long_bound) = (peak("short_bound"), peak("long_bound"));
+        assert_eq!(
+            short_tail, long_tail,
+            "a `become` loop holds the same continuation however long its input"
+        );
+        assert!(
+            usize::from(long_bound) >= usize::from(short_bound).saturating_add(240_usize),
+            "a bound recursion holds a frame per step: {short_bound:?} against {long_bound:?}"
         );
     }
 }
