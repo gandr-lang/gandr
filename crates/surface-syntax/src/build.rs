@@ -294,6 +294,10 @@ pub struct TreeBuilder<'source>
     staged: Vec<StagedNode>,
     /// Every staged node's children, in one flat list.
     edges: Vec<StagedId>,
+    /// Scratch for the significant child digests [`node`](Self::node) folds,
+    /// kept across calls: a fold allocates only when it has more significant
+    /// children than every fold before it.
+    child_digests: Vec<NodeDigest>,
 }
 
 impl<'source> TreeBuilder<'source>
@@ -343,6 +347,7 @@ impl<'source> TreeBuilder<'source>
             grammar,
             staged: Vec::new(),
             edges: Vec::new(),
+            child_digests: Vec::new(),
         })
     }
 
@@ -464,13 +469,18 @@ impl<'source> TreeBuilder<'source>
     ) -> Result<StagedId, SyntaxError>
     {
         let fragment = self.source.fragment(span)?;
-        let mut digests: Vec<NodeDigest> = Vec::with_capacity(children.len());
-        self.attach(children, |staged| {
+        // The scratch leaves the builder while `attach` borrows it, and returns
+        // whether or not a child is refused.
+        let mut digests = core::mem::take(&mut self.child_digests);
+        digests.clear();
+        let attached = self.attach(children, |staged| {
             if bool::from(staged.label.significance()) {
                 digests.push(staged.digest);
             }
-        })?;
-        let digest = digest_of(label, fragment, &digests);
+        });
+        let folded = attached.map(|()| digest_of(label, fragment, &digests));
+        self.child_digests = digests;
+        let digest = folded?;
 
         Ok(self.stage(label, span, children, digest))
     }
