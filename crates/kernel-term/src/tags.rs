@@ -34,7 +34,8 @@
 //! and their arities. Native paths have distinct bytes. Element identity holds
 //! `0x30–0x37` and function identity `0x38–0x47`; [Element and function
 //! identity](#element-and-function-identity) states each assigned node's
-//! children and inline payload. The original `0x00–0x1F` meanings are frozen,
+//! children and inline payload, and [The lazy product](#the-lazy-product) does
+//! the same for `0x65–0x67`. The original `0x00–0x1F` meanings are frozen,
 //! including the static operators at `0x1E–0x1F`.
 //!
 //! | Byte or range | Meaning | Artifact reader |
@@ -79,9 +80,12 @@
 //! | `0x62` | Record projection, label and value child | Admitted |
 //! | `0x63` | Fixpoint, evidence byte and one computation child | Admitted |
 //! | `0x64` | Tuple projection, component and value child | Admitted |
-//! | `0x65–0xFF` | Unassigned | Refused |
+//! | `0x65` | Lazy product type, two computation-type children | Assigned; refused until kernel checking lands |
+//! | `0x66` | Lazy pairing, two computation children | Assigned; refused until kernel checking lands |
+//! | `0x67` | Lazy projection, inline side byte and one computation child | Assigned; refused until kernel checking lands |
+//! | `0x68–0xFF` | Unassigned | Refused |
 //!
-//! The admitted domain is sparse: the greatest assigned native byte is
+//! The admitted domain is sparse: the greatest admitted native byte is
 //! `0x64`, not a promise to accept every smaller byte. Boundary witnesses
 //! admit assigned native tags, refuse inline opcodes and retired bytes as
 //! native nodes, and retain the frozen block. The unit and the empty type are
@@ -164,6 +168,26 @@
 //! reader refuses them as it refuses any unassigned byte. Filling any of
 //! these slots holds [`FORMAT_VERSION`]: every byte in both ranges is a node
 //! tag, refused by name by the closed-vocabulary reader until it is admitted.
+//!
+//! # The lazy product
+//!
+//! The computation product `C & D` persists as its own former, binary as the
+//! core holds it; a lazy record of `n` entries is its right-nested chain.
+//! [`crate::types`] states why it is not the record of thunks.
+//!
+//! | byte | node | family | children, in order | inline payload |
+//! | ---- | ---- | ------ | ------------------ | -------------- |
+//! | `0x65` | [`NODE_CT_WITH`] | computation type | the left component type; the right component type | none |
+//! | `0x66` | [`NODE_C_WITH`] | computation | the left component; the right component | none |
+//! | `0x67` | [`NODE_C_PROJECT`] | computation | the observed pairing | the side, [`SIDE_LEFT`] or [`SIDE_RIGHT`] |
+//!
+//! The side byte precedes the child, as a tuple projection's component does;
+//! any other side byte is refused as an unknown tag at the side site, as the
+//! fixpoint's evidence byte is. All three children are computation-family
+//! nodes, so a value or value-type child is refused as a polarity fault.
+//! The three bytes hold [`FORMAT_VERSION`]: a reader that predates them
+//! refuses each by name as an unassigned byte, so no artifact means anything
+//! else by them.
 //!
 //! # Universe paths
 //!
@@ -566,6 +590,19 @@ pub const NODE_V_LIST_NIL: WireTag = WireTag(0x51);
 pub const NODE_V_LIST_CONS: WireTag = WireTag(0x5B);
 /// Node tag: pure fold, over element, result, list, nil and cons branches.
 pub const NODE_C_LIST_FOLD: WireTag = WireTag(0x5C);
+/// Node tag: the lazy product `C & D`, over its left and right component
+/// computation types.
+pub const NODE_CT_WITH: WireTag = WireTag(0x65);
+/// Node tag: the lazy pairing of two computations, introducing the lazy
+/// product of their types; neither component runs until it is observed.
+pub const NODE_C_WITH: WireTag = WireTag(0x66);
+/// Node tag: the projection of one side of a lazy pairing, with the side
+/// byte inline before its one computation child.
+pub const NODE_C_PROJECT: WireTag = WireTag(0x67);
+/// Projection side: the left component of a lazy pairing.
+pub const SIDE_LEFT: WireTag = WireTag(0);
+/// Projection side: the right component of a lazy pairing.
+pub const SIDE_RIGHT: WireTag = WireTag(1);
 /// The number of subterm-table child references an entry carries after its
 /// inline payload.
 ///
