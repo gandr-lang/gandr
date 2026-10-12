@@ -9,76 +9,153 @@
 //!
 //! # Objects
 //!
-//! A [`Shape`] is a [`Wiring`] the carrier admits, read as a graph, with no
-//! stick component. Each generator is a vertex; each wire records its
-//! producer and its consumer, either a vertex or an open end. A wire open at
-//! one end is a leg; attached at both, inner; open at both, a stick, which
-//! the constructors refuse by naming it. A wire with no operation on it may
-//! run between two vertices of a shape; alone, it is never an object. The
-//! generator labels, the order of a generator's ports and the order of the
-//! interface are forgotten: they are the data an element of a presheaf
-//! carries, as the symmetric-group action on a corolla's value does in the
-//! published graphical categories. Two shapes are the same object when a
-//! bijection of vertices carries one multiset of wire ends onto the other.
-//! The empty shape `∅` and the arity-zero corolla `•`, the point, are
-//! objects.
+//! A [`Shape`] is the graph a carrier [`Wiring`] presents. Each generator is a
+//! vertex; each wire records its producer and its consumer, either a vertex or
+//! an open end. A wire open at one end is a leg, attached at both inner, and
+//! open at both a stick, which the constructors refuse with
+//! `ShapeObstruction::Stick` naming the wire; a vertex with no incident wire is
+//! a point. A wire with no operation on it may run between two vertices of a
+//! shape; alone, it is never an object. Generator labels, the order of a
+//! generator's ports and the order of the interface are forgotten: they are
+//! what an element of a presheaf carries, as the corolla's symmetric-group
+//! action does in the published graphical categories. Two shapes are one object
+//! when a bijection of vertices carries one multiset of wire ends onto the
+//! other. The empty shape `∅` and the point `•`, one vertex with no ports, are
+//! objects; so is every disconnected shape without a stick.
+//!
+//! Forgetting the port order is a choice. The alternative keeps it, which makes
+//! every corolla rigid and the site a category over the signature's arities; it
+//! is the reading to take if a presheaf on the site must tell two orders of one
+//! generator's inputs apart, which the carrier's normal form does not.
 //!
 //! # Maps
 //!
 //! A [`SiteMap`] `f : G → K` is a pair `(S, φ)`: `S` sends each vertex `v` of
 //! `G` to a set `S_v` of vertices of `K`, and `φ` sends each wire of `G` to a
-//! wire of `K`. It is a map exactly when:
+//! wire of `K`. It is a map exactly when three clauses hold.
 //!
-//! - **disjointness**: distinct vertices have disjoint images;
-//! - **boundary**: with `Im = φ(wires G)`, let `in(S_v)` be the wires of `K`
+//! - **Disjointness.** Distinct vertices have disjoint images.
+//! - **Boundary.** With `Im = φ(wires G)`, `in(S_v)` is the set of wires of `K`
 //!   consumed in `S_v` whose producer lies outside `S_v` or which lie in `Im`,
 //!   and `out(S_v)` the wires produced in `S_v` whose consumer lies outside
-//!   `S_v` or which lie in `Im`. Then `φ` restricts to a bijection from the
-//!   wires `v` consumes onto `in(S_v)`, and from the wires `v` produces onto
-//!   `out(S_v)`;
-//! - **fusion**: a wire of `K` with two or more preimages has no inner wire of
+//!   `S_v` or which lie in `Im`. `φ` restricts to a bijection from the wires
+//!   `v` consumes onto `in(S_v)`, and from the wires `v` produces onto
+//!   `out(S_v)`.
+//! - **Fusion.** A wire of `K` with two or more preimages has no inner wire of
 //!   `G` among them, at most one preimage with a producer and at most one with
 //!   a consumer.
 //!
-//! The boundary clause reads `S_v` as the sub-graph substituted for `v`; the
-//! wires of `K` inside it and outside `Im` are its inner wires. The fusion
+//! The boundary clause reads `S_v` as the sub-graph substituted for `v`, whose
+//! inner wires are the wires of `K` inside it and outside `Im`. The fusion
 //! clause reads a wire with two preimages as a contraction, an output leg
 //! joined to an input leg; on stick-free sources the boundary clause already
-//! implies it. Composition is union of images and composition of wire
-//! functions; the identity sends each vertex to itself and each wire to
-//! itself.
+//! implies it, and it stays in the class as the statement of what a contraction
+//! is. Composition takes the union of images and composes the wire functions;
+//! the identity sends each vertex to itself and each wire to itself.
 //!
-//! A map is **raising** when no vertex is deleted, its kernel `{v : S_v = ∅}`
-//! empty, and **lowering** when it is a deletion followed by an isomorphism:
-//! images of at most one vertex covering the target, `φ` bijective. The
-//! **degree** of a shape is its vertices plus its inner wires.
+//! A map is **raising** when its kernel `{v : S_v = ∅}` is empty, and
+//! **lowering** when it is a deletion followed by an isomorphism: images of at
+//! most one vertex covering the target, `φ` bijective. The maps in both classes
+//! are the isomorphisms. The **degree** of a shape is its vertices plus its
+//! inner wires.
 //!
 //! # What the class borrows
 //!
-//! - The substitution reading of a graphical category's maps: a vertex goes to
-//!   a sub-graph with the same boundary, and a contracting coface identifies an
-//!   output leg with an input leg (Hackney, Robertson and Yau).
-//! - The non-unital monad's admissibility, no stick components (Raynor,
-//!   Definition 5.6), taken for the substituted sub-graphs and for the objects
-//!   both.
-//! - The external product's unit: `S_v = ∅` exactly when `v` has no ports, the
-//!   empty graph substituted at the point (Raynor, Remark 3.22). Deleting a
-//!   point is the one codegeneracy the class holds.
+//! - **Substitution.** A graphical map sends a vertex to a sub-graph with the
+//!   same boundary and identifies an output leg with an input leg for a
+//!   contracting coface (Hackney, Robertson and Yau).
+//! - **Admissibility.** The non-unital monad substitutes no graph with a stick
+//!   component, so no vertex goes to a bare wire, and the unit of contraction
+//!   is absent (Raynor, Definition 5.6).
+//! - **The external unit.** The empty graph is an admissible zero-graph: `S_v =
+//!   ∅` exactly when `v` has no ports (Raynor, Remark 3.22). Deleting such a
+//!   vertex is the one codegeneracy the class holds, and it is not an
+//!   isomorphism.
 //!
 //! # What the class decides
 //!
-//! - **Stick-free objects.** No object has a stick component. Keeping sticks
-//!   leaves no degree, since `↑ → ↑↑ → ↑` composes to the identity; connected
-//!   objects lose the point's deletion, which lands on `∅`; restricting fusions
-//!   to an output leg and an input leg is not closed under composition.
-//! - **Contraction raises.** A fusion is part of the map that performs it,
-//!   never factored out first; placed in the lowering class it loses the
-//!   factorization of `C(1,1) → p→q`.
-//! - **Point deletion is the kernel's codegeneracy.** A map deletes the points
-//!   in its kernel; deletions are split, addressed by their kernels, and graded
-//!   apart by point count.
+//! - **Stick-free objects.** Admissibility, no stick components, is taken for
+//!   the objects as it is for the substituted graphs, and enforced at
+//!   construction. Alternatives: keeping sticks leaves no degree, since `↑ → ↑↑
+//!   → ↑` composes to the identity through a non-invertible raising map;
+//!   connected objects, the restriction the published graphical categories
+//!   make, lose the factorization of `ε : • → •`, the point deleted and
+//!   included back, which passes only through `∅`; restricting fusions to an
+//!   output leg joined to an input leg is not closed under composition, since
+//!   two sticks sent to the legs of `C(1,1)` and the corolla then substituted
+//!   by `p→q` compose to a fusion of two sticks, so its closure holds a stick
+//!   fusion again. Reversal: a consumer whose presheaves must hold a value at
+//!   the bare wire, which brings the contraction unit back and with it the
+//!   stick fusions that leave no degree.
+//! - **Contraction raises.** A fusion is part of the map that performs it and
+//!   is never factored out first, as an inner coface raises the graphical
+//!   degree by the inner edge it creates. Alternative: contraction in the
+//!   lowering class, ordered by vertices plus wires; it loses the factorization
+//!   of `C(1,1) → p→q`, whose lowering half would join the corolla's legs into
+//!   a loop the acyclic carrier refuses. Reversal: a wheeled carrier, where
+//!   contracting a corolla's own legs is a shape.
+//! - **Point deletion is the kernel's codegeneracy.** A map deletes exactly the
+//!   points in its kernel, and every deletion has a section; deletions out of a
+//!   shape are addressed by their kernels, and the point-count grade sets them
+//!   apart from the point-free core, where every map raises. Alternative: no
+//!   deletion, as in the graphical categories, where every vertex has a
+//!   non-empty image; then `• → ∅` is no map and the empty graph, which the
+//!   monad admits as the external product's unit, is never substituted.
+//!   Reversal: a consumer that never restricts a presheaf along the removal of
+//!   a constant.
 //! - **No vertex reuse.** Images are disjoint, so a fold `• ⊔ • → •` and an
-//!   étale cover are not maps, though the full Kleisli subcategory holds them.
+//!   étale cover are not maps, though the full Kleisli subcategory over the
+//!   non-unital monad holds them. A fold retracts an inclusion, which leaves no
+//!   degree; its restriction on a Segal object is the diagonal the product
+//!   already determines. Reversal: a consumer whose presheaves must see that
+//!   diagonal as data.
+//!
+//! A circuit algebra substitutes disconnected graphs, so an image may be
+//! disconnected, and a restriction map needs no convex rewrite site.
+//!
+//! # Boundary wrappers
+//!
+//! Every count and index a signature here crosses is a transparent wrapper
+//! (`ShapeSize`, `PointCount`, `ShapeIndex`, `CaseCount`, `Degree`,
+//! `GeneratorBound`, …) converting with `From` both ways; the carrier's `Edge`,
+//! `Wire`, `EdgeCount` and `WireCount` name vertices and wires.
+//!
+//! # References
+//!
+//! - Clemens Berger and Ieke Moerdijk. "On an Extension of the Notion of Reedy
+//!   Category." _Mathematische Zeitschrift_ 269, 3–4 (2011), pages 977–1004.
+//!   `doi:10.1007/s00209-010-0770-x`; preprint `arXiv:0809.3341` — the
+//!   generalized Reedy axioms the checks run at the bound: the two classes
+//!   meeting in the isomorphisms, the degree, the factorization unique up to
+//!   unique isomorphism, and the rigidity axiom (iv), with its dual for the
+//!   opposite category.
+//! - Philip Hackney, Marcy Robertson, and Donald Yau. "On Factorizations of
+//!   Graphical Maps." _Homology, Homotopy and Applications_ 20, 2 (2018), pages
+//!   217–238. `doi:10.4310/HHA.2018.v20.n2.a11`; preprint `arXiv:1705.08546` —
+//!   graphical maps as an edge map and a vertex-to-sub-graph map, contracting
+//!   cofaces, the degree `|Vt| + |Edge_i|` and the generalized Reedy structure
+//!   on connected graphs.
+//! - Philip Hackney, Marcy Robertson, and Donald Yau. _Infinity Properads and
+//!   Infinity Wheeled Properads_. Lecture Notes in Mathematics 2147, Springer,
+//!   2015. `doi:10.1007/978-3-319-20547-2`; preprint `arXiv:1410.6716` — outer
+//!   and inner contracting cofaces, and that each creates one inner edge.
+//! - Sophie Raynor. "Modular Operads, Iterated Distributive Laws and a Nerve
+//!   Theorem for Circuit Algebras." Preprint, 2024–2026. `arXiv:2412.20262` —
+//!   the non-unital circuit-algebra monad over graphs without stick components
+//!   (Definition 5.6), the external product's unit (Definition 3.21, Remark
+//!   3.22), the empty graph as an admissible zero-graph, and the full Kleisli
+//!   subcategory whose maps include folds.
+//! - Michael Shulman. "Univalence for Inverse Diagrams and Homotopy
+//!   Canonicity." _Mathematical Structures in Computer Science_ 25, 5 (2015).
+//!   `doi:10.1017/S0960129514000565`; preprint `arXiv:1203.3253` — diagrams
+//!   over an inverse category built in type theory by induction on degree, each
+//!   stage a limit over the maps out of an object; a presheaf on the site is a
+//!   diagram on its opposite, whose maps out of a shape are the site's latching
+//!   maps into it.
+//! - André Joyal and Joachim Kock. "Coherence for Weak Units." _Documenta
+//!   Mathematica_ 18 (2013), pages 71–110. `doi:10.4171/dm/392`; preprint
+//!   `arXiv:0907.4553` — a weak unit as a cancellable pseudo-idempotent, the
+//!   property the unit check runs on scalars.
 //!
 //! [`Wiring`]: gandr_theory_circuit_algebras::Wiring
 

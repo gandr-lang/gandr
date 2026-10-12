@@ -44,6 +44,47 @@
 //! A [`Wiring`] is the matcher's working view of a diagram. It holds nothing a
 //! diagram's port-bijection representation does not already hold, and nothing
 //! in this crate reads a wiring back out as a term.
+//!
+//! # The fragment, at construction
+//!
+//! `Wiring::assemble` refuses a diagram outside the monogamous acyclic
+//! fragment: an undeclared wire on a generator or the interface, a wire with
+//! two producers or two consumers (a repeated port on one generator counts), a
+//! repeated interface port, a produced input, a consumed output, an open wire
+//! the interface does not declare, and a directed cycle. Every theorem the
+//! matcher quotes — that one assigned wire forces its neighbours, that the
+//! discharge route is sound, that a re-closed body is never a target — has
+//! these as hypotheses, and holding them as an invariant of the type means no
+//! function here re-checks them and no caller can pass a diagram that breaks
+//! them.
+//!
+//! The cycle refusal names a generator on the cycle. The first generator a
+//! topological sort leaves unsettled can sit downstream of a cycle without
+//! being on it, so the refusal walks back from that generator until it closes a
+//! loop and names a member of the loop. Witness:
+//! `interface::tests::the_wiring_refuses_a_directed_cycle`, whose fixture lists
+//! the downstream generator first.
+//!
+//! # Generator labels
+//!
+//! A label is a name together with the role the name is worn in — a value
+//! constructor, an operation frame, a return-side frame, the terminal `★`, or a
+//! fired rewrite (`GeneratorSort`). Two boxes of one spelling in different
+//! roles are two generators: a return-side frame `K⁻(c)` and a nullary
+//! operation frame `K(; c)` share a name and an arity, and a name-only label
+//! would match one against the other where the one-sided matcher refuses both.
+//! The differential against that matcher carries the two rows that separate
+//! them.
+//!
+//! # Boundary wrappers
+//!
+//! Every count, index, budget and verdict a signature here crosses is a
+//! transparent wrapper of this crate's own (`WireCount`, `EdgeCount`,
+//! `PairCount`, `ComponentIndex`, `MatchBudget`, `SearchSteps`, `MatchCount`,
+//! `AdmittedIndex`, …), converting with `From` both ways. `Wire` and `Edge` are
+//! wrappers too, so a wire is never passed where a generator position is
+//! expected. The substrate's wrappers stay the substrate's: one shared
+//! vocabulary would make every budget here a substrate change.
 
 pub mod spine;
 

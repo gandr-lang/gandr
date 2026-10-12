@@ -42,6 +42,33 @@
 //! A metavariable occurring twice is a copy on a wire: it would leave the
 //! fragment by out-degree two, and cell patterns are linear. The reading
 //! refuses it by name rather than leaving it to surface as a fan-out.
+//!
+//! # The spine reading
+//!
+//! `read_spine` reads `⟨p | c⟩` as a diagram whose cut is one wire: the
+//! producer side is a tree of value generators feeding it, the consumer side a
+//! chain of frames reading it and ending at `★` or an open output. A producer
+//! metavariable becomes an input port and a consumer metavariable an output
+//! port, declared in first-occurrence order; a metavariable occurring twice is
+//! a copy, refused, because a wire has one producer and one consumer.
+//!
+//! A name worn at both polarities, a producer `r` and a consumer `r` as in `⟨r
+//! | seam(; r)⟩`, reads as two interface nodes: one input and one output. That
+//! is the matcher's own keying — the substrate's substitution keys a
+//! metavariable by name and category — so the reading and the one-sided matcher
+//! agree on the shape, and the differential carries four rows of it.
+//! `SpineReading::port_of` reports which port each metavariable became.
+//! Witness:
+//! `interface::spine::tests::a_hole_at_both_polarities_reads_as_one_input_and_one_output`.
+//!
+//! - **Alternatives.** Refusing the shape leaves a reading the substrate's
+//!   matcher already gives undefined here. Reading the name as one node at
+//!   mixed variance, as the substrate's derived cell metadata does when it
+//!   classifies the hole as a seam, makes the diagram a cycle through the cut,
+//!   which the fragment refuses.
+//! - **Reversal.** A ruling that the diagram view should not read the shape
+//!   restores a refusal at the reader and turns that one test back into a
+//!   refusal test; the matcher is untouched.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;

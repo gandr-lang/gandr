@@ -31,6 +31,29 @@
 //! dinaturality seam the composition gate reads. That shape is not a copy and
 //! is not refused, because the copy relation is per `(name, category)` pair,
 //! which is exactly [`MetaVar`]'s own equality.
+//!
+//! # Linearity admission
+//!
+//! A metavariable twice on a cell's left-hand side is a copy on a wire:
+//! substitution copies for free in a term store, but a circuit needs a comonoid
+//! the type may not have. `admit_linear_cell` refuses that cell, naming the
+//! copied hole and how to respell the rule. It governs which cells enter a
+//! store, not which patterns can be built: unification goals legitimately carry
+//! repeated metavariables, so derivation refuses nothing.
+//!
+//! A hole worn by a producer and a consumer metavariable is one hole at two
+//! polarities, the seam the composition gate reads, and is not a copy, because
+//! the copy relation is per name and category.
+//!
+//! The right-hand side is reported, not refused. A contractum that repeats a
+//! hole duplicates it; `CellMeta::step_growth` classifies each cell as strictly
+//! linear, erasing or duplicating, and the cost of duplication is a budget
+//! question for the engine that fires the cell. Refusing duplication at
+//! admission is a stricter reading that remains open; the reported step growth
+//! is the datum such a refusal would read, so adopting it is one predicate at
+//! admission. Invertibility (`CellInvertibility`) names the orientation a
+//! joinability certificate may be read in, not an undo operation on
+//! derivations.
 
 use anodized::spec;
 use quenchant_shape::shape::Maybe;

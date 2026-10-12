@@ -55,6 +55,25 @@
 //! adjacent transpositions asks a quadratic number of independence questions
 //! in the path length, which the integration suite measures rather than
 //! assumes.
+//!
+//! # Shift equivalence
+//!
+//! Two adjacent applications commute when three conjuncts hold, asked in this
+//! order: their positions are incomparable, the two cells have no overlap at a
+//! seam, and the alphabet discharges the convexity conjunct for the store. The
+//! first refusal is the one returned, so a nested pair is refused on its
+//! positions before its cells are read, and two applications at one position
+//! are refused by the first conjunct as `PositionOrder::Same`
+//! (`tests::two_applications_at_one_position_are_refused`). A pair that passes
+//! is then confirmed rather than trusted: both sequentializations are fired
+//! from the one peak and must reach one join, through the engine's
+//! `replay_from_peak`. A shift boundary is a peak, a join and two paths, not a
+//! critical pair, so it has no overlap, and the engine's peak-rooted replay is
+//! the one replay both crates use; a replay written here would be a second
+//! semantics beside the oracle. The guard is the crate's single independence
+//! relation, and two cells firing at one position are refused before any tile
+//! exists, which is why the cells branching as a rewrite system never reaches
+//! the tile set.
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;

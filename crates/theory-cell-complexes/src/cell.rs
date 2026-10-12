@@ -16,6 +16,17 @@
 //! portable content address: a persistence or transport format must never
 //! serialize one, and carries the cell's content instead, resolved back to a
 //! local id by content lookup.
+//!
+//! # Cells and the store
+//!
+//! A cell's metadata is derived from its two faces when it is built and never
+//! declared: its fields are private, so the metadata always equals what
+//! derivation gives. `CellStore` deduplicates on structural equality of the
+//! whole cell and hands out `CellId`s in insertion order, so iteration is
+//! deterministic and cloning or appending preserves every id. A `CellId` is
+//! still a store-local index, not a content address: rebuilding the same cells
+//! in another order renumbers them, so a persistence or transport format never
+//! serializes one and carries the cell's content instead.
 
 use alloc::vec::Vec;
 

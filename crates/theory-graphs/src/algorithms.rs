@@ -7,6 +7,41 @@
 //! [`GraphValidationError`] and never an index fault, and every result is in
 //! canonical dense order, so it is independent of successor order and
 //! duplicate edges.
+//!
+//! # Graph library
+//!
+//! The condensation runs on petgraph, version `0.8.3`, every feature off;
+//! `condensation` and its `kosaraju_scc` build under `no_std` without `std`,
+//! `graphmap`, `stable_graph` or `matrix_graph`. petgraph is reached only
+//! through this crate and no public signature names one of its types: a graph
+//! enters as an `EdgeSource` and every result is in dense `NodeId`s and
+//! `ComponentIndex`es, so a consumer inherits no petgraph type and the library
+//! can change behind the boundary. The graph is built with `try_add_node` and
+//! `try_add_edge`, so an index-space overflow is
+//! `GraphValidationError::NodeCountTooLarge` or `EdgeCountTooLarge`, never
+//! petgraph's panic. The condensation is taken with `make_acyclic` off and its
+//! self-loops and parallel edges removed by one sort and deduplication
+//! afterwards, which avoids the per-edge neighbour scan `make_acyclic`
+//! performs; components are then renumbered in order of their smallest member,
+//! each member list ascending.
+//!
+//! - Alternatives: a hand-written Kosaraju or Tarjan pass loses to a
+//!   maintained, widely used implementation for an algorithm the crate has no
+//!   reason to own; `pathfinding` loses because it has no `no_std` build and
+//!   brings six required dependencies for one algorithm.
+//! - Reversal: an advisory against petgraph, an unmaintained mark, or a
+//!   `no_std` condensation that a smaller crate provides.
+//!
+//! petgraph `0.8.3` resolves `hashbrown` `0.15` while its `indexmap` resolves
+//! `hashbrown` `0.17`; `clippy.toml` allows that one duplicate, with the
+//! release that unifies them as its removal condition.
+//!
+//! Cycle evidence and reachability are this crate's own iterative depth-first
+//! searches over the validated rows: cycle evidence is the closed walk through
+//! the back edge that closes a cycle, where petgraph's cycle detection reports
+//! at most one node on it, and reachability runs one search per source,
+//! `O(n·(n + e))` for the whole relation, where a pairwise path query would be
+//! `O(n²·(n + e))`.
 
 use alloc::vec;
 use alloc::vec::Vec;

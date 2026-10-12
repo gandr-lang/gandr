@@ -16,6 +16,45 @@
 //! [`CollidingAddresses`] hashes every orientation tag to nothing: each gives
 //! an answer the trait and [`core::hash::Hash`] permit and no honest
 //! inhabitant gives. All four are instantiated only by test suites.
+//!
+//! # Adversary frame
+//!
+//! An engine generic over `CellAlphabet` spends clauses of the trait it cannot
+//! check, and some of its checks exist only to catch an inhabitant that breaks
+//! one. Such a check is dead code over every honest inhabitant. `Lying<L>`
+//! makes it live: it is the toy alphabet with exactly one answer replaced, so a
+//! behaviour seen over `Lying<L>` and not over `ToyAlphabet` is attributable to
+//! `L`'s lie alone. Each adversary has a fixture witness here, asserting that
+//! its lie happens and that a neighbouring answer stays honest, so an adversary
+//! that drifted into a second lie fails in this crate rather than silently
+//! changing what every suite over it measures.
+//!
+//! The frame carries four lies. The first two break a clause `CellAlphabet`
+//! states, the two an engine's commutation check defends against; the last two
+//! give an answer the trait permits and no honest inhabitant gives, so the
+//! refusal that answer triggers has no other input:
+//!
+//! | Adversary | What it does | What an engine sees |
+//! | --------- | ------------ | ------------------- |
+//! | `IncomparablePositions` | breaks `position_order`'s clauses that a position is `Same` as itself and `Incomparable` only to a disjoint one | an application enclosing another licensed to commute with it |
+//! | `NonLocalSplice` | breaks `splice_cmd_at`'s clause that a splice changes the term only at its position | two applications at disjoint positions that do not commute, though nothing an engine reads predicts it |
+//! | `WithheldConvexity` | answers `convexity_discharge` with `ReCheckRequired` for every store, which an alphabet whose left-hand sides could match non-convexly owes | a commutation check's convexity conjunct refusing every pair |
+//! | `CollidingAddresses` | hashes the orientation tag to nothing, which the `Hash` law permits for unequal values | two cells the store keeps apart, differing only in orientation, whose hashes collide, so a content address digested over them collides too |
+//!
+//! A lie is added together with the engine check it exercises, never ahead of
+//! one: an adversary with no suite instantiating it measures nothing.
+//! Orientation is the narrowest place for a hash lie, because it enters a
+//! cell's derived hash and nothing else an engine reads to address the cell;
+//! `LyingOrient<L>` keeps the toy tag's equality and asks `L` only how it
+//! hashes, so every adversary but `CollidingAddresses` hashes a cell exactly as
+//! the toy cell with the same fields. The convexity warrant is restated rather
+//! than asked of the toy, because the trait reads it from a store of the
+//! alphabet's own cells.
+//!
+//! `AlphabetLie` is a trait of static methods with honest defaults rather than
+//! a set of wrapper types, one per lie: one forwarding implementation of the
+//! 21-method trait serves every adversary, and an adversary is a unit struct
+//! overriding one method.
 
 use alloc::vec::Vec;
 use core::marker::PhantomData;

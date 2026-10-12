@@ -5,6 +5,14 @@
 //! both ways, so a primitive is unpacked only where a comparison, an index or
 //! a count needs it. The vocabulary is this crate's alone; the substrate keeps
 //! its own counts and decisions, which this crate reads rather than restates.
+//!
+//! # Boundary wrappers
+//!
+//! The crate owns the nominal wrappers its own signatures cross: budgets,
+//! indices and verdicts. The substrate keeps its own counts and decisions,
+//! which this crate reads; a budget in the substrate would make every engine's
+//! budget a substrate change. A wrapper two crates must exchange by value moves
+//! to the lower one.
 
 /// Defines a transparent newtype over one primitive with `From` conversions
 /// both ways.

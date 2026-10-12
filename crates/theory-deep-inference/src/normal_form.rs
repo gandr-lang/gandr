@@ -101,6 +101,63 @@
 //! writers are native-endian at the target's word width. An address is stable
 //! for one build of one target and no further; it orders and keys within one
 //! process, and nothing persists or transmits one.
+//!
+//! # The certificate normal form
+//!
+//! `normalize` runs the recorded path under the skolemization replay uses and
+//! refuses anything it cannot confirm, so a returned normal form is a replay
+//! receipt: the path fired step by step from the peak and landed on the join.
+//! It drops steps that fire and change nothing, groups repeated primitives
+//! under one content address with an integer multiplicity, and records the
+//! canonical schedule, which it replays before returning. A canonical schedule
+//! that does not fire, or lands elsewhere, is the kill signal: the independence
+//! relation licensed a commutation the semantics does not have, a defect in
+//! position or overlap bookkeeping. Normal-form equality implies replay
+//! equivalence, and the converse is false by design: the engine's fused
+//! certificate is one boundary reached by a two-step path and a one-step path,
+//! replay-equal and normal-form-distinct. Replay stays the oracle, and a
+//! negative answer here means "not identified", never "distinct".
+//! `ReplayWitness` has private fields and one constructor,
+//! `normalize_certified`, so holding one is holding the receipt; `TraceletNf`
+//! is a plain value whose receipt property its holder keeps.
+//!
+//! `ReplayWitness::into_parts` consumes the receipt into its normal form and
+//! causal order without copying either. Certificate-algebra consumers can keep
+//! both views while growing a pathway. The integration witness
+//! `tests::oracle::composed_tracelets_replay_and_normalize_through_the_public_algebra`
+//! composes through `gandr-theory-decomposition-spaces` in both modes, replays
+//! the resulting certificate, and checks its exact certified schedule and
+//! target-last order.
+//!
+//! # Replay plans
+//!
+//! `ReplayWitness::replay_plan` groups the certified derivation's events by
+//! causal depth: each level is an antichain of the order, its steps in
+//! canonical order, and the number of levels is the critical-path fuel a
+//! complete replay consumes. `replay_level` fires one level from a term already
+//! replayed, and `replay_with_fuel` fires every level from the skolemized peak,
+//! declining with `replay_fuel::Absent::InsufficientFuel` when the fuel is
+//! below the critical path. The plan keeps the batch boundaries rather than
+//! flattening them into one schedule, so a parallel or on-demand replay reads
+//! what may fire together. The levels name cells and positions and no
+//! metavariable, so a relabelled twin plans the same levels with the same fuel.
+//!
+//! # Content addresses
+//!
+//! `PrimId`, `CellAddress` and `CausalPast` are 128-bit FNV-1a digests over
+//! `core::hash::Hash` writes, each domain separated by its own prefix. The
+//! integer writers of `Hash` are native-endian at the target's word width, so
+//! an address is stable for one build of one target and no further: it orders
+//! events and keys factors within one process, and nothing persists or
+//! transmits one. A fixed-endian encoding of cell content, addressed by the
+//! storage tier's content pointers, would turn an ordering key into an identity
+//! a reader trusts across processes and make this crate a storage consumer for
+//! a use it does not have. The addresses change to that encoding when a
+//! certificate, an event or a web is first written to storage or sent to
+//! another process. An address orders and is nowhere the identity witness: two
+//! structurally distinct cells colliding inside one normal form are refused,
+//! and across two normal forms the compared values carry the primitive
+//! certificates themselves.
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;

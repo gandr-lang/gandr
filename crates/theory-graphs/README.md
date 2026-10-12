@@ -3,19 +3,12 @@
 The graph theory gandr's grammar stands on: the operator-precedence DAG, the walk machine a grammar's tiles are closed under, and the graph algorithms both read.
 
 <!-- toc -->
-
 - [Synopsis](#synopsis)
-- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
-- [Scope](#scope)
-- [Graph library](#graph-library)
-- [Precedence DAG](#precedence-dag)
-- [Walk index](#walk-index)
-- [Fingerprints](#fingerprints)
+- [Where the detail lives](#where-the-detail-lives)
 - [License](#license)
-
 <!-- tocstop -->
 
 ## Synopsis
@@ -25,14 +18,6 @@ The graph theory gandr's grammar stands on: the operator-precedence DAG, the wal
 **Why.** A tile-based parser asks two questions of a grammar on every token: how two precedence groups compare, and which walks connect two adjacent tiles. Both answers are fixed once the grammar is, so they are precomputed into lookup tables at build time, and the tables are fingerprinted so a cached parse is keyed by the grammar that produced it. The grammar's closing-class derivation reads the strongly-connected-component condensation, and the precedence DAG reads cycle evidence and reachability; those three algorithms are what the grammar needs from a graph library.
 
 **How.** `PrecDag::build` refuses a cyclic tighter-than relation with a closed cycle as evidence and otherwise precomputes the transitive closure, so a comparison is a binary search in one sorted row. `WalkIndex::build` closes a walk machine's direct walks transitively through intermediate ends by iterative breadth-first search, keeps the valid and minimal walks of each row in the paper's canonical order, and projects them into the equal, less and greater queries and the molds-by-label table. Every algorithm validates its input once into sorted, deduplicated adjacency rows, so an out-of-bounds successor is a typed refusal and every result is independent of successor order and duplicate edges.
-
-## References
-
-- David Moon, Andrew Blinn, Thomas J. Porter, and Cyrus Omar. "Syntactic Completions with Material Obligations." _Proceedings of the ACM on Programming Languages_ 9, OOPSLA2 (October 2025). `doi:10.1145/3763182`; preprint `arXiv:2508.16848` — the walk, swing and stance vocabulary, the validity and minimality filters and canonical order of § 4.1, and the figure-33 fragments the walk suite pins.
-- Nils Anders Danielsson and Ulf Norell. "Parsing Mixfix Operators." In _Implementation and Application of Functional Languages (IFL 2008)_, Lecture Notes in Computer Science 5836, pages 80–99, 2011. `doi:10.1007/978-3-642-24452-0_5` — the precedence-graph presentation the precedence DAG follows: groups related by a tighter-than order that need not be total.
-- A. B. Kahn. "Topological Sorting of Large Networks." _Communications of the ACM_ 5, 11 (November 1962), pages 558–562. `doi:10.1145/368996.369025` — the ready-set topological sort the DAG's linear extension is, with its tie-break fixed to the smallest ready group.
-- Micha Sharir. "A Strong-Connectivity Algorithm and Its Applications in Data Flow Analysis." _Computers & Mathematics with Applications_ 7, 1 (1981), pages 67–72. `doi:10.1016/0898-1221(81)90008-0` — the two-pass strongly-connected-component algorithm petgraph's condensation runs.
-- Glenn Fowler, Landon Curt Noll, Kiem-Phong Vo, Donald Eastlake 3rd, and Tony Hansen. "The FNV Non-Cryptographic Hash Algorithm." RFC 9923, February 2026. `doi:10.17487/RFC9923` — the 64-bit FNV-1a parameters `Fnv64` fixes, pinned against the published test vectors.
 
 ## Provided features
 
@@ -75,53 +60,17 @@ Run the tests:
 cargo nextest run -p gandr-theory-graphs
 ```
 
-## Scope
+## Where the detail lives
 
-The algorithm half carries what the grammar reads and nothing else: cycle evidence and reachability for the precedence DAG, condensation for the closing-class derivation. The DAG's linear extension is its own Kahn order, so no general topological sort is exposed. Dominators, shortest paths, simple-path enumeration, transitive reduction, partition refinement and an adjacency fingerprint are absent because no consumer reads them; an algorithm with no reader is maintained surface with no contract a consumer depends on. The walk index needs no partition refinement: its rows are canonicalised by key, not by bisimulation.
+Mechanism, decisions with their alternatives and reversals, and witnesses live in the rustdoc beside the code:
 
-The determinism probe — a binary that prints the byte-level projection of every public result while scratch allocation is perturbed — and the benchmarks are a lateral, outside this crate. Determinism is held here by construction and by test: every tie is broken by the smallest dense identifier, every collection the results are read from is ordered, no hasher is process-random, and the pinned fingerprints and permuted-insertion tests fail on any drift.
-
-Executable `#[spec]` predicates check arithmetic and refusal boundaries, dense incidence, precedence comparisons, walk shape and canonical-row invariants. They retain scalar snapshots or borrowed observers rather than copies of entire inputs. Each nontrivial operation names its same-crate witnesses and the boundary of their evidence under `# Adequacy`; the enforcing test lane runs the predicates. Complete closure and canonical tie-breaking are checked against independent fixtures and generated oracles, not assumed from the structural predicates.
-
-Required trait declarations, opaque iterator returns and consuming generic fingerprint conversions record why their contracts cannot be instrumented locally without changing a protocol or ownership boundary. Display evidence observes numeric fields and sink refusal without pinning wording.
-
-## Graph library
-
-The condensation runs on petgraph, version `0.8.3`, every feature off; `condensation` and its `kosaraju_scc` build under `no_std` without `std`, `graphmap`, `stable_graph` or `matrix_graph`. petgraph is reached only through this crate and no public signature names one of its types: a graph enters as an `EdgeSource` and every result is in dense `NodeId`s and `ComponentIndex`es, so a consumer inherits no petgraph type and the library can change behind the boundary. The graph is built with `try_add_node` and `try_add_edge`, so an index-space overflow is `GraphValidationError::NodeCountTooLarge` or `EdgeCountTooLarge`, never petgraph's panic. The condensation is taken with `make_acyclic` off and its self-loops and parallel edges removed by one sort and deduplication afterwards, which avoids the per-edge neighbour scan `make_acyclic` performs; components are then renumbered in order of their smallest member, each member list ascending.
-
-- Alternatives: a hand-written Kosaraju or Tarjan pass loses to a maintained, widely used implementation for an algorithm the crate has no reason to own; `pathfinding` loses because it has no `no_std` build and brings six required dependencies for one algorithm.
-- Reversal: an advisory against petgraph, an unmaintained mark, or a `no_std` condensation that a smaller crate provides.
-
-petgraph `0.8.3` resolves `hashbrown` `0.15` while its `indexmap` resolves `hashbrown` `0.17`; `clippy.toml` allows that one duplicate, with the release that unifies them as its removal condition.
-
-Cycle evidence and reachability are this crate's own iterative depth-first searches over the validated rows: cycle evidence is the closed walk through the back edge that closes a cycle, where petgraph's cycle detection reports at most one node on it, and reachability runs one search per source, O(n·(n + e)) for the whole relation, where a pairwise path query would be O(n²·(n + e)).
-
-## Precedence DAG
-
-A group's associativity is one of three values, `Assoc::Left`, `Assoc::Right` and `Assoc::Non`. A lookup of an unknown group returns `Option<Assoc>`, so `Non` is a value of its own rather than an absent associativity, which would nest a lookup into `Option<Option<Assoc>>`. A group relates to itself only by the relation its associativity names, and only when the caller asserts the same associativity: a left-associative group is greater than itself under `Assoc::Left`, a right-associative one less than itself under `Assoc::Right`, a non-associative one equal to itself under `Assoc::Non`. `comparable` asks only whether two groups are ordered at all, so it holds for every known group with itself.
-
-`PrecDag::build` returns `PrecDagError`, which keeps three refusals apart: `Cycle` with a closed witness naming every group on the cycle, `Graph` for a specification whose relation fails validation, and `Inconsistent` for an internal state that contradicts itself. A cycle is never reported with an empty witness.
-
-The linear extension is Kahn's order with the smallest ready group taken first, so it is one fixed order for a given specification, and `linear_extension` borrows it. Comparisons read the precomputed closure: each group's row lists, ascending, the groups strictly looser than it, so `lt` and `gt` are one binary search.
-
-Construction accepts all 65,536 group identities, but exhausting the `groups` iterator at that capacity can overflow its 16-bit enumeration counter when overflow checks are enabled. Capacity construction and complete iterator consumption are distinct boundaries.
-
-## Walk index
-
-A walk alternates swings — non-empty runs of nonterminals — with the stances between them, starting and ending on a swing. A machine supplies walks directly between two ends, and generates them from swing arcs: an arc extends a swing, crosses a stance into a new swing, or emits the walk so far at an end, from a seed per direction and source. The swing arcs are indexed by source once per build. Swing closure keys a visited state on its sort and bounds; `WalkIndex::compare_seen_keys` reports whether keying on the sort alone would change any row, the diagnostic that shows the bounds part of the key is needed.
-
-The outer closure chains direct walks through intermediate stance ends by breadth-first search, never re-enters an end its path has passed, and drops a prefix that is already not minimal, since no extension makes it minimal again. Every row then keeps the walks that pass § 4.1's validity and minimality filters, one per canonical key, sorted by the canonical order; a cap on the alternating length makes an over-long walk `WalkBuildError::ChainLengthExceeded` rather than a silent truncation.
-
-The `eq`, `lt` and `gt` projections are the direct rows filtered by query kind; `molds` lists, per label, the molded ends reachable from the root in canonical order.
-
-## Fingerprints
-
-`Fnv64` is 64-bit FNV-1a with the published offset basis and prime, and multi-byte words are absorbed little-endian, so a fingerprint is the same on every platform. A fingerprint keys a cache and is no proof of equality.
-
-- `PrecDag::fingerprint` hashes the group count, then per group its name's length, its name and its associativity tag (`Non` 0, `Left` 1, `Right` 2), then the edge count and each edge as two 16-bit indices, in canonical edge order. Reordered or repeated edges agree; a renamed group, a changed associativity or a changed relation each move it.
-- `WalkIndex::fingerprint` hashes the frame `gandr.walk.v1` and the cap, the direct rows under tag `D`, the transitive rows under tag `T`, then under tag `M` each label's molds by ordinal, with every symbol written as its stable key. Two machines with the same rows have the same fingerprint, whatever their insertion order.
-
-The walk fingerprint witnesses include independently framed empty and directional machines with asymmetric symbol keys and a molds row. Zero-sized swing and stance inputs exercise representability and refusal precedence without allocating billions of elements.
+| Topic | Module |
+| ----- | ------ |
+| Scope, determinism, specification evidence, references | [`src/lib.rs`](src/lib.rs) |
+| The graph library and its algorithms | [`algorithms`](src/algorithms.rs) |
+| The precedence DAG | [`prec`](src/prec.rs) |
+| The walk index | [`walk`](src/walk.rs) |
+| Fingerprints | [`fingerprint`](src/fingerprint.rs) |
 
 ## License
 

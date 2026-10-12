@@ -14,6 +14,69 @@
 //! - A composition certificate ([`derive_fused`]) certifies a fused cell: one
 //!   path is the two-step derivation, the other the single fused step, and both
 //!   reach the composite.
+//!
+//! # Certificates and their identity
+//!
+//! A `Tracelet` records which cell fired where on each of its two paths, never
+//! a substitution. `replay` skolemizes the peak and the join to constants,
+//! re-fires every step by ground rewriting and checks both paths land on the
+//! join: a certificate is evidence checked by replay, never trusted.
+//! `replay_trace` is the same replay keeping every fired step and the first
+//! step that did not fire, with its reason; the verdict-only replay retains
+//! nothing.
+//!
+//! Two certificates are one transformation when they share a peak and a join
+//! and each replays — `replay_equivalent`, the identity criterion. It is
+//! proof-irrelevant up to replay: two structurally different derivations of one
+//! boundary are one certificate, which is what makes composing certificates
+//! associative and unital. The derived `PartialEq` on `Tracelet` compares whole
+//! values and is finer; the two are kept apart everywhere.
+//!
+//! A recorded `CellId` resolves as an insertion-order index into the store
+//! replay is given, never by cell content. Clones and append-only extensions of
+//! a store therefore keep every certificate's replay, and a permutation may
+//! rebind an identifier, which the trace shows as the step it stops at.
+//! Identity by stable address is the representation's choice; resolving by
+//! content instead would make a certificate survive a permutation at the cost
+//! of hashing every cell on every step, and the reversal is a consumer that
+//! reorders stores.
+//!
+//! `confluence_tracelet` joins a critical pair whose reducts normalize to one
+//! term. `derive_fused` builds the fused cell `peak ~> composite` of a
+//! composition and its certificate — the two-step path against the single fused
+//! step — and the property test `fused_equals_two_step` holds the fused cell to
+//! the two-step derivation on generated ground instances, the concurrency
+//! theorem adopted as a test rather than implemented as proof machinery. Both
+//! check the overlap kind they read and refuse the other with `OverlapRefusal`,
+//! rather than leave it a precondition.
+//!
+//! # Peak-rooted replay
+//!
+//! `replay_from_peak` takes the boundary as arguments — a peak, a join and two
+//! paths — and `Tracelet::replay` is a call to it on the certificate's overlap
+//! peak, so the crate holds one replay. A boundary that is not a critical pair
+//! needs it: two adjacent applications exchanged past each other start at one
+//! peak and must reach one join, and no enumerator found an overlap there.
+//!
+//! The alternatives are worse. A synthetic `Overlap` per such boundary would
+//! mint a record whose kind, seam and unifier claim a critical pair no
+//! enumeration produced; a replay written by the crate that checks those
+//! boundaries would be a second replay beside this one, and a certificate check
+//! that two implementations answer is no longer one check. The function becomes
+//! a constructor if the engine grows a peak-rooted replay type that `Tracelet`
+//! wraps.
+//!
+//! # Replay reuse
+//!
+//! The crate keeps no memo of replay outcomes: every `replay` re-fires every
+//! step. A memo keyed by each step's full support — the resolved cell's
+//! content, the position, the input term — would reuse outcomes across repeated
+//! replays, across append-only store growth and across certificates that share
+//! steps, but nothing here replays one certificate set repeatedly, so there is
+//! no workload to measure it on. It is added when a consumer that does — a
+//! kernel-side certificate check, or a producer replaying guarded templates —
+//! lands, together with differentials that poison a memo entry in each
+//! direction and show the memoized verdict disagreeing with the engine's.
 
 use alloc::vec::Vec;
 

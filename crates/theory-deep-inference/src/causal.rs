@@ -49,6 +49,22 @@
 //! satisfy every conjunct honestly and still fail to commute if that clause is
 //! broken. Nothing in this module can see that failure; the normal form's
 //! replay of the schedule this order induces catches it.
+//!
+//! # The causal order
+//!
+//! An event depends directly on every earlier event the guard refuses to
+//! commute with it, and precedence is the transitive closure. Each event's
+//! causal depth is one more than the deepest event it depends on, and its key
+//! is its primitive's content address together with a digest of its causal
+//! past: the address folded with the causal pasts of the events it depends on
+//! directly, read as a multiset. The canonical schedule sorts by depth, then
+//! key: a licensed transposition swaps two events with no dependence edge
+//! between them, so it changes no depth and no key, and two sequentializations
+//! of one trace sort to one sequence. Two events at one depth with one key are
+//! refused as a `KeyCollision` rather than ordered by arrival, which would make
+//! the canonical schedule depend on the recording. The causal past is in the
+//! key because an alphabet may legally give two events one address; a repeated
+//! primitive at two depths is no tie, since the depth separates it first.
 
 use alloc::vec::Vec;
 

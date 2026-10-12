@@ -1,4 +1,18 @@
 //! The site at a size bound: every shape class and every map between two.
+//!
+//! # What a bound proves
+//!
+//! A shape's size is its vertices plus its wires. The enumeration at a bound is
+//! exhaustive, so a hold proves the condition for every case whose shapes have
+//! size at most the bound, and says nothing of larger shapes. The
+//! factorization's middle is no larger than the map's source, and each
+//! condition other than the pushout quantifies only over the shapes of its
+//! case, so a failure there is a counter-example at every larger bound. The
+//! pushout quantifies over all cocones, so its failure is the argument above,
+//! which holds at every size. The catalogue orders classes by size and then by
+//! key, pairs and triples by total size and then by index, and each condition
+//! stops at its first failing case, so the counter-example it reports has the
+//! least total size, ties broken by that order.
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;

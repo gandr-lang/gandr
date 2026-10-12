@@ -5,6 +5,16 @@
 //! both ways, so a primitive is unpacked only where a comparison, an index or
 //! a count needs it. The vocabulary is this crate's alone: an engine above
 //! keeps its own budgets, indices and verdicts.
+//!
+//! # Boundary wrappers
+//!
+//! Every count, step and verdict a signature here crosses is a transparent
+//! wrapper of this crate's own (`CellCount`, `PatternSize`, `PositionStep`,
+//! `SubstitutionDecision`, `FiringPermission`, `CellInvertibility`, …),
+//! converting with `From` both ways. An engine above keeps its own budgets,
+//! indices and verdicts: one shared vocabulary in the substrate would make
+//! every engine's budget a substrate change. A wrapper two crates must exchange
+//! by value moves to the lower crate.
 
 use anodized::spec;
 

@@ -13,6 +13,28 @@
 //! weakening of the logical-time graphs of Acclavio, Horne, Mauw and
 //! Straßburger. Anything that would need a correspondence between different
 //! events is refused by name rather than guessed.
+//!
+//! # The causal web and refinement
+//!
+//! `causal_web` moves one event order into its canonical coordinates as a
+//! conflict-free two-colour web: green is the order's precedence, white its
+//! complement on distinct events. It computes no second dependence relation; it
+//! materializes the order's precedence by one pass in recorded order, folding
+//! each direct dependence's finished ancestor row, latest dependence first and
+//! skipping one already reached. A per-pair reachability search would cost a
+//! search per ordered pair, which a long dependence chain makes quartic; the
+//! fold makes a chain quadratic. `refines(finer, coarser)` decides one
+//! fragment: two webs over the same labelled events, where `finer` keeps every
+//! precedence of `coarser` and adds precedence only to pairs `coarser` leaves
+//! independent. It answers `Refines` with the `SliceChain` naming each added
+//! pair, `DoesNotRefine` with the first pair in canonical order whose required
+//! relation is missing, and `Refused` with a named frontier for anything
+//! needing a correspondence between different events: an equal-size label
+//! mismatch, a size mismatch, or a malformed web. Over one fixed event set it
+//! checks that an order respects a happens-before or that a schedule weakens
+//! one. It offers no web over events a caller supplies, no comparison across
+//! event sets, no conflict relation and no persistence, and a web over n events
+//! holds n² bits.
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;

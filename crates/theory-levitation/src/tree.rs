@@ -9,6 +9,28 @@
 //! found by skipping its elder siblings' ranges, a subtree is read or copied
 //! as one slice, and building an application reuses its last argument's
 //! buffer. No walk over a table recurses, and dropping one frees one vector.
+//!
+//! # Flat representation
+//!
+//! No datum here owns its way back to itself. A code, a value-type reference, a
+//! free term and a payload are each one flat table: the nodes below the root in
+//! reverse pre-order, then the root, every node carrying its subtree's node
+//! count, so a child is found by skipping its elder siblings and a subtree is
+//! one contiguous slice. Equality and hashing are derived over the table, and
+//! the layout is canonical, so they are structural. Building an application
+//! concatenates its arguments' tables. The public `tree` module shares that
+//! representation with other theory crates: `Head` supplies each node's arity,
+//! `Tree` owns the table, and `TreeRef` and `Children` borrow it. A
+//! constructor's head must agree with its supplied children. A whiskered
+//! composite is a list of whiskers outermost first around its active cell.
+//!
+//! - **Alternatives.** Boxed children are recursive owned pointers, which the
+//!   workspace denies: a deep term overflows the stack on drop. One arena
+//!   shared by every description couples a value to the arena's lifetime and
+//!   gives equal values one identity before anything sanctions it.
+//! - **Reversal.** A measured cost from copying tables when building
+//!   applications moves the representation to a shared arena, with the identity
+//!   question answered first.
 
 use alloc::vec::Vec;
 use core::iter;

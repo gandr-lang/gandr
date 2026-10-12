@@ -84,6 +84,93 @@
 //! completion: those are the rewriting engines', over whatever alphabet they
 //! are given. No engine depends on this crate; a matcher reaches an engine
 //! only through a seam supplied where the engine is instantiated.
+//!
+//! # Embedding search
+//!
+//! An `Embedding` is a monomorphism of diagrams: injective on generators and on
+//! wires, label-, arity-, incidence- and port-order-preserving. The search
+//! seeds one nondeterministic choice per connected component of the pattern — a
+//! component's lowest-positioned generator against every target generator, or a
+//! bare wire against every target wire — and propagates each choice through
+//! monogamy, which forces the image of every generator on either side of an
+//! assigned wire. A step is one pending assignment resolved; `Matching::steps`
+//! reports them, and the multi-root fixture pins its cost at exactly 24, which
+//! separates one seed per component from a coarser seed set. The search walks a
+//! stack of explicit frames and enumerates candidates in target order, so the
+//! enumeration is deterministic.
+//!
+//! # Convexity
+//!
+//! A match is convex when no directed path leaves its image and returns to it.
+//! The condition is global, so it is checked once per complete candidate, by
+//! one of two routes computed from the pattern and never taken from a caller:
+//!
+//! - **Discharged** (`ConvexityWarrant::StronglyConnectedOverAcyclicTarget`):
+//!   when every input port of the pattern reaches every output port, no match
+//!   into an acyclic target can fail convexity. A path leaving the image does
+//!   so at an image output and returns at an image input; boundary honesty
+//!   makes those the images of a declared output and a declared input, strong
+//!   connectivity joins that input to that output inside the image, and the two
+//!   paths compose to a cycle the target cannot hold. The argument holds
+//!   vacuously when either port list is empty, and a component with no open
+//!   port contributes no endpoint.
+//! - **Swept** (`ConvexityWarrant::SweptOverTheComplement`): a forward walk
+//!   from every image output through every target generator outside the image,
+//!   looking for an image input. Nothing is removed from the target first, so
+//!   the verdict is about the diagram as given.
+//!
+//! The discharge is audited rather than trusted: `embeddings_by_sweep` sweeps
+//! unconditionally, and the tests compare it against the discharge over the
+//! fixtures where the argument above is likeliest to be wrong.
+//!
+//! The variant name says what is checked: one condition on one pattern, strong
+//! connectivity, plus the target's acyclicity. The literature's phrase for the
+//! route is "left-connected over an acyclic target", but left-connectedness
+//! constrains a whole rule system — left-linear rules, monogamous acyclic on
+//! both sides, every left-hand side strongly connected — and the substrate
+//! admits rules that repeat a hole on the right, so the system-level condition
+//! is not what holds. The substrate's `ConvexityDischarge` carries the same
+//! variant name.
+//!
+//! - **Alternatives.** The literature's phrase, with the precision carried by
+//!   the doc comment alone.
+//! - **Reversal.** A ruling that the literature's phrase is authoritative
+//!   renames the variant here and in the substrate together.
+//!
+//! The sweep shares one visited set across the walks from every image output. A
+//! wire an earlier walk reached without finding an image input reaches none, so
+//! skipping it on a later walk changes no verdict, and the sweep costs one pass
+//! over the target per candidate rather than one pass per image output. A
+//! visited set per output gives the same verdict at one pass per image output.
+//!
+//! # Verdicts do not travel
+//!
+//! Convexity is broken by the existence of a path, and closing a delayed
+//! feedback loop adds an edge from an output of a body to an input of it, so a
+//! verdict on the cut-open body says nothing about the closed one. Two
+//! placements keep a cut-open verdict from being read on the closed form. The
+//! closed body is cyclic, so `Wiring::assemble` refuses it and it is never a
+//! target. And a verdict is computed per target: `Matching` and
+//! `ConvexityRefusal` have no public constructor, and an `Embedding` claimed
+//! from outside carries no verdict, because `Embedding::check` sweeps the
+//! target it is given whatever warrant the claim names. Witness:
+//! `matching::tests::a_cut_open_verdict_does_not_travel_to_the_re_closed_form`.
+//!
+//! # Certificates
+//!
+//! An `Embedding` is evidence its consumer refutes, not evidence its producer
+//! asserts. `Embedding::claim` is public so a certificate from outside the
+//! search — stored, transmitted, or produced by another matcher — can be read;
+//! a claim asserts nothing. `Embedding::check` re-derives every conjunct from
+//! the two diagrams in a fixed order and refuses at the first that fails,
+//! naming the locus: the image's length, then per pattern generator its range,
+//! label, arity and incidence, then generator injectivity, then the wire map's
+//! totality, range and width, then the seam, then the warrant, then the sweep.
+//! The seam is derived data, the wire map restricted to the pattern's
+//! interface, so a seam that disagrees is a forgery rather than a second
+//! opinion. Extra wire pairs outside the pattern are refused rather than
+//! ignored, because two certificates differing only in them would compare
+//! unequal while denoting one embedding.
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeSet;

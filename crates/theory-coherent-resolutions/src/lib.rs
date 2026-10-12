@@ -17,7 +17,55 @@
 //! Everything is generic over the substrate's
 //! [`CellAlphabet`](gandr_theory_cell_complexes::CellAlphabet) and adds no cell
 //! vocabulary. The crate is `no_std` and depends on `alloc`, the substrate and
-//! `quenchant-shape`. Its `README.md` carries the design and the references.
+//! `quenchant-shape`.
+//!
+//! # Executable specifications
+//!
+//! The item specifications pair executable `#[spec]` predicates with local `#
+//! Adequacy` witnesses. Enforced runs check rewrite order and budgets, overlap
+//! and certificate support, preserved completion state, and the exact
+//! successful replay prefix before a typed refusal. The boundary witnesses
+//! include empty schedules and support, interrupted batches, independently
+//! failing replay legs, and fusion retries that preserve the store and
+//! identifier.
+//!
+//! The test-only numeral strategy is the sole executable exemption: the pinned
+//! attribute cannot name its opaque `impl Strategy` return in a generated
+//! predicate signature. The fusion differential independently checks every
+//! generated input through borrowed producer views and its size, rejecting
+//! metavariables, wrong constructors or arities, and values outside zero
+//! through 63 successors. The exemption ends when opaque returns are supported.
+//!
+//! # References
+//!
+//! - Donald E. Knuth and Peter B. Bendix. "Simple Word Problems in Universal
+//!   Algebras." In _Computational Problems in Abstract Algebra_, Pergamon,
+//!   1970, pages 263–297. `doi:10.1016/B978-0-08-012975-4.50028-X` — critical
+//!   pairs, orienting a divergent pair by a reduction order, and the completion
+//!   loop `complete` runs.
+//! - Franz Baader and Tobias Nipkow. _Term Rewriting and All That_. Cambridge
+//!   University Press, 1998. `doi:10.1017/CBO9781139172752` — critical pairs
+//!   and the critical-pair lemma, completion as an inference system that can
+//!   fail or diverge, and overlaps at interior positions, which this enumerator
+//!   does not compute.
+//! - Craig C. Squier, Friedrich Otto, and Yuji Kobayashi. "A Finiteness
+//!   Condition for Rewriting Systems." _Theoretical Computer Science_ 131, 2
+//!   (1994), pages 271–294 — the critical branchings of a convergent
+//!   presentation, joined, generate its homotopy relations: the reading of a
+//!   confluence certificate as a coherence cell.
+//! - Dimitri Ara, Albert Burroni, Yves Guiraud, Philippe Malbos, François
+//!   Métayer, and Samuel Mimram. _Polygraphs: From Rewriting to Higher
+//!   Categories_. London Mathematical Society Lecture Note Series 495,
+//!   Cambridge University Press, March 2025. `doi:10.1017/9781009498968`;
+//!   preprint `arXiv:2312.00429` — coherent presentations and Squier
+//!   completion, which extends Knuth–Bendix completion with a 3-cell for every
+//!   critical branching.
+//! - Nicolas Behr. "Tracelets and Tracelet Analysis of Compositional Rewriting
+//!   Systems." In _Proceedings of Applied Category Theory 2019_, Electronic
+//!   Proceedings in Theoretical Computer Science 323 (2020), pages 44–71.
+//!   `doi:10.4204/EPTCS.323.4` — tracelets as derivations recorded for
+//!   re-execution, sequential composition of rules, and the concurrency theorem
+//!   the fused-cell differential adopts as a test.
 
 #![no_std]
 

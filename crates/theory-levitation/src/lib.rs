@@ -29,8 +29,112 @@
 //! whiskered composite — is held flat, so no walk over one recurses.
 //!
 //! The crate is `no_std` and depends on `core`, `alloc` and the shape
-//! vocabulary of `quenchant-shape`. The papers it draws on are in its
-//! `README.md`, § References.
+//! vocabulary of `quenchant-shape`.
+//!
+//! # The closed tier
+//!
+//! The crate depends on no other crate of the workspace, so no wrapper in its
+//! signatures belongs to a crate a dependent's manifest does not name, and it
+//! re-exports none. The field leaf is the one place a core notion meets the
+//! code universe, and it enters as a type parameter: a field carries a grade
+//! `G` the consumer supplies, and its value type stays this crate's own
+//! symbolic reference (`ValueTypeRef` over `PrimTy` and declared heads), which
+//! is all the generic programs, the arity naming and the rendering read. The
+//! crate is `no_std`, so it cannot name a `std` collection; the compiler holds
+//! that line.
+//!
+//! - **Alternatives.** Depending on the core term crate for its grade and value
+//!   types puts a core edge under a theory crate, inverting the layering, and
+//!   lets a dependent reach that crate through re-exported wrappers. A
+//!   whole-leaf parameter `Field(L)` would lose `PrimTy` and the symbolic value
+//!   type that operation arities, the inspection rendering and the leaf-shift
+//!   certificate read. A trait declared here and implemented in the core tier
+//!   is an abstraction with one implementation.
+//! - **Reversal.** A reordering of the categories that puts the core tier below
+//!   the theory tier returns the field leaf to the core's own grade and value
+//!   types.
+//!
+//! # The integration suites
+//!
+//! Two suites check the crate against the laws its consumers rely on, with the
+//! machinery the crate leaves to them supplied as test support.
+//!
+//! - **Certificates** (`tests::code_iso`). A certificate is a pair of value
+//!   translators between two monomorphic descriptions, judged by replaying its
+//!   round trips against `generic_eq`; its identity is replay-equivalence, the
+//!   shape of a protype isomorphism. Identity, inverse and composition form a
+//!   groupoid up to replay, and `generic_eq`, `serialize_value` and a
+//!   content-addressed code table transport across every certificate. Two
+//!   guards stand: negation and the identity share their boundary codes yet
+//!   replay differently, so the identity of certificates is never code
+//!   equality; and over a one-constructor description with an unbounded
+//!   `Integer` leaf, the successor shift is a valid certificate distinct from
+//!   the only structural one, so a completeness claim about certificates ranges
+//!   over translators uniform in leaf contents.
+//! - **The virtual double category dictionary** (`tests::vdc_dictionary`).
+//!   Objects are tuples of real descriptions, tight arrows renamings of real
+//!   symbols checked against their real codes and arities, and restriction
+//!   recomputes real faces. The tight category holds strictly; cell composition
+//!   and the cartesian structure hold up to replay; restriction holds in the
+//!   split form by construction, with the face action split on `RuleFace`
+//!   itself; units hold β on `refl`, and path induction declines on a non-empty
+//!   path, which locates an obligation on a cell store: instances closed under
+//!   path action. The matcher, substitution, rewriter and signature morphism
+//!   the suite uses are test support; the crate ships none of them
+//!   (`tests::vdc_dictionary::law3_restriction::matching_and_substitution_are_supplied_test_side`,
+//!   `tests::vdc_dictionary::law1_tight::check_morphism_accepts_a_role_matched_renaming`).
+//!
+//! Executable specifications check structural relationships, ordering and
+//! multiplicity, variable provenance, budget refusal and encoding layout. Each
+//! nontrivial item's `# Adequacy` names the observations, defect classes,
+//! evidence rung and boundary its witnesses establish. Contracts also cover the
+//! certificate and dictionary harnesses: their composition, substitution and
+//! refusal paths must not silently weaken the laws they test. Const extent
+//! arithmetic checks its primitive fields directly, with constant-evaluation
+//! and runtime boundary witnesses. Opaque-iterator items document the
+//! instrumentation boundary; formatting documents its write-only sink. A
+//! predicate over an observable projection does not claim the unobservable
+//! remainder of a contract.
+//!
+//! Test prose names items plainly: the suites carry no intra-doc links, which
+//! rustdoc does not check in a test target.
+//!
+//! # Consumers
+//!
+//! The virtual-doctrine reflection retains real `SignDesc<G>` values and uses
+//! the public flat-tree representation for signatures, protypes, proterms and
+//! derivations. It does not decode grades or introduce a second description
+//! format.
+//!
+//! The cell layer reads the declaration table, its operations' arities, its
+//! rule faces and its circuit rules: it elaborates a description into cells and
+//! instantiates circuit rules at an application, through `SignDesc`,
+//! `OperDesc`, `BridgeArity`, `DeclPolarity`, `RuleFace`, `FreeTerm`,
+//! `CircuitRule`, `CircuitBody`, `WhiskeredCell`, `RedexOccurrence`,
+//! `elaborate_body`, `redex_occurrences` and `derive_boundaries`. The surface's
+//! description route lowers declarations into the table, runs `check_desc`, and
+//! decodes codes into core types on its core side.
+//!
+//! # References
+//!
+//! - James Chapman, Pierre-Évariste Dagand, Conor `McBride`, and Peter Morris.
+//!   "The Gentle Art of Levitation." In _Proceedings of the 15th ACM SIGPLAN
+//!   International Conference on Functional Programming (ICFP '10)_, pages
+//!   3–14, September 2010. `doi:10.1145/1863543.1863547` — the universe of
+//!   datatype descriptions as an inductive object, generic programs driven by a
+//!   description, and the staging that keeps the meta-theory functions
+//!   host-side until each moves deliberately.
+//! - Nicola Gambino and Joachim Kock. "Polynomial Functors and Polynomial
+//!   Monads." _Mathematical Proceedings of the Cambridge Philosophical Society_
+//!   154, 1 (2013), pages 153–192. `arXiv:0906.4931` — the presentation of a
+//!   polynomial by finite sets and maps, `Σ_t ∘ Π_π ∘ Δ_s`, which `BridgeArity`
+//!   stores as the bridge diagram `A ←s— J —π→ I —t→ B`.
+//! - Hayato Nasu. _Logical Aspects of Virtual Double Categories_. Preprint,
+//!   January 2025. `arXiv:2501.17869` — the split cartesian fibrant virtual
+//!   double category (Definition 3.2.6) and its splitness lemma (Lemma 3.2.8),
+//!   whose laws the dictionary suite checks on this crate's structures, and
+//!   protype isomorphisms (§ 3.2.3), the shape of the certificate suite's value
+//!   translators.
 
 #![no_std]
 

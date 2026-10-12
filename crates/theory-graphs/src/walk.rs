@@ -9,6 +9,30 @@
 //! intermediate ends, keeps the valid and minimal walks of each row in the
 //! canonical order, and fingerprints the result; it answers the equal, less and
 //! greater queries a parser asks of two adjacent tiles.
+//!
+//! # Walk index
+//!
+//! A walk alternates swings — non-empty runs of nonterminals — with the stances
+//! between them, starting and ending on a swing. A machine supplies walks
+//! directly between two ends, and generates them from swing arcs: an arc
+//! extends a swing, crosses a stance into a new swing, or emits the walk so far
+//! at an end, from a seed per direction and source. The swing arcs are indexed
+//! by source once per build. Swing closure keys a visited state on its sort and
+//! bounds; `WalkIndex::compare_seen_keys` reports whether keying on the sort
+//! alone would change any row, the diagnostic that shows the bounds part of the
+//! key is needed.
+//!
+//! The outer closure chains direct walks through intermediate stance ends by
+//! breadth-first search, never re-enters an end its path has passed, and drops
+//! a prefix that is already not minimal, since no extension makes it minimal
+//! again. Every row then keeps the walks that pass § 4.1's validity and
+//! minimality filters, one per canonical key, sorted by the canonical order; a
+//! cap on the alternating length makes an over-long walk
+//! `WalkBuildError::ChainLengthExceeded` rather than a silent truncation.
+//!
+//! The `eq`, `lt` and `gt` projections are the direct rows filtered by query
+//! kind; `molds` lists, per label, the molded ends reachable from the root in
+//! canonical order.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -249,34 +273,48 @@ pub trait WalkSym: Clone + Debug + Eq + Ord
 
 /// One end of a machine walk.
 type WalkEnd<S> = End<<S as WalkSym>::Stance>;
+
 /// One walk over a machine's symbols.
 type MachineWalk<S> = Walk<<S as WalkSym>::Nonterminal, <S as WalkSym>::Stance>;
+
 /// One direct walk: its direction, ends and shape.
 type DirectStep<S> = (Dir, WalkEnd<S>, WalkEnd<S>, MachineWalk<S>);
+
 /// One swing-closure seed: its direction, source end and first nonterminal.
 type SwingSeed<S> = (Dir, WalkEnd<S>, <S as WalkSym>::Nonterminal);
+
 /// The key of a direction-sensitive row.
 type DirectKey<S> = (Dir, WalkEnd<S>, WalkEnd<S>);
+
 /// The key of a query row.
 type QueryKey<S> = (WalkEnd<S>, WalkEnd<S>);
+
 /// Direction-sensitive rows.
 type DirectRows<S> = BTreeMap<DirectKey<S>, Vec<MachineWalk<S>>>;
+
 /// Query rows.
 type QueryRows<S> = BTreeMap<QueryKey<S>, Vec<MachineWalk<S>>>;
+
 /// One molded end and its mold.
 type MoldRow<S> = (WalkEnd<S>, <S as WalkSym>::Mold);
+
 /// Molded ends by label.
 type MoldRows<S> = BTreeMap<<S as WalkSym>::Label, Vec<MoldRow<S>>>;
+
 /// Every end and walk one swing closure emits.
 type SwingClosureOutput<S> = Vec<(WalkEnd<S>, MachineWalk<S>)>;
+
 /// One queued outer-closure prefix: its last end, its walk, and the ends its
 /// path has passed through.
 type ClosureQueueItem<S> = (WalkEnd<S>, MachineWalk<S>, BTreeSet<WalkEnd<S>>);
+
 /// Direct rows indexed by direction and source end.
 type RowsBySource<'rows, S> =
     BTreeMap<(Dir, &'rows WalkEnd<S>), Vec<(&'rows WalkEnd<S>, &'rows Vec<MachineWalk<S>>)>>;
+
 /// Swing arcs indexed by their source nonterminal.
 type ArcsBySource<'spec, S> = BTreeMap<&'spec <S as WalkSym>::Nonterminal, Vec<&'spec SwingArc<S>>>;
+
 /// The canonical-order key of one machine walk.
 type WalkSortKey<S> =
     CanonicalWalkKey<<S as WalkSym>::Nonterminal, <S as WalkSym>::Stance, <S as WalkSym>::Sort>;

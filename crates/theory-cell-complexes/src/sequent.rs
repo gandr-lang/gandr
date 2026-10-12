@@ -14,6 +14,15 @@
 //! Matches over the pattern views stay exhaustive, so a grammar extension is
 //! a compile-visible change at every match site here and in
 //! [`crate::pattern`].
+//!
+//! # Renaming apart
+//!
+//! `rename_apart` primes each name of the renamed cell until it is apart from
+//! the anchor's names, keyed by name alone, so a producer and a consumer
+//! metavariable sharing a name get the same fresh name and a seam stays one
+//! hole. Renaming per name and category would split a seam `r` into `r'` and
+//! `r''` and break the guarantee that an already-disjoint cell is returned
+//! unchanged. Witness: `sequent::tests::renaming_apart_keeps_a_seam_one_hole`.
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;

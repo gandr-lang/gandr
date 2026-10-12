@@ -21,6 +21,53 @@
 //! [`OverlapSupport`] memoizes which cells and which certificates overlap, so
 //! scheduling asks constant-time independence questions and batches a family
 //! into groups no two members of which interact.
+//!
+//! # Overlap enumeration
+//!
+//! For each ordered pair of cells the enumerator returns every unification at a
+//! seam, one entry per unifier: the family is a multi-sum and is never
+//! collapsed to one chosen overlap. A confluence entry unifies the two
+//! left-hand sides at the root; a composition entry unifies the left cell's
+//! right-hand side, at one of its command positions, with the right cell's
+//! left-hand side. Each entry carries its seam data — unifier, seam position,
+//! peak, and the right cell renamed apart from the left — so a consumer reads
+//! the span, not a verdict. The right cell is renamed apart before unifying,
+//! and the unifier's bindings on the right read against that renamed cell.
+//!
+//! The family is complete up to the root diagonal: a cell is not overlapped
+//! with itself at the root, because the root unifier of a pattern with its own
+//! renaming is that renaming and both contractions land on one term.
+//! `peak_legs` states that decision once, and the guard in the enumerator is on
+//! the two identifiers rather than on coinciding legs, because a ground rule
+//! and a schematic rule over one operation are distinct cells whose legs
+//! coincide once unified, and that joinable pair is work completion certifies.
+//! This is not the Knuth–Bendix exclusion of self-overlaps: completion over
+//! first-order terms also needs a rule's overlaps with itself at interior
+//! positions of its left-hand side, and this enumerator unifies whole left-hand
+//! sides at the root for every pair. A consumer needing interior overlaps needs
+//! a different enumerator; the reversal is the first presentation whose
+//! completion they decide.
+//!
+//! `overlaps_between` is the pair query the store-wide sweep iterates, exposed
+//! so a consumer asking about two cells pays for two.
+//!
+//! # Overlap support
+//!
+//! `OverlapSupport` records which unordered cell pairs overlap and which
+//! certificates' supports meet — a certificate's support being the cells its
+//! paths fire — so scheduling asks logarithmic questions after one quadratic
+//! construction. Its sets are `BTreeSet`s rather than hash sets: iteration and
+//! equality are deterministic and independent of insertion history, a support
+//! built in one call equals one built in several, and nothing in the crate
+//! iterates a hashed collection. The cost is a logarithmic lookup where a hash
+//! set's is expected-constant; the reversal is a measured store where lookups
+//! dominate completion.
+//!
+//! Independence is answered in one polarity, `StepIndependence`; every overlap
+//! question is that answer negated where it is asked, so no second query can
+//! drift from the first. `batches` is first-fit: each overlap joins the first
+//! batch every member of which it is independent of, so batches are
+//! subsequences of the input in order and the partition is deterministic.
 
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;

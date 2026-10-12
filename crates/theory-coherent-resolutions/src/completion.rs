@@ -23,6 +23,60 @@
 //!
 //! Fusion is the separate [`crate::derive_fused`] on a composition overlap;
 //! completion here is the confluence engine.
+//!
+//! # Completion
+//!
+//! `complete` schedules the store's confluence overlaps into independent
+//! batches and runs them in order. A pair whose reducts normalize to one term
+//! contributes a certificate; a pair whose normal forms differ is oriented by
+//! the alphabet's reduction order into a derived cell, whose own critical pairs
+//! join the worklist. Three obstructions are left rather than guessed at: a
+//! reduct the normalization budget does not bring to a normal form, a
+//! divergence the order does not separate, and a derived cell the store already
+//! holds. Each pair's reducts are normalized once, and the certificate is built
+//! from those normalizations rather than recomputed.
+//!
+//! The `CompletionBudget` is three ceilings — critical pairs processed, cells
+//! the store may hold, steps per normalization — each the most admitted rather
+//! than the point of failure. Reaching the step or cell ceiling returns
+//! `CompletionOutcome::Declined` with the interrupted batch's remainder first
+//! and every later batch unchanged, never a divergence or a truncated answer.
+//! `resume` continues the same loop from that state, so a declined-then-resumed
+//! run equals the uninterrupted one by construction rather than by agreement
+//! between two loops.
+//!
+//! After each derived cell the loop re-enumerates the store and keeps the
+//! batches that touch the new cell. Restricting the sweep to the new cell's
+//! pairs through `overlaps_between` is the known improvement; it waits for a
+//! store large enough to measure the difference.
+//!
+//! # Supplied overlaps
+//!
+//! `complete_with_overlap_source` is the seam through which a caller's own
+//! matcher seeds the worklist with confluence overlaps the generic unifier
+//! would not find. The source is a parameter, not a dependency: this crate
+//! depends on the substrate and `quenchant-shape` and on no matcher crate, in
+//! any dependency table, and a matcher-owning crate reaches completion by
+//! calling it. `Overlap::from_supplied_confluence` builds an entry from the
+//! matcher's unifier and seam without re-running the generic unifier.
+//!
+//! Every supplied entry is validated before any reaches the loop: it must be a
+//! confluence, both its identifiers must address stored cells, and its unifier
+//! must send both legs — the stored left cell's left-hand side and the renamed
+//! right cell's — to its peak. The first invalid entry declines with
+//! `DeclineReason::InvalidSuppliedOverlap`, naming its batch and position, with
+//! every supplied batch pending and nothing derived. An invalid-input decline
+//! is terminal under `resume`, and a budget decline's pending work is
+//! revalidated before it resumes, so an invalid entry never reaches the loop by
+//! either route.
+//!
+//! The leg check reads both legs. Checking the right leg alone would accept an
+//! entry whose left identifier was changed to another stored cell, since the
+//! peak is computed from the left cell the entry was built with; reading the
+//! stored left cell closes that, and
+//! `a_supplied_overlap_naming_another_left_cell_is_declined` holds it. That the
+//! right leg is the stored right cell renamed apart from the stored left one is
+//! the constructor's guarantee and stays a precondition.
 
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
