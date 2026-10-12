@@ -15,6 +15,7 @@ use core::sync::atomic::Ordering;
 use core::time::Duration;
 use std::fs::DirBuilder;
 use std::io;
+use std::io::BufRead as _;
 use std::io::BufReader;
 use std::io::Read;
 use std::io::Write;
@@ -175,20 +176,30 @@ pub fn bind(socket: &Path) -> Result<Maybe<UnixListener, bind::Absent>, io::Erro
     }
 }
 
+/// A face that serves a connection speaking newline-delimited JSON.
+///
+/// The Model Context Protocol speaks it. The face reads the connection
+/// through the buffered stream it is given, writes to the stream under it,
+/// and works over the workspace every connection shares, as the peer it is
+/// given. The hub lets the peer go and shuts the stream once the face
+/// returns.
+pub type Face = fn(&mut BufReader<UnixStream>, Peer, &Mutex<Workspace>);
+
 /// Serve every connection `listener`, bound to `socket`, accepts over one
 /// workspace, until none has been open for `linger`.
 ///
 /// # Specification
 /// - requires: `listener` is bound to `socket`.
-/// - ensures: each accepted connection is served as [`Server::handle`] and
-///   [`Server::admit`] state, over the documents every connection shares: its
-///   answers and publications reach it in the order its handling made them,
-///   interleaved with the publications other connections' synchronisations made
-///   for documents it holds, and each synchronisation's timing line goes to
-///   `log`. A connection ends at `exit`, at the end of its stream, or at a
-///   stream fault; it then holds nothing and its socket is shut. The hub
-///   returns once no connection has been open for `linger`, its socket file
-///   removed first so a late client starts a fresh hub.
+/// - ensures: a connection whose first byte is `{` is handed to `lines` when
+///   one is given. Every other accepted connection is served as
+///   [`Server::handle`] and [`Server::admit`] state, over the documents every
+///   connection shares: its answers and publications reach it in the order its
+///   handling made them, interleaved with the publications other connections'
+///   synchronisations made for documents it holds, and each synchronisation's
+///   timing line goes to `log`. A connection ends at `exit`, at the end of its
+///   stream, or at a stream fault; it then holds nothing and its socket is
+///   shut. The hub returns once no connection has been open for `linger`, its
+///   socket file removed first so a late client starts a fresh hub.
 /// - provides: the engine hub's whole lifetime.
 /// - fails: when accepting fails for a reason other than having nothing to
 ///   accept.
@@ -206,12 +217,14 @@ pub fn bind(socket: &Path) -> Result<Maybe<UnixListener, bind::Absent>, io::Erro
 ///   none, removes its socket and returns.
 /// - witness: `hub::tests::two_clients_share_one_document`
 /// - witness: `hub::tests::a_hub_left_alone_exits_after_its_linger`
+/// - witness: `hub::tests::a_line_connection_reaches_the_second_face`
 #[inline]
 pub fn run_hub<Log>(
     listener: &UnixListener,
     socket: &Path,
     linger: Duration,
     log: Log,
+    lines: Option<Face>,
 ) -> Result<(), io::Error>
 where
     Log: Write + Send + 'static,
@@ -229,7 +242,7 @@ where
         let (workspace, log, open) = (Arc::clone(&workspace), Arc::clone(&log), Arc::clone(&open));
         let peer = Peer::from(peers);
         drop(thread::spawn(move || {
-            connection(stream, peer, &workspace, &log);
+            connection(stream, peer, &workspace, &log, lines);
             let _closed = open.fetch_sub(1, Ordering::SeqCst);
         }));
         Ok(())
@@ -283,12 +296,24 @@ fn connection<Log>(
     peer: Peer,
     workspace: &Mutex<Workspace>,
     log: &Mutex<Log>,
+    lines: Option<Face>,
 ) where
     Log: Write,
 {
+    let mut reading = BufReader::new(stream);
+    if let Some(face) = lines
+        && reading
+            .fill_buf()
+            .is_ok_and(|bytes| bytes.first() == Some(&b'{'))
+    {
+        face(&mut reading, peer, workspace);
+        lock(workspace).depart(peer);
+        drop(reading.get_ref().shutdown(std::net::Shutdown::Both));
+        return;
+    }
     let (outbox, inbox) = channel::<Outgoing>();
     lock(workspace).join(peer, outbox.clone());
-    let writer = stream.try_clone().map(|mut writing| {
+    let writer = reading.get_ref().try_clone().map(|mut writing| {
         thread::spawn(move || {
             for message in inbox {
                 let Ok(encoded) = serde_json::to_vec(&message)
@@ -301,7 +326,6 @@ fn connection<Log>(
             }
         })
     });
-    let mut reading = BufReader::new(stream);
     let mut server = Server::new(peer);
     if writer.is_ok() {
         while let Ok(Maybe::Present(body)) = read_frame(&mut reading) {
@@ -414,7 +438,9 @@ mod tests
 {
     use core::time::Duration;
     use std::io;
+    use std::io::BufRead as _;
     use std::io::BufReader;
+    use std::io::Write as _;
     use std::os::unix::net::UnixStream;
     use std::path::Path;
     use std::path::PathBuf;
@@ -481,7 +507,28 @@ mod tests
         }
     }
 
-    /// A hub serving `socket` on its own thread, lingering 100 ms.
+    /// A line face that answers each line it reads with the number of
+    /// documents the workspace holds, then the line.
+    ///
+    /// # Specification
+    /// trivial.
+    fn echo(
+        reading: &mut BufReader<UnixStream>,
+        _peer: super::Peer,
+        workspace: &std::sync::Mutex<super::Workspace>,
+    )
+    {
+        let mut writing = reading.get_ref().try_clone().expect("the stream clones");
+        let mut line = String::new();
+        while reading.read_line(&mut line).is_ok_and(|read| read != 0) {
+            let held = super::lock(workspace).held().count();
+            write!(writing, "{held} {line}").expect("the client reads");
+            line.clear();
+        }
+    }
+
+    /// A hub serving `socket` on its own thread, lingering 100 ms, its line
+    /// face [`echo`].
     ///
     /// # Specification
     /// trivial.
@@ -493,8 +540,14 @@ mod tests
         };
         let socket = socket.to_path_buf();
         thread::spawn(move || {
-            run_hub(&listener, &socket, Duration::from_millis(100), io::sink())
-                .expect("the hub serves");
+            run_hub(
+                &listener,
+                &socket,
+                Duration::from_millis(100),
+                io::sink(),
+                Some(echo),
+            )
+            .expect("the hub serves");
         })
     }
 
@@ -685,6 +738,33 @@ mod tests
         drop(second);
         hub.join().expect("the hub exits");
         assert!(!socket.exists(), "the hub removes its socket");
+    }
+
+    #[test]
+    fn a_line_connection_reaches_the_second_face()
+    {
+        let scratch = Scratch::new(Json("lines"));
+        let socket = scratch.socket();
+        let hub = hub(&socket);
+        let mut editor = Client::new(&socket);
+        editor.send(Json(
+            r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{
+                "uri":"file:///tmp/lines.gandr","version":1,"text":"def f = 42 ;\n"}}}"#,
+        ));
+        assert_eq!(editor.published(), Some(serde_json::json!(1_i32)));
+        let mut model = UnixStream::connect(&socket).expect("the hub accepts");
+        model.write_all(b"{\"ping\":1}\n").expect("the hub reads");
+        let mut answer = String::new();
+        BufReader::new(&model)
+            .read_line(&mut answer)
+            .expect("the face answers");
+        assert_eq!(
+            answer, "1 {\"ping\":1}\n",
+            "a connection opening with `{{` is served by the line face, over the shared documents"
+        );
+        drop(model);
+        drop(editor);
+        hub.join().expect("the hub exits");
     }
 
     #[test]

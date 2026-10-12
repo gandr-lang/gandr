@@ -97,6 +97,8 @@ mod tokens;
 mod transport;
 
 #[cfg(unix)]
+pub use crate::hub::Face;
+#[cfg(unix)]
 pub use crate::hub::LINGER;
 #[cfg(unix)]
 pub use crate::hub::bind;
@@ -106,7 +108,13 @@ pub use crate::hub::relay;
 pub use crate::hub::run_hub;
 #[cfg(unix)]
 pub use crate::hub::socket_for;
+pub use crate::protocol::Diagnostic;
+pub use crate::protocol::DocumentUri;
+pub use crate::protocol::DocumentVersion;
+pub use crate::server::Peer;
 pub use crate::server::Served;
+pub use crate::server::Server;
+pub use crate::server::Workspace;
 pub use crate::server::serve;
 pub use crate::tokens::TOKEN_MODIFIERS;
 pub use crate::tokens::TOKEN_TYPES;

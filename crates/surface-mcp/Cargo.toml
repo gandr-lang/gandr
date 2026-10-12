@@ -1,0 +1,30 @@
+[package]
+name = "gandr-surface-mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The gandr Model Context Protocol server: the engine hub's documents, diagnostics and queries served to models"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "language", "mcp"]
+categories = ["development-tools"]
+publish.workspace = true
+
+# The server reads the language server's shared workspace: its documents, the
+# diagnostics last published for each, and its read-only requests answered
+# off them. The wire is newline-delimited JSON, built and read through
+# serde_json's value tree.
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled.
+[dependencies]
+anodized.workspace = true
+gandr-surface-lsp.workspace = true
+serde_json.workspace = true
+
+# The hub tests read frames through the language server's framing, whose
+# absence is a named shape.
+[dev-dependencies]
+quenchant-shape.workspace = true
+
+[lints]
+workspace = true

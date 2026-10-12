@@ -66,10 +66,11 @@ crates/
 ├── surface-dispatcher/            routes a driver invocation; composes parse, lower, check and settle over the sources a verb walks
 ├── surface-diagnostics/           renders what a dispatcher step prints: a refusal, an unsettled declaration and a goal as a located source snippet, the ledger lines as text
 ├── surface-session/               the interactive session: each revision lowered, judged, resumed through the incremental checker and checkpointed, with the edit actions from the revision before and the parser's repairs, for the REPL, language server and terminal faces
-├── surface-lsp/                   the language server: the base protocol over byte streams, diagnostics from the renderer's reports, semantic tokens from the highlighter's roles
+├── surface-lsp/                   the language server: the base protocol over byte streams, diagnostics from the renderer's reports, semantic tokens from the highlighter's roles, and the engine hub that serves one workspace's clients over a Unix socket
+├── surface-mcp/                   the Model Context Protocol server: the hub's open documents, their diagnostics and the language server's queries served to models as tools and resources
 ├── surface-repl/                  the read-evaluate loop: the completeness gate, the session loop and its meta-commands, the transcript encoder and its rows, the batch and line-editor faces
 ├── surface-tui/                   the terminal face: the loop's transcript, an input pane and a status line full-screen, styled by highlight role and line kind
-├── surface-driver/                the `gandr` driver binary, package `gandr-lang`: `check`, `test`, `lsp`, `repl`, `tui` and the exit codes
+├── surface-driver/                the `gandr` driver binary, package `gandr-lang`: `check`, `test`, `lsp`, `serve`, `mcp`, `repl`, `tui` and the exit codes
 ├── workflow-spec-cost/            the `spec-cost` binary: executable specifications ranked by the check time profiled in the slowest enforcing tests
 └── workflow-test-timing/          the `test-timing` binary: nextest priority levels proposed from recent merge-queue runs' JUnit reports
 ```
