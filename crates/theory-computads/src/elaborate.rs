@@ -9,9 +9,10 @@
 //! `$ret`, flattening a constructor that wraps an operation into a return-side
 //! constructor frame `K⁻`. The supported fragment is the direct one — a matched
 //! producer, an operation frame, and result terms that are variables,
-//! constructors of producers, tail operations, or a constructor wrapping an
-//! operation through single-argument constructors. A shape outside it is
-//! declined with an [`ElaborateError`], never mis-elaborated.
+//! constructors of producers, tail operations, a constructor wrapping an
+//! operation through single-argument constructors, or the results tuple of a
+//! many-out operation. A shape outside it is declined with an
+//! [`ElaborateError`], never mis-elaborated.
 //!
 //! # The declaration's polarity
 //!
@@ -26,14 +27,39 @@
 //!
 //! # The operation alphabet a description supplies
 //!
-//! A description declares operations, each with a multi-output arity, and the
-//! arity decides what the cell layer can hold. [`elaborate_data_desc`] reads
-//! the operations before the faces: an operation whose arity is the
-//! one-monomial, one-output shape is admitted, because an operation frame
-//! `f(p̄; c)` carries exactly one return continuation; every other arity is
-//! declined with an [`OpElaborateError`], and a face applying a declined
-//! operation is declined with it rather than elaborated into a frame that
-//! silently drops the operation's other outputs.
+//! A description declares operations, each with a multi-output arity — a
+//! bridge diagram `A ← J → I → B` computed `Σ_t ∘ Π_π ∘ Δ_s` (Spivak, Garner
+//! and Fairbanks, *Functorial Aggregation*, arXiv:2111.10968) — and the arity
+//! decides what the cell layer can hold. [`elaborate_data_desc`] reads the
+//! operations before the faces. An operation frame `f(p̄; κ₁ … κₙ)` carries one
+//! return continuation per output port, so every arity of the product layer
+//! is admitted: each output port fed by exactly one monomial, the named result
+//! tuple. The alphabet grows in place rather than through a second consumer
+//! grammar, because the carrier has to express what the shape layer provides
+//! — many inputs and many outputs — with any restriction left to a static
+//! analysis. Two arities are declined with an [`OpElaborateError`]: one with no
+//! output, whose results go nowhere, and one aggregating several monomials
+//! into a port, which is the sum layer and needs a commutative monoid on the
+//! target. A face applying a declined operation is declined with it.
+//!
+//! A many-out operation's rule returns its results together, as a results
+//! tuple `(t₁, …, tₙ)` of producers, or by a tail call to an operation with as
+//! many outputs. The tuple elaborates to `⟨t₁ | $deliver(t₂ … tₙ; κ₁ … κₙ)⟩`:
+//! the results are written to their destinations and control transfers once.
+//! The alternatives were one cut per result, which a command — a single cut —
+//! cannot hold, and a covariable per consumer threaded through a sequence of
+//! cuts, which fixes an order of delivery the operation does not have. The
+//! choice reverses if commands grow a multi-cut, at which point the delivery
+//! frame is that multi-cut's normal form. A result count other than the
+//! operation's output count is [`ElaborateError::ResultArity`].
+//!
+//! A face over a many-out operation keeps the convexity discharge
+//! ([`SequentAlphabet::convexity_discharge`]): its left-hand side cuts the
+//! matched producer against one frame whose arguments are producers and whose
+//! continuations are the frame's own leaves, so every input reaches every
+//! output and the forcing argument holds as it does for one output.
+//!
+//! [`SequentAlphabet::convexity_discharge`]: gandr_theory_cell_complexes::CellAlphabet::convexity_discharge
 //!
 //! Whether a face's symbols belong to the declaration at all, and whether an
 //! arity's maps compose, are [`check_desc`]'s questions; a caller wanting both
@@ -139,15 +165,14 @@
 //!
 //! # The operation gate
 //!
-//! An operation frame `f(p̄; c)` carries one producer-argument list and one
-//! return continuation, so the only arity it holds has one output port fed by
-//! one monomial. An operation declaring no output port, several, or one fed by
-//! zero or several monomials is declined with an `OpElaborateError`, and every
-//! face and circuit rule applying it is declined with
-//! `ElaborateError::UnrepresentableOperation` before it is shaped, rather than
-//! elaborated into a frame that drops the operation's other outputs. Growing
-//! the cell alphabet so those arities are representable is a cell-layer change
-//! and is not taken here.
+//! An operation frame `f(p̄; κ₁ … κₙ)` carries one producer-argument list and
+//! one return continuation per output port, so it holds every arity whose
+//! output ports are each fed by exactly one monomial. An operation declaring
+//! no output port, or one fed by zero or several monomials, is declined with
+//! an `OpElaborateError`, and every face and circuit rule applying it is
+//! declined with `ElaborateError::UnrepresentableOperation` before it is
+//! shaped, rather than elaborated into a frame that drops or merges the
+//! operation's results.
 //!
 //! Output-arity admission does not supply a matched producer: a zero-input
 //! signature can pass this gate, while its empty operation application is
@@ -198,6 +223,7 @@ use gandr_theory_cell_complexes::CellVariance;
 use gandr_theory_cell_complexes::CmdPat;
 use gandr_theory_cell_complexes::ConsPat;
 use gandr_theory_cell_complexes::ConsView;
+use gandr_theory_cell_complexes::ContinuationCount;
 use gandr_theory_cell_complexes::EtaKind;
 use gandr_theory_cell_complexes::HoleName;
 use gandr_theory_cell_complexes::NonLinearPattern;
@@ -263,6 +289,27 @@ const RETURN_CONT: &str = "$ret";
 /// - witness: `elaborate::tests::a_codata_declaration_mints_its_eta_cell_at_a_negative_cut`
 const ETA_OBSERVED: &str = "$eta";
 
+/// The reserved delivery frame a many-out rule's results leave by:
+/// `⟨t₁ |ε $deliver(t₂ … tₙ; κ₁ … κₙ)⟩` writes each result to its port's
+/// continuation with one control transfer.
+///
+/// No cell rewrites it, so a many-out rule's contractum stays a normal form
+/// that names every result and its destination; reading the results out of it
+/// is the consumer's step, the destination-passing reading of a many-out
+/// return.
+///
+/// # Specification
+/// - provides: the delivery frame is spelled apart from every declared symbol
+///   by the `$` prefix no surface name carries.
+/// - executable: none — a constant has no callable boundary; the delivered
+///   faces are checked where they are elaborated.
+///
+/// # Adequacy
+/// - hypothesis: L3 compares a delivered pair against the exact expected
+///   command; swapping or dropping a component changes it.
+/// - witness: `elaborate::tests::a_two_output_operation_elaborates_one_frame_with_two_continuations`
+const DELIVER: &str = "$deliver";
+
 /// Why a face could not be elaborated into a command cell, or could not be
 /// admitted once elaborated.
 ///
@@ -281,6 +328,7 @@ const ETA_OBSERVED: &str = "$eta";
 /// - witness: `elaborate::tests::fragment_refusals_preserve_left_before_right_precedence`
 /// - witness: `elaborate::tests::a_repeated_hole_and_a_mixed_polarity_hole_earn_distinct_refusals`
 /// - witness: `elaborate::tests::circuit_composite_refusal_precedes_a_bad_sphere`
+/// - witness: `elaborate::tests::a_result_count_other_than_the_output_count_is_refused`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ElaborateError
 {
@@ -291,11 +339,23 @@ pub enum ElaborateError
     /// producer to cut against.
     EmptyOperation,
     /// A term shape outside the supported fragment: an operation in producer
-    /// position, or a several-argument constructor wrapping an operation.
+    /// position, a several-argument constructor wrapping an operation, or a
+    /// results tuple anywhere but the whole right-hand side or holding an
+    /// operation.
     UnsupportedShape,
-    /// The face applies an operation whose declared arity the
-    /// single-continuation command-pattern grammar cannot hold.
+    /// The face applies an operation whose declared arity the operation frame
+    /// cannot hold ([`OpElaborateError`]).
     UnrepresentableOperation,
+    /// The right-hand side returns a number of results other than the
+    /// left-hand operation's output count: a single value, a results tuple of
+    /// another width, or a tail operation with another output count.
+    ResultArity
+    {
+        /// The output ports of the operation the left-hand side applies.
+        outputs: ContinuationCount,
+        /// The results the right-hand side returns.
+        results: ContinuationCount,
+    },
     /// The face elaborated, but its left-hand side copies a hole: refused at
     /// the admission seam, because cell patterns are linear.
     NonLinear(NonLinearPattern),
@@ -409,7 +469,8 @@ impl fmt::Display for MixedPolarityHole
              which joins a pattern variable to a continuation. A description's rule binds its \
              pattern variables as producers and sends its result to one reserved continuation, so \
              a face reaches this seam only by spelling a variable with a name the elaboration \
-             reserves (`{RETURN_CONT}`, `{ETA_OBSERVED}`). Give the variable a name of its own.",
+             reserves (`{RETURN_CONT}`, `{RETURN_CONT}.0`, …, `{ETA_OBSERVED}`). Give the variable \
+             a name of its own.",
             hole = self.hole,
         )
     }
@@ -421,60 +482,60 @@ impl core::error::Error for MixedPolarityHole
 
 /// Why a declared operation gets no operation frame in the cell layer.
 ///
-/// Each variant names a way the operation's arity leaves the shape an
-/// operation frame expresses: one frame carries exactly one producer-argument
-/// list and exactly one return continuation, so the only arity it holds is the
-/// one-monomial, one-output shape.
+/// An operation frame `f(p̄; c₁ … cₙ)` carries one producer-argument list and
+/// one return continuation per output port, so it holds every arity of the
+/// product layer — a named result tuple. Each variant names a way an arity
+/// leaves that layer.
 ///
 /// # Specification
-/// - provides: operation admission distinguishes zero, multiple and singly
-///   aggregated outputs in that order.
+/// - provides: operation admission distinguishes zero outputs and an output fed
+///   by a number of monomials other than one, in that order.
 /// - executable: none — the refusal carries no source arity table from which to
 ///   decide its case; `admit_op` checks the classification.
 ///
 /// # Adequacy
-/// - hypothesis: L3 observes zero, one and multiple outputs and zero, one and
-///   multiple monomials. Exact refusal variants distinguish collapsed arity
-///   classes; the admitted zero-input boundary separates signature admission
-///   from face elaboration.
+/// - hypothesis: L3 observes zero, one and two outputs and zero, one and
+///   several monomials per output. Exact refusal variants distinguish collapsed
+///   arity classes; the admitted zero-input boundary separates signature
+///   admission from face elaboration.
 /// - witness: `elaborate::tests::an_aggregating_arity_and_an_outputless_one_are_declined_apart`
-/// - witness: `elaborate::tests::a_many_out_operation_is_declined_and_declines_its_faces`
+/// - witness: `elaborate::tests::a_two_output_operation_elaborates_one_frame_with_two_continuations`
 /// - witness: `elaborate::tests::a_zero_input_signature_does_not_supply_a_matched_producer`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum OpElaborateError
 {
-    /// The operation declares no output port, so its frame's return
-    /// continuation would carry nothing.
+    /// The operation declares no output port, so its frame would carry no
+    /// return continuation and its result would go nowhere.
     NoOutput,
-    /// The operation declares more than one output port, which needs one
-    /// continuation per port and so a wider consumer grammar.
-    ManyOutput,
-    /// The operation's one output port is fed by zero or several monomials;
-    /// several is the sum-layer aggregation that needs a commutative monoid on
-    /// the target, and zero feeds the port nothing.
+    /// An output port is fed by zero or several monomials; several is the
+    /// sum-layer aggregation that needs a commutative monoid on the target,
+    /// and zero feeds the port nothing.
     AggregatedOutput,
 }
 
 /// A declared operation the cell layer admits: the symbol its applications
-/// cut against, and how many input ports it reads.
+/// cut against, how many input ports it reads, and how many return
+/// continuations its frame carries.
 ///
 /// A nonempty operation application cuts its first producer against the
-/// frame; remaining producers become frame arguments. A zero-input signature
-/// can pass arity admission, but its empty application has no matched producer.
+/// frame; remaining producers become frame arguments, and each output port
+/// gets its own continuation. A zero-input signature can pass arity
+/// admission, but its empty application has no matched producer.
 ///
 /// # Specification
-/// - provides: an admitted operation retains its declared symbol and input
-///   count; admissible output arity does not guarantee a nonempty operation
-///   application.
+/// - provides: an admitted operation retains its declared symbol, input count
+///   and output count; admissible output arity does not guarantee a nonempty
+///   operation application.
 /// - executable: none — the record lacks its source operation and arity table;
-///   `admit_op` checks symbol and input-count preservation.
+///   `admit_op` checks symbol and count preservation.
 ///
 /// # Adequacy
-/// - hypothesis: L3 observes admitted symbols and declared input counts on
-///   zero-input and binary signatures. Dropped arguments or treating arity
-///   admission as proof of an inhabitable operation cut changes the boundary
-///   outcome.
+/// - hypothesis: L3 observes admitted symbols, declared input counts and output
+///   counts on zero-input, binary and two-output signatures. Dropped arguments,
+///   a dropped output or treating arity admission as proof of an inhabitable
+///   operation cut changes the boundary outcome.
 /// - witness: `elaborate::tests::an_admitted_operation_reports_its_declared_inputs`
+/// - witness: `elaborate::tests::a_two_output_operation_elaborates_one_frame_with_two_continuations`
 /// - witness: `elaborate::tests::a_zero_input_signature_does_not_supply_a_matched_producer`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct OpFrame
@@ -483,6 +544,8 @@ pub struct OpFrame
     pub op: Sym,
     /// The operation's declared input ports.
     pub inputs: OperationInputCount,
+    /// The operation's declared output ports: one return continuation each.
+    pub outputs: ContinuationCount,
 }
 
 /// One circuit rule member's elaboration, in declaration order.
@@ -697,7 +760,8 @@ pub struct DescElaboration
 ///   check report shape and polarity; exact cell witnesses cover content and
 ///   admission order.
 /// - witness: `elaborate::tests::a_whole_description_elaborates_frame_and_rule_cells`
-/// - witness: `elaborate::tests::a_many_out_operation_is_declined_and_declines_its_faces`
+/// - witness: `elaborate::tests::a_two_output_operation_elaborates_one_frame_with_two_continuations`
+/// - witness: `elaborate::tests::a_circuit_rule_under_a_many_out_operation_elaborates`
 /// - witness: `elaborate::tests::a_codata_declarations_cells_all_cut_at_its_eta_polarity`
 /// - witness: `elaborate::tests::a_single_redex_circuit_rule_reaches_the_store`
 /// - witness: `elaborate::tests::a_two_redex_circuit_rule_is_declined_its_composite`
@@ -758,16 +822,16 @@ pub fn elaborate_data_desc<G>(desc: &SignDesc<G>) -> DescElaboration
     }
     let mut declined_faces = Vec::new();
     for (index, face) in desc.rules.iter().enumerate() {
-        if let Err(error) = admit_face(&mut store, face, desc.polarity, &unrepresentable) {
+        if let Err(error) = admit_face(&mut store, face, desc.polarity, &opers, &unrepresentable) {
             declined_faces.push((DeclinedFaceIndex::from(index), error));
         }
     }
     let circuits = desc
         .circuits
         .iter()
-        .map(|rule| admit_circuit_rule(&mut store, rule, desc.polarity, &unrepresentable))
+        .map(|rule| admit_circuit_rule(&mut store, rule, desc.polarity, &opers, &unrepresentable))
         .collect();
-    let eta = mint_eta_cells(&mut store, desc, &unrepresentable);
+    let eta = mint_eta_cells(&mut store, desc, &opers);
     DescElaboration {
         store,
         opers,
@@ -829,11 +893,12 @@ fn admit_face(
     store: &mut CellStore,
     face: &RuleFace,
     polarity: DeclPolarity,
+    opers: &[OpFrame],
     unrepresentable: &[&Name],
 ) -> Result<(), ElaborateError>
 {
     declined_operation(face, unrepresentable)?;
-    let cell = elaborate_rule(face, polarity)?;
+    let cell = elaborate_rule(face, polarity, opers)?;
     admit_cell(store, cell)?;
     Ok(())
 }
@@ -882,6 +947,7 @@ fn admit_circuit_rule(
     store: &mut CellStore,
     rule: &CircuitRule,
     polarity: DeclPolarity,
+    opers: &[OpFrame],
     unrepresentable: &[&Name],
 ) -> CircuitElaboration
 {
@@ -892,7 +958,7 @@ fn admit_circuit_rule(
         },
     };
     let admitted = declined_operation(&rule.sphere, unrepresentable)
-        .and_then(|()| elaborate_rule(&rule.sphere, polarity))
+        .and_then(|()| elaborate_rule(&rule.sphere, polarity, opers))
         .and_then(|cell| admit_cell(store, cell));
     match admitted {
         | Ok(cell) => CircuitElaboration::Admitted { cell, composite },
@@ -914,17 +980,19 @@ fn admit_circuit_rule(
 /// consumer-driven redex like every other cell the route admits; the mirror is
 /// headed by a bare hole, matches every cut of its polarity, and is not
 /// minted. The declaration licenses the law by stating both halves: exactly
-/// one constructor `K`, and an admitted operation `f` carrying the inverse
-/// face `f(K(x)) ==> x`. The cut is the declaration's — data η positive, codata
-/// η negative — and the cell's provenance carries the kind, so the alphabet
-/// refuses it at the other polarity however well it matches.
+/// one constructor `K`, and an admitted single-output operation `f` carrying
+/// the inverse face `f(K(x)) ==> x` — a face whose one result is the field, so
+/// a many-out operation never carries it. The cut is the declaration's — data
+/// η positive, codata η negative — and the cell's provenance carries the kind,
+/// so the alphabet refuses it at the other polarity however well it matches.
 ///
 /// # Specification
-/// - ensures: one η cell per admitted operation carrying the inverse face, when
-///   the declaration has exactly one constructor, in operation order.
+/// - ensures: one η cell per admitted single-output operation carrying the
+///   inverse face, when the declaration has exactly one constructor, in
+///   operation order.
 /// - fails: [`EtaElaborateError::NotSingleConstructor`] with the constructor
 ///   count when it is not one; [`EtaElaborateError::NoInverseFace`] when no
-///   admitted operation carries the face.
+///   such operation carries the face.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -967,7 +1035,7 @@ fn admit_circuit_rule(
 fn mint_eta_cells<G>(
     store: &mut CellStore,
     desc: &SignDesc<G>,
-    unrepresentable: &[&Name],
+    opers: &[OpFrame],
 ) -> EtaElaboration
 {
     let [ref ctor] = *desc.ctors
@@ -980,10 +1048,10 @@ fn mint_eta_cells<G>(
     let constructor = sym(&ctor.name);
     let mut minted = Vec::new();
     for op in &desc.opers {
-        if unrepresentable.contains(&&op.name) {
-            continue;
-        }
-        if !bool::from(inverts(desc, &op.name, &ctor.name)) {
+        let single = opers.iter().any(|frame| {
+            frame.op.as_ref() == op.name.as_ref() && frame.outputs == ContinuationCount::ONE
+        });
+        if !single || !bool::from(inverts(desc, &op.name, &ctor.name)) {
             continue;
         }
         minted.push(store.insert(eta_cell(&sym(&op.name), &constructor, kind)));
@@ -1143,11 +1211,11 @@ fn is_inverse_face(
             RETURN_CONT
         )
         && matches!(
-            ret.lhs().consumer().view(), ConsView::Op { op : applied, args, ret :
-            continuation } if applied == op && args.len() == 0 && matches!(continuation
-            .view(), ConsView::Frame { ctor : built, ret : tail } if built == ctor &&
-            matches!(tail.view(), ConsView::Meta(var) if var.hole().as_ref() ==
-            RETURN_CONT))
+            ret.lhs().consumer().view(), ConsView::Op { op : applied, args, rets } if applied
+            == op && args.len() == 0 && rets.len() == 1 && rets.clone().next()
+            .is_some_and(|continuation| matches!(continuation.view(), ConsView::Frame {
+            ctor : built, ret : tail } if built == ctor && matches!(tail.view(),
+            ConsView::Meta(var) if var.hole().as_ref() == RETURN_CONT)))
         )
 },
 )]
@@ -1285,12 +1353,13 @@ const fn cut_polarity(polarity: DeclPolarity) -> Polarity
 /// Admit one declared operation into the cell layer's operation alphabet.
 ///
 /// # Specification
-/// - ensures: the frame exactly when the arity has one output port fed by one
-///   monomial; it carries the operation's symbol and declared input count.
-/// - fails: [`OpElaborateError::NoOutput`] with no output port,
-///   [`OpElaborateError::ManyOutput`] with several, then
-///   [`OpElaborateError::AggregatedOutput`] when the one port is fed by zero or
-///   several monomials.
+/// - ensures: the frame exactly when the arity has at least one output port and
+///   every output port is fed by exactly one monomial, with no monomial left
+///   over; it carries the operation's symbol, declared input count and output
+///   count.
+/// - fails: [`OpElaborateError::NoOutput`] with no output port, then
+///   [`OpElaborateError::AggregatedOutput`] when a port is fed by zero or
+///   several monomials or a monomial feeds no declared port.
 /// - panics: none.
 ///
 /// # Errors
@@ -1298,41 +1367,54 @@ const fn cut_polarity(polarity: DeclPolarity) -> Polarity
 ///
 /// # Adequacy
 /// - hypothesis: L3 over arity tables observes exact admission and refusal
-///   variant plus symbol and declared input count. Zero, one and multiple
-///   outputs and zero, one and multiple monomials distinguish each gate and its
-///   precedence. A zero-input signature may pass this arity gate while an empty
-///   operation application fails face elaboration.
+///   variant plus symbol, declared input count and output count. Zero, one and
+///   two outputs and zero, one and several monomials per port distinguish each
+///   gate and its precedence. A zero-input signature may pass this arity gate
+///   while an empty operation application fails face elaboration.
 /// - witness: `elaborate::tests::an_admitted_operation_reports_its_declared_inputs`
-/// - witness: `elaborate::tests::a_many_out_operation_is_declined_and_declines_its_faces`
+/// - witness: `elaborate::tests::a_two_output_operation_elaborates_one_frame_with_two_continuations`
 /// - witness: `elaborate::tests::an_aggregating_arity_and_an_outputless_one_are_declined_apart`
 /// - witness: `elaborate::tests::a_zero_input_signature_does_not_supply_a_matched_producer`
 #[spec(
-    ensures: |ret| match ret {
-    Ok(ref frame) => {
-        op.arity.outputs.len() == 1 && usize::from(op.arity.monomials()) == 1
-            && frame.op.as_ref() == op.name.as_ref()
-            && usize::from(frame.inputs) == op.arity.inputs.len()
-    }
-    Err(OpElaborateError::NoOutput) => op.arity.outputs.is_empty(),
-    Err(OpElaborateError::ManyOutput) => op.arity.outputs.len() > 1,
-    Err(OpElaborateError::AggregatedOutput) => {
-        op.arity.outputs.len() == 1 && usize::from(op.arity.monomials()) != 1
+    ensures: |ret| {
+    let fed_once = (0 .. op.arity.outputs.len()).all(|port| {
+        op.arity.dest.iter().filter(|&&dest| usize::try_from(dest).is_ok_and(|dest| dest == port)).count() == 1
+    }) && op.arity.dest.len() == op.arity.outputs.len();
+    match ret {
+        Ok(ref frame) => {
+            !op.arity.outputs.is_empty() && fed_once
+                && frame.op.as_ref() == op.name.as_ref()
+                && usize::from(frame.inputs) == op.arity.inputs.len()
+                && usize::from(frame.outputs) == op.arity.outputs.len()
+        }
+        Err(OpElaborateError::NoOutput) => op.arity.outputs.is_empty(),
+        Err(OpElaborateError::AggregatedOutput) => !op.arity.outputs.is_empty() && !fed_once,
     }
 },
 )]
 fn admit_op(op: &OperDesc) -> Result<OpFrame, OpElaborateError>
 {
-    match *op.arity.outputs {
-        | [_] => {},
-        | [] => return Err(OpElaborateError::NoOutput),
-        | [_, _, ..] => return Err(OpElaborateError::ManyOutput),
+    let ports = op.arity.outputs.len();
+    if ports == 0 {
+        return Err(OpElaborateError::NoOutput);
     }
-    if usize::from(op.arity.monomials()) != 1 {
+    let mut fed = alloc::vec![0_usize; ports];
+    for &dest in &op.arity.dest {
+        match usize::try_from(dest)
+            .ok()
+            .and_then(|dest| fed.get_mut(dest))
+        {
+            | Some(count) => *count = count.saturating_add(1),
+            | None => return Err(OpElaborateError::AggregatedOutput),
+        }
+    }
+    if fed.iter().any(|&count| count != 1) {
         return Err(OpElaborateError::AggregatedOutput);
     }
     Ok(OpFrame {
         op: sym(&op.name),
         inputs: OperationInputCount::from(op.arity.inputs.len()),
+        outputs: ContinuationCount::from(ports),
     })
 }
 
@@ -1366,7 +1448,7 @@ fn admit_op(op: &OperDesc) -> Result<OpFrame, OpElaborateError>
     while let Some(term) = pending.pop() {
         match term.view() {
             TermView::Var(_) => {}
-            TermView::Ctor { args, .. } => pending.extend(args),
+            TermView::Ctor { args, .. } | TermView::Results { args } => pending.extend(args),
             TermView::Op { name, args } => {
                 mentioned |= declined.contains(&name);
                 pending.extend(args);
@@ -1395,7 +1477,7 @@ fn declined_operation(
                 }
                 stack.extend(args);
             },
-            | TermView::Ctor { args, .. } => stack.extend(args),
+            | TermView::Ctor { args, .. } | TermView::Results { args } => stack.extend(args),
         }
     }
     Ok(())
@@ -1503,16 +1585,25 @@ fn single_polarity_holes(cell: &Cell) -> Result<(), MixedPolarityHole>
 /// Elaborate one rule face into an oriented command cell at the declaration's
 /// polarity.
 ///
+/// `opers` is the operation alphabet the declaration admitted; it says how
+/// many return continuations each operation's frame carries. An operation the
+/// face applies that `opers` does not list is read at one output: whether a
+/// face's symbols belong to the declaration is [`check_desc`]'s question.
+///
+/// [`check_desc`]: gandr_theory_levitation::check_desc
+///
 /// # Specification
 /// - ensures: for a face whose left-hand side is an operation `f(head, rest…)`
-///   and whose result term is in the supported fragment, the cell `⟨head |ε
-///   f(rest…; $ret)⟩ ~> 𝓡⟦rhs⟧$ret`, with `ε` positive for `data` and negative
-///   for `codata`, provenance [`CellProvenance::SurfaceRule`], and derived
-///   metadata.
+///   with `n` outputs and whose result term is in the supported fragment, the
+///   cell `⟨head |ε f(rest…; κ₁ … κₙ)⟩ ~> 𝓡⟦rhs⟧(κ₁ … κₙ)`, where the `κ` are
+///   the reserved return continuations (`$ret` for one output, `$ret.0` … for
+///   several), `ε` is positive for `data` and negative for `codata`, provenance
+///   is [`CellProvenance::SurfaceRule`], and metadata is derived.
 /// - fails: [`ElaborateError::LhsNotOperation`] when the left-hand side is not
 ///   an operation, [`ElaborateError::EmptyOperation`] on an operation with no
 ///   argument, [`ElaborateError::UnsupportedShape`] on a term outside the
-///   fragment.
+///   fragment, [`ElaborateError::ResultArity`] when the right-hand side returns
+///   another number of results than `f` has outputs.
 /// - panics: none.
 ///
 /// # Errors
@@ -1522,16 +1613,18 @@ fn single_polarity_holes(cell: &Cell) -> Result<(), MixedPolarityHole>
 /// - hypothesis: L3 over arbitrary face shapes observes exact command faces,
 ///   metadata and typed refusals at both polarities. Variables and constructors
 ///   on the left, empty applications, nested operations in producer position,
-///   multi-argument wrappers and unary flattening separate each fragment
-///   boundary and left-before-right failure. Predicates check outer-shape
-///   refusal and successful metadata; literal command witnesses check the
-///   translation.
+///   multi-argument wrappers, unary flattening, two-output operations returning
+///   a tuple, a tail call or the wrong count separate each fragment boundary
+///   and left-before-right failure. Predicates check outer-shape refusal and
+///   successful metadata; literal command witnesses check the translation.
 /// - witness: `elaborate::tests::add_zero_elaborates_to_a_cut_against_the_operation_frame`
 /// - witness: `elaborate::tests::add_succ_flattens_the_wrapping_constructor_into_a_frame`
 /// - witness: `elaborate::tests::a_non_operation_lhs_is_declined`
 /// - witness: `elaborate::tests::a_codata_declarations_cells_all_cut_at_its_eta_polarity`
 /// - witness: `elaborate::tests::fragment_refusals_preserve_left_before_right_precedence`
 /// - witness: `elaborate::tests::producer_order_and_nested_result_frames_are_exact`
+/// - witness: `elaborate::tests::a_two_output_operation_elaborates_one_frame_with_two_continuations`
+/// - witness: `elaborate::tests::a_result_count_other_than_the_output_count_is_refused`
 #[spec(
     ensures: |ret| {
     if matches!(face.lhs.view(), TermView::Op { .. }) {
@@ -1542,9 +1635,11 @@ fn single_polarity_holes(cell: &Cell) -> Result<(), MixedPolarityHole>
                     && cell.lhs().polarity() == cut_polarity(polarity)
                     && cell.rhs().polarity() == cut_polarity(polarity)
             }
-            Err(&(ElaborateError::EmptyOperation | ElaborateError::UnsupportedShape)) => {
-                true
-            }
+            Err(
+                &(ElaborateError::EmptyOperation
+                | ElaborateError::UnsupportedShape
+                | ElaborateError::ResultArity { .. }),
+            ) => true,
             _ => false,
         }
     } else {
@@ -1556,6 +1651,7 @@ fn single_polarity_holes(cell: &Cell) -> Result<(), MixedPolarityHole>
 pub fn elaborate_rule(
     face: &RuleFace,
     polarity: DeclPolarity,
+    opers: &[OpFrame],
 ) -> Result<Cell, ElaborateError>
 {
     let polarity = cut_polarity(polarity);
@@ -1563,8 +1659,9 @@ pub fn elaborate_rule(
     else {
         return Err(ElaborateError::LhsNotOperation);
     };
-    let lhs = operation_cut(name, args, ConsPat::meta(RETURN_CONT), polarity)?;
-    let rhs = elaborate_result(face.rhs.to_node(), ConsPat::meta(RETURN_CONT), polarity)?;
+    let conts = return_continuations(outputs_of(name, opers));
+    let lhs = operation_cut(name, args, conts.clone(), polarity)?;
+    let rhs = elaborate_result(face.rhs.to_node(), conts, polarity, opers)?;
     Ok(Cell::new(
         lhs,
         rhs,
@@ -1573,10 +1670,52 @@ pub fn elaborate_rule(
     ))
 }
 
-/// The cut of an operation application `name(head, rest…)` against `cont`.
+/// How many outputs `name` has in the admitted alphabet: its frame's
+/// continuation count, or one for a name the alphabet does not list.
 ///
 /// # Specification
-/// - ensures: `⟨head |ε name(rest…; cont)⟩` when `head` and every `rest` term
+/// trivial.
+fn outputs_of(
+    name: &Name,
+    opers: &[OpFrame],
+) -> ContinuationCount
+{
+    opers
+        .iter()
+        .find(|frame| frame.op.as_ref() == name.as_ref())
+        .map_or(ContinuationCount::ONE, |frame| frame.outputs)
+}
+
+/// The reserved return continuations of an operation with `outputs` output
+/// ports, in port order: `$ret` alone, or `$ret.0`, `$ret.1`, … for several.
+///
+/// # Specification
+/// - ensures: `outputs` metavariable continuations with pairwise distinct
+///   reserved names; one output keeps the single-output name `$ret`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one and two outputs are observed through the exact
+///   elaborated faces; reusing one name for both ports or renaming the
+///   single-output continuation changes them.
+/// - witness: `elaborate::tests::add_zero_elaborates_to_a_cut_against_the_operation_frame`
+/// - witness: `elaborate::tests::a_two_output_operation_elaborates_one_frame_with_two_continuations`
+#[spec(ensures: |ref conts| conts.len() == usize::from(outputs))]
+fn return_continuations(outputs: ContinuationCount) -> Vec<ConsPat>
+{
+    match usize::from(outputs) {
+        | 1 => alloc::vec![ConsPat::meta(RETURN_CONT)],
+        | ports => (0 .. ports)
+            .map(|port| ConsPat::meta(alloc::format!("{RETURN_CONT}.{port}").as_str()))
+            .collect(),
+    }
+}
+
+/// The cut of an operation application `name(head, rest…)` against `conts`,
+/// one continuation per output port.
+///
+/// # Specification
+/// - ensures: `⟨head |ε name(rest…; conts…)⟩` when `head` and every `rest` term
 ///   is a producer.
 /// - fails: [`ElaborateError::EmptyOperation`] with no argument;
 ///   [`ElaborateError::UnsupportedShape`] when an argument is not a producer.
@@ -1587,23 +1726,24 @@ pub fn elaborate_rule(
 ///
 /// # Adequacy
 /// - hypothesis: L3 over empty, unary and multi-argument applications observes
-///   the first producer, ordered remaining producers and retained continuation.
-///   Operations in the first or a later producer position separate head, tail
-///   and emptiness checks; both polarities and nested frames separate dropped
-///   continuations. The predicate checks arity, frame symbol, polarity and
-///   continuation size.
+///   the first producer, ordered remaining producers and retained
+///   continuations. Operations in the first or a later producer position
+///   separate head, tail and emptiness checks; both polarities, nested frames
+///   and two continuations separate dropped or reordered continuations. The
+///   predicate checks arity, frame symbol, polarity and continuation count.
 /// - witness: `elaborate::tests::add_zero_elaborates_to_a_cut_against_the_operation_frame`
 /// - witness: `elaborate::tests::fragment_refusals_preserve_left_before_right_precedence`
 /// - witness: `elaborate::tests::producer_order_and_nested_result_frames_are_exact`
+/// - witness: `elaborate::tests::a_two_output_operation_elaborates_one_frame_with_two_continuations`
 #[spec(
-    captures: before = (args.len(), usize::from(cont.size())),
+    captures: before = (args.len(), conts.len()),
     ensures: |ret| match ret.as_ref() {
     Ok(cut) => {
         before.0 > 0 && cut.polarity() == polarity
             && matches!(
-                cut.consumer().view(), ConsView::Op { op, args, ret : continuation } if
+                cut.consumer().view(), ConsView::Op { op, args, rets } if
                 op.as_ref() == name.as_ref() && args.len() == before.0.saturating_sub(1)
-                && usize::from(continuation.size()) == before.1
+                && rets.len() == before.1
             )
     }
     Err(&ElaborateError::EmptyOperation) => before.0 == 0,
@@ -1614,7 +1754,7 @@ pub fn elaborate_rule(
 fn operation_cut(
     name: &Name,
     mut args: TermArgs<'_>,
-    cont: ConsPat,
+    conts: Vec<ConsPat>,
     polarity: Polarity,
 ) -> Result<CmdPat, ElaborateError>
 {
@@ -1627,19 +1767,111 @@ fn operation_cut(
     Ok(CmdPat::cut(
         polarity,
         producer,
-        ConsPat::op(sym(name), frame_args, cont),
+        ConsPat::operation(sym(name), frame_args, conts),
     ))
 }
 
-/// Elaborate a result term, sending its value to the continuation `cont`.
+/// Elaborate a right-hand side, sending its results to `conts`, one
+/// continuation per output port of the rewritten operation.
+///
+/// Several results leave by one control transfer: a results tuple `(t₁, …,
+/// tₙ)` of producers becomes `⟨t₁ |ε $deliver(t₂ … tₙ; κ₁ … κₙ)⟩`, the
+/// reserved delivery frame no cell rewrites, which writes every result to its
+/// destination and transfers control once — the destination-passing reading
+/// of a many-out return. A tail operation with the same output count passes
+/// the continuations through.
+///
+/// # Specification
+/// - ensures: for one continuation, [`elaborate_value`]'s cut; for several, the
+///   delivery cut of a results tuple of as many producers, or the tail cut of
+///   an operation with as many outputs.
+/// - fails: [`ElaborateError::ResultArity`] when the result count differs from
+///   the continuation count; [`ElaborateError::UnsupportedShape`] for a results
+///   tuple holding an operation; as [`operation_cut`] and [`elaborate_value`]
+///   fail.
+/// - panics: none.
+///
+/// # Errors
+/// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 over a delivered pair, a passed-through tail call, a
+///   one-component tuple and every count mismatch observes exact commands and
+///   typed refusals; swapping the delivered components, dropping one or
+///   accepting the wrong width changes them.
+/// - witness: `elaborate::tests::a_two_output_operation_elaborates_one_frame_with_two_continuations`
+/// - witness: `elaborate::tests::a_result_count_other_than_the_output_count_is_refused`
+#[spec(
+    captures: outputs = conts.len(),
+    ensures: |ret| match ret.as_ref() {
+    Ok(cut) => cut.polarity() == polarity,
+    Err(&ElaborateError::ResultArity { outputs: declared, .. }) => usize::from(declared) == outputs,
+    Err(&(ElaborateError::UnsupportedShape | ElaborateError::EmptyOperation)) => true,
+    _ => false,
+},
+)]
+fn elaborate_result(
+    term: TermNode<'_>,
+    conts: Vec<ConsPat>,
+    polarity: Polarity,
+    opers: &[OpFrame],
+) -> Result<CmdPat, ElaborateError>
+{
+    let outputs = ContinuationCount::from(conts.len());
+    let mismatch = |results| ElaborateError::ResultArity { outputs, results };
+    match term.view() {
+        | TermView::Op { name, args } => {
+            let produced = outputs_of(name, opers);
+            if produced != outputs {
+                return Err(mismatch(produced));
+            }
+            operation_cut(name, args, conts, polarity)
+        },
+        | TermView::Results { mut args } => {
+            let width = ContinuationCount::from(args.len());
+            if width != outputs {
+                return Err(mismatch(width));
+            }
+            let conts = match <[ConsPat; 1]>::try_from(conts) {
+                | Ok([cont]) => {
+                    return match args.next() {
+                        | Some(only) => elaborate_value(only, cont, polarity, opers),
+                        | None => Err(mismatch(width)),
+                    };
+                },
+                | Err(conts) => conts,
+            };
+            let mut components = elaborate_producers(args)?.into_iter();
+            let Some(first) = components.next()
+            else {
+                return Err(mismatch(width));
+            };
+            Ok(CmdPat::cut(
+                polarity,
+                first,
+                ConsPat::operation(Sym::from(DELIVER), components, conts),
+            ))
+        },
+        | TermView::Var(_) | TermView::Ctor { .. } => match <[ConsPat; 1]>::try_from(conts) {
+            | Ok([cont]) => elaborate_value(term, cont, polarity, opers),
+            | Err(_) => Err(mismatch(ContinuationCount::ONE)),
+        },
+    }
+}
+
+/// Elaborate a single result term, sending its value to the continuation
+/// `cont`.
 ///
 /// # Specification
 /// - ensures: `⟨x |ε cont⟩` for a variable, `⟨K(p̄) |ε cont⟩` for a constructor
-///   of producers, `⟨head |ε g(rest…; cont)⟩` for a tail operation, and a
-///   single-argument constructor wrapping anything else flattened into a
-///   return-side frame `K⁻(cont)` around its argument's elaboration.
+///   of producers, `⟨head |ε g(rest…; cont)⟩` for a single-output tail
+///   operation, and a single-argument constructor wrapping anything else
+///   flattened into a return-side frame `K⁻(cont)` around its argument's
+///   elaboration.
 /// - fails: [`ElaborateError::UnsupportedShape`] for a several-argument
-///   constructor wrapping an operation, and as [`operation_cut`] fails.
+///   constructor wrapping an operation or a results tuple below the root;
+///   [`ElaborateError::ResultArity`] for a many-out operation where one value
+///   is expected; and as [`operation_cut`] fails.
 /// - panics: none.
 /// - intension: a loop that descends one constructor per turn, so nesting costs
 ///   no stack.
@@ -1650,14 +1882,16 @@ fn operation_cut(
 /// # Adequacy
 /// - hypothesis: L3 over variables, pure constructors, tail operations and
 ///   unary wrappers observes exact producer and consumer trees at both
-///   polarities. Multi-argument wrappers containing an operation and empty tail
-///   applications separate the two refusals; nested wrappers distinguish
-///   reversed frames and lost continuations. A bounded deep unary chain
-///   witnesses the iterative path, not an unbounded complexity theorem.
+///   polarities. Multi-argument wrappers containing an operation, a wrapped
+///   many-out operation and empty tail applications separate the refusals;
+///   nested wrappers distinguish reversed frames and lost continuations. A
+///   bounded deep unary chain witnesses the iterative path, not an unbounded
+///   complexity theorem.
 /// - witness: `elaborate::tests::add_succ_flattens_the_wrapping_constructor_into_a_frame`
 /// - witness: `elaborate::tests::fragment_refusals_preserve_left_before_right_precedence`
 /// - witness: `elaborate::tests::producer_order_and_nested_result_frames_are_exact`
 /// - witness: `elaborate::tests::deep_constructor_elaboration_preserves_the_boundary_without_recursion`
+/// - witness: `elaborate::tests::a_result_count_other_than_the_output_count_is_refused`
 #[spec(
     captures: continuation_size = usize::from(cont.size()),
     ensures: |ret| match ret.as_ref() {
@@ -1666,13 +1900,15 @@ fn operation_cut(
             && usize::from(cut.consumer().size()) >= continuation_size
     }
     Err(&(ElaborateError::UnsupportedShape | ElaborateError::EmptyOperation)) => true,
+    Err(&ElaborateError::ResultArity { outputs, .. }) => outputs == ContinuationCount::ONE,
     _ => false,
 },
 )]
-fn elaborate_result(
+fn elaborate_value(
     term: TermNode<'_>,
     cont: ConsPat,
     polarity: Polarity,
+    opers: &[OpFrame],
 ) -> Result<CmdPat, ElaborateError>
 {
     let mut current = term;
@@ -1682,7 +1918,17 @@ fn elaborate_result(
             | TermView::Var(name) => {
                 return Ok(CmdPat::cut(polarity, ProdPat::meta(hole(name)), cont));
             },
-            | TermView::Op { name, args } => return operation_cut(name, args, cont, polarity),
+            | TermView::Op { name, args } => {
+                let produced = outputs_of(name, opers);
+                if produced != ContinuationCount::ONE {
+                    return Err(ElaborateError::ResultArity {
+                        outputs: ContinuationCount::ONE,
+                        results: produced,
+                    });
+                }
+                return operation_cut(name, args, alloc::vec![cont], polarity);
+            },
+            | TermView::Results { .. } => return Err(ElaborateError::UnsupportedShape),
             | TermView::Ctor { name, args } => {
                 if let Ok(producers) = elaborate_producers(args.clone()) {
                     return Ok(CmdPat::cut(
@@ -1710,7 +1956,7 @@ fn elaborate_result(
 /// - ensures: the producer pattern of a variable or of a constructor whose
 ///   arguments are all producers, argument order kept.
 /// - fails: [`ElaborateError::UnsupportedShape`] when the term holds an
-///   operation application.
+///   operation application or a results tuple.
 /// - panics: none.
 /// - intension: an explicit stack of constructors awaiting their arguments, so
 ///   nesting costs no call stack.
@@ -1759,7 +2005,7 @@ fn elaborate_result(
             match source.view() {
                 TermView::Var(_) => {}
                 TermView::Ctor { args, .. } => pending.extend(args),
-                TermView::Op { .. } => operation = true,
+                TermView::Op { .. } | TermView::Results { .. } => operation = true,
             }
         }
         operation
@@ -1799,7 +2045,9 @@ fn elaborate_producer(term: TermNode<'_>) -> Result<ProdPat, ElaborateError>
     loop {
         let mut value = match current.view() {
             | TermView::Var(name) => ProdPat::meta(hole(name)),
-            | TermView::Op { .. } => return Err(ElaborateError::UnsupportedShape),
+            | TermView::Op { .. } | TermView::Results { .. } => {
+                return Err(ElaborateError::UnsupportedShape);
+            },
             | TermView::Ctor { name, mut args } => match args.next() {
                 | Some(first) => {
                     let built = Vec::with_capacity(args.len().saturating_add(1));
@@ -1894,9 +2142,12 @@ mod tests
     use alloc::string::ToString as _;
     use alloc::vec;
 
+    use gandr_theory_cell_complexes::CellAlphabet as _;
     use gandr_theory_cell_complexes::CellContractumUse;
     use gandr_theory_cell_complexes::CellCount;
+    use gandr_theory_cell_complexes::ConvexityDischarge;
     use gandr_theory_cell_complexes::MetaVar;
+    use gandr_theory_cell_complexes::SequentAlphabet;
     use gandr_theory_cell_complexes::StepGrowth;
     use gandr_theory_levitation::Attrs;
     use gandr_theory_levitation::BridgeArity;
@@ -1931,7 +2182,7 @@ mod tests
             FreeTerm::op("add", [FreeTerm::ctor("Zero", []), FreeTerm::var("n")]),
             FreeTerm::var("n"),
         );
-        let cell = elaborate_rule(&f, DeclPolarity::Data).expect("the direct case elaborates");
+        let cell = elaborate_rule(&f, DeclPolarity::Data, &[]).expect("the direct case elaborates");
         assert_eq!(
             &CmdPat::cut(
                 Polarity::Positive,
@@ -1966,7 +2217,8 @@ mod tests
                 FreeTerm::var("n"),
             ])]),
         );
-        let cell = elaborate_rule(&f, DeclPolarity::Data).expect("the flattening case elaborates");
+        let cell =
+            elaborate_rule(&f, DeclPolarity::Data, &[]).expect("the flattening case elaborates");
         assert_eq!(
             &CmdPat::cut(
                 Polarity::Positive,
@@ -1988,7 +2240,7 @@ mod tests
         let f = face(FreeTerm::var("x"), FreeTerm::var("x"));
         assert_eq!(
             Err(ElaborateError::LhsNotOperation),
-            elaborate_rule(&f, DeclPolarity::Data),
+            elaborate_rule(&f, DeclPolarity::Data, &[]),
             "a rule rewrites an operation"
         );
     }
@@ -2304,14 +2556,14 @@ mod tests
                     "w",
                 )),
                 CircuitNode::Frame(CircuitFrame::new(
-                    FrameHead::Op("divmod".into()),
+                    FrameHead::Op("merge".into()),
                     [FreeTerm::var("w"), FreeTerm::var("y")],
                     "z",
                 )),
             ],
             "z",
         );
-        let desc = nat_with([divmod_op()], []).with_circuits([rule_over("over", body)]);
+        let desc = nat_with([merge_op()], []).with_circuits([rule_over("over", body)]);
         let elaborated = elaborate_data_desc(&desc);
         assert_eq!(
             vec![CircuitElaboration::Declined(
@@ -2330,6 +2582,7 @@ mod tests
             vec![OpFrame {
                 op: Sym::from("add"),
                 inputs: OperationInputCount::from(2_usize),
+                outputs: ContinuationCount::ONE,
             }],
             elaborated.opers,
             "the admitted operation carries its symbol and its declared input count"
@@ -2337,33 +2590,222 @@ mod tests
     }
 
     #[test]
-    fn a_many_out_operation_is_declined_and_declines_its_faces()
+    fn a_two_output_operation_elaborates_one_frame_with_two_continuations()
     {
-        // `op divmod(m, n) -> (q, r)`: two output ports, and an operation frame
-        // has exactly one return continuation.
-        let desc = nat_with([divmod_op()], [face(
-            FreeTerm::op("divmod", [FreeTerm::ctor("Zero", []), FreeTerm::var("n")]),
-            FreeTerm::ctor("Zero", []),
-        )]);
+        // `op divmod(m, n) -> (q, r)` with `rule divmod(m, Zero) ==> (Zero, m)`
+        // and the tail call `rule divmod(Succ(m), n) ==> divmod(m, n)`.
+        let desc = nat_with([divmod_op()], [
+            face(
+                FreeTerm::op("divmod", [FreeTerm::var("m"), FreeTerm::ctor("Zero", [])]),
+                FreeTerm::results([FreeTerm::ctor("Zero", []), FreeTerm::var("m")]),
+            ),
+            face(
+                FreeTerm::op("divmod", [
+                    FreeTerm::ctor("Succ", [FreeTerm::var("m")]),
+                    FreeTerm::var("n"),
+                ]),
+                FreeTerm::op("divmod", [FreeTerm::var("m"), FreeTerm::var("n")]),
+            ),
+        ]);
         let elaborated = elaborate_data_desc(&desc);
-        assert_eq!(
-            vec![(DeclinedOpIndex::from(0_usize), OpElaborateError::ManyOutput)],
-            elaborated.declined_opers,
-            "a many-out arity has no operation frame in this grammar"
-        );
-        assert!(elaborated.opers.is_empty(), "nothing was admitted");
-        assert_eq!(
-            vec![(
-                DeclinedFaceIndex::from(0_usize),
-                ElaborateError::UnrepresentableOperation
-            )],
-            elaborated.declined_faces,
-            "a face over a declined operation is declined, not silently narrowed"
+        assert!(
+            elaborated.declined_opers.is_empty(),
+            "the product arity is admitted"
         );
         assert_eq!(
-            CellCount::from(2_usize),
+            vec![OpFrame {
+                op: Sym::from("divmod"),
+                inputs: OperationInputCount::from(2_usize),
+                outputs: ContinuationCount::from(2_usize),
+            }],
+            elaborated.opers,
+            "the frame carries one continuation per output port"
+        );
+        assert!(
+            elaborated.declined_faces.is_empty(),
+            "both faces elaborate: {:?}",
+            elaborated.declined_faces
+        );
+        let rets = || [ConsPat::meta("$ret.0"), ConsPat::meta("$ret.1")];
+        let [ref zero_face, ref tail_face] = *desc.rules
+        else {
+            panic!("two faces were written");
+        };
+        let delivered = elaborate_rule(zero_face, DeclPolarity::Data, &elaborated.opers)
+            .expect("a results tuple of producers elaborates");
+        assert_eq!(
+            &CmdPat::cut(
+                Polarity::Positive,
+                ProdPat::meta("m"),
+                ConsPat::operation("divmod", [ProdPat::ctor("Zero", [])], rets()),
+            ),
+            delivered.lhs(),
+            "⟨m | divmod(Zero; $ret.0, $ret.1)⟩"
+        );
+        assert_eq!(
+            &CmdPat::cut(
+                Polarity::Positive,
+                ProdPat::ctor("Zero", []),
+                ConsPat::operation(DELIVER, [ProdPat::meta("m")], rets()),
+            ),
+            delivered.rhs(),
+            "⟨Zero | $deliver(m; $ret.0, $ret.1)⟩: the first result to the first port"
+        );
+        let tail = elaborate_rule(tail_face, DeclPolarity::Data, &elaborated.opers)
+            .expect("a tail call with as many outputs elaborates");
+        assert_eq!(
+            &CmdPat::cut(
+                Polarity::Positive,
+                ProdPat::meta("m"),
+                ConsPat::operation("divmod", [ProdPat::meta("n")], rets()),
+            ),
+            tail.rhs(),
+            "⟨m | divmod(n; $ret.0, $ret.1)⟩ passes both continuations through"
+        );
+        assert_eq!(
+            CellCount::from(4_usize),
             elaborated.store.len(),
-            "only the two constructor frame cells reached the store"
+            "the two constructor frame cells and the two rule cells"
+        );
+        assert_eq!(
+            ConvexityDischarge::StronglyConnectedOverAcyclicTarget,
+            SequentAlphabet::convexity_discharge(&elaborated.store),
+            "each face's one frame is its root, so every input reaches every output"
+        );
+    }
+
+    #[test]
+    fn a_circuit_rule_under_a_many_out_operation_elaborates()
+    {
+        // `*p(-x, +x′); *divmod(-x′, -y, +q, +r);` leaving `(q, r)`.
+        let body = CircuitBody::rooted(
+            [
+                CircuitNode::Redex(CircuitRedex::new(
+                    "p",
+                    FreeTerm::var("x"),
+                    FreeTerm::var("x\u{2032}"),
+                    "x\u{2032}",
+                )),
+                CircuitNode::Frame(CircuitFrame::binding(
+                    FrameHead::Op("divmod".into()),
+                    [FreeTerm::var("x\u{2032}"), FreeTerm::var("y")],
+                    [Name::from("q"), Name::from("r")],
+                )),
+            ],
+            [Name::from("q"), Name::from("r")],
+        );
+        let rule = rule_over("under", body);
+        assert_eq!(
+            face(
+                FreeTerm::op("divmod", [FreeTerm::var("x"), FreeTerm::var("y")]),
+                FreeTerm::op("divmod", [FreeTerm::var("x\u{2032}"), FreeTerm::var("y")]),
+            ),
+            rule.sphere,
+            "a frame leaving whole derives its application at both ends"
+        );
+        let elaborated = elaborate_data_desc(&nat_with([divmod_op()], []).with_circuits([rule]));
+        let [CircuitElaboration::Admitted { ref composite, .. }] = *elaborated.circuits
+        else {
+            panic!("the gate admits the rule: {:?}", elaborated.circuits);
+        };
+        assert_eq!(
+            Maybe::Present(vec![TermPositionIndex::from(0_usize)]),
+            composite.active_position(),
+            "the redex sits at `divmod`'s first argument"
+        );
+    }
+
+    #[test]
+    fn a_result_count_other_than_the_output_count_is_refused()
+    {
+        let opers = elaborate_data_desc(&nat_with([add_op(), divmod_op()], [])).opers;
+        let divmod = |rhs| {
+            face(
+                FreeTerm::op("divmod", [FreeTerm::var("m"), FreeTerm::ctor("Zero", [])]),
+                rhs,
+            )
+        };
+        let add = |rhs| {
+            face(
+                FreeTerm::op("add", [FreeTerm::ctor("Zero", []), FreeTerm::var("n")]),
+                rhs,
+            )
+        };
+        let two = ContinuationCount::from(2_usize);
+        let arity = |outputs, results| Err(ElaborateError::ResultArity { outputs, results });
+        for (rule, expected, why) in [
+            (
+                divmod(FreeTerm::var("m")),
+                arity(two, ContinuationCount::ONE),
+                "one value for two outputs",
+            ),
+            (
+                divmod(FreeTerm::results([
+                    FreeTerm::var("m"),
+                    FreeTerm::var("m"),
+                    FreeTerm::var("m"),
+                ])),
+                arity(two, ContinuationCount::from(3_usize)),
+                "three results for two outputs",
+            ),
+            (
+                divmod(FreeTerm::op("add", [
+                    FreeTerm::var("m"),
+                    FreeTerm::var("m"),
+                ])),
+                arity(two, ContinuationCount::ONE),
+                "a tail call with one output",
+            ),
+            (
+                add(FreeTerm::results([FreeTerm::var("n"), FreeTerm::var("n")])),
+                arity(ContinuationCount::ONE, two),
+                "two results for one output",
+            ),
+            (
+                add(FreeTerm::op("divmod", [
+                    FreeTerm::var("n"),
+                    FreeTerm::var("n"),
+                ])),
+                arity(ContinuationCount::ONE, two),
+                "a tail call with two outputs",
+            ),
+            (
+                add(FreeTerm::ctor("Succ", [FreeTerm::op("divmod", [
+                    FreeTerm::var("n"),
+                    FreeTerm::var("n"),
+                ])])),
+                arity(ContinuationCount::ONE, two),
+                "two results where a constructor takes one",
+            ),
+            (
+                divmod(FreeTerm::results([
+                    FreeTerm::var("m"),
+                    FreeTerm::op("add", [FreeTerm::var("m"), FreeTerm::var("m")]),
+                ])),
+                Err(ElaborateError::UnsupportedShape),
+                "a delivered result is a producer",
+            ),
+        ] {
+            assert_eq!(
+                expected,
+                elaborate_rule(&rule, DeclPolarity::Data, &opers).map(|_| ()),
+                "{why}"
+            );
+        }
+        let single = elaborate_rule(
+            &add(FreeTerm::results([FreeTerm::var("n")])),
+            DeclPolarity::Data,
+            &opers,
+        )
+        .expect("a one-component tuple is its component");
+        assert_eq!(
+            &CmdPat::cut(
+                Polarity::Positive,
+                ProdPat::meta("n"),
+                ConsPat::meta(RETURN_CONT)
+            ),
+            single.rhs(),
+            "⟨n | $ret⟩"
         );
     }
 
@@ -2372,23 +2814,12 @@ mod tests
     {
         // One output port fed by two monomials, and an operation with no
         // output port at all.
-        let aggregated = OperDesc::new(
-            "merge",
-            BridgeArity::new(
-                [SortRef::new("p", "Nat"), SortRef::new("q", "Nat")],
-                [1_u32, 1_u32],
-                [0_u32, 1_u32],
-                [0_u32, 0_u32],
-                [SortRef::new("r", "Nat")],
-            ),
-            Attrs::empty(),
-        );
         let outputless = OperDesc::new(
             "sink",
             BridgeArity::new([SortRef::new("p", "Nat")], [], [], [], []),
             Attrs::empty(),
         );
-        let elaborated = elaborate_data_desc(&nat_with([aggregated, outputless], []));
+        let elaborated = elaborate_data_desc(&nat_with([merge_op(), outputless], []));
         assert_eq!(
             vec![
                 (
@@ -2725,20 +3156,24 @@ mod tests
             [
                 OpFrame {
                     op: Sym::from("add"),
-                    inputs: OperationInputCount::from(2_usize)
+                    inputs: OperationInputCount::from(2_usize),
+                    outputs: ContinuationCount::ONE,
+                },
+                OpFrame {
+                    op: Sym::from("divmod"),
+                    inputs: OperationInputCount::from(2_usize),
+                    outputs: ContinuationCount::from(2_usize),
                 },
                 OpFrame {
                     op: Sym::from("id"),
-                    inputs: OperationInputCount::from(1_usize)
+                    inputs: OperationInputCount::from(1_usize),
+                    outputs: ContinuationCount::ONE,
                 }
             ],
             *report.opers
         );
         assert_eq!(
-            [
-                (DeclinedOpIndex::from(0_usize), OpElaborateError::NoOutput),
-                (DeclinedOpIndex::from(2_usize), OpElaborateError::ManyOutput)
-            ],
+            [(DeclinedOpIndex::from(0_usize), OpElaborateError::NoOutput)],
             *report.declined_opers
         );
         assert_eq!(
@@ -2765,12 +3200,12 @@ mod tests
         let good = add_zero_face();
         assert_eq!(
             Ok(()),
-            admit_face(&mut store, &good, DeclPolarity::Data, &[])
+            admit_face(&mut store, &good, DeclPolarity::Data, &[], &[])
         );
         let before = store.clone();
         assert_eq!(
             Ok(()),
-            admit_face(&mut store, &good, DeclPolarity::Data, &[])
+            admit_face(&mut store, &good, DeclPolarity::Data, &[], &[])
         );
         assert_eq!(before, store);
         for refused in [
@@ -2785,7 +3220,7 @@ mod tests
                 FreeTerm::ctor("Zero", []),
             ),
         ] {
-            assert!(admit_face(&mut store, &refused, DeclPolarity::Data, &[]).is_err());
+            assert!(admit_face(&mut store, &refused, DeclPolarity::Data, &[], &[]).is_err());
             assert_eq!(before, store);
         }
         assert_eq!(CellCount::from(2_usize), store.len());
@@ -2815,7 +3250,7 @@ mod tests
             let mut store = CellStore::new();
             assert_eq!(
                 Err(ElaborateError::UnrepresentableOperation),
-                admit_face(&mut store, &input, DeclPolarity::Data, &[&blocked])
+                admit_face(&mut store, &input, DeclPolarity::Data, &[], &[&blocked])
             );
             assert!(bool::from(store.is_empty()));
         }
@@ -2855,7 +3290,7 @@ mod tests
         store.insert(frame_cell(&Sym::from("Seed"), Polarity::Positive));
         let before = store.clone();
         assert!(matches!(
-            admit_circuit_rule(&mut store, &rule, DeclPolarity::Data, &[]),
+            admit_circuit_rule(&mut store, &rule, DeclPolarity::Data, &[], &[]),
             CircuitElaboration::Declined(ElaborateError::NoCircuitComposite(_))
         ));
         assert_eq!(before, store);
@@ -2879,12 +3314,16 @@ mod tests
                 )
             })
             .into();
-        let blocked = Name::from("divmod");
+        let opers: Vec<OpFrame> = desc
+            .opers
+            .iter()
+            .filter_map(|op| admit_op(op).ok())
+            .collect();
         let mut store = CellStore::new();
         store.insert(frame_cell(&Sym::from("Seed"), Polarity::Positive));
         let expected =
             EtaElaboration::Minted(alloc::vec![CellId::from(1_usize), CellId::from(2_usize)]);
-        assert_eq!(expected, mint_eta_cells(&mut store, &desc, &[&blocked]));
+        assert_eq!(expected, mint_eta_cells(&mut store, &desc, &opers));
         for ((_, cell), name) in store.iter().skip(1).zip(["unwrap", "inspect"]) {
             assert!(
                 matches!(cell.lhs().consumer().view(), ConsView::Op { op, .. } if op.as_ref() == name)
@@ -2892,12 +3331,12 @@ mod tests
             assert_eq!(CellProvenance::Eta(EtaKind::Data), cell.provenance());
         }
         let before = store.clone();
-        assert_eq!(expected, mint_eta_cells(&mut store, &desc, &[&blocked]));
+        assert_eq!(expected, mint_eta_cells(&mut store, &desc, &opers));
         assert_eq!(before, store);
         desc.rules = [].into();
         assert_eq!(
             EtaElaboration::Declined(EtaElaborateError::NoInverseFace),
-            mint_eta_cells(&mut store, &desc, &[&blocked])
+            mint_eta_cells(&mut store, &desc, &opers)
         );
         assert_eq!(before, store);
         desc.ctors = [].into();
@@ -2905,7 +3344,7 @@ mod tests
             EtaElaboration::Declined(EtaElaborateError::NotSingleConstructor(
                 ConstructorCount::from(0_usize)
             )),
-            mint_eta_cells(&mut store, &desc, &[&blocked])
+            mint_eta_cells(&mut store, &desc, &opers)
         );
         assert_eq!(before, store);
     }
@@ -2936,7 +3375,8 @@ mod tests
         assert_eq!(
             Ok(OpFrame {
                 op: Sym::from("nil"),
-                inputs: OperationInputCount::from(0_usize)
+                inputs: OperationInputCount::from(0_usize),
+                outputs: ContinuationCount::ONE,
             }),
             admit_op(&nullary)
         );
@@ -2944,7 +3384,8 @@ mod tests
             Err(ElaborateError::EmptyOperation),
             elaborate_rule(
                 &face(FreeTerm::op("nil", []), FreeTerm::ctor("Zero", [])),
-                DeclPolarity::Data
+                DeclPolarity::Data,
+                &[]
             )
         );
     }
@@ -3028,7 +3469,10 @@ mod tests
         ];
         for polarity in [DeclPolarity::Data, DeclPolarity::Codata] {
             for case in &cases {
-                assert_eq!(Err(&case.1), elaborate_rule(&case.0, polarity).as_ref());
+                assert_eq!(
+                    Err(&case.1),
+                    elaborate_rule(&case.0, polarity, &[]).as_ref()
+                );
             }
         }
     }
@@ -3099,7 +3543,7 @@ mod tests
                 Orientation::PolarityDerived,
                 CellProvenance::SurfaceRule,
             );
-            assert_eq!(Ok(expected), elaborate_rule(&input, declared));
+            assert_eq!(Ok(expected), elaborate_rule(&input, declared, &[]));
         }
     }
 
@@ -3124,10 +3568,11 @@ mod tests
                 node = args.next().expect("one child");
             }
             assert!(matches!(node.view(), ProdView::Meta(var) if var.hole().as_ref() == "x"));
-            let result = elaborate_result(framed.to_node(), ConsPat::meta(RETURN_CONT), Polarity::Negative).expect("unary wrapping");
+            let result = elaborate_value(framed.to_node(), ConsPat::meta(RETURN_CONT), Polarity::Negative, &[]).expect("unary wrapping");
             assert_eq!(Polarity::Negative, result.polarity());
             assert_eq!(&ProdPat::meta("x"), result.producer());
-            let ConsView::Op { op, args, ret: mut continuation } = result.consumer().view() else { panic!("tail operation"); };
+            let ConsView::Op { op, args, mut rets } = result.consumer().view() else { panic!("tail operation"); };
+            let (Some(mut continuation), None) = (rets.next(), rets.next()) else { panic!("one continuation"); };
             assert_eq!(&Sym::from("g"), op);
             assert_eq!(0, args.len());
             for _ in 0..depth {
@@ -3245,6 +3690,26 @@ mod tests
                 [0_u32, 1_u32, 0_u32, 1_u32],
                 [0_u32, 1_u32],
                 [SortRef::new("q", "Nat"), SortRef::new("r", "Nat")],
+            ),
+            Attrs::empty(),
+        )
+    }
+
+    /// `op merge(p, q) -> r` aggregating both monomials into its one output
+    /// port: the sum layer.
+    ///
+    /// # Specification
+    /// trivial.
+    fn merge_op() -> OperDesc
+    {
+        OperDesc::new(
+            "merge",
+            BridgeArity::new(
+                [SortRef::new("p", "Nat"), SortRef::new("q", "Nat")],
+                [1_u32, 1_u32],
+                [0_u32, 1_u32],
+                [0_u32, 0_u32],
+                [SortRef::new("r", "Nat")],
             ),
             Attrs::empty(),
         )

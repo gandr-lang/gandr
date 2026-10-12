@@ -159,12 +159,15 @@ impl Reader<'_, '_>
         Ok(RuleFace::new(lhs, rhs, variables, span))
     }
 
-    /// Read free terms iteratively, distinguishing constructors and operations.
+    /// Read free terms iteratively, distinguishing constructors, operations
+    /// and results tuples.
     ///
     /// # Specification
     /// - ensures: every application preserves its head and ordered argument
-    ///   terms.
-    /// - fails: forms outside names and applications are located.
+    ///   terms; a parenthesized term is its one component, and a parenthesized
+    ///   list of several is a results tuple of them in order.
+    /// - fails: forms outside names, applications and parenthesized lists are
+    ///   located.
     /// - panics: none.
     ///
     /// # Errors
@@ -172,8 +175,11 @@ impl Reader<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — constructor-wrapped operation calls distinguish head
-    ///   category and child order.
+    ///   category and child order; a two-component tuple and a parenthesized
+    ///   variable distinguish a results tuple from grouping and a swapped
+    ///   component.
     /// - witness: `description::tests::operations_and_rules_preserve_their_boundaries`
+    /// - witness: `description::tests::a_parenthesized_result_list_reads_as_a_results_tuple`
     #[spec(ensures: |result| result.is_ok() || self.tree.node(at.node).is_some())]
     pub(super) fn free_term(
         &self,
@@ -200,6 +206,30 @@ impl Reader<'_, '_>
                         continue;
                     }
                     let mut run = Run::new(&pieces, at.span);
+                    if run.eat(Spelling("(")).0 {
+                        let mut components = Vec::new();
+                        while !run.eat(Spelling(")")).0 {
+                            components.push(run.take()?);
+                            if !run.eat(Spelling(",")).0 && !run.at(Spelling(")")).0 {
+                                return Err(run.fault(DescriptionFault::Malformed));
+                            }
+                        }
+                        run.end()?;
+                        match <[Placed; 1]>::try_from(components) {
+                            | Ok([only]) => pending.push(TermFrame::Read(only)),
+                            | Err(components) if components.is_empty() => {
+                                return Err(DescriptionDiagnostic {
+                                    span: at.span,
+                                    fault: DescriptionFault::Malformed,
+                                });
+                            },
+                            | Err(components) => {
+                                pending.push(TermFrame::Gather(ArgumentCount(components.len())));
+                                pending.extend(components.into_iter().rev().map(TermFrame::Read));
+                            },
+                        }
+                        continue;
+                    }
                     let head = run.take()?;
                     if !run.eat(Spelling("(")).0 {
                         return Err(run.fault(DescriptionFault::Malformed));
@@ -241,6 +271,18 @@ impl Reader<'_, '_>
                     };
                     terms.push(term);
                 },
+                | TermFrame::Gather(count) => {
+                    let Some(start) = terms.len().checked_sub(count.0)
+                    else {
+                        return Err(DescriptionDiagnostic {
+                            span: at.span,
+                            fault: DescriptionFault::Malformed,
+                        });
+                    };
+                    let components = terms.drain(start ..);
+                    let term = FreeTerm::results(components);
+                    terms.push(term);
+                },
             }
         }
         terms.pop().ok_or(DescriptionDiagnostic {
@@ -266,4 +308,6 @@ enum TermFrame
     Read(Placed),
     /// Assemble an ordered argument suffix under its head.
     Apply(Name, ArgumentCount, TermKind),
+    /// Assemble an ordered suffix into a results tuple.
+    Gather(ArgumentCount),
 }

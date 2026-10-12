@@ -1308,12 +1308,17 @@ mod tests
                     }
                 },
                 | NodeRef::Cons(cons) => match cons.view() {
-                    | ConsView::Op { args, ret, .. } => {
+                    | ConsView::Op { args, rets, .. } => {
                         let arity = args.len();
                         for (index, arg) in args.enumerate() {
                             work.push((pos.child(PositionStep::from(index)), NodeRef::Prod(arg)));
                         }
-                        work.push((pos.child(PositionStep::from(arity)), NodeRef::Cons(ret)));
+                        for (port, ret) in rets.enumerate() {
+                            work.push((
+                                pos.child(PositionStep::from(arity.saturating_add(port))),
+                                NodeRef::Cons(ret),
+                            ));
+                        }
                     },
                     | ConsView::Frame { ret, .. } => {
                         work.push((pos.child(PositionStep::from(0_usize)), NodeRef::Cons(ret)));

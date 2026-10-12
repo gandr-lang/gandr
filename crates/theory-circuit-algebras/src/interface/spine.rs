@@ -12,14 +12,14 @@
 //! # The reading
 //!
 //! A cut `⟨p |ε c⟩` reads as one cut wire, with the producer half above it and
-//! the consumer spine below it:
+//! the consumer half below it:
 //!
 //! - a constructor `K(p̄)` is a [`GeneratorSort::Value`] generator whose one
 //!   target is its output wire and whose sources are its arguments' wires;
-//! - an operation frame `f(p̄; c)` is a [`GeneratorSort::Operation`] generator
-//!   whose first source is the wire arriving down the spine, whose remaining
-//!   sources are its arguments' wires, and whose one target continues the
-//!   spine;
+//! - an operation frame `f(p̄; c₁, …, cₙ)` is a [`GeneratorSort::Operation`]
+//!   generator whose first source is the wire arriving at the frame, whose
+//!   remaining sources are its arguments' wires, and whose targets are one wire
+//!   per continuation, in port order;
 //! - a return-side constructor frame `K⁻(c)` is a [`GeneratorSort::Return`]
 //!   generator from the arriving wire to the continuing one;
 //! - the terminal `★` is a closed [`GeneratorSort::Terminal`] generator that
@@ -46,11 +46,12 @@
 //! # The spine reading
 //!
 //! `read_spine` reads `⟨p | c⟩` as a diagram whose cut is one wire: the
-//! producer side is a tree of value generators feeding it, the consumer side a
-//! chain of frames reading it and ending at `★` or an open output. A producer
-//! metavariable becomes an input port and a consumer metavariable an output
-//! port, declared in first-occurrence order; a metavariable occurring twice is
-//! a copy, refused, because a wire has one producer and one consumer.
+//! producer side is a tree of value generators feeding it, the consumer side
+//! frames reading it, each frame feeding one wire per continuation and each
+//! branch ending at `★` or an open output. A producer metavariable becomes an
+//! input port and a consumer metavariable an output port, declared in
+//! first-occurrence order; a metavariable occurring twice is a copy, refused,
+//! because a wire has one producer and one consumer.
 //!
 //! A name worn at both polarities, a producer `r` and a consumer `r` as in `⟨r
 //! | seam(; r)⟩`, reads as two interface nodes: one input and one output. That
@@ -502,34 +503,38 @@ fn read_producer(
     Ok(())
 }
 
-/// Reads a consumer spine whose value arrives on `arriving`.
+/// Reads a consumer whose value arrives on `arriving`.
 ///
 /// # Specification
-/// - requires: `arriving` is allocated and is the wire the spine's outermost
+/// - requires: `arriving` is allocated and is the wire the consumer's root
 ///   frame consumes.
-/// - ensures: one generator per operation frame, return frame and terminal,
-///   threaded on one wire each; an operation frame's argument wires are
-///   allocated before its continuation and read after it is emitted; a consumer
-///   metavariable ending the spine declared an output port.
+/// - ensures: one generator per operation frame, return frame and terminal; an
+///   operation frame takes the arriving wire and its argument wires and gives
+///   one fresh wire per continuation, in port order; its argument wires are
+///   allocated before its continuations and read after it is emitted; a
+///   consumer metavariable declares the wire arriving at it an output port.
+///   Continuations are read depth-first in port order, so ports are declared in
+///   the pattern's metavariable order.
 /// - fails: the repeated-hole refusal of [`Reader::declare`], from a frame's
-///   producer arguments or the spine's end.
+///   producer arguments or an end.
 /// - panics: none.
-/// - intension: a loop down the spine, so the walk never recurses on spine
-///   length.
+/// - intension: an explicit stack of `(subtree, wire)` pairs, so the walk never
+///   recurses on pattern depth.
 ///
 /// # Errors
 /// [`SpineObstruction::RepeatedHole`] on a copied metavariable.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — operation and return frames, producer arguments, a
-///   terminal and a consumer-hole end expose exact generator roles, threading
-///   and port order. Wrong root roles, missing frames, reordered arguments or a
-///   fabricated terminal port differs; the arriving wire is allocated and no
-///   general graph is read here.
+///   terminal, a consumer-hole end and a two-continuation frame expose exact
+///   generator roles, threading and port order. Wrong root roles, missing
+///   frames, reordered arguments or continuations, or a fabricated terminal
+///   port differs; the arriving wire is allocated.
 /// - witness: `interface::spine::tests::a_spine_reads_as_its_generators_and_ports`
 /// - witness: `interface::spine::tests::the_reading_declares_input_ports_in_first_occurrence_order`
 /// - witness: `interface::spine::tests::a_terminal_is_a_closed_generator_not_a_port`
 /// - witness: `interface::spine::tests::a_hole_at_both_polarities_reads_as_one_input_and_one_output`
+/// - witness: `interface::spine::tests::a_many_output_frame_reads_as_one_box_with_an_output_per_port`
 #[spec(requires: usize::from(arriving) < reader.next, captures: [
     generators = reader.generators.len(), next = reader.next, inputs = reader.inputs.len(), outputs = reader.outputs.len(),
 ], ensures: |ref result| match *result {
@@ -547,7 +552,7 @@ fn read_producer(
                 ConsView::Meta(hole) => reader.ports.get(hole) == Some(&arriving),
                 ConsView::Top => reader.generators.get(generators).is_some_and(|generator| generator.label().sort() == GeneratorSort::Terminal && generator.sources() == [arriving] && generator.targets().is_empty()),
                 ConsView::Frame { ctor, .. } => reader.generators.get(generators).is_some_and(|generator| generator.label().sort() == GeneratorSort::Return && generator.label().name().as_ref() == ctor.as_ref() && generator.sources() == [arriving] && generator.targets().len() == 1),
-                ConsView::Op { op, args, .. } => reader.generators.get(generators).is_some_and(|generator| generator.label().sort() == GeneratorSort::Operation && generator.label().name().as_ref() == op.as_ref() && generator.sources().first() == Some(&arriving) && generator.sources().len() == args.len().saturating_add(1) && generator.targets().len() == 1),
+                ConsView::Op { op, args, rets } => reader.generators.get(generators).is_some_and(|generator| generator.label().sort() == GeneratorSort::Operation && generator.label().name().as_ref() == op.as_ref() && generator.sources().first() == Some(&arriving) && generator.sources().len() == args.len().saturating_add(1) && generator.targets().len() == rets.len()),
             }
     },
     Err(SpineObstruction::RepeatedHole { ref hole, first, second }) => reader.ports.get(hole) == Some(&first) && usize::from(second) < reader.next,
@@ -559,18 +564,16 @@ fn read_consumer(
     reader: &mut Reader,
 ) -> Result<(), SpineObstruction>
 {
-    let mut node = root;
-    let mut wire = arriving;
-    loop {
+    let mut stack: Vec<(ConsRef<'_>, Wire)> = alloc::vec![(root, arriving)];
+    while let Some((node, wire)) = stack.pop() {
         match node.view() {
-            | ConsView::Meta(hole) => return reader.declare(hole, wire),
+            | ConsView::Meta(hole) => reader.declare(hole, wire)?,
             | ConsView::Top => {
                 reader.generators.push(Generator::new(
                     GeneratorLabel::new(TERMINAL, GeneratorSort::Terminal),
                     [wire],
                     [],
                 ));
-                return Ok(());
             },
             | ConsView::Frame { ctor, ret } => {
                 let next = reader.fresh();
@@ -579,10 +582,9 @@ fn read_consumer(
                     [wire],
                     [next],
                 ));
-                wire = next;
-                node = ret;
+                stack.push((ret, next));
             },
-            | ConsView::Op { op, args, ret } => {
+            | ConsView::Op { op, args, rets } => {
                 let mut sources: Vec<Wire> = Vec::with_capacity(args.len().saturating_add(1));
                 sources.push(wire);
                 let mut pending: Vec<(ProdRef<'_>, Wire)> = Vec::with_capacity(args.len());
@@ -591,20 +593,28 @@ fn read_consumer(
                     sources.push(source);
                     pending.push((arg, source));
                 }
-                let next = reader.fresh();
+                let mut targets: Vec<Wire> = Vec::with_capacity(rets.len());
+                let continuing = stack.len();
+                for ret in rets {
+                    let target = reader.fresh();
+                    targets.push(target);
+                    stack.push((ret, target));
+                }
+                if let Some(continuations) = stack.get_mut(continuing ..) {
+                    continuations.reverse();
+                }
                 reader.generators.push(Generator::new(
                     GeneratorLabel::new(name_of(op), GeneratorSort::Operation),
                     sources,
-                    [next],
+                    targets,
                 ));
                 for (arg, source) in pending {
                     read_producer(arg, source, reader)?;
                 }
-                wire = next;
-                node = ret;
             },
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -716,6 +726,74 @@ mod tests
             consumer.sources().first(),
             "with the arriving wire first"
         );
+    }
+
+    #[test]
+    fn a_many_output_frame_reads_as_one_box_with_an_output_per_port()
+    {
+        use gandr_theory_cell_complexes::Cell;
+        use gandr_theory_cell_complexes::CellAlphabet as _;
+        use gandr_theory_cell_complexes::CellProvenance;
+        use gandr_theory_cell_complexes::CellStore;
+        use gandr_theory_cell_complexes::ConvexityDischarge;
+        use gandr_theory_cell_complexes::Orientation;
+        use gandr_theory_cell_complexes::SequentAlphabet;
+
+        use crate::matching::Connectivity;
+        use crate::matching::connectivity;
+
+        // `⟨x | divmod(n; Succ⁻(q), r)⟩`.
+        let divmod = CmdPat::cut(
+            Polarity::Positive,
+            ProdPat::meta("x"),
+            ConsPat::operation("divmod", [ProdPat::meta("n")], [
+                ConsPat::frame("Succ", ConsPat::meta("q")),
+                ConsPat::meta("r"),
+            ]),
+        );
+        let reading = read_spine(&divmod).expect("the fixture is linear");
+        let wiring = reading.wiring();
+        assert_eq!(EdgeCount::from(2), wiring.edge_count());
+        assert_eq!(&wires![0, 1][..], wiring.boundary().inputs());
+        assert_eq!(
+            &wires![4, 3][..],
+            wiring.boundary().outputs(),
+            "q, then r: the ports keep the pattern's order"
+        );
+        let frame = generator_at(wiring, &wiring.consumer_of(reading.cut()));
+        assert_eq!(GeneratorSort::Operation, frame.label().sort());
+        assert_eq!(&wires![0, 1][..], frame.sources());
+        assert_eq!(
+            &wires![2, 3][..],
+            frame.targets(),
+            "one target per continuation, in port order"
+        );
+        // The structural discharge agrees with the built connectivity sweep:
+        // an argument below one branch of a fork reaches only that branch.
+        let below_a_fork = CmdPat::cut(
+            Polarity::Positive,
+            ProdPat::meta("x"),
+            ConsPat::operation("f", [], [
+                ConsPat::op("g", [ProdPat::meta("n")], ConsPat::meta("q")),
+                ConsPat::meta("r"),
+            ]),
+        );
+        for (lhs, expected) in [(divmod, true), (below_a_fork, false)] {
+            let swept = connectivity(read_spine(&lhs).expect("linear").wiring());
+            assert_eq!(expected, swept == Connectivity::StronglyConnected);
+            let mut store = CellStore::new();
+            store.insert(Cell::new(
+                lhs.clone(),
+                lhs,
+                Orientation::PolarityDerived,
+                CellProvenance::SurfaceRule,
+            ));
+            assert_eq!(
+                expected,
+                SequentAlphabet::convexity_discharge(&store)
+                    == ConvexityDischarge::StronglyConnectedOverAcyclicTarget
+            );
+        }
     }
 
     #[test]

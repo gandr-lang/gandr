@@ -223,6 +223,7 @@ pub use crate::elaborate::PortInstantiationError;
 pub use crate::elaborate::RedexOccurrence;
 pub use crate::elaborate::RewritePort;
 pub use crate::elaborate::Whisker;
+pub use crate::elaborate::WhiskerHead;
 pub use crate::elaborate::WhiskeredCell;
 pub use crate::elaborate::active_position;
 pub use crate::elaborate::elaborate_body;

@@ -24,9 +24,10 @@
 //! **Names resolve through tables with no fallthrough.** `Unit`, `Integer`,
 //! `String`, `+U` and `-F` answer from a type-head table indexed by arity, and
 //! a term name answers from the enclosing binders, then the module's earlier
-//! declarations. Nothing falls through to an opaque atom: an unanswered name is
-//! a refusal with a span, so a misspelling is a mistake rather than a new
-//! nominal type.
+//! declarations, then the operations earlier `data` families run (the
+//! decisions are in `operation`). Nothing falls through to an opaque atom: an
+//! unanswered name is a refusal with a span, so a misspelling is a mistake
+//! rather than a new nominal type.
 //!
 //! **A module is collected by name and resolved by position.** A signature
 //! pairs with its definition wherever the two sit, so the
@@ -158,6 +159,7 @@ mod import;
 mod lower;
 mod module;
 pub mod namespace;
+mod operation;
 mod origin;
 mod resolve;
 

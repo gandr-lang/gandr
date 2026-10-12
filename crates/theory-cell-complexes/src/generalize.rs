@@ -9,10 +9,9 @@
 //! positions whose subterms agree member by member stand one point, which is
 //! what makes the result least general rather than merely general.
 //!
-//! Producers and consumer spines are generalized by different walks, both
-//! explicit: a producer column by a worklist of columns and constructor
-//! builds, a spine from the cut outward, one shared frame at a time, until
-//! the members' remaining spines differ or end. Neither recurses, and a
+//! Producers and consumers are generalized by walks of the same kind, both
+//! explicit: a worklist of columns and builds, a build applying a shared head
+//! to the patterns its children's columns produced. Neither recurses, and a
 //! consumer's operation arguments are producer columns, so the consumer walk
 //! calls the producer walk and never the reverse.
 //!
@@ -29,13 +28,14 @@
 //! in two components is one point across both.
 //!
 //! A producer column is walked by a heap worklist of columns and constructor
-//! builds; a consumer spine is walked from the cut outward, one shared frame at
-//! a time, until the members' remaining spines differ or end, and that suffix
-//! is one consumer point. Two cuts of different polarity have no generalization
-//! in this grammar, which has no command metavariable, and are refused by name,
-//! as are an empty family and members of different lengths. A point's name is
-//! `$g$` and a suffix no member wears; points are listed in the order the walk
-//! first meets them.
+//! builds; a consumer column is walked the same way from the cut outward,
+//! keeping each frame every member shares, its argument columns generalized as
+//! producers and its continuation columns in port order, and a column whose
+//! members differ is one consumer point. Two cuts of different polarity have
+//! no generalization in this grammar, which has no command metavariable, and
+//! are refused by name, as are an empty family and members of different
+//! lengths. A point's name is `$g$` and a suffix no member wears; points are
+//! listed in the order the walk first meets them.
 //!
 //! - **Decision.** Anti-unification is a method of `CellAlphabet`, beside
 //!   `unify_cmd`, with `restrict_subst` and `cmd_size` for the consumers that
@@ -67,13 +67,12 @@ use crate::pattern::CmdPat;
 use crate::pattern::ConsPat;
 use crate::pattern::ConsRef;
 use crate::pattern::ConsView;
+use crate::pattern::ContinuationCount;
 use crate::pattern::HoleName;
 use crate::pattern::MetaVar;
 use crate::pattern::ProdPat;
 use crate::pattern::ProdRef;
 use crate::pattern::ProdView;
-use crate::pattern::SpineEnd;
-use crate::pattern::SpineFrame;
 use crate::pattern::Sym;
 use crate::sequent::SequentAlphabet;
 use crate::subst::substitution_from;
@@ -285,32 +284,33 @@ enum ProdShape<'term>
     Differ,
 }
 
-/// What a consumer column shares at its outermost frame or end.
+/// What a consumer column shares at its root frame or end.
 enum ConsShape<'term>
 {
     /// Every member ends in `★`.
     Top,
     /// Every member is one consumer metavariable.
     Meta(&'term MetaVar),
-    /// Every member's outermost frame is one operation at one arity.
+    /// Every member's root frame is one operation at one arity and one
+    /// continuation count.
     Op
     {
         /// The shared operation symbol.
         op: &'term Sym,
         /// The argument columns, left to right.
         args: Vec<Column<ProdRef<'term>>>,
-        /// The continuation column, one frame in.
-        ret: Column<ConsRef<'term>>,
+        /// The continuation columns, in port order.
+        rets: Vec<Column<ConsRef<'term>>>,
     },
-    /// Every member's outermost frame re-wraps with one constructor.
+    /// Every member's root frame re-wraps with one constructor.
     Frame
     {
         /// The shared constructor symbol.
         ctor: &'term Sym,
-        /// The continuation column, one frame in.
+        /// The continuation column.
         ret: Column<ConsRef<'term>>,
     },
-    /// The members' outermost frames or ends differ.
+    /// The members' root frames or ends differ.
     Differ,
 }
 
@@ -330,13 +330,14 @@ enum ConsShape<'term>
 ///   argument, reversed column order or a missing family member.
 /// - witness: `generalize::tests::positions_agreeing_member_by_member_stand_one_point`
 /// - witness: `generalize::tests::shape_disagreements_are_distinguished_in_both_categories`
+/// - witness: `generalize::tests::continuations_are_generalized_port_by_port`
 #[spec(captures: members = rest.len(), ensures: |output| output.iter().all(|column| column.rest.len() == members))]
-fn child_columns<'term, I>(
+fn child_columns<T, I>(
     first: I,
     rest: Vec<I>,
-) -> Vec<Column<ProdRef<'term>>>
+) -> Vec<Column<T>>
 where
-    I: Iterator<Item = ProdRef<'term>>,
+    I: Iterator<Item = T>,
 {
     let mut rest = rest;
     first
@@ -381,27 +382,30 @@ fn prod_shape<'term>(column: &Column<ProdRef<'term>>) -> ProdShape<'term>
     }
 }
 
-/// What a consumer column shares at its outermost frame or end.
+/// What a consumer column shares at its root frame or end.
 ///
 /// # Specification
-/// - ensures: the shared end, or the shared outermost frame with its argument
-///   columns and its continuation column, when every member agrees on it;
-///   [`ConsShape::Differ`] otherwise, including when one member's spine ends
-///   where another's carries a frame.
+/// - ensures: the shared end, or the shared root frame with its argument
+///   columns and its continuation columns, when every member agrees on it;
+///   [`ConsShape::Differ`] otherwise, including when one member ends where
+///   another carries a frame.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — terminal, variable, operation and frame spines share only
-///   their common outer prefix. Rebuilt members and exact retained frames
+/// - hypothesis: L3 — terminal, variable, operation and frame consumers share
+///   only their common outer prefix, and two operation frames differing in
+///   continuation count differ. Rebuilt members and exact retained frames
 ///   reject sharing past a mismatch or losing a shared frame.
 /// - witness: `generalize::tests::a_spine_is_shared_from_the_cut_outward`
 /// - witness: `generalize::tests::shape_disagreements_are_distinguished_in_both_categories`
+/// - witness: `generalize::tests::continuations_are_generalized_port_by_port`
 #[spec(ensures: |output| matches!(output, ConsShape::Differ) == column.rest.iter().any(|member|
     match (column.first.view(), member.view()) {
         (ConsView::Top, ConsView::Top) => false,
         (ConsView::Meta(left), ConsView::Meta(right)) => left != right,
         (ConsView::Frame { ctor: left, .. }, ConsView::Frame { ctor: right, .. }) => left != right,
-        (ConsView::Op { op: left, args: left_args, .. }, ConsView::Op { op: right, args: right_args, .. }) => left != right || left_args.len() != right_args.len(),
+        (ConsView::Op { op: left, args: left_args, rets: left_rets }, ConsView::Op { op: right, args: right_args, rets: right_rets }) =>
+            left != right || left_args.len() != right_args.len() || left_rets.len() != right_rets.len(),
         _ => true,
     }))]
 fn cons_shape<'term>(column: &Column<ConsRef<'term>>) -> ConsShape<'term>
@@ -455,19 +459,20 @@ fn cons_shape<'term>(column: &Column<ConsRef<'term>>) -> ConsShape<'term>
                 },
             }
         },
-        | ConsView::Op { op, args, ret } => {
+        | ConsView::Op { op, args, rets } => {
             let arity = args.len();
+            let count = rets.len();
             let mut rest_args = Vec::with_capacity(column.rest.len());
-            let mut rets = Vec::with_capacity(column.rest.len());
+            let mut rest_rets = Vec::with_capacity(column.rest.len());
             for member in &column.rest {
                 match member.view() {
                     | ConsView::Op {
                         op: other,
                         args: theirs,
-                        ret: their_ret,
-                    } if other == op && theirs.len() == arity => {
+                        rets: their_rets,
+                    } if other == op && theirs.len() == arity && their_rets.len() == count => {
                         rest_args.push(theirs);
-                        rets.push(their_ret);
+                        rest_rets.push(their_rets);
                     },
                     | ConsView::Op { .. }
                     | ConsView::Frame { .. }
@@ -480,10 +485,7 @@ fn cons_shape<'term>(column: &Column<ConsRef<'term>>) -> ConsShape<'term>
             ConsShape::Op {
                 op,
                 args: child_columns(args, rest_args),
-                ret: Column {
-                    first: ret,
-                    rest: rets,
-                },
+                rets: child_columns(rets, rest_rets),
             }
         },
     }
@@ -557,24 +559,40 @@ fn generalize_prod<'term>(
     ProdPat::ctor(ctor.clone(), built)
 }
 
+/// One pending task of the consumer walk.
+enum ConsTask<'term>
+{
+    /// Generalize one column, leaving its pattern on the built stack.
+    Visit(Column<ConsRef<'term>>),
+    /// Re-wrap the last pattern built with a shared constructor frame.
+    Frame(&'term Sym),
+    /// Apply a shared operation frame, its arguments already generalized, to
+    /// the last patterns built, one per continuation.
+    Op(&'term Sym, Vec<ProdPat>, ContinuationCount),
+}
+
 /// The least general generalization of one consumer column.
 ///
 /// # Specification
-/// - ensures: a spine every member instantiates under its point arms: the
+/// - ensures: a consumer every member instantiates under its point arms: the
 ///   frames every member shares from the cut outward are kept, their argument
-///   columns generalized as producers, and the first column that differs is the
-///   consumer metavariable of the point standing for the members' remaining
-///   spines.
+///   columns generalized as producers and their continuation columns in port
+///   order, and each column that differs is the consumer metavariable of the
+///   point standing for the members' subtrees there.
 /// - panics: none.
-/// - intension: one step per shared frame; each step strips one frame from
-///   every member, so the walk ends within the shortest spine.
+/// - intension: one task per column and one build per shared frame, on a heap
+///   worklist; a shared operation's arguments are generalized when its column
+///   is visited and its continuations visited left to right, so points are
+///   stood in the members' pre-order.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — consumer columns agree through an operation or frame and
-///   then disagree at their ends. Exact prefix and arms reject reversed spines
-///   and premature generalization.
+///   then disagree at their ends, and a shared two-continuation frame is
+///   generalized port by port. Exact prefix and arms reject reversed
+///   continuations and premature generalization.
 /// - witness: `generalize::tests::a_spine_is_shared_from_the_cut_outward`
 /// - witness: `generalize::tests::shape_disagreements_are_distinguished_in_both_categories`
+/// - witness: `generalize::tests::continuations_are_generalized_port_by_port`
 #[spec(captures: [first = column.first, uniform = column.rest.iter().all(|member| *member == column.first),
     smallest = column.iter().map(|member| usize::from(member.size())).min().unwrap_or(1)],
     ensures: |output| usize::from(output.size()) <= smallest && (!uniform || output.to_ref() == first))]
@@ -583,33 +601,42 @@ fn generalize_cons<'term>(
     points: &mut Points<'term>,
 ) -> ConsPat
 {
-    // Outermost first while walking; a spine lists them innermost first.
-    let mut frames: Vec<SpineFrame> = Vec::new();
-    let mut current = column;
-    let end = loop {
-        match cons_shape(&current) {
-            | ConsShape::Top => break SpineEnd::Top,
-            | ConsShape::Meta(var) => break SpineEnd::Meta(var.clone()),
-            | ConsShape::Differ => break SpineEnd::Meta(points.stand(Disagreement::Cons(current))),
-            | ConsShape::Frame { ctor, ret } => {
-                frames.push(SpineFrame::Frame(ctor.clone()));
-                current = ret;
+    let mut built: Vec<ConsPat> = Vec::new();
+    let mut tasks: Vec<ConsTask<'term>> = alloc::vec![ConsTask::Visit(column)];
+    while let Some(task) = tasks.pop() {
+        match task {
+            | ConsTask::Visit(column) => match cons_shape(&column) {
+                | ConsShape::Top => built.push(ConsPat::top()),
+                | ConsShape::Meta(var) => built.push(ConsPat::meta(var.hole().clone())),
+                | ConsShape::Differ => {
+                    let var = points.stand(Disagreement::Cons(column));
+                    built.push(ConsPat::meta(var.hole().clone()));
+                },
+                | ConsShape::Frame { ctor, ret } => {
+                    tasks.push(ConsTask::Frame(ctor));
+                    tasks.push(ConsTask::Visit(ret));
+                },
+                | ConsShape::Op { op, args, rets } => {
+                    let args = args
+                        .into_iter()
+                        .map(|arg| generalize_prod(arg, points))
+                        .collect();
+                    tasks.push(ConsTask::Op(op, args, ContinuationCount::from(rets.len())));
+                    tasks.extend(rets.into_iter().rev().map(ConsTask::Visit));
+                },
             },
-            | ConsShape::Op { op, args, ret } => {
-                let args = args
-                    .into_iter()
-                    .map(|arg| generalize_prod(arg, points))
-                    .collect();
-                frames.push(SpineFrame::Op {
-                    op: op.clone(),
-                    args,
-                });
-                current = ret;
+            | ConsTask::Frame(ctor) => {
+                let ret = built.pop().unwrap_or_else(ConsPat::top);
+                built.push(ConsPat::frame(ctor.clone(), ret));
+            },
+            | ConsTask::Op(op, args, count) => {
+                let first = built.len().saturating_sub(usize::from(count));
+                let rets = built.split_off(first);
+                built.push(ConsPat::operation(op.clone(), args, rets));
             },
         }
-    };
-    frames.reverse();
-    ConsPat::from_parts(frames, end)
+    }
+    built.pop().unwrap_or_else(ConsPat::top)
 }
 
 /// The least general generalization of a family of command-pattern tuples.
@@ -1003,6 +1030,53 @@ mod tests
                 rebuilt(&generalization, Member(1))
             ),
             "the framed member and the bare one are rebuilt"
+        );
+    }
+
+    #[test]
+    fn continuations_are_generalized_port_by_port()
+    {
+        let (zero, one) = (Successors(0), Successors(1));
+        let divmod = |quotient: ConsPat, remainder: ConsPat| {
+            cut(
+                numeral(zero),
+                ConsPat::operation("divmod", [numeral(one)], [quotient, remainder]),
+            )
+        };
+        let left = divmod(ConsPat::frame("Succ", ConsPat::top()), ConsPat::top());
+        let right = divmod(ConsPat::frame("Succ", ConsPat::meta("k")), ConsPat::top());
+        let generalization =
+            generalized(&[core::slice::from_ref(&left), core::slice::from_ref(&right)]);
+        assert_eq!(
+            1,
+            generalization.points.len(),
+            "only the first continuation differs, below its shared frame"
+        );
+        let point = generalization.points[0].var.hole().clone();
+        assert_eq!(
+            divmod(ConsPat::frame("Succ", ConsPat::meta(point)), ConsPat::top()),
+            generalization.patterns[0],
+            "the shared second continuation is kept in its own port"
+        );
+        assert_eq!(
+            (alloc::vec![left.clone()], alloc::vec![right]),
+            (
+                rebuilt(&generalization, Member(0)),
+                rebuilt(&generalization, Member(1))
+            )
+        );
+        let narrower = cut(
+            numeral(zero),
+            ConsPat::operation("divmod", [numeral(one)], [ConsPat::top()]),
+        );
+        let differing = generalized(&[
+            core::slice::from_ref(&left),
+            core::slice::from_ref(&narrower),
+        ]);
+        assert_eq!(
+            alloc::vec![cut(numeral(zero), ConsPat::meta("$g$0"))],
+            differing.patterns,
+            "frames differing in continuation count stand one consumer point"
         );
     }
 

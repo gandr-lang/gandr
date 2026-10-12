@@ -106,7 +106,7 @@ impl FormName
     ///   possible custom grammar kind.
     /// - witness: `error::tests::the_form_names_are_pairwise_distinct`
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 44_usize] = [
+    pub const ALL: [Self; 45_usize] = [
         Self::ROOT,
         Self::UNIT,
         Self::TUPLE,
@@ -141,6 +141,7 @@ impl FormName
         Self::CASE_WITH_VIEW,
         Self::CONSTRUCTOR_PATTERN,
         Self::WILDCARD,
+        Self::TUPLE_PATTERN,
         Self::LITERAL_PATTERN,
         Self::OR_PATTERN,
         Self::AS_PATTERN,
@@ -229,6 +230,9 @@ impl FormName
     pub const CONSTRUCTOR_PATTERN: Self = Self("constructor_pattern");
     /// The wildcard pattern `_`.
     pub const WILDCARD: Self = Self("wildcard");
+    /// The tuple pattern `(p, q, …)`: a bind statement's binder splits the
+    /// tuple its computation returns.
+    pub const TUPLE_PATTERN: Self = Self("tuple_pattern");
     /// A literal pattern: a number, a string or a boolean.
     pub const LITERAL_PATTERN: Self = Self("literal_pattern");
     /// The or-pattern `p | q`.

@@ -443,6 +443,30 @@ fn operation_and_rule_members_elaborate_with_arities_and_faces()
 }
 
 #[test]
+fn a_parenthesized_result_list_reads_as_a_results_tuple()
+{
+    use gandr_theory_levitation::FreeTerm;
+    let report = elaborated(SourceText::from(
+        "data NatDiv : Type { Zero : NatDiv; oper divmod(m : NatDiv, n : NatDiv) -> (q : NatDiv, r : NatDiv); rule divmod(m, Zero) ==> (Zero, m); rule divmod(Zero, n) ==> (divmod(n, (n))); }",
+    ));
+    assert_eq!(report.diagnostics, []);
+    let [ref delivered, ref grouped] = *report.declarations[0].description.rules
+    else {
+        panic!("two faces")
+    };
+    assert_eq!(
+        delivered.rhs,
+        FreeTerm::results([FreeTerm::ctor("Zero", []), FreeTerm::var("m")]),
+        "two components in order are the results tuple"
+    );
+    assert_eq!(
+        grouped.rhs,
+        FreeTerm::op("divmod", [FreeTerm::var("n"), FreeTerm::var("n")]),
+        "one parenthesized component is that component"
+    );
+}
+
+#[test]
 fn the_ruled_face_arrow_elaborates_and_the_retired_one_declines_with_its_respelling()
 {
     let ruled = elaborated(SourceText::from(

@@ -71,7 +71,7 @@ fn a_ruled_sign_block_lowers_its_members_into_a_description()
         CircuitNode::Redex(_),
         CircuitNode::Frame(_)
     ]));
-    assert_eq!(rule.body.out.as_ref(), "z");
+    assert!(matches!(*rule.body.outs, [ref out] if out.as_ref() == "z"));
     assert_eq!(
         rule.sphere.lhs,
         FreeTerm::op("add", [FreeTerm::var("x"), FreeTerm::var("y")])

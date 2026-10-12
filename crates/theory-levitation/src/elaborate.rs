@@ -63,10 +63,12 @@ use crate::boundary::PortArgumentCount;
 use crate::boundary::TermPositionIndex;
 use crate::circuit::CircuitBody;
 use crate::circuit::CircuitDerivationError;
+use crate::circuit::CircuitFrame;
 use crate::circuit::CircuitNode;
 use crate::circuit::CircuitRedex;
 use crate::circuit::DerivedBoundaries;
 use crate::circuit::FrameHead;
+use crate::circuit::Roots;
 use crate::circuit::derive_boundaries;
 use crate::code::Name;
 use crate::rule::FreeTerm;
@@ -404,9 +406,11 @@ pub enum PortInstantiationError
     },
     /// The declared target names endpoints the source does not bind, and the
     /// target is not the lone opaque endpoint the output port supplies — so
-    /// there is no wire for those endpoints to come from. One redex line binds
-    /// exactly one output port; a many-out node is a cell-alphabet question,
-    /// which this route declines rather than omits.
+    /// there is no wire for those endpoints to come from. A redex line binds
+    /// one output port, the wire its target leaves by; a rewrite whose target
+    /// writes several unbound endpoints asks for a wire per endpoint, which is
+    /// a many-out frame's shape and is spelled as one (`node : f(x) --> (a,
+    /// b)`), never as a redex line.
     UnboundTargetEndpoint
     {
         /// The applied rewrite.
@@ -417,13 +421,37 @@ pub enum PortInstantiationError
     },
 }
 
-/// One whiskering level `f(t̄, ·, ū)`: a frame application with one active
-/// argument slot.
+/// What one whiskering level applies around its active slot.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum WhiskerHead
+{
+    /// A frame application, in its head's alphabet.
+    Frame(FrameHead),
+    /// The results tuple of a many-rooted body: the level a redex under one
+    /// of several declared output ports sits in.
+    Results,
+}
+
+impl From<FrameHead> for WhiskerHead
+{
+    /// The level applying `head`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(head: FrameHead) -> Self
+    {
+        Self::Frame(head)
+    }
+}
+
+/// One whiskering level `f(t̄, ·, ū)`: a frame application, or a results
+/// tuple, with one active argument slot.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Whisker
 {
-    /// The frame's head and the alphabet it is declared in.
-    pub head: FrameHead,
+    /// What the level applies: a frame's head, or a results tuple.
+    pub head: WhiskerHead,
     /// The unchanged arguments left of the active slot (`t̄`).
     pub before: Box<[FreeTerm]>,
     /// The unchanged arguments right of the active slot (`ū`).
@@ -529,19 +557,20 @@ impl WhiskeredCell
         ensures: |ref cell| cell.whiskers.len() == levels.saturating_add(1)
             && matches!(cell.active, ActiveCell::Here(_)) == was_identity,
     )]
-    pub fn whisker<B, U>(
-        head: FrameHead,
+    pub fn whisker<H, B, U>(
+        head: H,
         before: B,
         inner: Self,
         after: U,
     ) -> Self
     where
+        H: Into<WhiskerHead>,
         B: Into<Box<[FreeTerm]>>,
         U: Into<Box<[FreeTerm]>>,
     {
         let mut whiskers = Vec::with_capacity(inner.whiskers.len().saturating_add(1));
         whiskers.push(Whisker {
-            head,
+            head: head.into(),
             before: before.into(),
             after: after.into(),
         });
@@ -754,7 +783,8 @@ pub enum CircuitElaborationError
     },
     | Err(CircuitElaborationError::ManyRedexOccurrences { ref occurrences }) => occurrences.len() > 1,
     | Err(CircuitElaborationError::Derivation(CircuitDerivationError::NodeBudget { budget })) => budget == CircuitNodeBudget::DEFAULT,
-    | Err(CircuitElaborationError::Derivation(CircuitDerivationError::CyclicWiring(ref port))) => body.nodes.iter().any(|node| node.out() == port),
+    | Err(CircuitElaborationError::Derivation(CircuitDerivationError::CyclicWiring(ref port))) => body.nodes.iter().any(|node| node.outs().contains(port)),
+    | Err(CircuitElaborationError::Derivation(CircuitDerivationError::SplitOutputs(ref port))) => body.nodes.iter().any(|node| matches!(*node, CircuitNode::Frame(ref frame) if frame.outs.len() > 1 && frame.outs.contains(port))),
     | Err(CircuitElaborationError::PositionOffBoundary { ref rewrite, .. }) => body.nodes.iter().any(|node| matches!(*node, CircuitNode::Redex(ref redex) if &redex.rewrite == rewrite)),
 })]
 pub fn elaborate_body(body: &CircuitBody) -> Result<WhiskeredCell, CircuitElaborationError>
@@ -779,8 +809,8 @@ pub fn elaborate_body(body: &CircuitBody) -> Result<WhiskeredCell, CircuitElabor
 ///
 /// # Specification
 /// - ensures: the head in its alphabet and the arguments in order for an
-///   application; the off-boundary error for a variable, which addresses no
-///   argument.
+///   application, the results head and the components for a results tuple; the
+///   off-boundary error for a variable, which addresses no argument.
 /// - fails: `off_boundary()` for a variable.
 /// - panics: none of its own; a panic in `off_boundary` propagates.
 ///
@@ -789,14 +819,16 @@ pub fn elaborate_body(body: &CircuitBody) -> Result<WhiskeredCell, CircuitElabor
 ///
 /// # Adequacy
 /// - hypothesis: L3 — variables, constructor and operation applications,
-///   including a nullary head, are observed as exact errors or ordered
-///   head/argument records; invoking the refusal callback on success, wrong
-///   alphabets or reordered arguments changes an observation.
+///   including a nullary head, and a results tuple are observed as exact errors
+///   or ordered head/argument records; invoking the refusal callback on
+///   success, wrong alphabets or reordered arguments changes an observation.
 /// - witness: `elaborate::tests::application_and_whisker_positions_decline_off_boundary`
+/// - witness: `elaborate::tests::a_redex_under_one_of_two_roots_whiskers_through_the_results`
 #[spec(ensures: |ref result| match *result {
     | Ok((ref head, ref args)) => match node.view() {
-        | TermView::Ctor { name, args: expected } => matches!(*head, FrameHead::Ctor(ref actual) if actual == name) && args.iter().copied().eq(expected),
-        | TermView::Op { name, args: expected } => matches!(*head, FrameHead::Op(ref actual) if actual == name) && args.iter().copied().eq(expected),
+        | TermView::Ctor { name, args: expected } => matches!(*head, WhiskerHead::Frame(FrameHead::Ctor(ref actual)) if actual == name) && args.iter().copied().eq(expected),
+        | TermView::Op { name, args: expected } => matches!(*head, WhiskerHead::Frame(FrameHead::Op(ref actual)) if actual == name) && args.iter().copied().eq(expected),
+        | TermView::Results { args: expected } => matches!(*head, WhiskerHead::Results) && args.iter().copied().eq(expected),
         | TermView::Var(_) => false,
     },
     | Err(_) => matches!(node.view(), TermView::Var(_)),
@@ -804,13 +836,20 @@ pub fn elaborate_body(body: &CircuitBody) -> Result<WhiskeredCell, CircuitElabor
 fn application<E, O>(
     node: TermNode<'_>,
     off_boundary: O,
-) -> Result<(FrameHead, Vec<TermNode<'_>>), E>
+) -> Result<(WhiskerHead, Vec<TermNode<'_>>), E>
 where
     O: FnOnce() -> E,
 {
     match node.view() {
-        | TermView::Ctor { name, args } => Ok((FrameHead::Ctor(name.clone()), args.collect())),
-        | TermView::Op { name, args } => Ok((FrameHead::Op(name.clone()), args.collect())),
+        | TermView::Ctor { name, args } => Ok((
+            WhiskerHead::Frame(FrameHead::Ctor(name.clone())),
+            args.collect(),
+        )),
+        | TermView::Op { name, args } => Ok((
+            WhiskerHead::Frame(FrameHead::Op(name.clone())),
+            args.collect(),
+        )),
+        | TermView::Results { args } => Ok((WhiskerHead::Results, args.collect())),
         | TermView::Var(_) => Err(off_boundary()),
     }
 }
@@ -894,7 +933,7 @@ fn whisker_along(
     })
 }
 
-/// Enumerate the redex occurrences the declared output port unfolds to, each
+/// Enumerate the redex occurrences the declared output ports unfold to, each
 /// with its position in the derived boundary.
 ///
 /// This is the block's occurrence record, and it is public because
@@ -911,18 +950,21 @@ fn whisker_along(
 ///
 /// # Specification
 /// - ensures: one entry per redex occurrence reached by the source reading's
-///   unfolding of the declared output port, in left-to-right order, positioned
-///   by the argument-index path the unfolding took; a wire consumed twice
+///   unfolding of the declared output ports, in left-to-right order, positioned
+///   by the argument-index path the unfolding took — under a many-rooted body,
+///   the root's index in the results tuple first; a wire consumed twice
 ///   contributes two entries.
 /// - provides: the positions a two-redex body's applications sit at, for the
 ///   instantiation site that earns their identification.
 /// - fails: [`CircuitDerivationError::CyclicWiring`] on a port reachable from
-///   itself other than as a redex's own opaque endpoint — the same guard the
-///   derivation runs, so the walk stays total on a wiring the derivation
-///   refuses; [`CircuitDerivationError::NodeBudget`] on a wiring whose
-///   unfolding passes [`CircuitNodeBudget::DEFAULT`], which is the same ceiling
-///   the derivation runs under and is charged here too because this is a second
-///   traversal of the same reconvergence.
+///   itself other than as a redex's own opaque endpoint, and
+///   [`CircuitDerivationError::SplitOutputs`] on one output of a many-out node
+///   read on its own — the same guards the derivation runs, so the walk stays
+///   total on a wiring the derivation refuses;
+///   [`CircuitDerivationError::NodeBudget`] on a wiring whose unfolding passes
+///   [`CircuitNodeBudget::DEFAULT`], which is the same ceiling the derivation
+///   runs under and is charged here too because this is a second traversal of
+///   the same reconvergence.
 /// - panics: none.
 ///
 /// # Errors
@@ -937,13 +979,15 @@ fn whisker_along(
 /// - witness: `elaborate::tests::a_reconvergent_redex_is_two_occurrences_of_one_rewrite`
 /// - witness: `elaborate::tests::a_cyclic_wiring_elaborates_to_nothing`
 /// - witness: `elaborate::tests::occurrence_walk_distinguishes_opaque_roots_and_budget_refusals`
+/// - witness: `elaborate::tests::a_redex_under_one_of_two_roots_whiskers_through_the_results`
 #[inline]
 #[spec(ensures: |ref result| match *result {
     | Ok(ref occurrences) => occurrences.len() <= usize::from(CircuitNodeBudget::DEFAULT)
         && occurrences.iter().all(|occurrence| body.nodes.iter().any(|node| matches!(*node, CircuitNode::Redex(ref redex) if redex.rewrite == occurrence.rewrite)))
         && occurrences.iter().zip(occurrences.iter().skip(1)).all(|(first, second)| first.position <= second.position),
     | Err(CircuitDerivationError::NodeBudget { budget }) => budget == CircuitNodeBudget::DEFAULT,
-    | Err(CircuitDerivationError::CyclicWiring(ref port)) => body.nodes.iter().any(|node| node.out() == port),
+    | Err(CircuitDerivationError::CyclicWiring(ref port)) => body.nodes.iter().any(|node| node.outs().contains(port)),
+    | Err(CircuitDerivationError::SplitOutputs(ref port)) => body.nodes.iter().any(|node| matches!(*node, CircuitNode::Frame(ref frame) if frame.outs.len() > 1 && frame.outs.contains(port))),
 })]
 pub fn redex_occurrences(body: &CircuitBody)
 -> Result<Vec<RedexOccurrence>, CircuitDerivationError>
@@ -953,6 +997,8 @@ pub fn redex_occurrences(body: &CircuitBody)
     {
         /// Resolve a port through the node that binds it.
         Port(&'body Name),
+        /// Walk a frame's arguments, entered through `port`.
+        Frame(&'body CircuitFrame, &'body Name),
         /// Walk a term, resolving its port leaves.
         Term(TermNode<'body>),
         /// Enter an argument slot.
@@ -996,17 +1042,25 @@ pub fn redex_occurrences(body: &CircuitBody)
         }
     }
 
-    let mut producers: BTreeMap<&Name, &CircuitNode> = BTreeMap::new();
-    for node in &body.nodes {
-        producers.entry(node.out()).or_insert(node);
-    }
-
+    let producers = body.producers();
     let ceiling = usize::from(CircuitNodeBudget::DEFAULT);
     let mut visited: usize = 0;
     let mut path: BTreeSet<&Name> = BTreeSet::new();
     let mut position: Vec<TermPositionIndex> = Vec::new();
     let mut occurrences: Vec<RedexOccurrence> = Vec::new();
-    let mut stack: Vec<Walk<'_>> = vec![Walk::Port(&body.out)];
+    let mut stack: Vec<Walk<'_>> = match body.roots(&producers) {
+        | Roots::One(port) => vec![Walk::Port(port)],
+        | Roots::Whole(frame, port) => vec![Walk::Frame(frame, port)],
+        | Roots::Tuple(ports) => {
+            let mut steps = Vec::with_capacity(ports.len().saturating_mul(3));
+            for (index, port) in ports.iter().enumerate().rev() {
+                steps.push(Walk::Ascend);
+                steps.push(Walk::Port(port));
+                steps.push(Walk::Descend(TermPositionIndex::from(index)));
+            }
+            steps
+        },
+    };
     while let Some(step) = stack.pop() {
         // The same node-visit charge the derivation makes, for the same
         // reason: this walk is a second traversal of one wiring and inherits
@@ -1043,18 +1097,24 @@ pub fn redex_occurrences(body: &CircuitBody)
                         stack.push(Walk::Leave(port));
                         stack.push(Walk::Term(redex.source.to_node()));
                     },
-                    | CircuitNode::Frame(ref frame) => {
-                        if !path.insert(port) {
-                            return Err(CircuitDerivationError::CyclicWiring(port.clone()));
-                        }
-                        stack.push(Walk::Leave(port));
-                        push_args(&mut stack, frame.args.iter().map(FreeTerm::to_node));
+                    | CircuitNode::Frame(ref frame) if frame.outs.len() > 1 => {
+                        return Err(CircuitDerivationError::SplitOutputs(port.clone()));
                     },
+                    | CircuitNode::Frame(ref frame) => stack.push(Walk::Frame(frame, port)),
                 }
+            },
+            | Walk::Frame(frame, port) => {
+                if !path.insert(port) {
+                    return Err(CircuitDerivationError::CyclicWiring(port.clone()));
+                }
+                stack.push(Walk::Leave(port));
+                push_args(&mut stack, frame.args.iter().map(FreeTerm::to_node));
             },
             | Walk::Term(term) => match term.view() {
                 | TermView::Var(name) => stack.push(Walk::Port(name)),
-                | TermView::Ctor { args, .. } | TermView::Op { args, .. } => {
+                | TermView::Ctor { args, .. }
+                | TermView::Op { args, .. }
+                | TermView::Results { args } => {
                     push_args(&mut stack, args);
                 },
             },
@@ -1445,6 +1505,63 @@ mod tests
     }
 
     #[test]
+    fn a_redex_under_one_of_two_roots_whiskers_through_the_results()
+    {
+        // `node : f(y) --> (b); node : p(x) ==> (x′);` read out at `(b, x′)`:
+        // the redex sits under the second root, so its whisker is the results
+        // tuple with the first root's term before the active slot.
+        let body = CircuitBody::rooted(
+            [
+                CircuitNode::Frame(CircuitFrame::new(
+                    FrameHead::Op("f".into()),
+                    [FreeTerm::var("y")],
+                    "b",
+                )),
+                CircuitNode::Redex(CircuitRedex::new(
+                    "p",
+                    FreeTerm::var("x"),
+                    FreeTerm::var("x\u{2032}"),
+                    "x\u{2032}",
+                )),
+            ],
+            ["b", "x\u{2032}"].map(Name::from),
+        );
+        assert_eq!(
+            vec![RedexOccurrence::new("p", [TermPositionIndex::from(
+                1_usize
+            )])],
+            redex_occurrences(&body).expect("the wiring is acyclic")
+        );
+        let cell = elaborate_body(&body).expect("one redex occurrence");
+        assert_eq!(
+            WhiskeredCell::whisker(
+                WhiskerHead::Results,
+                [FreeTerm::op("f", [FreeTerm::var("y")])],
+                WhiskeredCell::redex(InterfacePair::new(
+                    "p",
+                    FreeTerm::var("x"),
+                    FreeTerm::var("x\u{2032}")
+                )),
+                [],
+            ),
+            cell
+        );
+        let tuple = FreeTerm::results([FreeTerm::var("a"), FreeTerm::var("b")]);
+        let (head, components) = application::<active_position::Absent, _>(tuple.to_node(), || {
+            panic!("a results tuple addresses its components")
+        })
+        .expect("a results tuple is an application");
+        assert_eq!(WhiskerHead::Results, head);
+        assert_eq!(
+            vec![FreeTerm::var("a"), FreeTerm::var("b")],
+            components
+                .into_iter()
+                .map(TermNode::to_term)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
     fn an_identity_composite_has_no_active_position()
     {
         assert_eq!(
@@ -1705,7 +1822,7 @@ mod tests
                 panic!("an application does not call the refusal callback")
             })
             .expect("application");
-            assert_eq!(head, expected_head);
+            assert_eq!(head, WhiskerHead::Frame(expected_head));
             assert_eq!(
                 args.into_iter().map(TermNode::to_term).collect::<Vec<_>>(),
                 expected_args

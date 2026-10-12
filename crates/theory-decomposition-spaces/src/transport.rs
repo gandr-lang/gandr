@@ -13,13 +13,19 @@
 //! occurrence. The immutable contractum-use classification is recoverable from
 //! the encoded faces and carries no redundant field.
 //!
-//! The iterator walks flat producer tables and consumer spines without
-//! allocation or recursive calls. Storage owns checked widths, byte framing and
-//! BLAKE3 identities through `gandr_storage_artifact::transport`. This
+//! The iterator walks flat producer and consumer tables without allocation or
+//! recursive calls. Storage owns checked widths, byte framing and BLAKE3
+//! identities through `gandr_storage_artifact::transport`. This
 //! direction keeps theory independent of storage. A buffered byte image would
 //! allocate per hash; a sink trait would add an abstraction with one
 //! implementation. Reconsider the field boundary when a second alphabet
 //! supplies its canonical encoding.
+//!
+//! A consumer is encoded node by node in pre-order. An operation frame with
+//! one continuation keeps the v1 tag, so every single-output certificate is
+//! unchanged; a frame with another continuation count takes its own tag and
+//! states the count, which is what a decoder needs to know where each
+//! continuation's fields end.
 
 use anodized::spec;
 use gandr_theory_cell_complexes::Cat;
@@ -27,6 +33,8 @@ use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellProvenance;
 use gandr_theory_cell_complexes::CellVariance;
 use gandr_theory_cell_complexes::CmdPat;
+use gandr_theory_cell_complexes::ConsHead;
+use gandr_theory_cell_complexes::ContinuationCount;
 use gandr_theory_cell_complexes::EtaKind;
 use gandr_theory_cell_complexes::MetaVar;
 use gandr_theory_cell_complexes::Orientation;
@@ -34,8 +42,6 @@ use gandr_theory_cell_complexes::Polarity;
 use gandr_theory_cell_complexes::Pos;
 use gandr_theory_cell_complexes::ProdHead;
 use gandr_theory_cell_complexes::ProdPat;
-use gandr_theory_cell_complexes::SpineEnd;
-use gandr_theory_cell_complexes::SpineFrame;
 
 /// A structural field awaiting the storage tier's canonical framing.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -169,68 +175,82 @@ fn producer_fields(prod: &ProdPat) -> impl Iterator<Item = CertificateField<'_>>
         })
 }
 
-/// Project one consumer frame and its producer arguments.
+/// Project one consumer node and its producer arguments.
 ///
 /// # Specification
-/// - ensures: frame tag and name precede operation arity and arguments;
-///   constructor frames omit arity.
+/// - ensures: the node's tag precedes its name and counts, then its producer
+///   arguments: an operation frame with one continuation is tag 1, its name and
+///   argument count; with another count, tag 4, its name, argument count and
+///   continuation count; a constructor frame is tag 2 and its name; a hole tag
+///   0, its name and category; the terminal tag 3.
 /// - panics: none.
 /// - executable: none — the return is an opaque iterator.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — frame and nested-operation sequences distinguish tags,
-///   argument omission and order.
+/// - hypothesis: L2 — frame, nested-operation and two-continuation sequences
+///   distinguish tags, argument omission, continuation counts and order.
 /// - witness: `transport::tests::frame_fields_match_the_v1_sequence`
 /// - witness: `transport::tests::nested_fields_keep_preorder_and_position`
-fn frame_fields(frame: &SpineFrame) -> impl Iterator<Item = CertificateField<'_>>
+/// - witness: `transport::tests::a_many_continuation_frame_states_its_count_and_ports_in_order`
+fn consumer_fields(head: &ConsHead) -> impl Iterator<Item = CertificateField<'_>>
 {
-    let (prefix, args) = match *frame {
-        | SpineFrame::Frame(ref name) => (
+    let prefix = match *head {
+        | ConsHead::Op {
+            ref op,
+            ref args,
+            rets,
+        } => [
+            Some(CertificateField::Tag(if rets == ContinuationCount::ONE {
+                1
+            }
+            else {
+                4
+            })),
+            Some(CertificateField::Bytes(op.as_ref().as_bytes())),
+            Some(CertificateField::Count(args.len())),
+            (rets != ContinuationCount::ONE).then_some(CertificateField::Count(usize::from(rets))),
+        ],
+        | ConsHead::Frame(ref name) => [
+            Some(CertificateField::Tag(2)),
+            Some(CertificateField::Bytes(name.as_ref().as_bytes())),
+            None,
+            None,
+        ],
+        | ConsHead::Meta(ref var) => {
+            let [name, category] = variable_fields(var);
             [
-                Some(CertificateField::Tag(2)),
-                Some(CertificateField::Bytes(name.as_ref().as_bytes())),
+                Some(CertificateField::Tag(0)),
+                Some(name),
+                Some(category),
                 None,
-            ],
-            &[][..],
-        ),
-        | SpineFrame::Op { ref op, ref args } => (
-            [
-                Some(CertificateField::Tag(1)),
-                Some(CertificateField::Bytes(op.as_ref().as_bytes())),
-                Some(CertificateField::Count(args.len())),
-            ],
-            args.as_slice(),
-        ),
+            ]
+        },
+        | ConsHead::Top => [Some(CertificateField::Tag(3)), None, None, None],
     };
     prefix
         .into_iter()
         .flatten()
-        .chain(args.iter().flat_map(producer_fields))
+        .chain(head.args().iter().flat_map(producer_fields))
 }
 
-/// Project one cut, traversing each producer table and consumer spine once.
+/// Project one cut, traversing each producer table and the consumer table
+/// once.
 ///
 /// # Specification
 /// - ensures: cut tag and polarity precede producer and consumer fields;
-///   consumer frames run outside-in and end in a hole or terminal tag.
+///   consumer nodes run in pre-order, each frame before its continuations,
+///   which run in port order and end in a hole or terminal tag.
 /// - panics: none.
 /// - executable: none — the return is an opaque iterator.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — literal sequences separate cut polarity, traversal order
-///   and the two consumer endings.
+/// - hypothesis: L2 — literal sequences separate cut polarity, traversal order,
+///   the two consumer endings and continuation order.
 /// - witness: `transport::tests::frame_fields_match_the_v1_sequence`
 /// - witness: `transport::tests::nested_fields_keep_preorder_and_position`
+/// - witness: `transport::tests::a_many_continuation_frame_states_its_count_and_ports_in_order`
 fn command_fields(cmd: &CmdPat) -> impl Iterator<Item = CertificateField<'_>>
 {
-    let cons = cmd.consumer().to_ref();
-    let end = match *cons.end() {
-        | SpineEnd::Top => [Some(CertificateField::Tag(3)), None, None],
-        | SpineEnd::Meta(ref var) => {
-            let [name, category] = variable_fields(var);
-            [Some(CertificateField::Tag(0)), Some(name), Some(category)]
-        },
-    };
     [
         CertificateField::Tag(0),
         CertificateField::Tag(match cmd.polarity() {
@@ -240,8 +260,7 @@ fn command_fields(cmd: &CmdPat) -> impl Iterator<Item = CertificateField<'_>>
     ]
     .into_iter()
     .chain(producer_fields(cmd.producer()))
-    .chain(cons.frames().iter().rev().flat_map(frame_fields))
-    .chain(end.into_iter().flatten())
+    .chain(cmd.consumer().to_ref().preorder().flat_map(consumer_fields))
 }
 
 #[cfg(test)]
@@ -346,5 +365,41 @@ mod tests
         let at = Pos::root().child(0_usize.into()).child(2_usize.into());
         let fields: Vec<_> = step_fields(&cell, &at).collect();
         assert_eq!(&fields[fields.len() - 3 ..], &[C(2), C(0), C(2)]);
+    }
+
+    #[test]
+    fn a_many_continuation_frame_states_its_count_and_ports_in_order()
+    {
+        let cmd = CmdPat::cut(
+            Polarity::Positive,
+            ProdPat::meta("m"),
+            ConsPat::operation("divmod", [ProdPat::meta("n")], [
+                ConsPat::meta("q"),
+                ConsPat::frame("S", ConsPat::meta("r")),
+            ]),
+        );
+        let fields: Vec<_> = command_fields(&cmd).collect();
+        assert_eq!(fields, [
+            T(0),
+            T(0),
+            T(0),
+            B(b"m"),
+            T(0),
+            T(4),
+            B(b"divmod"),
+            C(1),
+            C(2),
+            T(0),
+            B(b"n"),
+            T(0),
+            T(0),
+            B(b"q"),
+            T(1),
+            T(2),
+            B(b"S"),
+            T(0),
+            B(b"r"),
+            T(1)
+        ]);
     }
 }

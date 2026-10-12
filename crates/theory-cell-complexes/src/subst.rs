@@ -42,6 +42,7 @@ use crate::boundary::SubstitutionDecision;
 use crate::boundary::SubstitutionEmptyStatus;
 use crate::pattern::Cat;
 use crate::pattern::CmdPat;
+use crate::pattern::ConsHead;
 use crate::pattern::ConsPat;
 use crate::pattern::ConsRef;
 use crate::pattern::ConsView;
@@ -49,8 +50,6 @@ use crate::pattern::MetaVar;
 use crate::pattern::ProdHead;
 use crate::pattern::ProdPat;
 use crate::pattern::ProdRef;
-use crate::pattern::SpineEnd;
-use crate::pattern::SpineFrame;
 
 quenchant_shape::reason_enum! {
     /// Why a substitution holds no image for a metavariable.
@@ -522,7 +521,7 @@ impl Subst
     /// - witness: `subst::tests::substitution_applies_once_then_resolves_both_categories`
     #[inline]
     #[must_use]
-    #[spec(ensures: |output| output.to_ref().frames().len() >= cons.to_ref().frames().len()
+    #[spec(ensures: |output| usize::from(output.size()) >= usize::from(cons.size())
         && (self.mentions_bound(cons.to_ref().metavars()).0 || output == *cons))]
     pub fn apply_cons(
         &self,
@@ -562,42 +561,31 @@ impl Subst
     ///
     /// # Specification
     /// - ensures: as [`Subst::apply_cmd`], for a consumer: each operation
-    ///   argument is substituted, and a bound end is replaced by its image's
-    ///   frames and end, inside the frames above it.
+    ///   argument is substituted, and each bound end is replaced by its image,
+    ///   inside the frames above it.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — empty, framed and operation consumer spines with
-    ///   bound or unbound ends have exact one-pass observations. Dropped
-    ///   arguments or reordered frame suffixes change the term.
+    /// - hypothesis: L3 — empty, framed and operation consumers with bound or
+    ///   unbound ends have exact one-pass observations. Dropped arguments or
+    ///   reordered continuations change the term.
     /// - witness: `subst::tests::substitution_applies_once_then_resolves_both_categories`
-    #[spec(ensures: |output| output.to_ref().frames().len() >= cons.frames().len()
+    /// - witness: `pattern::tests::consumer_instantiation_rebuilds_every_continuation`
+    #[spec(ensures: |output| usize::from(output.size()) >= usize::from(cons.size())
         && (self.mentions_bound(cons.metavars()).0 || output.to_ref() == cons))]
     fn apply_cons_ref(
         &self,
         cons: ConsRef<'_>,
     ) -> ConsPat
     {
-        let applied = cons.frames().iter().map(|frame| match *frame {
-            | SpineFrame::Op { ref op, ref args } => SpineFrame::Op {
-                op: op.clone(),
-                args: args.iter().map(|arg| self.apply_prod(arg)).collect(),
-            },
-            | SpineFrame::Frame(ref ctor) => SpineFrame::Frame(ctor.clone()),
-        });
-        let image = match *cons.end() {
-            | SpineEnd::Meta(ref var) => self.conss.get(var),
-            | SpineEnd::Top => None,
-        };
-        match image {
-            | Some(image) => {
-                let image = image.to_ref();
-                let mut frames = image.frames().to_vec();
-                frames.extend(applied);
-                ConsPat::from_parts(frames, image.end().clone())
-            },
-            | None => ConsPat::from_parts(applied.collect(), cons.end().clone()),
+        if bool::from(self.is_empty()) {
+            return cons.to_pattern();
         }
+        crate::pattern::instantiate_cons(
+            cons,
+            &|var: &MetaVar| self.get_prod(var).map(ProdPat::to_ref),
+            &|var: &MetaVar| self.get_cons(var).map(ConsPat::to_ref),
+        )
     }
 
     /// Copies a walk's bindings in.
@@ -824,12 +812,12 @@ fn match_prod_step<'pattern, 'target>(
 }
 
 /// One consumer match goal: binds a metavariable end or enqueues the frame's
-/// argument pairs and the continuation pair.
+/// argument pairs and its continuation pairs.
 ///
 /// # Specification
-/// - ensures: the pattern's metavariable bound in `found` to the rest of the
-///   target's spine, or each argument pair and the continuation pair enqueued,
-///   when the outermost frames agree.
+/// - ensures: the pattern's metavariable bound in `found` to the target's
+///   subtree there, or each argument pair and each continuation pair enqueued,
+///   when the root frames agree in symbol, arity and continuation count.
 /// - fails: [`Refusal::Clash`] on a frame, symbol or arity clash;
 ///   [`Refusal::Conflict`] on a binding that disagrees with `subst` or `found`.
 /// - panics: none.
@@ -839,6 +827,7 @@ fn match_prod_step<'pattern, 'target>(
 ///   pattern; compatible ends succeed. Exact substitutions and refusal
 ///   distinguish ignored frame clashes and conflicting end bindings.
 /// - witness: `subst::tests::failed_walks_preserve_existing_and_staged_bindings`
+/// - witness: `subst::tests::a_many_continuation_frame_matches_and_unifies_port_by_port`
 ///
 /// # Errors
 /// As the failure clause states.
@@ -871,15 +860,15 @@ fn match_cons_step<'pattern, 'target>(
         },
         | (ConsView::Top, ConsView::Top) => Ok(()),
         | (
-            ConsView::Op { op, args, ret },
+            ConsView::Op { op, args, rets },
             ConsView::Op {
                 op: other,
                 args: other_args,
-                ret: other_ret,
+                rets: other_rets,
             },
-        ) if op == other && args.len() == other_args.len() => {
+        ) if op == other && args.len() == other_args.len() && rets.len() == other_rets.len() => {
             goals.extend(args.zip(other_args).map(|(p, t)| Goal::Prod(p, t)));
-            goals.push(Goal::Cons(ret, other_ret));
+            goals.extend(rets.zip(other_rets).map(|(p, t)| Goal::Cons(p, t)));
             Ok(())
         },
         | (
@@ -1119,11 +1108,11 @@ fn bind_found_prod<'term>(
 }
 
 /// One consumer unification goal: binds a metavariable end or enqueues the
-/// frame's argument pairs and the continuation pair.
+/// frame's argument pairs and its continuation pairs.
 ///
 /// # Specification
 /// - ensures: both sides walked through the bindings, then a bare metavariable
-///   bound in `found`, or each argument pair and the continuation pair
+///   bound in `found`, or each argument pair and each continuation pair
 ///   enqueued.
 /// - fails: [`Refusal::Clash`] on a frame, symbol or arity clash,
 ///   [`Refusal::Occurs`] on an occurs-check failure, [`Refusal::Cyclic`] on a
@@ -1135,6 +1124,7 @@ fn bind_found_prod<'term>(
 ///   indirect cycles. Exact substitutions or unchanged failure states
 ///   distinguish genuine binding from ignored cyclic ends.
 /// - witness: `subst::tests::walks_refuse_cycles_and_occurs_checks`
+/// - witness: `subst::tests::a_many_continuation_frame_matches_and_unifies_port_by_port`
 ///
 /// # Errors
 /// As the failure clause states.
@@ -1164,15 +1154,15 @@ fn unify_cons_step<'term>(
     match (lhs.view(), rhs.view()) {
         | (ConsView::Top, ConsView::Top) => Ok(()),
         | (
-            ConsView::Op { op, args, ret },
+            ConsView::Op { op, args, rets },
             ConsView::Op {
                 op: other,
                 args: other_args,
-                ret: other_ret,
+                rets: other_rets,
             },
-        ) if op == other && args.len() == other_args.len() => {
+        ) if op == other && args.len() == other_args.len() && rets.len() == other_rets.len() => {
             goals.extend(args.zip(other_args).map(|(l, r)| Goal::Prod(l, r)));
-            goals.push(Goal::Cons(ret, other_ret));
+            goals.extend(rets.zip(other_rets).map(|(l, r)| Goal::Cons(l, r)));
             Ok(())
         },
         | (
@@ -1197,15 +1187,16 @@ fn unify_cons_step<'term>(
 /// # Specification
 /// - requires: `var` is unbound in `existing` and `found`.
 /// - ensures: `var` bound to `image` in `found`.
-/// - fails: [`Refusal::Occurs`] when `var` ends `image`'s spine, or the spine
-///   of the image of any bound end reached from it. A consumer metavariable
-///   occurs only at a spine's end: operation arguments are producers.
+/// - fails: [`Refusal::Occurs`] when `var` is an end of `image`, or an end of
+///   the image of any bound end reached from it. A consumer metavariable occurs
+///   only at a consumer's ends: operation arguments are producers.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — unbound consumer holes meet terminal, directly recursive
-///   and indirectly recursive spines. Exact bindings or unchanged maps reject a
-///   lost occurs check and premature insertion.
+///   and indirectly recursive consumers, the occurrence on a second
+///   continuation included. Exact bindings or unchanged maps reject a lost
+///   occurs check and premature insertion.
 /// - witness: `subst::tests::walks_refuse_cycles_and_occurs_checks`
 ///
 /// # Errors
@@ -1223,19 +1214,25 @@ fn bind_found_cons<'term>(
 ) -> Step
 {
     let mut visited: BTreeSet<&MetaVar> = BTreeSet::new();
-    let mut cursor = image;
-    while let SpineEnd::Meta(ref end) = *cursor.end() {
-        if end == var {
-            return Err(Refusal::Occurs);
+    let mut pending: Vec<ConsRef<'term>> = alloc::vec![image];
+    while let Some(cursor) = pending.pop() {
+        for head in cursor.preorder() {
+            let ConsHead::Meta(ref end) = *head
+            else {
+                continue;
+            };
+            if end == var {
+                return Err(Refusal::Occurs);
+            }
+            if !visited.insert(end) {
+                continue;
+            }
+            match (found.conss.get(end), existing.conss.get(end)) {
+                | (Some(&bound), _) => pending.push(bound),
+                | (None, Some(bound)) => pending.push(bound.to_ref()),
+                | (None, None) => {},
+            }
         }
-        if !visited.insert(end) {
-            break;
-        }
-        cursor = match (found.conss.get(end), existing.conss.get(end)) {
-            | (Some(&bound), _) => bound,
-            | (None, Some(bound)) => bound.to_ref(),
-            | (None, None) => break,
-        };
     }
     found.conss.insert(var, image);
     Ok(())
@@ -1645,7 +1642,11 @@ mod tests
             );
             assert!(found.prods.is_empty());
         }
-        for image in [framed, ConsPat::frame("F", ConsPat::meta("beta"))] {
+        for image in [
+            framed,
+            ConsPat::frame("F", ConsPat::meta("beta")),
+            ConsPat::operation("split", [], [top.clone(), ConsPat::meta("beta")]),
+        ] {
             let mut found = Found::default();
             assert_eq!(
                 Err(Refusal::Occurs),
@@ -1670,6 +1671,73 @@ mod tests
             Maybe::Present(top.to_ref()),
             walk_cons(ca.to_ref(), &empty, &found)
         );
+    }
+
+    #[test]
+    fn a_many_continuation_frame_matches_and_unifies_port_by_port()
+    {
+        let cut = |prod, cons| CmdPat::cut(Polarity::Positive, prod, cons);
+        let zero = || ProdPat::ctor("Zero", []);
+        let quotient = ConsPat::frame("Succ", ConsPat::top());
+        let pattern = cut(
+            ProdPat::meta("x"),
+            ConsPat::operation("divmod", [ProdPat::meta("n")], [
+                ConsPat::meta("q"),
+                ConsPat::meta("r"),
+            ]),
+        );
+        let target = cut(
+            zero(),
+            ConsPat::operation("divmod", [zero()], [quotient.clone(), ConsPat::top()]),
+        );
+        for unifies in [false, true] {
+            let mut subst = Subst::new();
+            let decision = if unifies {
+                unify_cmd(&pattern, &target, &mut subst)
+            }
+            else {
+                match_cmd(&pattern, &target, &mut subst)
+            };
+            assert!(bool::from(decision));
+            assert_eq!(
+                (Maybe::Present(&quotient), Maybe::Present(&ConsPat::top())),
+                (
+                    subst.get_cons(&MetaVar::consumer("q")),
+                    subst.get_cons(&MetaVar::consumer("r"))
+                ),
+                "each continuation binds at its own port"
+            );
+            assert_eq!(target, subst.apply_cmd(&pattern));
+        }
+        for other in [
+            cut(
+                zero(),
+                ConsPat::operation("divmod", [zero()], [ConsPat::top()]),
+            ),
+            cut(
+                zero(),
+                ConsPat::operation("divmod", [zero()], [
+                    ConsPat::top(),
+                    ConsPat::top(),
+                    ConsPat::top(),
+                ]),
+            ),
+        ] {
+            for unifies in [false, true] {
+                let mut subst = Subst::new();
+                let decision = if unifies {
+                    unify_cmd(&pattern, &other, &mut subst)
+                }
+                else {
+                    match_cmd(&pattern, &other, &mut subst)
+                };
+                assert!(
+                    !bool::from(decision),
+                    "a continuation count is part of the frame"
+                );
+                assert!(bool::from(subst.is_empty()));
+            }
+        }
     }
 
     #[test]

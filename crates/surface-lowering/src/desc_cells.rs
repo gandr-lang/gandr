@@ -8,6 +8,7 @@ use gandr_surface_syntax::ByteSpan;
 use gandr_theory_cell_complexes::CellId;
 use gandr_theory_cell_complexes::CellStore;
 use gandr_theory_computads::CircuitElaboration;
+use gandr_theory_computads::DeclinedFaceIndex;
 use gandr_theory_computads::DescElaboration;
 use gandr_theory_computads::ElaborateError;
 use gandr_theory_computads::EtaElaboration;
@@ -29,7 +30,8 @@ pub struct CellDiagnosticIndex(pub usize);
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CellFault
 {
-    /// The operation cannot be represented by one cell-alphabet frame.
+    /// The operation's arity has no cell-alphabet frame: it has no output, or
+    /// aggregates several monomials into one output port.
     Operation(OpElaborateError),
     /// The written face or circuit composite did not pass the cell gate.
     Rule(ElaborateError),
@@ -88,6 +90,9 @@ pub struct DeclarationCells
     pub store: CellStore,
     /// Admitted operations in declaration order.
     pub operations: Vec<OpFrame>,
+    /// The written faces the cell gate declined, by their position among the
+    /// description's rules; the cause is owned by the report's diagnostics.
+    pub declined_faces: Vec<DeclinedFaceIndex>,
     /// One result per circuit rule, in declaration order.
     pub circuits: Vec<CircuitCell>,
     /// The declaration's eta cells or their explicit absence.
@@ -118,11 +123,12 @@ pub struct CellReport
 /// operation's exact interval and every face carries its own provenance.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a many-output operation, a rule over it and a later
-///   declaration separate a declined member, its dependent refusal and an
-///   untouched sibling, and two declarations in swapped order separate store
-///   order from source order.
-/// - witness: `desc_cells::tests::a_rule_over_a_many_out_operation_is_declined_rather_than_narrowed`
+/// - hypothesis: L3 — a two-output operation with a results-tuple rule, a rule
+///   returning too few results and a later declaration separate an admitted
+///   many-out member, a refused rule and an untouched sibling, and two
+///   declarations in swapped order separate store order from source order.
+/// - witness: `desc_cells::tests::a_many_out_operation_rule_becomes_a_cell_with_a_continuation_per_output`
+/// - witness: `desc_cells::tests::a_rule_returning_fewer_results_than_outputs_is_refused_rather_than_narrowed`
 /// - witness: `desc_cells::tests::declaration_order_is_the_cell_order`
 /// - witness: `desc_cells::tests::ordinary_lowering_executes_the_cell_gate_and_preserves_later_values`
 #[spec(ensures: |report| report.declarations.len() == declarations.len() && report.declarations.iter().zip(declarations).all(|(cells, declaration)| cells.at == declaration.at))]
@@ -154,6 +160,7 @@ pub fn elaborate_desc_cells(declarations: &[DescribedDeclaration]) -> CellReport
                 fault: CellFault::Operation(error),
             });
         }
+        let mut declined = Vec::with_capacity(declined_faces.len());
         for (index, error) in declined_faces {
             let span = declaration
                 .description
@@ -166,6 +173,7 @@ pub fn elaborate_desc_cells(declarations: &[DescribedDeclaration]) -> CellReport
                 span,
                 fault: CellFault::Rule(error),
             });
+            declined.push(index);
         }
         let mut outcomes = Vec::with_capacity(circuits.len());
         for (index, circuit) in circuits.into_iter().enumerate() {
@@ -195,6 +203,7 @@ pub fn elaborate_desc_cells(declarations: &[DescribedDeclaration]) -> CellReport
             at: declaration.at,
             store,
             operations: opers,
+            declined_faces: declined,
             circuits: outcomes,
             eta,
         });

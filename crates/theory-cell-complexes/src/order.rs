@@ -69,11 +69,11 @@
 //!
 //! Both commands are laid out in one node table each, every node's children at
 //! strictly smaller indices and the root last. The layout reads the producer
-//! tables in place and gives each consumer spine its end first and its
-//! outermost frame last. The relation is then filled by two nested loops over
-//! `(left index, right index)` in increasing order, because the path order at
-//! one pair reads only pairs with a smaller left index, a smaller right index,
-//! or both. Nothing recurses.
+//! and consumer tables in place, each in its own index order, which already
+//! puts every node after its children. The relation is then filled by two
+//! nested loops over `(left index, right index)` in increasing order, because
+//! the path order at one pair reads only pairs with a smaller left index, a
+//! smaller right index, or both. Nothing recurses.
 //!
 //! # Reduction order
 //!
@@ -107,11 +107,11 @@ use gandr_theory_spec_combinators::appended;
 use quenchant_shape::shape::Maybe;
 
 use crate::pattern::CmdPat;
+use crate::pattern::ConsHead;
+use crate::pattern::ConsRef;
 use crate::pattern::MetaVar;
 use crate::pattern::ProdHead;
 use crate::pattern::ProdRef;
-use crate::pattern::SpineEnd;
-use crate::pattern::SpineFrame;
 use crate::pattern::Sym;
 use crate::polarity::Polarity;
 
@@ -353,9 +353,9 @@ impl<'term> FlatTerm<'term>
     ///   is the cut. The children of each node are in the uniform node view's
     ///   left-to-right order.
     /// - panics: none.
-    /// - intension: one pass over the consumer spine and one over each producer
-    ///   table, never recursion; the producer tables are read in their own
-    ///   index order, which already puts children first.
+    /// - intension: one pass over each consumer and producer table, never
+    ///   recursion; the tables are read in their own index order, which already
+    ///   puts children first.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — leaf and nested cuts exercise producer, operation and
@@ -370,31 +370,61 @@ impl<'term> FlatTerm<'term>
     fn lay_out(cmd: &'term CmdPat) -> Self
     {
         let mut term = Self::default();
-        let cons = cmd.consumer().to_ref();
-        let mut ret = term.push(
-            match *cons.end() {
-                | SpineEnd::Top => Head::Top,
-                | SpineEnd::Meta(ref var) => Head::Var(var),
-            },
-            &[],
-        );
-        for frame in cons.frames() {
-            ret = match *frame {
-                | SpineFrame::Op { ref op, ref args } => {
-                    let mut roots: Vec<FlatIndex> =
-                        Vec::with_capacity(args.len().saturating_add(1));
-                    for arg in args {
-                        roots.push(term.push_prod(arg.to_ref()));
-                    }
-                    roots.push(ret);
-                    term.push(Head::Op(op), &roots)
-                },
-                | SpineFrame::Frame(ref ctor) => term.push(Head::Frame(ctor), &[ret]),
-            };
-        }
+        let cons = term.push_cons(cmd.consumer().to_ref());
         let prod = term.push_prod(cmd.producer().to_ref());
-        term.push(Head::Cut(cmd.polarity()), &[prod, ret]);
+        term.push(Head::Cut(cmd.polarity()), &[prod, cons]);
         term
+    }
+
+    /// Lays one consumer table out and returns its root's index.
+    ///
+    /// # Specification
+    /// - ensures: the table's nodes appended in table order, each frame's
+    ///   children being its producer arguments, laid out just before it, then
+    ///   its continuations, the most recently completed subtrees, its first
+    ///   continuation the most recent; the index of the table's root.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a framed operation and a two-continuation frame
+    ///   appear below distinct heads in both comparison directions. Exact
+    ///   strict and equal observations reject a wrong root or reordered
+    ///   continuations.
+    /// - witness: `order::tests::precedence_and_relation_boundaries_preserve_strictness`
+    #[spec(captures: before = self.nodes.len(), ensures: |output|
+        self.nodes.len() == before.saturating_add(usize::from(cons.size())) && output.0.saturating_add(1) == self.nodes.len())]
+    fn push_cons(
+        &mut self,
+        cons: ConsRef<'term>,
+    ) -> FlatIndex
+    {
+        // The roots of the completed subtrees not yet claimed by a frame, the
+        // most recent last.
+        let mut completed: Vec<FlatIndex> = Vec::new();
+        let mut children: Vec<FlatIndex> = Vec::new();
+        let mut root = FlatIndex(self.nodes.len());
+        for head in cons.heads() {
+            let first = completed
+                .len()
+                .saturating_sub(usize::from(head.continuations()));
+            let rets: Vec<FlatIndex> = completed.drain(first ..).rev().collect();
+            children.clear();
+            for arg in head.args() {
+                children.push(self.push_prod(arg.to_ref()));
+            }
+            children.extend(rets);
+            root = self.push(
+                match *head {
+                    | ConsHead::Op { ref op, .. } => Head::Op(op),
+                    | ConsHead::Frame(ref ctor) => Head::Frame(ctor),
+                    | ConsHead::Top => Head::Top,
+                    | ConsHead::Meta(ref var) => Head::Var(var),
+                },
+                &children,
+            );
+            completed.push(root);
+        }
+        root
     }
 
     /// Lays one producer table out and returns its root's index.
@@ -976,6 +1006,25 @@ mod tests
             assert_eq!(Ordering::Greater, path_order_cmp(&larger, &smaller));
             assert_eq!(Ordering::Equal, path_order_cmp(&larger, &larger));
         }
+        let split = |first: &str, second: &str| {
+            CmdPat::cut(
+                Polarity::Positive,
+                ProdPat::ctor("A", []),
+                ConsPat::operation("f", [], [
+                    ConsPat::frame(first, ConsPat::top()),
+                    ConsPat::frame(second, ConsPat::top()),
+                ]),
+            )
+        };
+        assert_eq!(
+            Ordering::Less,
+            path_order_cmp(&split("A", "Z"), &split("Z", "A")),
+            "continuations are compared in port order"
+        );
+        assert_eq!(
+            Ordering::Greater,
+            path_order_cmp(&split("Z", "A"), &split("A", "Z"))
+        );
         let laid_out_term = term(ProdPat::ctor("Pair", [low.clone(), ProdPat::meta("x")]));
         let layout = FlatTerm::lay_out(&laid_out_term);
         let invalid = FlatNode {

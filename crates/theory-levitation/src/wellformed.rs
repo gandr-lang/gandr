@@ -46,6 +46,7 @@ use crate::desc::SurfaceSpan;
 use crate::rule::FreeTerm;
 use crate::rule::RuleFace;
 use crate::rule::RuleVarMeta;
+use crate::rule::TermView;
 use crate::rule::Variance;
 
 /// The reserved-derived metadata marker names an attribute Σ may not declare:
@@ -89,6 +90,12 @@ pub enum WfKind
     /// A declared sort's polarity disagrees with the declaration's polarity,
     /// outside the polarity-homogeneous fragment this table admits.
     SortPolarityDisagreement,
+    /// A results tuple stands somewhere other than the root of a rule's
+    /// right-hand side, the one place a many-out operation's results leave.
+    MisplacedResults,
+    /// A circuit rule's wiring reads one output of a many-out node on its
+    /// own, which no term carries.
+    SplitCircuitOutputs,
 }
 
 quenchant_shape::reason_enum! {
@@ -201,11 +208,13 @@ fn located(
 /// - witness: `wellformed::tests::a_redex_applying_an_undeclared_port_is_declined`
 /// - witness: `wellformed::tests::declaring_derived_metadata_is_declined`
 /// - witness: `wellformed::tests::a_derivation_budget_failure_prevents_boundary_comparison`
+/// - witness: `wellformed::tests::a_results_tuple_stands_only_at_a_right_hand_root`
 #[inline]
 #[must_use]
 #[spec(ensures: |ref diagnostics| diagnostics.iter().all(|diagnostic| match diagnostic.kind {
     | WfKind::OutOfSignatureRule | WfKind::UnboundRhsVariable | WfKind::DerivedBoundaryMismatch
-    | WfKind::CyclicCircuitWiring | WfKind::UnknownRewritePort | WfKind::CircuitDerivationBudget => matches!(diagnostic.span, Maybe::Present(_)),
+    | WfKind::CyclicCircuitWiring | WfKind::UnknownRewritePort | WfKind::CircuitDerivationBudget
+    | WfKind::MisplacedResults | WfKind::SplitCircuitOutputs => matches!(diagnostic.span, Maybe::Present(_)),
     | WfKind::ArityDoesNotCompose | WfKind::DeclaresDerivedMetadata | WfKind::DuplicateSortName
     | WfKind::UnknownResultSort | WfKind::UnknownVarSort | WfKind::SortPolarityDisagreement => diagnostic.span == Maybe::Absent(diagnostic_span::Absent::Unrecorded),
 }))]
@@ -394,7 +403,8 @@ fn check_sorts<G>(
     ensures: diagnostics.len() >= before && diagnostics.get(before ..).is_some_and(|added| added.iter().all(|diagnostic|
         diagnostic.span == Maybe::Present(rule.sphere.provenance)
         && matches!(diagnostic.kind, WfKind::OutOfSignatureRule | WfKind::UnknownRewritePort
-            | WfKind::CyclicCircuitWiring | WfKind::CircuitDerivationBudget | WfKind::DerivedBoundaryMismatch))),
+            | WfKind::CyclicCircuitWiring | WfKind::CircuitDerivationBudget | WfKind::DerivedBoundaryMismatch
+            | WfKind::SplitCircuitOutputs))),
 )]
 fn check_circuit_rule(
     rule: &CircuitRule,
@@ -465,6 +475,20 @@ fn check_circuit_rule(
                      {budget}: a wire consumed twice is unfolded twice, so reconvergence is a \
                      shared subterm on the term-shaped store and a body of doubling frames \
                      derives an exponentially large boundary",
+                    rule.name
+                ),
+                span,
+            ));
+            return;
+        },
+        | Err(CircuitDerivationError::SplitOutputs(port)) => {
+            diagnostics.push(located(
+                WfKind::SplitCircuitOutputs,
+                format!(
+                    "circuit rule `{}`'s wiring reads port `{port}`, one output of a many-out \
+                     node, on its own: a term holds a many-out application only whole, as the \
+                     results it returns, so the node's outputs must leave the body together as \
+                     its declared results, in order",
                     rule.name
                 ),
                 span,
@@ -593,28 +617,35 @@ fn signature_names<G>(desc: &SignDesc<G>) -> Vec<Name>
         .collect()
 }
 
-/// Check one rule face: every applied symbol is in-signature and the
-/// right-hand side introduces no fresh variable.
+/// Check one rule face: every applied symbol is in-signature, the right-hand
+/// side introduces no fresh variable, and a results tuple stands only at the
+/// right-hand root.
 ///
 /// # Specification
 /// - ensures: the out-of-signature diagnostics of the left-hand side, then of
 ///   the right-hand side, then one diagnostic per right-hand-side variable
-///   occurrence the left-hand side does not bind.
+///   occurrence the left-hand side does not bind, then one per results tuple
+///   other than the right-hand root.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — symbols outside the signature on both sides and a
-///   repeated fresh right-hand variable have an exact diagnostic sequence and
-///   face span; reversed sides, deduplication and using the wrong span differ.
+/// - hypothesis: L3 — symbols outside the signature on both sides, a repeated
+///   fresh right-hand variable, and results tuples at the right-hand root,
+///   nested under it and on the left have an exact diagnostic sequence and face
+///   span; reversed sides, deduplication, using the wrong span or refusing the
+///   root tuple differ.
 /// - witness: `wellformed::tests::diagnostics_preserve_phase_order_multiplicity_and_provenance`
 /// - witness: `wellformed::tests::a_clean_description_passes`
+/// - witness: `wellformed::tests::a_results_tuple_stands_only_at_a_right_hand_root`
 #[spec(
     captures: before = diagnostics.len(),
     ensures: diagnostics.len() == before.saturating_add(
         cell.lhs.applied_symbols().chain(cell.rhs.applied_symbols()).filter(|name| !signature.contains(name)).count()
             .saturating_add(cell.rhs.to_node().vars().filter(|name| !cell.lhs.to_node().vars().any(|left| left == *name)).count())
+            .saturating_add(cell.lhs.results_widths().count())
+            .saturating_add(cell.rhs.results_widths().count().saturating_sub(usize::from(matches!(cell.rhs.view(), TermView::Results { .. }))))
     ) && diagnostics.get(before ..).is_some_and(|added| added.iter().all(|diagnostic| diagnostic.span == Maybe::Present(cell.provenance)
-        && matches!(diagnostic.kind, WfKind::OutOfSignatureRule | WfKind::UnboundRhsVariable))),
+        && matches!(diagnostic.kind, WfKind::OutOfSignatureRule | WfKind::UnboundRhsVariable | WfKind::MisplacedResults))),
 )]
 fn check_rule_face(
     cell: &RuleFace,
@@ -637,6 +668,24 @@ fn check_rule_face(
                 cell.provenance,
             ));
         }
+    }
+
+    let rooted = matches!(cell.rhs.view(), TermView::Results { .. });
+    let misplaced = cell
+        .lhs
+        .results_widths()
+        .chain(cell.rhs.results_widths().skip(usize::from(rooted)));
+    for width in misplaced {
+        diagnostics.push(located(
+            WfKind::MisplacedResults,
+            format!(
+                "cell rule writes a results tuple of {} components away from its right-hand \
+                 root: a tuple is how a many-out operation's rule returns its results, so it \
+                 stands only as the whole right-hand side",
+                usize::from(width)
+            ),
+            cell.provenance,
+        ));
     }
 }
 
@@ -1003,6 +1052,49 @@ mod tests
             check_desc(&nat_with(vec![face], vec![op], Attrs::empty())).is_empty(),
             "a well-formed description has no diagnostics"
         );
+    }
+
+    #[test]
+    fn a_results_tuple_stands_only_at_a_right_hand_root()
+    {
+        let divmod = || {
+            OperDesc::new(
+                "divmod",
+                BridgeArity::tupled([SortRef::new("m", "Nat"), SortRef::new("n", "Nat")], [
+                    SortRef::new("q", "Nat"),
+                    SortRef::new("r", "Nat"),
+                ]),
+                Attrs::empty(),
+            )
+        };
+        let lhs = || FreeTerm::op("divmod", [FreeTerm::var("m"), FreeTerm::var("n")]);
+        let pair = || FreeTerm::results([FreeTerm::var("n"), FreeTerm::var("m")]);
+        for (face, misplaced) in [
+            (RuleFace::new(lhs(), pair(), Vec::new(), span()), 0_usize),
+            (
+                RuleFace::new(lhs(), FreeTerm::ctor("Succ", [pair()]), Vec::new(), span()),
+                1,
+            ),
+            (
+                RuleFace::new(
+                    FreeTerm::op("divmod", [pair(), FreeTerm::var("n")]),
+                    FreeTerm::results([pair(), FreeTerm::var("m")]),
+                    Vec::new(),
+                    span(),
+                ),
+                2,
+            ),
+        ] {
+            let diagnostics = check_desc(&nat_with(vec![face], vec![divmod()], Attrs::empty()));
+            assert_eq!(
+                misplaced,
+                diagnostics
+                    .iter()
+                    .filter(|diagnostic| diagnostic.kind == WfKind::MisplacedResults)
+                    .count()
+            );
+            assert_eq!(misplaced, diagnostics.len(), "{diagnostics:?}");
+        }
     }
 
     #[test]

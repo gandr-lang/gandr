@@ -229,10 +229,10 @@ fn numeral(n: Value) -> ProdPat
 ///   distinguish a wrong frame symbol, a metavariable tail and an off-by-one
 ///   depth. Typed consumer substitution checks the same stacks in a family.
 /// - witness: `tests::template::corpus_boundaries_preserve_typed_assignments`
-#[spec(ensures: |output| output.to_ref().frames().len() == n.0
-    && output.to_ref().frames().iter().all(|frame|
-        matches!(*frame, gandr_theory_cell_complexes::SpineFrame::Frame(ref ctor) if ctor.as_ref() == "Succ"))
-    && matches!(*output.to_ref().end(), gandr_theory_cell_complexes::SpineEnd::Top))]
+#[spec(ensures: |output| output.to_ref().preorder().count() == n.0.saturating_add(1)
+    && output.to_ref().preorder().take(n.0).all(|head|
+        matches!(*head, gandr_theory_cell_complexes::ConsHead::Frame(ref ctor) if ctor.as_ref() == "Succ"))
+    && matches!(output.to_ref().preorder().last(), Some(&gandr_theory_cell_complexes::ConsHead::Top)))]
 fn frames(n: Value) -> ConsPat
 {
     (0_usize .. n.0).fold(ConsPat::top(), |inner, _| ConsPat::frame("Succ", inner))

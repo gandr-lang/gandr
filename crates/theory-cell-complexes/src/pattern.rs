@@ -12,10 +12,13 @@
 //! a contiguous index range ending at its own root, and each node's first
 //! child immediately before it. Every node records its subtree's node count,
 //! so a child is found by skipping its elder siblings' counts and a subtree is
-//! read or copied as one slice. A consumer is a spine: the frames between the
-//! cut and the consumer's end, listed innermost first, then the end itself —
-//! the terminal `★` or a consumer metavariable. An operation frame's producer
-//! arguments are producer tables of their own.
+//! read or copied as one slice. A consumer is a flat node table of the same
+//! shape over consumer heads: a frame whose children are its continuations,
+//! or an end — the terminal `★` or a consumer metavariable. A return-side
+//! constructor frame has one continuation; an operation frame has one per
+//! output port of its operation, so a single-output operation's consumer is a
+//! chain of frames down to one end and a many-output one branches. An
+//! operation frame's producer arguments are producer tables of their own.
 //!
 //! The layout is canonical: two structurally equal patterns have equal tables,
 //! so the derived [`Eq`] and [`Hash`] are structural content identity, and no
@@ -23,18 +26,19 @@
 //! place, reusing the buffer of the innermost part: wrapping a pattern in one
 //! more constructor or frame appends to it rather than copying it.
 //!
-//! Every walk in this module and above it is a loop over a table or a spine,
-//! or an explicit worklist; none recurses. A read past a table's end ends the
-//! walk rather than panicking, and no constructor produces a table a walk can
-//! read past.
+//! Every walk in this module and above it is a loop over a table or an
+//! explicit worklist; none recurses. A read past a table's end ends the walk
+//! rather than panicking, and no constructor produces a table a walk can read
+//! past.
 //!
 //! # Positions
 //!
 //! A [`Pos`] addresses a subterm as a path of child indices through the
 //! uniform node view: a cut's children are its producer and then its
 //! consumer; a constructor application's are its arguments; an operation
-//! frame's are its arguments and then its return continuation; a return-side
-//! constructor frame's is its return continuation. The empty path is the root.
+//! frame's are its arguments and then its continuations in port order; a
+//! return-side constructor frame's is its return continuation. The empty path
+//! is the root.
 //!
 //! # Pattern representation
 //!
@@ -42,19 +46,24 @@
 //! reverse pre-order, the root last, every subtree a contiguous range ending at
 //! its own root and carrying its node count, so a child is found by skipping
 //! its elder siblings and a subtree is read or copied as one slice. A consumer
-//! is a spine: its frames listed innermost first, then its end, `★` or a
-//! consumer metavariable; an operation frame's producer arguments are producer
-//! tables of their own. A command is a cut over one producer and one consumer.
-//! Commands do not nest, so a cut is only ever a pattern's root.
+//! is a flat table of the same shape over consumer heads: a frame whose
+//! children are its continuations, or an end, `★` or a consumer metavariable.
+//! An operation frame has one continuation per output port of its operation,
+//! so a single-output consumer is a chain and a many-output one branches; its
+//! producer arguments are producer tables of their own. A command is a cut
+//! over one producer and one consumer. Commands do not nest, so a cut is only
+//! ever a pattern's root.
 //!
 //! A pattern is flat, its children held as index ranges, and flat per category
-//! — one table per producer, one spine per consumer, the cut over the two —
-//! rather than one table across all three, for three reasons: every view is
-//! total, because a table holds one category and no read checks a node's
-//! category; building `Succ(p)` reuses `p`'s buffer, so constructor application
-//! is amortized constant time; and a consumer is a list, not a tree, so its
-//! natural flat form is the spine. Nothing recurses either way, and
-//! structurally equal patterns have equal tables.
+//! — one table per producer, one per consumer, the cut over the two — rather
+//! than one table across all three, for two reasons: every view is total,
+//! because a table holds one category and no read checks a node's category;
+//! and building `Succ(p)` reuses `p`'s buffer, so constructor application is
+//! amortized constant time. Nothing recurses either way, and structurally
+//! equal patterns have equal tables. An earlier form held a consumer as a
+//! spine, a list of frames innermost first; an operation of several outputs
+//! gives a consumer one branch per output, which a list cannot hold (Spivak,
+//! Garner and Fairbanks, _Functorial Aggregation_, `arXiv:2111.10968`).
 //!
 //! - **Alternatives.** One table across all categories puts a category check
 //!   and a fallback on every view. A store-wide arena shared by every cell's
@@ -909,45 +918,139 @@ impl ExactSizeIterator for ProdArgs<'_>
 {
 }
 
-/// One frame of a consumer spine.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub enum SpineFrame
+/// The number of continuations an operation frame carries: one per output
+/// port of its operation.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ContinuationCount(usize);
+
+impl ContinuationCount
 {
-    /// An operation frame `f(p̄; c)`: an `f`-application waiting at the seam,
-    /// with its remaining producer arguments.
+    /// One continuation: the frame of a single-output operation, and the one
+    /// continuation of a return-side constructor frame.
+    pub const ONE: Self = Self(1);
+}
+
+impl From<usize> for ContinuationCount
+{
+    /// Wraps the primitive.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: usize) -> Self
+    {
+        Self(value)
+    }
+}
+
+impl From<ContinuationCount> for usize
+{
+    /// Unwraps the primitive.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: ContinuationCount) -> Self
+    {
+        value.0
+    }
+}
+
+/// The head of one consumer-table node.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum ConsHead
+{
+    /// An operation frame `f(p̄; c₁, …, cₙ)`: an `f`-application waiting at
+    /// the seam, with its remaining producer arguments and one continuation
+    /// per output port of `f`, in port order.
     Op
     {
         /// The operation symbol `f`.
         op: Sym,
         /// The producer arguments `p̄`.
         args: Vec<ProdPat>,
+        /// The number of continuations `n`.
+        rets: ContinuationCount,
     },
     /// A return-side constructor frame `K⁻(c)`, definable as
     /// `μ̃x.⟨K(x) | c⟩`; its defining cell is [`frame_defining_cell`].
     ///
     /// [`frame_defining_cell`]: crate::sequent::frame_defining_cell
     Frame(Sym),
-}
-
-/// Where a consumer spine ends.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub enum SpineEnd
-{
     /// The terminal consumer `★`.
     Top,
     /// A consumer metavariable `α`.
     Meta(MetaVar),
 }
 
-/// A consumer pattern `c`: a spine of frames ending in the terminal `★` or a
-/// consumer metavariable.
+impl ConsHead
+{
+    /// The node's number of consumer children: an operation frame's
+    /// continuations, a return-side frame's one, and none for an end.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn continuations(&self) -> ContinuationCount
+    {
+        match *self {
+            | Self::Op { rets, .. } => rets,
+            | Self::Frame(_) => ContinuationCount::ONE,
+            | Self::Top | Self::Meta(_) => ContinuationCount(0),
+        }
+    }
+
+    /// The producer arguments the node carries: an operation frame's, and
+    /// none for any other head.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn args(&self) -> &[ProdPat]
+    {
+        match *self {
+            | Self::Op { ref args, .. } => args.as_slice(),
+            | Self::Frame(_) | Self::Top | Self::Meta(_) => &[],
+        }
+    }
+}
+
+/// The number of consumer-table nodes one subtree spans, its root included.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct TableExtent(usize);
+
+/// One node of a consumer table: its head and the number of table nodes the
+/// subtree it roots spans.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct ConsEntry
+{
+    /// The node's head.
+    head: ConsHead,
+    /// The table nodes of the subtree this node roots, itself included.
+    extent: TableExtent,
+}
+
+/// The node a frame reads as its continuation when its table range is empty,
+/// which no constructor produces: the terminal, so every view stays total and
+/// no walk revisits a node.
+static TERMINAL_ENTRY: ConsEntry = ConsEntry {
+    head: ConsHead::Top,
+    extent: TableExtent(1),
+};
+
+/// A consumer pattern `c`: a tree of frames whose leaves are the terminal
+/// `★` and consumer metavariables, held as one flat node table.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ConsPat
 {
-    /// The frames, innermost first: the last frame meets the cut.
-    frames: Vec<SpineFrame>,
-    /// The end of the spine, inside the innermost frame.
-    end: SpineEnd,
+    /// Every node below the root, in reverse pre-order.
+    below: Vec<ConsEntry>,
+    /// The root node: the frame or end that meets the cut.
+    root: ConsEntry,
 }
 
 impl ConsPat
@@ -962,10 +1065,7 @@ impl ConsPat
     where
         N: Into<HoleName>,
     {
-        Self {
-            frames: Vec::new(),
-            end: SpineEnd::Meta(MetaVar::consumer(name)),
-        }
+        Self::leaf(ConsHead::Meta(MetaVar::consumer(name)))
     }
 
     /// The terminal consumer `★`.
@@ -977,17 +1077,19 @@ impl ConsPat
     pub const fn top() -> Self
     {
         Self {
-            frames: Vec::new(),
-            end: SpineEnd::Top,
+            below: Vec::new(),
+            root: ConsEntry {
+                head: ConsHead::Top,
+                extent: TableExtent(1),
+            },
         }
     }
 
-    /// An operation frame `op(args; ret)`.
+    /// An operation frame `op(args; ret)` with one continuation: the frame of
+    /// a single-output operation.
     ///
     /// # Specification
-    /// - ensures: the consumer whose outermost frame is `op` over `args` in
-    ///   order, continuing as `ret`; `ret`'s spine is reused as the new spine's
-    ///   buffer.
+    /// - ensures: [`ConsPat::operation`] over the one continuation `ret`.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -997,9 +1099,9 @@ impl ConsPat
     /// - witness: `pattern::tests::pattern_children_preserve_order_and_bounds`
     #[inline]
     #[must_use]
-    #[spec(captures: frames = ret.frames.len(), ensures: |output|
-        output.frames.len() == frames.saturating_add(1)
-        && matches!(output.frames.last(), Some(SpineFrame::Op { .. }))) ]
+    #[spec(captures: nodes = ret.below.len(), ensures: |output|
+        output.below.len() == nodes.saturating_add(1)
+        && matches!(output.root.head, ConsHead::Op { rets, .. } if rets == ContinuationCount::ONE))]
     pub fn op<S, A>(
         op: S,
         args: A,
@@ -1009,23 +1111,71 @@ impl ConsPat
         S: Into<Sym>,
         A: IntoIterator<Item = ProdPat>,
     {
-        let mut frames = ret.frames;
-        frames.push(SpineFrame::Op {
-            op: op.into(),
-            args: args.into_iter().collect(),
-        });
+        Self::operation(op, args, [ret])
+    }
+
+    /// An operation frame `op(args; rets)`: one continuation per output port
+    /// of `op`, in port order.
+    ///
+    /// # Specification
+    /// - ensures: the consumer whose root is `op` over `args` in order, its
+    ///   continuations `rets` in order; the last continuation's table is reused
+    ///   as the new table's buffer, so wrapping one continuation costs one
+    ///   appended node.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a two-continuation frame over a framed and a bare
+    ///   continuation is read back child by child, port order kept. Swapped or
+    ///   dropped continuations, and a wrong extent, change the children read.
+    /// - witness: `pattern::tests::a_many_continuation_frame_keeps_its_port_order`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |output| matches!(output.root.head, ConsHead::Op { .. })
+        && output.root.extent.0 == output.below.len().saturating_add(1))]
+    pub fn operation<S, A, R>(
+        op: S,
+        args: A,
+        rets: R,
+    ) -> Self
+    where
+        S: Into<Sym>,
+        A: IntoIterator<Item = ProdPat>,
+        R: IntoIterator<Item = Self>,
+    {
+        let mut rets: Vec<Self> = rets.into_iter().collect();
+        let count = ContinuationCount(rets.len());
+        let mut below = match rets.pop() {
+            | Some(last) => {
+                let mut below = last.below;
+                below.push(last.root);
+                below
+            },
+            | None => Vec::new(),
+        };
+        for ret in rets.into_iter().rev() {
+            below.extend(ret.below);
+            below.push(ret.root);
+        }
+        let extent = TableExtent(below.len().saturating_add(1));
         Self {
-            frames,
-            end: ret.end,
+            below,
+            root: ConsEntry {
+                head: ConsHead::Op {
+                    op: op.into(),
+                    args: args.into_iter().collect(),
+                    rets: count,
+                },
+                extent,
+            },
         }
     }
 
     /// A return-side constructor frame `ctor⁻(ret)`.
     ///
     /// # Specification
-    /// - ensures: the consumer whose outermost frame re-wraps with `ctor`,
-    ///   continuing as `ret`; `ret`'s spine is reused as the new spine's
-    ///   buffer.
+    /// - ensures: the consumer whose root re-wraps with `ctor`, continuing as
+    ///   `ret`; `ret`'s table is reused as the new table's buffer.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -1035,9 +1185,9 @@ impl ConsPat
     /// - witness: `pattern::tests::pattern_children_preserve_order_and_bounds`
     #[inline]
     #[must_use]
-    #[spec(captures: frames = ret.frames.len(), ensures: |output|
-        output.frames.len() == frames.saturating_add(1)
-        && matches!(output.frames.last(), Some(SpineFrame::Frame(_))))]
+    #[spec(captures: nodes = ret.below.len(), ensures: |output|
+        output.below.len() == nodes.saturating_add(1)
+        && matches!(output.root.head, ConsHead::Frame(_)))]
     pub fn frame<S>(
         ctor: S,
         ret: Self,
@@ -1045,11 +1195,40 @@ impl ConsPat
     where
         S: Into<Sym>,
     {
-        let mut frames = ret.frames;
-        frames.push(SpineFrame::Frame(ctor.into()));
+        let mut below = ret.below;
+        below.push(ret.root);
+        let extent = TableExtent(below.len().saturating_add(1));
         Self {
-            frames,
-            end: ret.end,
+            below,
+            root: ConsEntry {
+                head: ConsHead::Frame(ctor.into()),
+                extent,
+            },
+        }
+    }
+
+    /// A one-node table.
+    ///
+    /// # Specification
+    /// - requires: an end: the terminal or a metavariable.
+    /// - ensures: an empty descendant table and an extent of one.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a consumer hole is read as a childless node beside
+    ///   framed ends. A non-leaf head or wrong extent changes the child count.
+    /// - witness: `pattern::tests::pattern_children_preserve_order_and_bounds`
+    #[inline]
+    #[spec(requires: usize::from(head.continuations()) == 0 && head.args().is_empty(),
+        ensures: |output| output.below.is_empty() && output.root.extent.0 == 1)]
+    fn leaf(head: ConsHead) -> Self
+    {
+        Self {
+            below: Vec::new(),
+            root: ConsEntry {
+                head,
+                extent: TableExtent(1),
+            },
         }
     }
 
@@ -1062,12 +1241,12 @@ impl ConsPat
     pub fn to_ref(&self) -> ConsRef<'_>
     {
         ConsRef {
-            frames: &self.frames,
-            end: &self.end,
+            below: &self.below,
+            root: &self.root,
         }
     }
 
-    /// The pattern's outermost frame and continuation.
+    /// The pattern's root frame and continuations.
     ///
     /// # Specification
     /// trivial.
@@ -1078,33 +1257,12 @@ impl ConsPat
         self.to_ref().view()
     }
 
-    /// The pattern's node count: one per frame, per argument node and for the
-    /// end.
+    /// The pattern's node count: one per frame, per argument node and per end.
     ///
     /// # Specification
-    /// - ensures: each frame counts one plus its arguments' node counts, and
-    ///   the end counts one.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — terminal, bare-hole, framed and operation consumers
-    ///   have exact counts. Omitting an end, frame or argument changes the
-    ///   result.
-    /// - witness: `pattern::tests::the_per_category_sizes_count_their_own_subtree`
-    /// - witness: `pattern::tests::pattern_children_preserve_order_and_bounds`
+    /// trivial.
     #[inline]
     #[must_use]
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            spec_clause_traversal,
-            reason = "parity: the body folds the same frames and argument sizes"
-        )
-    )]
-    #[spec(ensures: |output| usize::from(output) == self.frames.iter().fold(1_usize, |count, frame| {
-        let args = match *frame { SpineFrame::Op { ref args, .. } => args.as_slice(), SpineFrame::Frame(_) => &[] };
-        args.iter().fold(count.saturating_add(1), |count, arg| count.saturating_add(usize::from(arg.size())))
-    }))]
     pub fn size(&self) -> PatternSize
     {
         self.to_ref().size()
@@ -1120,168 +1278,245 @@ impl ConsPat
     {
         GroundPatternStatus::from(self.to_ref().metavars().next().is_none())
     }
+}
 
-    /// A spine from its frames, innermost first, and its end.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub const fn from_parts(
-        frames: Vec<SpineFrame>,
-        end: SpineEnd,
-    ) -> Self
-    {
-        Self { frames, end }
+/// `cons` with each metavariable `prods` or `conss` answers for replaced by
+/// its image.
+///
+/// # Specification
+/// - ensures: the table rebuilt in index order: each answered consumer leaf's
+///   image is appended whole, each operation frame's arguments are instantiated
+///   by [`instantiate_prod`] over `prods`, and each frame's extent is one plus
+///   its continuations', which precede it; every other node is copied. The
+///   images are inserted as given, one pass.
+/// - panics: none.
+/// - intension: one output table sized to the input; the pending extents are a
+///   stack, claimed by their frame as it is reached.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a two-continuation frame over a bound and an unbound
+///   leaf, beside a producer argument with a bound hole, is instantiated in one
+///   pass. Exact rebuilt children reject a skipped argument, a lost
+///   continuation and a stale extent.
+/// - witness: `pattern::tests::consumer_instantiation_rebuilds_every_continuation`
+#[inline]
+#[spec(ensures: |output| output.root.extent.0 == output.below.len().saturating_add(1))]
+pub fn instantiate_cons<'prod, 'cons, P, C>(
+    cons: ConsRef<'_>,
+    prods: &P,
+    conss: &C,
+) -> ConsPat
+where
+    P: Fn(&MetaVar) -> Maybe<ProdRef<'prod>, crate::subst::binding::Absent>,
+    C: Fn(&MetaVar) -> Maybe<ConsRef<'cons>, crate::subst::binding::Absent>,
+{
+    let mut table: Vec<ConsEntry> = Vec::with_capacity(cons.below.len().saturating_add(1));
+    // The extents of the completed subtrees not yet claimed by a frame, the
+    // most recent last.
+    let mut completed: Vec<TableExtent> = Vec::new();
+    for entry in cons.entries() {
+        if let ConsHead::Meta(ref var) = entry.head
+            && let Maybe::Present(image) = conss(var)
+        {
+            table.extend(image.entries().cloned());
+            completed.push(image.root.extent);
+            continue;
+        }
+        let first = completed
+            .len()
+            .saturating_sub(usize::from(entry.head.continuations()));
+        let extent = completed.drain(first ..).fold(TableExtent(1), |sum, part| {
+            TableExtent(sum.0.saturating_add(part.0))
+        });
+        let head = match entry.head {
+            | ConsHead::Op {
+                ref op,
+                ref args,
+                rets,
+            } => ConsHead::Op {
+                op: op.clone(),
+                args: args
+                    .iter()
+                    .map(|arg| instantiate_prod(arg.to_ref(), prods))
+                    .collect(),
+                rets,
+            },
+            | ConsHead::Frame(_) | ConsHead::Top | ConsHead::Meta(_) => entry.head.clone(),
+        };
+        table.push(ConsEntry { head, extent });
+        completed.push(extent);
+    }
+    match table.pop() {
+        | Some(root) => ConsPat { below: table, root },
+        | None => ConsPat::top(),
     }
 }
 
-/// A borrowed consumer subtree: a suffix of a spine.
+/// A borrowed consumer subtree: a contiguous range of a consumer table.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct ConsRef<'pattern>
 {
-    /// The frames from the end up to this suffix's outermost, innermost
-    /// first.
-    frames: &'pattern [SpineFrame],
-    /// The spine's end.
-    end: &'pattern SpineEnd,
+    /// Every node below the root, in reverse pre-order.
+    below: &'pattern [ConsEntry],
+    /// The subtree's root.
+    root: &'pattern ConsEntry,
 }
 
 impl<'pattern> ConsRef<'pattern>
 {
-    /// The subtree's outermost frame and continuation.
+    /// The subtree's root frame and continuations.
     ///
     /// # Specification
-    /// - ensures: the outermost frame with its continuation one frame in, or
-    ///   the end when no frame remains.
+    /// - ensures: the root's head with its arguments and continuations, or the
+    ///   end when the root is one.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — operation, frame, bare-hole and terminal consumers
-    ///   are observed through their outer view and continuation. Wrong
-    ///   variants, reversed frames and off-by-one suffixes change the
+    ///   are observed through their root view and continuations. Wrong
+    ///   variants, reversed continuations and off-by-one ranges change the
     ///   observations.
     /// - witness: `pattern::tests::pattern_children_preserve_order_and_bounds`
+    /// - witness: `pattern::tests::a_many_continuation_frame_keeps_its_port_order`
     #[inline]
     #[must_use]
     #[spec(ensures: |output| match output {
-        ConsView::Top => self.frames.is_empty() && matches!(self.end, SpineEnd::Top),
-        ConsView::Meta(var) => self.frames.is_empty() && matches!(self.end, SpineEnd::Meta(held) if held == var),
-        ConsView::Op { ret, .. } => ret.frames.len().saturating_add(1) == self.frames.len()
-            && ret.end == self.end && matches!(self.frames.last(), Some(SpineFrame::Op { .. })),
-        ConsView::Frame { ret, .. } => ret.frames.len().saturating_add(1) == self.frames.len()
-            && ret.end == self.end && matches!(self.frames.last(), Some(SpineFrame::Frame(_))),
+        ConsView::Top => matches!(self.root.head, ConsHead::Top),
+        ConsView::Meta(var) => matches!(self.root.head, ConsHead::Meta(ref held) if held == var),
+        ConsView::Op { ref args, ref rets, .. } => matches!(self.root.head, ConsHead::Op { args: ref held, rets: count, .. }
+            if held.len() == args.len() && usize::from(count) == rets.len()),
+        ConsView::Frame { ret, .. } => matches!(self.root.head, ConsHead::Frame(_))
+            && ret.below.len().saturating_add(1) == self.below.len(),
     })]
     pub fn view(self) -> ConsView<'pattern>
     {
-        let Some((outer, inner)) = self.frames.split_last()
-        else {
-            return match *self.end {
-                | SpineEnd::Top => ConsView::Top,
-                | SpineEnd::Meta(ref var) => ConsView::Meta(var),
-            };
-        };
-        let ret = ConsRef {
-            frames: inner,
-            end: self.end,
-        };
-        match *outer {
-            | SpineFrame::Op { ref op, ref args } => ConsView::Op {
+        match self.root.head {
+            | ConsHead::Top => ConsView::Top,
+            | ConsHead::Meta(ref var) => ConsView::Meta(var),
+            | ConsHead::Frame(ref ctor) => ConsView::Frame {
+                ctor,
+                ret: match self.below.split_last() {
+                    | Some((root, below)) => ConsRef { below, root },
+                    | None => ConsRef {
+                        below: &[],
+                        root: &TERMINAL_ENTRY,
+                    },
+                },
+            },
+            | ConsHead::Op {
+                ref op, ref args, ..
+            } => ConsView::Op {
                 op,
                 args: OpArgs(args.iter()),
-                ret,
+                rets: self.children(),
             },
-            | SpineFrame::Frame(ref ctor) => ConsView::Frame { ctor, ret },
         }
     }
 
-    /// The frames of this suffix, innermost first.
+    /// The subtree's root head.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn frames(self) -> &'pattern [SpineFrame]
+    pub const fn head(self) -> &'pattern ConsHead
     {
-        self.frames
+        &self.root.head
     }
 
-    /// The spine's end.
+    /// The subtree's continuations, left to right.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn end(self) -> &'pattern SpineEnd
+    pub const fn children(self) -> Continuations<'pattern>
     {
-        self.end
+        Continuations {
+            rest: self.below,
+            remaining: self.root.head.continuations(),
+        }
     }
 
     /// The subtree's node count.
     ///
     /// # Specification
     /// - ensures: each frame counts one plus its arguments' node counts, and
-    ///   the end counts one.
+    ///   each end counts one.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — terminal, metavariable, framed and multi-argument
-    ///   operation consumers have hand-counted sizes. Missing the end, an
-    ///   argument or a frame changes the count.
+    /// - hypothesis: L3 — terminal, metavariable, framed, multi-argument and
+    ///   two-continuation consumers have hand-counted sizes. Missing an end, an
+    ///   argument, a frame or a continuation changes the count.
     /// - witness: `pattern::tests::pattern_children_preserve_order_and_bounds`
+    /// - witness: `pattern::tests::a_many_continuation_frame_keeps_its_port_order`
     #[inline]
     #[must_use]
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            spec_clause_traversal,
-            reason = "parity: the body folds the same frames and argument sizes"
-        )
-    )]
-    #[spec(ensures: |output| usize::from(output) == self.frames.iter().fold(1_usize, |count, frame| {
-        let args = match *frame { SpineFrame::Op { ref args, .. } => args.as_slice(), SpineFrame::Frame(_) => &[] };
-        args.iter().fold(count.saturating_add(1), |count, arg| count.saturating_add(usize::from(arg.size())))
-    }))]
+    #[spec(ensures: |output| usize::from(output) >= self.below.len().saturating_add(1))]
     pub fn size(self) -> PatternSize
     {
-        let mut size = PatternSize::ONE;
-        for frame in self.frames {
+        let mut size = PatternSize::default();
+        for entry in self.entries() {
             size = size.saturating_add(PatternSize::ONE);
-            if let SpineFrame::Op { ref args, .. } = *frame {
-                for arg in args {
-                    size = size.saturating_add(arg.size());
-                }
+            for arg in entry.head.args() {
+                size = size.saturating_add(arg.size());
             }
         }
         size
     }
 
+    /// Every node head of the subtree in table order: each node after its
+    /// children, the root last.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn heads(self) -> impl DoubleEndedIterator<Item = &'pattern ConsHead>
+    {
+        self.entries().map(|entry| &entry.head)
+    }
+
+    /// Every node head of the subtree, root first, in pre-order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn preorder(self) -> impl Iterator<Item = &'pattern ConsHead>
+    {
+        self.heads().rev()
+    }
+
     /// The subtree's metavariables, left to right with repeats.
     ///
     /// # Specification
-    /// - ensures: one item per metavariable occurrence, outermost frame first,
-    ///   each operation frame's arguments in order, then the end.
+    /// - ensures: one item per metavariable occurrence in pre-order: each
+    ///   operation frame's arguments in order, then its continuations in port
+    ///   order, and each consumer end where it is reached.
     /// - panics: none.
     /// - executable: none — instrumentation gives its wrapper closure this
     ///   impl-Trait return type, which Rust rejects for closures.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — terminal and framed ends and operation arguments
-    ///   carry distinct and repeated holes. Exact sequences reject reversal,
-    ///   deduplication and a dropped end.
+    /// - hypothesis: L3 — terminal and framed ends, operation arguments and two
+    ///   continuations carry distinct and repeated holes. Exact sequences
+    ///   reject reversal, deduplication and a dropped end.
     /// - witness: `pattern::tests::pattern_children_preserve_order_and_bounds`
+    /// - witness: `pattern::tests::a_many_continuation_frame_keeps_its_port_order`
     #[inline]
     pub fn metavars(self) -> impl Iterator<Item = &'pattern MetaVar>
     {
-        let args = self.frames.iter().rev().flat_map(|frame| match *frame {
-            | SpineFrame::Op { ref args, .. } => args.as_slice(),
-            | SpineFrame::Frame(_) => &[],
-        });
-        let end = match *self.end {
-            | SpineEnd::Meta(ref var) => Some(var),
-            | SpineEnd::Top => None,
-        };
-        args.flat_map(|arg| arg.to_ref().metavars()).chain(end)
+        self.preorder().flat_map(|head| {
+            let end = match *head {
+                | ConsHead::Meta(ref var) => Some(var),
+                | ConsHead::Op { .. } | ConsHead::Frame(_) | ConsHead::Top => None,
+            };
+            head.args()
+                .iter()
+                .flat_map(|arg| arg.to_ref().metavars())
+                .chain(end)
+        })
     }
 
     /// An owned copy of the subtree.
@@ -1293,17 +1528,25 @@ impl<'pattern> ConsRef<'pattern>
     pub fn to_pattern(self) -> ConsPat
     {
         ConsPat {
-            frames: self.frames.to_vec(),
-            end: self.end.clone(),
+            below: self.below.to_vec(),
+            root: self.root.clone(),
         }
     }
 
-    /// Whether this suffix is a bare metavariable, with no frame above its
-    /// end.
+    /// Every node of the subtree in table order, the root last.
     ///
     /// # Specification
-    /// - provides: [`bare_end::Absent::Framed`] when a frame remains,
-    ///   [`bare_end::Absent::Terminal`] when the end is `★`.
+    /// trivial.
+    fn entries(self) -> impl DoubleEndedIterator<Item = &'pattern ConsEntry>
+    {
+        self.below.iter().chain(core::iter::once(self.root))
+    }
+
+    /// Whether this subtree is a bare metavariable, with no frame above it.
+    ///
+    /// # Specification
+    /// - provides: [`bare_end::Absent::Framed`] when the root is a frame,
+    ///   [`bare_end::Absent::Terminal`] when it is `★`.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -1313,51 +1556,87 @@ impl<'pattern> ConsRef<'pattern>
     /// - witness: `pattern::tests::pattern_children_preserve_order_and_bounds`
     #[inline]
     #[spec(ensures: |output| match output {
-        Maybe::Present(var) => self.frames.is_empty() && matches!(self.end, SpineEnd::Meta(held) if held == var),
-        Maybe::Absent(bare_end::Absent::Framed) => !self.frames.is_empty(),
-        Maybe::Absent(bare_end::Absent::Terminal) => self.frames.is_empty() && matches!(self.end, SpineEnd::Top),
+        Maybe::Present(var) => matches!(self.root.head, ConsHead::Meta(ref held) if held == var),
+        Maybe::Absent(bare_end::Absent::Framed) => matches!(self.root.head, ConsHead::Op { .. } | ConsHead::Frame(_)),
+        Maybe::Absent(bare_end::Absent::Terminal) => matches!(self.root.head, ConsHead::Top),
     })]
     pub fn bare_meta(self) -> Maybe<&'pattern MetaVar, bare_end::Absent>
     {
-        if !self.frames.is_empty() {
-            return Maybe::Absent(bare_end::Absent::Framed);
+        match self.root.head {
+            | ConsHead::Meta(ref var) => Maybe::Present(var),
+            | ConsHead::Top => Maybe::Absent(bare_end::Absent::Terminal),
+            | ConsHead::Op { .. } | ConsHead::Frame(_) => Maybe::Absent(bare_end::Absent::Framed),
         }
-        match *self.end {
-            | SpineEnd::Meta(ref var) => Maybe::Present(var),
-            | SpineEnd::Top => Maybe::Absent(bare_end::Absent::Terminal),
+    }
+
+    /// The `step`-th continuation, with the offset of its first node from the
+    /// start of this subtree's table range.
+    ///
+    /// # Specification
+    /// - ensures: the continuation `step` counts from the left, and the number
+    ///   of this subtree's nodes that precede the continuation's first node in
+    ///   the table.
+    /// - provides: [`position_read::Absent::OffPattern`] when this node has no
+    ///   continuation `step`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a two-continuation frame is read at its first, last
+    ///   and one-past-last continuations. Exact subtrees and offsets reject
+    ///   reversal and off-by-one bounds.
+    /// - witness: `pattern::tests::a_many_continuation_frame_keeps_its_port_order`
+    #[inline]
+    #[spec(ensures: |output| matches!(output, Maybe::Present(_))
+        == (usize::from(step) < self.root.head.continuations().0))]
+    fn nth_child(
+        self,
+        step: PositionStep,
+    ) -> Maybe<(Self, TableOffset), position_read::Absent>
+    {
+        let mut children = self.children();
+        let mut skipped = usize::from(step);
+        loop {
+            let Some(child) = children.next()
+            else {
+                return Maybe::Absent(position_read::Absent::OffPattern);
+            };
+            if skipped == 0 {
+                return Maybe::Present((child, TableOffset(children.rest.len())));
+            }
+            skipped = skipped.saturating_sub(1);
         }
     }
 }
 
 quenchant_shape::reason_enum! {
-    /// Why a consumer suffix is not a bare metavariable.
+    /// Why a consumer subtree is not a bare metavariable.
     pub mod bare_end {
-        /// The reason the suffix is something else.
+        /// The reason the subtree is something else.
         #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
         pub enum Absent {
-            /// A frame sits above the end.
+            /// A frame sits at the root.
             Framed,
-            /// The end is the terminal `★`.
+            /// The root is the terminal `★`.
             Terminal,
         }
     }
 }
 
-/// The outermost frame and continuation of one consumer subtree.
+/// The root frame and continuations of one consumer subtree.
 #[derive(Clone, Debug)]
 pub enum ConsView<'pattern>
 {
     /// A consumer metavariable `α`.
     Meta(&'pattern MetaVar),
-    /// An operation frame `f(p̄; c)`.
+    /// An operation frame `f(p̄; c₁, …, cₙ)`.
     Op
     {
         /// The operation symbol `f`.
         op: &'pattern Sym,
         /// The producer arguments `p̄`, left to right.
         args: OpArgs<'pattern>,
-        /// The return continuation `c`.
-        ret: ConsRef<'pattern>,
+        /// The continuations `c₁, …, cₙ`, in port order.
+        rets: Continuations<'pattern>,
     },
     /// A return-side constructor frame `K⁻(c)`.
     Frame
@@ -1402,6 +1681,71 @@ impl<'pattern> Iterator for OpArgs<'pattern>
 }
 
 impl ExactSizeIterator for OpArgs<'_>
+{
+}
+
+/// The continuations of a consumer node, left to right.
+#[derive(Clone, Debug)]
+pub struct Continuations<'pattern>
+{
+    /// The table range holding the continuations not yet yielded, the next one
+    /// last.
+    rest: &'pattern [ConsEntry],
+    /// How many continuations remain.
+    remaining: ContinuationCount,
+}
+
+impl<'pattern> Iterator for Continuations<'pattern>
+{
+    type Item = ConsRef<'pattern>;
+
+    /// The next continuation.
+    ///
+    /// # Specification
+    /// - ensures: yields the remaining continuations in left-to-right order;
+    ///   the next one's root is the last node of `rest`, and its subtree the
+    ///   `extent` nodes ending there. A range shorter than the extents it
+    ///   records ends the iteration.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a two-continuation frame is consumed through
+    ///   exhaustion. Exact sequence and remaining counts reject skips and wrong
+    ///   bounds.
+    /// - witness: `pattern::tests::a_many_continuation_frame_keeps_its_port_order`
+    #[inline]
+    #[spec(
+        captures: [remaining = self.remaining.0, nodes = self.rest.len()],
+        ensures: |output| if output.is_some() {
+            self.remaining.0 == remaining.saturating_sub(1) && self.rest.len() < nodes
+        } else { self.remaining.0 == remaining && self.rest.len() == nodes },
+    )]
+    fn next(&mut self) -> Option<Self::Item>
+    {
+        if self.remaining.0 == 0 {
+            return None;
+        }
+        let (root, before) = self.rest.split_last()?;
+        let below_len = root.extent.0.checked_sub(1)?;
+        let split = before.len().checked_sub(below_len)?;
+        let (rest, below) = before.split_at_checked(split)?;
+        self.rest = rest;
+        self.remaining = ContinuationCount(self.remaining.0.saturating_sub(1));
+        Some(ConsRef { below, root })
+    }
+
+    /// The exact number of remaining continuations.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>)
+    {
+        (self.remaining.0, Some(self.remaining.0))
+    }
+}
+
+impl ExactSizeIterator for Continuations<'_>
 {
 }
 
@@ -1626,7 +1970,8 @@ impl NodeRef<'_>
     /// # Specification
     /// - ensures: a cut's children are its producer then its consumer; a
     ///   constructor's its arguments; an operation frame's its arguments then
-    ///   its return continuation; a return-side frame's its continuation.
+    ///   its continuations in port order; a return-side frame's its
+    ///   continuation.
     /// - provides: [`position_read::Absent::OffPattern`] when the node has no
     ///   child `step`.
     /// - panics: none.
@@ -1640,10 +1985,7 @@ impl NodeRef<'_>
     #[spec(ensures: |output| matches!(output, Maybe::Present(_)) == (usize::from(step) < match self {
         Self::Cmd(_) => 2,
         Self::Prod(prod) => prod.root.head.arity().0,
-        Self::Cons(cons) => cons.frames.last().map_or(0, |frame| match *frame {
-            SpineFrame::Op { ref args, .. } => args.len().saturating_add(1),
-            SpineFrame::Frame(_) => 1,
-        }),
+        Self::Cons(cons) => cons.root.head.args().len().saturating_add(cons.root.head.continuations().0),
     }))]
     fn child(
         self,
@@ -1658,23 +2000,14 @@ impl NodeRef<'_>
                 | _ => Maybe::Absent(position_read::Absent::OffPattern),
             },
             | Self::Prod(prod) => prod.nth_child(step).map(|(child, _)| Self::Prod(child)),
-            | Self::Cons(cons) => match cons.view() {
-                | ConsView::Op { mut args, ret, .. } => {
-                    let arity = args.len();
-                    if index == arity {
-                        Maybe::Present(Self::Cons(ret))
-                    }
-                    else {
-                        match args.nth(index) {
-                            | Some(arg) => Maybe::Present(Self::Prod(arg)),
-                            | None => Maybe::Absent(position_read::Absent::OffPattern),
-                        }
-                    }
-                },
-                | ConsView::Frame { ret, .. } if index == 0 => Maybe::Present(Self::Cons(ret)),
-                | ConsView::Frame { .. } | ConsView::Meta(_) | ConsView::Top => {
-                    Maybe::Absent(position_read::Absent::OffPattern)
-                },
+            | Self::Cons(cons) => {
+                let args = cons.root.head.args();
+                match args.get(index) {
+                    | Some(arg) => Maybe::Present(Self::Prod(arg.to_ref())),
+                    | None => cons
+                        .nth_child(PositionStep::from(index.saturating_sub(args.len())))
+                        .map(|(child, _)| Self::Cons(child)),
+                }
             },
         }
     }
@@ -1794,7 +2127,7 @@ impl Pos
 #[inline]
 #[spec(ensures: |output| !pos.steps().is_empty() || match (root, output) {
     (NodeRef::Prod(left), Maybe::Present(NodeRef::Prod(right))) => left.below == right.below && left.root == right.root,
-    (NodeRef::Cons(left), Maybe::Present(NodeRef::Cons(right))) => left.frames == right.frames && left.end == right.end,
+    (NodeRef::Cons(left), Maybe::Present(NodeRef::Cons(right))) => left.below == right.below && left.root == right.root,
     (NodeRef::Cmd(left), Maybe::Present(NodeRef::Cmd(right))) => left == right,
     _ => false,
 })]
@@ -2113,18 +2446,21 @@ fn descend_prod<'pattern>(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — terminal and framed consumers accept a root or suffix
-///   replacement, and operation arguments accept producer replacements. Exact
-///   retained frames and both refusal classes separate continuation loss and
-///   incorrect categories.
+/// - hypothesis: L3 — terminal, framed and two-continuation consumers accept a
+///   root, suffix or second-continuation replacement, and operation arguments
+///   accept producer replacements. Exact retained siblings and both refusal
+///   classes separate continuation loss, stale extents and incorrect
+///   categories.
 /// - witness: `pattern::tests::splices_preserve_siblings_and_separate_refusals`
+/// - witness: `pattern::tests::a_many_continuation_frame_keeps_its_port_order`
 ///
 /// # Errors
 /// As [`splice_at`].
 #[spec(
-    captures: [replacement_is_consumer = matches!(replacement, Node::Cons(_)), entry_frames = cons.frames.len()],
+    captures: [replacement_is_consumer = matches!(replacement, Node::Cons(_)),
+        children = cons.root.head.args().len().saturating_add(cons.root.head.continuations().0)],
     ensures: |output| if steps.is_empty() { output.is_ok() == replacement_is_consumer }
-        else { output.is_err() || entry_frames > 0 },
+        else { output.is_err() || children > 0 },
 )]
 fn splice_cons(
     cons: ConsRef<'_>,
@@ -2132,86 +2468,130 @@ fn splice_cons(
     replacement: Node,
 ) -> Result<ConsPat, SpliceRefusal>
 {
-    // Walk the spine from the outside. `depth` frames have been entered; an
-    // operation argument step leaves the spine for a producer table.
     let mut cursor = cons;
-    let mut depth = SpineDepth(0);
-    for (index, &step) in steps.iter().enumerate() {
-        let step_index = usize::from(step);
-        match cursor.view() {
-            | ConsView::Op { args, ret, .. } => {
-                let arity = args.len();
-                if step_index == arity {
-                    cursor = ret;
-                    depth = SpineDepth(depth.0.saturating_add(1));
-                    continue;
-                }
-                if step_index > arity {
-                    return Err(SpliceRefusal::OffPattern);
-                }
-                let rest = steps.get(index.saturating_add(1) ..).unwrap_or(&[]);
-                return splice_op_argument(cons, depth, step, rest, replacement);
-            },
-            | ConsView::Frame { ret, .. } if step_index == 0 => {
-                cursor = ret;
-                depth = SpineDepth(depth.0.saturating_add(1));
-            },
-            | ConsView::Frame { .. } | ConsView::Meta(_) | ConsView::Top => {
-                return Err(SpliceRefusal::OffPattern);
-            },
+    // The offset of the cursor's first node in `cons`'s below-root range, and
+    // the below-root indices of its proper ancestors other than the root.
+    let mut start = 0_usize;
+    let mut ancestors: Vec<BelowIndex> = Vec::with_capacity(steps.len());
+    for (depth, &step) in steps.iter().enumerate() {
+        let index = usize::from(step);
+        let arity = cursor.root.head.args().len();
+        let site = if depth == 0 {
+            EntrySite::Root
         }
+        else {
+            EntrySite::Below(BelowIndex(
+                start.saturating_add(cursor.root.extent.0).saturating_sub(1),
+            ))
+        };
+        if index < arity {
+            let rest = steps.get(depth.saturating_add(1) ..).unwrap_or(&[]);
+            return splice_cons_argument(cons, site, step, rest, replacement);
+        }
+        if let EntrySite::Below(at) = site {
+            ancestors.push(at);
+        }
+        let (child, offset) =
+            match cursor.nth_child(PositionStep::from(index.saturating_sub(arity))) {
+                | Maybe::Present(found) => found,
+                | Maybe::Absent(position_read::Absent::OffPattern) => {
+                    return Err(SpliceRefusal::OffPattern);
+                },
+            };
+        start = start.saturating_add(offset.0);
+        cursor = child;
     }
     let Node::Cons(replacement) = replacement
     else {
         return Err(SpliceRefusal::CategoryMismatch);
     };
-    // Keep the outer `depth` frames and continue as the replacement inside
-    // them; the frames are listed innermost first.
-    let kept = cons.frames.len().saturating_sub(depth.0);
-    let mut frames = replacement.frames;
-    frames.extend(cons.frames.iter().skip(kept).cloned());
+    if steps.is_empty() {
+        return Ok(replacement);
+    }
+    let removed = cursor.root.extent.0;
+    let added = replacement.root.extent.0;
+    let mut below: Vec<ConsEntry> = Vec::with_capacity(
+        cons.below
+            .len()
+            .saturating_sub(removed)
+            .saturating_add(added),
+    );
+    below.extend(cons.below.iter().take(start).cloned());
+    below.extend(replacement.below);
+    below.push(replacement.root);
+    below.extend(
+        cons.below
+            .iter()
+            .skip(start.saturating_add(removed))
+            .cloned(),
+    );
+    // Every ancestor below the root sits after the spliced range; its index
+    // moves by the size difference and its extent grows or shrinks by it.
+    for ancestor in ancestors {
+        let shifted = ancestor.0.saturating_sub(removed).saturating_add(added);
+        if let Some(entry) = below.get_mut(shifted) {
+            entry.extent =
+                TableExtent(entry.extent.0.saturating_sub(removed).saturating_add(added));
+        }
+    }
+    let extent = TableExtent(below.len().saturating_add(1));
     Ok(ConsPat {
-        frames,
-        end: replacement.end,
+        below,
+        root: ConsEntry {
+            head: cons.root.head.clone(),
+            extent,
+        },
     })
+}
+
+/// Where one consumer-table node sits: the root, or a below-root index.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum EntrySite
+{
+    /// The table's root.
+    Root,
+    /// A node below the root, by its below-root index.
+    Below(BelowIndex),
 }
 
 /// `cons` with the subterm at `rest` inside one operation argument replaced.
 ///
 /// # Specification
-/// - requires: the frame `depth` frames in from the outside of `cons` is an
-///   operation frame with an argument `argument`.
-/// - ensures: as [`splice_at`], for that argument's producer table.
+/// - requires: the node at `site` is an operation frame with an argument
+///   `argument`.
+/// - ensures: as [`splice_at`], for that argument's producer table; every
+///   consumer node keeps its place and extent.
 /// - fails: as [`splice_at`]; [`SpliceRefusal::OffPattern`] when the
 ///   requirement does not hold.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — first and last operation arguments change independently;
-///   missing frames, non-operation frames and out-of-range arguments refuse.
-///   Exact siblings and the spine end reject replacing the wrong slot or
-///   disturbing the continuation.
+/// - hypothesis: L3 — first and last operation arguments of a nested frame
+///   change independently; a non-operation node and an out-of-range argument
+///   refuse. Exact siblings and continuations reject replacing the wrong slot
+///   or disturbing a continuation.
 /// - witness: `pattern::tests::splices_preserve_siblings_and_separate_refusals`
 ///
 /// # Errors
 /// As [`splice_at`].
-#[spec(ensures: |output| output.as_ref().map_or(true, |result|
-    result.frames.len() == cons.frames.len() && &result.end == cons.end))]
-fn splice_op_argument(
+#[spec(ensures: |output| output.as_ref().map_or(true, |result| result.below.len() == cons.below.len()))]
+fn splice_cons_argument(
     cons: ConsRef<'_>,
-    depth: SpineDepth,
+    site: EntrySite,
     argument: PositionStep,
     rest: &[PositionStep],
     replacement: Node,
 ) -> Result<ConsPat, SpliceRefusal>
 {
     let mut rebuilt = cons.to_pattern();
-    let frame_index = rebuilt
-        .frames
-        .len()
-        .checked_sub(depth.0.saturating_add(1))
-        .ok_or(SpliceRefusal::OffPattern)?;
-    let Some(&mut SpineFrame::Op { ref mut args, .. }) = rebuilt.frames.get_mut(frame_index)
+    let entry = match site {
+        | EntrySite::Root => &mut rebuilt.root,
+        | EntrySite::Below(at) => rebuilt
+            .below
+            .get_mut(at.0)
+            .ok_or(SpliceRefusal::OffPattern)?,
+    };
+    let ConsHead::Op { ref mut args, .. } = entry.head
     else {
         return Err(SpliceRefusal::OffPattern);
     };
@@ -2222,11 +2602,6 @@ fn splice_op_argument(
     *slot = spliced;
     Ok(rebuilt)
 }
-
-/// How many frames a walk has entered from a spine's outside.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
-struct SpineDepth(usize);
 
 #[cfg(test)]
 mod tests
@@ -2417,6 +2792,146 @@ mod tests
     }
 
     #[test]
+    fn a_many_continuation_frame_keeps_its_port_order()
+    {
+        let quotient = ConsPat::frame("Succ", ConsPat::meta("q"));
+        let remainder = ConsPat::meta("r");
+        let divmod = ConsPat::operation("divmod", [ProdPat::meta("n")], [
+            quotient.clone(),
+            remainder.clone(),
+        ]);
+        assert_eq!(PatternSize::from(5_usize), divmod.size());
+        assert_eq!(
+            alloc::vec![
+                MetaVar::producer("n"),
+                MetaVar::consumer("q"),
+                MetaVar::consumer("r")
+            ],
+            divmod.to_ref().metavars().cloned().collect::<Vec<_>>()
+        );
+        let ConsView::Op { op, args, mut rets } = divmod.view()
+        else {
+            panic!("the root is the operation frame");
+        };
+        assert_eq!(&Sym::new("divmod"), op);
+        assert_eq!(1, args.len());
+        assert_eq!((2, Some(2)), rets.size_hint());
+        assert_eq!(Some(quotient.clone()), rets.next().map(ConsRef::to_pattern));
+        assert_eq!(
+            Some(remainder.clone()),
+            rets.next().map(ConsRef::to_pattern)
+        );
+        assert!(rets.next().is_none());
+        let swapped = ConsPat::operation("divmod", [ProdPat::meta("n")], [
+            remainder.clone(),
+            quotient.clone(),
+        ]);
+        assert_ne!(divmod, swapped, "the port order is content");
+        for (step, expected, offset) in [(0, &quotient, 1), (1, &remainder, 0)] {
+            let Maybe::Present((child, at)) = divmod.to_ref().nth_child(PositionStep::from(step))
+            else {
+                panic!("the declared continuation exists");
+            };
+            assert_eq!(expected, &child.to_pattern());
+            assert_eq!(TableOffset(offset), at);
+        }
+        assert!(matches!(
+            divmod.to_ref().nth_child(PositionStep::from(2_usize)),
+            Maybe::Absent(position_read::Absent::OffPattern)
+        ));
+        let node = Node::Cons(divmod.clone());
+        for (index, expected) in [
+            Node::Prod(ProdPat::meta("n")),
+            Node::Cons(quotient.clone()),
+            Node::Cons(remainder.clone()),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assert_eq!(
+                Maybe::Present(expected),
+                node.to_ref()
+                    .child(PositionStep::from(index))
+                    .map(NodeRef::to_node)
+            );
+        }
+        assert!(matches!(
+            node.to_ref().child(PositionStep::from(3_usize)),
+            Maybe::Absent(position_read::Absent::OffPattern)
+        ));
+        let grounded = ConsPat::frame("Succ", ConsPat::top());
+        assert_eq!(
+            Ok(ConsPat::operation("divmod", [ProdPat::meta("n")], [
+                quotient.clone(),
+                grounded.clone()
+            ])),
+            splice_cons(
+                divmod.to_ref(),
+                &[PositionStep::from(2_usize)],
+                Node::Cons(grounded)
+            ),
+            "the second continuation is replaced and the first kept"
+        );
+        assert_eq!(
+            Ok(ConsPat::operation("divmod", [ProdPat::meta("n")], [
+                ConsPat::frame("Succ", ConsPat::frame("Succ", ConsPat::meta("q"))),
+                remainder,
+            ])),
+            splice_cons(
+                divmod.to_ref(),
+                &[PositionStep::from(1_usize), PositionStep::from(0_usize)],
+                Node::Cons(quotient)
+            ),
+            "growing inside the first continuation recounts its frame"
+        );
+        let sink = ConsPat::operation("sink", [ProdPat::meta("n")], []);
+        assert_eq!(PatternSize::from(2_usize), sink.size());
+        assert!(sink.to_ref().children().next().is_none());
+        assert_eq!(
+            Maybe::Absent(bare_end::Absent::Framed),
+            sink.to_ref().bare_meta()
+        );
+    }
+
+    #[test]
+    fn consumer_instantiation_rebuilds_every_continuation()
+    {
+        let cons = ConsPat::operation("f", [ProdPat::meta("x")], [
+            ConsPat::meta("alpha"),
+            ConsPat::frame("K", ConsPat::meta("beta")),
+        ]);
+        let image = ConsPat::frame("Succ", ConsPat::top());
+        let zero = ProdPat::ctor("Zero", []);
+        let prods = |var: &MetaVar| {
+            if *var == MetaVar::producer("x") {
+                Maybe::Present(zero.to_ref())
+            }
+            else {
+                Maybe::Absent(crate::subst::binding::Absent::Unbound)
+            }
+        };
+        let conss = |var: &MetaVar| {
+            if *var == MetaVar::consumer("alpha") {
+                Maybe::Present(image.to_ref())
+            }
+            else {
+                Maybe::Absent(crate::subst::binding::Absent::Unbound)
+            }
+        };
+        assert_eq!(
+            ConsPat::operation("f", [zero.clone()], [
+                image.clone(),
+                ConsPat::frame("K", ConsPat::meta("beta"))
+            ]),
+            instantiate_cons(cons.to_ref(), &prods, &conss)
+        );
+        assert_eq!(
+            image,
+            instantiate_cons(ConsPat::meta("alpha").to_ref(), &prods, &conss)
+        );
+    }
+
+    #[test]
     fn splices_preserve_siblings_and_separate_refusals()
     {
         let zero = ProdPat::ctor("Zero", []);
@@ -2488,21 +3003,26 @@ mod tests
             );
             assert_eq!(
                 Ok(expected),
-                splice_op_argument(
+                splice_cons_argument(
                     cons.to_ref(),
-                    SpineDepth(1),
+                    EntrySite::Below(BelowIndex(2)),
                     PositionStep::from(argument),
                     &[],
                     Node::Prod(tree.clone())
                 )
             );
         }
-        for (depth, argument) in [(0, 0), (1, 2), (3, 0)] {
+        for (site, argument) in [
+            (EntrySite::Root, 0),
+            (EntrySite::Below(BelowIndex(2)), 2),
+            (EntrySite::Below(BelowIndex(0)), 0),
+            (EntrySite::Below(BelowIndex(9)), 0),
+        ] {
             assert_eq!(
                 Err(SpliceRefusal::OffPattern),
-                splice_op_argument(
+                splice_cons_argument(
                     cons.to_ref(),
-                    SpineDepth(depth),
+                    site,
                     PositionStep::from(argument),
                     &[],
                     Node::Prod(zero.clone())

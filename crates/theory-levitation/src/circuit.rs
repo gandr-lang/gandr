@@ -36,11 +36,22 @@
 //! [`CircuitDerivationError::CyclicWiring`] refuses it: no boundary term
 //! unfolds from a cycle.
 //!
-//! # Scope
+//! # Many-out interfaces and nodes
 //!
-//! One declared output port per body, because the derived boundaries land on
-//! a term-shaped store, which is single-rooted; a many-out interface is a
-//! cell-alphabet question, not a case this derivation quietly admits.
+//! A body declares one output port per result. One is the term-shaped case;
+//! several make it many-rooted, and each root is unfolded on its own into one
+//! component of a results tuple ([`FreeTerm::results`]) — the product layer
+//! of a multi-output arity, the named result tuple of Spivak, Garner and
+//! Fairbanks's bridge diagrams (*Functorial Aggregation*, arXiv:2111.10968).
+//! A frame binds one port per output of its head, so a many-out operation is
+//! a node like any other. A term holds a many-out application only whole, as
+//! the tuple it returns: a many-out frame whose ports are exactly the body's
+//! declared outputs, in its own order, derives its application, and reading
+//! one of its outputs on its own is the projection the cartesian structure
+//! of a Lawvere theory adds to a PROP's linear wirings (Bonchi, Sobociński and
+//! Zanasi, *Lawvere categories as composed PROPs*), which the boundary
+//! language does not carry: [`CircuitDerivationError::SplitOutputs`] names
+//! that port rather than deriving a term that drops the node's other outputs.
 //!
 //! [`check_desc`]: crate::check_desc
 //!
@@ -122,7 +133,8 @@ impl FrameHead
 }
 
 /// A frame line: a declared constructor or operation applied to its input
-/// wiring, binding one output port (`node : add(x′, y′) --> (z)`).
+/// wiring, binding one output port per output of its head (`node : add(x′,
+/// y′) --> (z)`, `node : divmod(m, n) --> (q, r)`).
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct CircuitFrame
 {
@@ -131,13 +143,14 @@ pub struct CircuitFrame
     /// The head's arguments in argument order: input ports as variables, or
     /// ground terms.
     pub args: Box<[FreeTerm]>,
-    /// The output port this frame binds.
-    pub out: Name,
+    /// The output ports this frame binds, in the head's output-port order;
+    /// more than one makes the frame a many-out node.
+    pub outs: Box<[Name]>,
 }
 
 impl CircuitFrame
 {
-    /// A frame applying `head` to `args` and binding `out`.
+    /// A frame applying `head` to `args` and binding the one port `out`.
     ///
     /// # Specification
     /// trivial.
@@ -152,10 +165,29 @@ impl CircuitFrame
         A: Into<Box<[FreeTerm]>>,
         N: Into<Name>,
     {
+        Self::binding(head, args, [out.into()])
+    }
+
+    /// A frame applying `head` to `args` and binding `outs`, one port per
+    /// output of the head, in port order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn binding<A, O>(
+        head: FrameHead,
+        args: A,
+        outs: O,
+    ) -> Self
+    where
+        A: Into<Box<[FreeTerm]>>,
+        O: Into<Box<[Name]>>,
+    {
         Self {
             head,
             args: args.into(),
-            out: out.into(),
+            outs: outs.into(),
         }
     }
 }
@@ -227,35 +259,58 @@ pub enum CircuitNode
 
 impl CircuitNode
 {
-    /// The output port this node binds.
+    /// The output ports this node binds, in port order: one for a redex line,
+    /// one per output of its head for a frame.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn out(&self) -> &Name
+    pub fn outs(&self) -> &[Name]
     {
         match *self {
-            | Self::Frame(ref frame) => &frame.out,
-            | Self::Redex(ref redex) => &redex.out,
+            | Self::Frame(ref frame) => &frame.outs,
+            | Self::Redex(ref redex) => core::slice::from_ref(&redex.out),
         }
     }
 }
 
-/// A circuit rule's body: its wiring, plus the interface port the diagram's
-/// result leaves by.
+/// A circuit rule's body: its wiring, plus the interface ports the diagram's
+/// results leave by.
+///
+/// One declared output port is the common, term-shaped case. Several make the
+/// body many-rooted: each root's boundary is derived on its own and the
+/// derived boundary is the results tuple of them, in port order
+/// ([`FreeTerm::results`]).
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct CircuitBody
 {
     /// The body statements, in source order.
     pub nodes: Box<[CircuitNode]>,
-    /// The declared output port the boundary terms are read from.
-    pub out: Name,
+    /// The declared output ports the boundary terms are read from, in port
+    /// order; never empty.
+    pub outs: Box<[Name]>,
+}
+
+/// How a body's declared output ports are read: one root, a many-out frame
+/// whose outputs are exactly those ports, or a tuple of roots each read on
+/// its own.
+#[derive(Clone, Copy, Debug)]
+pub enum Roots<'body>
+{
+    /// One declared output port.
+    One(&'body Name),
+    /// The ports a single many-out frame binds, in its own port order: the
+    /// frame's application stands for its whole result tuple.
+    Whole(&'body CircuitFrame, &'body Name),
+    /// Several ports, each unfolded separately into one component of the
+    /// results tuple.
+    Tuple(&'body [Name]),
 }
 
 impl CircuitBody
 {
-    /// A body over `nodes` whose declared output port is `out`.
+    /// A body over `nodes` whose one declared output port is `out`.
     ///
     /// # Specification
     /// trivial.
@@ -269,9 +324,27 @@ impl CircuitBody
         S: Into<Box<[CircuitNode]>>,
         N: Into<Name>,
     {
+        Self::rooted(nodes, [out.into()])
+    }
+
+    /// A body over `nodes` whose declared output ports are `outs`, in port
+    /// order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn rooted<S, O>(
+        nodes: S,
+        outs: O,
+    ) -> Self
+    where
+        S: Into<Box<[CircuitNode]>>,
+        O: Into<Box<[Name]>>,
+    {
         Self {
             nodes: nodes.into(),
-            out: out.into(),
+            outs: outs.into(),
         }
     }
 
@@ -297,20 +370,60 @@ impl CircuitBody
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body inserts every node once; the check reads every node and every entry once"
+            reason = "parity: the body inserts every port of every node once; the check reads every port and every entry once"
         )
     )]
-    #[spec(ensures: |ref producers| producers.iter().all(|(port, producer)| producer.out() == *port
+    #[spec(ensures: |ref producers| producers.iter().all(|(port, producer)| producer.outs().contains(*port)
             && self.nodes.as_ptr_range().contains(&core::ptr::from_ref(*producer)))
-        && self.nodes.iter().all(|node| producers.get(node.out())
-            .is_some_and(|producer| core::ptr::from_ref(*producer) <= core::ptr::from_ref(node))))]
-    fn producers(&self) -> BTreeMap<&Name, &CircuitNode>
+        && self.nodes.iter().all(|node| node.outs().iter().all(|port| producers.get(port)
+            .is_some_and(|producer| core::ptr::from_ref(*producer) <= core::ptr::from_ref(node)))))]
+    pub(crate) fn producers(&self) -> BTreeMap<&Name, &CircuitNode>
     {
         let mut producers: BTreeMap<&Name, &CircuitNode> = BTreeMap::new();
         for node in &self.nodes {
-            producers.entry(node.out()).or_insert(node);
+            for port in node.outs() {
+                producers.entry(port).or_insert(node);
+            }
         }
         producers
+    }
+
+    /// How the declared output ports are read.
+    ///
+    /// # Specification
+    /// - ensures: [`Roots::One`] for one declared port; [`Roots::Whole`] when
+    ///   there are several and the first port's producer is a frame binding
+    ///   exactly the declared ports in the same order; [`Roots::Tuple`]
+    ///   otherwise.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one root, a many-out frame's ports as the roots in
+    ///   order, the same ports reversed and two independent roots are observed
+    ///   as derived boundaries; reading a reversed tuple as whole or a whole
+    ///   frame as a tuple changes them.
+    /// - witness: `circuit::tests::a_two_rooted_body_derives_one_boundary_per_root`
+    /// - witness: `circuit::tests::a_many_out_frame_leaving_whole_is_its_application`
+    #[spec(ensures: |ret| match ret {
+        Roots::One(port) => self.outs.len() == 1 && self.outs.first() == Some(port),
+        Roots::Whole(frame, _) => self.outs.len() > 1 && frame.outs == self.outs,
+        Roots::Tuple(ports) => ports.len() != 1 && ports == &*self.outs,
+    })]
+    pub(crate) fn roots<'body>(
+        &'body self,
+        producers: &BTreeMap<&Name, &'body CircuitNode>,
+    ) -> Roots<'body>
+    {
+        match *self.outs {
+            | [ref port] => Roots::One(port),
+            | [ref first, ..] => match producers.get(first).copied() {
+                | Some(&CircuitNode::Frame(ref frame)) if frame.outs == self.outs => {
+                    Roots::Whole(frame, first)
+                },
+                | Some(_) | None => Roots::Tuple(&self.outs),
+            },
+            | [] => Roots::Tuple(&self.outs),
+        }
     }
 }
 
@@ -445,6 +558,18 @@ pub enum CircuitDerivationError
         /// The ceiling the unfolding reached.
         budget: CircuitNodeBudget,
     },
+    /// The named port is one output of a many-out node whose outputs do not
+    /// leave the body together, in order, as its declared results.
+    ///
+    /// A boundary is a term, and a term holds a many-out application only
+    /// whole: as the result tuple it returns. Reading one output on its own
+    /// is a projection, and wiring the outputs apart is copy and discard —
+    /// the cartesian structure a Lawvere theory adds to the linear wirings of
+    /// a PROP (Bonchi, Sobociński and Zanasi, *Lawvere categories as composed
+    /// PROPs*). The boundary language has no projection, so such a port
+    /// derives no term rather than one that silently drops the node's other
+    /// outputs.
+    SplitOutputs(Name),
 }
 
 /// Derive both boundaries of a circuit rule's wiring.
@@ -452,29 +577,36 @@ pub enum CircuitDerivationError
 /// # Specification
 /// - ensures: the source boundary is the diagram with every redex replaced by
 ///   its source, and the target boundary the same diagram with every redex
-///   replaced by its target; ports no node binds stay boundary variables.
+///   replaced by its target; ports no node binds stay boundary variables; a
+///   many-rooted body's boundaries are results tuples, one component per
+///   declared output port.
 /// - provides: the pair the declaration table checks against the declared
 ///   sphere ([`check_desc`]).
 /// - fails: [`CircuitDerivationError::CyclicWiring`] when either reading
-///   reaches a port from itself; [`CircuitDerivationError::NodeBudget`] when
-///   either reading passes [`CircuitNodeBudget::DEFAULT`].
+///   reaches a port from itself; [`CircuitDerivationError::SplitOutputs`] when
+///   it reaches one output of a many-out node that does not leave whole;
+///   [`CircuitDerivationError::NodeBudget`] when either reading passes
+///   [`CircuitNodeBudget::DEFAULT`].
 /// - panics: none.
 ///
 /// # Errors
 /// Returns [`CircuitDerivationError::CyclicWiring`] naming the port a reading
-/// reaches from itself, or [`CircuitDerivationError::NodeBudget`] when a
-/// reading passes the standing ceiling.
+/// reaches from itself, [`CircuitDerivationError::SplitOutputs`] naming the
+/// split port, or [`CircuitDerivationError::NodeBudget`] when a reading passes
+/// the standing ceiling.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the congruence body (two disjoint redexes whiskered into
 ///   one frame) pins both readings at once, because its source and target
 ///   differ exactly in the redex substitution; a pinned redex target pins that
 ///   the substitution is a term, not a rename; a two-node cycle pins the
-///   refusal.
+///   refusal; a two-rooted body pins the per-root tuple.
 /// - witness: `circuit::tests::the_congruence_wiring_derives_its_boundary_pair`
 /// - witness: `circuit::tests::a_pinned_redex_target_substitutes_into_the_frame`
 /// - witness: `circuit::tests::a_wiring_that_closes_a_cycle_derives_nothing`
 /// - witness: `circuit::tests::a_doubling_body_declines_on_the_node_budget`
+/// - witness: `circuit::tests::a_two_rooted_body_derives_one_boundary_per_root`
+/// - witness: `circuit::tests::one_output_of_a_many_out_node_derives_no_term`
 ///
 /// [`check_desc`]: crate::check_desc
 #[inline]
@@ -482,7 +614,8 @@ pub enum CircuitDerivationError
     | Ok(ref derived) => [&derived.source, &derived.target].into_iter().all(|term|
         term.applied_symbols().count().saturating_add(term.to_node().vars().count()) <= usize::from(CircuitNodeBudget::DEFAULT)),
     | Err(CircuitDerivationError::NodeBudget { budget: observed }) => observed == CircuitNodeBudget::DEFAULT,
-    | Err(CircuitDerivationError::CyclicWiring(ref port)) => body.nodes.iter().any(|node| node.out() == port),
+    | Err(CircuitDerivationError::CyclicWiring(ref port)) => body.nodes.iter().any(|node| node.outs().contains(port)),
+    | Err(CircuitDerivationError::SplitOutputs(ref port)) => body.nodes.iter().any(|node| matches!(*node, CircuitNode::Frame(ref frame) if frame.outs.len() > 1 && frame.outs.contains(port))),
 })]
 pub fn derive_boundaries(body: &CircuitBody) -> Result<DerivedBoundaries, CircuitDerivationError>
 {
@@ -517,7 +650,8 @@ pub fn derive_boundaries(body: &CircuitBody) -> Result<DerivedBoundaries, Circui
     | Ok(ref derived) => [&derived.source, &derived.target].into_iter().all(|term|
         term.applied_symbols().count().saturating_add(term.to_node().vars().count()) <= usize::from(budget)),
     | Err(CircuitDerivationError::NodeBudget { budget: observed }) => observed == budget,
-    | Err(CircuitDerivationError::CyclicWiring(ref port)) => body.nodes.iter().any(|node| node.out() == port),
+    | Err(CircuitDerivationError::CyclicWiring(ref port)) => body.nodes.iter().any(|node| node.outs().contains(port)),
+    | Err(CircuitDerivationError::SplitOutputs(ref port)) => body.nodes.iter().any(|node| matches!(*node, CircuitNode::Frame(ref frame) if frame.outs.len() > 1 && frame.outs.contains(port))),
 })]
 pub fn derive_boundaries_within(
     body: &CircuitBody,
@@ -532,42 +666,51 @@ pub fn derive_boundaries_within(
 /// Derive one boundary of a circuit rule's wiring, under the given reading.
 ///
 /// # Specification
-/// - ensures: the declared output port is unfolded through the nodes that bind
+/// - ensures: each declared output port is unfolded through the nodes that bind
 ///   the ports it reaches, with every redex replaced by the boundary `reading`
 ///   selects and that boundary's own variable leaves resolved in turn; a port
 ///   no node binds, and a port a redex binds to itself under this reading, are
-///   boundary variables.
+///   boundary variables. One declared port is the boundary; the ports of one
+///   many-out frame, declared in its own order, are that frame's application;
+///   any other several are the results tuple of their unfoldings.
 /// - provides: one endpoint candidate for the declared sphere.
 /// - fails: [`CircuitDerivationError::CyclicWiring`] when a port is reachable
 ///   from itself other than as a redex's own opaque endpoint;
-///   [`CircuitDerivationError::NodeBudget`] past
-///   [`CircuitNodeBudget::DEFAULT`].
+///   [`CircuitDerivationError::SplitOutputs`] when a port is one output of a
+///   many-out frame read on its own; [`CircuitDerivationError::NodeBudget`]
+///   past [`CircuitNodeBudget::DEFAULT`].
 /// - panics: none.
 /// - intension: a port bound by two nodes resolves through the first node that
 ///   binds it, in source order.
 ///
 /// # Errors
 /// Returns [`CircuitDerivationError::CyclicWiring`] naming the port this
-/// reading reaches from itself, or [`CircuitDerivationError::NodeBudget`]
-/// when the reading passes the standing ceiling.
+/// reading reaches from itself, [`CircuitDerivationError::SplitOutputs`]
+/// naming the split port, or [`CircuitDerivationError::NodeBudget`] when the
+/// reading passes the standing ceiling.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — both readings of redex/frame bodies, unbound and opaque
-///   endpoints, reconvergence, cycles and duplicate producers are observed as
-///   exact terms/errors; wrong substitution, source precedence or cycle scope
-///   changes one of those observations.
+///   endpoints, reconvergence, cycles, duplicate producers, two roots and a
+///   many-out frame leaving whole or split are observed as exact terms/errors;
+///   wrong substitution, source precedence, cycle scope or root order changes
+///   one of those observations.
 /// - witness: `circuit::tests::the_congruence_wiring_derives_its_boundary_pair`
 /// - witness: `circuit::tests::a_redex_boundary_resolves_its_own_port_leaves`
 /// - witness: `circuit::tests::an_unbound_port_stays_a_boundary_variable`
 /// - witness: `circuit::tests::a_reconvergent_wire_is_unfolded_at_each_consumption`
 /// - witness: `circuit::tests::a_wiring_that_closes_a_cycle_derives_nothing`
 /// - witness: `circuit::tests::duplicate_producers_keep_the_first_source_binding`
+/// - witness: `circuit::tests::a_two_rooted_body_derives_one_boundary_per_root`
+/// - witness: `circuit::tests::a_many_out_frame_leaving_whole_is_its_application`
+/// - witness: `circuit::tests::one_output_of_a_many_out_node_derives_no_term`
 #[inline]
 #[spec(ensures: |ref result| match *result {
     | Ok(ref derived) => { let term = derived;
         term.applied_symbols().count().saturating_add(term.to_node().vars().count()) <= usize::from(CircuitNodeBudget::DEFAULT) },
     | Err(CircuitDerivationError::NodeBudget { budget: observed }) => observed == CircuitNodeBudget::DEFAULT,
-    | Err(CircuitDerivationError::CyclicWiring(ref port)) => body.nodes.iter().any(|node| node.out() == port),
+    | Err(CircuitDerivationError::CyclicWiring(ref port)) => body.nodes.iter().any(|node| node.outs().contains(port)),
+    | Err(CircuitDerivationError::SplitOutputs(ref port)) => body.nodes.iter().any(|node| matches!(*node, CircuitNode::Frame(ref frame) if frame.outs.len() > 1 && frame.outs.contains(port))),
 })]
 pub fn derive_boundary(
     body: &CircuitBody,
@@ -610,7 +753,8 @@ pub fn derive_boundary(
     | Ok(ref derived) => { let term = derived;
         term.applied_symbols().count().saturating_add(term.to_node().vars().count()) <= usize::from(budget) },
     | Err(CircuitDerivationError::NodeBudget { budget: observed }) => observed == budget,
-    | Err(CircuitDerivationError::CyclicWiring(ref port)) => body.nodes.iter().any(|node| node.out() == port),
+    | Err(CircuitDerivationError::CyclicWiring(ref port)) => body.nodes.iter().any(|node| node.outs().contains(port)),
+    | Err(CircuitDerivationError::SplitOutputs(ref port)) => body.nodes.iter().any(|node| matches!(*node, CircuitNode::Frame(ref frame) if frame.outs.len() > 1 && frame.outs.contains(port))),
 })]
 pub fn derive_boundary_within(
     body: &CircuitBody,
@@ -623,6 +767,8 @@ pub fn derive_boundary_within(
     {
         /// Resolve a port through the node that binds it.
         Port(&'body Name),
+        /// Unfold a frame's application, entered through `port`.
+        Frame(&'body CircuitFrame, &'body Name),
         /// Unfold a term, resolving its port leaves.
         Term(TermNode<'body>),
         /// Rebuild a frame's application over the last results.
@@ -631,6 +777,8 @@ pub fn derive_boundary_within(
         FinishCtor(&'body Name, usize),
         /// Rebuild an operation application over the last results.
         FinishOp(&'body Name, usize),
+        /// Rebuild a results tuple over the last results.
+        FinishResults(usize),
         /// The port's subtree is built: take it off the active path.
         Leave(&'body Name),
     }
@@ -640,12 +788,22 @@ pub fn derive_boundary_within(
     let mut emitted: usize = 0;
     let mut path: BTreeSet<&Name> = BTreeSet::new();
     let mut results: Vec<FreeTerm> = Vec::new();
-    let mut stack: Vec<Step<'_>> = vec![Step::Port(&body.out)];
+    let mut stack: Vec<Step<'_>> = match body.roots(&producers) {
+        | Roots::One(port) => vec![Step::Port(port)],
+        | Roots::Whole(frame, port) => vec![Step::Frame(frame, port)],
+        | Roots::Tuple(ports) => {
+            let mut steps = Vec::with_capacity(ports.len().saturating_add(1));
+            steps.push(Step::FinishResults(ports.len()));
+            steps.extend(ports.iter().rev().map(Step::Port));
+            steps
+        },
+    };
     while let Some(step) = stack.pop() {
         // Charge one node visit per resolution, term node, or rebuild. Every
         // node the reading emits is charged, so the count bounds the derived
-        // term's size; the `Leave` bookkeeping step is not a visit.
-        if !matches!(step, Step::Leave(_)) {
+        // term's size; the `Leave` bookkeeping step is not a visit, and
+        // entering a frame is the visit its port's resolution already paid.
+        if !matches!(step, Step::Leave(_) | Step::Frame(..)) {
             emitted = emitted.saturating_add(1);
             if emitted > ceiling {
                 return Err(CircuitDerivationError::NodeBudget { budget });
@@ -675,28 +833,33 @@ pub fn derive_boundary_within(
                         stack.push(Step::Leave(port));
                         stack.push(Step::Term(bound.to_node()));
                     },
-                    | CircuitNode::Frame(ref frame) => {
-                        if !path.insert(port) {
-                            return Err(CircuitDerivationError::CyclicWiring(port.clone()));
-                        }
-                        stack.push(Step::Leave(port));
-                        stack.push(Step::Finish(&frame.head, frame.args.len()));
-                        stack.extend(frame.args.iter().rev().map(|arg| Step::Term(arg.to_node())));
+                    | CircuitNode::Frame(ref frame) if frame.outs.len() > 1 => {
+                        return Err(CircuitDerivationError::SplitOutputs(port.clone()));
                     },
+                    | CircuitNode::Frame(ref frame) => stack.push(Step::Frame(frame, port)),
                 }
             },
-            | Step::Term(term) => match term.view() {
-                | TermView::Var(name) => stack.push(Step::Port(name)),
-                | TermView::Ctor { name, args } => {
-                    stack.push(Step::FinishCtor(name, args.len()));
-                    let args: Vec<TermNode<'_>> = args.collect();
-                    stack.extend(args.iter().rev().copied().map(Step::Term));
-                },
-                | TermView::Op { name, args } => {
-                    stack.push(Step::FinishOp(name, args.len()));
-                    let args: Vec<TermNode<'_>> = args.collect();
-                    stack.extend(args.iter().rev().copied().map(Step::Term));
-                },
+            | Step::Frame(frame, port) => {
+                if !path.insert(port) {
+                    return Err(CircuitDerivationError::CyclicWiring(port.clone()));
+                }
+                stack.push(Step::Leave(port));
+                stack.push(Step::Finish(&frame.head, frame.args.len()));
+                stack.extend(frame.args.iter().rev().map(|arg| Step::Term(arg.to_node())));
+            },
+            | Step::Term(term) => {
+                let (finish, args) = match term.view() {
+                    | TermView::Var(name) => {
+                        stack.push(Step::Port(name));
+                        continue;
+                    },
+                    | TermView::Ctor { name, args } => (Step::FinishCtor(name, args.len()), args),
+                    | TermView::Op { name, args } => (Step::FinishOp(name, args.len()), args),
+                    | TermView::Results { args } => (Step::FinishResults(args.len()), args),
+                };
+                stack.push(finish);
+                let args: Vec<TermNode<'_>> = args.collect();
+                stack.extend(args.iter().rev().copied().map(Step::Term));
             },
             | Step::Finish(head, arity) => {
                 let args = results.split_off(results.len().saturating_sub(arity));
@@ -710,16 +873,22 @@ pub fn derive_boundary_within(
                 let args = results.split_off(results.len().saturating_sub(arity));
                 results.push(FreeTerm::op(name.clone(), args));
             },
+            | Step::FinishResults(arity) => {
+                let components = results.split_off(results.len().saturating_sub(arity));
+                results.push(FreeTerm::results(components));
+            },
             | Step::Leave(port) => {
                 path.remove(port);
             },
         }
     }
-    // An empty wiring already resolves its declared output port as an unbound
-    // one, so a result is always left; the fallback names the same variable.
-    Ok(results
-        .pop()
-        .unwrap_or_else(|| FreeTerm::var(body.out.clone())))
+    // Every root reading leaves exactly one result; the fallback names the
+    // first declared port, which is how an empty wiring resolves it.
+    Ok(results.pop().unwrap_or_else(|| {
+        body.outs
+            .first()
+            .map_or_else(|| FreeTerm::results([]), |port| FreeTerm::var(port.clone()))
+    }))
 }
 
 #[cfg(test)]
@@ -786,6 +955,108 @@ mod tests
             derived.target,
             "the target replaces each redex by its target"
         );
+    }
+
+    /// `divmod(m′, n)` as one frame binding `(q, r)`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn divmod_frame() -> CircuitNode
+    {
+        CircuitNode::Frame(CircuitFrame::binding(
+            FrameHead::Op("divmod".into()),
+            [FreeTerm::var("m\u{2032}"), FreeTerm::var("n")],
+            ["q", "r"].map(Name::from),
+        ))
+    }
+
+    #[test]
+    fn a_two_rooted_body_derives_one_boundary_per_root()
+    {
+        // `node : p(x) ==> (x′); node : f(y) --> (b);` read out at `(x′, b)`:
+        // each root unfolds on its own, in declared order, and the redex
+        // rewrites only the first component.
+        let nodes = [
+            CircuitNode::Redex(CircuitRedex::new(
+                "p",
+                FreeTerm::var("x"),
+                FreeTerm::var("x\u{2032}"),
+                "x\u{2032}",
+            )),
+            CircuitNode::Frame(CircuitFrame::new(
+                FrameHead::Op("f".into()),
+                [FreeTerm::var("y")],
+                "b",
+            )),
+        ];
+        let fy = || FreeTerm::op("f", [FreeTerm::var("y")]);
+        for (outs, source, target) in [
+            (
+                ["x\u{2032}", "b"],
+                FreeTerm::results([FreeTerm::var("x"), fy()]),
+                FreeTerm::results([FreeTerm::var("x\u{2032}"), fy()]),
+            ),
+            (
+                ["b", "x\u{2032}"],
+                FreeTerm::results([fy(), FreeTerm::var("x")]),
+                FreeTerm::results([fy(), FreeTerm::var("x\u{2032}")]),
+            ),
+        ] {
+            let body = CircuitBody::rooted(nodes.clone(), outs.map(Name::from));
+            let derived = derive_boundaries(&body).expect("the wiring is acyclic");
+            assert_eq!(
+                (source, target),
+                (derived.source, derived.target),
+                "the roots read out in declared order"
+            );
+        }
+    }
+
+    #[test]
+    fn a_many_out_frame_leaving_whole_is_its_application()
+    {
+        // `node : p(m) ==> (m′); node : divmod(m′, n) --> (q, r);` read out at
+        // `(q, r)`: the frame's ports leave together, in its order, so the
+        // boundary is the application standing for its result tuple.
+        let redex = CircuitNode::Redex(CircuitRedex::new(
+            "p",
+            FreeTerm::var("m"),
+            FreeTerm::var("m\u{2032}"),
+            "m\u{2032}",
+        ));
+        let body = CircuitBody::rooted([redex, divmod_frame()], ["q", "r"].map(Name::from));
+        let derived = derive_boundaries(&body).expect("the wiring is acyclic");
+        assert_eq!(
+            FreeTerm::op("divmod", [FreeTerm::var("m"), FreeTerm::var("n")]),
+            derived.source
+        );
+        assert_eq!(
+            FreeTerm::op("divmod", [FreeTerm::var("m\u{2032}"), FreeTerm::var("n")]),
+            derived.target
+        );
+    }
+
+    #[test]
+    fn one_output_of_a_many_out_node_derives_no_term()
+    {
+        // Read out reversed, alone, or beside another root, a port of the
+        // frame is one projection of its tuple, which no term carries.
+        let other = CircuitNode::Frame(CircuitFrame::new(FrameHead::Op("f".into()), [], "z"));
+        for (outs, split) in [
+            (&["r", "q"][..], "r"),
+            (&["q"][..], "q"),
+            (&["z", "r"][..], "r"),
+        ] {
+            let body = CircuitBody::rooted(
+                [divmod_frame(), other.clone()],
+                outs.iter().copied().map(Name::from).collect::<Vec<_>>(),
+            );
+            assert_eq!(
+                Err(CircuitDerivationError::SplitOutputs(Name::from(split))),
+                derive_boundaries(&body),
+                "reading {outs:?}"
+            );
+        }
     }
 
     #[test]
