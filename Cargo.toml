@@ -146,12 +146,14 @@ rev = "8b8d0702d69409549e855606a85492c777e05fc9"
 default-features = false
 features = ["anodized"]
 
-# BLAKE3 hashing for content and node identities.
+# BLAKE3 hashing for content and node identities, and the engine hub's
+# socket names.
 # consumers:
 # - core-incremental
 # - storage-artifact
 # - storage-records
 # - storage-values
+# - surface-lsp
 # - surface-syntax
 [workspace.dependencies.blake3]
 version = "1.8.7"

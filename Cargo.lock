@@ -771,6 +771,7 @@ dependencies = [
 name = "gandr-surface-lsp"
 version = "0.0.0"
 dependencies = [
+ "blake3",
  "gandr-core-incremental",
  "gandr-storage-records",
  "gandr-surface-diagnostics",

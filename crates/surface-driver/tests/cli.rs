@@ -762,8 +762,8 @@ mod cli
         Body::from(stream)
     }
 
-    /// The finished run of `gandr lsp` with `input` on standard input, its
-    /// output captured.
+    /// The finished run of `gandr` with `arguments`, and `input` on standard
+    /// input, its output captured.
     ///
     /// # Specification
     /// - requires: a finite input whose pipe write completes before server
@@ -780,10 +780,16 @@ mod cli
     ///   writes or lost termination state changes those cases; large
     ///   backpressured sessions and external signals are excluded.
     /// - witness: `cli::cli::lsp_serves_a_session_over_the_standard_streams`
+    /// - witness: `cli::cli::lsp_clients_share_one_engine_hub`
     #[spec(ensures: |ref ret| matches!(ret.status.code(), Some(0 ..= 2)))]
-    fn served(input: &Body) -> Output
+    fn served<Argument>(
+        arguments: &[Argument],
+        input: &Body,
+    ) -> Output
+    where
+        Argument: AsRef<std::ffi::OsStr>,
     {
-        let mut child = gandr(&["lsp"])
+        let mut child = gandr(arguments)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -805,7 +811,8 @@ mod cli
             Text::from(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#);
         let shutdown = Text::from(r#"{"jsonrpc":"2.0","id":2,"method":"shutdown"}"#);
         let exit = Text::from(r#"{"jsonrpc":"2.0","method":"exit"}"#);
-        let output = served(&frames(&[initialize, shutdown, exit]));
+        let standalone = ["lsp", "--standalone"];
+        let output = served(&standalone, &frames(&[initialize, shutdown, exit]));
         assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
         let mut replies = output.stdout.as_slice();
         for _ in 0_u8 .. 2 {
@@ -822,14 +829,17 @@ mod cli
             "exit is a notification and receives no reply"
         );
 
-        let output = served(&frames(&[initialize]));
+        let output = served(&standalone, &frames(&[initialize]));
         assert_eq!(
             code(&output),
             Code(1_i32),
             "a session closed before shutdown exits one"
         );
 
-        let output = served(&Body::from(b"Content-Length: 9\r\n\r\n{".to_vec()));
+        let output = served(
+            &standalone,
+            &Body::from(b"Content-Length: 9\r\n\r\n{".to_vec()),
+        );
         assert_eq!(code(&output), Code(2_i32), "a broken stream exits two");
         assert!(
             output.stdout.is_empty(),
@@ -838,6 +848,67 @@ mod cli
         assert!(
             stderr(&output).starts_with("gandr:"),
             "the stream fault uses standard error"
+        );
+    }
+
+    #[test]
+    fn lsp_clients_share_one_engine_hub()
+    {
+        use std::ffi::OsStr;
+
+        // The name is short: a socket path must fit the platform's limit.
+        let scratch = Scratch::new(Path::new("hub"));
+        let socket = scratch.0.join("hub.sock");
+        let session = frames(&[
+            Text::from(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#),
+            Text::from(r#"{"jsonrpc":"2.0","id":2,"method":"shutdown"}"#),
+            Text::from(r#"{"jsonrpc":"2.0","method":"exit"}"#),
+        ]);
+        let client = [
+            OsStr::new("lsp"),
+            OsStr::new("--socket"),
+            socket.as_os_str(),
+            OsStr::new("--linger-ms"),
+            OsStr::new("2000"),
+        ];
+        let first = served(&client, &session);
+        assert_eq!(code(&first), Code(0_i32), "{}", stderr(&first));
+        assert_eq!(
+            first.stdout,
+            served(&["lsp", "--standalone"], &session).stdout,
+            "a relayed session answers as a standalone one does"
+        );
+        assert!(
+            socket.exists(),
+            "the hub a client started outlives it by its linger"
+        );
+        let second = served(&client, &session);
+        assert_eq!(code(&second), Code(0_i32), "{}", stderr(&second));
+        let another = gandr(&[
+            OsStr::new("serve"),
+            OsStr::new("--socket"),
+            socket.as_os_str(),
+        ])
+        .output()
+        .expect("the driver runs");
+        assert_eq!(code(&another), Code(0_i32));
+        assert!(
+            stderr(&another).starts_with("gandr: a hub already serves"),
+            "a second hub on one socket leaves it to the first"
+        );
+        let broken = served(&client, &Body::from(b"Content-Length: 9\r\n\r\n{".to_vec()));
+        assert_eq!(
+            code(&broken),
+            Code(2_i32),
+            "a broken client stream exits two"
+        );
+        let deadline = std::time::Instant::now() + core::time::Duration::from_secs(20);
+        while socket.exists() && std::time::Instant::now() < deadline {
+            std::thread::sleep(core::time::Duration::from_millis(50));
+        }
+        assert!(
+            !socket.exists(),
+            "the hub exits after its linger, removing its socket"
         );
     }
 

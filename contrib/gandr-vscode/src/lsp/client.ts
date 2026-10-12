@@ -25,10 +25,14 @@ export class GandrLanguageClient extends LanguageClient {
       "gandr language server trace",
       { log: true },
     );
-    const server: Executable = {
-      command: "gandr",
-      args: ["lsp"],
-    };
+    // `gandr lsp` reaches the engine hub of its working directory, so the
+    // server starts in the first workspace folder: every window on one
+    // workspace then shares one hub.
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const server: Executable =
+      root === undefined
+        ? { command: "gandr", args: ["lsp"] }
+        : { command: "gandr", args: ["lsp"], options: { cwd: root } };
     const serverOptions: ServerOptions = {
       run: server,
       debug: server,
