@@ -1485,6 +1485,14 @@ fn expected_agrees_with_committed_finalize() -> Result<(), Box<dyn Error>>
         for upto in 0 ..= tokens.len() {
             let state = push_prefix(pbg, source, TokenPrefixLen::from(upto));
             let completion = state.expected();
+            assert!(
+                !completion
+                    .obligations()
+                    .iter()
+                    .any(|obligation| obligation.class == Oblig::MissingTile)
+                    || !bool::from(completion.is_complete()),
+                "an owed tile is expected material at prefix {upto} of {src:?}"
+            );
             let mut excess: Vec<Oblig> = state
                 .obligations()
                 .iter()
@@ -1821,12 +1829,10 @@ fn expected_completion_names_the_next_tile_or_hole()
         !bool::from(open_completion.is_complete()),
         "`( x` is incomplete"
     );
-    assert!(
-        open_completion
-            .expected()
-            .iter()
-            .any(|item| matches!(item, Expected::Tile(_))),
-        "an open form expects a continuing tile"
+    assert_eq!(
+        open_completion.expected(),
+        [Expected::Tile(")")],
+        "an open bracket expects its closer"
     );
 
     let complete = push_prefix(pbg, SourceFragment::from("x"), TokenPrefixLen::MAX);

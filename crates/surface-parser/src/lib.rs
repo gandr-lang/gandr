@@ -24,6 +24,7 @@ extern crate alloc;
 #[cfg(test)]
 extern crate std;
 
+mod closing;
 mod label;
 mod meld;
 mod mold;
@@ -32,6 +33,8 @@ mod parse;
 #[cfg(test)]
 mod testing;
 
+pub use crate::closing::TileSpelling;
+pub use crate::closing::tile_spelling;
 pub use crate::label::Labeling;
 pub use crate::label::Lexeme;
 pub use crate::label::Token;

@@ -13,6 +13,7 @@ use anodized::spec;
 use serde::Deserialize;
 use serde::Serialize;
 
+use crate::position::Position;
 use crate::position::Range;
 use crate::tokens::TOKEN_MODIFIERS;
 use crate::tokens::TOKEN_TYPES;
@@ -214,6 +215,17 @@ pub struct RangeParams
     pub range: Range,
 }
 
+/// The parameters of `textDocument/inlineCompletion`.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct InlineCompletionParams
+{
+    /// The document addressed.
+    pub text_document: DocumentIdentifier,
+    /// The cursor the completion is shown at.
+    pub position: Position,
+}
+
 /// The result of `initialize`: what the server provides, and its name.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -234,8 +246,9 @@ impl InitializeResult
     /// - ensures: positions counted in UTF-16 code units; incremental document
     ///   synchronisation with open and close notifications; semantic tokens
     ///   over the whole document and over a range, under the legend of
-    ///   [`TOKEN_TYPES`] and [`TOKEN_MODIFIERS`]; the server named `gandr` at
-    ///   this crate's version. Nothing else: no hover, no completion.
+    ///   [`TOKEN_TYPES`] and [`TOKEN_MODIFIERS`]; inline completion; the server
+    ///   named `gandr` at this crate's version. Nothing else: no hover, no
+    ///   completion list.
     /// - provides: the one capabilities answer, written by `initialize` and by
     ///   the driver's `gandr lsp --capabilities` alike.
     /// - fails: never.
@@ -252,7 +265,8 @@ impl InitializeResult
             && ret.capabilities.text_document_sync.open_close
             && ret.capabilities.text_document_sync.change.0 == SyncKind::INCREMENTAL.0
             && ret.capabilities.semantic_tokens_provider.full
-            && ret.capabilities.semantic_tokens_provider.range)]
+            && ret.capabilities.semantic_tokens_provider.range
+            && ret.capabilities.inline_completion_provider)]
     #[inline]
     #[must_use]
     pub const fn advertised() -> Self
@@ -272,6 +286,7 @@ impl InitializeResult
                     full: true,
                     range: true,
                 },
+                inline_completion_provider: true,
             },
             server_info: ServerInfo {
                 name: SOURCE,
@@ -292,6 +307,8 @@ pub struct ServerCapabilities
     pub text_document_sync: TextDocumentSync,
     /// The semantic tokens the server answers.
     pub semantic_tokens_provider: SemanticTokensProvider,
+    /// Inline completion is answered.
+    pub inline_completion_provider: bool,
 }
 
 /// Document synchronisation, as advertised.
@@ -361,8 +378,10 @@ pub enum Answer
     Initialize(Box<InitializeResult>),
     /// What a semantic-tokens request answers for an open document.
     Tokens(SemanticTokens),
-    /// `null`: what `shutdown` answers, and a semantic-tokens request for a
-    /// document that is not open.
+    /// What an inline-completion request answers for an open document.
+    Inline(InlineCompletionList),
+    /// `null`: what `shutdown` answers, and a semantic-tokens or
+    /// inline-completion request for a document that is not open.
     Nothing,
 }
 
@@ -373,6 +392,36 @@ pub struct SemanticTokens
 {
     /// The token stream, five integers per token.
     pub data: TokenStream,
+}
+
+/// The result of an inline-completion request.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[repr(transparent)]
+pub struct InlineCompletionList
+{
+    /// The completions, the one shown first; empty when none is shown.
+    pub items: Vec<InlineCompletionItem>,
+}
+
+/// One inline completion: the snippet inserted, and where.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InlineCompletionItem
+{
+    /// The text inserted, as a snippet.
+    pub insert_text: StringValue,
+    /// The range the text replaces: the empty range at the cursor.
+    pub range: Range,
+}
+
+/// A string in the protocol's snippet syntax.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct StringValue
+{
+    /// Always `snippet`.
+    pub kind: &'static str,
+    /// The snippet.
+    pub value: String,
 }
 
 /// The parameters of `textDocument/publishDiagnostics`.

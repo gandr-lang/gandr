@@ -29,10 +29,11 @@ mod capabilities
                         "full": true,
                         "range": true,
                     },
+                    "inlineCompletionProvider": true,
                 },
                 "serverInfo": {"name": "gandr", "version": env!("CARGO_PKG_VERSION")},
             }),
-            "the legend the crate exports, and nothing unserved: no hover, no completion"
+            "the legend the crate exports, and nothing unserved: no hover, no completion list"
         );
     }
     /// A formatter sink refusing every write.
