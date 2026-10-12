@@ -227,9 +227,6 @@ pub enum FocusRefusal
     /// A tuple projection has no command-IL destructor: the IL splits no
     /// positive tuple.
     TupleProjection(ComputationId),
-    /// A split has no command-IL translation yet: its case on one tuple
-    /// pattern is not focused.
-    Split(ComputationId),
     /// A core value id names no node of the core arena.
     DanglingValue(ValueId),
     /// A core computation id names no node of the core arena.
@@ -275,7 +272,6 @@ impl fmt::Display for FocusRefusal
             | Self::TupleProjection(_) => {
                 f.write_str("a tuple projection has no command-IL destructor")
             },
-            | Self::Split(_) => f.write_str("a split has no command-IL translation"),
             | Self::DanglingValue(_) => f.write_str("a core value id names no node"),
             | Self::DanglingComputation(_) => f.write_str("a core computation id names no node"),
             | Self::Mint(refusal) => write!(f, "the command arena refused a node: {refusal}"),
@@ -597,6 +593,9 @@ enum Task
         /// The number of arms.
         branches: NodeCount,
     },
+    /// Pop the scrutinee's producer and the body's command, and mint the cut
+    /// of the scrutinee against the match of one tuple pattern of this arity.
+    Split(ProducerArity),
     /// Pop the branches' thunks and the scrutinee's producer, and mint the
     /// cut of the scrutinee against the nominal match.
     DataCase
@@ -731,6 +730,7 @@ impl<'run> Focusing<'run>
             | &Task::Thunk | &Task::Fixpoint(_) | &Task::Lambda { .. } | &Task::Bind { .. } | &Task::Name { .. } => !self.commands.is_empty(),
             | &Task::ListFold { .. } => !self.producers.is_empty() && self.commands.len() >= 2,
             | &Task::Case { branches } => !self.producers.is_empty() && self.commands.len() >= usize::from(branches),
+            | &Task::Split(_) => !self.producers.is_empty() && !self.commands.is_empty(),
             | &Task::Tuple(arity) | &Task::Native { arity, .. } => self.producers.len() >= usize::from(arity),
             | &Task::DataCase { branches, .. } => self.producers.len() > usize::from(branches),
             | &Task::Value(_) | &Task::Computation { .. } => true,
@@ -902,6 +902,16 @@ impl<'run> Focusing<'run>
                         body,
                     })
                     .collect();
+                let matcher = self.arena.mint_consumer(ConsumerNode::Case { arms })?;
+                self.cut(FocusOrigin::Case, Polarity::Positive, scrutinee, matcher)
+            },
+            | Task::Split(arity) => {
+                let body = self.pop_command()?;
+                let scrutinee = self.pop_producer()?;
+                let arms = alloc::boxed::Box::from([PatternArm {
+                    constructor: ConstructorTag::Tuple(arity),
+                    body,
+                }]);
                 let matcher = self.arena.mint_consumer(ConsumerNode::Case { arms })?;
                 self.cut(FocusOrigin::Case, Polarity::Positive, scrutinee, matcher)
             },
@@ -1291,7 +1301,6 @@ impl<'run> Focusing<'run>
     ///   [`FocusRefusal::IncompleteComputation`] for a hole or a mark,
     ///   [`FocusRefusal::RecordProjection`] for a record projection,
     ///   [`FocusRefusal::TupleProjection`] for a tuple projection,
-    ///   [`FocusRefusal::Split`] for a split,
     ///   [`FocusRefusal::UniverseTransport`] for a transport, or a refused
     ///   mint.
     /// - panics: none.
@@ -1317,7 +1326,6 @@ impl<'run> Focusing<'run>
             | Some(&Computation::Hole(_) | &Computation::Mark { .. }) => ret == Err(FocusRefusal::IncompleteComputation(id)),
             | Some(&Computation::RecordProjection(..)) => ret == Err(FocusRefusal::RecordProjection(id)),
             | Some(&Computation::TupleProjection(..)) => ret == Err(FocusRefusal::TupleProjection(id)),
-            | Some(&Computation::Split { .. }) => ret == Err(FocusRefusal::Split(id)),
             | Some(_) => ret.is_err() || self.tasks.len() > work,
         },
     )]
@@ -1338,7 +1346,20 @@ impl<'run> Focusing<'run>
             | Computation::TupleProjection(..) => {
                 return Err(FocusRefusal::TupleProjection(id));
             },
-            | Computation::Split { .. } => return Err(FocusRefusal::Split(id)),
+            | Computation::Split {
+                scrutinee,
+                arity,
+                body,
+            } => {
+                let inner = self.share_or_name(FocusOrigin::Case, continuation)?;
+                self.tasks
+                    .push(Task::Split(ProducerArity::from(usize::from(arity))));
+                self.tasks.push(Task::Value(scrutinee));
+                self.tasks.push(Task::Computation {
+                    computation: body,
+                    continuation: inner,
+                });
+            },
             | Computation::DataCase {
                 scrutinee,
                 ref branches,

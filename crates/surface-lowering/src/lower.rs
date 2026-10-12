@@ -1015,12 +1015,23 @@ struct Stretch
     end: usize,
 }
 
-/// One `run x <- c ;` statement of a block.
+/// What a block statement does with the value its computation returns.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum StatementBinding
+{
+    /// `run x <- c ;` names the value for the rest of the block.
+    Named,
+    /// `c ;` discards it, splitting it as the unit under a binder no name
+    /// reaches.
+    Discarded,
+}
+
+/// One `run x <- c ;` or `c ;` statement of a block.
 ///
 /// # Specification
 /// - requires: coordinates, when present, are interpreted in their originating
 ///   run.
-/// - ensures: The run position supplies the bind’s origin while the bound
+/// - ensures: The origin position supplies the bind’s origin while the bound
 ///   position supplies its computation.
 /// - provides: One source-ordered block binding.
 /// - fails: none as a data value; interpretation belongs to its consumers.
@@ -1032,14 +1043,18 @@ struct Stretch
 /// - hypothesis: L3 — consecutive run bindings scope over the following
 ///   computation and preserve their own source origins.
 /// - witness: `lower::tests::a_block_binds_each_statement_over_the_next`
+/// - witness: `lower::tests::a_discarded_statement_splits_its_unit`
 /// - witness: `lower::tests::every_minted_node_has_an_origin`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct Statement
 {
-    /// The `run` tile, the origin of the bind.
-    run: NodeIndex,
+    /// The origin of the bind: the `run` tile, or a discarded statement's
+    /// computation.
+    origin: NodeIndex,
     /// The computation whose returned value the statement binds.
     bound: NodeIndex,
+    /// Whether the rest of the block names the value or discards it.
+    binding: StatementBinding,
 }
 
 /// A block: its statements, in source order, and its last computation.
@@ -4088,14 +4103,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             },
                             | Run::Empty(gap) => gap,
                         };
-                        let statement = first.join(semicolon.span);
+                        let span = first.join(semicolon.span);
                         let mut ahead = cursor.clone();
                         let _semicolon = ahead.tile(TileName::SEMICOLON);
                         if let (Run::One(written), Maybe::Present(_)) =
                             (run, ahead.at(TileName::BRACE_CLOSE))
                         {
                             let _semicolon = cursor.tile(TileName::SEMICOLON);
-                            let _first = self.stated.insert(written.node, statement);
+                            let _first = self.stated.insert(written.node, span);
                             closed(site, cursor, TileName::BRACE_CLOSE)?;
                             exhausted(site, cursor)?;
                             self.read(written.node, Reading::Computation(frame));
@@ -4107,12 +4122,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
                                 last: written.node,
                             });
                         }
-                        return Err(LoweringRefusal::OutOfFragment {
-                            span: statement,
-                            form: FormName::EXPRESSION_STATEMENT,
-                            sort: FragmentSort::Computation,
-                            boundary: FragmentBoundary::Unadmitted,
+                        let discarded = site.one(run)?;
+                        let _semicolon = cursor.tile(TileName::SEMICOLON);
+                        self.read(discarded.node, Reading::Computation(frame));
+                        self.statements.push(Statement {
+                            origin: discarded.node,
+                            bound: discarded.node,
+                            binding: StatementBinding::Discarded,
                         });
+                        frame = Frame::Inner(self.scope.extend(frame, SurfaceName::from("")));
+                        continue;
                     }
                     let last = site.one(run)?;
                     closed(site, cursor, TileName::BRACE_CLOSE)?;
@@ -4186,7 +4205,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Ok(Frame::Inner(_)) => {
                 self.statements.len() == before.saturating_add(1_usize)
                     && self.statements.last().is_some_and(|last| {
-                        last.run == run.node
+                        last.origin == run.node
+                            && last.binding == StatementBinding::Named
                             && self.reading(last.bound) == Reading::Computation(frame)
                     })
             },
@@ -4222,8 +4242,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.note_binder(binder, name)?;
         self.read(bound.node, Reading::Computation(frame));
         self.statements.push(Statement {
-            run: run.node,
+            origin: run.node,
             bound: bound.node,
+            binding: StatementBinding::Named,
         });
 
         Ok(Frame::Inner(self.scope.extend(frame, name)))
@@ -4234,7 +4255,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: `binder` is the pattern operand of the statement at
     ///   `statement`.
-    /// - ensures: the name an identifier pattern spells.
+    /// - ensures: the name an identifier pattern spells; the empty name, which
+    ///   no identifier resolves to, for a wildcard, so `run _ <- c;` discards
+    ///   `c`'s value at any type.
     /// - provides: the binder reading of the bind statement.
     /// - fails: yields the unadmitted refusal, at pattern sort and by the
     ///   pattern's own name, for every other pattern;
@@ -4245,24 +4268,27 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// The pattern's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — ordinary run binders introduce the spelled name;
-    ///   wildcard and annotated patterns are refused rather than becoming
-    ///   ordinary names.
+    /// - hypothesis: L3 — ordinary run binders introduce the spelled name, a
+    ///   wildcard binds a name nothing reads, and other patterns are refused
+    ///   rather than becoming ordinary names.
     /// - witness: `lower::tests::a_block_binds_each_statement_over_the_next`
+    /// - witness: `lower::tests::a_discarded_statement_splits_its_unit`
     /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
     #[spec(
         ensures: |ret| {
             ret.as_ref().map_or(true, |name| {
-                *name == self.name_at(binder)
-                    && self.tree.node(binder.node).is_some_and(|node| {
-                        matches!(
-                            shape_of(self.pbg, node),
-                            Ok(Shape::Form {
-                                former: Former::Name,
-                                ..
-                            })
-                        )
-                    })
+                self.tree.node(binder.node).is_some_and(|node| {
+                    match shape_of(self.pbg, node) {
+                        | Ok(Shape::Form {
+                            former: Former::Name,
+                            ..
+                        }) => *name == self.name_at(binder),
+                        | Ok(Shape::Form { name: form, .. }) => {
+                            form == FormName::WILDCARD && name.as_ref().is_empty()
+                        },
+                        | _ => false,
+                    }
+                })
             })
         },
     )]
@@ -4281,6 +4307,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 former: Former::Name,
                 ..
             } => Ok(self.name_at(binder)),
+            | Shape::Form { name, .. } if name == FormName::WILDCARD => Ok(SurfaceName::from("")),
             | Shape::Form { name, .. } => Err(LoweringRefusal::OutOfFragment {
                 span: binder.span,
                 form: name,
@@ -7181,7 +7208,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 let missing = statements.iter().find_map(|statement| {
                     match (
                         self.computation_at(statement.bound),
-                        self.origin_at(statement.run),
+                        self.origin_at(statement.origin),
                     ) {
                         | (Maybe::Absent(reason), _) | (_, Maybe::Absent(reason)) => Some(reason),
                         | (Maybe::Present(_), Maybe::Present(_)) => None,
@@ -7192,7 +7219,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     | None => match statements.first() {
                         | None => ret == Maybe::Present(last),
                         | Some(first) => {
-                            matches!(ret, Maybe::Present(id) if matches!((sink.origins.computation(id), self.origin_at(first.run)), (Maybe::Present(stored), Maybe::Present(expected)) if stored == expected))
+                            matches!(ret, Maybe::Present(id) if matches!((sink.origins.computation(id), self.origin_at(first.origin)), (Maybe::Present(stored), Maybe::Present(expected)) if stored == expected))
                         },
                     },
                 }
@@ -7214,18 +7241,31 @@ impl<'run, 'source> Lowerer<'run, 'source>
             if let Maybe::Absent(reason) = self.computation_at(statement.bound) {
                 return Maybe::Absent(reason);
             }
-            if let Maybe::Absent(reason) = self.origin_at(statement.run) {
+            if let Maybe::Absent(reason) = self.origin_at(statement.origin) {
                 return Maybe::Absent(reason);
             }
         }
         for statement in statements.iter().rev() {
             let (Maybe::Present(bound), Maybe::Present(origin)) = (
                 self.computation_at(statement.bound),
-                self.origin_at(statement.run),
+                self.origin_at(statement.origin),
             )
             else {
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
+            if statement.binding == StatementBinding::Discarded {
+                let unit = sink
+                    .arena
+                    .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+                sink.origins.record_value(unit, origin);
+                let split = sink.arena.computation_split(
+                    unit,
+                    gandr_core_term::ComponentCount::default(),
+                    chain,
+                );
+                sink.origins.record_computation(split, origin);
+                chain = split;
+            }
             let id = sink.arena.computation_bind(bound, chain);
             sink.origins.record_computation(id, origin);
             chain = id;
@@ -11180,6 +11220,87 @@ mod tests
         );
     }
 
+    /// `c ;` binds its value under a binder no name reaches and splits it as
+    /// the unit, so a name bound before it is read one index further out
+    /// after it, and the bind's origin is the discarded computation.
+    #[test]
+    fn a_discarded_statement_splits_its_unit()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from("def a = thunk { run x <- pure 1 ; pure 2 ; return x } ;"),
+            &mut arena,
+        );
+        let Some(&Value::Thunk(suspended)) = arena.value(body_of(outcomes(&module)[0]))
+        else {
+            panic!("the thunk lowers to a thunk value");
+        };
+        let Some(&Computation::Bind(_, rest)) = arena.computation(suspended)
+        else {
+            panic!("the named statement is the outer bind");
+        };
+        let Some(&Computation::Bind(discarded, split)) = arena.computation(rest)
+        else {
+            panic!("the discarded statement binds over the rest of the block");
+        };
+        let Some(&Computation::Split {
+            scrutinee,
+            arity,
+            body,
+        }) = arena.computation(split)
+        else {
+            panic!("the discarded value is split");
+        };
+        assert_eq!(arity, gandr_core_term::ComponentCount::default());
+        let variable = |index: u32| Value::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(index),
+        };
+        assert_eq!(arena.value(scrutinee), Some(&variable(0_u32)));
+        let returned = |id| match arena.computation(id) {
+            | Some(&Computation::Return(value)) => arena.value(value).cloned(),
+            | _ => None,
+        };
+        assert_eq!(
+            [returned(discarded), returned(body)],
+            [
+                Some(Value::Literal(integer(SourceFragment::from("2")))),
+                Some(variable(1_u32)),
+            ],
+            "the name bound before the discard is read past its binder"
+        );
+        assert_eq!(
+            module
+                .origins()
+                .computation(rest)
+                .map(|origin| origin.span()),
+            Maybe::Present(at(34_usize, 40_usize)),
+            "a discarded statement's bind has its computation's origin"
+        );
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from("def a = thunk { run x <- pure 1 ; run _ <- pure 2 ; return x } ;"),
+            &mut arena,
+        );
+        let Some(&Value::Thunk(suspended)) = arena.value(body_of(outcomes(&module)[0]))
+        else {
+            panic!("the thunk lowers to a thunk value");
+        };
+        let Some(&Computation::Bind(_, rest)) = arena.computation(suspended)
+        else {
+            panic!("the named statement is the outer bind");
+        };
+        let Some(&Computation::Bind(_, last)) = arena.computation(rest)
+        else {
+            panic!("the wildcard statement binds over the rest of the block");
+        };
+        assert!(
+            matches!(arena.computation(last), Some(&Computation::Return(value)) if arena.value(value) == Some(&variable(1_u32))),
+            "a wildcard binds at any type, with no split, and a name before it is read past it"
+        );
+    }
+
     #[test]
     fn a_block_standing_as_a_computation_binds_its_statements()
     {
@@ -12055,30 +12176,12 @@ mod tests
                 ),
             ),
             (
-                "def a = thunk { pure 1; return 2 } ;",
-                unadmitted(
-                    16_usize,
-                    23_usize,
-                    FormName::EXPRESSION_STATEMENT,
-                    FragmentSort::Computation,
-                ),
-            ),
-            (
                 "def a = thunk { pure 1 ; } ;",
                 unadmitted(
                     16_usize,
                     24_usize,
                     FormName::EXPRESSION_STATEMENT,
                     FragmentSort::Computation,
-                ),
-            ),
-            (
-                "def a = thunk { run _ <- pure 1; return 2 } ;",
-                unadmitted(
-                    20_usize,
-                    21_usize,
-                    FormName::from(NamedKind("wildcard")),
-                    FragmentSort::Pattern,
                 ),
             ),
             (

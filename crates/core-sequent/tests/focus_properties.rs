@@ -24,6 +24,7 @@ use gandr_core_sequent::focus_top_value;
 use gandr_core_sequent::focus_value;
 use gandr_core_sequent::unfocus_command;
 use gandr_core_sequent::unfocus_value;
+use gandr_core_term::ComponentCount;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Zone;
@@ -356,6 +357,34 @@ fn cases() -> Vec<Case>
         core,
         root,
         origin: FocusOrigin::Case,
+    });
+
+    let mut core = CoreArena::new();
+    let unit = core.value_unit();
+    let one = integer(&mut core, Integer(1));
+    let two = integer(&mut core, Integer(2));
+    let triple = core.value_tuple(&[one, unit, two]);
+    let middle = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+    let body = core.computation_return(middle);
+    let root = core.computation_split(triple, ComponentCount::from(3_usize), body);
+    cases.push(Case {
+        label: "a triple split, its middle component returned",
+        core,
+        root,
+        origin: FocusOrigin::Case,
+    });
+
+    let mut core = CoreArena::new();
+    let discarded = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+    let three = integer(&mut core, Integer(3));
+    let body = core.computation_return(three);
+    let split = core.computation_split(discarded, ComponentCount::default(), body);
+    let root = core.computation_lambda(split);
+    cases.push(Case {
+        label: "an empty split under a lambda",
+        core,
+        root,
+        origin: FocusOrigin::Lambda,
     });
 
     let mut core = CoreArena::new();

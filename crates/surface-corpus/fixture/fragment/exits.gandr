@@ -61,6 +61,29 @@ def discarded(n : Nat) -> -F Nat {
   down(m) ;
 }
 
+@[ checks ]
+def done(n : Nat) -> -F Unit {
+  return unit
+}
+
+@[ checks ]
+def discards_unit(n : Nat) -> -F Nat {
+  done(n) ;
+  return n
+}
+
+@[ refuses("ShapeMismatch") ]
+def discards_nat(n : Nat) -> -F Nat {
+  down(n) ;
+  return n
+}
+
+@[ checks ]
+def discards_any(n : Nat) -> -F Nat {
+  run _ <- down(n) ;
+  return n
+}
+
 @[ refuses("OutOfFragment") ]
 def early(n : Nat) -> -F Nat {
   run m <- return n ;
