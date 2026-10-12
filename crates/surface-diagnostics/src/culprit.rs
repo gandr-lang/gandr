@@ -168,7 +168,7 @@ const fn checked(refusal: CheckRefusal) -> Culprit
         | CheckRefusal::EffectSignatureConflict { .. } => "effect rows that disagree",
         | CheckRefusal::PathCode(_) => "not a quoted closed first-order code",
         | CheckRefusal::EndpointMismatch { .. } => "not both endpoints of the path",
-        | CheckRefusal::IdentityAtOpenType { .. } => "transport at a type with no structure",
+        | CheckRefusal::IdentityAtOpenType { .. } => "identity at an open type",
         | CheckRefusal::CompoundEndpoint { .. } => "an endpoint that returns no pure value",
         | CheckRefusal::TypeMismatch(Mismatch::Value { .. } | Mismatch::Computation { .. }) => {
             "its type does not convert"

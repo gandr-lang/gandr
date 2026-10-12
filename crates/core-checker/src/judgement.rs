@@ -322,14 +322,20 @@
 //! forward over both binders; that is the dependent-arrow extension, and this
 //! rule does not take it.
 //!
-//! **Identity at an open type is the owner's obligation.** A sealed atom, the
-//! decode of a code no quote reaches and the unknown type expose no structure
-//! for the identity recursion to unfold, so the judgement invents no
-//! transport through them: a transport at such a carrier is
-//! [`CheckRefusal::IdentityAtOpenType`], naming the transport and the
-//! carrier. Forming the path type and reflexivity there stay admitted, since
-//! neither reads the structure; whoever owns the type supplies its identity
-//! before anything moves along it.
+//! **Identity at an open type is the owner's obligation.** A carrier that
+//! mentions a variable bound outside it — the decode of a type variable, a
+//! data type at a variable index — has no fibre the identity recursion can
+//! read, so the path type does not form there and reflexivity does not
+//! synthesise there: each is [`CheckRefusal::IdentityAtOpenType`], naming the
+//! node and the carrier. A sealed atom, the fragment's other open type, is
+//! refused wherever a type is read. Transport refuses the same way at a
+//! carrier that exposes no structure, the decode of a code no quote reaches
+//! or the unknown type. These are the points where the kernel refuses
+//! identity at an open type, so the judgement admits no identity the kernel
+//! does not form. The alternative, forming the path type and reflexivity at
+//! any carrier and refusing only transport, admits declarations the kernel
+//! rejects. Whoever owns the type supplies its identity; the refusal names
+//! what lifts it.
 //!
 //! K is not derivable: no rule matches a path against reflexivity, and the
 //! lowering refuses a `here` pattern before a term reaches the judgement, as
@@ -1123,6 +1129,8 @@ enum Frame
     /// path type from the point to itself in it.
     HereSynthesised
     {
+        /// The reflexivity.
+        at: ValueId,
         /// The point.
         point: ValueId,
     },
@@ -2336,7 +2344,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             }),
             | Value::StaticApplication(..) => self.static_application(term),
             | Value::Here(point) => {
-                self.frames.push(Frame::HereSynthesised { point });
+                self.frames.push(Frame::HereSynthesised { at: term, point });
                 Ok(Step::Descend(Goal::Value {
                     term: point,
                     direction: Direction::Synthesise,
@@ -3400,14 +3408,16 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   type, then awaits the raise; a decode awaits its code's synthesised
     ///   type; an eager product and a sum form each component, an empty sum at
     ///   once; a static Pi forms both classifiers, then awaits their check as
-    ///   static classifiers; a path type forms its carrier, then checks each
-    ///   endpoint against it, left first. A former formed at once leaves the
-    ///   frames as found, but for a data type, a record, a product and a sum,
-    ///   which queue their components; one that descends leaves them no
-    ///   shorter.
+    ///   static classifiers; a path type at a closed carrier forms its carrier,
+    ///   then checks each endpoint against it, left first. A former formed at
+    ///   once leaves the frames as found, but for a data type, a record, a
+    ///   product and a sum, which queue their components; one that descends
+    ///   leaves them no shorter.
     /// - fails: the view's refusal for a former outside the fragment or a
     ///   dangling id; [`CheckRefusal::OutOfFragment`] naming
-    ///   [`UnadmittedFormer::TopUniverse`].
+    ///   [`UnadmittedFormer::TopUniverse`];
+    ///   [`CheckRefusal::IdentityAtOpenType`] for a path type whose carrier
+    ///   reaches a binder outside it.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -3447,6 +3457,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 left,
                 right,
             } => {
+                self.closed_carrier(CoreNode::Type(TypeNode::Value(at)), carrier)?;
                 self.frames.push(Frame::Next(Goal::Value {
                     term: right,
                     direction: Direction::Check(carrier),
@@ -4175,7 +4186,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(source),
                 }))
             },
-            | (Frame::HereSynthesised { point }, Produced::ValueType(carrier)) => {
+            | (Frame::HereSynthesised { at, point }, Produced::ValueType(carrier)) => {
+                self.closed_carrier(CoreNode::Term(TermNode::Value(at)), carrier)?;
                 let path = self
                     .context
                     .arena_mut()
@@ -4890,12 +4902,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   its own and an unfolding reaches by a certified step.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a transport at the decode of a type variable is
+    /// - hypothesis: L3 — a transport at the decode of a code with no body is
     ///   refused by name, and one at a closed carrier and at the decode of a
     ///   quoted closed carrier check.
     /// - witness: `judgement::tests::transport_at_an_open_carrier_is_refused_by_name`
     #[spec(ensures: |ret| match ret {
-        | Err(CheckRefusal::IdentityAtOpenType { at: site, carrier: named }) => site == at && named == carrier,
+        | Err(CheckRefusal::IdentityAtOpenType { at: site, carrier: named }) => site == CoreNode::Term(TermNode::Computation(at)) && named == carrier,
         | Ok(()) | Err(_) => true,
     })]
     fn transported_carrier(
@@ -4915,13 +4927,57 @@ impl<'context, 'arena> Machine<'context, 'arena>
             head = self.context.whnf_value_type(quoted)?;
         }
         match gandr_core_nbe::identity::clause(self.context.arena(), head) {
-            | Ok(gandr_core_nbe::identity::Clause::Open) => {
-                Err(CheckRefusal::IdentityAtOpenType { at, carrier })
-            },
+            | Ok(gandr_core_nbe::identity::Clause::Open) => Err(CheckRefusal::IdentityAtOpenType {
+                at: CoreNode::Term(TermNode::Computation(at)),
+                carrier,
+            }),
             | Ok(_) => Ok(()),
             | Err(_) => Err(CheckRefusal::DanglingNode {
                 node: CoreNode::Type(TypeNode::Value(head)),
             }),
+        }
+    }
+
+    /// Refuse identity at a carrier that mentions a variable bound outside it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: success exactly when `carrier` reaches no binder outside
+    ///   itself — the kernel's closedness for an identity's domain, whose other
+    ///   half, a sealed atom, the fragment refuses wherever a type is read.
+    /// - provides: path formation and reflexivity's synthesis admit what the
+    ///   kernel forms, so a judged identity readmits.
+    /// - fails: [`CheckRefusal::IdentityAtOpenType`] naming `at` and the
+    ///   carrier; the reach's refusal for a dangling carrier.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a path type at the decode of a type variable and
+    ///   reflexivity synthesised at one refuse by name, at their own nodes,
+    ///   while a path type at a closed carrier between variables forms.
+    /// - witness: `judgement::tests::identity_at_an_open_type_is_refused_where_it_forms`
+    #[spec(ensures: |ret| match ret {
+        | Err(CheckRefusal::IdentityAtOpenType { at: site, carrier: named }) => site == at && named == carrier,
+        | Ok(()) | Err(_) => true,
+    })]
+    fn closed_carrier(
+        &self,
+        at: CoreNode,
+        carrier: ValueTypeId,
+    ) -> Result<(), CheckRefusal>
+    {
+        let reach = crate::code::loose_reach(
+            self.context.arena(),
+            CoreNode::Type(TypeNode::Value(carrier)),
+        )?;
+        if reach == BinderDepth::default() {
+            Ok(())
+        }
+        else {
+            Err(CheckRefusal::IdentityAtOpenType { at, carrier })
         }
     }
 
@@ -7801,15 +7857,15 @@ mod tests
         let through_quote = arena.computation_path_transport(integer_type, here_point, zero);
         let through_quote_lambda = arena.computation_lambda(through_quote);
         let quoted_pi = arena.comp_type_pi(decoded, returns_integer);
-        // \a. \x. tr(Integer, here(x), 0) at the decode of the variable `a`.
-        let code = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-        let open = arena.value_type_element(code, Level::zero());
-        let open_transport = arena.computation_path_transport(integer_type, here_point, zero);
-        let inner = arena.computation_lambda(open_transport);
-        let outer = arena.computation_lambda(inner);
-        let point_pi = arena.comp_type_pi(open, returns_integer);
-        let code_pi = arena.comp_type_pi(small, point_pi);
+        // \x. tr(Integer, here(x), 0) at the decode of `c : U`, a code with no
+        // body for a quote to reach.
+        let code = arena.value_constant(ConstantIndex::from(0_usize));
+        let opaque = arena.value_type_element(code, Level::zero());
+        let opaque_transport = arena.computation_path_transport(integer_type, here_point, zero);
+        let opaque_lambda = arena.computation_lambda(opaque_transport);
+        let opaque_pi = arena.comp_type_pi(opaque, returns_integer);
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        seed(&mut context, &[small]);
         let synthesised = synthesise_comp(&mut context, closed).unwrap();
         assert!(
             matches!(
@@ -7823,13 +7879,91 @@ mod tests
             check_comp(&mut context, through_quote_lambda, quoted_pi).is_ok(),
             "the decode of a quoted closed carrier is read through to the carrier"
         );
-        let code_pi = form_comp_type(&mut context, code_pi).unwrap();
-        let refusal = check_comp(&mut context, outer, code_pi).unwrap_err();
+        let opaque_pi = form_comp_type(&mut context, opaque_pi).unwrap();
+        let refusal = check_comp(&mut context, opaque_lambda, opaque_pi).unwrap_err();
         let CheckRefusal::IdentityAtOpenType { at, carrier } = refusal
         else {
-            panic!("the decode of a type variable is an open carrier: {refusal:?}");
+            panic!("the decode of a code no quote reaches is an open carrier: {refusal:?}");
         };
-        assert_eq!(at, open_transport, "the refusal names the transport");
+        assert_eq!(
+            at,
+            CoreNode::Term(TermNode::Computation(opaque_transport)),
+            "the refusal names the transport, past the reflexivity its closed carrier admits"
+        );
+        assert!(
+            matches!(
+                context.arena().value_type(carrier),
+                Some(&ValueType::Element { code: named, .. }) if named == code
+            ),
+            "the refusal names the carrier, the decode of the opaque code"
+        );
+        assert_eq!(
+            refusal.classify(),
+            FailureClass::Unrepresentable,
+            "identity at an open type is outside what the judgement represents"
+        );
+        assert_eq!(
+            context.binders().depth(Zone::Intuitionistic),
+            BinderDepth::from(0_usize),
+            "the refused check closed the binder it opened"
+        );
+    }
+
+    #[test]
+    fn identity_at_an_open_type_is_refused_where_it_forms()
+    {
+        let mut arena = CoreArena::new();
+        let integer_type = arena.value_type_base(BaseType::Integer);
+        let returns_integer = arena.comp_type_returner(integer_type);
+        let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let zero = arena.value_literal(integer_literal());
+        let inner = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let outer = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        // (x : Integer) -> (y : Integer) -> F Path(Integer, x, y): the carrier
+        // is closed though both endpoints are variables.
+        let between = arena.value_type_path(integer_type, outer, inner);
+        let returns_between = arena.comp_type_returner(between);
+        let right_pi = arena.comp_type_pi(integer_type, returns_between);
+        let closed_pi = arena.comp_type_pi(integer_type, right_pi);
+        // (a : U) -> (x : El a) -> F Path(El a, x, x): the carrier reads `a`.
+        let decoded = arena.value_type_element(inner, Level::zero());
+        let open = arena.value_type_element(outer, Level::zero());
+        let open_path = arena.value_type_path(open, inner, inner);
+        let returns_open_path = arena.comp_type_returner(open_path);
+        let point_pi = arena.comp_type_pi(decoded, returns_open_path);
+        let path_pi = arena.comp_type_pi(small, point_pi);
+        // \a. \x. tr(Integer, here(x), 0) against (a : U) -> (x : El a) -> F
+        // Integer: the reflexivity synthesises at the decode of `a`.
+        let here_point = arena.value_here(inner);
+        let transport = arena.computation_path_transport(integer_type, here_point, zero);
+        let under_point = arena.computation_lambda(transport);
+        let under_code = arena.computation_lambda(under_point);
+        let integer_pi = arena.comp_type_pi(decoded, returns_integer);
+        let code_pi = arena.comp_type_pi(small, integer_pi);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        assert!(
+            form_comp_type(&mut context, closed_pi).is_ok(),
+            "a path type at a closed carrier forms between variables"
+        );
+        assert_eq!(
+            form_comp_type(&mut context, path_pi).map(|_formed| ()),
+            Err(CheckRefusal::IdentityAtOpenType {
+                at: CoreNode::Type(TypeNode::Value(open_path)),
+                carrier: open,
+            }),
+            "a path type whose carrier reads a binder outside it is refused at the path type"
+        );
+        let code_pi = form_comp_type(&mut context, code_pi).unwrap();
+        let refusal = check_comp(&mut context, under_code, code_pi).unwrap_err();
+        let CheckRefusal::IdentityAtOpenType { at, carrier } = refusal
+        else {
+            panic!("reflexivity at the decode of a type variable is refused: {refusal:?}");
+        };
+        assert_eq!(
+            at,
+            CoreNode::Term(TermNode::Value(here_point)),
+            "the refusal names the reflexivity, before the transport reads its carrier"
+        );
         assert!(
             matches!(
                 context.arena().value_type(carrier),
@@ -7845,7 +7979,7 @@ mod tests
         assert_eq!(
             context.binders().depth(Zone::Intuitionistic),
             BinderDepth::from(0_usize),
-            "the refused check closed the binders it opened"
+            "each refusal closed the binders it opened"
         );
     }
 

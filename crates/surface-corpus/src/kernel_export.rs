@@ -117,10 +117,9 @@ enum Class
     /// The checker accepted it with a hole or the unknown type, which the
     /// kernel has no image of: an unfinished program crosses nothing.
     Unfinished,
-    /// The checker accepted it with an element-identity former, which the
-    /// kernel has no tag to receive: it crosses nothing until the kernel
-    /// carries identity.
-    Identity,
+    /// The checker accepted it with a compound endpoint, which the kernel has
+    /// no node for: it crosses nothing until the kernel reads a returned value.
+    CompoundEndpoint,
     /// The lowering refused it, under this name, and nothing was offered.
     NeverOffered(RefusalName),
 }
@@ -268,7 +267,7 @@ fn sources(root: Root) -> Vec<PathBuf>
 ///   definitions or static operators, owed assumptions, matching refusal marks,
 ///   accepted/owed declarations withheld by a dependency, accepted/owed
 ///   declarations holding a hole or the unknown type, or accepted/owed
-///   declarations holding an element-identity former.
+///   declarations holding a compound endpoint.
 /// - ensures: returns exactly the corresponding boundary class, retaining the
 ///   checker refusal’s canonical name for a mark.
 /// - panics: when the fixture’s verdict and readmission disagree.
@@ -276,8 +275,8 @@ fn sources(root: Root) -> Vec<PathBuf>
 /// # Adequacy
 /// - hypothesis: L3 — the current corpus supplies readmitted definitions,
 ///   assumptions, refusal marks, static declarations, withheld dependencies,
-///   holed declarations and declarations holding a path type or reflexivity.
-///   Exact partition-to-artifact membership distinguishes admitting excluded
+///   holed declarations and declarations holding a compound endpoint. Exact
+///   partition-to-artifact membership distinguishes admitting excluded
 ///   declarations or losing admitted names; the predicate additionally states
 ///   pair compatibility and exact class selection.
 /// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds`
@@ -292,7 +291,7 @@ fn sources(root: Root) -> Vec<PathBuf>
             bridge::Refusal::Withheld { .. }
             | bridge::Refusal::Hole { .. }
             | bridge::Refusal::Unknown { .. }
-            | bridge::Refusal::ElementIdentity { .. }
+            | bridge::Refusal::CompoundEndpoint { .. }
         )),
     )
     | (
@@ -302,7 +301,7 @@ fn sources(root: Root) -> Vec<PathBuf>
             bridge::Refusal::Withheld { .. }
             | bridge::Refusal::Hole { .. }
             | bridge::Refusal::Unknown { .. }
-            | bridge::Refusal::ElementIdentity { .. }
+            | bridge::Refusal::CompoundEndpoint { .. }
         )),
     )
     | (Verdict::Data, &bridge::Outcome::Data { .. }) => true,
@@ -325,8 +324,8 @@ fn sources(root: Root) -> Vec<PathBuf>
         Class::Unfinished,
     ) | (
         _,
-        &bridge::Outcome::Refused(bridge::Refusal::ElementIdentity { .. }),
-        Class::Identity,
+        &bridge::Outcome::Refused(bridge::Refusal::CompoundEndpoint { .. }),
+        Class::CompoundEndpoint,
     ) => true,
     (Verdict::Refused(refusal), &bridge::Outcome::Marked(mark), Class::Marked(name)) => {
         refusal == mark && name == Refusal::Checking(refusal).name()
@@ -365,8 +364,8 @@ fn class_of(
         ) => Class::Unfinished,
         | (
             Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Owed(_),
-            &bridge::Outcome::Refused(bridge::Refusal::ElementIdentity { .. }),
-        ) => Class::Identity,
+            &bridge::Outcome::Refused(bridge::Refusal::CompoundEndpoint { .. }),
+        ) => Class::CompoundEndpoint,
         | (verdict, outcome) => panic!(
             "{}: the verdict {verdict:?} and the kernel's outcome {outcome:?} disagree",
             path.display()

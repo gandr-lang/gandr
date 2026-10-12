@@ -646,7 +646,8 @@ impl CodeDefinitions
             Definitions::new(&self.lowered, &self.environment, self.environment.root());
         let mut domain = DomainArena::new();
         let mut environment = Environment::new();
-        let open = u32::try_from(usize::from(loose_reach(core, step.redex)?))
+        let reach = loose_reach(core, CoreNode::Term(TermNode::Value(step.redex)))?;
+        let open = u32::try_from(usize::from(reach))
             .map_err(|_overflow| CheckRefusal::MachineInvariant)?;
         for level in 0 .. open {
             let neutral = domain
@@ -742,8 +743,8 @@ impl CodeDefinitions
             Definitions::new(&self.lowered, &self.environment, self.environment.root());
         let mut domain = DomainArena::new();
         let mut environment = Environment::new();
-        let reach =
-            usize::from(loose_reach(core, left)?).max(usize::from(loose_reach(core, right)?));
+        let reach = |endpoint| loose_reach(core, CoreNode::Term(TermNode::Value(endpoint)));
+        let reach = usize::from(reach(left)?).max(usize::from(reach(right)?));
         let open = u32::try_from(reach).map_err(|_overflow| CheckRefusal::MachineInvariant)?;
         for level in 0 .. open {
             let neutral = domain
@@ -783,14 +784,16 @@ impl CodeDefinitions
 }
 
 /// How many binders outside `root` its free intuitionistic variables reach:
-/// one past the largest index that counts out of every binder within `root`.
+/// one past the largest index that counts out of every binder within `root`,
+/// which is a value, a computation or a type of either.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: zero for a closed value; otherwise the least `n` such that `root`
+/// - ensures: zero for a closed node; otherwise the least `n` such that `root`
 ///   read beneath `n` binders mentions no binder beyond them. Linear variables
 ///   count no binder and reach nothing.
-/// - provides: the environment a certificate evaluates an open code in.
+/// - provides: the environment a certificate evaluates an open code in, and the
+///   closedness an identity's carrier needs.
 /// - fails: [`CheckRefusal::DanglingNode`] for a node `core` does not hold;
 ///   [`CheckRefusal::MachineInvariant`] for a reach past the address space.
 /// - panics: none.
@@ -807,31 +810,32 @@ impl CodeDefinitions
 ///
 /// # Adequacy
 /// - hypothesis: L3 — separated by a closed code, a bare variable, a variable
-///   beneath a static lambda, and a variable beneath a dependent arrow's binder
-///   inside a quote, each reach asserted.
+///   beneath a static lambda, a variable beneath a dependent arrow's binder
+///   inside a quote, and a type decoding a variable, each reach asserted.
 /// - witness: `code::tests::the_loose_reach_counts_only_binders_outside_the_root`
 #[inline]
-#[spec(ensures: |ret| match (core.value(root), ret) {
-    | (Some(&Value::Variable { zone: Zone::Intuitionistic, index }), Ok(reach)) => {
-        usize::try_from(u32::from(index)).ok().and_then(|counted| counted.checked_add(1))
-            == Some(usize::from(reach))
-    },
-    | (Some(&(Value::Constant(_) | Value::Literal(_))), Ok(reach)) => {
-        reach == BinderDepth::default()
-    },
-    | (Some(&Value::Tuple(ref components)), Ok(reach)) if components.is_empty() => {
-        reach == BinderDepth::default()
+#[spec(ensures: |ret| match (root, ret) {
+    | (CoreNode::Term(TermNode::Value(at)), Ok(reach)) => match core.value(at) {
+        | Some(&Value::Variable { zone: Zone::Intuitionistic, index }) => {
+            usize::try_from(u32::from(index)).ok().and_then(|counted| counted.checked_add(1))
+                == Some(usize::from(reach))
+        },
+        | Some(&(Value::Constant(_) | Value::Literal(_))) => reach == BinderDepth::default(),
+        | Some(&Value::Tuple(ref components)) if components.is_empty() => {
+            reach == BinderDepth::default()
+        },
+        | _ => true,
     },
     | _ => true,
 })]
 pub fn loose_reach(
     core: &CoreArena,
-    root: ValueId,
+    root: CoreNode,
 ) -> Result<BinderDepth, CheckRefusal>
 {
     let dangling = |node| CheckRefusal::DanglingNode { node };
     let mut reach = 0_usize;
-    let mut work = Vec::from([(CoreNode::Term(TermNode::Value(root)), 0_usize)]);
+    let mut work = Vec::from([(root, 0_usize)]);
     while let Some((node, depth)) = work.pop() {
         let under = depth.checked_add(1).ok_or(CheckRefusal::MachineInvariant)?;
         match node {
@@ -1186,6 +1190,9 @@ mod tests
     use quenchant_shape::shape::Maybe;
 
     use super::CodeDefinitions;
+    use super::CoreNode;
+    use super::TermNode;
+    use super::TypeNode;
     use super::Unfolded;
     use super::loose_reach;
     use super::unfolding;
@@ -1363,29 +1370,40 @@ mod tests
         let returns_unit = arena.comp_type_returner(unit);
         let in_domain = arena.comp_type_pi(decoded_domain, returns_unit);
         let domain_quote = arena.value_quote_computation(in_domain);
+        let path_at_variable = arena.value_type_path(decoded, zero, zero);
+        let value = |at| CoreNode::Term(TermNode::Value(at));
         let rows = [
-            (closed, 0_usize, "a closed code reaches nothing"),
-            (two, 3_usize, "a bare variable reaches one past its index"),
-            (linear, 0_usize, "a linear variable counts no binder"),
+            (value(closed), 0_usize, "a closed code reaches nothing"),
             (
-                bound_inside,
+                value(two),
+                3_usize,
+                "a bare variable reaches one past its index",
+            ),
+            (value(linear), 0_usize, "a linear variable counts no binder"),
+            (
+                value(bound_inside),
                 0_usize,
                 "a variable its own lambda binds reaches nothing",
             ),
             (
-                reaching_out,
+                value(reaching_out),
                 2_usize,
                 "a lambda's binder is subtracted from its body's reach",
             ),
             (
-                under_pi,
+                value(under_pi),
                 1_usize,
                 "a dependent codomain's binder is subtracted",
             ),
             (
-                domain_quote,
+                value(domain_quote),
                 1_usize,
                 "a dependent domain sits outside the binder",
+            ),
+            (
+                CoreNode::Type(TypeNode::Value(path_at_variable)),
+                2_usize,
+                "a type reaches through the decode at its carrier",
             ),
         ];
         for (root, reach, message) in rows {
