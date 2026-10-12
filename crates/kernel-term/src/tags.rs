@@ -771,10 +771,11 @@ const fn bounded_alias(
 /// The complete node-tag vocabulary and its storage-boundary analysis.
 ///
 /// This table is documentation and a const protocol input for the storage
-/// tier; it alters no artifact byte. Its arities are pinned against the arena's
-/// own child relation, and its rows are pinned against the encoder's wire
-/// images by the round-trip suites, so a row that drifts from the code is a
-/// test failure rather than a comment that quietly went stale.
+/// tier and the decoder's specifications; it alters no artifact byte. Its
+/// arities are pinned against the arena's own child relation, and its rows are
+/// pinned against the encoder's wire images by the round-trip suites, so a row
+/// that drifts from the code is a test failure rather than a comment that
+/// quietly went stale.
 ///
 /// # Specification
 /// - requires: the consumer interprets rows by their tag and keeps the two
