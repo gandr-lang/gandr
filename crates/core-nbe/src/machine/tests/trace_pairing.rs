@@ -27,7 +27,10 @@ fn concatenation_consumes_the_first_component_before_the_second()
     let unit = core.value_unit();
     let zero = core.value_constant(Name::Zero.constant());
     let one = core.value_constant(Name::One.constant());
-    let pair = Sides::Values(core.value_pair(zero, one), core.value_pair(unit, unit));
+    let pair = Sides::Values(
+        core.value_tuple(&[zero, one]),
+        core.value_tuple(&[unit, unit]),
+    );
     let world = World::new(core, &[(Name::Zero, first_body), (Name::One, second_body)]);
     let mut concatenated = Vec::from([ConversionDecision::Decompose]);
     let mut first_component_len = 0_usize;
@@ -71,8 +74,8 @@ fn every_pair_of_generated_ladder_traces_replays()
                 panic!("the ladder generates value claims");
             };
             let pair = Sides::Values(
-                world.core.value_pair(first_left, second_left),
-                world.core.value_pair(first_right, second_right),
+                world.core.value_tuple(&[first_left, second_left]),
+                world.core.value_tuple(&[first_right, second_right]),
             );
             let mut concatenated = Vec::from([ConversionDecision::Decompose]);
             for sides in [first, second] {
@@ -122,15 +125,15 @@ proptest! {
                 let left_unit = core.value_unit();
                 let right_unit = core.value_unit();
                 (left, right) = if before {
-                    (core.value_pair(left_unit, left), core.value_pair(right_unit, right))
+                    (core.value_tuple(&[left_unit, left]), core.value_tuple(&[right_unit, right]))
                 } else {
-                    (core.value_pair(left, left_unit), core.value_pair(right, right_unit))
+                    (core.value_tuple(&[left, left_unit]), core.value_tuple(&[right, right_unit]))
                 };
             }
             if reverse { (right, left) } else { (left, right) }
         });
         let [(first_left, first_right), (second_left, second_right)] = components;
-        let pair = Sides::Values(core.value_pair(first_left, second_left), core.value_pair(first_right, second_right));
+        let pair = Sides::Values(core.value_tuple(&[first_left, second_left]), core.value_tuple(&[first_right, second_right]));
         let world = World::new(core, &[(Name::Zero, body), (Name::One, body)]);
         let mut concatenated = Vec::from([ConversionDecision::Decompose]);
         for (left, right) in components {
@@ -156,15 +159,15 @@ proptest! {
                 let left_unit = core.value_unit();
                 let right_unit = core.value_unit();
                 (left, right) = if before {
-                    (core.value_pair(left_unit, left), core.value_pair(right_unit, right))
+                    (core.value_tuple(&[left_unit, left]), core.value_tuple(&[right_unit, right]))
                 } else {
-                    (core.value_pair(left, left_unit), core.value_pair(right, right_unit))
+                    (core.value_tuple(&[left, left_unit]), core.value_tuple(&[right, right_unit]))
                 };
             }
             (left, right)
         });
         let [(first_left, first_right), (second_left, second_right)] = components;
-        let pair = Sides::Values(core.value_pair(first_left, second_left), core.value_pair(first_right, second_right));
+        let pair = Sides::Values(core.value_tuple(&[first_left, second_left]), core.value_tuple(&[first_right, second_right]));
         let world = World::new(core, &[]);
         let unit = [ConversionDecision::ComparedShared { left: ReplayNode::Other, right: ReplayNode::Other }];
         let mut concatenated = Vec::from([ConversionDecision::Decompose]);
@@ -198,16 +201,16 @@ proptest! {
         for before in context {
             let unit = core.value_unit();
             (left, right) = if before {
-                (core.value_pair(unit, left), core.value_pair(unit, right))
+                (core.value_tuple(&[unit, left]), core.value_tuple(&[unit, right]))
             } else {
-                (core.value_pair(left, unit), core.value_pair(right, unit))
+                (core.value_tuple(&[left, unit]), core.value_tuple(&[right, unit]))
             };
         }
         let unit = core.value_unit();
         let pair = if second {
-            Sides::Values(core.value_pair(unit, left), core.value_pair(unit, right))
+            Sides::Values(core.value_tuple(&[unit, left]), core.value_tuple(&[unit, right]))
         } else {
-            Sides::Values(core.value_pair(left, unit), core.value_pair(right, unit))
+            Sides::Values(core.value_tuple(&[left, unit]), core.value_tuple(&[right, unit]))
         };
         let world = World::new(core, &[]);
         let sides = Sides::Values(left, right);
@@ -243,10 +246,10 @@ fn a_selected_refutation_replays_its_unfolding_before_rigid_separation()
     let body = core.value_unit();
     let unit = core.value_unit();
     let reference = core.value_constant(Name::Zero.constant());
-    let units = core.value_pair(unit, unit);
+    let units = core.value_tuple(&[unit, unit]);
     let pair = Sides::Values(
-        core.value_pair(unit, reference),
-        core.value_pair(unit, units),
+        core.value_tuple(&[unit, reference]),
+        core.value_tuple(&[unit, units]),
     );
     let world = World::new(core, &[(Name::Zero, body)]);
     let sides = Sides::Values(reference, units);

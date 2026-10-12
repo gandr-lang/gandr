@@ -116,10 +116,11 @@ pub fn same_value(
 #[spec(ensures: |ret| match start {
     | Pending::Values(left, right) => match (left_arena.value(left), right_arena.value(right)) {
         | (Some(left), Some(right)) => match *left {
-            | Value::ListNil | Value::Unit | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) => (ret == Agreement::Same) == (left == right),
+            | Value::ListNil | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) => (ret == Agreement::Same) == (left == right),
+            | Value::Tuple(ref components) => ret != Agreement::Same || matches!(*right, Value::Tuple(ref others) if components.len() == others.len()),
             | Value::Injection(side, _) => ret != Agreement::Same || matches!(*right, Value::Injection(other_side, _) if side == other_side),
             | Value::Lift { ref target, .. } => ret != Agreement::Same || matches!(*right, Value::Lift { target: ref other_target, .. } if target == other_target),
-            | Value::ListCons(..) | Value::Pair(_, _) | Value::Thunk(_) => ret != Agreement::Same || core::mem::discriminant(left) == core::mem::discriminant(right),
+            | Value::ListCons(..) | Value::Thunk(_) => ret != Agreement::Same || core::mem::discriminant(left) == core::mem::discriminant(right),
             | Value::Constructor { tag, ref fields, .. } => ret != Agreement::Same
                 || matches!(*right, Value::Constructor { tag: other_tag, fields: ref other_fields, .. } if tag == other_tag && fields.len() == other_fields.len()),
             Value::Record(_) | Value::Reify(_) | Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(_, _) | Value::Hole(_) | Value::Mark { .. } => ret == Agreement::Differ,
@@ -154,11 +155,19 @@ fn walk(
                         },
                     ) => zone == other_zone && index == other_index,
                     | (&Value::Constant(constant), &Value::Constant(other)) => constant == other,
-                    | (&Value::Unit, &Value::Unit) | (&Value::ListNil, &Value::ListNil) => true,
+                    | (&Value::ListNil, &Value::ListNil) => true,
+                    | (&Value::Tuple(ref components), &Value::Tuple(ref others)) => {
+                        pending.extend(
+                            components
+                                .iter()
+                                .zip(others.iter())
+                                .map(|(&component, &other)| Pending::Values(component, other)),
+                        );
+                        components.len() == others.len()
+                    },
                     | (&Value::Literal(ref literal), &Value::Literal(ref other)) => {
                         literal == other
                     },
-                    | (&Value::Pair(first, second), &Value::Pair(other_first, other_second))
                     | (
                         &Value::ListCons(first, second),
                         &Value::ListCons(other_first, other_second),
@@ -244,18 +253,23 @@ fn walk(
                     | (
                         &Computation::Case {
                             scrutinee,
-                            on_left,
-                            on_right,
+                            ref branches,
                         },
                         &Computation::Case {
                             scrutinee: other_scrutinee,
-                            on_left: other_left,
-                            on_right: other_right,
+                            branches: ref others,
                         },
                     ) => {
                         pending.push(Pending::Values(scrutinee, other_scrutinee));
-                        pending.push(Pending::Computations(on_left, other_left));
-                        pending.push(Pending::Computations(on_right, other_right));
+                        pending.extend(
+                            branches
+                                .iter()
+                                .zip(others.iter())
+                                .map(|(&branch, &other)| Pending::Computations(branch, other)),
+                        );
+                        if branches.len() != others.len() {
+                            return Agreement::Differ;
+                        }
                         true
                     },
                     | (
@@ -315,10 +329,10 @@ fn structural_equality_ignores_addresses_but_not_labels()
     let mut left = CoreArena::new();
     let left_unit = left.value_unit();
     let left_variable = left.value_variable(Zone::Intuitionistic, 0_u32.into());
-    let left_pair = left.value_pair(left_unit, left_variable);
+    let left_pair = left.value_tuple(&[left_unit, left_variable]);
     let left_constant = left.value_constant(0_usize.into());
     let left_integer = integer(&mut left, Integer(7));
-    let left_injection = left.value_injection(Side::Left, left_unit);
+    let left_injection = left.value_injection(Side::Left.into(), left_unit);
     let left_lift = left.value_lift(Level::zero(), left_unit);
     let left_datatype = left.value_type_data(0_usize.into(), alloc::vec![]);
     let left_constructor = left.value_constructor(left_datatype, 1_usize.into(), alloc::vec![
@@ -329,10 +343,10 @@ fn structural_equality_ignores_addresses_but_not_labels()
     let other_zone = right.value_variable(Zone::Linear, 0_u32.into());
     let right_unit = right.value_unit();
     let right_variable = right.value_variable(Zone::Intuitionistic, 0_u32.into());
-    let right_pair = right.value_pair(right_unit, right_variable);
+    let right_pair = right.value_tuple(&[right_unit, right_variable]);
     let right_constant = right.value_constant(0_usize.into());
     let right_integer = integer(&mut right, Integer(7));
-    let right_injection = right.value_injection(Side::Left, right_unit);
+    let right_injection = right.value_injection(Side::Left.into(), right_unit);
     let right_lift = right.value_lift(Level::zero(), right_unit);
     let erased = right.value_type_unknown();
     let right_constructor = right.value_constructor(erased, 1_usize.into(), alloc::vec![
@@ -366,13 +380,13 @@ fn structural_equality_ignores_addresses_but_not_labels()
         assert_eq!(Agreement::Differ, same_value(&left, a, &right, b));
     }
     let changed_index = right.value_variable(Zone::Intuitionistic, 1_u32.into());
-    let changed_first = right.value_pair(right_variable, right_variable);
-    let changed_second = right.value_pair(right_unit, right_unit);
-    let exchanged = right.value_pair(right_variable, right_unit);
+    let changed_first = right.value_tuple(&[right_variable, right_variable]);
+    let changed_second = right.value_tuple(&[right_unit, right_unit]);
+    let exchanged = right.value_tuple(&[right_variable, right_unit]);
     let changed_constant = right.value_constant(1_usize.into());
     let changed_integer = integer(&mut right, Integer(8));
-    let changed_side = right.value_injection(Side::Right, right_unit);
-    let changed_injected_body = right.value_injection(Side::Left, right_variable);
+    let changed_side = right.value_injection(Side::Right.into(), right_unit);
+    let changed_injected_body = right.value_injection(Side::Left.into(), right_variable);
     let changed_level = right.value_lift(
         Level::zero().succ().expect("one is representable"),
         right_unit,
@@ -429,8 +443,8 @@ fn computation_comparison_preserves_every_child_role()
     let thunk = left.value_thunk(returned_unit);
     let forced = left.computation_force(thunk);
     let bound = left.computation_bind(returned_unit, returned_variable);
-    let injected = left.value_injection(Side::Left, unit);
-    let cased = left.computation_case(injected, returned_unit, returned_variable);
+    let injected = left.value_injection(Side::Left.into(), unit);
+    let cased = left.computation_case(injected, &[returned_unit, returned_variable]);
     let unit_type = left.value_type_unit();
     let motive = left.comp_type_returner(unit_type);
     let matched =
@@ -447,9 +461,11 @@ fn computation_comparison_preserves_every_child_role()
     let other_thunk = right.value_thunk(other_returned_unit);
     let other_forced = right.computation_force(other_thunk);
     let other_bound = right.computation_bind(other_returned_unit, other_returned_variable);
-    let other_injected = right.value_injection(Side::Left, other_unit);
-    let other_cased =
-        right.computation_case(other_injected, other_returned_unit, other_returned_variable);
+    let other_injected = right.value_injection(Side::Left.into(), other_unit);
+    let other_cased = right.computation_case(other_injected, &[
+        other_returned_unit,
+        other_returned_variable,
+    ]);
     let erased = right.comp_type_unknown();
     let other_matched = right.computation_data_case(other_unit, erased, alloc::vec![
         other_returned_unit,
@@ -479,7 +495,7 @@ fn computation_comparison_preserves_every_child_role()
         Agreement::Differ,
         same_value(&left, thunk, &right, changed_thunk)
     );
-    let changed_scrutinee = right.value_injection(Side::Right, other_unit);
+    let changed_scrutinee = right.value_injection(Side::Right.into(), other_unit);
     let changed_function = right.computation_lambda(other_returned_unit);
     let changed_head = right.computation_application(other_returned_unit, other_unit);
     let changed_argument = right.computation_application(other_function, other_variable);
@@ -487,18 +503,16 @@ fn computation_comparison_preserves_every_child_role()
     let returned_thunk = right.computation_return(other_thunk);
     let changed_bound = right.computation_bind(other_returned_variable, other_returned_variable);
     let changed_body = right.computation_bind(other_returned_unit, other_returned_unit);
-    let changed_case_scrutinee = right.computation_case(
-        changed_scrutinee,
+    let changed_case_scrutinee = right.computation_case(changed_scrutinee, &[
         other_returned_unit,
         other_returned_variable,
-    );
-    let changed_left_arm = right.computation_case(
-        other_injected,
+    ]);
+    let changed_left_arm = right.computation_case(other_injected, &[
         other_returned_variable,
         other_returned_variable,
-    );
+    ]);
     let changed_right_arm =
-        right.computation_case(other_injected, other_returned_unit, other_returned_unit);
+        right.computation_case(other_injected, &[other_returned_unit, other_returned_unit]);
     let changed_match_scrutinee = right.computation_data_case(other_variable, erased, alloc::vec![
         other_returned_unit,
         other_returned_variable

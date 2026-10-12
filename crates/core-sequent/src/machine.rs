@@ -2533,7 +2533,7 @@ mod tests
         let second = integer(&mut core, Digits("2"));
         let term = native(&mut core, NativeName("lt"), &[first, second]);
         let unit = core.value_unit();
-        let truth = core.value_injection(Side::Left, unit);
+        let truth = core.value_injection(Side::Left.into(), unit);
         let expected = core.computation_return(truth);
         assert_eq!(evaluated(&mut core, term), shown(&core, expected));
     }
@@ -2544,8 +2544,8 @@ mod tests
     {
         let mut core = CoreArena::new();
         let unit = core.value_unit();
-        let truth = core.value_injection(Side::Left, unit);
-        let falsity = core.value_injection(Side::Right, unit);
+        let truth = core.value_injection(Side::Left.into(), unit);
+        let falsity = core.value_injection(Side::Right.into(), unit);
         let term = native(&mut core, NativeName("and"), &[truth, falsity]);
         let expected = core.computation_return(falsity);
         assert_eq!(evaluated(&mut core, term), shown(&core, expected));
@@ -2874,7 +2874,7 @@ mod tests
         assert_control(&mut core, perform, ControlExpectation::Perform("E", "op"));
         let buried = core.computation_bind(perform, identity);
         assert_control(&mut core, buried, ControlExpectation::Perform("E", "op"));
-        let doubled = core.value_pair(zero, zero);
+        let doubled = core.value_tuple(&[zero, zero]);
         let double_return = core.computation_return(doubled);
         let discard = handler(
             &mut core,
@@ -2902,7 +2902,7 @@ mod tests
             resume_payload,
         );
         assert_control(&mut core, payload_flow, ControlExpectation::Value(five));
-        let doubled_seven = core.value_pair(seven, seven);
+        let doubled_seven = core.value_tuple(&[seven, seven]);
         let returned = handler(
             &mut core,
             signature.clone(),
@@ -2917,13 +2917,13 @@ mod tests
         );
         let buried_handled = handler(&mut core, signature.clone(), buried, identity, resume_seven);
         assert_control(&mut core, buried_handled, ControlExpectation::Value(seven));
-        let pair = core.value_pair(outer, zero);
+        let pair = core.value_tuple(&[outer, zero]);
         let pair_return = core.computation_return(pair);
         let second = core.computation_bind(perform, pair_return);
         let first = core.computation_bind(perform, second);
         let resume_one = core.computation_resume(zero, ret_one);
         let deep = handler(&mut core, signature.clone(), first, identity, resume_one);
-        let both_one = core.value_pair(one, one);
+        let both_one = core.value_tuple(&[one, one]);
         assert_control(&mut core, deep, ControlExpectation::Value(both_one));
         let other = effect(&mut core, "Other".into(), "other".into());
         let other_perform = core.computation_perform(other.clone(), "other".into(), five);
@@ -2982,7 +2982,7 @@ mod tests
         let ret_two = core.computation_return(two);
         let ret_three = core.computation_return(three);
         let identity = core.computation_return(zero);
-        let pair = core.value_pair(zero, zero);
+        let pair = core.value_tuple(&[zero, zero]);
         let pair_return = core.computation_return(pair);
         let discard = core.computation_shift(ret_one);
         let simple = core.computation_reset(discard);
@@ -2994,7 +2994,7 @@ mod tests
         let shifted = core.computation_shift(resumed);
         let bound = core.computation_bind(shifted, pair_return);
         let reset = core.computation_reset(bound);
-        let pair_three = core.value_pair(three, three);
+        let pair_three = core.value_tuple(&[three, three]);
         assert_control(&mut core, reset, ControlExpectation::Value(pair_three));
         let add = gandr_core_term::primitive::PRELUDE
             .iter()
@@ -3458,7 +3458,7 @@ mod tests
         let two = integer(&mut core, Digits("2"));
         let three = integer(&mut core, Digits("3"));
         let unit = core.value_unit();
-        let pair = core.value_pair(one, two);
+        let pair = core.value_tuple(&[one, two]);
         let nil = core.value_list_nil();
         let tail = core.value_list_cons(three, nil);
         let tail = core.value_list_cons(two, tail);
@@ -3576,15 +3576,15 @@ mod tests
     ) -> ComputationId
     {
         let unit = core.value_unit();
-        let yes = core.value_injection(Side::Left, unit);
-        let no = core.value_injection(Side::Right, unit);
+        let yes = core.value_injection(Side::Left.into(), unit);
+        let no = core.value_injection(Side::Right.into(), unit);
         let on_return = core.computation_return(yes);
         let failed = core.computation_return(no);
         let reply = core.computation_return(unit);
         let payload = core.value_variable(Zone::Intuitionistic, 1_u32.into());
         let shifted_continuation = core.value_variable(Zone::Intuitionistic, 1_u32.into());
         let passed = core.computation_resume(shifted_continuation, reply);
-        let clause = core.computation_case(payload, passed, failed);
+        let clause = core.computation_case(payload, &[passed, failed]);
         handler(core, signature, body, on_return, clause)
     }
 
@@ -3593,8 +3593,8 @@ mod tests
     {
         let mut core = CoreArena::new();
         let unit = core.value_unit();
-        let yes = core.value_injection(Side::Left, unit);
-        let no = core.value_injection(Side::Right, unit);
+        let yes = core.value_injection(Side::Left.into(), unit);
+        let no = core.value_injection(Side::Right.into(), unit);
         let one = integer(&mut core, Digits("1"));
         let two = integer(&mut core, Digits("2"));
         let three = integer(&mut core, Digits("3"));
@@ -3639,8 +3639,8 @@ mod tests
     {
         let mut core = CoreArena::new();
         let unit = core.value_unit();
-        let yes = core.value_injection(Side::Left, unit);
-        let no = core.value_injection(Side::Right, unit);
+        let yes = core.value_injection(Side::Left.into(), unit);
+        let no = core.value_injection(Side::Right.into(), unit);
         let one = integer(&mut core, Digits("1"));
         let five = integer(&mut core, Digits("5"));
         let nil = core.value_list_nil();
@@ -3684,8 +3684,8 @@ mod tests
             "capture".into(),
         )));
         let arguments = core.value_list_nil();
-        let args_mode = core.value_pair(arguments, mode);
-        let payload = core.value_pair(program_name, args_mode);
+        let args_mode = core.value_tuple(&[arguments, mode]);
+        let payload = core.value_tuple(&[program_name, args_mode]);
         let stdout = core.value_literal(Literal::Text(gandr_kernel_term::StringLiteral::new(
             "mocked-output".into(),
         )));
@@ -3693,8 +3693,8 @@ mod tests
             String::new(),
         )));
         let status = integer(&mut core, Digits("0"));
-        let error_status = core.value_pair(stderr, status);
-        let output = core.value_pair(stdout, error_status);
+        let error_status = core.value_tuple(&[stderr, status]);
+        let output = core.value_tuple(&[stdout, error_status]);
         let reply = core.computation_return(output);
         let zero = core.value_variable(Zone::Intuitionistic, 0_u32.into());
         let on_return = core.computation_return(zero);
@@ -3713,7 +3713,7 @@ mod tests
         let eleven = integer(&mut core, Digits("11"));
         let zero = core.value_variable(Zone::Intuitionistic, 0_u32.into());
         let one = core.value_variable(Zone::Intuitionistic, 1_u32.into());
-        let pair = core.value_pair(zero, one);
+        let pair = core.value_tuple(&[zero, one]);
         let pair_return = core.computation_return(pair);
         let lambda = core.computation_lambda(pair_return);
         let ignored = core.computation_return(seven);
@@ -3740,7 +3740,7 @@ mod tests
         let resumed = core.computation_resume(stack, fed);
         let close = core.computation_lambda(resumed);
         let program = core.computation_application(close, eleven);
-        let expected = core.value_pair(eleven, seven);
+        let expected = core.value_tuple(&[eleven, seven]);
         assert_control(&mut core, program, ControlExpectation::Value(expected));
     }
 
@@ -3790,7 +3790,7 @@ mod tests
         let head = source.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
         let result = source.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
         let outer = source.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
-        let paired = source.value_pair(head, outer);
+        let paired = source.value_tuple(&[head, outer]);
         let cell = source.value_list_cons(paired, result);
         let on_nil = source.computation_return(nil);
         let on_cons = source.computation_return(cell);
@@ -3855,7 +3855,7 @@ mod tests
                 else {
                     panic!("native cell");
                 };
-                let &Value::Pair(head, outer) = core.value(pair).expect("pair")
+                let &[head, outer] = core.value(pair).and_then(Value::components).expect("pair")
                 else {
                     panic!("paired head");
                 };
@@ -3920,12 +3920,12 @@ mod tests
         for (side, expected) in [(Side::Left, "⟨3 |+ ★⟩"), (Side::Right, "⟨0 |+ ★⟩")] {
             let mut core = CoreArena::new();
             let three = integer(&mut core, Digits("3"));
-            let scrutinee = core.value_injection(side, three);
+            let scrutinee = core.value_injection(side.into(), three);
             let payload = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
             let on_left = core.computation_return(payload);
             let zero = integer(&mut core, Digits("0"));
             let on_right = core.computation_return(zero);
-            let program = core.computation_case(scrutinee, on_left, on_right);
+            let program = core.computation_case(scrutinee, &[on_left, on_right]);
             assert_eq!(
                 expected,
                 evaluated(&mut core, program),
@@ -3985,7 +3985,7 @@ mod tests
         let mut core = CoreArena::new();
         let five = integer(&mut core, Digits("5"));
         let unit = core.value_unit();
-        let injected = core.value_injection(Side::Left, unit);
+        let injected = core.value_injection(Side::Left.into(), unit);
         let datatype = core.value_type_unknown();
         let beyond = core.value_constructor(datatype, 1_usize.into(), alloc::vec![five]);
         let own = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
@@ -4155,7 +4155,7 @@ mod tests
 
         let forced = core.computation_force(first);
         let again = core.computation_force(first);
-        let pair = core.value_pair(opaque, first);
+        let pair = core.value_tuple(&[opaque, first]);
         let returned = core.computation_return(pair);
         let tail = core.computation_bind(again, returned);
         let program = core.computation_bind(forced, tail);
@@ -4648,7 +4648,9 @@ mod tests
         let read = machine
             .read_back_value(value, &mut core)
             .expect("positive pair");
-        let Some(&gandr_core_term::Value::Pair(first_read, last_read)) = core.value(read)
+        let Some(&[first_read, last_read]) = core
+            .value(read)
+            .and_then(gandr_core_term::Value::components)
         else {
             panic!("pair reading");
         };

@@ -184,11 +184,11 @@ pub enum UnadmittedFormer
     With,
     /// Observation of a lazy computation pair.
     Project,
-    /// A product of neither zero nor two components, which the binary
-    /// kernel product has no image for.
+    /// A product or tuple of neither zero nor two components, which the
+    /// binary kernel product has no image for.
     ProductArity,
-    /// A sum of other than two summands, which the binary kernel sum has no
-    /// image for.
+    /// A sum of other than two summands, or an injection or case beyond
+    /// two, which the binary kernel sum has no image for.
     SumArity,
 }
 

@@ -554,7 +554,7 @@ mod tests
             let right = domain.comp_lambda(right_closure, crate::CompTermFace::Reduced);
             let first = domain.value_unit(crate::TermFace::Reduced);
             let second = domain.value_unit(crate::TermFace::Reduced);
-            let pair = domain.value_pair(first, first, crate::TermFace::Reduced);
+            let pair = domain.value_tuple([first, first], crate::TermFace::Reduced);
             let chain = crate::LoweredChain::new();
             let environment = gandr_core_term::DefinitionalEnvironment::new();
             let definitions = crate::Definitions::new(&chain, &environment, environment.root());

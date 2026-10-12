@@ -6712,10 +6712,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     #[spec(
         ensures: |ret| match ret {
             | Maybe::Present(Lowered::Value(id)) => {
-                matches!(
-                    sink.arena.value(id),
-                    Some(&gandr_core_term::Value::Pair(..))
-                )
+                sink.arena
+                    .value(id)
+                    .and_then(gandr_core_term::Value::components)
+                    .is_some_and(|components| components.len() == 2)
             },
             | Maybe::Present(_) => false,
             | Maybe::Absent(_) => true,
@@ -6773,7 +6773,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             else {
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
-            paired = sink.arena.value_pair(first, paired);
+            paired = sink.arena.value_tuple(&[first, paired]);
             sink.origins.record_value(paired, origin);
         }
 
@@ -10609,7 +10609,7 @@ mod tests
 
         assert_eq!(
             arena.value(body_of(lowered[0])),
-            Some(&Value::Unit),
+            Some(&Value::unit()),
             "`unit` is the unit value"
         );
         assert_eq!(
@@ -11604,7 +11604,10 @@ mod tests
         let one = Value::Literal(integer(SourceFragment::from("1")));
         let letter = Value::Literal(text(SourceFragment::from("a")));
         let pair = |id| match arena.value(id) {
-            | Some(&Value::Pair(first, second)) => Some((first, second)),
+            | Some(&Value::Tuple(ref components)) => match **components {
+                | [first, second] => Some((first, second)),
+                | _ => None,
+            },
             | _ => None,
         };
 
@@ -11637,7 +11640,7 @@ mod tests
         };
         assert_eq!(
             (arena.value(head), arena.value(middle), arena.value(last)),
-            (Some(&one), Some(&Value::Unit), Some(&letter)),
+            (Some(&one), Some(&Value::unit()), Some(&letter)),
             "each member stands at its place in the chain"
         );
         assert_eq!(

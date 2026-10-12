@@ -65,7 +65,6 @@ mod deep_evaluation
     use gandr_core_nbe::DomainArena;
     use gandr_core_nbe::DomainComp;
     use gandr_core_nbe::DomainCompId;
-    use gandr_core_nbe::DomainValue;
     use gandr_core_nbe::DomainValueId;
     use gandr_core_nbe::DuplicationStance;
     use gandr_core_nbe::Fuel;
@@ -177,12 +176,12 @@ mod deep_evaluation
             let mut top = ret.1;
             let mut leaf = None;
             for _ in 0..CHAIN_LINKS {
-                let Some(&Value::Pair(first, second)) = ret.0.value(top) else { return false; };
-                if ret.0.value(second) != Some(&Value::Unit) || leaf.is_some_and(|held| held != second) { return false; }
+                let Some(&[first, second]) = ret.0.value(top).and_then(Value::components) else { return false; };
+                if ret.0.value(second) != Some(&Value::unit()) || leaf.is_some_and(|held| held != second) { return false; }
                 leaf = Some(second);
                 top = first;
             }
-            ret.0.value(top) == Some(&Value::Unit) && leaf.is_none_or(|held| held == top)
+            ret.0.value(top) == Some(&Value::unit()) && leaf.is_none_or(|held| held == top)
         }
     )]
     fn unshared_value_chain() -> (CoreArena, ValueId)
@@ -192,7 +191,7 @@ mod deep_evaluation
         let mut nested = leaf;
         let mut remaining = CHAIN_LINKS;
         while remaining > 0 {
-            nested = core.value_pair(nested, leaf);
+            nested = core.value_tuple(&[nested, leaf]);
             remaining = remaining.saturating_sub(1);
         }
         (core, nested)
@@ -286,7 +285,7 @@ mod deep_evaluation
             let mut argument = None;
             for _ in 0..CURRIED_ARGUMENTS {
                 let Some(&Computation::Application(head, value)) = ret.0.computation(top) else { return false; };
-                if ret.0.value(value) != Some(&Value::Unit) || argument.is_some_and(|held| held != value) { return false; }
+                if ret.0.value(value) != Some(&Value::unit()) || argument.is_some_and(|held| held != value) { return false; }
                 argument = Some(value);
                 top = head;
             }
@@ -433,7 +432,7 @@ mod deep_evaluation
                 continuation = Some(body);
                 top = bound;
             }
-            matches!(ret.0.computation(top), Some(&Computation::Return(value)) if ret.0.value(value) == Some(&Value::Unit))
+            matches!(ret.0.computation(top), Some(&Computation::Return(value)) if ret.0.value(value) == Some(&Value::unit()))
         }
     )]
     fn unshared_bind_chain() -> (CoreArena, ComputationId)
@@ -488,7 +487,7 @@ mod deep_evaluation
                 top = bound;
             }
             let Some(&CompNode::Opaque(base)) = ret.1.computation(top) else { return false; };
-            matches!(ret.0.computation(base), Some(&Computation::Return(value)) if ret.0.value(value) == Some(&Value::Unit))
+            matches!(ret.0.computation(base), Some(&Computation::Return(value)) if ret.0.value(value) == Some(&Value::unit()))
         }
     )]
     fn shared_bind_chain() -> (CoreArena, Overlay, OverlayCompId)
@@ -802,7 +801,9 @@ mod deep_evaluation
                 // shallow graph and keep passing.
                 let mut depth = 0_usize;
                 let mut here = result;
-                while let Some(&DomainValue::Pair { first, .. }) = domain.value(here) {
+                while let Some(&[first, _]) =
+                    domain.value(here).and_then(|held| domain.components(held))
+                {
                     depth = depth.saturating_add(1_usize);
                     here = first;
                 }
@@ -843,7 +844,10 @@ mod deep_evaluation
             panic!("the weak head is a returner");
         };
         assert!(
-            matches!(domain.value(value), Some(&DomainValue::Unit { .. })),
+            domain
+                .value(value)
+                .and_then(|held| domain.components(held))
+                .is_some_and(<[_]>::is_empty),
             "the innermost body returned the argument the last application bound"
         );
     }
@@ -864,7 +868,10 @@ mod deep_evaluation
                     panic!("the weak head is a returner");
                 };
                 assert!(
-                    matches!(domain.value(value), Some(&DomainValue::Unit { .. })),
+                    domain
+                        .value(value)
+                        .and_then(|held| domain.components(held))
+                        .is_some_and(<[_]>::is_empty),
                     "the unit the innermost returner produced was passed up every link"
                 );
             })

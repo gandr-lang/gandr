@@ -2471,7 +2471,7 @@ fn mint_test(
         } => match (child(yes), child(no)) {
             | (Maybe::Present(left), Maybe::Present(right)) => {
                 let scrutinee = level_value(sink.arena, scrutinised, depth, level);
-                Maybe::Present(sink.arena.computation_case(scrutinee, left, right))
+                Maybe::Present(sink.arena.computation_case(scrutinee, &[left, right]))
             },
             | _ => Maybe::Absent(lowered::Absent::Unminted),
         },
@@ -2498,7 +2498,7 @@ fn mint_test(
                 .arena
                 .computation_primitive(equal, Arguments::Binary([scrutinee, compared]));
             let answer = variable(sink.arena, Depth::default());
-            let branched = sink.arena.computation_case(answer, left, right);
+            let branched = sink.arena.computation_case(answer, &[left, right]);
             Maybe::Present(sink.arena.computation_bind(test, branched))
         },
     }

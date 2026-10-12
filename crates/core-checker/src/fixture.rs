@@ -1012,7 +1012,7 @@ impl AtomType
     #[spec(ensures: |ret| match self {
         Self::Integer => matches!(arena.value(ret), Some(gandr_core_term::Value::Literal(Literal::Integer(_)))),
         Self::String => matches!(arena.value(ret), Some(gandr_core_term::Value::Literal(Literal::Text(_)))),
-        Self::Unit => matches!(arena.value(ret), Some(gandr_core_term::Value::Unit)),
+        Self::Unit => arena.value(ret) == Some(&gandr_core_term::Value::unit()),
     })]
     fn inhabitant(
         self,

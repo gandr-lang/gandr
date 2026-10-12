@@ -316,7 +316,7 @@ impl Written
     ) -> ValueId
     {
         let unit = self.core.value_unit();
-        self.core.value_injection(side, unit)
+        self.core.value_injection(side.into(), unit)
     }
 
     /// Every row's live answer against `scrutinee`, the selection, and the

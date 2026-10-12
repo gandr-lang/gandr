@@ -174,12 +174,12 @@ mod deep_readback
             let mut top = ret.1;
             let mut leaf = None;
             for _ in 0..CHAIN_LINKS {
-                let Some(&Value::Pair(first, second)) = ret.0.value(top) else { return false; };
-                if ret.0.value(second) != Some(&Value::Unit) || leaf.is_some_and(|held| held != second) { return false; }
+                let Some(&[first, second]) = ret.0.value(top).and_then(Value::components) else { return false; };
+                if ret.0.value(second) != Some(&Value::unit()) || leaf.is_some_and(|held| held != second) { return false; }
                 leaf = Some(second);
                 top = first;
             }
-            ret.0.value(top) == Some(&Value::Unit) && leaf.is_none_or(|held| held == top)
+            ret.0.value(top) == Some(&Value::unit()) && leaf.is_none_or(|held| held == top)
         }
     )]
     fn unshared_value_chain() -> (CoreArena, ValueId)
@@ -189,7 +189,7 @@ mod deep_readback
         let mut nested = leaf;
         let mut remaining = CHAIN_LINKS;
         while remaining > 0 {
-            nested = core.value_pair(nested, leaf);
+            nested = core.value_tuple(&[nested, leaf]);
             remaining = remaining.saturating_sub(1);
         }
         (core, nested)
@@ -290,7 +290,7 @@ mod deep_readback
                 let Some(&Value::Thunk(body)) = ret.0.value(value) else { return false; };
                 top = body;
             }
-            matches!(ret.0.computation(top), Some(&Computation::Return(value)) if ret.0.value(value) == Some(&Value::Unit))
+            matches!(ret.0.computation(top), Some(&Computation::Return(value)) if ret.0.value(value) == Some(&Value::unit()))
         }
     )]
     fn unshared_suspension_chain() -> (CoreArena, ComputationId)
@@ -589,7 +589,7 @@ mod deep_readback
                 // a shallow graph and keep passing.
                 let mut depth = 0_usize;
                 let mut here = rebuilt;
-                while let Some(&Value::Pair(first, _)) = core.value(here) {
+                while let Some(&[first, _]) = core.value(here).and_then(Value::components) {
                     depth = depth.saturating_add(1_usize);
                     here = first;
                 }
@@ -598,7 +598,7 @@ mod deep_readback
                     "every link of the chain is present in the term that was read back"
                 );
                 assert!(
-                    matches!(core.value(here), Some(&Value::Unit)),
+                    core.value(here) == Some(&Value::unit()),
                     "and the leaf under all of them came back too"
                 );
             })

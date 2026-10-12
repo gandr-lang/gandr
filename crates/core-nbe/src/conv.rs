@@ -977,8 +977,37 @@ impl<'run> Walk<'run>
                     Local::Disagree
                 },
             ),
-            | (DomainValue::Unit { .. }, DomainValue::Unit { .. })
             | (DomainValue::ListNil { .. }, DomainValue::ListNil { .. }) => Ok(Local::Agree),
+            | (
+                DomainValue::Tuple {
+                    fields: left_fields,
+                    ..
+                },
+                DomainValue::Tuple {
+                    fields: right_fields,
+                    ..
+                },
+            ) => {
+                let left_fields = self
+                    .domain
+                    .fields(left_fields)
+                    .map_err(ConversionFault::Domain)?;
+                let right_fields = self
+                    .domain
+                    .fields(right_fields)
+                    .map_err(ConversionFault::Domain)?;
+                if left_fields.len() != right_fields.len() {
+                    return Ok(Local::Disagree);
+                }
+                self.goals.extend(
+                    left_fields
+                        .iter()
+                        .zip(right_fields)
+                        .rev()
+                        .map(|(a, b)| Goal::Values(*a, *b, context)),
+                );
+                Ok(Local::Agree)
+            },
             | (
                 DomainValue::Literal { literal: first, .. },
                 DomainValue::Literal {
@@ -1008,18 +1037,6 @@ impl<'run> Walk<'run>
                     second: right_second,
                     ..
                 },
-            )
-            | (
-                DomainValue::Pair {
-                    first: left_first,
-                    second: left_second,
-                    ..
-                },
-                DomainValue::Pair {
-                    first: right_first,
-                    second: right_second,
-                    ..
-                },
             ) => {
                 self.goals
                     .push(Goal::Values(left_second, right_second, context));
@@ -1029,17 +1046,17 @@ impl<'run> Walk<'run>
             },
             | (
                 DomainValue::Injection {
-                    side: left_side,
+                    summand: left_summand,
                     body: left_body,
                     ..
                 },
                 DomainValue::Injection {
-                    side: right_side,
+                    summand: right_summand,
                     body: right_body,
                     ..
                 },
             ) => {
-                if left_side != right_side {
+                if left_summand != right_summand {
                     return Ok(Local::Disagree);
                 }
                 self.goals
@@ -1154,9 +1171,8 @@ impl<'run> Walk<'run>
                 | DomainValue::Constructor { .. }
                 | DomainValue::Record { .. }
                 | DomainValue::PathProduct { .. }
-                | DomainValue::Unit { .. }
+                | DomainValue::Tuple { .. }
                 | DomainValue::Literal { .. }
-                | DomainValue::Pair { .. }
                 | DomainValue::ListNil { .. }
                 | DomainValue::ListCons { .. }
                 | DomainValue::Injection { .. }
@@ -1438,18 +1454,21 @@ impl<'run> Walk<'run>
                     queued.push(Goal::Closures(ln, rn));
                     queued.push(Goal::Closures(lc, rc));
                 },
-                | (
-                    Elimination::Case {
-                        on_left: left_on_left,
-                        on_right: left_on_right,
-                    },
-                    Elimination::Case {
-                        on_left: right_on_left,
-                        on_right: right_on_right,
-                    },
-                ) => {
-                    queued.push(Goal::Closures(left_on_left, right_on_left));
-                    queued.push(Goal::Closures(left_on_right, right_on_right));
+                | (Elimination::Case(left_branches), Elimination::Case(right_branches)) => {
+                    let left_branches = self
+                        .domain
+                        .branches(left_branches)
+                        .map_err(ConversionFault::Domain)?;
+                    let right_branches = self
+                        .domain
+                        .branches(right_branches)
+                        .map_err(ConversionFault::Domain)?;
+                    if left_branches.len() != right_branches.len() {
+                        return Ok(mismatch);
+                    }
+                    queued.extend(left_branches.iter().zip(right_branches).map(
+                        |(&left_branch, &right_branch)| Goal::Closures(left_branch, right_branch),
+                    ));
                 },
                 | (
                     Elimination::Transport(_)
@@ -1459,7 +1478,7 @@ impl<'run> Walk<'run>
                     | Elimination::Apply(_)
                     | Elimination::Force
                     | Elimination::Bind(_)
-                    | Elimination::Case { .. }
+                    | Elimination::Case(_)
                     | Elimination::ListFold { .. }
                     | Elimination::StaticApply(_)
                     | Elimination::Fixpoint(_),
@@ -1708,7 +1727,7 @@ mod tests
             closure.environment().bindings(zone).is_empty())
         && matches!(closure.body(), crate::closure::CompBody::Source(body)
             if matches!(core.computation(body), Some(gandr_core_term::Computation::Return(value))
-                if matches!(core.value(*value), Some(gandr_core_term::Value::Unit))))))]
+                if core.value(*value).and_then(gandr_core_term::Value::components).is_some_and(<[_]>::is_empty)))))]
     fn closure(
         core: &mut CoreArena,
         domain: &mut DomainArena,
@@ -1834,8 +1853,8 @@ mod tests
         let unit = domain.value_unit(TermFace::Reduced);
         let one = literal(&mut core, &mut domain, String::from("1"));
         let two = literal(&mut core, &mut domain, String::from("2"));
-        let left = domain.value_pair(unit, one, TermFace::Reduced);
-        let right = domain.value_pair(unit, two, TermFace::Reduced);
+        let left = domain.value_tuple([unit, one], TermFace::Reduced);
+        let right = domain.value_tuple([unit, two], TermFace::Reduced);
         let settled = convert_values(&core, &domain, left, right);
         assert_eq!(
             Ok(Settlement::GuardedApart),
@@ -1860,8 +1879,8 @@ mod tests
         let left_one = literal(&mut core, &mut domain, String::from("1"));
         let right_unit = domain.value_unit(TermFace::Reduced);
         let right_one = literal(&mut core, &mut domain, String::from("1"));
-        let left = domain.value_pair(left_unit, left_one, TermFace::Reduced);
-        let right = domain.value_pair(right_unit, right_one, TermFace::Reduced);
+        let left = domain.value_tuple([left_unit, left_one], TermFace::Reduced);
+        let right = domain.value_tuple([right_unit, right_one], TermFace::Reduced);
         assert_eq!(
             Ok(Settlement::StructurallyEqual),
             convert_values(&core, &domain, left, right),
@@ -1874,8 +1893,8 @@ mod tests
         let left_thunk = domain.value_thunk(left_closure, TermFace::Reduced);
         let right_thunk = domain.value_thunk(right_closure, TermFace::Reduced);
         let two = literal(&mut core, &mut domain, String::from("2"));
-        let left = domain.value_pair(left_thunk, left_unit, TermFace::Reduced);
-        let right = domain.value_pair(right_thunk, two, TermFace::Reduced);
+        let left = domain.value_tuple([left_thunk, left_unit], TermFace::Reduced);
+        let right = domain.value_tuple([right_thunk, two], TermFace::Reduced);
         assert_eq!(
             Ok(Settlement::StructurallyApart),
             convert_values(&core, &domain, left, right),
@@ -1989,8 +2008,8 @@ mod tests
         let thunk = domain.value_thunk(suspended, TermFace::Reduced);
         let one = literal(&mut core, &mut domain, String::from("1"));
         let two = literal(&mut core, &mut domain, String::from("2"));
-        let left_pair = domain.value_pair(thunk, one, TermFace::Reduced);
-        let right_pair = domain.value_pair(thunk, two, TermFace::Reduced);
+        let left_pair = domain.value_tuple([thunk, one], TermFace::Reduced);
+        let right_pair = domain.value_tuple([thunk, two], TermFace::Reduced);
         let left = domain.comp_return(left_pair, CompTermFace::Reduced);
         let right = domain.comp_return(right_pair, CompTermFace::Reduced);
         assert_eq!(
@@ -2039,8 +2058,8 @@ mod tests
         let mut right = domain.value_unit(TermFace::Reduced);
         let mut remaining = 64_u32;
         while remaining > 0_u32 {
-            left = domain.value_pair(left, left, TermFace::Reduced);
-            right = domain.value_pair(right, right, TermFace::Reduced);
+            left = domain.value_tuple([left, left], TermFace::Reduced);
+            right = domain.value_tuple([right, right], TermFace::Reduced);
             remaining = remaining.saturating_sub(1_u32);
         }
         assert_eq!(
@@ -2194,8 +2213,8 @@ mod tests
                 Deferral::Unfolding,
             ),
         ] {
-            let left = domain.value_pair(left_first, left_second, TermFace::Reduced);
-            let right = domain.value_pair(right_first, right_second, TermFace::Reduced);
+            let left = domain.value_tuple([left_first, left_second], TermFace::Reduced);
+            let right = domain.value_tuple([right_first, right_second], TermFace::Reduced);
             let answer =
                 convert_values(&core, &domain, left, right).expect("the pair is well formed");
             assert_eq!(Settlement::Deferred(reason), answer);
@@ -2207,8 +2226,8 @@ mod tests
                     .verdict()
             );
             let one = literal(&mut core, &mut domain, String::from("1"));
-            let left = domain.value_pair(left, unit, TermFace::Reduced);
-            let right = domain.value_pair(right, one, TermFace::Reduced);
+            let left = domain.value_tuple([left, unit], TermFace::Reduced);
+            let right = domain.value_tuple([right, one], TermFace::Reduced);
             let answer =
                 convert_values(&core, &domain, left, right).expect("the mismatch resolves");
             assert_eq!(Settlement::StructurallyApart, answer);

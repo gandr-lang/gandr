@@ -326,9 +326,15 @@ fn walk(
                     pending.push((AnyNode::Value(forward), depth, results));
                     pending.push((AnyNode::Value(backward), depth, results));
                 },
+                | Some(&Value::Tuple(ref components)) => {
+                    pending.extend(
+                        components
+                            .iter()
+                            .map(|&component| (AnyNode::Value(component), depth, results)),
+                    );
+                },
                 | Some(
                     &(Value::PathProduct(first, second)
-                    | Value::Pair(first, second)
                     | Value::ListCons(first, second)
                     | Value::StaticApplication(first, second)),
                 ) => {
@@ -371,7 +377,6 @@ fn walk(
                 | Some(
                     &(Value::Primitive { .. }
                     | Value::Constant(_)
-                    | Value::Unit
                     | Value::ListNil
                     | Value::Literal(_)
                     | Value::Hole(_)),
@@ -426,12 +431,14 @@ fn walk(
                 },
                 | Some(&Computation::Case {
                     scrutinee,
-                    on_left,
-                    on_right,
+                    ref branches,
                 }) => {
                     pending.push((AnyNode::Value(scrutinee), depth, results));
-                    pending.push((AnyNode::Computation(on_left), deeper, results));
-                    pending.push((AnyNode::Computation(on_right), deeper, results));
+                    pending.extend(
+                        branches
+                            .iter()
+                            .map(|&branch| (AnyNode::Computation(branch), deeper, results)),
+                    );
                 },
                 | Some(
                     &(Computation::Lambda(body)

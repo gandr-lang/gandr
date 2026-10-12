@@ -1060,7 +1060,7 @@ mod tests
         let zero = arena.value_literal(integer_literal());
         let forced = arena.computation_force(zero);
         let thunk = arena.value_thunk(forced);
-        let pair = arena.value_pair(zero, thunk);
+        let pair = arena.value_tuple(&[zero, thunk]);
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
         let module = [
             declaration(At(0), Maybe::Present(integer), Maybe::Present(itself)),

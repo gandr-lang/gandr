@@ -138,20 +138,24 @@ pub fn canonical(
                     core::fmt::Write::write_fmt(&mut text, format_args!("{}", i64::from(integer)));
                 text.push(')');
             },
-            | Value::Unit => text.push_str("(unit)"),
-            | Value::Pair(first, second) => {
-                text.push_str("(pair ");
-                pending.extend([
-                    Step::Text(")"),
-                    Step::Value(second),
-                    Step::Text(" "),
-                    Step::Value(first),
-                ]);
+            | Value::Tuple(ref components) => match **components {
+                | [] => text.push_str("(unit)"),
+                | [first, second] => {
+                    text.push_str("(pair ");
+                    pending.extend([
+                        Step::Text(")"),
+                        Step::Value(second),
+                        Step::Text(" "),
+                        Step::Value(first),
+                    ]);
+                },
+                | _ => return Err(RenderError::OutsideSlice),
             },
-            | Value::Injection(side, payload) => {
-                text.push_str(match side {
-                    | Side::Left => "(inl ",
-                    | Side::Right => "(inr ",
+            | Value::Injection(summand, payload) => {
+                text.push_str(match Side::try_from(summand) {
+                    | Ok(Side::Left) => "(inl ",
+                    | Ok(Side::Right) => "(inr ",
+                    | Err(_) => return Err(RenderError::OutsideSlice),
                 });
                 pending.extend([Step::Text(")"), Step::Value(payload)]);
             },

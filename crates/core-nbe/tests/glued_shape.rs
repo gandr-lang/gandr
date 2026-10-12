@@ -33,22 +33,23 @@ mod glued_shape
 
         let mut domain = DomainArena::new();
         let unreduced = domain.value_unit(TermFace::Source(source));
-        let reduced = domain.value_pair(unreduced, unreduced, TermFace::Reduced);
+        let reduced = domain.value_tuple([unreduced, unreduced], TermFace::Reduced);
 
         assert_eq!(
-            Some(&DomainValue::Unit {
-                face: TermFace::Source(source),
-            }),
-            domain.value(unreduced),
+            Some(TermFace::Source(source)),
+            domain.value(unreduced).map(DomainValue::face),
             "an unreduced value reads back as the id it came from"
         );
         assert_eq!(
-            Some(&DomainValue::Pair {
-                first: unreduced,
-                second: unreduced,
-                face: TermFace::Reduced,
-            }),
-            domain.value(reduced),
+            Some([unreduced, unreduced].as_slice()),
+            domain
+                .value(reduced)
+                .and_then(|held| domain.components(held)),
+            "a pair holds its components in order"
+        );
+        assert_eq!(
+            Some(TermFace::Reduced),
+            domain.value(reduced).map(DomainValue::face),
             "and a value something reduced inside states the absence rather than a stale id"
         );
 

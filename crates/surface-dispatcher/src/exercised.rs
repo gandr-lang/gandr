@@ -756,11 +756,13 @@ fn formers(
                         backward: second,
                         ..
                     }
-                    | Value::ListCons(first, second)
-                    | Value::Pair(first, second)),
+                    | Value::ListCons(first, second)),
                 ) => {
                     worklist.push(Node::Value(first));
                     worklist.push(Node::Value(second));
+                },
+                | Some(&Value::Tuple(ref components)) => {
+                    worklist.extend(components.iter().map(|&component| Node::Value(component)));
                 },
                 | Some(&(Value::PathRefl(injected) | Value::Injection(_, injected))) => {
                     worklist.push(Node::Value(injected));
@@ -774,7 +776,6 @@ fn formers(
                     &Value::Primitive { .. }
                     | &(Value::Variable { .. }
                     | Value::Constant(_)
-                    | Value::Unit
                     | Value::ListNil
                     | Value::Literal(_)
                     | Value::Quote(_)
@@ -861,12 +862,10 @@ fn formers(
                 },
                 | Some(&Computation::Case {
                     scrutinee,
-                    on_left,
-                    on_right,
+                    ref branches,
                 }) => {
                     worklist.push(Node::Value(scrutinee));
-                    worklist.push(Node::Computation(on_left));
-                    worklist.push(Node::Computation(on_right));
+                    worklist.extend(branches.iter().map(|&branch| Node::Computation(branch)));
                 },
                 | Some(&Computation::Fixpoint { body, .. }) => {
                     worklist.push(Node::Computation(body));

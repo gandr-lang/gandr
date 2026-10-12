@@ -365,9 +365,9 @@ fn normaliser_stop(fault: EvalFault) -> Stop
         | EvalFault::AppliedNonFunction => Stop::AppliedNonFunction,
         | EvalFault::ForcedNonThunk => Stop::ForcedNonThunk,
         | EvalFault::CasedNonInjection => Stop::CasedNonInjection,
-        | EvalFault::CasedNonConstructor | EvalFault::UnknownConstructor { .. } => {
-            Stop::UnmatchedConstructor
-        },
+        | EvalFault::CasedNonConstructor
+        | EvalFault::UnknownConstructor { .. }
+        | EvalFault::UnknownSummand { .. } => Stop::UnmatchedConstructor,
         | EvalFault::UnboundVariable { .. } => Stop::UnboundVariable,
         | EvalFault::TransportedNonPath
         | EvalFault::ProjectedNonRecord
@@ -554,8 +554,8 @@ fn first_order_returns_compare_exactly()
         let head = returning(core, |core| {
             let one = integer(core, Integer(1_i32));
             let unit = core.value_unit();
-            let left = core.value_injection(Side::Left, unit);
-            core.value_pair(one, left)
+            let left = core.value_injection(Side::Left.into(), unit);
+            core.value_tuple(&[one, left])
         });
         let body = returning(core, |core| variable(core, Index(0)));
         core.computation_bind(head, body)
@@ -567,8 +567,8 @@ fn first_order_returns_compare_exactly()
             returning(core, |core| {
                 let one = integer(core, Integer(1_i32));
                 let unit = core.value_unit();
-                let right = core.value_injection(Side::Right, unit);
-                core.value_pair(one, right)
+                let right = core.value_injection(Side::Right.into(), unit);
+                core.value_tuple(&[one, right])
             })
         },
     );
@@ -649,13 +649,13 @@ fn hand_built_pure_spine_cases_agree()
             returning(core, |core| {
                 let first = integer(core, Integer(1_i32));
                 let second = integer(core, Integer(-2_i32));
-                core.value_pair(first, second)
+                core.value_tuple(&[first, second])
             })
         }),
         case(Label("return an injection"), Expected::Exactly, |core| {
             returning(core, |core| {
                 let unit = core.value_unit();
-                core.value_injection(Side::Left, unit)
+                core.value_injection(Side::Left.into(), unit)
             })
         }),
         case(Label("bind threads a value"), Expected::Exactly, |core| {
@@ -680,7 +680,7 @@ fn hand_built_pure_spine_cases_agree()
             let answer = returning(core, |core| {
                 let earlier = variable(core, Index(1));
                 let later = variable(core, Index(0));
-                core.value_pair(earlier, later)
+                core.value_tuple(&[earlier, later])
             });
             let inner = core.computation_bind(force_again, answer);
             let middle = core.computation_bind(force_first, inner);
@@ -703,17 +703,17 @@ fn hand_built_pure_spine_cases_agree()
         },),
         case(Label("case on the left"), Expected::Exactly, |core| {
             let one = integer(core, Integer(1_i32));
-            let scrutinee = core.value_injection(Side::Left, one);
+            let scrutinee = core.value_injection(Side::Left.into(), one);
             let on_left = returning(core, |core| variable(core, Index(0)));
             let on_right = returning(core, |core| integer(core, Integer(0_i32)));
-            core.computation_case(scrutinee, on_left, on_right)
+            core.computation_case(scrutinee, &[on_left, on_right])
         }),
         case(Label("case on the right"), Expected::Exactly, |core| {
             let two = integer(core, Integer(2_i32));
-            let scrutinee = core.value_injection(Side::Right, two);
+            let scrutinee = core.value_injection(Side::Right.into(), two);
             let on_left = returning(core, |core| integer(core, Integer(0_i32)));
             let on_right = returning(core, |core| variable(core, Index(0)));
-            core.computation_case(scrutinee, on_left, on_right)
+            core.computation_case(scrutinee, &[on_left, on_right])
         }),
         case(
             Label("a returner applied"),
@@ -739,7 +739,7 @@ fn hand_built_pure_spine_cases_agree()
                 let one = integer(core, Integer(1_i32));
                 let on_left = returning(core, CoreArena::value_unit);
                 let on_right = returning(core, CoreArena::value_unit);
-                core.computation_case(one, on_left, on_right)
+                core.computation_case(one, &[on_left, on_right])
             },
         ),
     ]);
@@ -778,7 +778,7 @@ fn hand_built_exact_readback_cases_agree()
             let body = returning(core, |core| {
                 let outer = variable(core, Index(1));
                 let inner = variable(core, Index(0));
-                core.value_pair(outer, inner)
+                core.value_tuple(&[outer, inner])
             });
             let inner = core.computation_lambda(body);
             core.computation_lambda(inner)
@@ -948,7 +948,7 @@ fn hand_built_declared_data_cases_agree()
                 let pair = returning(core, |core| {
                     let head = variable(core, Index(1));
                     let tail = variable(core, Index(0));
-                    core.value_pair(head, tail)
+                    core.value_tuple(&[head, tail])
                 });
                 let inner = core.computation_lambda(pair);
                 let cons = core.computation_lambda(inner);
@@ -968,7 +968,7 @@ fn hand_built_declared_data_cases_agree()
                 let matched = core.computation_data_case(scrutinee, motive, alloc::vec![branch]);
                 let doubled = returning(core, |core| {
                     let bound = variable(core, Index(0));
-                    core.value_pair(bound, bound)
+                    core.value_tuple(&[bound, bound])
                 });
                 core.computation_bind(matched, doubled)
             },

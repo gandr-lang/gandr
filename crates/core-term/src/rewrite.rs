@@ -655,8 +655,9 @@ impl<'arena> Engine<'arena>
 Value::Reify(ref frames) => frames.iter().filter(|frame| !matches!(frame, crate::control::StackFrame::Project(_))).count(),
 Value::Constructor { ref fields, .. } => fields.len().saturating_add(1),
 Value::Record(ref fields) => fields.len(),
-Value::ListNil | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Unit | Value::Literal(_) | Value::Hole(_) => 0_usize,
-Value::ListCons(..) | Value::Pair(..) | Value::StaticApplication(..) | Value::PathProduct(..) => 2,
+Value::Tuple(ref components) => components.len(),
+Value::ListNil | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Hole(_) => 0_usize,
+Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) => 2,
 Value::PathEquiv { .. } => 3,
 Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::PathRefl(_) | Value::Mark { .. } => 1,
 }),
@@ -668,7 +669,7 @@ Computation::Primitive { ref arguments, .. } => arguments.len(),
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
 Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::RecordProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 1,
 Computation::Resume(..) | Computation::With(..) | Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) => 2,
-Computation::Case { .. } => 3,
+Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
 Computation::Hole(_) => 0_usize,
 }),
         | Node::ValueType(id) => self.arena.value_type(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
@@ -736,7 +737,6 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                     &Value::Primitive { .. }
                     | &Value::Variable { .. }
                     | &Value::Constant(_)
-                    | &Value::Unit
                     | &Value::ListNil
                     | &Value::Literal(_)
                     | &Value::Hole(_),
@@ -761,12 +761,17 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                 | Some(
                     &Value::ListCons(first, second)
                     | &Value::PathProduct(first, second)
-                    | &Value::Pair(first, second)
                     | &Value::StaticApplication(first, second),
                 ) => {
                     self.tasks.push(open(Node::Value(second), depth));
                     self.tasks.push(open(Node::Value(first), depth));
                 },
+                | Some(&Value::Tuple(ref components)) => self.tasks.extend(
+                    components
+                        .iter()
+                        .rev()
+                        .map(|&component| open(Node::Value(component), depth)),
+                ),
                 | Some(&Value::Thunk(body)) => {
                     self.tasks.push(open(Node::Computation(body), depth));
                 },
@@ -892,13 +897,14 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                 },
                 | Some(&Computation::Case {
                     scrutinee,
-                    on_left,
-                    on_right,
+                    ref branches,
                 }) => {
-                    self.tasks
-                        .push(open(Node::Computation(on_right), depth.deeper()));
-                    self.tasks
-                        .push(open(Node::Computation(on_left), depth.deeper()));
+                    self.tasks.extend(
+                        branches
+                            .iter()
+                            .rev()
+                            .map(|&branch| open(Node::Computation(branch), depth.deeper())),
+                    );
                     self.tasks.push(open(Node::Value(scrutinee), depth));
                 },
             },
@@ -1218,8 +1224,9 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
 Value::Reify(ref frames) => frames.iter().filter(|frame| !matches!(frame, crate::control::StackFrame::Project(_))).count(),
 Value::Constructor { ref fields, .. } => fields.len().saturating_add(1),
 Value::Record(ref fields) => fields.len(),
-Value::ListNil | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Unit | Value::Literal(_) | Value::Hole(_) => 0_usize,
-Value::ListCons(..) | Value::Pair(..) | Value::StaticApplication(..) | Value::PathProduct(..) => 2,
+Value::Tuple(ref components) => components.len(),
+Value::ListNil | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Hole(_) => 0_usize,
+Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) => 2,
 Value::PathEquiv { .. } => 3,
 Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::PathRefl(_) | Value::Mark { .. } => 1,
 })],
@@ -1356,7 +1363,6 @@ Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | 
             | Value::Primitive { .. }
             | Value::Variable { .. }
             | Value::Constant(_)
-            | Value::Unit
             | Value::ListNil
             | Value::Literal(_)
             | Value::Hole(_) => id,
@@ -1369,14 +1375,20 @@ Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | 
                     self.arena.value_mark(mark, rewritten)
                 }
             },
-            | Value::Pair(first, second) => {
-                let rewritten_second = Self::value(&mut self.results, second);
-                let rewritten_first = Self::value(&mut self.results, first);
-                if (rewritten_first, rewritten_second) == (first, second) {
-                    id
+            | Value::Tuple(ref components) => {
+                let mut changed: Option<Vec<ValueId>> = None;
+                for (index, original) in components.iter().enumerate().rev() {
+                    let rewritten = Self::value(&mut self.results, *original);
+                    if rewritten != *original {
+                        let changed = changed.get_or_insert_with(|| components.to_vec());
+                        if let Some(slot) = changed.get_mut(index) {
+                            *slot = rewritten;
+                        }
+                    }
                 }
-                else {
-                    self.arena.value_pair(rewritten_first, rewritten_second)
+                match changed {
+                    | Some(components) => self.arena.value_tuple(&components),
+                    | None => id,
                 }
             },
             | Value::ListCons(head, tail) => {
@@ -1389,13 +1401,13 @@ Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | 
                     self.arena.value_list_cons(new_head, new_tail)
                 }
             },
-            | Value::Injection(side, body) => {
+            | Value::Injection(summand, body) => {
                 let rewritten = Self::value(&mut self.results, body);
                 if rewritten == body {
                     id
                 }
                 else {
-                    self.arena.value_injection(side, rewritten)
+                    self.arena.value_injection(summand, rewritten)
                 }
             },
             | Value::Thunk(body) => {
@@ -1481,7 +1493,7 @@ Computation::Primitive { ref arguments, .. } => arguments.len(),
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
 Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::RecordProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 1,
 Computation::Resume(..) | Computation::With(..) | Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) => 2,
-Computation::Case { .. } => 3,
+Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
 Computation::Hole(_) => 0_usize,
 })],
         ensures: |ret| self.results.len() == ready.saturating_sub(children)
@@ -1754,23 +1766,32 @@ Computation::Hole(_) => 0_usize,
             },
             | Computation::Case {
                 scrutinee,
-                on_left,
-                on_right,
+                ref branches,
             } => {
-                let rewritten_right = Self::computation(&mut self.results, on_right);
-                let rewritten_left = Self::computation(&mut self.results, on_left);
+                let mut changed: Option<Vec<ComputationId>> = None;
+                for (index, original) in branches.iter().enumerate().rev() {
+                    let rewritten = Self::computation(&mut self.results, *original);
+                    if rewritten != *original {
+                        let changed = changed.get_or_insert_with(|| branches.to_vec());
+                        if let Some(slot) = changed.get_mut(index) {
+                            *slot = rewritten;
+                        }
+                    }
+                }
                 let rewritten_scrutinee = Self::value(&mut self.results, scrutinee);
-                if (rewritten_scrutinee, rewritten_left, rewritten_right)
-                    == (scrutinee, on_left, on_right)
-                {
+                if changed.is_none() && rewritten_scrutinee == scrutinee {
                     id
                 }
                 else {
-                    self.arena.computation_case(
-                        rewritten_scrutinee,
-                        rewritten_left,
-                        rewritten_right,
-                    )
+                    match changed {
+                        | Some(branches) => {
+                            self.arena.computation_case(rewritten_scrutinee, &branches)
+                        },
+                        | None => {
+                            let branches = branches.to_vec();
+                            self.arena.computation_case(rewritten_scrutinee, &branches)
+                        },
+                    }
                 }
             },
             | Computation::Hole(_) => id,
@@ -2815,13 +2836,13 @@ mod tests
         | Visit::Value(id) => match arena.value(id) {
             | Some(&Value::Variable { index, .. }) => Token::Variable(u32::from(index)),
             | Some(&Value::Constant(constant)) => Token::Constant(constant),
-            | Some(&Value::Pair(..)) => Token::Pair,
+            | Some(&Value::Tuple(_)) => Token::Pair,
             | Some(&Value::Quote(_)) => Token::Quote,
             | Some(&Value::QuoteComputation(_)) => Token::QuoteComputation,
             | Some(&Value::StaticLambda(_)) => Token::StaticLambda,
             | Some(&Value::StaticApplication(..)) => Token::StaticApplication,
             Some(&Value::Reify(_) | &Value::ListNil | &Value::ListCons(..) | &Value::Constructor { .. } | &Value::Record(_) | &Value::Primitive { .. }
-| &Value::Unit | &Value::Literal(_) | &Value::Injection(..) | &Value::Thunk(_)
+| &Value::Literal(_) | &Value::Injection(..) | &Value::Thunk(_)
 | &Value::Lift { .. } | &Value::PathRefl(_) | &Value::PathProduct(..) |
 &Value::PathEquiv { .. } | &Value::Hole(_) | &Value::Mark { .. }) | None => Token::Other,
             },
@@ -2884,10 +2905,14 @@ mod tests
                         tokens.push(Token::Variable(u32::from(index)));
                     },
                     | Some(&Value::Constant(constant)) => tokens.push(Token::Constant(constant)),
-                    | Some(&Value::Pair(first, second)) => {
+                    | Some(&Value::Tuple(ref components)) => {
                         tokens.push(Token::Pair);
-                        pending.push(Visit::Value(second));
-                        pending.push(Visit::Value(first));
+                        pending.extend(
+                            components
+                                .iter()
+                                .rev()
+                                .map(|&component| Visit::Value(component)),
+                        );
                     },
                     | Some(&Value::Quote(quoted)) => {
                         tokens.push(Token::Quote);
@@ -3474,7 +3499,7 @@ mod tests
         // stays; the inner #1 is the substituted binder.
         let own = variable(&mut arena, DeBruijnIndex::from(0));
         let substituted = variable(&mut arena, DeBruijnIndex::from(1));
-        let pair = arena.value_pair(own, substituted);
+        let pair = arena.value_tuple(&[own, substituted]);
         let body = arena.value_static_lambda(pair);
         let argument = arena.value_constant(ConstantIndex::from(1_usize));
         let reduct = instantiate_value(&mut arena, body, argument);
@@ -3735,22 +3760,22 @@ mod tests
         let level = Level::zero().succ().expect("one");
         for (original, unchanged, changed, expected) in [
             (
-                arena.value_pair(v0, v1),
+                arena.value_tuple(&[v0, v1]),
                 vec![Node::Value(v0), Node::Value(v1)],
                 vec![Node::Value(w0), Node::Value(w1)],
-                Value::Pair(w0, w1),
+                Value::Tuple([w0, w1].into()),
             ),
             (
-                arena.value_injection(gandr_kernel_term::Side::Left, v0),
+                arena.value_injection(gandr_kernel_term::Side::Left.into(), v0),
                 vec![Node::Value(v0)],
                 vec![Node::Value(w0)],
-                Value::Injection(gandr_kernel_term::Side::Left, w0),
+                Value::Injection(gandr_kernel_term::Side::Left.into(), w0),
             ),
             (
-                arena.value_injection(gandr_kernel_term::Side::Right, v1),
+                arena.value_injection(gandr_kernel_term::Side::Right.into(), v1),
                 vec![Node::Value(v1)],
                 vec![Node::Value(w1)],
-                Value::Injection(gandr_kernel_term::Side::Right, w1),
+                Value::Injection(gandr_kernel_term::Side::Right.into(), w1),
             ),
             (
                 arena.value_thunk(c0),
@@ -3838,7 +3863,7 @@ mod tests
                 crate::Computation::Bind(d0, d1),
             ),
             (
-                arena.computation_case(v0, c0, c1),
+                arena.computation_case(v0, &[c0, c1]),
                 vec![
                     Node::Value(v0),
                     Node::Computation(c0),
@@ -3851,8 +3876,7 @@ mod tests
                 ],
                 crate::Computation::Case {
                     scrutinee: w0,
-                    on_left: d0,
-                    on_right: d1,
+                    branches: [d0, d1].into(),
                 },
             ),
         ] {
@@ -4017,10 +4041,10 @@ mod tests
         let zero = variable(&mut arena, DeBruijnIndex::from(0));
         let one = variable(&mut arena, DeBruijnIndex::from(1));
         let linear = arena.value_variable(Zone::Linear, DeBruijnIndex::from(0));
-        let pair = arena.value_pair(zero, one);
+        let pair = arena.value_tuple(&[zero, one]);
         let shared = arena.computation_return(pair);
         let linear_branch = arena.computation_return(linear);
-        let case = arena.computation_case(zero, shared, linear_branch);
+        let case = arena.computation_case(zero, &[shared, linear_branch]);
         let bind = arena.computation_bind(shared, shared);
         let lambda = arena.computation_lambda(shared);
         for (root, expected) in [
@@ -4050,8 +4074,13 @@ mod tests
                             zone: Zone::Linear,
                             index,
                         } => linear_seen.push(u32::from(index)),
-                        | Value::Pair(first, second) => {
-                            pending.extend([Node::Value(second), Node::Value(first)]);
+                        | Value::Tuple(ref components) => {
+                            pending.extend(
+                                components
+                                    .iter()
+                                    .rev()
+                                    .map(|&component| Node::Value(component)),
+                            );
                         },
                         | _ => panic!("the golden uses variables and pairs"),
                     },
@@ -4068,13 +4097,16 @@ mod tests
                             },
                             | crate::Computation::Case {
                                 scrutinee,
-                                on_left,
-                                on_right,
-                            } => pending.extend([
-                                Node::Computation(on_right),
-                                Node::Computation(on_left),
-                                Node::Value(scrutinee),
-                            ]),
+                                ref branches,
+                            } => {
+                                pending.extend(
+                                    branches
+                                        .iter()
+                                        .rev()
+                                        .map(|&branch| Node::Computation(branch)),
+                                );
+                                pending.push(Node::Value(scrutinee));
+                            },
                             | _ => panic!("the golden uses binding computations and return"),
                         }
                     },
@@ -4129,7 +4161,7 @@ mod tests
         let named = arena.value_hole(HoleId::from(1_u32));
         let other = arena.value_hole(HoleId::from(2_u32));
         let computation_named = arena.computation_hole(HoleId::from(1_u32));
-        let pair = arena.value_pair(named, other);
+        let pair = arena.value_tuple(&[named, other]);
         let returned = arena.computation_return(pair);
         let subject = arena.computation_bind(computation_named, returned);
         let filling = variable(&mut arena, DeBruijnIndex::from(0_u32));
@@ -4156,7 +4188,7 @@ mod tests
         };
         assert_eq!(
             arena.value(value),
-            Some(&Value::Pair(filling, other)),
+            Some(&Value::Tuple([filling, other].into())),
             "the named hole takes the filling uncarried, and another name stands"
         );
         let unit = arena.value_unit();
@@ -4179,7 +4211,7 @@ mod tests
         let mut arena = CoreArena::new();
         let occurrence = variable(&mut arena, DeBruijnIndex::from(0_u32));
         let unit = arena.value_unit();
-        let pair = arena.value_pair(occurrence, unit);
+        let pair = arena.value_tuple(&[occurrence, unit]);
         let returned = arena.computation_return(pair);
         let sites = BTreeMap::from([
             (TermId::Value(occurrence), MarkIndex::from(0_u32)),
@@ -4205,7 +4237,7 @@ mod tests
             panic!("the named pair is marked");
         };
         assert_eq!(mark, MarkIndex::from(1_u32));
-        let Some(&Value::Pair(first, second)) = arena.value(body)
+        let Some(&[first, second]) = arena.value(body).and_then(Value::components)
         else {
             panic!("the mark wraps the rebuilt pair");
         };
@@ -4236,7 +4268,7 @@ mod tests
         ];
         let [zero, one, two, three] =
             [0_u32, 1, 2, 3].map(|index| variable(&mut arena, DeBruijnIndex::from(index)));
-        let top = arena.value_pair(zero, one);
+        let top = arena.value_tuple(&[zero, one]);
         let TermId::Value(at_top) =
             substitute_environment(&mut arena, TermId::Value(top), &entries)
         else {
@@ -4244,11 +4276,11 @@ mod tests
         };
         assert_eq!(
             arena.value(at_top),
-            Some(&Value::Pair(entries[0], entries[1]))
+            Some(&Value::Tuple([entries[0], entries[1]].into()))
         );
-        let inner = arena.value_pair(zero, one);
-        let outer = arena.value_pair(two, three);
-        let both = arena.value_pair(inner, outer);
+        let inner = arena.value_tuple(&[zero, one]);
+        let outer = arena.value_tuple(&[two, three]);
+        let both = arena.value_tuple(&[inner, outer]);
         let returned = arena.computation_return(both);
         let lambda = arena.computation_lambda(returned);
         let TermId::Computation(substituted) =
@@ -4264,7 +4296,7 @@ mod tests
         else {
             panic!("a substituted return");
         };
-        let Some(&Value::Pair(inner, outer)) = arena.value(value)
+        let Some(&[inner, outer]) = arena.value(value).and_then(Value::components)
         else {
             panic!("a substituted pair");
         };
@@ -4275,7 +4307,7 @@ mod tests
             }) => Some(u32::from(index)),
             | Some(_) | None => None,
         };
-        let Some(&Value::Pair(bound, first_entry)) = arena.value(inner)
+        let Some(&[bound, first_entry]) = arena.value(inner).and_then(Value::components)
         else {
             panic!("the inner pair");
         };
@@ -4285,7 +4317,7 @@ mod tests
             "the lambda's own index stands"
         );
         assert_eq!(first_entry, entries[0], "a closed entry is placed as it is");
-        let Some(&Value::Pair(second_entry, past)) = arena.value(outer)
+        let Some(&[second_entry, past]) = arena.value(outer).and_then(Value::components)
         else {
             panic!("the outer pair");
         };

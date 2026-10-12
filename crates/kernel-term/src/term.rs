@@ -637,6 +637,75 @@ impl From<ConstructorTag> for usize
     }
 }
 
+/// Position of a summand within one sum type, counting from zero.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Summand(usize);
+
+impl From<usize> for Summand
+{
+    /// Preserve the summand ordinal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(index: usize) -> Self
+    {
+        Self(index)
+    }
+}
+
+impl From<Summand> for usize
+{
+    /// Read the summand ordinal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(summand: Summand) -> Self
+    {
+        summand.0
+    }
+}
+
+impl From<Side> for Summand
+{
+    /// The summand a side names in a binary sum: the left summand first.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(side: Side) -> Self
+    {
+        match side {
+            | Side::Left => Self(0),
+            | Side::Right => Self(1),
+        }
+    }
+}
+
+impl TryFrom<Summand> for Side
+{
+    type Error = Summand;
+
+    /// The side that names a summand of a binary sum.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// The summand itself, when it is neither the first nor the second.
+    #[inline]
+    fn try_from(summand: Summand) -> Result<Self, Self::Error>
+    {
+        match summand.0 {
+            | 0 => Ok(Self::Left),
+            | 1 => Ok(Self::Right),
+            | _ => Err(summand),
+        }
+    }
+}
+
 /// Position of a field within one constructor's field list.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

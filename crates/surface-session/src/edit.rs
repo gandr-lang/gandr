@@ -2346,7 +2346,7 @@ fn agreement(
                 })
                 && left.len() == right.len()
         },
-        | (&ContentNode::Project(left, _), &ContentNode::Project(right, _))
+        | (&ContentNode::Project(left, _), &ContentNode::Project(right, _)) => left == right,
         | (&ContentNode::Injection(left, _), &ContentNode::Injection(right, _)) => left == right,
         | (
             &ContentNode::Perform {
@@ -2703,7 +2703,9 @@ fn read(
                         found == expected)
                     )
                 }
-                Value::Unit => matches!(ret, ContentNode::Unit),
+                Value::Tuple(ref components) => {
+                    matches!(ret, ContentNode::Tuple(ref found) if found.len() == components.len())
+                }
                 Value::ListNil => matches!(ret, ContentNode::ListNil),
                 Value::ListCons(..) => matches!(ret, ContentNode::ListCons(..)),
                 Value::Literal(ref expected) => {
@@ -2718,7 +2720,6 @@ fn read(
                         == target
                     )
                 }
-                Value::Pair(..) => matches!(ret, ContentNode::Pair(..)),
                 Value::Thunk(..) => matches!(ret, ContentNode::Thunk(..)),
                 Value::Quote(..) => matches!(ret, ContentNode::Quote(..)),
                 Value::QuoteComputation(..) => {
@@ -2798,16 +2799,17 @@ where
         },
         | Some(&Value::Variable { zone, index }) => ContentNode::Variable { zone, index },
         | Some(&Value::Constant(position)) => ContentNode::Constant(program.resolve(position)),
-        | Some(&Value::Unit) => ContentNode::Unit,
         | Some(&Value::ListNil) => ContentNode::ListNil,
         | Some(&Value::ListCons(head, tail)) => {
             ContentNode::ListCons(child(Root::Value(head)), child(Root::Value(tail)))
         },
         | Some(&Value::Literal(ref literal)) => ContentNode::Literal(literal.clone()),
-        | Some(&Value::Pair(first, second)) => {
-            let first = child(Root::Value(first));
-            ContentNode::Pair(first, child(Root::Value(second)))
-        },
+        | Some(&Value::Tuple(ref components)) => ContentNode::Tuple(
+            components
+                .iter()
+                .map(|&component| child(Root::Value(component)))
+                .collect(),
+        ),
         | Some(&Value::Injection(side, body)) => {
             ContentNode::Injection(side, child(Root::Value(body)))
         },
@@ -3013,15 +3015,15 @@ where
         | Some(&Computation::Force(value)) => ContentNode::Force(child(Root::Value(value))),
         | Some(&Computation::Case {
             scrutinee,
-            on_left,
-            on_right,
+            ref branches,
         }) => {
             let scrutinee = child(Root::Value(scrutinee));
-            let on_left = child(Root::Computation(on_left));
             ContentNode::Case {
                 scrutinee,
-                on_left,
-                on_right: child(Root::Computation(on_right)),
+                branches: branches
+                    .iter()
+                    .map(|&branch| child(Root::Computation(branch)))
+                    .collect(),
             }
         },
         | Some(&Computation::Hole(hole)) => ContentNode::ComputationHole(hole),
@@ -3613,7 +3615,10 @@ def body = 1 ;
             unrecorded.localize(range),
             Maybe::Absent(located::Absent::Outside)
         );
-        assert_eq!(children(&super::ContentNode::Unit).next(), None);
+        assert_eq!(
+            children(&super::ContentNode::Tuple(Vec::new())).next(),
+            None
+        );
     }
 
     #[test]
@@ -3625,8 +3630,7 @@ def body = 1 ;
         use super::NodeIndex;
         let original = ContentNode::Case {
             scrutinee: NodeIndex::from(7_usize),
-            on_left: NodeIndex::from(3_usize),
-            on_right: NodeIndex::from(11_usize),
+            branches: vec![NodeIndex::from(3_usize), NodeIndex::from(11_usize)],
         };
         let mut seen = Vec::new();
         let mapped = super::map_children(&original, &mut |index| {
@@ -3640,27 +3644,28 @@ def body = 1 ;
         ]);
         assert_eq!(mapped, ContentNode::Case {
             scrutinee: NodeIndex::from(20_usize),
-            on_left: NodeIndex::from(21_usize),
-            on_right: NodeIndex::from(22_usize)
+            branches: vec![NodeIndex::from(21_usize), NodeIndex::from(22_usize)],
         });
         assert_eq!(children(&mapped).nth(3), None);
-        let left = ContentNode::Injection(Side::Left, NodeIndex::from(7_usize));
+        let left = ContentNode::Injection(Side::Left.into(), NodeIndex::from(7_usize));
         let changed = super::map_children(&left, &mut |_| NodeIndex::from(8_usize));
         assert_eq!(
             changed,
-            ContentNode::Injection(Side::Left, NodeIndex::from(8_usize))
+            ContentNode::Injection(Side::Left.into(), NodeIndex::from(8_usize))
         );
         assert_eq!(super::agreement(&left, &changed), super::Agreement::Same);
         assert_ne!(
             super::agreement(
                 &left,
-                &ContentNode::Injection(Side::Right, NodeIndex::from(7_usize))
+                &ContentNode::Injection(Side::Right.into(), NodeIndex::from(7_usize))
             ),
             super::Agreement::Same
         );
         assert_eq!(
-            super::map_children(&ContentNode::Unit, &mut |_| panic!("a leaf has no child")),
-            ContentNode::Unit
+            super::map_children(&ContentNode::Tuple(Vec::new()), &mut |_| panic!(
+                "a leaf has no child"
+            )),
+            ContentNode::Tuple(Vec::new())
         );
     }
 
@@ -3904,7 +3909,7 @@ def body = 1 ;
                 [
                     ContentNode::Transport(NodeIndex::from(1_usize), NodeIndex::from(2_usize)),
                     ContentNode::PathProduct(NodeIndex::from(3_usize), NodeIndex::from(4_usize)),
-                    ContentNode::Unit,
+                    ContentNode::Tuple(Vec::new()),
                     ContentNode::PathRefl(NodeIndex::from(5_usize)),
                     ContentNode::PathRefl(NodeIndex::from(6_usize)),
                 ]
@@ -4027,12 +4032,11 @@ def c = 3 ;
             nodes: vec![
                 ContentNode::Case {
                     scrutinee: NodeIndex::from(1_usize),
-                    on_left: NodeIndex::from(2_usize),
-                    on_right: NodeIndex::from(3_usize),
+                    branches: vec![NodeIndex::from(2_usize), NodeIndex::from(3_usize)],
                 },
-                ContentNode::Unit,
-                ContentNode::Unit,
-                ContentNode::Unit,
+                ContentNode::Tuple(Vec::new()),
+                ContentNode::Tuple(Vec::new()),
+                ContentNode::Tuple(Vec::new()),
             ],
         };
         let left = ByteSpan::new(

@@ -294,12 +294,12 @@ fn cases() -> Vec<Case>
 
     let mut core = CoreArena::new();
     let unit = core.value_unit();
-    let scrutinee = core.value_injection(Side::Left, unit);
+    let scrutinee = core.value_injection(Side::Left.into(), unit);
     let one = integer(&mut core, Integer(1));
     let two = integer(&mut core, Integer(2));
     let on_left = core.computation_return(one);
     let on_right = core.computation_return(two);
-    let root = core.computation_case(scrutinee, on_left, on_right);
+    let root = core.computation_case(scrutinee, &[on_left, on_right]);
     cases.push(Case {
         label: "case under a tail",
         core,
@@ -309,14 +309,14 @@ fn cases() -> Vec<Case>
 
     let mut core = CoreArena::new();
     let unit = core.value_unit();
-    let scrutinee = core.value_injection(Side::Left, unit);
+    let scrutinee = core.value_injection(Side::Left.into(), unit);
     let own = core.value_variable(Zone::Intuitionistic, 0_u32.into());
     let left_body = core.computation_return(own);
     let on_left = core.computation_lambda(left_body);
     let five = integer(&mut core, Integer(5));
     let right_body = core.computation_return(five);
     let on_right = core.computation_lambda(right_body);
-    let cased = core.computation_case(scrutinee, on_left, on_right);
+    let cased = core.computation_case(scrutinee, &[on_left, on_right]);
     let three = integer(&mut core, Integer(3));
     let root = core.computation_application(cased, three);
     cases.push(Case {
@@ -330,7 +330,7 @@ fn cases() -> Vec<Case>
     let constant = core.value_constant(ConstantIndex::from(0_usize));
     let minus_three = integer(&mut core, Integer(-3));
     let lifted = core.value_lift(Level::zero(), minus_three);
-    let pair = core.value_pair(constant, lifted);
+    let pair = core.value_tuple(&[constant, lifted]);
     let root = core.computation_return(pair);
     cases.push(Case {
         label: "structured values",

@@ -61,7 +61,7 @@ use gandr_core_term::hole::MarkIndex;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::GlobalIndex;
-use gandr_kernel_term::Side;
+use gandr_kernel_term::Summand;
 
 use crate::arena::CompClosureId;
 use crate::arena::DomainCompId;
@@ -257,14 +257,9 @@ pub enum Elimination
     Force,
     /// `x ← M; N`: sequenced into a body that could not run.
     Bind(CompClosureId),
-    /// A sum elimination whose scrutinee was stuck.
-    Case
-    {
-        /// The left branch, closed over its environment.
-        on_left: CompClosureId,
-        /// The right branch, closed over its environment.
-        on_right: CompClosureId,
-    },
+    /// A sum elimination whose scrutinee was stuck, its branches closed over
+    /// their environment in summand order.
+    Case(crate::arena::BranchSpan),
     /// A native List fold whose list was neutral.
     ListFold
     {
@@ -520,12 +515,6 @@ pub enum DomainValue
         /// The term face.
         face: TermFace,
     },
-    /// The unit value.
-    Unit
-    {
-        /// The term face.
-        face: TermFace,
-    },
     /// A base-type literal.
     ///
     /// The payload stays in the core arena rather than being copied here, so
@@ -540,13 +529,11 @@ pub enum DomainValue
         /// The term face.
         face: TermFace,
     },
-    /// A pair.
-    Pair
+    /// A tuple of any arity; the unit is the tuple of no components.
+    Tuple
     {
-        /// The first component.
-        first: DomainValueId,
-        /// The second component.
-        second: DomainValueId,
+        /// The components, stored once in the arena's flat field table.
+        fields: crate::arena::FieldSpan,
         /// The term face.
         face: TermFace,
     },
@@ -569,8 +556,8 @@ pub enum DomainValue
     /// A sum injection.
     Injection
     {
-        /// The side injected into.
-        side: Side,
+        /// The summand injected into.
+        summand: Summand,
         /// The injected value.
         body: DomainValueId,
         /// The term face.
@@ -663,9 +650,8 @@ impl DomainValue
         | Self::Constructor { face, .. }
         | Self::Record { face, .. }
         | Self::PathProduct { face, .. }
-        | Self::Unit { face }
         | Self::Literal { face, .. }
-        | Self::Pair { face, .. }
+        | Self::Tuple { face, .. }
         | Self::ListNil { face } | Self::ListCons { face, .. }
         | Self::Injection { face, .. }
         | Self::Thunk { face, .. }
@@ -681,9 +667,8 @@ impl DomainValue
             | Self::Constructor { face, .. }
             | Self::Record { face, .. }
             | Self::PathProduct { face, .. }
-            | Self::Unit { face }
             | Self::Literal { face, .. }
-            | Self::Pair { face, .. }
+            | Self::Tuple { face, .. }
             | Self::ListNil { face }
             | Self::ListCons { face, .. }
             | Self::Injection { face, .. }

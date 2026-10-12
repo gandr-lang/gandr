@@ -140,16 +140,20 @@ impl<'arena> CoreSource<'arena>
             .is_some_and(|held| held.as_ref() == name.as_ref()),
         | (Some(&Value::Constant(index)), Former::Unreadable) => usize::from(index) >= self.names.len(),
         (Some(&Value::Constructor { .. } | &Value::Record(_) | &Value::Hole(_) | &Value::Mark { .. }) | None,
-Former::Unreadable) | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::ListNil), Former::ListNil) | (Some(&Value::Unit), Former::Unit) |
+Former::Unreadable) | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::ListNil), Former::ListNil) |
 (Some(&Value::Thunk(_)), Former::Thunk) |
 (Some(&Value::Lift { .. }), Former::ValueLift) => true,
         | (Some(&Value::Literal(ref literal)), Former::Literal(actual)) =>
             core::ptr::eq(core::ptr::from_ref(literal), core::ptr::from_ref(actual)),
-        | (Some(&Value::Pair(first, second)), Former::Pair(actual_first, actual_second))
+        | (Some(&Value::Tuple(ref components)), Former::Unit) => components.is_empty(),
+        | (Some(&Value::Tuple(ref components)), Former::Pair(actual_first, actual_second)) =>
+            matches!(**components, [first, second] if actual_first == CoreNode::Value(first) && actual_second == CoreNode::Value(second)),
+        | (Some(&Value::Tuple(ref components)), Former::Unreadable) => !matches!(components.len(), 0 | 2),
         | (Some(&Value::PathProduct(first, second)), Former::PathProduct(actual_first, actual_second)) =>
             actual_first == CoreNode::Value(first) && actual_second == CoreNode::Value(second),
-        | (Some(&Value::Injection(side, body)), Former::Injection(actual_side, actual_body)) =>
-            side == actual_side && actual_body == CoreNode::Value(body),
+        | (Some(&Value::Injection(summand, body)), Former::Injection(actual_side, actual_body)) =>
+            summand == actual_side.into() && actual_body == CoreNode::Value(body),
+        | (Some(&Value::Injection(summand, _)), Former::Unreadable) => usize::from(summand) > 1,
         | (Some(&Value::Quote(quoted)), Former::Quote(actual)) => actual == CoreNode::ValueType(quoted),
         | (Some(&Value::QuoteComputation(quoted)), Former::QuoteComputation(actual)) => actual == CoreNode::CompType(quoted),
         | (Some(&Value::StaticLambda(body)), Former::StaticLambda(actual)) => actual == CoreNode::Value(body),
@@ -186,16 +190,22 @@ Former::Unreadable) | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::Li
             } => Former::PathEquiv(CoreNode::Value(forward), CoreNode::Value(backward)),
             | Value::Variable { zone, index } => Former::Variable { zone, index },
             | Value::Constant(constant) => self.named(constant, Former::Constant),
-            | Value::Unit => Former::Unit,
             | Value::ListNil => Former::ListNil,
             | Value::ListCons(head, tail) => {
                 Former::ListCons(CoreNode::Value(head), CoreNode::Value(tail))
             },
             | Value::Literal(ref literal) => Former::Literal(literal),
-            | Value::Pair(first, second) => {
-                Former::Pair(CoreNode::Value(first), CoreNode::Value(second))
+            // The surface reads only the kernel's arities until its tuples and
+            // sums are n-ary.
+            | Value::Tuple(ref components) => match **components {
+                | [] => Former::Unit,
+                | [first, second] => Former::Pair(CoreNode::Value(first), CoreNode::Value(second)),
+                | _ => Former::Unreadable,
             },
-            | Value::Injection(side, body) => Former::Injection(side, CoreNode::Value(body)),
+            | Value::Injection(summand, body) => match gandr_kernel_term::Side::try_from(summand) {
+                | Ok(side) => Former::Injection(side, CoreNode::Value(body)),
+                | Err(_) => Former::Unreadable,
+            },
             | Value::Thunk(_) => Former::Thunk,
             | Value::Lift { .. } => Former::ValueLift,
             | Value::Quote(quoted) => Former::Quote(CoreNode::ValueType(quoted)),
@@ -490,7 +500,7 @@ mod tests
         let mark = arena.watermark();
         let first = arena.value_unit();
         let second = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(3_u32));
-        let pair = arena.value_pair(first, second);
+        let pair = arena.value_tuple(&[first, second]);
         let computation = arena.computation_return(first);
         let value_type = arena.value_type_unit();
         let comp_type = arena.comp_type_returner(value_type);

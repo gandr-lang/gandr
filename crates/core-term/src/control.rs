@@ -318,7 +318,7 @@ mod tests
         let mut arena = CoreArena::new();
         let outer = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
         let beneath = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
-        let pair = arena.value_pair(outer, beneath);
+        let pair = arena.value_tuple(&[outer, beneath]);
         let bound_body = arena.computation_return(pair);
         let stack = arena.value_reify(Arc::from([
             StackFrame::Apply(outer),
@@ -345,7 +345,7 @@ mod tests
         else {
             panic!("return")
         };
-        assert_eq!(arena.value(pair), Some(&Value::Pair(outer, unit)));
+        assert_eq!(arena.value(pair), Some(&Value::Tuple([outer, unit].into())));
         let fed = arena.computation_return(beneath);
         let resumed = arena.computation_resume(outer, fed);
         let shifted = arena.computation_shift(resumed);
@@ -487,7 +487,7 @@ mod tests
         .unwrap();
         let performed = arena.computation_perform(signature.clone(), "ask".into(), free);
         let returned = arena.computation_return(under_one);
-        let pair = arena.value_pair(free, under_two);
+        let pair = arena.value_tuple(&[free, under_two]);
         let clause = arena.computation_return(pair);
         let handled = arena.computation_handle(
             signature,
@@ -539,7 +539,7 @@ mod tests
         else {
             panic!("clause")
         };
-        assert_eq!(arena.value(pair), Some(&Value::Pair(free, quote)));
+        assert_eq!(arena.value(pair), Some(&Value::Tuple([free, quote].into())));
     }
 
     #[test]

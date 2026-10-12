@@ -1998,7 +1998,7 @@ mod tests
         let b = arena.value_literal(integer(Digits("2")));
         let first = arena.value_constant(ConstantIndex::from(0_usize));
         let second = arena.value_constant(ConstantIndex::from(1_usize));
-        let pair = arena.value_pair(first, second);
+        let pair = arena.value_tuple(&[first, second]);
         let unsigned = || Maybe::Absent(signature::Absent::Unsigned);
         let mut program = Program::new(arena, vec![
             Item::new(
@@ -2032,7 +2032,7 @@ mod tests
 
         let literal = |digits: &'static str| ContentNode::Literal(integer(Digits(digits)));
         let out_of_discovery = hand_made(vec![
-            ContentNode::Pair(NodeIndex::from(2_usize), NodeIndex::from(1_usize)),
+            ContentNode::Tuple(vec![NodeIndex::from(2_usize), NodeIndex::from(1_usize)]),
             literal("1"),
             literal("2"),
         ]);
@@ -2245,7 +2245,7 @@ mod tests
         let mut programs: Vec<(Sort, Program)> = Vec::new();
         let mut arena = CoreArena::new();
         let literal = arena.value_literal(integer(Digits("1")));
-        let pair = arena.value_pair(literal, foreign_value);
+        let pair = arena.value_tuple(&[literal, foreign_value]);
         programs.push((
             Sort::Value,
             nested(

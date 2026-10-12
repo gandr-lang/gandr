@@ -47,6 +47,7 @@ use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Side;
+use gandr_kernel_term::Summand;
 use quenchant_shape::shape::Maybe;
 
 use crate::boundary::NodeIndex;
@@ -279,18 +280,16 @@ pub enum ContentNode
     },
     /// A constant, by what its position names.
     Constant(Reference),
-    /// The unit value.
-    Unit,
     /// A literal.
     Literal(Literal),
-    /// A pair of values.
-    Pair(NodeIndex, NodeIndex),
+    /// A tuple of values, in order; the empty tuple is the unit value.
+    Tuple(Vec<NodeIndex>),
     /// The empty native list.
     ListNil,
     /// A native list cell.
     ListCons(NodeIndex, NodeIndex),
-    /// A sum injection.
-    Injection(Side, NodeIndex),
+    /// A sum injection into its summand.
+    Injection(Summand, NodeIndex),
     /// A thunk of a computation.
     Thunk(NodeIndex),
     /// A universe lift of a value.
@@ -334,10 +333,8 @@ pub enum ContentNode
     {
         /// The scrutinee.
         scrutinee: NodeIndex,
-        /// The left branch.
-        on_left: NodeIndex,
-        /// The right branch.
-        on_right: NodeIndex,
+        /// The branches, one per summand in order.
+        branches: Vec<NodeIndex>,
     },
     /// A term hole in computation position, by its name.
     ComputationHole(HoleId),
@@ -660,11 +657,10 @@ impl ContentNode
         | Self::PathEquiv { .. }
         | Self::Variable { .. }
         | Self::Constant(_)
-        | Self::Unit
+        | Self::Tuple(_)
         | Self::ListNil
         | Self::ListCons(..)
         | Self::Literal(_)
-        | Self::Pair(..)
         | Self::Injection(..)
         | Self::Thunk(_)
         | Self::ValueLift { .. }
@@ -736,11 +732,10 @@ impl ContentNode
             | Self::PathEquiv { .. }
             | Self::Variable { .. }
             | Self::Constant(_)
-            | Self::Unit
+            | Self::Tuple(_)
             | Self::ListNil
             | Self::ListCons(..)
             | Self::Literal(_)
-            | Self::Pair(..)
             | Self::Injection(..)
             | Self::Thunk(_)
             | Self::ValueLift { .. }
@@ -839,7 +834,6 @@ impl ContentNode
             | Self::Primitive(_, arguments) => actual.is_some_and(|children| children.iter().copied().eq(arguments.iter().copied().map(|argument| (argument, V)))),
             | Self::PrimitiveValue(_) | Self::Variable { .. }
             | Self::Constant(_)
-            | Self::Unit
             | Self::ListNil
             | Self::Literal(_)
             | Self::Base(_)
@@ -850,8 +844,9 @@ impl ContentNode
             | Self::ComputationHole(_)
             | Self::UnknownType
             | Self::UnknownComputationType => ret.count == 0,
+            | Self::Tuple(ref components) => ret.iter().eq(components.iter().map(|&component| (component, V))),
             | Self::ListFold { element, result, list, on_nil, on_cons } => actual == Some(&[(element, A), (result, A), (list, V), (on_nil, M), (on_cons, M)][..]),
-            | Self::ListCons(a, b) | Self::Pair(a, b) | Self::StaticApplication(a, b) | Self::PathUniverse(a, b) | Self::PathProduct(a, b) | Self::Transport(a, b) => {
+            | Self::ListCons(a, b) | Self::StaticApplication(a, b) | Self::PathUniverse(a, b) | Self::PathProduct(a, b) | Self::Transport(a, b) => {
                 actual == Some(&[(a, V), (b, V)][..])
             },
             | Self::PathEquiv { path_type, forward, backward, .. } => actual == Some(&[(path_type, A), (forward, V), (backward, V)][..]),
@@ -871,9 +866,8 @@ impl ContentNode
             | Self::Bind(a, b) => actual == Some(&[(a, M), (b, M)][..]),
             | Self::Case {
                 scrutinee: a,
-                on_left: b,
-                on_right: c,
-            } => actual == Some(&[(a, V), (b, M), (c, M)][..]),
+                ref branches,
+            } => ret.iter().eq(core::iter::once((a, V)).chain(branches.iter().map(|&branch| (branch, M)))),
             | Self::Product(ref parts) | Self::Sum(ref parts) => ret.iter().eq(parts.iter().map(|&part| (part, A))),
             | Self::StaticPi {
                 domain: a,
@@ -961,7 +955,6 @@ impl ContentNode
             | Self::PrimitiveValue(_)
             | Self::Variable { .. }
             | Self::Constant(_)
-            | Self::Unit
             | Self::ListNil
             | Self::Literal(_)
             | Self::Base(_)
@@ -972,10 +965,10 @@ impl ContentNode
             | Self::ComputationHole(_)
             | Self::UnknownType
             | Self::UnknownComputationType => Children::default(),
+            | Self::Tuple(ref components) => Children::default().followed_by(components, V),
             | Self::PathUniverse(first, second)
             | Self::PathProduct(first, second)
             | Self::Transport(first, second)
-            | Self::Pair(first, second)
             | Self::ListCons(first, second)
             | Self::StaticApplication(first, second) => Children::of(&[(first, V), (second, V)]),
             | Self::PathRefl(body)
@@ -1006,9 +999,8 @@ impl ContentNode
             ]),
             | Self::Case {
                 scrutinee,
-                on_left,
-                on_right,
-            } => Children::of(&[(scrutinee, V), (on_left, M), (on_right, M)]),
+                ref branches,
+            } => Children::of(&[(scrutinee, V)]).followed_by(branches, M),
             | Self::Product(ref parts) | Self::Sum(ref parts) => {
                 Children::default().followed_by(parts, A)
             },
@@ -1088,12 +1080,11 @@ impl ContentNode
             | Self::PathEquiv { .. }
             | Self::Transport(..)
             | Self::Variable { .. }
-            | Self::Unit
+            | Self::Tuple(_)
             | Self::ListNil
             | Self::ListCons(..)
             | Self::ListFold { .. }
             | Self::Literal(_)
-            | Self::Pair(..)
             | Self::Injection(..)
             | Self::Thunk(_)
             | Self::ValueLift { .. }
@@ -2047,19 +2038,20 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
             },
             | Value::Variable { zone, index } => ContentNode::Variable { zone, index },
             | Value::Constant(position) => ContentNode::Constant(self.layout.resolve(position)),
-            | Value::Unit => ContentNode::Unit,
             | Value::ListNil => ContentNode::ListNil,
             | Value::ListCons(head, tail) => {
                 let head = self.discover(ArenaNode::Value(head));
                 ContentNode::ListCons(head, self.discover(ArenaNode::Value(tail)))
             },
             | Value::Literal(ref literal) => ContentNode::Literal(literal.clone()),
-            | Value::Pair(first, second) => {
-                let first = self.discover(ArenaNode::Value(first));
-                ContentNode::Pair(first, self.discover(ArenaNode::Value(second)))
-            },
-            | Value::Injection(side, body) => {
-                ContentNode::Injection(side, self.discover(ArenaNode::Value(body)))
+            | Value::Tuple(ref components) => ContentNode::Tuple(
+                components
+                    .iter()
+                    .map(|&component| self.discover(ArenaNode::Value(component)))
+                    .collect(),
+            ),
+            | Value::Injection(summand, body) => {
+                ContentNode::Injection(summand, self.discover(ArenaNode::Value(body)))
             },
             | Value::Thunk(body) => ContentNode::Thunk(self.discover(ArenaNode::Computation(body))),
             | Value::Lift { ref target, body } => ContentNode::ValueLift {
@@ -2239,15 +2231,15 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
             },
             | Computation::Case {
                 scrutinee,
-                on_left,
-                on_right,
+                ref branches,
             } => {
                 let scrutinee = self.discover(ArenaNode::Value(scrutinee));
-                let on_left = self.discover(ArenaNode::Computation(on_left));
                 ContentNode::Case {
                     scrutinee,
-                    on_left,
-                    on_right: self.discover(ArenaNode::Computation(on_right)),
+                    branches: branches
+                        .iter()
+                        .map(|&branch| self.discover(ArenaNode::Computation(branch)))
+                        .collect(),
                 }
             },
             | Computation::Hole(hole) => ContentNode::ComputationHole(hole),
@@ -2654,7 +2646,6 @@ where
         },
         | ContentNode::Variable { .. }
         | ContentNode::Constant(_)
-        | ContentNode::Unit
         | ContentNode::ListNil
         | ContentNode::Literal(_)
         | ContentNode::Base(_)
@@ -2679,11 +2670,13 @@ where
             on_nil: image(on_nil),
             on_cons: image(on_cons),
         },
-        | ContentNode::Pair(first, second) => {
-            let first = image(first);
-            ContentNode::Pair(first, image(second))
-        },
-        | ContentNode::Injection(side, body) => ContentNode::Injection(side, image(body)),
+        | ContentNode::Tuple(ref components) => ContentNode::Tuple(
+            components
+                .iter()
+                .map(|&component| image(component))
+                .collect(),
+        ),
+        | ContentNode::Injection(summand, body) => ContentNode::Injection(summand, image(body)),
         | ContentNode::Thunk(body) => ContentNode::Thunk(image(body)),
         | ContentNode::ValueLift { ref target, body } => ContentNode::ValueLift {
             target: target.clone(),
@@ -2702,15 +2695,12 @@ where
         | ContentNode::Force(value) => ContentNode::Force(image(value)),
         | ContentNode::Case {
             scrutinee,
-            on_left,
-            on_right,
+            ref branches,
         } => {
             let scrutinee = image(scrutinee);
-            let on_left = image(on_left);
             ContentNode::Case {
                 scrutinee,
-                on_left,
-                on_right: image(on_right),
+                branches: branches.iter().map(|&branch| image(branch)).collect(),
             }
         },
         | ContentNode::Product(ref parts) => {
@@ -3201,12 +3191,11 @@ fn mint_node(
         | ContentNode::ComputationElement { .. }
         | ContentNode::Variable { .. }
         | ContentNode::Constant(_)
-        | ContentNode::Unit
         | ContentNode::ListNil
         | ContentNode::ListCons(..)
         | ContentNode::ListFold { .. }
         | ContentNode::Literal(_)
-        | ContentNode::Pair(..)
+        | ContentNode::Tuple(_)
         | ContentNode::Injection(..)
         | ContentNode::Thunk(_)
         | ContentNode::ValueLift { .. }
@@ -3729,7 +3718,7 @@ mod tests
     {
         let mut shared = CoreArena::new();
         let literal = shared.value_literal(zero());
-        let pair = shared.value_pair(literal, literal);
+        let pair = shared.value_tuple(&[literal, literal]);
         let shared = single(
             shared,
             Maybe::Absent(signature::Absent::Unsigned),
@@ -3740,7 +3729,7 @@ mod tests
         assert_eq!(
             shared.nodes(),
             [
-                ContentNode::Pair(NodeIndex::from(1_usize), NodeIndex::from(1_usize)),
+                ContentNode::Tuple(vec![NodeIndex::from(1_usize), NodeIndex::from(1_usize)]),
                 ContentNode::Literal(zero()),
             ],
             "one entry for the shared literal"
@@ -3748,7 +3737,7 @@ mod tests
         let mut apart = CoreArena::new();
         let first = apart.value_literal(zero());
         let second = apart.value_literal(zero());
-        let pair = apart.value_pair(first, second);
+        let pair = apart.value_tuple(&[first, second]);
         let apart = single(
             apart,
             Maybe::Absent(signature::Absent::Unsigned),
@@ -3839,14 +3828,12 @@ mod tests
         ]);
         let dangling = [ContentNode::Case {
             scrutinee: index(usize::MAX),
-            on_left: index(0_usize),
-            on_right: index(usize::MAX),
+            branches: vec![index(0_usize), index(usize::MAX)],
         }];
         assert_eq!(super::renumber(&dangling, index(0_usize)), [
             ContentNode::Case {
                 scrutinee: index(1_usize),
-                on_left: index(0_usize),
-                on_right: index(1_usize),
+                branches: vec![index(0_usize), index(1_usize)],
             },
             ContentNode::Unresolved(Sort::Value),
         ]);

@@ -695,15 +695,17 @@ mod tests
         let read = machine
             .read_back_value(value, &mut core)
             .expect("positive result");
-        let Some(&Value::Injection(Side::Right, outer)) = core.value(read)
+        let Some(&Value::Injection(last, outer)) = core.value(read)
         else {
             panic!("the last frame wraps last");
         };
-        let Some(&Value::Injection(Side::Left, pair)) = core.value(outer)
+        assert_eq!(last, Side::Right.into());
+        let Some(&Value::Injection(first, pair)) = core.value(outer)
         else {
             panic!("the first frame wraps first");
         };
-        let Some(&Value::Pair(lift, right)) = core.value(pair)
+        assert_eq!(first, Side::Left.into());
+        let Some(&[lift, right]) = core.value(pair).and_then(Value::components)
         else {
             panic!("pair head survives");
         };
@@ -712,16 +714,18 @@ mod tests
             panic!("first field is lifted");
         };
         assert_eq!(&Level::zero(), target);
-        let Some(&Value::Injection(Side::Right, first_unit)) = core.value(body)
+        let Some(&Value::Injection(lifted, first_unit)) = core.value(body)
         else {
             panic!("right injection survives under lift");
         };
-        let Some(&Value::Injection(Side::Left, last_unit)) = core.value(right)
+        assert_eq!(lifted, Side::Right.into());
+        let Some(&Value::Injection(second, last_unit)) = core.value(right)
         else {
             panic!("left injection remains the second field");
         };
-        assert_eq!(Some(&Value::Unit), core.value(first_unit));
-        assert_eq!(Some(&Value::Unit), core.value(last_unit));
+        assert_eq!(second, Side::Left.into());
+        assert_eq!(Some(&Value::unit()), core.value(first_unit));
+        assert_eq!(Some(&Value::unit()), core.value(last_unit));
         let negative = CmdPat::cut(
             Polarity::Negative,
             ProdPat::ctor("Unit", []),

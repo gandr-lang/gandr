@@ -127,14 +127,13 @@ impl Image
             | Self::Computation(Computation::RecordProjection(ref mut record, _)) => {
                 [Some(V(record)), None, None, None, None]
             },
-            | Self::Value(Value::Record(_))
+            | Self::Value(Value::Record(_) | Value::Tuple(_))
             | Self::ValueType(ValueType::Data { .. } | ValueType::Record(_)) => {
                 [None, None, None, None, None]
             },
             | Self::Value(
                 Value::Variable { .. }
                 | Value::Constant(_)
-                | Value::Unit
                 | Value::Literal(_)
                 | Value::ListNil
                 | Value::Reify(_)
@@ -200,8 +199,7 @@ impl Image
                 code: ref mut body, ..
             }) => [Some(V(body)), None, None, None, None],
             | Self::Value(
-                Value::Pair(ref mut first, ref mut second)
-                | Value::PathProduct(ref mut first, ref mut second)
+                Value::PathProduct(ref mut first, ref mut second)
                 | Value::ListCons(ref mut first, ref mut second)
                 | Value::StaticApplication(ref mut first, ref mut second),
             )
@@ -249,16 +247,8 @@ impl Image
                 [Some(C(head)), Some(V(argument)), None, None, None]
             },
             | Self::Computation(Computation::Case {
-                ref mut scrutinee,
-                ref mut on_left,
-                ref mut on_right,
-            }) => [
-                Some(V(scrutinee)),
-                Some(C(on_left)),
-                Some(C(on_right)),
-                None,
-                None,
-            ],
+                ref mut scrutinee, ..
+            }) => [Some(V(scrutinee)), None, None, None, None],
             | Self::Computation(Computation::ListFold {
                 ref mut element,
                 ref mut result,
@@ -416,6 +406,12 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                         .rev()
                                         .map(|&value| Task::Open(Node::Value(value))),
                                 ),
+                                | Value::Tuple(ref components) => self.pending.extend(
+                                    components
+                                        .iter()
+                                        .rev()
+                                        .map(|&value| Task::Open(Node::Value(value))),
+                                ),
                                 | Value::Reify(ref frames) => {
                                     self.pending.extend(frames.iter().rev().filter_map(|frame| {
                                         match *frame {
@@ -435,6 +431,14 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                         | Node::Computation(id) => {
                             let computation = self.source.computation(id).ok_or(ImportFault)?;
                             match *computation {
+                                | Computation::Case { ref branches, .. } => {
+                                    self.pending.extend(
+                                        branches
+                                            .iter()
+                                            .rev()
+                                            .map(|&body| Task::Open(Node::Computation(body))),
+                                    );
+                                },
                                 | Computation::DataCase { ref branches, .. } => {
                                     self.pending.extend(
                                         branches
@@ -545,6 +549,11 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 *value = map_value(*value)?;
                             }
                         },
+                        | Image::Value(Value::Tuple(ref mut components)) => {
+                            for value in components.iter_mut() {
+                                *value = map_value(*value)?;
+                            }
+                        },
                         | Image::ValueType(ValueType::Record(ref mut fields)) => {
                             for ty in fields.values_mut() {
                                 *ty = map_type(*ty)?;
@@ -562,6 +571,13 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                             ref mut branches, ..
                         }) => {
                             for body in branches {
+                                *body = map_computation(*body)?;
+                            }
+                        },
+                        | Image::Computation(Computation::Case {
+                            ref mut branches, ..
+                        }) => {
+                            for body in branches.iter_mut() {
                                 *body = map_computation(*body)?;
                             }
                         },

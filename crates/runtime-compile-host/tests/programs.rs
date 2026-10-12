@@ -68,10 +68,10 @@ pub fn named() -> Vec<Program>
     };
     let mut core = CoreArena::new();
     let three = integer(&mut core, 3_i64.into());
-    let scrutinee = core.value_injection(Side::Left, three);
+    let scrutinee = core.value_injection(Side::Left.into(), three);
     let variable = core.value_variable(Zone::Intuitionistic, 0_u32.into());
     let arm = core.computation_return(variable);
-    let root = core.computation_case(scrutinee, arm, arm);
+    let root = core.computation_case(scrutinee, &[arm, arm]);
     let case = Program {
         core,
         root,
@@ -80,7 +80,7 @@ pub fn named() -> Vec<Program>
     let mut core = CoreArena::new();
     let one = integer(&mut core, 1_i64.into());
     let two = integer(&mut core, 2_i64.into());
-    let pair = core.value_pair(one, two);
+    let pair = core.value_tuple(&[one, two]);
     let root = core.computation_return(pair);
     let ctor = Program {
         core,
@@ -89,11 +89,11 @@ pub fn named() -> Vec<Program>
     };
     let mut core = CoreArena::new();
     let eight = integer(&mut core, 8_i64.into());
-    let injection = core.value_injection(Side::Right, eight);
+    let injection = core.value_injection(Side::Right.into(), eight);
     let bound = core.computation_return(injection);
     let variable = core.value_variable(Zone::Intuitionistic, 0_u32.into());
     let arm = core.computation_return(variable);
-    let body = core.computation_case(variable, arm, arm);
+    let body = core.computation_case(variable, &[arm, arm]);
     let root = core.computation_bind(bound, body);
     let compound = Program {
         core,

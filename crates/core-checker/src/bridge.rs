@@ -2888,7 +2888,6 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 let position = self.constant_position(at, constant)?;
                 return Ok(self.erased_value(at, target.value_constant(position)));
             },
-            | Value::Unit => return Ok(self.erased_value(at, target.value_unit())),
             | Value::Literal(ref literal) => match literal.base_type() {
                 | BaseType::Integer | BaseType::String => {
                     return Ok(self.erased_value(at, target.value_literal(literal.clone())));
@@ -2906,12 +2905,20 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 Frame::QuoteComputation { at },
                 CoreNode::Type(TypeNode::Computation(quoted)),
             ),
-            | Value::Pair(first, second) => (
-                Frame::PairFirst { at, second },
-                CoreNode::Term(TermNode::Value(first)),
-            ),
-            | Value::Injection(side, body) => (
-                Frame::Injection { at, side },
+            | Value::Tuple(ref components) => match **components {
+                | [] => return Ok(self.erased_value(at, target.value_unit())),
+                | [first, second] => (
+                    Frame::PairFirst { at, second },
+                    CoreNode::Term(TermNode::Value(first)),
+                ),
+                | _ => return Err(unadmitted(UnadmittedFormer::ProductArity)),
+            },
+            | Value::Injection(summand, body) => (
+                Frame::Injection {
+                    at,
+                    side: gandr_kernel_term::Side::try_from(summand)
+                        .map_err(|_beyond| unadmitted(UnadmittedFormer::SumArity))?,
+                },
                 CoreNode::Term(TermNode::Value(body)),
             ),
             | Value::Lift { .. } => return Err(unadmitted(UnadmittedFormer::ValueLift)),
@@ -3102,16 +3109,21 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             },
             | Computation::Case {
                 scrutinee,
-                on_left,
-                on_right,
-            } => (
-                Frame::CaseScrutinee {
-                    at,
-                    on_left,
-                    on_right,
-                },
-                TermNode::Value(scrutinee),
-            ),
+                ref branches,
+            } => {
+                let &[on_left, on_right] = &**branches
+                else {
+                    return Err(unadmitted(UnadmittedFormer::SumArity));
+                };
+                (
+                    Frame::CaseScrutinee {
+                        at,
+                        on_left,
+                        on_right,
+                    },
+                    TermNode::Value(scrutinee),
+                )
+            },
             | Computation::Hole(hole) => return Err(Refusal::Hole { at: node, hole }),
             | Computation::Mark { body, .. } => (
                 Frame::UnmarkedComputation { at },
@@ -3441,10 +3453,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     | Value::Primitive { .. }
                     | Value::PathProduct(..)
                     | Value::PathEquiv { .. }
-                    | Value::Unit
+                    | Value::Tuple(_)
                     | Value::Literal(_)
                     | Value::Thunk(_)
-                    | Value::Pair(..)
                     | Value::ListNil
                     | Value::ListCons(..)
                     | Value::Injection(..)
@@ -5127,7 +5138,7 @@ mod tests
         let swapped = arena.computation_return(swapped);
         let swapped = arena.computation_list_fold(unit_type, list_type, cons, on_nil, swapped);
         let swapped = arena.value_thunk(swapped);
-        let sum_nil = arena.value_injection(Side::Left, unit);
+        let sum_nil = arena.value_injection(Side::Left.into(), unit);
         let (_, readmission) = judge_and_readmit(&mut arena, &[
             declaration(At(0), Maybe::Present(list_type), Maybe::Present(nil)),
             declaration(At(1), Maybe::Present(list_type), Maybe::Present(cons)),
@@ -5349,14 +5360,14 @@ mod tests
         let code = arena.value_quote(boolean);
         let path_type = arena.value_type_path_universe(code, code);
         let unit = arena.value_unit();
-        let truth = arena.value_injection(Side::Left, unit);
-        let falsity = arena.value_injection(Side::Right, unit);
+        let truth = arena.value_injection(Side::Left.into(), unit);
+        let falsity = arena.value_injection(Side::Right.into(), unit);
         let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-        let left = arena.value_injection(Side::Right, variable);
-        let right = arena.value_injection(Side::Left, variable);
+        let left = arena.value_injection(Side::Right.into(), variable);
+        let right = arena.value_injection(Side::Left.into(), variable);
         let left = arena.computation_return(left);
         let right = arena.computation_return(right);
-        let not = arena.computation_case(variable, left, right);
+        let not = arena.computation_case(variable, &[left, right]);
         let not = arena.computation_lambda(not);
         let not = arena.value_thunk(not);
         // These are untrusted candidate dialogues, not acceptance marks. The
@@ -5371,7 +5382,7 @@ mod tests
         let product_code = arena.value_quote(product_type);
         let product_path_type = arena.value_type_path_universe(product_code, product_code);
         let product_path = arena.value_path_product(path, refl);
-        let input = arena.value_pair(falsity, truth);
+        let input = arena.value_tuple(&[falsity, truth]);
         let transport = arena.computation_transport(product_path, input);
         let body = arena.value_thunk(transport);
         let result = arena.comp_type_returner(product_type);
@@ -5558,7 +5569,7 @@ mod tests
         let integer = arena.value_type_base(BaseType::Integer);
         let sum = arena.value_type_sum(&[integer, integer]);
         let zero = arena.value_literal(integer_literal());
-        let injection = arena.value_injection(Side::Left, zero);
+        let injection = arena.value_injection(Side::Left.into(), zero);
         let text = arena.value_literal(text_literal());
         let mismatched = arena.value_constant(ConstantIndex::from(5_usize));
         let module = [
@@ -5660,7 +5671,7 @@ mod tests
         let text = arena.value_literal(text_literal());
         let hole = HoleId::from(0_u32);
         let standing = arena.value_hole(hole);
-        let holed = arena.value_pair(standing, zero);
+        let holed = arena.value_tuple(&[standing, zero]);
         let TermId::Value(filled) =
             fill_hole(&mut arena, TermId::Value(holed), hole, TermId::Value(zero))
         else {

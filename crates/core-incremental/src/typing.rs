@@ -1298,7 +1298,7 @@ mod tests
         let returner = arena.comp_type_returner(unit_type);
         let thunk_type = arena.value_type_thunk(returner);
         let quote = arena.value_quote(thunk_type);
-        let root = arena.value_pair(quote, thunk);
+        let root = arena.value_tuple(&[quote, thunk]);
         let integer = arena.value_type_base(BaseType::Integer);
         let integer_returner = arena.comp_type_returner(integer);
         let unreached = arena.value_unit();

@@ -2701,10 +2701,10 @@ impl Erasure<'_>
          && self.core.value(id).is_some_and(|actual| match *graft {
             ValueGraft::Variable{zone,index} => matches!(*actual, gandr_core_term::Value::Variable{zone:actual_zone,index:actual_index} if zone == actual_zone && index == actual_index),
             ValueGraft::Constant(index) => matches!(*actual, gandr_core_term::Value::Constant(actual) if index == actual),
-            ValueGraft::Unit => matches!(*actual, gandr_core_term::Value::Unit),
+            ValueGraft::Unit => actual.components().is_some_and(<[ValueId]>::is_empty),
             ValueGraft::Literal(ref expected) => matches!(*actual, gandr_core_term::Value::Literal(ref actual) if expected == actual),
-            ValueGraft::Pair(..) => matches!(*actual, gandr_core_term::Value::Pair(first,second) if children[1] == Some(CoreId::Value(first)) && children[0] == Some(CoreId::Value(second))),
-            ValueGraft::Injection(side,_) => matches!(*actual, gandr_core_term::Value::Injection(actual,body) if side == actual && children[0] == Some(CoreId::Value(body))),
+            ValueGraft::Pair(..) => matches!(actual.components(), Some(&[first,second]) if children[1] == Some(CoreId::Value(first)) && children[0] == Some(CoreId::Value(second))),
+            ValueGraft::Injection(side,_) => matches!(*actual, gandr_core_term::Value::Injection(actual,body) if gandr_core_term::Summand::from(side) == actual && children[0] == Some(CoreId::Value(body))),
             ValueGraft::Thunk(_) => matches!(*actual, gandr_core_term::Value::Thunk(body) if children[0] == Some(CoreId::Computation(body))),
             ValueGraft::Lift{ref target,..} => matches!(*actual, gandr_core_term::Value::Lift{target:ref actual,body} if target == actual && children[0] == Some(CoreId::Value(body))),
             ValueGraft::Quote(_) => matches!(*actual, gandr_core_term::Value::Quote(quoted) if children[0] == Some(CoreId::ValueType(quoted))),
@@ -2726,11 +2726,11 @@ impl Erasure<'_>
             | ValueGraft::Pair(..) => {
                 let second = self.value()?;
                 let first = self.value()?;
-                Ok(self.core.value_pair(first, second))
+                Ok(self.core.value_tuple(&[first, second]))
             },
             | ValueGraft::Injection(side, _) => {
                 let body = self.value()?;
-                Ok(self.core.value_injection(side, body))
+                Ok(self.core.value_injection(side.into(), body))
             },
             | ValueGraft::Thunk(_) => {
                 let body = self.computation()?;
@@ -2783,7 +2783,7 @@ impl Erasure<'_>
         (CompGraft::Application(..),&gandr_core_term::Computation::Application(head,argument)) => children[1] == Some(CoreId::Computation(head)) && children[0] == Some(CoreId::Value(argument)),
         (CompGraft::Return(_),&gandr_core_term::Computation::Return(value)) | (CompGraft::Force(_),&gandr_core_term::Computation::Force(value)) => children[0] == Some(CoreId::Value(value)),
         (CompGraft::Bind(..),&gandr_core_term::Computation::Bind(bound,body)) => children[1] == Some(CoreId::Computation(bound)) && children[0] == Some(CoreId::Computation(body)),
-        (CompGraft::Case{..},&gandr_core_term::Computation::Case{scrutinee,on_left,on_right}) => children[2] == Some(CoreId::Value(scrutinee)) && children[1] == Some(CoreId::Computation(on_left)) && children[0] == Some(CoreId::Computation(on_right)),
+        (CompGraft::Case{..},&gandr_core_term::Computation::Case{scrutinee,ref branches}) => children[2] == Some(CoreId::Value(scrutinee)) && matches!(**branches, [on_left,on_right] if children[1] == Some(CoreId::Computation(on_left)) && children[0] == Some(CoreId::Computation(on_right))),
          _ => false,
          }),
          Err(fault) => fault == EraseFault::MachineInvariant && self.core.watermark() == mark && self.results.len() <= results,
@@ -2821,7 +2821,7 @@ impl Erasure<'_>
                 let on_right = self.computation()?;
                 let on_left = self.computation()?;
                 let scrutinee = self.value()?;
-                Ok(self.core.computation_case(scrutinee, on_left, on_right))
+                Ok(self.core.computation_case(scrutinee, &[on_left, on_right]))
             },
         }
     }
@@ -3885,24 +3885,24 @@ mod tests
         let held = reference.value_unit();
         let r_variable = reference.value_variable(Zone::Intuitionistic, innermost);
         let r_constant = reference.value_constant(first);
-        let r_names = reference.value_pair(r_variable, r_constant);
+        let r_names = reference.value_tuple(&[r_variable, r_constant]);
         let r_literal = reference.value_literal(literal.clone());
-        let r_injected = reference.value_injection(Side::Left, r_literal);
+        let r_injected = reference.value_injection(Side::Left.into(), r_literal);
         let r_returned = reference.value_unit();
         let r_return = reference.computation_return(r_returned);
         let r_thunk = reference.value_thunk(r_return);
         let r_lifted = reference.value_unit();
         let r_lift = reference.value_lift(target.clone(), r_lifted);
-        let r_suspended = reference.value_pair(r_thunk, r_lift);
-        let r_wrapped = reference.value_pair(r_injected, r_suspended);
+        let r_suspended = reference.value_tuple(&[r_thunk, r_lift]);
+        let r_wrapped = reference.value_tuple(&[r_injected, r_suspended]);
         let r_quoted = reference.value_type_unit();
         let r_quote = reference.value_quote(r_quoted);
         let r_quoted_result = reference.value_type_unit();
         let r_quoted_returner = reference.comp_type_returner(r_quoted_result);
         let r_quote_computation = reference.value_quote_computation(r_quoted_returner);
-        let r_quotes = reference.value_pair(r_quote, r_quote_computation);
-        let r_rest = reference.value_pair(r_wrapped, r_quotes);
-        let r_value = reference.value_pair(r_names, r_rest);
+        let r_quotes = reference.value_tuple(&[r_quote, r_quote_computation]);
+        let r_rest = reference.value_tuple(&[r_wrapped, r_quotes]);
+        let r_value = reference.value_tuple(&[r_names, r_rest]);
 
         let r_leg = reference.value_unit();
         let r_force = reference.computation_force(r_leg);
@@ -3913,7 +3913,7 @@ mod tests
         let r_produced = reference.value_unit();
         let r_then = reference.computation_return(r_produced);
         let r_bind = reference.computation_bind(r_application, r_then);
-        let r_case = reference.computation_case(r_leg, r_force, r_bind);
+        let r_case = reference.computation_case(r_leg, &[r_force, r_bind]);
 
         let r_base = reference.value_type_base(BaseType::Integer);
         let r_unit = reference.value_type_unit();
@@ -4218,8 +4218,8 @@ mod tests
         let foreign = {
             let mut elsewhere = CoreArena::new();
             let leaf = elsewhere.value_unit();
-            let pair = elsewhere.value_pair(leaf, leaf);
-            elsewhere.value_pair(pair, pair)
+            let pair = elsewhere.value_tuple(&[leaf, leaf]);
+            elsewhere.value_tuple(&[pair, pair])
         };
         let leaf = unit(&mut overlay);
         let opaque = value(&mut overlay, ValueNode::Opaque(foreign));
@@ -4260,7 +4260,7 @@ mod tests
             core.watermark(),
             "earlier grafts cannot make an initially missing opaque id live"
         );
-        assert_eq!(Some(&gandr_core_term::Value::Unit), core.value(retained));
+        assert_eq!(Some(&gandr_core_term::Value::unit()), core.value(retained));
     }
 
     #[test]
@@ -4655,6 +4655,6 @@ mod tests
         let valid = unit(&mut overlay);
         let erased = erase_value(&overlay, valid, &mut core)
             .expect("unreachable invalid nodes do not taint another root");
-        assert_eq!(Some(&gandr_core_term::Value::Unit), core.value(erased));
+        assert_eq!(Some(&gandr_core_term::Value::unit()), core.value(erased));
     }
 }

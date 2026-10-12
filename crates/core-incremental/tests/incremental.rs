@@ -849,7 +849,7 @@ fn an_opaque_footprint_is_never_adopted()
         }
         push("plain", arena.value_literal(integer(Natural(1))));
         let literal = arena.value_literal(integer(Natural(1)));
-        push("opaque", arena.value_pair(literal, foreign));
+        push("opaque", arena.value_tuple(&[literal, foreign]));
         Program::new(arena, items).expect("positions ascend")
     };
     let mut base = program_for(Name(""));

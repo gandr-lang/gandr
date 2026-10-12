@@ -117,12 +117,10 @@ pub enum GuardAnswer
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum GuardTag
 {
-    /// The unit value.
-    Unit,
     /// A literal value.
     Literal,
-    /// A pair.
-    Pair,
+    /// A tuple of any arity, the unit among them.
+    Tuple,
     /// The empty native list.
     ListNil,
     /// A native list cell.
@@ -341,11 +339,11 @@ mod tests
     #[test]
     fn equal_content_folds_to_one_word()
     {
-        let unit = Guard::compose(GuardTag::Unit, &(), &[]);
+        let unit = Guard::compose(GuardTag::Tuple, &0_usize, &[]);
         let one = Guard::compose(GuardTag::Literal, &integer(String::from("1")), &[]);
-        let first = Guard::compose(GuardTag::Pair, &(), &[unit, one]);
-        let again = Guard::compose(GuardTag::Pair, &(), &[
-            Guard::compose(GuardTag::Unit, &(), &[]),
+        let first = Guard::compose(GuardTag::Tuple, &2_usize, &[unit, one]);
+        let again = Guard::compose(GuardTag::Tuple, &2_usize, &[
+            Guard::compose(GuardTag::Tuple, &0_usize, &[]),
             Guard::compose(GuardTag::Literal, &integer(String::from("1")), &[]),
         ]);
         assert_eq!(
@@ -359,12 +357,12 @@ mod tests
         let two = Guard::compose(GuardTag::Literal, &integer(String::from("2")), &[]);
         assert_ne!(
             first,
-            Guard::compose(GuardTag::Pair, &(), &[unit, two]),
+            Guard::compose(GuardTag::Tuple, &2_usize, &[unit, two]),
             "a differing payload folds apart"
         );
         assert_ne!(
             first,
-            Guard::compose(GuardTag::Pair, &(), &[one, unit]),
+            Guard::compose(GuardTag::Tuple, &2_usize, &[one, unit]),
             "and so does the same content in another order"
         );
         let padded = integer(String::from("0001"));
@@ -379,14 +377,14 @@ mod tests
     #[test]
     fn a_flexible_child_makes_its_parent_flexible()
     {
-        let unit = Guard::compose(GuardTag::Unit, &(), &[]);
+        let unit = Guard::compose(GuardTag::Tuple, &0_usize, &[]);
         for children in [[Guard::Flexible, unit], [unit, Guard::Flexible], [
             Guard::Flexible,
             Guard::Flexible,
         ]] {
             assert_eq!(
                 Guard::Flexible,
-                Guard::compose(GuardTag::Pair, &(), &children)
+                Guard::compose(GuardTag::Tuple, &2_usize, &children)
             );
         }
     }
@@ -394,7 +392,7 @@ mod tests
     #[test]
     fn only_two_rigid_words_that_differ_are_apart()
     {
-        let unit = Guard::compose(GuardTag::Unit, &(), &[]);
+        let unit = Guard::compose(GuardTag::Tuple, &0_usize, &[]);
         let one = Guard::compose(GuardTag::Literal, &integer(String::from("1")), &[]);
         let words = [unit, one, Guard::Flexible];
         let expected = [

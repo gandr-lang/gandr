@@ -471,9 +471,15 @@ fn worst(
                     pending.push((AnyNode::Value(forward), reach));
                     pending.push((AnyNode::Value(backward), reach));
                 },
+                | Some(&Value::Tuple(ref components)) => {
+                    pending.extend(
+                        components
+                            .iter()
+                            .map(|&component| (AnyNode::Value(component), reach)),
+                    );
+                },
                 | Some(
                     &(Value::PathProduct(first, second)
-                    | Value::Pair(first, second)
                     | Value::ListCons(first, second)
                     | Value::StaticApplication(first, second)),
                 ) => {
@@ -510,7 +516,6 @@ fn worst(
                 | Some(
                     &(Value::Primitive { .. }
                     | Value::Variable { .. }
-                    | Value::Unit
                     | Value::ListNil
                     | Value::Literal(_)
                     | Value::Hole(_)),
@@ -617,12 +622,14 @@ fn worst(
                 },
                 | Some(&Computation::Case {
                     scrutinee,
-                    on_left,
-                    on_right,
+                    ref branches,
                 }) => {
                     pending.push((AnyNode::Value(scrutinee), reach));
-                    pending.push((AnyNode::Computation(on_left), reach));
-                    pending.push((AnyNode::Computation(on_right), reach));
+                    pending.extend(
+                        branches
+                            .iter()
+                            .map(|&branch| (AnyNode::Computation(branch), reach)),
+                    );
                 },
                 | Some(&Computation::Transport(path, value)) => {
                     pending.push((AnyNode::Value(path), reach));

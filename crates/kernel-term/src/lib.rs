@@ -211,6 +211,7 @@ pub use crate::term::OccurrenceSite;
 pub use crate::term::ParameterPosition;
 pub use crate::term::PathEvidence;
 pub use crate::term::Side;
+pub use crate::term::Summand;
 pub use crate::term::Value;
 pub use crate::types::CompType;
 pub use crate::types::GroundSort;

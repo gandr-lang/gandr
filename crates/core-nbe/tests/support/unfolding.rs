@@ -124,8 +124,9 @@ pub struct Unfolded(pub u64);
                     Value::Constructor { ref fields, .. } => 2_u64.saturating_add(u64::try_from(fields.len()).unwrap_or(u64::MAX)),
                     Value::Record(ref fields) => 1_u64.saturating_add(u64::try_from(fields.len()).unwrap_or(u64::MAX)),
                     Value::Reify(ref frames) => 1_u64.checked_add(u64::try_from(frames.iter().filter(|frame| !matches!(frame, gandr_core_term::control::StackFrame::Project(_))).count()).expect("walkable frame arity")).expect("walkable frame arity"),
-                    Value::ListNil | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Unit | Value::Literal(_) | Value::Hole(_) => 1,
-                    Value::ListCons(..) | Value::PathProduct(..) | Value::Pair(_, _) | Value::StaticApplication(_, _) => 3,
+                    Value::ListNil | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Hole(_) => 1,
+                    Value::Tuple(ref components) => 1_u64.saturating_add(u64::try_from(components.len()).unwrap_or(u64::MAX)),
+                    Value::ListCons(..) | Value::PathProduct(..) | Value::StaticApplication(_, _) => 3,
                     Value::PathEquiv { .. } => 4,
                     Value::PathRefl(_) | Value::StaticLambda(_) | Value::Injection(_, _) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::Mark { .. } => 2,
                 }
@@ -226,12 +227,17 @@ pub fn unfolded(
                 | Value::Primitive { .. }
                 | Value::Variable { .. }
                 | Value::Constant(_)
-                | Value::Unit
                 | Value::ListNil
                 | Value::Literal(_)
                 | Value::Hole(_) => {},
+                | Value::Tuple(ref components) => {
+                    pending.extend(
+                        components
+                            .iter()
+                            .map(|&component| CoreNode::Value(component)),
+                    );
+                },
                 | Value::PathProduct(first, second)
-                | Value::Pair(first, second)
                 | Value::ListCons(first, second)
                 | Value::StaticApplication(first, second) => {
                     pending.push(CoreNode::Value(first));
@@ -334,12 +340,11 @@ pub fn unfolded(
                     },
                     | Computation::Case {
                         scrutinee,
-                        on_left,
-                        on_right,
+                        ref branches,
                     } => {
                         pending.push(CoreNode::Value(scrutinee));
-                        pending.push(CoreNode::Computation(on_left));
-                        pending.push(CoreNode::Computation(on_right));
+                        pending
+                            .extend(branches.iter().map(|&branch| CoreNode::Computation(branch)));
                     },
                 }
             },

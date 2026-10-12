@@ -429,13 +429,13 @@ impl<'run> Reading<'run>
                 | HeapValue::Literal(ref literal) => matches!(*node, gandr_core_term::Value::Literal(ref found) if found == literal),
                 | HeapValue::Opaque(constant) => *node == gandr_core_term::Value::Constant(constant),
                 | HeapValue::Constructed { ref tag, ref fields } => match (tag, fields.as_ref()) {
-                    | (&ConstructorTag::Unit, &[]) => *node == gandr_core_term::Value::Unit,
+                    | (&ConstructorTag::Unit, &[]) => node.components().is_some_and(<[gandr_core_term::ValueId]>::is_empty),
                     | (&ConstructorTag::ListNil, &[]) => *node == gandr_core_term::Value::ListNil,
                     | (&ConstructorTag::ListCons, &[head, tail]) => matches!(*node, gandr_core_term::Value::ListCons(h, t) if self.read.get(&head) == Some(&h) && self.read.get(&tail) == Some(&t)),
-                    | (&ConstructorTag::Pair, &[first, second]) => matches!(*node, gandr_core_term::Value::Pair(left, right)
+                    | (&ConstructorTag::Pair, &[first, second]) => matches!(node.components(), Some(&[left, right])
                         if self.read.get(&first) == Some(&left) && self.read.get(&second) == Some(&right)),
                     | (&ConstructorTag::Injection(side), &[body]) => matches!(*node, gandr_core_term::Value::Injection(found, value)
-                        if side == found && self.read.get(&body) == Some(&value)),
+                        if gandr_core_term::Summand::from(side) == found && self.read.get(&body) == Some(&value)),
                     | (&ConstructorTag::Lift(ref level), &[body]) => matches!(*node, gandr_core_term::Value::Lift { ref target, body: value }
                         if target == level && self.read.get(&body) == Some(&value)),
                     | (&ConstructorTag::Data { tag, arity }, fields) => fields.len() == usize::from(arity)
@@ -503,11 +503,11 @@ impl<'run> Reading<'run>
                 | (&ConstructorTag::Pair, &[first, second]) => {
                     let first = self.lookup(first)?;
                     let second = self.lookup(second)?;
-                    Ok(self.core.value_pair(first, second))
+                    Ok(self.core.value_tuple(&[first, second]))
                 },
                 | (&ConstructorTag::Injection(side), &[body]) => {
                     let body = self.lookup(body)?;
-                    Ok(self.core.value_injection(side, body))
+                    Ok(self.core.value_injection(side.into(), body))
                 },
                 | (&ConstructorTag::Lift(ref level), &[body]) => {
                     let body = self.lookup(body)?;
@@ -670,17 +670,20 @@ mod tests
         let read_branch = reading.lookup(branch).expect("recorded");
         let read_root = reading.lookup(root).expect("recorded");
         for (id, expected) in [
-            (read_unit, Value::Unit),
+            (read_unit, Value::unit()),
             (read_opaque, Value::Constant(7_usize.into())),
             (read_text, Value::Literal(literal)),
-            (read_pair, Value::Pair(read_text, read_opaque)),
-            (read_injection, Value::Injection(Side::Right, read_unit)),
+            (read_pair, Value::Tuple([read_text, read_opaque].into())),
+            (
+                read_injection,
+                Value::Injection(Side::Right.into(), read_unit),
+            ),
             (read_lift, Value::Lift {
                 target: Level::zero(),
                 body: read_injection,
             }),
-            (read_branch, Value::Pair(read_pair, read_lift)),
-            (read_root, Value::Pair(read_branch, read_branch)),
+            (read_branch, Value::Tuple([read_pair, read_lift].into())),
+            (read_root, Value::Tuple([read_branch, read_branch].into())),
         ] {
             assert_eq!(Some(&expected), reading.core.value(id));
         }
@@ -715,7 +718,7 @@ mod tests
             Some(&Value::Constant(7_usize.into())),
             reading.core.value(inner_read)
         );
-        assert_eq!(Some(&Value::Unit), reading.core.value(outer_read));
+        assert_eq!(Some(&Value::unit()), reading.core.value(outer_read));
         let missing = HeapValueId::from(u32::MAX);
         assert_eq!(
             Err(ReadbackRefusal::Dangling(missing)),

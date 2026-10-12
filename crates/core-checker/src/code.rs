@@ -525,11 +525,10 @@ impl CodeDefinitions
             | Value::PathProduct(..)
             | Value::PathEquiv { .. }
             | Value::Variable { .. }
-            | Value::Unit
+            | Value::Tuple(_)
             | Value::ListNil
             | Value::ListCons(..)
             | Value::Literal(_)
-            | Value::Pair(..)
             | Value::Injection(..)
             | Value::Thunk(_)
             | Value::Lift { .. }
@@ -700,7 +699,10 @@ impl CodeDefinitions
         usize::try_from(u32::from(index)).ok().and_then(|counted| counted.checked_add(1))
             == Some(usize::from(reach))
     },
-    | (Some(&(Value::Constant(_) | Value::Unit | Value::Literal(_))), Ok(reach)) => {
+    | (Some(&(Value::Constant(_) | Value::Literal(_))), Ok(reach)) => {
+        reach == BinderDepth::default()
+    },
+    | (Some(&Value::Tuple(ref components)), Ok(reach)) if components.is_empty() => {
         reach == BinderDepth::default()
     },
     | _ => true,
@@ -773,12 +775,15 @@ pub fn loose_reach(
                         zone: Zone::Linear, ..
                     }
                     | Value::Constant(_)
-                    | Value::Unit
                     | Value::ListNil
                     | Value::Literal(_)
                     | Value::Hole(_) => {},
+                    | Value::Tuple(ref components) => work.extend(
+                        components
+                            .iter()
+                            .map(|&component| (CoreNode::Term(TermNode::Value(component)), depth)),
+                    ),
                     | Value::PathProduct(first, second)
-                    | Value::Pair(first, second)
                     | Value::ListCons(first, second)
                     | Value::StaticApplication(first, second) => {
                         work.push((CoreNode::Term(TermNode::Value(first)), depth));
@@ -917,12 +922,14 @@ pub fn loose_reach(
                     },
                     | Computation::Case {
                         scrutinee,
-                        on_left,
-                        on_right,
+                        ref branches,
                     } => {
                         work.push((CoreNode::Term(TermNode::Value(scrutinee)), depth));
-                        work.push((CoreNode::Term(TermNode::Computation(on_left)), under));
-                        work.push((CoreNode::Term(TermNode::Computation(on_right)), under));
+                        work.extend(
+                            branches.iter().map(|&branch| {
+                                (CoreNode::Term(TermNode::Computation(branch)), under)
+                            }),
+                        );
                     },
                     | Computation::Hole(_) => {},
                 }

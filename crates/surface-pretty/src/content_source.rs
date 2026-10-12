@@ -109,7 +109,6 @@ impl Source for ContentSource<'_>
 &ContentNode::Perform { .. } | &ContentNode::Handle { .. } | &ContentNode::Resume(..) | &ContentNode::Reset(_) | &ContentNode::Shift(_) | &ContentNode::With(..) | &ContentNode::Project(..) | &ContentNode::ListFold { .. } |
 &ContentNode::Return(_) | &ContentNode::Bind(..) | &ContentNode::Force(_) |
 &ContentNode::Case { .. } | &ContentNode::Fixpoint { .. }), Former::Computation) |
-(Some(&ContentNode::Unit), Former::Unit) |
 (Some(&ContentNode::ListNil), Former::ListNil) |
 (Some(&ContentNode::Thunk(_)), Former::Thunk) |
 (Some(&ContentNode::ValueLift { .. }), Former::ValueLift) |
@@ -118,7 +117,6 @@ impl Source for ContentSource<'_>
         | (Some(&ContentNode::WithType(a, b)), Former::With(c, d)) | (Some(&ContentNode::PathUniverse(a, b)), Former::PathUniverse(c, d))
         | (Some(&ContentNode::PathProduct(a, b)), Former::PathProduct(c, d))
         | (Some(&ContentNode::PathEquiv { forward: a, backward: b, .. }), Former::PathEquiv(c, d))
-        | (Some(&ContentNode::Pair(a, b)), Former::Pair(c, d))
         | (Some(&ContentNode::ListCons(a, b)), Former::ListCons(c, d))
         | (Some(&ContentNode::StaticApplication(a, b)), Former::StaticApplication(c, d))
         | (Some(&ContentNode::Arrow { domain: a, codomain: b }), Former::Arrow { domain: c, codomain: d })
@@ -131,8 +129,13 @@ impl Source for ContentSource<'_>
             name.as_ref().as_bytes() == key.as_ref(),
         (Some(content), Former::Literal(actual)) =>
             matches!(*content, ContentNode::Literal(ref literal) if literal == actual),
-        (Some(&ContentNode::Injection(side, body)), Former::Injection(actual_side, actual_body)) =>
-            side == actual_side && body == actual_body,
+        (Some(&ContentNode::Injection(summand, body)), Former::Injection(actual_side, actual_body)) =>
+            summand == actual_side.into() && body == actual_body,
+        (Some(&ContentNode::Injection(summand, _)), Former::Unreadable) => usize::from(summand) > 1,
+        (Some(held), Former::Unit) => matches!(*held, ContentNode::Tuple(ref components) if components.is_empty()),
+        (Some(held), Former::Pair(c, d)) => matches!(*held, ContentNode::Tuple(ref components) if **components == [c, d]),
+        (Some(held), Former::Unreadable) if matches!(*held, ContentNode::Tuple(_)) =>
+            matches!(*held, ContentNode::Tuple(ref components) if !matches!(components.len(), 0 | 2)),
         (Some(&ContentNode::PathRefl(a)), Former::PathRefl(b))
         | (Some(&ContentNode::Quote(a)), Former::Quote(b))
         | (Some(&ContentNode::QuoteComputation(a)), Former::QuoteComputation(b))
@@ -206,12 +209,22 @@ impl Source for ContentSource<'_>
             } => Former::PathEquiv(forward, backward),
             | ContentNode::Variable { zone, index } => Former::Variable { zone, index },
             | ContentNode::Constant(ref reference) => named(reference, Former::Constant),
-            | ContentNode::Unit => Former::Unit,
             | ContentNode::ListNil => Former::ListNil,
             | ContentNode::ListCons(head, tail) => Former::ListCons(head, tail),
             | ContentNode::Literal(ref literal) => Former::Literal(literal),
-            | ContentNode::Pair(first, second) => Former::Pair(first, second),
-            | ContentNode::Injection(side, body) => Former::Injection(side, body),
+            | ContentNode::Tuple(ref components) => match **components {
+                | [] => Former::Unit,
+                | [first, second] => Former::Pair(first, second),
+                // A tuple of any other arity has no spelling yet.
+                | _ => Former::Unreadable,
+            },
+            | ContentNode::Injection(summand, body) => {
+                match gandr_kernel_term::Side::try_from(summand) {
+                    | Ok(side) => Former::Injection(side, body),
+                    // An injection past the second summand has no spelling yet.
+                    | Err(_) => Former::Unreadable,
+                }
+            },
             | ContentNode::Thunk(_) => Former::Thunk,
             | ContentNode::ValueLift { .. } => Former::ValueLift,
             | ContentNode::Quote(quoted) => Former::Quote(quoted),
@@ -538,7 +551,10 @@ mod tests
             ]),
             approximate("? -> -F Integer".into())
         );
-        assert_eq!(spelled(&[ContentNode::Unit]), approximate("?".into()));
+        assert_eq!(
+            spelled(&[ContentNode::Tuple(Vec::new())]),
+            approximate("?".into())
+        );
     }
 
     /// Fidelity follows the nodes the surface cannot write, not the characters

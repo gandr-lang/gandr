@@ -82,6 +82,12 @@ pub enum Form
     Mark,
     /// A fixpoint: the vocabulary has no recursion.
     Fixpoint,
+    /// A tuple of other than zero or two components: the image's products
+    /// are binary.
+    TupleArity,
+    /// An injection past the second summand or a case of other than two
+    /// branches: the image's sums are binary.
+    SumArity,
 }
 impl core::fmt::Display for Form
 {
@@ -132,6 +138,8 @@ impl core::fmt::Display for Form
             | Self::Hole => "a term hole",
             | Self::Mark => "a mark",
             | Self::Fixpoint => "a fixpoint",
+            | Self::TupleArity => "a tuple of neither zero nor two components",
+            | Self::SumArity => "a sum other than binary",
         })
     }
 }
@@ -365,9 +373,12 @@ pub fn lower_computation(
                     },
                     | Computation::Case {
                         scrutinee,
-                        on_left,
-                        on_right,
+                        ref branches,
                     } => {
+                        let &[on_left, on_right] = &**branches
+                        else {
+                            return Err(LowerError::OutsideSlice(Form::SumArity));
+                        };
                         steps.push(Step::Build(NodeKind::Case, CtorTag::Unit, Arity(3)));
                         let inner = Depth(depth.0.saturating_add(1));
                         steps.push(Step::Computation(on_right, inner));
@@ -414,7 +425,6 @@ pub fn lower_computation(
                     | Value::Primitive { .. } => {
                         return Err(LowerError::OutsideSlice(Form::Primitive));
                     },
-                    | Value::Unit => {},
                     | Value::Literal(CoreLiteral::Integer(ref integer)) => {
                         node.kind = NodeKind::Lit;
                         let literal = Literal::try_from(integer)?;
@@ -427,16 +437,21 @@ pub fn lower_computation(
                         node.kind = NodeKind::Var;
                         node.binder = BinderIndex::from(u32::from(index));
                     },
-                    | Value::Pair(first, second) => {
-                        steps.push(Step::Build(NodeKind::Ctor, CtorTag::Pair, Arity(2)));
-                        steps.push(Step::Value(second, depth));
-                        steps.push(Step::Value(first, depth));
-                        continue;
+                    | Value::Tuple(ref components) => match **components {
+                        | [] => {},
+                        | [first, second] => {
+                            steps.push(Step::Build(NodeKind::Ctor, CtorTag::Pair, Arity(2)));
+                            steps.push(Step::Value(second, depth));
+                            steps.push(Step::Value(first, depth));
+                            continue;
+                        },
+                        | _ => return Err(LowerError::OutsideSlice(Form::TupleArity)),
                     },
-                    | Value::Injection(side, payload) => {
-                        let tag = match side {
-                            | Side::Left => CtorTag::Inl,
-                            | Side::Right => CtorTag::Inr,
+                    | Value::Injection(summand, payload) => {
+                        let tag = match Side::try_from(summand) {
+                            | Ok(Side::Left) => CtorTag::Inl,
+                            | Ok(Side::Right) => CtorTag::Inr,
+                            | Err(_) => return Err(LowerError::OutsideSlice(Form::SumArity)),
                         };
                         steps.push(Step::Build(NodeKind::Ctor, tag, Arity(1)));
                         steps.push(Step::Value(payload, depth));

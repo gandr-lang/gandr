@@ -297,9 +297,9 @@ fn reachable(
         match arena.computation(next) {
             | Some(&Computation::Bind(first, second)) => pending.extend([second, first]),
             | Some(&Computation::Lambda(under)) => pending.push(under),
-            | Some(&Computation::Case {
-                on_left, on_right, ..
-            }) => pending.extend([on_right, on_left]),
+            | Some(&Computation::Case { ref branches, .. }) => {
+                pending.extend(branches.iter().rev().copied());
+            },
             | Some(&Computation::DataCase { ref branches, .. }) => {
                 pending.extend(branches.iter().rev().copied());
             },

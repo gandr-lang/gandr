@@ -1388,7 +1388,7 @@ mod tests
     {
         let mut core = CoreArena::new();
         let held_unit = core.value_unit();
-        let held = core.value_pair(held_unit, held_unit);
+        let held = core.value_tuple(&[held_unit, held_unit]);
 
         let mut overlay = Overlay::new();
         let left = unit(&mut overlay);

@@ -2930,9 +2930,8 @@ where
                 | DomainValue::Constructor { .. }
                 | DomainValue::Record { .. }
                 | DomainValue::PathProduct { .. }
-                | DomainValue::Unit { .. }
+                | DomainValue::Tuple { .. }
                 | DomainValue::Literal { .. }
-                | DomainValue::Pair { .. }
                 | DomainValue::ListNil { .. }
                 | DomainValue::ListCons { .. }
                 | DomainValue::Injection { .. }
@@ -4501,7 +4500,7 @@ mod tests
             ensures: |ret| {
              let roots = match sides { Sides::Values(a,b) => [CoreTerm::Value(a),CoreTerm::Value(b)], Sides::Computations(a,b) => [CoreTerm::Computation(a),CoreTerm::Computation(b)] };
              (roots[0] != roots[1] || ret[0] == ret[1]) && roots.into_iter().zip(ret).all(|(root,count)|
-                !matches!(root, CoreTerm::Value(id) if matches!(self.core.value(id), Some(Value::Unit | Value::Variable{..} | Value::Constant(_) | Value::Literal(_)))) || u64::from(count) == 0)
+                !matches!(root, CoreTerm::Value(id) if matches!(self.core.value(id), Some(Value::Variable{..} | Value::Constant(_) | Value::Literal(_)))) || u64::from(count) == 0)
             }
         )]
         fn shares(
@@ -4567,8 +4566,9 @@ mod tests
           Value::PathRefl(code) => ret.as_slice() == [CoreTerm::Value(code)],
           Value::PathProduct(first, second) => ret.as_slice() == [CoreTerm::Value(first), CoreTerm::Value(second)],
           Value::PathEquiv { forward, backward, .. } => ret.as_slice() == [CoreTerm::Value(forward), CoreTerm::Value(backward)],
-          Value::ListCons(a,b) | Value::Pair(a,b) | Value::StaticApplication(a,b) => ret.as_slice() == [CoreTerm::Value(a),CoreTerm::Value(b)],
-          Value::ListNil | Value::Primitive { .. } | Value::Variable{..} | Value::Constant(_) | Value::Unit | Value::Literal(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::Hole(_) => ret.is_empty(),
+          Value::ListCons(a,b) | Value::StaticApplication(a,b) => ret.as_slice() == [CoreTerm::Value(a),CoreTerm::Value(b)],
+          Value::Tuple(ref components) => ret.iter().copied().eq(components.iter().copied().map(CoreTerm::Value)),
+          Value::ListNil | Value::Primitive { .. } | Value::Variable{..} | Value::Constant(_) | Value::Literal(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::Hole(_) => ret.is_empty(),
           Value::StaticLambda(body) | Value::Injection(_,body) | Value::Lift{body,..} | Value::Mark{body,..} => ret.as_slice() == [CoreTerm::Value(body)],
           Value::Thunk(body) => ret.as_slice() == [CoreTerm::Computation(body)],
           }),
@@ -4583,7 +4583,7 @@ mod tests
           Computation::Application(head,arg) => ret.as_slice() == [CoreTerm::Computation(head),CoreTerm::Value(arg)],
           Computation::Return(value) | Computation::Force(value) => ret.as_slice() == [CoreTerm::Value(value)],
           Computation::Bind(bound,body) => ret.as_slice() == [CoreTerm::Computation(bound),CoreTerm::Computation(body)],
-          Computation::Case{scrutinee,on_left,on_right} => ret.as_slice() == [CoreTerm::Value(scrutinee),CoreTerm::Computation(on_left),CoreTerm::Computation(on_right)],
+          Computation::Case{scrutinee,ref branches} => ret.iter().copied().eq(core::iter::once(CoreTerm::Value(scrutinee)).chain(branches.iter().copied().map(CoreTerm::Computation))),
           Computation::Hole(_) => ret.is_empty(),
          }),
         }
@@ -4605,18 +4605,19 @@ mod tests
                 | Value::Primitive { .. }
                 | Value::Variable { .. }
                 | Value::Constant(_)
-                | Value::Unit
                 | Value::ListNil
                 | Value::Literal(_)
                 | Value::Quote(_)
                 | Value::QuoteComputation(_)
                 | Value::Hole(_) => Vec::new(),
+                | Value::Tuple(ref components) => {
+                    components.iter().copied().map(CoreTerm::Value).collect()
+                },
                 | Value::PathRefl(code) => Vec::from([CoreTerm::Value(code)]),
                 | Value::PathEquiv {
                     forward, backward, ..
                 } => Vec::from([CoreTerm::Value(forward), CoreTerm::Value(backward)]),
                 | Value::PathProduct(first, second)
-                | Value::Pair(first, second)
                 | Value::ListCons(first, second)
                 | Value::StaticApplication(first, second) => {
                     Vec::from([CoreTerm::Value(first), CoreTerm::Value(second)])
@@ -4684,13 +4685,10 @@ mod tests
                     },
                     | Computation::Case {
                         scrutinee,
-                        on_left,
-                        on_right,
-                    } => Vec::from([
-                        CoreTerm::Value(scrutinee),
-                        CoreTerm::Computation(on_left),
-                        CoreTerm::Computation(on_right),
-                    ]),
+                        ref branches,
+                    } => core::iter::once(CoreTerm::Value(scrutinee))
+                        .chain(branches.iter().copied().map(CoreTerm::Computation))
+                        .collect(),
                 }
             },
         }
@@ -4805,11 +4803,14 @@ mod tests
                                         backward: value(backward),
                                         evidence,
                                     },
-                                    | Value::Pair(first, second) => {
-                                        Value::Pair(value(first), value(second))
+                                    | Value::Tuple(mut components) => {
+                                        for component in &mut components {
+                                            *component = value(*component);
+                                        }
+                                        Value::Tuple(components)
                                     },
-                                    | Value::Injection(side, body) => {
-                                        Value::Injection(side, value(body))
+                                    | Value::Injection(summand, body) => {
+                                        Value::Injection(summand, value(body))
                                     },
                                     | Value::Thunk(body) => Value::Thunk(computation(body)),
                                     | Value::StaticLambda(body) => Value::StaticLambda(value(body)),
@@ -4826,7 +4827,6 @@ mod tests
                                     },
                                     | leaf @ (Value::Variable { .. }
                                     | Value::Constant(_)
-                                    | Value::Unit
                                     | Value::Literal(_)
                                     | Value::Quote(_)
                                     | Value::QuoteComputation(_)
@@ -4918,12 +4918,13 @@ mod tests
                                 },
                                 | Computation::Case {
                                     scrutinee,
-                                    on_left,
-                                    on_right,
+                                    ref branches,
                                 } => Computation::Case {
                                     scrutinee: value(scrutinee),
-                                    on_left: computation(on_left),
-                                    on_right: computation(on_right),
+                                    branches: branches
+                                        .iter()
+                                        .map(|branch| computation(*branch))
+                                        .collect(),
                                 },
                                 | Computation::Mark { mark, body } => Computation::Mark {
                                     mark,
@@ -4972,8 +4973,9 @@ mod tests
           Value::PathRefl(code) => ret.as_slice() == [canon[&CoreTerm::Value(code)]],
           Value::PathProduct(first, second) => ret.as_slice() == [canon[&CoreTerm::Value(first)], canon[&CoreTerm::Value(second)]],
           Value::PathEquiv { forward, backward, .. } => ret.as_slice() == [canon[&CoreTerm::Value(forward)], canon[&CoreTerm::Value(backward)]],
-          Value::ListCons(a,b) | Value::Pair(a,b) | Value::StaticApplication(a,b) => ret.as_slice() == [canon[&CoreTerm::Value(a)],canon[&CoreTerm::Value(b)]],
-          Value::ListNil | Value::Primitive { .. } | Value::Variable{..} | Value::Constant(_) | Value::Unit | Value::Literal(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::Hole(_) => ret.is_empty(),
+          Value::ListCons(a,b) | Value::StaticApplication(a,b) => ret.as_slice() == [canon[&CoreTerm::Value(a)],canon[&CoreTerm::Value(b)]],
+          Value::Tuple(ref components) => ret.iter().copied().eq(components.iter().map(|&component| canon[&CoreTerm::Value(component)])),
+          Value::ListNil | Value::Primitive { .. } | Value::Variable{..} | Value::Constant(_) | Value::Literal(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::Hole(_) => ret.is_empty(),
           Value::StaticLambda(body) | Value::Injection(_,body) | Value::Lift{body,..} | Value::Mark{body,..} => ret.as_slice() == [canon[&CoreTerm::Value(body)]],
           Value::Thunk(body) => ret.as_slice() == [canon[&CoreTerm::Computation(body)]],
           }),
@@ -4988,7 +4990,7 @@ mod tests
           Computation::Application(head,arg) => ret.as_slice() == [canon[&CoreTerm::Computation(head)],canon[&CoreTerm::Value(arg)]],
           Computation::Return(value) | Computation::Force(value) => ret.as_slice() == [canon[&CoreTerm::Value(value)]],
           Computation::Bind(bound,body) => ret.as_slice() == [canon[&CoreTerm::Computation(bound)],canon[&CoreTerm::Computation(body)]],
-          Computation::Case{scrutinee,on_left,on_right} => ret.as_slice() == [canon[&CoreTerm::Value(scrutinee)],canon[&CoreTerm::Computation(on_left)],canon[&CoreTerm::Computation(on_right)]],
+          Computation::Case{scrutinee,ref branches} => ret.iter().copied().eq(core::iter::once(canon[&CoreTerm::Value(scrutinee)]).chain(branches.iter().map(|&branch| canon[&CoreTerm::Computation(branch)]))),
           Computation::Hole(_) => ret.is_empty(),
          }),
         }
@@ -5217,14 +5219,19 @@ mod tests
                                     ValueGraft::Variable { zone, index }
                                 },
                                 | Value::Constant(constant) => ValueGraft::Constant(constant),
-                                | Value::Unit => ValueGraft::Unit,
                                 | Value::Literal(ref literal) => {
                                     ValueGraft::Literal(literal.clone())
                                 },
-                                | Value::Pair(..) => ValueGraft::Pair(value(0), value(1)),
-                                | Value::Injection(side, _) => {
-                                    ValueGraft::Injection(side, value(0))
+                                | Value::Tuple(ref components) => match components.len() {
+                                    | 0 => ValueGraft::Unit,
+                                    | 2 => ValueGraft::Pair(value(0), value(1)),
+                                    | _ => panic!("the fixture language's tuples are binary"),
                                 },
+                                | Value::Injection(summand, _) => ValueGraft::Injection(
+                                    gandr_kernel_term::Side::try_from(summand)
+                                        .expect("the fixture language's sums are binary"),
+                                    value(0),
+                                ),
                                 | Value::Thunk(_) => ValueGraft::Thunk(computation(0)),
                                 | Value::Lift { ref target, .. } => ValueGraft::Lift {
                                     target: target.clone(),
@@ -5556,8 +5563,9 @@ mod tests
               Value::PathRefl(code) => ret.as_slice() == [Node::Value(code)],
               Value::PathProduct(first, second) => ret.as_slice() == [Node::Value(first), Node::Value(second)],
               Value::PathEquiv { path_type, forward, backward, .. } => ret.as_slice() == [Node::ValueType(path_type), Node::Value(forward), Node::Value(backward)],
-              Value::ListCons(a,b) | Value::Pair(a,b) | Value::StaticApplication(a,b) => ret.as_slice() == [Node::Value(a),Node::Value(b)],
-              Value::ListNil | Value::Primitive { .. } | Value::Variable{..} | Value::Constant(_) | Value::Unit | Value::Literal(_) | Value::Hole(_) => ret.is_empty(),
+              Value::ListCons(a,b) | Value::StaticApplication(a,b) => ret.as_slice() == [Node::Value(a),Node::Value(b)],
+              Value::Tuple(ref components) => ret.iter().copied().eq(components.iter().copied().map(Node::Value)),
+              Value::ListNil | Value::Primitive { .. } | Value::Variable{..} | Value::Constant(_) | Value::Literal(_) | Value::Hole(_) => ret.is_empty(),
               Value::StaticLambda(body) | Value::Injection(_,body) | Value::Lift{body,..} | Value::Mark{body,..} => ret.as_slice() == [Node::Value(body)],
               Value::Thunk(body) => ret.as_slice() == [Node::Computation(body)],
              Value::Quote(id) => ret.as_slice() == [Node::ValueType(id)],
@@ -5574,7 +5582,7 @@ mod tests
               Computation::Application(head,arg) => ret.as_slice() == [Node::Computation(head),Node::Value(arg)],
               Computation::Return(value) | Computation::Force(value) => ret.as_slice() == [Node::Value(value)],
               Computation::Bind(bound,body) => ret.as_slice() == [Node::Computation(bound),Node::Computation(body)],
-              Computation::Case{scrutinee,on_left,on_right} => ret.as_slice() == [Node::Value(scrutinee),Node::Computation(on_left),Node::Computation(on_right)],
+              Computation::Case{scrutinee,ref branches} => ret.iter().copied().eq(core::iter::once(Node::Value(scrutinee)).chain(branches.iter().copied().map(Node::Computation))),
               Computation::Hole(_) => ret.is_empty(),
              }),
              Node::ValueType(id) => core.value_type(id).is_some_and(|value_type| match *value_type {
@@ -5635,10 +5643,12 @@ mod tests
                             Node::Value(backward),
                         ]),
                         | Value::PathProduct(first, second)
-                        | Value::Pair(first, second)
                         | Value::ListCons(first, second)
                         | Value::StaticApplication(first, second) => {
                             Vec::from([Node::Value(first), Node::Value(second)])
+                        },
+                        | Value::Tuple(ref components) => {
+                            components.iter().copied().map(Node::Value).collect()
                         },
                         | Value::StaticLambda(body)
                         | Value::Injection(_, body)
@@ -5650,7 +5660,6 @@ mod tests
                         | Value::Primitive { .. }
                         | Value::Variable { .. }
                         | Value::Constant(_)
-                        | Value::Unit
                         | Value::ListNil
                         | Value::Literal(_)
                         | Value::Hole(_) => Vec::new(),
@@ -5717,13 +5726,10 @@ mod tests
                         },
                         | Computation::Case {
                             scrutinee,
-                            on_left,
-                            on_right,
-                        } => Vec::from([
-                            Node::Value(scrutinee),
-                            Node::Computation(on_left),
-                            Node::Computation(on_right),
-                        ]),
+                            ref branches,
+                        } => core::iter::once(Node::Value(scrutinee))
+                            .chain(branches.iter().copied().map(Node::Computation))
+                            .collect(),
                     }
                 },
                 | Node::ValueType(value_type) => {
@@ -5865,7 +5871,6 @@ mod tests
                             panic!("the kernel's terms have no linear zone")
                         },
                         | Value::Constant(constant) => self.arena.value_constant(constant),
-                        | Value::Unit => self.arena.value_unit(),
                         | Value::ListNil => self.arena.value_list_nil(),
                         | Value::ListCons(first, second) => {
                             let (first, second) = (value(self, first), value(self, second));
@@ -5896,12 +5901,18 @@ mod tests
                                 alloc::sync::Arc::clone(evidence),
                             )
                         },
-                        | Value::Pair(first, second) => {
-                            let (first, second) = (value(self, first), value(self, second));
-                            self.arena.value_pair(first, second)
+                        | Value::Tuple(ref components) => match **components {
+                            | [] => self.arena.value_unit(),
+                            | [first, second] => {
+                                let (first, second) = (value(self, first), value(self, second));
+                                self.arena.value_pair(first, second)
+                            },
+                            | _ => panic!("the kernel's products are binary"),
                         },
-                        | Value::Injection(side, body) => {
+                        | Value::Injection(summand, body) => {
                             let body = value(self, body);
+                            let side = gandr_kernel_term::Side::try_from(summand)
+                                .expect("the kernel's sums are binary");
                             self.arena.value_injection(side, body)
                         },
                         | Value::Thunk(body) => {
@@ -6016,9 +6027,12 @@ mod tests
                         },
                         | Computation::Case {
                             scrutinee,
-                            on_left,
-                            on_right,
+                            ref branches,
                         } => {
+                            let &[on_left, on_right] = &**branches
+                            else {
+                                panic!("the kernel's cases are binary")
+                            };
                             let scrutinee = value(self, scrutinee);
                             let (on_left, on_right) =
                                 (computation(self, on_left), computation(self, on_right));
@@ -6460,7 +6474,7 @@ mod tests
         let first_unit = core.value_unit();
         let second_unit = core.value_unit();
         let function = identity(&mut core);
-        let units = core.value_pair(first_unit, second_unit);
+        let units = core.value_tuple(&[first_unit, second_unit]);
         let zero = core.value_constant(Name::Zero.constant());
         let one = core.value_constant(Name::One.constant());
         let two = core.value_constant(Name::Two.constant());
@@ -6530,7 +6544,7 @@ mod tests
         let mut core = CoreArena::new();
         let left = core.value_unit();
         let right = core.value_unit();
-        let paired = core.value_pair(left, right);
+        let paired = core.value_tuple(&[left, right]);
         let world = World::new(core, &[]);
 
         let mut log = TraceLog::new();
@@ -6565,8 +6579,8 @@ mod tests
         let unit_type = core.value_type_unit();
         let boolean = core.value_type_sum(&[unit_type, unit_type]);
         let unit = core.value_unit();
-        let yes = core.value_injection(gandr_kernel_term::Side::Left, unit);
-        let no = core.value_injection(gandr_kernel_term::Side::Right, unit);
+        let yes = core.value_injection(gandr_kernel_term::Side::Left.into(), unit);
+        let no = core.value_injection(gandr_kernel_term::Side::Right.into(), unit);
         let named_yes = core.value_constant(Name::Zero.constant());
         let list = innermost(&mut core);
         let head = core.value_variable(
@@ -6858,7 +6872,7 @@ mod tests
         let rigid = core.value_constant(Name::Rigid.constant());
         let reference = core.value_constant(Name::Zero.constant());
         let unit = core.value_unit();
-        let paired = core.value_pair(unit, unit);
+        let paired = core.value_tuple(&[unit, unit]);
         let left = call(&mut core, rigid, &[unit, reference]);
         let right = call(&mut core, rigid, &[unit, paired]);
         let world = World::new(core, &[(Name::Zero, body)]);
@@ -6989,9 +7003,9 @@ mod tests
         let zero = core.value_constant(Name::Zero.constant());
         let one = core.value_constant(Name::One.constant());
         let unit = core.value_unit();
-        let units = core.value_pair(unit, unit);
-        let cyclic = core.value_pair(zero, unit);
-        let refuted = core.value_pair(unit, units);
+        let units = core.value_tuple(&[unit, unit]);
+        let cyclic = core.value_tuple(&[zero, unit]);
+        let refuted = core.value_tuple(&[unit, units]);
         let world = World::new(core, &[(Name::Zero, one), (Name::One, zero)]);
 
         let (verdict, decisions) = world.traced(Sides::Values(cyclic, refuted));
@@ -7078,7 +7092,7 @@ mod tests
          Computation::Bind(bound,body) => matches!(core.computation(bound),Some(&Computation::Return(value)) if core.value(value) == Some(&Value::Constant(below)))
           && core.computation(body).is_some_and(|comp| match *comp {
            Computation::Return(value) => core.value(value).is_some_and(|value| match *value {
-            Value::Pair(left,right) => left == right && matches!(core.value(left),Some(Value::Variable{zone:Zone::Intuitionistic,index}) if u32::from(*index) == 0), _ => false,
+            Value::Tuple(ref components) => matches!(**components, [left, right] if left == right) && matches!(components.first().and_then(|&left| core.value(left)),Some(Value::Variable{zone:Zone::Intuitionistic,index}) if u32::from(*index) == 0), _ => false,
            }), _ => false,
           }), _ => false,
          }), _ => false,
@@ -7092,7 +7106,7 @@ mod tests
         let reference = core.value_constant(below);
         let produced = core.computation_return(reference);
         let occurrence = innermost(core);
-        let paired = core.value_pair(occurrence, occurrence);
+        let paired = core.value_tuple(&[occurrence, occurrence]);
         let returned = core.computation_return(paired);
         let bound = core.computation_bind(produced, returned);
         core.value_thunk(bound)
@@ -7152,7 +7166,7 @@ mod tests
     /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
     #[spec(
         ensures: |ret| ret.0.bodies.len() == 10 && ret.1.len() == 4
-         && ret.0.bodies.iter().take(2).all(|&body| ret.0.core.value(body) == Some(&Value::Unit))
+         && ret.0.bodies.iter().take(2).all(|&body| ret.0.core.value(body) == Some(&Value::unit()))
          && ret.1.iter().enumerate().all(|(rung,&sides)| match sides {
          Sides::Values(left,right) => rung.checked_add(1).and_then(|rung| rung.checked_mul(2)).is_some_and(|position|
              ret.0.core.value(left) == Some(&Value::Constant(ConstantIndex::from(position)))
@@ -7253,7 +7267,7 @@ mod tests
         let lambda = core.computation_lambda(returned);
         let constant = core.value_thunk(lambda);
         let head = core.value_constant(Name::Zero.constant());
-        let units = core.value_pair(unit, unit);
+        let units = core.value_tuple(&[unit, unit]);
         let left = call(&mut core, head, &[unit]);
         let right = call(&mut core, head, &[units]);
         let world = World::new(core, &[(Name::Zero, constant)]);
@@ -7283,12 +7297,12 @@ mod tests
         let mut core = CoreArena::new();
         let occurrence = innermost(&mut core);
         let unit = core.value_unit();
-        let paired = core.value_pair(occurrence, unit);
+        let paired = core.value_tuple(&[occurrence, unit]);
         let returned = core.computation_return(paired);
         let lambda = core.computation_lambda(returned);
         let function = core.value_thunk(lambda);
         let head = core.value_constant(Name::Zero.constant());
-        let units = core.value_pair(unit, unit);
+        let units = core.value_tuple(&[unit, unit]);
         let left = call(&mut core, head, &[unit]);
         let right = call(&mut core, head, &[units]);
         let world = World::new(core, &[(Name::Zero, function)]);
@@ -7318,8 +7332,8 @@ mod tests
         let zero = core.value_constant(Name::Zero.constant());
         let one = core.value_constant(Name::One.constant());
         let unit = core.value_unit();
-        let left = core.value_pair(zero, unit);
-        let right = core.value_pair(one, unit);
+        let left = core.value_tuple(&[zero, unit]);
+        let right = core.value_tuple(&[one, unit]);
         let world = World::new(core, &[(Name::Zero, left), (Name::One, right)]);
         let sides = Sides::Values(zero, one);
 
@@ -7489,9 +7503,9 @@ mod tests
         let returned = core.computation_return(unit);
         let settled = core.value_thunk(returned);
         let deep = core.value_constant(deep);
-        let units = core.value_pair(unit, unit);
-        let left = core.value_pair(started, deep);
-        let right = core.value_pair(settled, units);
+        let units = core.value_tuple(&[unit, unit]);
+        let left = core.value_tuple(&[started, deep]);
+        let right = core.value_tuple(&[settled, units]);
         let world = World::stacked(core, &bodies);
         let sides = Sides::Values(left, right);
 
@@ -7565,9 +7579,9 @@ mod tests
         let returned = core.computation_return(unit);
         let settled = core.value_thunk(returned);
         let deep = core.value_constant(deep);
-        let units = core.value_pair(unit, unit);
-        let left = core.value_pair(started, deep);
-        let right = core.value_pair(settled, units);
+        let units = core.value_tuple(&[unit, unit]);
+        let left = core.value_tuple(&[started, deep]);
+        let right = core.value_tuple(&[settled, units]);
         let world = World::stacked(core, &bodies);
         let sides = Sides::Values(left, right);
         assert!(
@@ -7991,7 +8005,7 @@ mod tests
                     core.computation_force(rigid)
                 }
                 else {
-                    let pair = core.value_pair(unit, unit);
+                    let pair = core.value_tuple(&[unit, unit]);
                     let returned = core.computation_return(pair);
                     core.computation_lambda(returned)
                 };
@@ -8060,15 +8074,15 @@ mod tests
             .expect("the first thunk evaluates");
         let right = eval_value(&core, &mut domain, definitions, Fuel::from(32_u32), second)
             .expect("the second thunk evaluates");
-        let mut left_tail = domain.value_pair(left, left, crate::TermFace::Reduced);
-        let mut right_tail = domain.value_pair(right, right, crate::TermFace::Reduced);
+        let mut left_tail = domain.value_tuple([left, left], crate::TermFace::Reduced);
+        let mut right_tail = domain.value_tuple([right, right], crate::TermFace::Reduced);
         let padding = domain.value_unit(crate::TermFace::Reduced);
         for _depth in 0_u32 .. 8_u32 {
-            left_tail = domain.value_pair(padding, left_tail, crate::TermFace::Reduced);
-            right_tail = domain.value_pair(padding, right_tail, crate::TermFace::Reduced);
+            left_tail = domain.value_tuple([padding, left_tail], crate::TermFace::Reduced);
+            right_tail = domain.value_tuple([padding, right_tail], crate::TermFace::Reduced);
         }
-        let left_root = domain.value_pair(left, left_tail, crate::TermFace::Reduced);
-        let right_root = domain.value_pair(right, right_tail, crate::TermFace::Reduced);
+        let left_root = domain.value_tuple([left, left_tail], crate::TermFace::Reduced);
+        let right_root = domain.value_tuple([right, right_tail], crate::TermFace::Reduced);
         let problem = Problem::values(left_root, right_root);
         let mut independent = domain.clone();
         let reshared = decide::<_, ResharingMemo>(
@@ -8604,11 +8618,11 @@ mod tests
         let mut core = CoreArena::new();
         let first = core.value_unit();
         let second = core.value_unit();
-        let left = core.value_pair(first, second);
+        let left = core.value_tuple(&[first, second]);
         let third = core.value_unit();
         let fourth = core.value_unit();
-        let right = core.value_pair(third, fourth);
-        let root = core.value_pair(left, right);
+        let right = core.value_tuple(&[third, fourth]);
+        let root = core.value_tuple(&[left, right]);
         let mut world = World::new(core, &[]);
         assert_eq!(
             [0_u64, 0_u64],
@@ -8631,17 +8645,17 @@ mod tests
         };
         let erased = crate::overlay::erase_value(&overlay, lifted_root, &mut world.core)
             .expect("the lifted tree erases");
-        let Some(&Value::Pair(first, second)) = world.core.value(erased)
+        let Some(&[first, second]) = world.core.value(erased).and_then(Value::components)
         else {
             panic!("the root is still a pair");
         };
         assert_eq!(first, second, "erasure reuses the shared pair leg");
-        let Some(&Value::Pair(first, second)) = world.core.value(first)
+        let Some(&[first, second]) = world.core.value(first).and_then(Value::components)
         else {
             panic!("each component is still a pair");
         };
         assert_eq!(first, second, "erasure reuses the shared unit leg");
-        assert_eq!(Some(&Value::Unit), world.core.value(first));
+        assert_eq!(Some(&Value::unit()), world.core.value(first));
     }
 
     #[test]

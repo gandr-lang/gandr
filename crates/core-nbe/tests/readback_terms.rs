@@ -231,8 +231,8 @@ mod readback_terms
         let mut core = CoreArena::new();
         let first = core.value_unit();
         let second = core.value_unit();
-        let one = core.value_pair(first, second);
-        let other = core.value_pair(second, first);
+        let one = core.value_tuple(&[first, second]);
+        let other = core.value_tuple(&[second, first]);
         assert!(
             matches!(
                 same_tree(&core, Term::Value(one), &core, Term::Value(other)),
@@ -266,7 +266,7 @@ mod readback_terms
             "different formers are different terms"
         );
 
-        let mixed = core.value_pair(first, occurrence);
+        let mixed = core.value_tuple(&[first, occurrence]);
         assert!(
             !matches!(
                 same_tree(&core, Term::Value(one), &core, Term::Value(mixed)),
@@ -275,8 +275,8 @@ mod readback_terms
             "a difference in a child is a difference in the term"
         );
 
-        let left = core.value_injection(Side::Left, first);
-        let right = core.value_injection(Side::Right, first);
+        let left = core.value_injection(Side::Left.into(), first);
+        let right = core.value_injection(Side::Right.into(), first);
         assert!(
             !matches!(
                 same_tree(&core, Term::Value(left), &core, Term::Value(right)),
@@ -471,9 +471,9 @@ mod readback_terms
              would call these equal"
         );
 
-        let cased = core.computation_case(first, returner, forced);
-        let cased_other_scrutinee = core.computation_case(occurrence, returner, forced);
-        let cased_swapped = core.computation_case(first, forced, returner);
+        let cased = core.computation_case(first, &[returner, forced]);
+        let cased_other_scrutinee = core.computation_case(occurrence, &[returner, forced]);
+        let cased_swapped = core.computation_case(first, &[forced, returner]);
         assert!(
             !matches!(
                 same_tree(
@@ -508,7 +508,7 @@ mod readback_terms
         let mut stranger_comp = other_arena.computation_return(stranger);
         let mut remaining = 32_usize;
         while remaining > 0 {
-            stranger = other_arena.value_pair(stranger, stranger);
+            stranger = other_arena.value_tuple(&[stranger, stranger]);
             stranger_comp = other_arena.computation_bind(stranger_comp, stranger_comp);
             remaining = remaining.saturating_sub(1);
         }
@@ -654,12 +654,12 @@ mod readback_terms
     {
         let mut core = CoreArena::new();
         let payload = core.value_unit();
-        let scrutinee = core.value_injection(Side::Right, payload);
+        let scrutinee = core.value_injection(Side::Right.into(), payload);
         let untaken = core.value_unit();
         let on_left = core.computation_return(untaken);
         let occurrence = core.value_variable(Zone::Intuitionistic, innermost());
         let on_right = core.computation_return(occurrence);
-        let source = core.computation_case(scrutinee, on_left, on_right);
+        let source = core.computation_case(scrutinee, &[on_left, on_right]);
 
         // Written out independently of the machine: `return ⟨⟩`, which is the
         // right branch with the injected payload substituted for its binder.
@@ -719,7 +719,7 @@ mod readback_terms
         let on_left = core.computation_return(untaken);
         let occurrence = core.value_variable(Zone::Intuitionistic, innermost());
         let on_right = core.computation_return(occurrence);
-        let source = core.computation_case(opaque, on_left, on_right);
+        let source = core.computation_case(opaque, &[on_left, on_right]);
 
         // Written out independently of the machine: the same case, with the
         // scrutinee stuck and both branches normalized under their own binder.
@@ -728,7 +728,7 @@ mod readback_terms
         let expected_left = core.computation_return(expected_untaken);
         let expected_occurrence = core.value_variable(Zone::Intuitionistic, innermost());
         let expected_right = core.computation_return(expected_occurrence);
-        let expected = core.computation_case(expected_scrutinee, expected_left, expected_right);
+        let expected = core.computation_case(expected_scrutinee, &[expected_left, expected_right]);
 
         let (chain, environment) = nothing_unfolds();
         let scope = environment.root();
@@ -767,7 +767,7 @@ mod readback_terms
         let mut core = CoreArena::new();
         let first = core.value_unit();
         let second = core.value_unit();
-        let source = core.value_pair(first, second);
+        let source = core.value_tuple(&[first, second]);
 
         let (chain, environment) = nothing_unfolds();
         let scope = environment.root();
