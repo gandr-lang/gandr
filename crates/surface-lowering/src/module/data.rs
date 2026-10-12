@@ -268,11 +268,7 @@ impl<'source> Collector<'_, 'source>
             }
         }
         let tail = if let Maybe::Present(repaired) = pieces.repair {
-            Tail::Refused(LoweringRefusal::MalformedForm {
-                span: repaired.span,
-                form: FormName::DATA,
-                fault: FormFault::Repaired(repaired.repair),
-            })
+            Tail::Refused(repaired.refusal(FormName::DATA))
         }
         else if let Err(refusal) = attributed {
             Tail::Refused(refusal)
@@ -332,11 +328,7 @@ impl<'source> Collector<'_, 'source>
         let mut pieces = Pieces::new();
         read_pieces(self.pbg, self.tree, block.node, &mut pieces)?;
         if let Maybe::Present(repaired) = pieces.repair {
-            return Err(LoweringRefusal::MalformedForm {
-                span: repaired.span,
-                form: FormName::ATTRIBUTE,
-                fault: FormFault::Repaired(repaired.repair),
-            });
+            return Err(repaired.refusal(FormName::ATTRIBUTE));
         }
         self.read_attributes(
             Cursor::new(&pieces.pieces, block.span),

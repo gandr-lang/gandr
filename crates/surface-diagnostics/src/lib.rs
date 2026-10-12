@@ -1,6 +1,6 @@
 //! Renders what one step of the dispatcher's walk prints: each refusal, each
-//! unsettled declaration and each goal as a source snippet with its span, its
-//! class and its message, and each ledger line a verb prints beside them.
+//! unsettled declaration and each goal as a source snippet with its span, what
+//! the span is and its message, and each ledger line a verb prints beside them.
 //!
 //! # The one input is the step
 //!
@@ -66,11 +66,13 @@
 //! [`Step`]: gandr_surface_dispatcher::Step
 //! [`DeclarationReport`]: gandr_surface_corpus::DeclarationReport
 
+mod culprit;
 mod entry;
 mod locus;
 mod report;
 mod style;
 
+pub use crate::culprit::Culprit;
 pub use crate::entry::Entries;
 pub use crate::entry::Entry;
 pub use crate::entry::Line;
@@ -79,10 +81,12 @@ pub use crate::locus::Annotation;
 pub use crate::locus::Label;
 pub use crate::locus::report_context;
 pub use crate::report::Class;
+pub use crate::report::Note;
 pub use crate::report::Report;
 pub use crate::report::Title;
 pub use crate::report::Unsettlement;
 pub use crate::report::report_identifier;
+pub use crate::report::report_note;
 pub use crate::report::report_span;
 pub use crate::style::RenderStyle;
 pub use crate::style::Rendered;

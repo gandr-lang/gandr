@@ -380,11 +380,12 @@ pub enum ExpectationFault
 
 impl fmt::Display for ExpectationFault
 {
-    /// Writes the fault and the bytes it names.
+    /// Writes the fault without the bytes it names: a diagnostic locates the
+    /// attribute through the fault's spans instead.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: writes the fault kind and every source span it carries.
+    /// - ensures: writes the fault kind and no source span.
     /// - fails: propagates a refusing output sink as `fmt::Error`.
     /// - panics: none.
     /// - executable: none — the formatter exposes neither emitted text nor
@@ -396,9 +397,9 @@ impl fmt::Display for ExpectationFault
     ///
     /// # Adequacy
     /// - hypothesis: L3 — each variant with distinct nonempty spans, counts or
-    ///   a non-ASCII spelling. The observation retains semantic payloads and
-    ///   distinguishes fault kinds without pinning sentence wording; every
-    ///   branch propagates an exact sink refusal.
+    ///   a non-ASCII spelling. The observation distinguishes fault kinds and
+    ///   omits every span without pinning sentence wording; every branch
+    ///   propagates an exact sink refusal.
     /// - witness: `expectation::tests::expectation_formatters_retain_payloads_and_sink_failures`
     #[inline]
     fn fmt(
@@ -407,19 +408,14 @@ impl fmt::Display for ExpectationFault
     ) -> fmt::Result
     {
         match *self {
-            | Self::UnknownRefusal { span } => {
-                write!(f, "the `refuses` payload at {span} names no refusal")
+            | Self::UnknownRefusal { .. } => f.write_str("the `refuses` payload names no refusal"),
+            | Self::NegativeObligations { .. } => f.write_str("the `owes` payload is below zero"),
+            | Self::ObligationsBeyondRange { .. } => {
+                f.write_str("the `owes` payload is past every ledger size")
             },
-            | Self::NegativeObligations { span } => {
-                write!(f, "the `owes` payload at {span} is below zero")
+            | Self::ConflictingExpectations { .. } => {
+                f.write_str("the expectation contradicts an earlier one")
             },
-            | Self::ObligationsBeyondRange { span } => {
-                write!(f, "the `owes` payload at {span} is past every ledger size")
-            },
-            | Self::ConflictingExpectations { first, second } => write!(
-                f,
-                "the expectation at {second} contradicts the one at {first}"
-            ),
         }
     }
 }
@@ -1216,10 +1212,8 @@ mod tests
         ] {
             let stated = Stated::Malformed(fault);
             let rendered = stated.to_string();
-            assert!(rendered.contains(&first_spelled));
-            if matches!(fault, ExpectationFault::ConflictingExpectations { .. }) {
-                assert!(rendered.contains(&second_spelled));
-            }
+            assert!(!rendered.contains(&first_spelled));
+            assert!(!rendered.contains(&second_spelled));
             assert!(
                 distinct.insert(rendered),
                 "distinct faults must remain distinguishable"

@@ -3,12 +3,12 @@
 The renderer for what one step of the dispatcher's walk prints: each refusal, each unsettled declaration and each goal as a located source snippet, and each ledger line a verb prints beside them.
 
 <!-- toc -->
-
 - [Synopsis](#synopsis)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [What a report shows](#what-a-report-shows)
+- [The label says what the locus is](#the-label-says-what-the-locus-is)
 - [Native universe-path diagnostics](#native-universe-path-diagnostics)
 - [The one input is the step](#the-one-input-is-the-step)
 - [Every span is the producer's](#every-span-is-the-producers)
@@ -17,7 +17,6 @@ The renderer for what one step of the dispatcher's walk prints: each refusal, ea
 - [Colour is the caller's choice](#colour-is-the-callers-choice)
 - [Specification discipline](#specification-discipline)
 - [License](#license)
-
 <!-- tocstop -->
 
 ## Synopsis
@@ -74,10 +73,10 @@ The crate's tests run with `cargo nextest run -p gandr-surface-diagnostics`; the
 
 | Kind | Title | Primary locus and label | Note |
 | ---- | ----- | ----------------------- | ---- |
-| refusal | `error[<refusal>]: <message>` | the refusal's span, labelled with its failure class | the declaration, what it states and its surviving obligations |
+| refusal | `error[<refusal>]: <message>` | the refusal's span, labelled with what the bytes there are | the declaration, what it states and its surviving obligations |
 | unsettled declaration | ``error: `<name>` states …; produced …`` | the declaration, labelled with how it is unsettled | none |
 | goal | ``goal: `<name>` states …; produced …`` | the declaration, labelled with its surviving obligations | none |
-| source refused as a whole | `error[<refusal>]: the lowering refused the source as a whole: …` | the refusal's span, labelled with its failure class | none |
+| source refused as a whole | `error[<refusal>]: the lowering refused the source as a whole: …` | the refusal's span, labelled with what the bytes there are | none |
 
 The refusal name in the title is the spelling the corpus's `refuses` attribute states, so a reader can copy it into an expectation. A type mismatch renders as:
 
@@ -88,12 +87,18 @@ error[TypeMismatch]: the type this term synthesises does not convert to the type
 1 │ def wrong : Integer ;
   │             ─────── the type it is checked against
 2 │ def wrong = "text" ;
-  │             ━━━━━━ malformed source
+  │             ━━━━━━ its type does not convert
   │
   ╰ note: unsettled `wrong` states checks owing 0
 ```
 
-The checker's refusals are worded here; the lowering's and the corpus root's use their own `Display`. Mismatch labels name causal roles, such as checked-against or synthesised type, while origins locate those roles in source. Labels expose no core node addresses. An empty path renders as `<input>`.
+The checker's refusals are worded here; the lowering's and the corpus root's use their own `Display`. No title carries a byte range: the snippet's path, line and column locate the refusal, and an offset beside them is noise. Mismatch labels name causal roles, such as checked-against or synthesised type, while origins locate those roles in source. Labels expose no core node addresses. An empty path renders as `<input>`. A pending source's ledger line has no snippet, so it keeps the refusal's byte range after its message.
+
+## The label says what the locus is
+
+The title names the refusal and the class sorts it, so the primary label spends the underline on the bytes themselves: `not found in this scope` under a name nothing binds, `its type does not convert` under a mismatched term, `missing }` where a closer was never written. `Culprit` holds one label per refusal variant, chosen by an exhaustive match, so a new refusal cannot render until it says what its locus is. `Report::label` exposes the primary label and `Report::note` the declaration note, so a face that lays out its own message — the language server's — composes the same parts the terminal prints.
+
+The alternative was the failure class as the label, which repeats what the title already sorted and gives every malformed-source refusal one underline whatever its cause. Reversal: when refusals carry their own per-site labels, the table gives way to them.
 
 ## Native universe-path diagnostics
 

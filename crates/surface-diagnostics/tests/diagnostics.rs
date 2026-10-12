@@ -359,6 +359,62 @@ def wrong = "text" ;
     }
 
     #[test]
+    fn refusals_of_one_class_label_what_their_locus_is()
+    {
+        let mismatch = SourceText::from(MISMATCH);
+        let head = SourceText::from("def f(xs: List(Integer)) -> -F Integer {\n  ret 1\n}\n");
+        let mismatched = unsettled(Path::new("mismatch.gandr"), SourceRoot::Strict, mismatch);
+        let unresolved = unsettled(Path::new("head.gandr"), SourceRoot::Strict, head);
+        let [mismatch_report] = *reports(&mismatched, Verb::Check(Goals::Gated)).as_slice()
+        else {
+            panic!("one mismatch, one report");
+        };
+        let [head_report] = *reports(&unresolved, Verb::Check(Goals::Gated)).as_slice()
+        else {
+            panic!("one unresolved head, one report");
+        };
+        assert_eq!(
+            (mismatch_report.class(), head_report.class()),
+            (
+                Class::Refusal(FailureClass::MalformedSource),
+                Class::Refusal(FailureClass::MalformedSource)
+            ),
+            "both refusals are the author's mistake"
+        );
+        let labelled = |report: Report<'_>| match report.label() {
+            | Maybe::Present(label) => label.to_string(),
+            | Maybe::Absent(reason) => panic!("a located refusal carries a label: {reason:?}"),
+        };
+        let (mismatch_label, head_label) = (labelled(mismatch_report), labelled(head_report));
+        assert_ne!(
+            mismatch_label, head_label,
+            "a term whose type does not convert and a head nothing answers are different loci"
+        );
+        for (report, label) in [
+            (mismatch_report, &mismatch_label),
+            (head_report, &head_label),
+        ] {
+            assert_ne!(
+                *label,
+                report.class().to_string(),
+                "the underline says what the bytes are, not the class"
+            );
+            let title = report.title().to_string();
+            assert!(
+                !title.contains(".."),
+                "the range locates the refusal; the title repeats no byte range: {title}"
+            );
+            assert!(
+                report
+                    .render(RenderStyle::Plain)
+                    .to_string()
+                    .contains(label.as_str()),
+                "the terminal prints the label under the locus"
+            );
+        }
+    }
+
+    #[test]
     fn a_pathless_report_names_input_and_renders_causal_context()
     {
         let text = SourceText::from(MISMATCH);
@@ -723,7 +779,7 @@ def broken = missing ;
 ",
                 Verb::Check(Goals::Gated),
                 Maybe::Present("UnresolvedName"),
-                &[13_usize, 20_usize][..],
+                &[][..],
                 &["missing"][..],
             ),
             (

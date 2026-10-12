@@ -83,11 +83,11 @@ run: settled
 seal: sealed
 verdict: settled
 $ gandr check broken.gandr
-error[UnresolvedName]: no declaration or binder answers `missing` at 13..20
+error[UnresolvedName]: no declaration or binder answers `missing`
   ╭▸ broken.gandr:1:14
   │
 1 │ def broken = missing ;
-  │              ━━━━━━━ malformed source
+  │              ━━━━━━━ not found in this scope
   │
   ╰ note: unsettled `broken` states checks owing 0
 

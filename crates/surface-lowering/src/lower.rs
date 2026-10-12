@@ -2828,7 +2828,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     #[spec(
         ensures: |ret| {
             if let Maybe::Present(repaired) = pieces.repair {
-                ret == Err(site.fault(repaired.span, FormFault::Repaired(repaired.repair)))
+                ret == Err(repaired.refusal(site.name))
             }
             else if family_of(former) != site.reading.family()
                 && !(family_of(former) == Family::Type && matches!(site.reading, Reading::Value(_)))
@@ -2852,7 +2852,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         if let Maybe::Present(repaired) = pieces.repair {
-            return Err(site.fault(repaired.span, FormFault::Repaired(repaired.repair)));
+            return Err(repaired.refusal(site.name));
         }
         let family = family_of(former);
         let quoted = family == Family::Type && matches!(site.reading, Reading::Value(_));
@@ -4418,7 +4418,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 } => {
                     read_pieces(self.pbg, self.tree, target.node, &mut chain)?;
                     if let Maybe::Present(repaired) = chain.repair {
-                        return Err(site.fault(repaired.span, FormFault::Repaired(repaired.repair)));
+                        return Err(repaired.refusal(site.name));
                     }
                     let (inner, selected) = Self::link(site, &chain.pieces, target.span)?;
                     links.push((inner, selected));
@@ -11563,6 +11563,32 @@ mod tests
             refused.classify(),
             FailureClass::MalformedSource,
             "a repaired form is the author's mistake"
+        );
+    }
+
+    #[test]
+    fn a_missing_close_is_reported_at_the_innermost_form()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let pbg = grammar();
+        let tree = repaired(
+            &pbg,
+            SourceText::from(
+                "def rank() -> -F Integer {\n  case (Green : Color) {\n    Red => ret 0,\n  }\n}\n",
+            ),
+        );
+        assert_eq!(
+            refusal_in(&pbg, &tree),
+            LoweringRefusal::MalformedForm {
+                span: at(69_usize, 69_usize),
+                form: FormName::CASE,
+                fault: FormFault::Repaired(Repair::GhostClose(
+                    gandr_surface_syntax::ClosingClass::Brace,
+                )),
+            },
+            "the definition's close follows from the case's, which the parser closed right \
+             after the arm's trailing comma; the refusal names the case there, not the \
+             definition at its opening brace"
         );
     }
 

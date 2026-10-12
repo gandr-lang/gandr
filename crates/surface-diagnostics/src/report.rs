@@ -1,13 +1,15 @@
 //! One report — a refusal, an unsettled declaration or a goal — at the source
 //! it sits in, and the snippet it renders as.
 //!
-//! # The class says whose fact the report is
+//! # The class says whose fact the report is; the label says what the bytes are
 //!
 //! A refusal is classed by the [`FailureClass`] its producer's classifier
 //! gives it, a declaration unsettled with no refusal produced by what its
-//! unsettlement rests on, and a goal as a goal. The class labels the primary
-//! locus; the title is the producer's message, and a refusal's vocabulary
-//! name is the report's identifier, spelled as a `refuses` payload spells it.
+//! unsettlement rests on, and a goal as a goal. The class sorts reports; the
+//! primary locus is labelled with what its bytes are, never with the class.
+//! The title is the producer's message, which names no byte offsets, and a
+//! refusal's vocabulary name is the report's identifier, spelled as a
+//! `refuses` payload spells it.
 
 use core::fmt;
 use std::path::Path;
@@ -31,6 +33,7 @@ use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
+use crate::culprit::Culprit;
 use crate::locus::Annotation;
 use crate::locus::Annotations;
 use crate::locus::Checked;
@@ -253,8 +256,8 @@ impl<'step> Report<'step>
     ///   [`Class::Refusal`] with the class their producer's classifier gives; a
     ///   declaration unsettled with no refusal is [`Class::Unsettled`] with
     ///   what it rests on; a goal is [`Class::Goal`].
-    /// - provides: the class a reader sorts reports by, and the label of the
-    ///   primary locus.
+    /// - provides: the class a reader sorts reports by and a face chooses a
+    ///   severity from.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -405,9 +408,10 @@ impl<'step> Report<'step>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the two context slots, in the order the refusal names them:
-    ///   the first occurrence a duplicate repeats; the type a term is checked
-    ///   against, then the type it synthesises; the type a former met. Each
-    ///   locus keeps its producer's span and its own label.
+    ///   the first occurrence a duplicate or a contradicted expectation
+    ///   repeats; the declaration a member is named before; the type a term is
+    ///   checked against, then the type it synthesises; the type a former met.
+    ///   Each locus keeps its producer's span and its own label.
     /// - provides: the context loci [`Report::render`] marks, for a face that
     ///   shows them as related locations.
     /// - fails: never; an empty slot is the [`report_context::Absent`] absence:
@@ -431,13 +435,71 @@ impl<'step> Report<'step>
         Maybe::Present(annotation) => self.text.fragment(annotation.span).is_ok(),
         Maybe::Absent(_) => true,
     }) && match self.subject {
-        Subject::Goal(_) | Subject::Unsettled { .. } => ret == [Maybe::Absent(report_context::Absent::Unnamed); 2_usize],
-        Subject::Refused { .. } | Subject::Source(_) => true,
+        Subject::Goal(_) | Subject::Unsettled { unsettlement: Unsettlement::Obligations | Unsettlement::Unproduced | Unsettlement::RunOutcome, .. } =>
+            ret == [Maybe::Absent(report_context::Absent::Unnamed); 2_usize],
+        Subject::Refused { .. } | Subject::Source(_) | Subject::Unsettled { unsettlement: Unsettlement::Malformed, .. } => true,
     })]
     #[inline]
     pub fn context(&self) -> [Maybe<Annotation, report_context::Absent>; 2_usize]
     {
         self.annotations().context
+    }
+
+    /// What the report's primary locus is, as its underline labels it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the label [`Report::render`] writes under the primary locus:
+    ///   what the refused bytes are for a refusal, what the unsettlement rests
+    ///   on for a declaration unsettled with no refusal, the surviving
+    ///   obligations for a goal; absent exactly when [`Report::span`] is.
+    /// - provides: the label a face shows beside the title, for a face that
+    ///   does not draw the underline.
+    /// - fails: never; an unlocated report is the [`report_span::Absent`]
+    ///   absence [`Report::span`] gives.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a type mismatch and an unresolved type head, both
+    ///   malformed source, carry different labels; a run refusal carries none.
+    /// - witness: `diagnostics::diagnostics::refusals_of_one_class_label_what_their_locus_is`
+    #[spec(ensures: |ret| matches!((ret, self.span()), (Maybe::Present(_), Maybe::Present(_)) | (Maybe::Absent(_), Maybe::Absent(_))))]
+    #[inline]
+    pub fn label(&self) -> Maybe<Label, report_span::Absent>
+    {
+        match self.annotations().primary {
+            | Maybe::Present(primary) => Maybe::Present(primary.label),
+            | Maybe::Absent(reason) => Maybe::Absent(reason),
+        }
+    }
+
+    /// The note the report closes with.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a refused declaration closes with a note naming it, what it
+    ///   states and the obligations that survive; every other report closes
+    ///   with none.
+    /// - provides: the note [`Report::render`] writes, for a face that carries
+    ///   it beside the message.
+    /// - fails: never; a report that states what a declaration states and
+    ///   produced is the [`report_note::Absent::Statement`] absence.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a refused declaration's note names it; an unsettled
+    ///   declaration has none.
+    /// - witness: `report::tests::notes_and_titles_preserve_numeric_roles_and_omit_empty_survivors`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Present(_)) == matches!(self.subject, Subject::Refused { .. }))]
+    #[inline]
+    pub const fn note(&self) -> Maybe<Note<'step>, report_note::Absent>
+    {
+        match self.subject {
+            | Subject::Refused { declaration, .. } => Maybe::Present(Note(declaration)),
+            | Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Source(_) => {
+                Maybe::Absent(report_note::Absent::Statement)
+            },
+        }
     }
 
     /// The report as a source snippet, laid out in `style`.
@@ -449,14 +511,14 @@ impl<'step> Report<'step>
     ///   producer's message for a refusal, what the declaration states and
     ///   produced otherwise. A located report then quotes the lines its loci
     ///   cover under the source's path, line and column, the primary locus
-    ///   underlined and labelled with the class or the surviving obligations,
-    ///   each context locus marked with what it explains; an unlocated report
-    ///   names the source's path alone. A refused declaration closes with a
-    ///   note naming it and what it states. A source with an empty path is
-    ///   named `<input>`. Plain adds no styling; styled adds the backend's
-    ///   colour sequences. Caller path controls remain literal in both modes.
-    ///   No framing terminator is appended, but a trailing path line ending can
-    ///   end an unlocated rendering.
+    ///   underlined and labelled with what its bytes are or with the surviving
+    ///   obligations, each context locus marked with what it explains; an
+    ///   unlocated report names the source's path alone. A refused declaration
+    ///   closes with a note naming it and what it states. A source with an
+    ///   empty path is named `<input>`. Plain adds no styling; styled adds the
+    ///   backend's colour sequences. Caller path controls remain literal in
+    ///   both modes. No framing terminator is appended, but a trailing path
+    ///   line ending can end an unlocated rendering.
     /// - provides: the plain text the driver prints and the tests compare.
     /// - fails: never.
     /// - panics: none; every span reaches the snippet backend checked against
@@ -549,11 +611,9 @@ impl<'step> Report<'step>
                 group = group.element(Origin::path(origin.as_str()));
             },
         }
-        let note = match self.subject {
-            | Subject::Refused { declaration, .. } => Maybe::Present(Note(declaration).to_string()),
-            | Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Source(_) => {
-                Maybe::Absent(unnamed::Absent::Statement)
-            },
+        let note = match self.note() {
+            | Maybe::Present(note) => Maybe::Present(note.to_string()),
+            | Maybe::Absent(reason) => Maybe::Absent(reason),
         };
         if let Maybe::Present(ref note) = note {
             group = group.element(Level::NOTE.message(note.as_str()));
@@ -589,11 +649,11 @@ impl<'step> Report<'step>
     #[spec(ensures: |ref ret| {
         let primary = match ret.primary {
             Maybe::Present(annotation) => self.text.fragment(annotation.span).is_ok() && match self.subject {
-                Subject::Refused { refusal, .. } => annotation.label == Label::Class(Class::Refusal(refusal.classify())),
-                Subject::Source(refusal) => annotation.label == Label::Class(Class::Refusal(refusal.classify())),
+                Subject::Refused { refusal, .. } => annotation.label == Label::Culprit(Culprit::of(refusal)),
+                Subject::Source(refusal) => annotation.label == Label::Culprit(Culprit::of(Refusal::Lowering(refusal))),
                 Subject::Unsettled { declaration, unsettlement: Unsettlement::Obligations }
                     | Subject::Goal(declaration) => annotation.label == Label::Surviving(declaration.surviving()),
-                Subject::Unsettled { unsettlement, .. } => annotation.label == Label::Class(Class::Unsettled(unsettlement)),
+                Subject::Unsettled { unsettlement, .. } => annotation.label == Label::Unsettled(unsettlement),
             },
             Maybe::Absent(_) => true,
         };
@@ -620,17 +680,13 @@ impl<'step> Report<'step>
             ),
             | Subject::Unsettled {
                 declaration,
-                unsettlement:
-                    unsettlement @ (Unsettlement::Unproduced
-                    | Unsettlement::RunOutcome
-                    | Unsettlement::Malformed),
-            } => Annotations::at(
-                declaration.span(),
-                Label::Class(Class::Unsettled(unsettlement)),
-            ),
-            | Subject::Source(refusal) => {
-                Annotations::lowering(refusal, Class::Refusal(refusal.classify()))
-            },
+                unsettlement: Unsettlement::Malformed,
+            } => Annotations::malformed(declaration.stated(), declaration.span()),
+            | Subject::Unsettled {
+                declaration,
+                unsettlement: unsettlement @ (Unsettlement::Unproduced | Unsettlement::RunOutcome),
+            } => Annotations::at(declaration.span(), Label::Unsettled(unsettlement)),
+            | Subject::Source(refusal) => Annotations::lowering(refusal),
         };
         let inside = |annotation: &Annotation| self.text.fragment(annotation.span).is_ok();
         let primary = match annotations.primary {
@@ -652,7 +708,7 @@ impl<'step> Report<'step>
 
 quenchant_shape::reason_enum! {
     /// Why a report carries no note.
-    mod unnamed {
+    pub mod report_note {
         /// The reason a report closes with no note.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
@@ -759,7 +815,7 @@ impl fmt::Display for Title<'_>
 /// The note a refused declaration closes with.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug)]
-struct Note<'step>(&'step DeclarationReport<'step>);
+pub struct Note<'step>(&'step DeclarationReport<'step>);
 
 impl fmt::Display for Note<'_>
 {
