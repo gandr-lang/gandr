@@ -19,6 +19,16 @@ def twice(n : Nat) -> -F Nat {
 }
 
 @[ checks ]
+def count(n : Nat) -> -F Integer {
+  return 1
+}
+
+@[ refuses("TypeMismatch") ]
+def mismatched(n : Nat) -> -F Nat {
+  become count(n)
+}
+
+@[ checks ]
 def identity : +U (Nat -> -F Nat) ;
 def identity = thunk { fn (n) { return n } } ;
 
@@ -29,6 +39,26 @@ def ret = Zero ;
 @[ checks ]
 def named(n : Nat) -> -F Nat {
   return ret
+}
+
+@[ checks ]
+def rec stated(n : Nat) -> -F Nat {
+  case n {
+    Zero => { return n; },
+    Succ(p) => { become stated[<](p); }
+  }
+}
+
+@[ checks ]
+def sequenced(n : Nat) -> -F Nat {
+  run m <- down(n) ;
+  return m ;
+}
+
+@[ refuses("OutOfFragment") ]
+def discarded(n : Nat) -> -F Nat {
+  run m <- down(n) ;
+  down(m) ;
 }
 
 @[ refuses("OutOfFragment") ]
