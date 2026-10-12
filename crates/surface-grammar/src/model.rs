@@ -2242,6 +2242,38 @@ impl Pbg
         self.molds.closing_class(mold)
     }
 
+    /// The least mold interchangeable with `mold`: the least mold whose
+    /// pushed tile the melder reads exactly as `mold`'s — the same rule,
+    /// precedence, sort, context contents, closing class, form membership,
+    /// same-form successors and same-form predecessors, the label aside.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a mold at most `mold` that is its own least interchangeable
+    ///   mold; `mold` itself when no lesser mold is interchangeable with it or
+    ///   it is past the table.
+    /// - provides: two molds with the same answer leave the slope to evolve
+    ///   alike under every later tile, so a parser that weighs both by what
+    ///   follows needs to weigh only one.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — over the built-in grammar each mold's answer is
+    ///   checked against the mold on every component of the reading through the
+    ///   other public queries, and the parameter-name molds of a definition
+    ///   share an answer.
+    /// - witness: `tests::walk::interchangeable_molds_differ_only_in_label`
+    #[spec(ensures: |ret| ret <= mold)]
+    #[inline]
+    #[must_use]
+    pub fn least_interchangeable(
+        &self,
+        mold: MoldId,
+    ) -> MoldId
+    {
+        self.molds.least_interchangeable(mold)
+    }
+
     /// The grammar's fingerprint: the precedence DAG's fingerprint folded
     /// with the mold and context tables.
     ///

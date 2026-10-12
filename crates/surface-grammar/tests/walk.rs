@@ -635,6 +635,65 @@ fn form_membership_flags_agree_with_their_lists() -> Result<(), Box<dyn Error>>
     Ok(())
 }
 
+/// Every mold reads exactly as its least interchangeable mold on each
+/// component a pushed tile is read by, and the lowercase parameter-name molds
+/// of a definition (`identifier`, `type_variable`) fall in one class.
+#[test]
+fn interchangeable_molds_differ_only_in_label() -> Result<(), Box<dyn Error>>
+{
+    let pbg = built_in()?;
+    let adjacencies = pbg.adjacencies();
+    let predecessors = |mold: MoldId| {
+        adjacencies
+            .iter()
+            .filter(move |&&(_, right)| right == mold)
+            .map(|&(left, _)| left)
+    };
+    let successors = |mold: MoldId| pbg.mold_successors(mold).iter().map(|&(_, right)| right);
+    let mut merged = 0_usize;
+    let mut parameter_names = false;
+    for (mold, def) in pbg.iter_molds() {
+        let twin = pbg.least_interchangeable(mold);
+        assert!(twin <= mold);
+        assert_eq!(twin, pbg.least_interchangeable(twin));
+        if twin == mold {
+            continue;
+        }
+        merged = merged.saturating_add(1);
+        let other = pbg.mold(twin)?;
+        assert_eq!(pbg.rule_of(twin)?.name(), pbg.rule_of(mold)?.name());
+        assert_eq!((other.prec, other.sort), (def.prec, def.sort));
+        assert_eq!(pbg.bounds(twin)?, pbg.bounds(mold)?);
+        for dir in [Dir::Left, Dir::Right] {
+            assert_eq!(pbg.step(other.rctx, dir)?, pbg.step(def.rctx, dir)?);
+        }
+        assert_eq!(pbg.closing_class(twin), pbg.closing_class(mold));
+        assert_eq!(
+            [
+                bool::from(pbg.mold_is_form_first(twin)),
+                bool::from(pbg.mold_is_form_last(twin)),
+                bool::from(pbg.mold_has_required_tail(twin)),
+            ],
+            [
+                bool::from(pbg.mold_is_form_first(mold)),
+                bool::from(pbg.mold_is_form_last(mold)),
+                bool::from(pbg.mold_has_required_tail(mold)),
+            ]
+        );
+        assert!(successors(twin).eq(successors(mold)));
+        assert!(predecessors(twin).eq(predecessors(mold)));
+        assert_ne!(
+            other.label, def.label,
+            "two occurrences of one label never share a class"
+        );
+        parameter_names |= pbg.rule_of(mold)?.name() == RuleName("def_value")
+            && (other.label, def.label) == ("identifier", "type_variable");
+    }
+    assert!(merged > 0);
+    assert!(parameter_names);
+    Ok(())
+}
+
 #[test]
 fn walk_index_projects_every_mold_once() -> Result<(), Box<dyn Error>>
 {

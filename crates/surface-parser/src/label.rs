@@ -66,8 +66,13 @@ pub enum Lexeme
     Character,
     /// A string delimiter `"`.
     Quote,
-    /// A run of ordinary string content between escapes and the closing quote.
+    /// A run of ordinary string content between escapes and the closing quote
+    /// of a host string (`string_fragment`).
     StringFragment,
+    /// A run of ordinary content inside a shell double-quoted string
+    /// (`double_string_fragment`). Kept apart from [`Lexeme::StringFragment`]
+    /// so the token after an opening `"` tells a host string from a shell one.
+    ShellStringFragment,
     /// A backslash escape inside a string or character.
     EscapeSequence,
     /// An operator or punctuation tile whose label is its exact text.
@@ -1534,7 +1539,7 @@ fn scan_braced_shell_interior(
 ///   and failure to advance change a row; double-quoted shell mode preserves
 ///   spaces and recognizes escapes and dollar expansions.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Punct | Lexeme::EscapeSequence | Lexeme::Unknown | Lexeme::StringFragment)))]
+#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Punct | Lexeme::EscapeSequence | Lexeme::Unknown | Lexeme::ShellStringFragment)))]
 fn scan_shell_double_interior(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1552,7 +1557,7 @@ fn scan_shell_double_interior(
                 }
                 cursor = cursor.advance(ByteWidth::ONE);
             }
-            ScanResult::new(Lexeme::StringFragment, cursor)
+            ScanResult::new(Lexeme::ShellStringFragment, cursor)
         },
         | None => ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE)),
     }
@@ -3017,7 +3022,7 @@ mod tests
                 ("\\n", Lexeme::EscapeSequence, 2),
                 ("\\", Lexeme::Unknown, 1),
                 ("${x", Lexeme::Punct, 2),
-                ("a b$", Lexeme::StringFragment, 3),
+                ("a b$", Lexeme::ShellStringFragment, 3),
             ]),
             (super::scan_shell_interior, &[
                 ("[x", Lexeme::SubshellOpen, 1),
@@ -3258,6 +3263,13 @@ mod tests
                 Punct,
             ]),
             ("#!{$A}", &[Punct, Punct, VariableName, Punct]),
+            ("#!{\"a\"}", &[
+                Punct,
+                Punct,
+                ShellStringFragment,
+                Punct,
+                Punct,
+            ]),
             ("#!{[]}", &[Punct, SubshellOpen, SubshellClose, Punct]),
             ("#!{2>f}", &[Punct, FileDescriptor, Punct, ShellWord, Punct]),
             (" ", &[Space]),
@@ -3496,7 +3508,7 @@ mod tests
             (Lexeme::SingleQuotedContent, "a \"b".to_owned()),
             (Lexeme::Punct, "'".to_owned()),
             (Lexeme::Punct, "\"".to_owned()),
-            (Lexeme::StringFragment, "c 'd".to_owned()),
+            (Lexeme::ShellStringFragment, "c 'd".to_owned()),
             (Lexeme::Punct, "\"".to_owned()),
             (Lexeme::Punct, ";".to_owned()),
             (Lexeme::Punct, "}".to_owned()),
@@ -4078,15 +4090,15 @@ mod tests
             (Lexeme::Punct, "#!{".to_owned()),
             (Lexeme::ShellWord, "echo".to_owned()),
             (Lexeme::Punct, "\"".to_owned()),
-            (Lexeme::StringFragment, "a ".to_owned()),
+            (Lexeme::ShellStringFragment, "a ".to_owned()),
             (Lexeme::Punct, "$".to_owned()),
             (Lexeme::VariableName, "x".to_owned()),
-            (Lexeme::StringFragment, " ".to_owned()),
+            (Lexeme::ShellStringFragment, " ".to_owned()),
             (Lexeme::Punct, "${".to_owned()),
             (Lexeme::VariableName, "y".to_owned()),
             (Lexeme::Punct, "}".to_owned()),
             (Lexeme::EscapeSequence, "\\t".to_owned()),
-            (Lexeme::StringFragment, "b".to_owned()),
+            (Lexeme::ShellStringFragment, "b".to_owned()),
             (Lexeme::Punct, "\"".to_owned()),
             (Lexeme::Punct, ";".to_owned()),
             (Lexeme::Punct, "}".to_owned()),

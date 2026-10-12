@@ -119,7 +119,7 @@ pub struct MoldDef
 }
 
 /// Precomputed properties of one interned context.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct RCtxData
 {
     /// Whether a hole can face the context on the left.
@@ -255,6 +255,9 @@ pub struct MoldTable
     is_required_tail: Vec<bool>,
     /// Each mold's closing class, by id; derived within the mold's own rule.
     closing: Vec<Option<ClosingClass>>,
+    /// Each mold's least interchangeable mold, by id: see
+    /// [`least_interchangeable`](Self::least_interchangeable).
+    twins: Vec<MoldId>,
     /// The precedence DAG's fingerprint folded with these tables.
     fingerprint: GrammarFingerprint,
 }
@@ -304,6 +307,8 @@ pub struct FrozenMold(
     pub u8,
     /// The mold's same-form successors, by id, ascending.
     pub &'static [u32],
+    /// The least mold interchangeable with this one, by id: at most its own.
+    pub u32,
 );
 
 /// One interned context of a [`FrozenTable`].
@@ -341,6 +346,9 @@ struct Parts
     complete_last: Vec<MoldId>,
     /// The form-last molds whose remainder needs a hole, ascending.
     required_tail: Vec<MoldId>,
+    /// Each mold's least interchangeable mold, by id, when the table is
+    /// thawed; a built table derives it.
+    twins: Option<Vec<MoldId>>,
 }
 
 impl MoldTable
@@ -449,6 +457,7 @@ impl MoldTable
             rctxs,
             owners,
             closing,
+            twins: None,
         };
         Ok(Self::assemble(parts, dag_fingerprint))
     }
@@ -462,14 +471,16 @@ impl MoldTable
     ///   precedence and sort read from its rule, every index derived as `build`
     ///   derives it, and the fingerprint folded from `dag_fingerprint`.
     /// - fails: a mold whose rule is not among `rules`, a mold or successor
-    ///   past the frozen molds, a context past the frozen contexts or a step
-    ///   list past the frozen lists, or a table past the 32-bit id.
+    ///   past the frozen molds, a least interchangeable mold past its own mold,
+    ///   a context past the frozen contexts or a step list past the frozen
+    ///   lists, or a table past the 32-bit id.
     /// - panics: none.
     ///
     /// # Errors
-    /// [`PbgError::UnknownMold`] for a mold whose rule is missing or a
-    /// successor past the table, [`PbgError::UnknownRCtx`] for a context or
-    /// step list past the table, or [`PbgError::MoldOverflow`].
+    /// [`PbgError::UnknownMold`] for a mold whose rule is missing, a
+    /// successor past the table or a least interchangeable mold past its own,
+    /// [`PbgError::UnknownRCtx`] for a context or step list past the table, or
+    /// [`PbgError::MoldOverflow`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the built-in surface's table, thawed, renders
@@ -500,7 +511,8 @@ impl MoldTable
         let mut form_last = Vec::new();
         let mut complete_last = Vec::new();
         let mut required_tail = Vec::new();
-        for (position, &FrozenMold(label, rctx, owner, class, membership, successors)) in
+        let mut twins = Vec::with_capacity(count);
+        for (position, &FrozenMold(label, rctx, owner, class, membership, successors, twin)) in
             frozen.molds.iter().enumerate()
         {
             let id = MoldId::try_from(position).map_err(|_error| PbgError::MoldOverflow)?;
@@ -535,6 +547,12 @@ impl MoldTable
                 }
                 adjacencies.push((id, right));
             }
+            if !usize::try_from(twin).is_ok_and(|index| index <= position) {
+                return Err(PbgError::UnknownMold {
+                    id: MoldId::from(twin),
+                });
+            }
+            twins.push(MoldId::from(twin));
         }
         let mut rctxs = Vec::with_capacity(frozen.contexts.len());
         for (raw, &FrozenContext(left_faces_sort, right_faces_sort, left, right)) in
@@ -570,6 +588,7 @@ impl MoldTable
             form_last,
             complete_last,
             required_tail,
+            twins: Some(twins),
         };
         Ok(Self::assemble(parts, dag_fingerprint))
     }
@@ -646,6 +665,7 @@ impl MoldTable
             form_last,
             complete_last,
             required_tail,
+            twins,
         } = parts;
         let bounds = molds
             .iter()
@@ -723,7 +743,7 @@ impl MoldTable
                 .collect();
         }
         let fingerprint = fold_fingerprint(dag_fingerprint, &molds, &rctxs);
-        Self {
+        let mut table = Self {
             molds,
             rctxs,
             bounds,
@@ -741,8 +761,114 @@ impl MoldTable
             required_tail,
             is_required_tail,
             closing,
+            twins: Vec::new(),
             fingerprint,
+        };
+        table.twins = match twins {
+            | Some(frozen) => frozen,
+            | None => table.twin_index(),
+        };
+        table
+    }
+
+    /// Derives each mold's least interchangeable mold.
+    ///
+    /// Two molds are interchangeable when everything the melder reads of a
+    /// pushed tile agrees: the rule, the form's precedence and sort, the
+    /// interned context's contents (its hole faces and steps, so its bounds
+    /// too), the closing class, the form membership, the same-form successors
+    /// and the same-form predecessors. Only the labels differ.
+    ///
+    /// # Specification
+    /// - requires: every other column is assembled.
+    /// - ensures: one entry per mold; each entry is the least mold whose
+    ///   reading above equals the mold's, so it is at most the mold and is its
+    ///   own entry.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — over the built-in grammar every mold's entry is
+    ///   compared, through the public queries, with the mold on each component
+    ///   of the reading; a dropped component merges molds with different
+    ///   futures, and a lost class leaves the parameter-name pair apart.
+    /// - witness: `tests::walk::interchangeable_molds_differ_only_in_label`
+    #[spec(ensures: |ret| ret.len() == self.molds.len() && ret.iter().zip(0_u32 ..).all(|(&twin, raw)| u32::from(twin) <= raw && usize::try_from(u32::from(twin)).ok().and_then(|at| ret.get(at)) == Some(&twin)))]
+    fn twin_index(&self) -> Vec<MoldId>
+    {
+        // Each mold's successors are its run of the right ends, and its
+        // predecessors the run of left ends in the pairs ordered by right end,
+        // so each key borrows two runs and the derivation allocates three
+        // columns rather than a list per mold.
+        let rights = self
+            .adjacencies
+            .iter()
+            .map(|&(_left, right)| right)
+            .collect::<Vec<_>>();
+        let mut incoming = self
+            .adjacencies
+            .iter()
+            .map(|&(left, right)| (right, left))
+            .collect::<Vec<_>>();
+        incoming.sort_unstable();
+        let lefts = incoming
+            .iter()
+            .map(|&(_right, left)| left)
+            .collect::<Vec<_>>();
+        let mut keyed = Vec::with_capacity(self.molds.len());
+        for (raw, def) in (0_u32 ..).zip(&self.molds) {
+            let id = MoldId::from(raw);
+            let at = usize::try_from(raw).unwrap_or(usize::MAX);
+            let flag = |flags: &[bool]| flags.get(at).copied().unwrap_or(false);
+            let successors = self
+                .successor_starts
+                .get(at)
+                .zip(self.successor_starts.get(at.saturating_add(1)))
+                .and_then(|(&start, &end)| rights.get(start .. end))
+                .unwrap_or_default();
+            let first = incoming.partition_point(|&(right, _left)| right < id);
+            let last = incoming.partition_point(|&(right, _left)| right <= id);
+            let predecessors = lefts.get(first .. last).unwrap_or_default();
+            // The rule and the same-form neighbours tell most molds apart, so
+            // they lead the key and the context's step lists compare last.
+            let key = (
+                self.owners.get(at).copied(),
+                successors,
+                predecessors,
+                self.closing.get(at).copied().flatten(),
+                [
+                    flag(&self.is_first),
+                    flag(&self.is_complete_last),
+                    flag(&self.is_required_tail),
+                ],
+                def.prec,
+                def.sort,
+                usize::try_from(u32::from(def.rctx))
+                    .ok()
+                    .and_then(|context| self.rctxs.get(context)),
+            );
+            keyed.push((key, id));
         }
+        // Ordered by key then id, each class is a run headed by its least
+        // mold.
+        keyed.sort_unstable();
+        let mut twins = vec![MoldId::from(0); self.molds.len()];
+        let mut class = None;
+        for &(ref key, id) in &keyed {
+            let twin = match class {
+                | Some((head, least)) if head == key => least,
+                | _ => {
+                    class = Some((key, id));
+                    id
+                },
+            };
+            if let Some(entry) = usize::try_from(u32::from(id))
+                .ok()
+                .and_then(|at| twins.get_mut(at))
+            {
+                *entry = twin;
+            }
+        }
+        twins
     }
 
     /// Renders the table as the Rust source of a [`FrozenTable`] digested
@@ -854,7 +980,7 @@ impl MoldTable
         writeln!(out)?;
         writeln!(
             out,
-            "/// Each mold: label, context, rule, closing class, membership bits, successors."
+            "/// Each mold: label, context, rule, closing class, membership bits, successors, least interchangeable mold."
         )?;
         writeln!(out, "#[rustfmt::skip]")?;
         writeln!(out, "static MOLDS: [FrozenMold; {}] = [", self.molds.len())?;
@@ -883,11 +1009,13 @@ impl MoldTable
                 .map(|&(_left, right)| format!("{}", u32::from(right)))
                 .collect::<Vec<_>>()
                 .join(", ");
+            let twin = self.twins.get(position).copied().unwrap_or(id);
             writeln!(
                 out,
-                "    FrozenMold({:?}, {}, {owner}, {closing}, {membership}, &[{successors}]),",
+                "    FrozenMold({:?}, {}, {owner}, {closing}, {membership}, &[{successors}], {}),",
                 mold.label,
                 u32::from(mold.rctx),
+                u32::from(twin),
             )?;
         }
         writeln!(out, "];")?;
@@ -1412,6 +1540,33 @@ impl MoldTable
     {
         let index = usize::try_from(u32::from(id)).ok()?;
         self.closing.get(index).copied().flatten()
+    }
+
+    /// The least mold interchangeable with mold `id`: `id` itself when no
+    /// lesser mold is, or past the table.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the stored entry for a valid id, otherwise `id`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the index's witness reads every mold's entry through
+    ///   this query; a wrong offset breaks the agreement it checks.
+    /// - witness: `tests::walk::interchangeable_molds_differ_only_in_label`
+    #[spec(ensures: |ret| ret == usize::try_from(u32::from(id)).ok().and_then(|index| self.twins.get(index)).copied().unwrap_or(id))]
+    #[inline]
+    #[must_use]
+    pub(crate) fn least_interchangeable(
+        &self,
+        id: MoldId,
+    ) -> MoldId
+    {
+        usize::try_from(u32::from(id))
+            .ok()
+            .and_then(|index| self.twins.get(index))
+            .copied()
+            .unwrap_or(id)
     }
 
     /// How many molds the table holds.
@@ -3377,8 +3532,8 @@ mod tests
         static STEPS: [&[StepSym]; 1] = [&[]];
         static CONTEXTS: [FrozenContext; 1] = [FrozenContext(false, false, 0, 0)];
         static MOLDS: [FrozenMold; 2] = [
-            FrozenMold("a", 0, 0, None, 0, &[1]),
-            FrozenMold("b", 0, 1, None, 0, &[]),
+            FrozenMold("a", 0, 0, None, 0, &[1], 0),
+            FrozenMold("b", 0, 1, None, 0, &[], 1),
         ];
         let frozen = FrozenTable {
             rules: RulesDigest(0),
@@ -3422,17 +3577,19 @@ mod tests
     }
 
     /// A context naming a step list past the frozen lists, a mold naming a
-    /// context past the frozen contexts and a successor past the frozen molds
-    /// are each refused by the identity that dangles.
+    /// context past the frozen contexts, a successor past the frozen molds and
+    /// a least interchangeable mold past the mold itself are each refused by
+    /// the identity that dangles.
     #[test]
     fn a_frozen_context_past_the_step_lists_is_refused()
     {
         static STEPS: [&[StepSym]; 1] = [&[StepSym::Tile("a")]];
         static DANGLING_LIST: [FrozenContext; 1] = [FrozenContext(true, false, 0, 1)];
         static CONTEXTS: [FrozenContext; 1] = [FrozenContext(true, false, 0, 0)];
-        static MOLD: [FrozenMold; 1] = [FrozenMold("a", 0, 0, None, 0, &[])];
-        static PAST_CONTEXT: [FrozenMold; 1] = [FrozenMold("a", 1, 0, None, 0, &[])];
-        static PAST_SUCCESSOR: [FrozenMold; 1] = [FrozenMold("a", 0, 0, None, 0, &[1])];
+        static MOLD: [FrozenMold; 1] = [FrozenMold("a", 0, 0, None, 0, &[], 0)];
+        static PAST_CONTEXT: [FrozenMold; 1] = [FrozenMold("a", 1, 0, None, 0, &[], 0)];
+        static PAST_SUCCESSOR: [FrozenMold; 1] = [FrozenMold("a", 0, 0, None, 0, &[1], 0)];
+        static PAST_TWIN: [FrozenMold; 1] = [FrozenMold("a", 0, 0, None, 0, &[], 1)];
         let rule = Rule::new(
             RuleName("only"),
             Sort::Expression,
@@ -3466,6 +3623,12 @@ mod tests
                 id: MoldId::from(1)
             }),
             thaw(&PAST_SUCCESSOR, &CONTEXTS)
+        );
+        assert_eq!(
+            Err(PbgError::UnknownMold {
+                id: MoldId::from(1)
+            }),
+            thaw(&PAST_TWIN, &CONTEXTS)
         );
         assert_eq!(Ok(()), thaw(&MOLD, &CONTEXTS));
     }
