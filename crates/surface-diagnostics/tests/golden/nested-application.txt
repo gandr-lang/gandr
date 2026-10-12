@@ -1,0 +1,11 @@
+error[NotSynthesisable]: a return stands where a type must be synthesised
+  ╭▸ application.gandr:2:18
+  │
+2 │ def b = thunk { (ret 1)(2) } ;
+  │         ┬───────┬┯━━━━──────
+  │         │       ││
+  │         │       │needs a type to be checked against
+  │         │       while checking this against `-F Integer`
+  │         while checking this against `+U (-F Integer)`
+  │
+  ╰ note: unsettled `b` states checks owing 0

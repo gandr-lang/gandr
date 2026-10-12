@@ -137,6 +137,7 @@ pub use crate::script::ScriptRun;
 pub use crate::script::execute;
 pub use crate::script::run_source;
 pub use crate::spelled::Spellings;
+pub use crate::spelled::Trails;
 pub use crate::spelled::spelling;
 pub use crate::stage::PoolFault;
 pub use crate::stage::ProgramSpec;

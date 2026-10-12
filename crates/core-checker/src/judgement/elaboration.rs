@@ -35,6 +35,17 @@
 //! so it marks nothing exactly when the strict judgement accepts, and its
 //! first mark carries the strict refusal. A mark stands on a node, so a node
 //! shared by two positions is marked at both.
+//!
+//! # A traced run keeps the judgements a refusal stood in
+//!
+//! A traced run anchors every term goal as a total run does and refuses as a
+//! strict run does, so at its refusal the anchors still standing are the
+//! value and computation judgements the refusal stood inside, outermost first.
+//! They are the nested reasons a face renders beside the refusal: the
+//! enclosing terms and the types they were checked against. The strict run
+//! keeps no anchors, so a refused declaration is traced again rather than
+//! every judgement paying for the trail; the trace is deterministic, so it
+//! meets the refusal the strict run met.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -48,6 +59,7 @@ use gandr_core_term::Zone;
 use gandr_core_term::hole::MarkIndex;
 use gandr_core_term::hole::TermId;
 use gandr_core_term::wrap_marks;
+use quenchant_shape::shape::Maybe;
 
 use super::Direction;
 use super::Frame;
@@ -61,6 +73,7 @@ use crate::formation::FormedCompType;
 use crate::formation::FormedValueType;
 use crate::refusal::CheckRefusal;
 use crate::refusal::TermNode;
+use crate::refusal::TypeNode;
 
 /// Whether a refusal ends a run or marks the term it stands at.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -70,6 +83,9 @@ pub(super) enum Marking
     Strict,
     /// A refusal other than an engine fault marks the term under judgement.
     Total,
+    /// The first refusal ends the run, with the term judgements it stood
+    /// inside still anchored.
+    Traced,
 }
 
 /// A term judgement under way in a total run, where a refusal is recovered.
@@ -119,6 +135,29 @@ impl MarkEntry
     {
         self.refusal
     }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a judgement under way was checked against no type.
+    pub mod pending {
+        /// The reason the expected type is absent.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The judgement synthesised its term's type.
+            Synthesised,
+        }
+    }
+}
+
+/// A term judgement under way when a refusal was met: the term and the type it
+/// was checked against.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Pending
+{
+    /// The term under judgement.
+    pub term: TermNode,
+    /// The type the term was checked against; absent when it was synthesised.
+    pub expected: Maybe<TypeNode, pending::Absent>,
 }
 
 /// A total run's result: the term with its marks, its type and the marks'
@@ -327,6 +366,114 @@ pub fn elaborate_comp(
     })
 }
 
+/// The term judgements under way when the strict judgement of `value` in
+/// `direction` refuses, outermost first.
+///
+/// # Specification
+/// - requires: `value` is closed over the context's binders, which are empty
+///   between judgements.
+/// - ensures: the binders stand where they stood; nothing when the strict
+///   judgement accepts; otherwise one entry per value and computation judgement
+///   the refusal stood inside, outermost first and `value` itself first, a term
+///   judged twice in a row (checked, then synthesised to cross a bridge)
+///   entered once, at its outer judgement.
+/// - provides: the nested reasons a face renders beside the strict refusal.
+/// - fails: never; an engine fault is traced as any refusal is.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an accepted term, a pair and a thunk each checked and
+///   refused one judgement deep, and a pair synthesised and refused at its
+///   component, separate the empty trail, the outermost-first order, the
+///   expected and synthesised sides and the collapsed bridge.
+/// - witness: `judgement::elaboration::tests::a_traced_run_keeps_the_judgements_a_refusal_stood_in`
+#[spec(
+    captures: depth = context.depth(Zone::Intuitionistic),
+    ensures: |ret| context.depth(Zone::Intuitionistic) == depth
+        && ret.first().is_none_or(|first| first.term == TermNode::Value(value))
+        && ret.iter().zip(ret.iter().skip(1)).all(|(outer, inner)| outer.term != inner.term),
+)]
+#[inline]
+#[must_use]
+pub fn trace_value(
+    context: &mut CheckingContext<'_>,
+    value: ValueId,
+    direction: Direction<FormedValueType>,
+) -> Vec<Pending>
+{
+    let entry = context.binders().depth(Zone::Intuitionistic);
+    let remaining = usize::from(context.budget());
+    let mut machine = Machine {
+        context,
+        frames: Vec::new(),
+        native_types: Vec::new(),
+        conversions: ConversionCount::default(),
+        remaining,
+        marking: Marking::Traced,
+        anchors: Vec::new(),
+        marks: Vec::new(),
+    };
+    let outcome = machine.drive(Goal::Value {
+        term: value,
+        direction: match direction {
+            | Direction::Synthesise => Direction::Synthesise,
+            | Direction::Check(expected) => Direction::Check(expected.id()),
+        },
+    });
+    machine.unwind(entry);
+    match outcome {
+        | Ok(_) => Vec::new(),
+        | Err(_) => trail(&machine.anchors),
+    }
+}
+
+/// The term judgements `anchors` stand for, outermost first, a term anchored
+/// twice in a row entered once.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one entry per value or computation anchor, in order, except an
+///   anchor on the same term as the entry before it; each entry carries the
+///   anchor's term and the type it was checked against, absent when it was
+///   synthesised.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a bridged term anchored as a check and then as a
+///   synthesis, beside terms anchored once in each direction, separates the
+///   collapse, the order and the expected side.
+/// - witness: `judgement::elaboration::tests::a_traced_run_keeps_the_judgements_a_refusal_stood_in`
+#[spec(ensures: |ret| ret.len() <= anchors.len()
+    && ret.iter().zip(ret.iter().skip(1)).all(|(outer, inner)| outer.term != inner.term))]
+fn trail(anchors: &[Anchor]) -> Vec<Pending>
+{
+    let mut trail: Vec<Pending> = Vec::with_capacity(anchors.len());
+    for anchor in anchors {
+        let pending = match anchor.goal {
+            | Goal::Value { term, direction } => Pending {
+                term: TermNode::Value(term),
+                expected: match direction {
+                    | Direction::Check(expected) => Maybe::Present(TypeNode::Value(expected)),
+                    | Direction::Synthesise => Maybe::Absent(pending::Absent::Synthesised),
+                },
+            },
+            | Goal::Computation { term, direction } => Pending {
+                term: TermNode::Computation(term),
+                expected: match direction {
+                    | Direction::Check(expected) => Maybe::Present(TypeNode::Computation(expected)),
+                    | Direction::Synthesise => Maybe::Absent(pending::Absent::Synthesised),
+                },
+            },
+            | Goal::Form(_) | Goal::Stack { .. } => continue,
+        };
+        if trail.last().is_some_and(|outer| outer.term == pending.term) {
+            continue;
+        }
+        trail.push(pending);
+    }
+    trail
+}
+
 /// Wrap every marked node beneath `root` in a mark naming its first entry.
 ///
 /// # Specification
@@ -371,9 +518,9 @@ impl Machine<'_, '_>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: in a total run, a value or computation goal is pushed with
-    ///   the frame height, binder depth and field-type height it began at;
-    ///   nothing changes otherwise.
+    /// - ensures: in a total or traced run, a value or computation goal is
+    ///   pushed with the frame height, binder depth and field-type height it
+    ///   began at; nothing changes otherwise.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -385,7 +532,7 @@ impl Machine<'_, '_>
     #[spec(
         captures: before = self.anchors.len(),
         ensures: self.anchors.len() == before.saturating_add(usize::from(
-            self.marking == Marking::Total && !matches!(goal, Goal::Form(_) | Goal::Stack { .. }),
+            self.marking != Marking::Strict && !matches!(goal, Goal::Form(_) | Goal::Stack { .. }),
         )),
     )]
     pub(super) fn anchor(
@@ -394,7 +541,7 @@ impl Machine<'_, '_>
     )
     {
         match (self.marking, goal) {
-            | (Marking::Total, Goal::Value { .. } | Goal::Computation { .. }) => {
+            | (Marking::Total | Marking::Traced, Goal::Value { .. } | Goal::Computation { .. }) => {
                 let depth = self.context.depth(Zone::Intuitionistic);
                 self.anchors.push(Anchor {
                     goal,
@@ -403,7 +550,8 @@ impl Machine<'_, '_>
                     native: self.native_types.len(),
                 });
             },
-            | (Marking::Strict, _) | (Marking::Total, Goal::Form(_) | Goal::Stack { .. }) => {},
+            | (Marking::Strict, _)
+            | (Marking::Total | Marking::Traced, Goal::Form(_) | Goal::Stack { .. }) => {},
         }
     }
 
@@ -437,12 +585,12 @@ impl Machine<'_, '_>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: a strict run, an engine fault or a run with no anchor is
-    ///   refused with `refusal` unchanged; otherwise the innermost anchor is
-    ///   retired, the frames, binders and field types fall back to where its
-    ///   goal began, one mark is recorded at its term, and its goal is answered
-    ///   — checked, the unknown type, or, for a term that cannot synthesise, a
-    ///   check against the unknown type.
+    /// - ensures: a strict or traced run, an engine fault or a run with no
+    ///   anchor is refused with `refusal` unchanged; otherwise the innermost
+    ///   anchor is retired, the frames, binders and field types fall back to
+    ///   where its goal began, one mark is recorded at its term, and its goal
+    ///   is answered — checked, the unknown type, or, for a term that cannot
+    ///   synthesise, a check against the unknown type.
     /// - fails: `refusal` itself, as above.
     /// - panics: none.
     ///
@@ -469,7 +617,8 @@ impl Machine<'_, '_>
     ) -> Result<Step, CheckRefusal>
     {
         let recoverable = match (self.marking, refusal.classify()) {
-            | (Marking::Strict, _) | (Marking::Total, FailureClass::EngineFault) => false,
+            | (Marking::Strict | Marking::Traced, _)
+            | (Marking::Total, FailureClass::EngineFault) => false,
             | (
                 Marking::Total,
                 FailureClass::MalformedSource
@@ -561,6 +710,7 @@ mod tests
     use gandr_core_term::FailureClass;
     use gandr_core_term::Value;
     use gandr_core_term::ValueType;
+    use gandr_core_term::Zone;
     use gandr_core_term::hole::HoleId;
     use gandr_core_term::hole::MarkIndex;
     use gandr_core_term::hole::TermId;
@@ -571,8 +721,11 @@ mod tests
     use quenchant_shape::shape::Maybe;
 
     use super::MarkEntry;
+    use super::Pending;
     use super::elaborate_comp;
     use super::elaborate_value;
+    use super::pending;
+    use super::trace_value;
     use crate::CheckBudget;
     use crate::CheckingContext;
     use crate::Declaration;
@@ -591,6 +744,8 @@ mod tests
     use crate::judgement::synthesise_comp;
     use crate::judgement::synthesise_value;
     use crate::refusal::CheckRefusal;
+    use crate::refusal::TermNode;
+    use crate::refusal::TypeNode;
     use crate::signature;
 
     #[test]
@@ -636,6 +791,97 @@ mod tests
         assert!(
             check_value(&mut context, elaboration.root(), expected).is_ok(),
             "the marked term is well typed"
+        );
+    }
+
+    #[test]
+    fn a_traced_run_keeps_the_judgements_a_refusal_stood_in()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let product = arena.value_type_product(integer, integer);
+        let zero = arena.value_literal(integer_literal());
+        let unit = arena.value_unit();
+        let pair = arena.value_pair(zero, unit);
+        let forced = arena.computation_force(zero);
+        let thunk = arena.value_thunk(forced);
+        let unsynthesisable = arena.value_pair(zero, thunk);
+        let returns_integer = arena.comp_type_returner(integer);
+        let suspended = arena.value_type_thunk(returns_integer);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let expected = form_value_type(&mut context, product).unwrap();
+        let formed_integer = form_value_type(&mut context, integer).unwrap();
+        let formed_suspended = form_value_type(&mut context, suspended).unwrap();
+        let depth = context.depth(Zone::Intuitionistic);
+
+        assert_eq!(
+            trace_value(&mut context, zero, Direction::Check(formed_integer)),
+            Vec::new(),
+            "an accepted judgement leaves no trail"
+        );
+        let checked = trace_value(&mut context, pair, Direction::Check(expected));
+        let &[outer, inner] = checked.as_slice()
+        else {
+            panic!("the pair and its mismatched component, the bridge collapsed: {checked:?}");
+        };
+        assert_eq!(
+            outer,
+            Pending {
+                term: TermNode::Value(pair),
+                expected: Maybe::Present(TypeNode::Value(expected.id())),
+            },
+            "the outermost judgement comes first, at the type it was checked against"
+        );
+        assert_eq!(
+            inner.term,
+            TermNode::Value(unit),
+            "the component comes last"
+        );
+        assert!(
+            matches!(inner.expected, Maybe::Present(TypeNode::Value(_))),
+            "the component was checked against its factor"
+        );
+        let forcing = trace_value(&mut context, thunk, Direction::Check(formed_suspended));
+        let &[outer, inner] = forcing.as_slice()
+        else {
+            panic!("the thunk and the force inside it, the bridge collapsed: {forcing:?}");
+        };
+        assert_eq!(
+            outer,
+            Pending {
+                term: TermNode::Value(thunk),
+                expected: Maybe::Present(TypeNode::Value(formed_suspended.id())),
+            },
+            "the thunk was checked against its declared type"
+        );
+        assert_eq!(
+            inner.term,
+            TermNode::Computation(forced),
+            "a force of an integer stands inside the thunk; the integer finished"
+        );
+        assert!(
+            matches!(inner.expected, Maybe::Present(TypeNode::Computation(_))),
+            "the body was checked against the thunk's computation type"
+        );
+        let synthesised = Maybe::Absent(pending::Absent::Synthesised);
+        assert_eq!(
+            trace_value(&mut context, unsynthesisable, Direction::Synthesise),
+            [
+                Pending {
+                    term: TermNode::Value(unsynthesisable),
+                    expected: synthesised,
+                },
+                Pending {
+                    term: TermNode::Value(thunk),
+                    expected: synthesised,
+                },
+            ],
+            "a thunk cannot synthesise, and stands inside the synthesised pair"
+        );
+        assert_eq!(
+            context.depth(Zone::Intuitionistic),
+            depth,
+            "the trace leaves the binders as found"
         );
     }
 

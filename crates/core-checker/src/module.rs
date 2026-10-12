@@ -33,6 +33,15 @@
 //! leaves its constant rigid. The report carries the lifts the run's value
 //! bridges recorded beside the verdicts, so the kernel bridge writes each one
 //! where it stands.
+//!
+//! # A refused body keeps the judgements it was refused inside
+//!
+//! [`check_module`] traces each body the judgement refused, at the point of the
+//! run it was refused at, before the declaration's own type enters the table:
+//! the report carries, by position, the value and computation judgements the
+//! refusal stood inside, outermost first. They are the refusal's nested
+//! reasons. [`check_declaration`] judges strictly and traces nothing, so an
+//! incremental caller re-judging one declaration pays for no trail.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -52,9 +61,11 @@ use crate::formation::FormedValueType;
 use crate::formation::form_value_type;
 use crate::judgement::Checked;
 use crate::judgement::Direction;
+use crate::judgement::Pending;
 use crate::judgement::Synthesised;
 use crate::judgement::check_value;
 use crate::judgement::synthesise_value;
+use crate::judgement::trace_value;
 use crate::ledger::Absence;
 use crate::ledger::ObligationEntry;
 use crate::ledger::ObligationLedger;
@@ -159,6 +170,9 @@ pub struct ModuleReport
     definitions: BTreeMap<ConstantIndex, ValueId>,
     /// Native signatures retained for kernel readmission.
     data_signatures: BTreeMap<ConstantIndex, alloc::sync::Arc<gandr_core_term::DataSignature>>,
+    /// The judgements each refused body was refused inside, outermost first, by
+    /// position.
+    pending: BTreeMap<ConstantIndex, Vec<Pending>>,
 }
 
 impl ModuleReport
@@ -220,6 +234,29 @@ impl ModuleReport
     {
         &self.definitions
     }
+
+    /// The judgements each refused body was refused inside, outermost first, by
+    /// position; a declaration refused before its body was judged, or accepted,
+    /// has no entry.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn pending(&self) -> &BTreeMap<ConstantIndex, Vec<Pending>>
+    {
+        &self.pending
+    }
+}
+
+/// Whether a declaration's judgement traces a refused body.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum Tracing
+{
+    /// A refusal is the verdict alone.
+    Untraced,
+    /// A refused body is traced before the declaration's type enters the table.
+    Traced,
 }
 
 /// Judge one declaration in `context`.
@@ -276,19 +313,46 @@ pub fn check_declaration(
     declaration: &Declaration,
 ) -> Verdict
 {
+    decide(context, declaration, Tracing::Untraced).0
+}
+
+/// Judge one declaration in `context`, tracing a refused body when asked.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the verdict [`check_declaration`] gives, with the same effect on
+///   `context`; beside it, when tracing and the body was judged and refused,
+///   the judgements the refusal stood inside, read before the declaration's
+///   type entered the table, and otherwise nothing.
+/// - fails: never; a refusal is the verdict [`Verdict::Refused`].
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a module with a body refused one judgement deep, a
+///   signature refused before its body, and an accepted body separate the
+///   traced, the untraced and the never-judged refusals.
+/// - witness: `module::tests::a_refused_body_keeps_the_judgements_it_was_refused_inside`
+#[spec(ensures: |ret| ret.1.is_empty() || (tracing == Tracing::Traced && matches!(ret.0, Verdict::Refused(_))))]
+fn decide(
+    context: &mut CheckingContext<'_>,
+    declaration: &Declaration,
+    tracing: Tracing,
+) -> (Verdict, Vec<Pending>)
+{
     let constant = declaration.constant();
     if let Err(refusal) = context.admit(constant) {
-        return Verdict::Refused(refusal);
+        return (Verdict::Refused(refusal), Vec::new());
     }
     let (signature, body) = match *(declaration.content()) {
         | crate::DeclarationContent::Data(ref signature) => {
-            return match crate::former::form_signature(context, constant, signature) {
+            let verdict = match crate::former::form_signature(context, constant, signature) {
                 | Ok(()) => {
                     context.record_data(constant, alloc::sync::Arc::clone(signature));
                     Verdict::Data
                 },
                 | Err(refusal) => Verdict::Refused(refusal),
             };
+            return (verdict, Vec::new());
         },
         | crate::DeclarationContent::Value {
             ref signature,
@@ -298,24 +362,31 @@ pub fn check_declaration(
     let direction = match signature {
         | Maybe::Present(declared) => match form_value_type(context, declared) {
             | Ok(formed) => Direction::Check(formed),
-            | Err(refusal) => return Verdict::Refused(refusal),
+            | Err(refusal) => return (Verdict::Refused(refusal), Vec::new()),
         },
         | Maybe::Absent(signature::Absent::Unsigned) => Direction::Synthesise,
     };
+    let mut trail = Vec::new();
     let verdict = match body {
-        | Maybe::Present(body) => match direction {
-            | Direction::Synthesise => match synthesise_value(context, body) {
-                | Ok(synthesised) => Verdict::Synthesised { body, synthesised },
-                | Err(refusal) => Verdict::Refused(refusal),
-            },
-            | Direction::Check(declared) => match check_value(context, body, declared) {
-                | Ok(evidence) => Verdict::Checked {
-                    declared,
-                    body,
-                    evidence,
+        | Maybe::Present(body) => {
+            let verdict = match direction {
+                | Direction::Synthesise => match synthesise_value(context, body) {
+                    | Ok(synthesised) => Verdict::Synthesised { body, synthesised },
+                    | Err(refusal) => Verdict::Refused(refusal),
                 },
-                | Err(refusal) => Verdict::Refused(refusal),
-            },
+                | Direction::Check(declared) => match check_value(context, body, declared) {
+                    | Ok(evidence) => Verdict::Checked {
+                        declared,
+                        body,
+                        evidence,
+                    },
+                    | Err(refusal) => Verdict::Refused(refusal),
+                },
+            };
+            if tracing == Tracing::Traced && matches!(verdict, Verdict::Refused(_)) {
+                trail = trace_value(context, body, direction);
+            }
+            verdict
         },
         | Maybe::Absent(body::Absent::Hole) => {
             match hole(direction, constant, declaration.origin()) {
@@ -343,7 +414,7 @@ pub fn check_declaration(
             Verdict::Data | Verdict::Checked { .. } | Verdict::Owed(_) | Verdict::Refused(_),
         ) => {},
     }
-    verdict
+    (verdict, trail)
 }
 
 /// Judge one declaration in `context`, and report the signature answers the
@@ -398,7 +469,9 @@ pub fn check_declaration_supported(
 ///   the verdict [`check_declaration`] gives at that point of the run; the
 ///   ledger holds exactly the owed verdicts' entries, in order; the lifts are
 ///   every lift the context's value bridges recorded by the run's end, and the
-///   definitions every body the context defines a constant as.
+///   definitions every body the context defines a constant as; each refused
+///   body judged has its trail, as [`trace_value`] gives it at that point of
+///   the run, under its position, and no other declaration has one.
 /// - provides: total marking — a refused declaration does not stop the run.
 /// - fails: never.
 /// - panics: none.
@@ -411,6 +484,7 @@ pub fn check_declaration_supported(
 /// - witness: `module::tests::a_refusal_does_not_stop_the_run`
 /// - witness: `module::tests::every_owed_hole_enters_the_ledger_in_order`
 /// - witness: `module::tests::a_refusal_never_enters_the_ledger`
+/// - witness: `module::tests::a_refused_body_keeps_the_judgements_it_was_refused_inside`
 #[spec(ensures: |ret| ret.judged.len() == declarations.len()
     && ret.judged.iter().zip(declarations).all(|(judged, declaration)|
         judged.constant == declaration.constant() && judged.origin == declaration.origin())
@@ -420,7 +494,10 @@ pub fn check_declaration_supported(
     }))
     && &ret.lifts == context.lifts()
     && ret.definitions.iter().map(|(&constant, &body)| (constant, body))
-        .eq(context.definitions().definitions()))]
+        .eq(context.definitions().definitions())
+    && ret.pending.iter().all(|(constant, trail)| !trail.is_empty()
+        && ret.judged.iter().any(|judged| judged.constant == *constant
+            && matches!(judged.verdict, Verdict::Refused(_)))))]
 #[inline]
 #[must_use]
 pub fn check_module(
@@ -430,8 +507,12 @@ pub fn check_module(
 {
     let mut judged = Vec::with_capacity(declarations.len());
     let mut ledger = ObligationLedger::new();
+    let mut pending = BTreeMap::new();
     for declaration in declarations {
-        let verdict = check_declaration(context, declaration);
+        let (verdict, trail) = decide(context, declaration, Tracing::Traced);
+        if !trail.is_empty() {
+            pending.insert(declaration.constant(), trail);
+        }
         if let Verdict::Owed(entry) = verdict {
             ledger.record(entry);
         }
@@ -447,6 +528,7 @@ pub fn check_module(
         lifts: context.lifts().clone(),
         definitions: context.definitions().definitions().collect(),
         data_signatures: context.data_signatures().clone(),
+        pending,
     }
 }
 
@@ -512,10 +594,13 @@ mod tests
     use crate::declaration::signature;
     use crate::fixture::integer_literal;
     use crate::fixture::text_literal;
+    use crate::judgement::Pending;
+    use crate::judgement::pending;
     use crate::refusal::CheckRefusal;
     use crate::refusal::CheckingForm;
     use crate::refusal::CoreNode;
     use crate::refusal::Mismatch;
+    use crate::refusal::TermNode;
     use crate::refusal::TypeNode;
     use crate::refusal::UnadmittedFormer;
 
@@ -961,6 +1046,64 @@ mod tests
             usize::from(report.ledger().count()),
             0_usize,
             "a refusal of any class leaves the ledger empty"
+        );
+    }
+
+    #[test]
+    fn a_refused_body_keeps_the_judgements_it_was_refused_inside()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let unformed = arena.value_type_base(BaseType::Numeric);
+        let itself = arena.value_constant(ConstantIndex::from(0_usize));
+        let text = arena.value_literal(text_literal());
+        let zero = arena.value_literal(integer_literal());
+        let forced = arena.computation_force(zero);
+        let thunk = arena.value_thunk(forced);
+        let pair = arena.value_pair(zero, thunk);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let module = [
+            declaration(At(0), Maybe::Present(integer), Maybe::Present(itself)),
+            declaration(At(1), UNSIGNED, Maybe::Present(text)),
+            declaration(At(2), Maybe::Present(unformed), Maybe::Present(text)),
+            declaration(At(3), UNSIGNED, Maybe::Present(pair)),
+        ];
+        let report = check_module(&mut context, &module);
+        assert_eq!(
+            report.pending().keys().copied().collect::<Vec<_>>(),
+            [ConstantIndex::from(0_usize), ConstantIndex::from(3_usize)],
+            "the two refused bodies are traced; the accepted body and the body \
+             under an unformed signature are not"
+        );
+        let [ref reference] = *report.pending()[&ConstantIndex::from(0_usize)]
+        else {
+            panic!(
+                "the self-reference is refused where it stands, before its type enters the table"
+            );
+        };
+        assert_eq!(
+            reference.term,
+            TermNode::Value(itself),
+            "the body is its own trail"
+        );
+        assert!(
+            matches!(reference.expected, Maybe::Present(TypeNode::Value(_))),
+            "the body was checked against its declared type"
+        );
+        let synthesised = Maybe::Absent(pending::Absent::Synthesised);
+        assert_eq!(
+            report.pending()[&ConstantIndex::from(3_usize)],
+            [
+                Pending {
+                    term: TermNode::Value(pair),
+                    expected: synthesised,
+                },
+                Pending {
+                    term: TermNode::Value(thunk),
+                    expected: synthesised,
+                },
+            ],
+            "the thunk, which cannot synthesise, was refused inside the pair"
         );
     }
 

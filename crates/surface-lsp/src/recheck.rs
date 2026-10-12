@@ -314,14 +314,15 @@ pub struct Rechecked
 ///   prints for the judgement's step becomes one diagnostic, in the order
 ///   printed: a report at the range its span projects to, with the refusal's
 ///   vocabulary name as its code, its title, primary label and note as its
-///   message, each context locus as a related location carrying its label, and
-///   the severity of a goal as information and of every other report as an
-///   error; a report the renderer leaves unlocated, and a ledger line, at the
-///   document's origin. A fault that keeps the document from composing, and a
-///   grammar that did not build, is one error at the origin naming it. The
-///   timing carries the judgement's form census, the incremental checker's
-///   census, and the wall of the whole recheck; its admission is pending when
-///   the judgement left one.
+///   message, each context locus as a related location carrying its label, then
+///   each nested reason, outermost first, as a related location carrying the
+///   judgement it stands for, and the severity of a goal as information and of
+///   every other report as an error; a report the renderer leaves unlocated,
+///   and a ledger line, at the document's origin. A fault that keeps the
+///   document from composing, and a grammar that did not build, is one error at
+///   the origin naming it. The timing carries the judgement's form census, the
+///   incremental checker's census, and the wall of the whole recheck; its
+///   admission is pending when the judgement left one.
 /// - provides: the one recheck every synchronisation publishes.
 /// - fails: never; a fault is a diagnostic.
 /// - panics: none.
@@ -331,12 +332,13 @@ pub struct Rechecked
 /// - hypothesis: L2 — over every corpus source, the diagnostics are the reports
 ///   the dispatcher's walk renders for that source under `check --goals`, at
 ///   the same ranges and codes; L3 — a type mismatch and a duplicate signature
-///   are asserted at their related locations, and a pending source at its
-///   ledger line.
+///   are asserted at their related locations, a force refused inside a thunk at
+///   its nested reasons, and a pending source at its ledger line.
 /// - witness: `session::session::every_corpus_report_is_published_where_the_walk_renders_it`
 /// - witness: `session::session::an_edit_to_a_large_document_rechecks_its_forms`
 /// - witness: `recheck::tests::causal_contexts_become_lsp_related_information`
 /// - witness: `recheck::tests::a_labeled_context_keeps_its_locus_and_cause_in_related_information`
+/// - witness: `recheck::tests::nested_reasons_become_lsp_related_information`
 /// - witness: `recheck::tests::a_fault_is_published_at_the_origin`
 #[spec(ensures: |ret| ret.diagnostics.iter().all(|diagnostic|
     diagnostic.source == "gandr" && diagnostic.range.start <= diagnostic.range.end
@@ -557,6 +559,7 @@ pub fn highlight(text: SourceText<'_>) -> Vec<HlSpan>
 ///   misprojected report fields without pinning wording.
 /// - witness: `recheck::tests::causal_contexts_become_lsp_related_information`
 /// - witness: `recheck::tests::a_labeled_context_keeps_its_locus_and_cause_in_related_information`
+/// - witness: `recheck::tests::nested_reasons_become_lsp_related_information`
 /// - witness: `recheck::tests::a_refusal_publishes_its_label_and_note`
 /// - witness: `session::session::every_corpus_report_is_published_where_the_walk_renders_it`
 #[spec(ensures: |ret| ret.source == "gandr"
@@ -564,7 +567,7 @@ pub fn highlight(text: SourceText<'_>) -> Vec<HlSpan>
     && ret.code.is_some() == matches!(report.identifier(), Maybe::Present(_))
     && ret.message.starts_with(&report.title().to_string())
     && ret.related_information.len() == report.context().into_iter()
-        .filter(|slot| matches!(slot, Maybe::Present(_))).count()
+        .filter(|slot| matches!(slot, Maybe::Present(_))).count().saturating_add(report.reasons().len())
     && ret.related_information.iter().all(|related| related.location.uri == *uri))]
 fn diagnostic(
     report: &Report<'_>,
@@ -601,6 +604,16 @@ fn diagnostic(
     if let Maybe::Present(spelling) = report.identifier() {
         diagnostic.code = Some(spelling.to_string());
     }
+    let reasons = report
+        .reasons()
+        .into_iter()
+        .map(|reason| RelatedInformation {
+            location: Location {
+                uri: uri.clone(),
+                range: range_of(reason.span),
+            },
+            message: reason.to_string(),
+        });
     diagnostic.related_information = report
         .context()
         .into_iter()
@@ -614,6 +627,7 @@ fn diagnostic(
             }),
             | Maybe::Absent(_) => None,
         })
+        .chain(reasons)
         .collect();
     diagnostic
 }
@@ -742,6 +756,42 @@ mod tests
             uri,
             range: range(Span(0, 12, 0, 19))
         });
+    }
+
+    #[test]
+    fn nested_reasons_become_lsp_related_information()
+    {
+        let uri = DocumentUri::from("file:///strict/force.gandr");
+        let text = "def a : +U (-F Integer) ;\ndef a = thunk { force 1 } ;\n";
+        let diagnostics = checked(&uri, SourceText::from(text));
+        let [ref diagnostic] = *diagnostics.as_slice()
+        else {
+            panic!("one shape mismatch");
+        };
+        assert_eq!(
+            (diagnostic.range, diagnostic.code.as_deref()),
+            (range(Span(1, 22, 1, 23)), Some("ShapeMismatch")),
+            "the forced integer is the primary locus"
+        );
+        let related: Vec<(Range, &str)> = diagnostic
+            .related_information
+            .iter()
+            .map(|related| (related.location.range, related.message.as_str()))
+            .collect();
+        assert_eq!(
+            related,
+            [
+                (
+                    range(Span(1, 8, 1, 25)),
+                    "while checking this against `+U (-F Integer)`"
+                ),
+                (
+                    range(Span(1, 16, 1, 23)),
+                    "while checking this against `-F Integer`"
+                ),
+            ],
+            "the thunk and the force it holds, outermost first"
+        );
     }
 
     #[test]

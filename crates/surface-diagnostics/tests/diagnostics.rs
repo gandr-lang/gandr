@@ -401,6 +401,102 @@ def wrong = "text" ;
     }
 
     #[test]
+    fn a_refusal_names_the_judgements_it_stood_inside()
+    {
+        let force = SourceText::from("def a : +U (-F Integer) ;\ndef a = thunk { force 1 } ;\n");
+        let application =
+            SourceText::from("def b : +U (-F Integer) ;\ndef b = thunk { (ret 1)(2) } ;\n");
+        let bound = SourceText::from(
+            "def f : +U (Integer -> -F Integer) ;\ndef f = thunk { fn (x) { ret x } } ;\ndef d : +U \
+             (-F Integer) ;\ndef d = thunk { run y <- (force f)(\"no\") ; ret y } ;\n",
+        );
+        let mismatch = SourceText::from(MISMATCH);
+        let steps = [
+            unsettled(Path::new("force.gandr"), SourceRoot::Strict, force),
+            unsettled(
+                Path::new("application.gandr"),
+                SourceRoot::Strict,
+                application,
+            ),
+            unsettled(Path::new("bound.gandr"), SourceRoot::Strict, bound),
+            unsettled(Path::new("mismatch.gandr"), SourceRoot::Strict, mismatch),
+        ];
+        let only = |step| {
+            let [report] = *reports(step, Verb::Check(Goals::Gated)).as_slice()
+            else {
+                panic!("one refusal, one report");
+            };
+            report
+        };
+        let named = |text: SourceText<'_>, report: Report<'_>| -> Vec<(String, String)> {
+            report
+                .reasons()
+                .iter()
+                .map(|reason| {
+                    (
+                        <&str>::from(
+                            text.fragment(reason.span)
+                                .expect("a reason lies inside the text"),
+                        )
+                        .to_owned(),
+                        reason.to_string(),
+                    )
+                })
+                .collect()
+        };
+        assert_eq!(
+            named(force, only(&steps[0])),
+            [
+                (
+                    "thunk { force 1 }".to_owned(),
+                    "while checking this against `+U (-F Integer)`".to_owned()
+                ),
+                (
+                    "force 1".to_owned(),
+                    "while checking this against `-F Integer`".to_owned()
+                ),
+            ],
+            "the force of an integer stands inside the thunk, outermost first"
+        );
+        assert_eq!(
+            named(application, only(&steps[1])),
+            [
+                (
+                    "thunk { (ret 1)(2) }".to_owned(),
+                    "while checking this against `+U (-F Integer)`".to_owned()
+                ),
+                (
+                    "(ret 1)(2)".to_owned(),
+                    "while checking this against `-F Integer`".to_owned()
+                ),
+            ],
+            "the unsynthesisable head stands inside the application and the thunk"
+        );
+        assert_eq!(
+            named(bound, only(&steps[2]))
+                .last()
+                .map(|named| named.1.as_str()),
+            Some("while synthesising the type of this"),
+            "the application whose argument mismatched was synthesised"
+        );
+        assert_eq!(
+            named(mismatch, only(&steps[3])),
+            Vec::new(),
+            "a body refused where it stands has no reason beyond its primary locus"
+        );
+        for (step, golden) in [
+            (&steps[0], include_str!("golden/nested-force.txt")),
+            (&steps[1], include_str!("golden/nested-application.txt")),
+        ] {
+            assert_eq!(
+                format!("{}\n", only(step).render(RenderStyle::Plain)),
+                golden,
+                "the terminal layout is a public surface"
+            );
+        }
+    }
+
+    #[test]
     fn refusals_of_one_class_label_what_their_locus_is()
     {
         let mismatch = SourceText::from(MISMATCH);
