@@ -1029,12 +1029,12 @@ fn repeat(part: Regex) -> Regex
     Regex::repeat(part)
 }
 
-/// Build a comma-separated nonempty regex list.
+/// Build a comma-separated nonempty regex list, closed by its caller.
 ///
 /// # Specification
-/// - requires: nothing.
+/// - requires: the caller follows the list with a closing tile.
 /// - ensures: one leading element followed by repetitions that each begin with
-///   a comma.
+///   a comma, then an optional trailing comma.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1046,10 +1046,14 @@ fn repeat(part: Regex) -> Regex
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
 /// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 2 && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(tail) if matches!(tail.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ",")))))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(tail) if matches!(tail.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ","))))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(inner) if matches!(inner.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ",")))))]
 fn comma1(element: Regex) -> Regex
 {
-    seq([element.clone(), repeat(seq([t(TileLabel(",")), element]))])
+    seq([
+        element.clone(),
+        repeat(seq([t(TileLabel(",")), element])),
+        opt(t(TileLabel(","))),
+    ])
 }
 
 #[cfg(test)]

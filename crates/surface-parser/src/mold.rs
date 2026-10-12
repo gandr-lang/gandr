@@ -428,7 +428,8 @@ enum WindowBound
 /// Whether a token can stand right after a mold.
 ///
 /// # Specification
-/// - ensures: `Refuted` only when no hole can face the mold on its right, the
+/// - ensures: `Refuted` when a hole faces the mold on its right and none of the
+///   token's candidate labels can begin a form, or when no hole faces it, the
 ///   mold cannot end its form, and none of its same-form successors carries one
 ///   of the token's candidate labels; `Possible` otherwise.
 /// - panics: none.
@@ -437,11 +438,36 @@ enum WindowBound
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Follow
 {
-    /// The token can follow: a hole, the form's end or a successor admits it.
+    /// The token can follow: it can begin what fills the mold's hole, or the
+    /// form's end or a successor admits it.
     Possible,
-    /// The mold's next symbol is a tile of its own form, and the token is
-    /// none of them.
+    /// The mold's next symbol is a hole the token cannot begin, or a tile of
+    /// its own form the token is none of.
     Refuted,
+}
+
+/// What a choice may read past the token it molds.
+///
+/// # Specification
+/// - ensures: `Stream` names the labeled stream, the molded token's index in it
+///   and the text the stream spells; `Nothing` names no stream.
+/// - panics: none.
+/// - executable: none — a plain value.
+#[derive(Clone, Copy, Debug)]
+enum Ahead<'tokens, 'src>
+{
+    /// The single-token path: nothing past the token is known.
+    Nothing,
+    /// The token stands at `index` of `tokens`, which `source` spells.
+    Stream
+    {
+        /// The labeled stream.
+        tokens: &'tokens [Token],
+        /// The molded token's index in `tokens`.
+        index: TokenIndex,
+        /// The text `tokens` index into.
+        source: &'src SourceFragment<'src>,
+    },
 }
 
 /// How a lookahead window ended.
@@ -635,7 +661,7 @@ const UPPER_KEYWORDS: &[&str] = &[
 
 /// The generic labels a reserved uppercase word falls back to where its own
 /// tile cannot mold: [`Molder::gather_reserved_fallback`] re-admits them, and
-/// [`Molder::drop_refuted_openers`] counts them among the word's labels.
+/// [`Molder::drop_refuted`] counts them among the word's labels.
 const RESERVED_FALLBACK_LABELS: [&str; 2] = ["constructor", "type_identifier"];
 
 /// Return the next non-space token after `index`.
@@ -920,7 +946,7 @@ impl<'pbg> Molder<'pbg>
         self.settle_shadowing(state, token, &source);
         self.gather(state, token, &source);
         state.settle_declaration_boundary(&self.candidates);
-        let best = self.choose(state, text);
+        let best = self.choose(state, text, Ahead::Nothing);
         Self::push_choice(state, best, text);
     }
 
@@ -1728,12 +1754,18 @@ impl<'pbg> Molder<'pbg>
     /// molding stays total. Among survivors the order is the local
     /// [`CandidateKey`] then the [`completion`](Self::completion) penalty
     /// then ascending [`MoldId`] — the completion penalty is the greedy
-    /// stand-in for the lookahead the single-token path cannot run.
+    /// stand-in for the lookahead the single-token path cannot run. Inside a
+    /// window `ahead` names the stream, and a key tie first drops the
+    /// candidates the next significant token cannot follow
+    /// ([`drop_refuted`](Self::drop_refuted)): a list's separator before its
+    /// closer is the trailing one, never the one that opens another element.
     ///
     /// # Specification
     /// - requires: the candidate menu is canonical and belongs to this grammar.
-    /// - ensures: selects a menu member, minimizing admissible key then
-    ///   completion then identity; an empty menu yields none.
+    /// - ensures: selects a menu member, minimizing admissible key, then, when
+    ///   `ahead` names a stream, keeping only what the next significant token
+    ///   can follow unless it can follow none, then completion then identity;
+    ///   an empty menu yields none.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -1741,13 +1773,18 @@ impl<'pbg> Molder<'pbg>
     ///   no-admissible fallback, expose the selected mold and final repairs.
     ///   Dropped candidates, choosing outside the menu or changing priority
     ///   changes those observations; dry-run state is compared byte-for-byte.
+    ///   An attribute block closed by a trailing comma before a declaration
+    ///   whose opener ties with it parses clean only when the window's comma
+    ///   tie reads the token after it.
     /// - witness: `mold::tests::dry_runs_restore_exact_state`
     /// - witness: `mold::tests::picks_the_obligation_minimum_mold`
+    /// - witness: `mold::tests::a_window_reads_the_token_after_a_tied_separator`
     #[spec(requires: self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right), ensures: |ret| ret.map_or_else(|| self.candidates.is_empty(), |mold| self.candidates.contains(&mold)))]
     fn choose(
         &mut self,
         state: &mut MeldState<'_>,
         text: TokenText<'_>,
+        ahead: Ahead<'_, '_>,
     ) -> Option<MoldId>
     {
         // Fast path: the pre-filter usually collapses the menu to
@@ -1781,6 +1818,21 @@ impl<'pbg> Molder<'pbg>
         self.least_candidates(state, text, frontier.expected);
         if self.tied.len() <= 1 {
             return self.tied.first().copied();
+        }
+        // Inside a window the next token is known: a tied candidate it cannot
+        // follow drops before any finalize runs.
+        if let Ahead::Stream {
+            tokens,
+            index,
+            source,
+        } = ahead
+        {
+            let mut tied = core::mem::take(&mut self.tied);
+            self.drop_refuted(&mut tied, tokens, index, source);
+            self.tied = tied;
+            if let [sole] = *self.tied.as_slice() {
+                return Some(sole);
+            }
         }
         // Pass two: break the key-tie by the single-token completion penalty,
         // keeping the smaller `MoldId` on a further tie (ascending visitation).
@@ -1904,12 +1956,13 @@ impl<'pbg> Molder<'pbg>
     /// *wrong* way (it prefers the shorter, already-complete reading), so it is
     /// deliberately excluded from the tie set here and the decision is made by
     /// a bounded greedy lookahead instead. First the next significant token
-    /// prunes the tie: a tied candidate whose next symbol is a tile of its
-    /// own form that the token cannot be is dropped
-    /// ([`drop_refuted_openers`](Self::drop_refuted_openers)), and a lone
-    /// survivor wins without a window. Each remaining candidate is dry-run
-    /// and its window molded greedily by [`choose`](Self::choose) (which IS
-    /// completion aware, so the window itself molds well), and the reading
+    /// prunes the tie: a tied candidate whose hole the token cannot begin, or
+    /// whose next symbol is a tile of its own form that the token cannot be,
+    /// is dropped ([`drop_refuted`](Self::drop_refuted)), and a lone survivor
+    /// wins without a window. Each remaining candidate is dry-run and its
+    /// window molded greedily by [`choose`](Self::choose) (which IS
+    /// completion aware and prunes its own ties by the token after each, so
+    /// the window itself molds well), and the reading
     /// whose window closes with the fewest obligations wins —
     /// deterministically, keeping the smaller [`MoldId`] on an exact window
     /// tie. When the local minimum is unique the fast path returns it
@@ -1973,7 +2026,9 @@ impl<'pbg> Molder<'pbg>
         core::mem::swap(&mut self.tied, &mut self.openers);
         // A tied opener the next significant token cannot follow is refuted
         // before any window runs; a lone survivor needs no window.
-        self.drop_refuted_openers(tokens, index, source);
+        let mut openers = core::mem::take(&mut self.openers);
+        self.drop_refuted(&mut openers, tokens, index, source);
+        self.openers = openers;
         if let [sole] = *self.openers.as_slice() {
             return Some(sole);
         }
@@ -2077,7 +2132,12 @@ impl<'pbg> Molder<'pbg>
                 self.settle_shadowing(state, token, source);
                 self.gather(state, token, source);
                 state.settle_declaration_boundary(&self.candidates);
-                let choice = self.choose(state, text);
+                let ahead = Ahead::Stream {
+                    tokens,
+                    index: TokenIndex::from(index),
+                    source,
+                };
+                let choice = self.choose(state, text, ahead);
                 Self::push_choice(state, choice, text);
                 molded = molded.saturating_add(1);
             }
@@ -2088,28 +2148,35 @@ impl<'pbg> Molder<'pbg>
 
     /// Whether a token carrying one of `labels` can stand right after `mold`.
     ///
-    /// A mold that no hole can follow on its right, and that cannot end its
-    /// form, is followed by one of its same-form successors: a token carrying
-    /// none of their labels refutes it. A mold a hole can follow, or that can
-    /// end its form, admits any token, since what fills the hole or follows
-    /// the form is not read here.
+    /// A mold a hole follows on its right is followed by what fills the hole,
+    /// which begins with a form's first tile: a token none of whose labels
+    /// can begin a form refutes it. A mold that no hole follows, and that
+    /// cannot end its form, is followed by one of its same-form successors: a
+    /// token carrying none of their labels refutes it. A mold that can end its
+    /// form admits any token, since what follows the form is not read here.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: [`Follow::Refuted`] exactly when `mold`'s right bound is the
-    ///   root, it is not form-last, and none of its same-form successors is
-    ///   labelled with one of `labels`.
+    /// - ensures: [`Follow::Refuted`] exactly when either `mold`'s right bound
+    ///   is not the root and no label in `labels` names a tile that begins a
+    ///   form, or its right bound is the root, it is not form-last, and none of
+    ///   its same-form successors is labelled with one of `labels`.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a parameter comma read before a name, before a closer
-    ///   and before nothing, an argument comma before a closer, and a call's
-    ///   form-last closer expose each branch: dropping the hole check refutes
-    ///   the argument comma, dropping the form-last check refutes the closer,
-    ///   dropping the successor check refutes the parameter comma before a
-    ///   name.
-    /// - witness: `mold::tests::a_closed_mold_is_refuted_only_by_a_token_no_successor_carries`
-    #[spec(ensures: |ret| (ret == Follow::Refuted) == (matches!(self.pbg.bounds(mold), Ok((_, Bound::Root))) && !bool::from(self.pbg.mold_is_form_last(mold)) && !self.pbg.mold_successors(mold).iter().any(|&(_, right)| self.pbg.mold(right).is_ok_and(|def| labels.contains(&CandidateLabel::from(def.label))))))]
+    ///   and before nothing, an argument comma before an argument and before a
+    ///   closer, and a call's form-last closer expose each branch: dropping the
+    ///   hole check keeps the argument comma before a closer, reading the hole
+    ///   check as the successor check refutes it before an argument, dropping
+    ///   the form-last check refutes the closer, dropping the successor check
+    ///   refutes the parameter comma before a name.
+    /// - witness: `mold::tests::a_mold_is_refuted_only_by_a_token_that_cannot_stand_after_it`
+    #[spec(ensures: |ret| (ret == Follow::Refuted) == if matches!(self.pbg.bounds(mold), Ok((_, Bound::Root))) {
+        !bool::from(self.pbg.mold_is_form_last(mold)) && !self.pbg.mold_successors(mold).iter().any(|&(_, right)| self.pbg.mold(right).is_ok_and(|def| labels.contains(&CandidateLabel::from(def.label))))
+    } else {
+        !labels.iter().any(|&label| self.candidate_label(label).is_some_and(|label| !self.pbg.fresh_candidates(label).is_empty()))
+    })]
     fn follow(
         &self,
         mold: MoldId,
@@ -2117,14 +2184,19 @@ impl<'pbg> Molder<'pbg>
     ) -> Follow
     {
         let pbg = self.pbg;
-        let closed = matches!(pbg.bounds(mold), Ok((_, Bound::Root)));
-        if !closed || bool::from(pbg.mold_is_form_last(mold)) {
-            return Follow::Possible;
+        let continued = if matches!(pbg.bounds(mold), Ok((_, Bound::Root))) {
+            bool::from(pbg.mold_is_form_last(mold))
+                || pbg.mold_successors(mold).iter().any(|&(_, right)| {
+                    pbg.mold(right)
+                        .is_ok_and(|def| labels.contains(&CandidateLabel::from(def.label)))
+                })
         }
-        let continued = pbg.mold_successors(mold).iter().any(|&(_, right)| {
-            pbg.mold(right)
-                .is_ok_and(|def| labels.contains(&CandidateLabel::from(def.label)))
-        });
+        else {
+            labels.iter().any(|&label| {
+                self.candidate_label(label)
+                    .is_some_and(|label| !pbg.fresh_candidates(label).is_empty())
+            })
+        };
         if continued {
             Follow::Possible
         }
@@ -2133,31 +2205,33 @@ impl<'pbg> Molder<'pbg>
         }
     }
 
-    /// Drop the tied openers that the significant token after `index` cannot
+    /// Drop from `molds` the ones the significant token after `index` cannot
     /// follow, keeping them all when it refutes every one.
     ///
     /// The token's labels are its whole candidate menu, the reserved
     /// uppercase words' generic fallback labels included, so a refutation
-    /// never depends on the state the opener would leave.
+    /// never depends on the state a mold would leave.
     ///
     /// # Specification
     /// - requires: `index` indexes `tokens`, which `source` spells.
-    /// - ensures: the openers that remain are the ones [`Molder::follow`]
-    ///   admits for the next significant token, in their order, unless it
-    ///   admits none or the stream ends, when every opener remains.
+    /// - ensures: the molds that remain are the ones [`Molder::follow`] admits
+    ///   for the next significant token, in their order, unless it admits none
+    ///   or the stream ends, when every mold remains.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — closed commas tied before a name, a reserved
     ///   uppercase word, a closer and the stream's end, and a closed comma tied
-    ///   with an open one before a closer: the fallback labels keep the
-    ///   parameter comma before `Type`, the closer drops only the closed comma
-    ///   beside the open one, and a closer refuting both or the stream's end
-    ///   keeps both.
-    /// - witness: `mold::tests::the_next_token_keeps_only_the_openers_it_can_follow`
-    #[spec(captures: before = self.openers.clone(), ensures: |_| self.openers.iter().all(|mold| before.contains(mold)) && (before.is_empty() || !self.openers.is_empty()))]
-    fn drop_refuted_openers<'src>(
-        &mut self,
+    ///   with an open one before a closer and before an argument: the fallback
+    ///   labels keep the parameter comma before `Type`, a closer drops the open
+    ///   comma beside a closed one it can follow, an argument drops the closed
+    ///   comma beside the open one, and a closer refuting both or the stream's
+    ///   end keeps both.
+    /// - witness: `mold::tests::the_next_token_keeps_only_the_molds_it_can_follow`
+    #[spec(captures: before = molds.clone(), ensures: |_| molds.iter().all(|mold| before.contains(mold)) && (before.is_empty() || !molds.is_empty()))]
+    fn drop_refuted<'src>(
+        &self,
+        molds: &mut Vec<MoldId>,
         tokens: &[Token],
         index: TokenIndex,
         source: &'src SourceFragment<'src>,
@@ -2174,16 +2248,13 @@ impl<'pbg> Molder<'pbg>
         {
             labels.extend(RESERVED_FALLBACK_LABELS.map(CandidateLabel::from));
         }
-        if self
-            .openers
+        if molds
             .iter()
             .all(|&mold| self.follow(mold, &labels) == Follow::Refuted)
         {
             return;
         }
-        let mut openers = core::mem::take(&mut self.openers);
-        openers.retain(|&mold| self.follow(mold, &labels) == Follow::Possible);
-        self.openers = openers;
+        molds.retain(|&mold| self.follow(mold, &labels) == Follow::Possible);
     }
 }
 
@@ -2202,9 +2273,11 @@ mod tests
     use gandr_surface_grammar::built_in;
     use gandr_surface_syntax::MoldId;
     use gandr_surface_syntax::NodeDigest;
+    use gandr_surface_syntax::NodeLabel;
     use gandr_surface_syntax::SourceFragment;
     use gandr_theory_graphs::Bound;
 
+    use super::Ahead;
     use super::CandidateLabel;
     use super::Follow;
     use super::Molder;
@@ -2456,7 +2529,11 @@ mod tests
                 CandidateCount(0)
             );
             assert_eq!(
-                molder.choose(&mut MeldState::new(&pbg), TokenText::from(source)),
+                molder.choose(
+                    &mut MeldState::new(&pbg),
+                    TokenText::from(source),
+                    Ahead::Nothing
+                ),
                 None
             );
         }
@@ -2500,7 +2577,7 @@ mod tests
             .unwrap();
         molder.candidates = vec![candidate];
         assert_eq!(
-            molder.choose(&mut state, TokenText::from("x")),
+            molder.choose(&mut state, TokenText::from("x"), Ahead::Nothing),
             Some(candidate)
         );
         assert_eq!(state.checkpoint().to_bytes(), before);
@@ -2814,7 +2891,7 @@ mod tests
     /// - hypothesis: L3 — the follow-check witnesses look up a closed and an
     ///   open comma and a closed form-last parenthesis; a wrong rule or side
     ///   changes which branch they exercise.
-    /// - witness: `mold::tests::a_closed_mold_is_refuted_only_by_a_token_no_successor_carries`
+    /// - witness: `mold::tests::a_mold_is_refuted_only_by_a_token_that_cannot_stand_after_it`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&mold| pbg.rule_of(mold).is_ok_and(|found| found.name() == rule) && matches!(pbg.bounds(mold), Ok((_, Bound::Root))) == (side == RightSide::Closed)))]
     fn mold_in(
         pbg: &Pbg,
@@ -2841,7 +2918,7 @@ mod tests
     }
 
     #[test]
-    fn a_closed_mold_is_refuted_only_by_a_token_no_successor_carries() -> Result<(), Box<dyn Error>>
+    fn a_mold_is_refuted_only_by_a_token_that_cannot_stand_after_it() -> Result<(), Box<dyn Error>>
     {
         let pbg = built()?;
         let molder = Molder::new(&pbg);
@@ -2855,10 +2932,11 @@ mod tests
         );
         assert_eq!(molder.follow(parameter_comma, &close), Follow::Refuted);
         assert_eq!(molder.follow(parameter_comma, &[]), Follow::Refuted);
-        // `f(x, y)`: an argument expression fills the hole after the comma, and
-        // what fills a hole is not read here.
+        // `f(x, y)`: an argument fills the hole after the comma, and an
+        // argument begins with a form's first tile, which a closer never is.
         let argument_comma = mold_in(&pbg, CALL, COMMA, RightSide::Hole, &[])?;
-        assert_eq!(molder.follow(argument_comma, &close), Follow::Possible);
+        assert_eq!(molder.follow(argument_comma, &identifier), Follow::Possible);
+        assert_eq!(molder.follow(argument_comma, &close), Follow::Refuted);
         // `f(x)`: the closer ends its form, so whatever follows the form may
         // follow it.
         let call_close = mold_in(&pbg, CALL, TileLabel(")"), RightSide::Closed, &[])?;
@@ -2868,10 +2946,10 @@ mod tests
     }
 
     #[test]
-    fn the_next_token_keeps_only_the_openers_it_can_follow() -> Result<(), Box<dyn Error>>
+    fn the_next_token_keeps_only_the_molds_it_can_follow() -> Result<(), Box<dyn Error>>
     {
         let pbg = built()?;
-        let mut molder = Molder::new(&pbg);
+        let molder = Molder::new(&pbg);
         // The parameter comma admits a type identifier after it; the record
         // pattern's comma admits only a field name.
         let parameter_comma = mold_in(&pbg, DEF, COMMA, RightSide::Closed, &[TYPE_IDENTIFIER])?;
@@ -2882,8 +2960,11 @@ mod tests
             RightSide::Closed,
             &[TileLabel("identifier")],
         )?;
+        // A call's argument comma opens another argument; its trailing comma
+        // is followed by the closer.
         let argument_comma = mold_in(&pbg, CALL, COMMA, RightSide::Hole, &[])?;
-        let cases: [(&str, &[MoldId], &[MoldId]); 5] = [
+        let trailing_comma = mold_in(&pbg, CALL, COMMA, RightSide::Closed, &[TileLabel(")")])?;
+        let cases: [(&str, &[MoldId], &[MoldId]); 7] = [
             (", x", &[parameter_comma, field_comma], &[
                 parameter_comma,
                 field_comma,
@@ -2893,11 +2974,16 @@ mod tests
             (", Type", &[parameter_comma, field_comma], &[
                 parameter_comma,
             ]),
-            (", )", &[parameter_comma, argument_comma], &[argument_comma]),
-            // Refuting every opener refutes none.
+            (", )", &[argument_comma, trailing_comma], &[trailing_comma]),
+            (", x", &[argument_comma, trailing_comma], &[argument_comma]),
+            // Refuting every mold refutes none.
             (", )", &[parameter_comma, field_comma], &[
                 parameter_comma,
                 field_comma,
+            ]),
+            (", )", &[parameter_comma, argument_comma], &[
+                parameter_comma,
+                argument_comma,
             ]),
             // At the stream's end nothing is read.
             (",  ", &[parameter_comma, field_comma], &[
@@ -2905,16 +2991,44 @@ mod tests
                 field_comma,
             ]),
         ];
-        for (source, openers, kept) in cases {
+        for (source, molds, kept) in cases {
             let tokens = label(SourceFragment::from(source));
-            molder.openers = openers.to_vec();
-            molder.drop_refuted_openers(
+            let mut molds = molds.to_vec();
+            molder.drop_refuted(
+                &mut molds,
                 &tokens,
                 TokenIndex::from(0),
                 &SourceFragment::from(source),
             );
-            assert_eq!(molder.openers, kept, "{source:?}");
+            assert_eq!(molds, kept, "{source:?}");
         }
+        Ok(())
+    }
+
+    #[test]
+    fn a_window_reads_the_token_after_a_tied_separator() -> Result<(), Box<dyn Error>>
+    {
+        // `@[` before `data` ties a declaration's attribute block with the
+        // standalone one, and the window that settles it meets the trailing
+        // comma: read without the token after it, the comma opens another
+        // attribute, the closer turns into a repair, and the declaration's
+        // reading wins and swallows the data declaration.
+        let pbg = built()?;
+        let source = "@[ checks, ]\ndata Color : Type {\n  Red : Color;\n}\n";
+        let parsed = crate::parse(&pbg, SourceText::from(source))?;
+        assert_eq!(parsed.obligations(), &[]);
+        let tree = parsed.tree();
+        let opener = tree
+            .children(tree.root())
+            .find_map(|child| match tree.node(child) {
+                | Some(node) => match node.label() {
+                    | NodeLabel::Meld(mold) => Some(mold),
+                    | _ => None,
+                },
+                | None => None,
+            });
+        let rule = opener.map(|mold| pbg.rule_of(mold).map(gandr_surface_grammar::Rule::name));
+        assert_eq!(rule, Some(Ok(RuleName("attribute_block"))));
         Ok(())
     }
 

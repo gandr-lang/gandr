@@ -1081,12 +1081,12 @@ fn grade_shape() -> Regex
     ])
 }
 
-/// Build a comma-separated non-empty repetition.
+/// Build a comma-separated non-empty repetition, closed by its caller.
 ///
 /// # Specification
-/// - requires: nothing.
-/// - ensures: one item followed by zero or more comma-prefixed items; no
-///   leading or trailing separator is introduced.
+/// - requires: the caller follows the list with a closing tile.
+/// - ensures: one item followed by zero or more comma-prefixed items, then an
+///   optional trailing comma; no leading separator is introduced.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1097,12 +1097,13 @@ fn grade_shape() -> Regex
 ///   exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 2 && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(tail) if matches!(tail.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ",")))))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(tail) if matches!(tail.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ","))))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(inner) if matches!(inner.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ",")))))]
 fn comma1(item: Regex) -> Regex
 {
     Regex::seq([
         item.clone(),
         Regex::repeat(Regex::seq([tile(TileLabel(",")), item])),
+        Regex::optional(tile(TileLabel(","))),
     ])
 }
 

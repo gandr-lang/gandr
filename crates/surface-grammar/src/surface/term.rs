@@ -1288,6 +1288,7 @@ fn patterns(
             t(TileLabel("(")),
             h(s),
             repeat1(seq([t(TileLabel(",")), h(s)])),
+            opt(t(TileLabel(","))),
             t(TileLabel(")")),
         ]),
     ));
@@ -2222,10 +2223,15 @@ fn record_pat_field() -> Regex
 
 /// Build list pattern elements.
 ///
+/// The element list cannot reuse [`comma1`]: its optional trailing comma
+/// followed by the `, ..rest` tail would admit `[a,, ..rest]`. The comma after
+/// the last element instead opens an optional rest, so `[a, b,]` and
+/// `[a, ..rest]` both read with one comma before what follows.
+///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: an element-list branch with an optional rest tail and a separate
-///   rest-only branch.
+/// - ensures: an element-list branch whose optional tail is a comma and an
+///   optional rest, and a separate rest-only branch.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -2240,8 +2246,11 @@ fn list_pat_elems() -> Regex
 {
     alt([
         seq([
-            comma1(h(Sort::Pattern)),
-            opt(seq([t(TileLabel(",")), rest_pat()])),
+            seq([
+                h(Sort::Pattern),
+                repeat(seq([t(TileLabel(",")), h(Sort::Pattern)])),
+            ]),
+            opt(seq([t(TileLabel(",")), opt(rest_pat())])),
         ]),
         rest_pat(),
     ])
@@ -2516,6 +2525,51 @@ fn arm() -> Regex
     seq([h(Sort::Pattern), t(TileLabel("=>")), h(Sort::Expression)])
 }
 
+/// Build a braced, comma-separated, nonempty arm list whose every arm may open
+/// with `|`.
+///
+/// A leading `|` lets an or-pattern spread over lines open with its
+/// separator. A mold is one tile occurrence, and an occurrence a hole can
+/// follow admits an operand before any successor: an optional `|` after a
+/// single `{` would admit `{ A | B => …` as `A` before the arm's bar, a
+/// reading that ties with the or-pattern's. So the bar is never optional
+/// after a shared tile: the opener and every separator come in two
+/// occurrences, one a hole follows and one the bar follows, and the token
+/// after the tile tells them apart.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: two alternatives, `{` then an arm and `{ |` then an arm, each
+///   followed by repetitions of `,` or `, |` before an arm, an optional
+///   trailing `,`, and `}`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   An or-pattern arm must lower with each alternative intact, which a bar
+///   reachable after a hole breaks.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref branches) if branches.len() == 2 && branches.iter().all(|branch| matches!(branch.shape(), RegexShape::Seq(ref parts) if parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "{")) && parts.last().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "}"))))))]
+fn arm_block() -> Regex
+{
+    let bar = || t(TileLabel("|"));
+    let tail = || {
+        seq([
+            repeat(alt([
+                seq([t(TileLabel(",")), arm()]),
+                seq([t(TileLabel(",")), bar(), arm()]),
+            ])),
+            opt(t(TileLabel(","))),
+        ])
+    };
+    alt([
+        seq([t(TileLabel("{")), arm(), tail(), t(TileLabel("}"))]),
+        seq([t(TileLabel("{")), bar(), arm(), tail(), t(TileLabel("}"))]),
+    ])
+}
+
 /// Build a sequence regex.
 ///
 /// # Specification
@@ -2614,9 +2668,7 @@ fn session_expressions(
             t(TileLabel("(")),
             h(s),
             t(TileLabel(")")),
-            t(TileLabel("{")),
-            comma1(arm()),
-            t(TileLabel("}")),
+            arm_block(),
         ]),
     ));
     out.push(r(
@@ -2725,12 +2777,16 @@ fn t(label: TileLabel) -> Regex
     Regex::tile(label)
 }
 
-/// Build a comma-separated nonempty regex list.
+/// Build a comma-separated nonempty regex list, closed by its caller.
+///
+/// A trailing comma is admitted: every caller puts a closer after the list,
+/// and a closer never competes with an element's hole content, so the comma
+/// before it keeps the discrimination [`member_list`] describes.
 ///
 /// # Specification
-/// - requires: nothing.
-/// - ensures: one explicit element and a repetition of comma followed by the
-///   same element, without a trailing separator.
+/// - requires: the caller follows the list with a closing tile.
+/// - ensures: one explicit element, a repetition of comma followed by the same
+///   element, and an optional trailing comma.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -2742,10 +2798,14 @@ fn t(label: TileLabel) -> Regex
 /// - witness: `surface::term::tests::list_separators_are_not_optional_between_members`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 2 && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(tail) if matches!(tail.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ",")) && sequence.get(1) == parts.first())))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(tail) if matches!(tail.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ",")) && sequence.get(1) == parts.first()))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(inner) if matches!(inner.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ",")))))]
 fn comma1(element: Regex) -> Regex
 {
-    seq([element.clone(), repeat(seq([t(TileLabel(",")), element]))])
+    seq([
+        element.clone(),
+        repeat(seq([t(TileLabel(",")), element])),
+        opt(t(TileLabel(","))),
+    ])
 }
 
 /// Build a block member list: every member is **terminated** by `;` (the
@@ -3135,8 +3195,12 @@ fn primary_expressions(
                     alt([
                         // parenthesized: `( E )`
                         t(TileLabel(")")),
-                        // tuple: `( E , E+ )`
-                        seq([repeat1(seq([t(TileLabel(",")), h(s)])), t(TileLabel(")"))]),
+                        // tuple: `( E , E+ ,? )`
+                        seq([
+                            repeat1(seq([t(TileLabel(",")), h(s)])),
+                            opt(t(TileLabel(","))),
+                            t(TileLabel(")")),
+                        ]),
                         // annotation: `( E : T )`
                         seq([t(TileLabel(":")), h(Sort::Type), t(TileLabel(")"))]),
                     ]),
@@ -3234,9 +3298,7 @@ fn primary_expressions(
             h(s),
             opt(seq([t(TileLabel("with")), h(s)])),
             opt(answer_type()),
-            t(TileLabel("{")),
-            opt(comma1(arm())),
-            t(TileLabel("}")),
+            alt([seq([t(TileLabel("{")), t(TileLabel("}"))]), arm_block()]),
         ]),
     );
     case.adaptations.push(Adaptation::new(
@@ -3396,11 +3458,13 @@ fn primary_expressions(
                     alt([
                         // update tail: `| id = E, … }`
                         seq([t(TileLabel("|")), comma1(record_field()), t(TileLabel("}"))]),
-                        // literal tail: the first field's `= E`, then `, id = E`*.
+                        // literal tail: the first field's `= E`, then `, id = E`*,
+                        // then an optional trailing `,`.
                         seq([
                             t(TileLabel("=")),
                             h(s),
                             repeat(seq([t(TileLabel(",")), record_field()])),
+                            opt(t(TileLabel(","))),
                             t(TileLabel("}")),
                         ]),
                     ]),
@@ -3503,7 +3567,7 @@ mod tests
         let repeat_one: fn(Regex) -> Regex = repeat1;
         for (assemble, expected, comma_closers) in [
             (repeat_one, repeated_edges, 0_usize),
-            (comma1, comma_edges, 0),
+            (comma1, comma_edges, 1),
             (member_list, member_edges, 1),
         ] {
             let table = built_in_prec_table().expect("built-in bands");

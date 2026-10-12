@@ -17,6 +17,7 @@ The checked precedence-bounded grammar of the gandr surface: rules over a preced
 - [Closing class](#closing-class)
 - [Walk index and comparison table](#walk-index-and-comparison-table)
 - [Built-in surface](#built-in-surface)
+  - [Lists close on an optional separator](#lists-close-on-an-optional-separator)
 - [Frozen tables](#frozen-tables)
 - [The bridges and the universe are built-in spellings](#the-bridges-and-the-universe-are-built-in-spellings)
 - [Type operators: the static abstraction and the value function space](#type-operators-the-static-abstraction-and-the-value-function-space)
@@ -166,7 +167,16 @@ Each rule's tiles form a graph under adjacency. Every tile in one strongly conne
 
 ## Built-in surface
 
-`built_in` is the gandr surface: 21 precedence groups and 19 tighter-than edges, then the term forms, the type-and-shell forms and the circuit forms. The groups form one expression chain, one pattern chain and one type chain whose union, intersection and lazy-product bands are mutually incomparable between the sum and arrow bands; the item group stands apart from all three. Its pinned shape is 2378 molds, 77 labels projected to more than one mold, and the fingerprint `0xf9c2_15a1_2bea_b69c`; a change to any form, group or edge moves the fingerprint, and the test pinning it states the change.
+`built_in` is the gandr surface: 21 precedence groups and 19 tighter-than edges, then the term forms, the type-and-shell forms and the circuit forms. The groups form one expression chain, one pattern chain and one type chain whose union, intersection and lazy-product bands are mutually incomparable between the sum and arrow bands; the item group stands apart from all three. Its pinned shape is 2495 molds, 77 labels projected to more than one mold, and the fingerprint `0xdee9_8372_a94e_34e2`; a change to any form, group or edge moves the fingerprint, and the test pinning it states the change.
+
+### Lists close on an optional separator
+
+Every comma-separated list of one or more elements — arguments, parameters, fields, type arguments, patterns, tuple and record elements, attribute blocks — may end with a comma before its closer, so a list spread one element per line reads the same whatever line is last. A parenthesised expression is not a list: `(a,)` has no reading, neither a one-element tuple nor `a`. A case or offer arm may open with `|`, so an or-pattern spread over lines can lead each line with its separator. A mold is one tile occurrence, and an occurrence a hole can follow admits an operand before any successor, so an optional bar after a shared `{` or `,` would let `{ A | B => …` read `A` before the arm's bar; the arm block instead spells its opener and its separator twice, once followed by a hole and once by the bar.
+
+- Alternatives: a leading bar as an optional prefix of the arm, which ties every or-pattern with a bar-led arm; a trailing comma only on lists of two or more, which leaves the one-element list the place a reordering breaks.
+- Reversal: a list whose trailing comma means something — a one-element tuple — takes the comma out of that list's optional tail.
+
+The optional separators and the doubled arm block moved the pinned shape from 2378 molds and the fingerprint `0xf9c2_15a1_2bea_b69c`.
 
 ## Frozen tables
 
