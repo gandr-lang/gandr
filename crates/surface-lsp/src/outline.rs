@@ -39,6 +39,10 @@ use crate::recheck::roles;
 /// The kind a folding range of documentation or a block comment carries.
 const COMMENT: &str = "comment";
 
+/// The rule of an attribute block standing before the declaration it
+/// decorates.
+const ATTRIBUTE_BLOCK: &str = "attribute_block";
+
 /// The opening of a block comment.
 const BLOCK_COMMENT: &str = "/*";
 
@@ -50,12 +54,13 @@ const BLOCK_COMMENT: &str = "/*";
 /// - ensures: one symbol per form of the [`Sort::Item`] or
 ///   [`Sort::ModuleMember`] sort that has a name: its first direct tile the
 ///   highlighter classifies as [`HlRole::FunctionDef`], [`HlRole::VariableDef`]
-///   or [`HlRole::Type`]. The symbol's range is the form's, its selection range
-///   the name's, and its kind a function, a value, or by the form's first
-///   keyword a module, a data declaration, a codata declaration or a signature.
-///   Symbols are in source order, each after the declaration holding it, which
-///   it names by position; a top-level one names none. Empty when the grammar
-///   does not build or the text does not parse.
+///   or [`HlRole::Type`]. The symbol's range is the form's, widened to the
+///   attribute blocks standing directly before it, its selection range the
+///   name's, and its kind a function, a value, or by the form's first keyword a
+///   module, a data declaration, a codata declaration or a signature. Symbols
+///   are in source order, each after the declaration holding it, which it names
+///   by position; a top-level one names none. Empty when the grammar does not
+///   build or the text does not parse.
 /// - provides: the answer to `textDocument/documentSymbol`.
 /// - fails: never.
 /// - panics: none.
@@ -63,9 +68,10 @@ const BLOCK_COMMENT: &str = "/*";
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a function, a value, a data declaration, a module with a
-///   nested module, documentation and an attribute block are asserted at the
-///   exact symbol tree. Taking a declaration's range from its name, dropping a
-///   nested member, reversing source order or reading an attribute name as the
+///   nested module, documentation and attribute blocks before a definition and
+///   a data declaration are asserted at the exact symbol tree. Taking a
+///   declaration's range from its name or its form alone, dropping a nested
+///   member, reversing source order or reading an attribute name as the
 ///   declared one changes it.
 /// - witness: `outline::tests::declarations_nest_as_symbols`
 #[spec(ensures: |ret| ret.0.iter().enumerate().all(|(position, symbol)|
@@ -118,9 +124,10 @@ pub fn declarations(
     // A depth-first walk in source order meets each declaration after the
     // one holding it.
     let mut found: Vec<(NodeIndex, DocumentSymbol)> = Vec::new();
-    let mut pending: Vec<(NodeIndex, Option<usize>)> = Vec::from([(tree.root(), None)]);
-    while let Some((at, holder)) = pending.pop() {
-        let holder = match declared(grammar, roles, tree, index, at) {
+    let mut pending: Vec<(NodeIndex, Option<usize>, Option<ByteSpan>)> =
+        Vec::from([(tree.root(), None, None)]);
+    while let Some((at, holder, decorated)) = pending.pop() {
+        let holder = match declared(grammar, roles, tree, index, at, decorated) {
             | Some(symbol) => {
                 found.push((at, DocumentSymbol { holder, ..symbol }));
                 Some(found.len().saturating_sub(1))
@@ -128,7 +135,30 @@ pub fn declarations(
             | None => holder,
         };
         let first = pending.len();
-        pending.extend(tree.children(at).map(|child| (child, holder)));
+        // The attribute blocks standing before a form decorate it, layout
+        // between them included.
+        let mut blocks: Option<ByteSpan> = None;
+        for child in tree.children(at) {
+            let Some(node) = tree.node(child)
+            else {
+                continue;
+            };
+            match node.label() {
+                | NodeLabel::Meld(mold)
+                    if grammar
+                        .rule_of(mold)
+                        .is_ok_and(|rule| rule.name().0 == ATTRIBUTE_BLOCK) =>
+                {
+                    let span = node.span();
+                    blocks = Some(blocks.map_or(span, |first| first.join(span)));
+                    pending.push((child, holder, None));
+                },
+                | NodeLabel::Meld(_) | NodeLabel::Tile(_) => {
+                    pending.push((child, holder, blocks.take()));
+                },
+                | _ => pending.push((child, holder, None)),
+            }
+        }
         if let Some(added) = pending.get_mut(first ..) {
             added.reverse();
         }
@@ -136,7 +166,8 @@ pub fn declarations(
     found
 }
 
-/// The symbol the form at `at` declares, when it is a named declaration.
+/// The symbol the form at `at` declares, when it is a named declaration,
+/// its range widened over the attribute blocks `decorated` before it.
 ///
 /// # Specification
 /// trivial.
@@ -146,6 +177,7 @@ fn declared(
     tree: &SyntaxTree<'_>,
     index: &LineIndex<'_>,
     at: NodeIndex,
+    decorated: Option<ByteSpan>,
 ) -> Option<DocumentSymbol>
 {
     let node = tree.node(at)?;
@@ -172,7 +204,10 @@ fn declared(
                 return Some(DocumentSymbol {
                     name: String::from(<&str>::from(name)),
                     kind: kind_of(role, keyword),
-                    range: range_of(index, node.span())?,
+                    range: range_of(
+                        index,
+                        decorated.map_or_else(|| node.span(), |blocks| blocks.join(node.span())),
+                    )?,
                     selection_range: range_of(index, tree.node(child)?.span())?,
                     holder: None,
                 });
@@ -477,7 +512,7 @@ mod tests
         assert_eq!(outline(&answered), [
             "twice 12 1:0-4:1 at 2:4-2:9",
             "answer 12 5:0-5:17 at 5:4-5:10",
-            "Color 10 7:0-7:34 at 7:5-7:10",
+            "Color 10 6:0-7:34 at 7:5-7:10",
             "Outer 2 8:0-13:1 at 8:7-8:12",
             "  inner 12 9:2-9:17 at 9:6-9:11",
             "  Nested 2 10:2-12:3 at 10:9-10:15",

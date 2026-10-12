@@ -31,8 +31,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - [Literals mean their decoded value](#literals-mean-their-decoded-value)
 - [One refusal per declaration](#one-refusal-per-declaration)
 - [The failure classifier](#the-failure-classifier)
-- [Attributes: a closed registry and a side table](#attributes-a-closed-registry-and-a-side-table)
-- [Documentation: one text, its links checked](#documentation-one-text-its-links-checked)
+- [Attributes and documentation](#attributes-and-documentation)
 - [Native data and the match](#native-data-and-the-match)
 - [Origins for terms and types](#origins-for-terms-and-types)
 - [Two sweeps, no recursion, one allowance](#two-sweeps-no-recursion-one-allowance)
@@ -281,27 +280,9 @@ The alternative was to collect every refusal of a declaration. It was declined b
 
 `LoweringRefusal::classify` is a `const`, wildcard-free match: adding a refusal variant fails to compile until its class is chosen. `MalformedSource` is the author's mistake; `Unrepresentable` is `OutOfFragment`, `GradedBridge` and `UnreadAscription`; `EngineFault` is the budget, the grammar mismatch and the unknown mold. `UserAbsence` — what the author has not yet supplied, the only class that may become an obligation — has no refusal in it: obligations come from declaration shape, an uncompleted signature, and never from a classified failure.
 
-## Attributes: a closed registry and a side table
+## Attributes and documentation
 
-The registry is closed: `checks` takes no payload, `owes` an integer, `refuses`, `runs` and `doc` a text. Five diagnostics cover what an attribute can get wrong, checked in this order: an unknown name, with the registered name within edit distance two when one exists; the same attribute written twice for one declared name, naming the first; a payload that is not a value at all, decided before the schema is consulted because being no value is a different fact from being the wrong one; a missing payload; and a payload of a form the schema does not admit, a payload on a marker included. A payload is read as a value under no binder, and the schema types it at the literal: an integer or a text. A well-formed `doc` entry never reaches the registry, because the parser reads it as [documentation](#documentation-one-text-its-links-checked); `doc` is registered so that a malformed one meets the payload diagnostics.
-
-Executable predicates preserve the registry inventory, exact lookup, the payload decision table, distance bounds and the borrowed identity of a filed entry list. Suggestions count Unicode scalar edits, include distance two and break equal-distance ties by registry order; boundary witnesses distinguish these choices without re-running an allocating distance algorithm in the suggestion predicate. Filing appends to one declaration key without replacing its earlier entries. An attribute record retains producer-supplied metadata; it does not itself authenticate a source span or validate a payload in an unheld value arena.
-
-An admitted attribute is filed under the content identity of the declaration form it decorates. The molded tree folds an attribute block into the declaration it decorates, so that identity covers the attributes themselves.
-
-The alternative was a key independent of the attributes: a digest over the declaration with its attribute tiles excluded. It was declined because the syntax tree's digest is the one identity it carries, and a second digest would be a second hash of every declaration. Reversal: when a consumer must find a declaration's entries across an edit to its attributes alone, the key moves to a digest that excludes them.
-
-An attribute is filed whatever its declaration's outcome: a refused declaration still has its tree and its digest, and an expectation about a refusal — `refuses` — can only be read off the declaration that refused. Its payload is minted for the same reason, the one part of a refused declaration that lowers. A declaration form whose own tiles fault records no half, and its attributes are not filed.
-
-The alternative was to file attributes for unrefused declarations only. It was declined because it leaves every lowering refusal unexpectable: a fixture stating the refusal it expects would be read as stating nothing. Reversal: none while an attribute can state an expectation about its declaration's refusal.
-
-## Documentation: one text, its links checked
-
-A declaration's documentation is every `NodeLabel::Doc` the parser grouped before its name, or inside the attribute block that decorates a `data` declaration: `///` runs and `doc("…")` entries alike, in source order. A run reads as its lines with the `///` and one following space removed, joined by line breaks; an entry reads as its string literal decoded; the pieces join by line breaks. `LoweredModule::documentation` answers it under the content identity of the declaration form, the key the attribute table uses, and the parser keeps documentation out of that identity, so documenting a declaration re-keys nothing. Documentation inside a body, before a constructor say, is not read.
-
-A link is a bracketed name, `[name]` or ``[`name`]``, a dotted path included, as an intra-doc link is in rustdoc: a bracket pair followed by `(`, `[` or `:` is a Markdown link or reference instead, and a bracket inside a code span is text. A link resolves as a name written in the source does, as a declared path, any declared name, a module or a constructor, and one nothing answers refuses its declaration as `UnresolvedDocLink` at the linked name, so renaming or deleting a declaration breaks the documentation that names it where the link is written.
-
-The alternative was storing documentation as an attribute entry with a text payload. It was declined because an entry's payload is minted into the core arena and the attribute table carries no source borrow, while a link names the source it was written in. A broken link refuses its declaration because the lowering has no warning severity; reversal: when diagnostics carry a severity, a broken link is a warning and the declaration lowers.
+An attribute is resolved against a closed registry, with five diagnostics, and filed in a side table under the content identity of the declaration it decorates, whatever that declaration's outcome; at the top level an attribute block is a form of its own, so that identity excludes the attributes. A declaration's documentation, its `///` runs and `doc("…")` entries, is read into one text under the same identity, its links resolved as names. Its own page, [docs/attributes.md](docs/attributes.md), states [the registry and the side table](docs/attributes.md#attributes-a-closed-registry-and-a-side-table) and [documentation](docs/attributes.md#documentation-one-text-its-links-checked), each choice with its alternative and reversal.
 
 ## Native data and the match
 

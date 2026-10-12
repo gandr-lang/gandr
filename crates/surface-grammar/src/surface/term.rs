@@ -134,12 +134,12 @@ fn items(
     def.adaptations.push(Adaptation::new(
         RuleName("def_value"),
         SurfaceForm("def_signature"),
-        AdaptationReason("factored into the def family: the signature tail `: T ;` shares the `@[…]* def id` prefix and discriminates on the leading `:` tile"),
+        AdaptationReason("factored into the def family: the signature tail `: T ;` shares the `def id` prefix and discriminates on the leading `:` tile"),
     ));
     def.adaptations.push(Adaptation::new(
         RuleName("def_value"),
         SurfaceForm("def_function"),
-        AdaptationReason("factored into the def family: the function tail `(params) -> T? { … }` shares the `@[…]* def id` prefix and discriminates on the leading `(` tile"),
+        AdaptationReason("factored into the def family: the function tail `(params) -> T? { … }` shares the `def id` prefix and discriminates on the leading `(` tile"),
     ));
     def.adaptations.push(Adaptation::new(
         RuleName("def_value"),
@@ -384,13 +384,16 @@ fn declarations(
     out.push(rec_block);
 }
 
-/// Build the top-level definition family: attributes, `def`, and a factored
+/// Build the top-level definition family: `def` and a factored
 /// value/signature/function/recursive tail.
+///
+/// The attribute blocks decorating a definition stand before it as
+/// `attribute_block` forms of their own, as they do before a data
+/// declaration, so the definition's identity excludes them.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: an attribute repetition, one shared def tile and the
-///   recursive-or-regular tail menu.
+/// - ensures: one def tile and the recursive-or-regular tail menu.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -400,11 +403,10 @@ fn declarations(
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(_))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "def")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_)))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "def")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_)))))]
 fn def_family() -> Regex
 {
     seq([
-        repeat(attr_block_inline()),
         t(TileLabel("def")),
         alt([def_rec_tail(), regular_def_tail()]),
     ])

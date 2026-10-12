@@ -1669,8 +1669,8 @@ impl<'pbg> MeldState<'pbg>
     /// * A form-mid is admissible when it `≐`-continues the nearest open
     ///   frontier **or** it can be a form's first tile ([`Pbg::form_first`])
     ///   and no form is open at all — a form-mid whose only predecessor is a
-    ///   nullable prefix (a `def` behind an optional `@[…]` attribute block) is
-    ///   a legitimate form-start at a fresh position, which `push`'s stray-mid
+    ///   nullable prefix (a tile behind a form's leading repetition) is a
+    ///   legitimate form-start at a fresh position, which `push`'s stray-mid
     ///   path opens without an obligation; a genuine mid (`=`, `,`) — or a
     ///   deep-nested tile like an `extern` body's `def`, which is not in any
     ///   form's FIRST set — stays rejected where it cannot continue an open
@@ -10018,21 +10018,34 @@ mod tests
     #[test]
     fn admits_a_form_first_mid_at_a_fresh_slot() -> Result<(), Box<dyn Error>>
     {
-        // The candidate pre-filter (`admits`): a `def` opens a definition at the
-        // base even though the factored def gives its `def` a nullable `@[…]`
-        // predecessor (a form-mid that is also form-first), while a stray `;`
-        // (a form-end closer) has no open form to close and is inadmissible.
-        let pbg = built_in()?;
+        // The candidate pre-filter (`admits`): a form whose first symbol is a
+        // repetition gives its first tile a predecessor, the repeated prefix,
+        // so that tile is a form-mid that is also form-first and opens the form
+        // at the base; a stray `;` (a form-end closer) has no open form to
+        // close and is inadmissible.
+        let mut spec = PrecSpec::new();
+        let item = spec.insert("item", Assoc::Non)?;
+        let pbg = Pbg::build(PrecDag::build(&spec)?, vec![Rule::new(
+            RuleName("decorated"),
+            Sort::Item,
+            item,
+            Regex::seq([
+                Regex::repeat(Regex::tile(TileLabel("@"))),
+                Regex::tile(TileLabel("k")),
+                Regex::tile(TileLabel(";")),
+            ]),
+        )])?;
         let state = MeldState::new(&pbg);
-        let def = *pbg
-            .candidates(TileLabel("def"))
-            .first()
-            .expect("a `def` mold");
+        let head = *pbg.candidates(TileLabel("k")).first().ok_or("a `k` mold")?;
         assert!(
-            bool::from(state.admits(def)),
-            "a form-first `def` opens at a fresh slot"
+            pbg.adjacencies().iter().any(|&(_, right)| right == head),
+            "the repeated prefix precedes the head"
         );
-        let semi = *pbg.candidates(TileLabel(";")).first().expect("a `;` mold");
+        assert!(
+            bool::from(state.admits(head)),
+            "a form-first mid opens at a fresh slot"
+        );
+        let semi = *pbg.candidates(TileLabel(";")).first().ok_or("a `;` mold")?;
         assert!(
             !bool::from(state.admits(semi)),
             "a stray `;` closer is inadmissible with no open form"

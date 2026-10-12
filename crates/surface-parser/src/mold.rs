@@ -551,24 +551,6 @@ enum WindowBound
     Below(Delta),
 }
 
-/// Where a tied opener's lookahead window begins and where the tokens it
-/// counts against [`LOOKAHEAD`] begin.
-///
-/// # Specification
-/// - ensures: `start` is the token after the opener; `counted` is `start`, or
-///   the token after the bracket the opener opens.
-/// - panics: none.
-/// - executable: none — a plain value; [`Molder::mold_window`] carries the
-///   executable clause.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct WindowSpan
-{
-    /// The first token the window molds.
-    start: TokenIndex,
-    /// The first token the window counts.
-    counted: TokenIndex,
-}
-
 /// Whether a token can stand right after a mold.
 ///
 /// # Specification
@@ -880,7 +862,7 @@ enum Bracket
 ///   a string fragment spelling a bracket; reading the lexeme loosely counts a
 ///   bracket inside a string, and reading the closer by suffix counts `]]` or a
 ///   compound closer that does not exist.
-/// - witness: `mold::tests::a_bracket_is_matched_across_nested_families`
+/// - witness: `mold::tests::brackets_are_classified_by_lexeme_and_text`
 #[spec(ensures: |ret| ret == if !matches!(token.lexeme, Lexeme::Punct | Lexeme::SubshellOpen | Lexeme::SubshellClose) {
     Bracket::Neither
 } else if <&str>::from(text).ends_with(['(', '[', '{']) {
@@ -913,110 +895,6 @@ fn bracket(
     }
 }
 
-/// The closer that matches the bracket token `open` opens.
-///
-/// # Specification
-/// - requires: `tokens` index into `source`.
-/// - ensures: `None` when the token at `open` opens no bracket or the stream
-///   ends before the brackets after it balance; otherwise the first position
-///   after `open` at which as many closers as openers, `open` included, have
-///   been read.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — an opener with nested brackets of every family, an
-///   unclosed one, a closer and a word: stopping at the first closer, counting
-///   only the opener's family or matching a non-bracket moves the answer.
-/// - witness: `mold::tests::a_bracket_is_matched_across_nested_families`
-#[spec(ensures: |ret| ret.is_none_or(|close| close > open && tokens.get(close.0).is_some()))]
-fn matching_close(
-    tokens: &[Token],
-    open: TokenIndex,
-    source: &SourceFragment<'_>,
-) -> Option<TokenIndex>
-{
-    let opener = *tokens.get(usize::from(open))?;
-    let text = opener.text(source);
-    if bracket(opener, TokenText::from(AsRef::<str>::as_ref(&text))) != Bracket::Open {
-        return None;
-    }
-    let mut depth = 1_usize;
-    let mut index = usize::from(open).saturating_add(1);
-    while let Some(&token) = tokens.get(index) {
-        let text = token.text(source);
-        match bracket(token, TokenText::from(AsRef::<str>::as_ref(&text))) {
-            | Bracket::Open => depth = depth.saturating_add(1),
-            | Bracket::Close => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    return Some(TokenIndex::from(index));
-                }
-            },
-            | Bracket::Neither => {},
-        }
-        index = index.saturating_add(1);
-    }
-    None
-}
-
-/// The window a tie at the token at `index` reads.
-///
-/// A window counts [`LOOKAHEAD`] significant tokens after the tied token.
-/// When that token opens a bracket whose contents and closer fill the count,
-/// the window would end inside the bracket or on its closer, where readings
-/// that agree on the contents cannot differ yet; such a window molds
-/// through the closer and counts from the token after it. A shorter bracket
-/// leaves the window as it is, which already reads past the closer.
-///
-/// # Specification
-/// - requires: `tokens` index into `source`.
-/// - ensures: `start` is the position after `index`; `counted` is the position
-///   after the matching closer ([`matching_close`]) when there is one and at
-///   least [`LOOKAHEAD`] significant tokens lie from `start` through it, and
-///   `start` otherwise.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — attribute blocks of one to six attributes before a
-///   definition, a signature, a function and a data declaration: counting from
-///   `start` for a long block ends the window at or before `]` and hands the
-///   tie to the wrong reading. Extending short brackets too changes only the
-///   cost, which no witness observes; the boundary is the executable clause.
-/// - witness: `mold::tests::a_tied_bracket_opener_is_read_past_its_closer`
-#[spec(ensures: |ret| ret.start.0 == index.0.saturating_add(1) && ret.counted == match matching_close(tokens, index, source) {
-    Some(close) if tokens.get(ret.start.0 ..= close.0).is_some_and(|run| run.iter().filter(|token| token.lexeme != Lexeme::Space).count() >= LOOKAHEAD) => TokenIndex::from(close.0.saturating_add(1)),
-    _ => ret.start,
-})]
-fn window_span(
-    tokens: &[Token],
-    index: TokenIndex,
-    source: &SourceFragment<'_>,
-) -> WindowSpan
-{
-    let start = TokenIndex::from(usize::from(index).saturating_add(1));
-    let Some(close) = matching_close(tokens, index, source)
-    else {
-        return WindowSpan {
-            start,
-            counted: start,
-        };
-    };
-    let inside = tokens
-        .get(usize::from(start) ..= usize::from(close))
-        .map_or(0_usize, |run| {
-            run.iter()
-                .filter(|token| !matches!(token.lexeme, Lexeme::Space))
-                .count()
-        });
-    let counted = if inside >= LOOKAHEAD {
-        TokenIndex::from(usize::from(close).saturating_add(1))
-    }
-    else {
-        start
-    };
-    WindowSpan { start, counted }
-}
-
 /// The position after the last token a run ending before `end` reads past
 /// its end: the [`LOOKAHEAD`]-th significant token from `end` on, the spaces
 /// before it included, or the stream's end when fewer remain.
@@ -1025,10 +903,7 @@ fn window_span(
 /// ([`Molder::mold_window`]) begins at `end` and molds at most [`LOOKAHEAD`]
 /// significant tokens, recording the spaces among them and none after the
 /// last; the direct-binder check reads two significant tokens, inside that
-/// window. A tied bracket opener's window molds through its closer before it
-/// counts, and a run ends only where every bracket it opened is closed
-/// ([`Molder::form_runs`]), so that window counts from at or before `end`
-/// too.
+/// window.
 ///
 /// # Specification
 /// - requires: nothing; an `end` past the stream reads as the stream's end.
@@ -2072,10 +1947,9 @@ impl<'pbg> Molder<'pbg>
     /// - hypothesis: L3 — empty, sole and ambiguous menus, including a
     ///   no-admissible fallback, expose the selected mold and final repairs.
     ///   Dropped candidates, choosing outside the menu or changing priority
-    ///   changes those observations; dry-run state is compared byte-for-byte.
-    ///   An attribute block closed by a trailing comma before a declaration
-    ///   whose opener ties with it parses clean only when the window's comma
-    ///   tie reads the token after it.
+    ///   changes those observations; dry-run state is compared byte-for-byte. A
+    ///   call's separator before its closer takes the lesser comma read alone
+    ///   and the trailing one when the window names the closer after it.
     /// - witness: `mold::tests::dry_runs_restore_exact_state`
     /// - witness: `mold::tests::picks_the_obligation_minimum_mold`
     /// - witness: `mold::tests::a_window_reads_the_token_after_a_tied_separator`
@@ -2267,9 +2141,8 @@ impl<'pbg> Molder<'pbg>
     /// the window itself molds well), and the reading
     /// whose window closes with the fewest obligations wins —
     /// deterministically, keeping the smaller [`MoldId`] on an exact window
-    /// tie. A tied bracket opener whose window would end inside its bracket
-    /// reads through the closer first ([`window_span`]). When the local
-    /// minimum is unique the fast path returns it directly.
+    /// tie. When the local minimum is unique the fast path returns it
+    /// directly.
     ///
     /// # Specification
     /// - requires: candidates are canonical for the current token.
@@ -2281,12 +2154,9 @@ impl<'pbg> Molder<'pbg>
     /// - hypothesis: L3 — complete shared-prefix families, exhausted input and
     ///   an empty menu expose selection and absence. Losing a tied opener or
     ///   looking beyond the bounded window changes the committed form; dry-run
-    ///   mutations change the checkpoint bytes. A long attribute block before a
-    ///   data declaration and before a definition decides its tie only past the
-    ///   block's closer.
+    ///   mutations change the checkpoint bytes.
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
     /// - witness: `mold::tests::lookahead_window_stops_after_eight_significant_tokens`
-    /// - witness: `mold::tests::a_tied_bracket_opener_is_read_past_its_closer`
     #[spec(requires: self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right), captures: before = (self.candidates.len(), tokens.get(index.0).is_some()), ensures: |ret| ret.is_some() == (before.1 && before.0 > 0) && ret.is_none_or(|mold| self.pbg.mold(mold).is_ok()))]
     fn choose_stream<'src>(
         &mut self,
@@ -2346,9 +2216,7 @@ impl<'pbg> Molder<'pbg>
         // with a strictly smaller delta, so each window after the first is
         // bounded by the best delta so far: a window delta never shrinks as
         // tokens are molded, and one that reaches the bound cannot win.
-        // A bracket opener whose window would end inside the bracket reads
-        // through its closer before the window counts.
-        let span = window_span(tokens, index, source);
+        let start = TokenIndex::from(usize::from(index).saturating_add(1));
         let mut best: Option<(Delta, MoldId)> = None;
         for slot in 0 .. self.openers.len() {
             let Some(&mold) = self.openers.get(slot)
@@ -2360,7 +2228,7 @@ impl<'pbg> Molder<'pbg>
             let bound = best.map_or(WindowBound::Unbounded, |(delta, _mold)| {
                 WindowBound::Below(delta)
             });
-            let end = self.mold_window(state, tokens, span, source, &mark, bound);
+            let end = self.mold_window(state, tokens, start, source, &mark, bound);
             if end == WindowEnd::Molded {
                 let delta = state.completion_delta(state.delta_since(&mark));
                 // Ascending MoldId visitation with a strict `<` keeps the
@@ -2378,8 +2246,8 @@ impl<'pbg> Molder<'pbg>
         best.map(|(_, mold)| mold)
     }
 
-    /// Mold the tokens from `span.start` until [`LOOKAHEAD`] non-space tokens
-    /// at or after `span.counted` are molded, for a window.
+    /// Mold the tokens from `start` until [`LOOKAHEAD`] non-space tokens are
+    /// molded, for a window.
     ///
     /// The window molds each token with the completion-aware greedy
     /// [`choose`](Self::choose) (no nested lookahead), so its cost is bounded
@@ -2391,14 +2259,12 @@ impl<'pbg> Molder<'pbg>
     /// correctly because the pre-filter, with the spurious form-first helper
     /// molds folded away, leaves a lone admissible candidate at the common
     /// positions; the window only exists to expose whether a tied opener's own
-    /// form completes. The tokens before `span.counted` — a bracket opener's
-    /// contents through its closer — are molded without counting.
+    /// form completes.
     ///
     /// # Specification
-    /// - requires: `span.start` is within the token stream or its end sentinel;
+    /// - requires: `start` is within the token stream or its end sentinel;
     ///   `mark` was taken from `state` before the tied opener was pushed.
-    /// - ensures: molds every non-space token from `span.start` before
-    ///   `span.counted` and at most eight non-space tokens from there, and
+    /// - ensures: molds at most eight non-space tokens from `start`, and
     ///   records preceding/intervening trivia, leaving the following token
     ///   untouched; returns [`WindowEnd::Dominated`] exactly when `bound` is
     ///   [`WindowBound::Below`] and the obligations flagged since `mark` reach
@@ -2409,26 +2275,25 @@ impl<'pbg> Molder<'pbg>
     /// - hypothesis: L3 — an empty suffix and nine significant tokens separated
     ///   by spaces expose the exact committed prefix. Counting spaces against
     ///   the window, using seven or nine tokens, or consuming trailing trivia
-    ///   after the eighth token changes the preserved source. Counting the
-    ///   uncounted prefix against the window stops it short. A bound the
+    ///   after the eighth token changes the preserved source. A bound the
     ///   window's obligations reach stops it before its next token; one they
     ///   stay below leaves the window whole.
     /// - witness: `mold::tests::lookahead_window_stops_after_eight_significant_tokens`
     /// - witness: `mold::tests::a_dominated_window_stops_before_its_next_token`
-    #[spec(requires: span.start.0 <= tokens.len(), ensures: |ret| ret == WindowEnd::Molded || matches!(bound, WindowBound::Below(least) if state.delta_since(mark) >= least))]
+    #[spec(requires: start.0 <= tokens.len(), ensures: |ret| ret == WindowEnd::Molded || matches!(bound, WindowBound::Below(least) if state.delta_since(mark) >= least))]
     fn mold_window<'src>(
         &mut self,
         state: &mut MeldState<'_>,
         tokens: &[Token],
-        span: WindowSpan,
+        start: TokenIndex,
         source: &'src SourceFragment<'src>,
         mark: &Mark,
         bound: WindowBound,
     ) -> WindowEnd
     {
         let mut molded = 0_usize;
-        let mut index = usize::from(span.start);
-        while index < tokens.len() && (index < usize::from(span.counted) || molded < LOOKAHEAD) {
+        let mut index = usize::from(start);
+        while index < tokens.len() && molded < LOOKAHEAD {
             let Some(&token) = tokens.get(index)
             else {
                 break;
@@ -2455,9 +2320,7 @@ impl<'pbg> Molder<'pbg>
                 };
                 let choice = self.choose(state, text, ahead);
                 Self::push_choice(state, choice, text);
-                if index >= usize::from(span.counted) {
-                    molded = molded.saturating_add(1);
-                }
+                molded = molded.saturating_add(1);
             }
             index = index.saturating_add(1);
         }
@@ -2629,7 +2492,9 @@ impl<'pbg> Molder<'pbg>
 mod tests
 {
     use alloc::boxed::Box;
+    use alloc::string::String;
     use alloc::vec;
+    use alloc::vec::Vec;
     use core::error::Error;
 
     use anodized::spec;
@@ -3017,10 +2882,7 @@ mod tests
         let end = molder.mold_window(
             &mut state,
             &tokens,
-            super::WindowSpan {
-                start: at(0),
-                counted: at(0),
-            },
+            at(0),
             &source,
             &mark,
             super::WindowBound::Unbounded,
@@ -3028,31 +2890,12 @@ mod tests
         assert_eq!(end, super::WindowEnd::Molded);
         let tree = state.commit(SourceText::from("1 2 3 4 5 6 7 8"))?;
         assert_eq!(crate::testing::reconstruct(&tree), "1 2 3 4 5 6 7 8");
-        // Counting from `3`, the two tokens before it are molded uncounted.
         let mut state = MeldState::new(&pbg);
         let mark = state.mark();
         molder.mold_window(
             &mut state,
             &tokens,
-            super::WindowSpan {
-                start: at(0),
-                counted: at(4),
-            },
-            &source,
-            &mark,
-            super::WindowBound::Unbounded,
-        );
-        let tree = state.commit(SourceText::from("1 2 3 4 5 6 7 8 9 10"))?;
-        assert_eq!(crate::testing::reconstruct(&tree), "1 2 3 4 5 6 7 8 9 10");
-        let mut state = MeldState::new(&pbg);
-        let mark = state.mark();
-        molder.mold_window(
-            &mut state,
-            &tokens,
-            super::WindowSpan {
-                start: at(tokens.len()),
-                counted: at(tokens.len()),
-            },
+            at(tokens.len()),
             &source,
             &mark,
             super::WindowBound::Unbounded,
@@ -3110,10 +2953,7 @@ mod tests
             let end = molder.mold_window(
                 &mut state,
                 &tokens,
-                super::WindowSpan {
-                    start: super::TokenIndex::from(2_usize),
-                    counted: super::TokenIndex::from(2_usize),
-                },
+                super::TokenIndex::from(2_usize),
                 &source,
                 &mark,
                 bound,
@@ -3433,111 +3273,139 @@ mod tests
     #[test]
     fn a_window_reads_the_token_after_a_tied_separator() -> Result<(), Box<dyn Error>>
     {
-        // `@[` before `data` ties a declaration's attribute block with the
-        // standalone one, and the window that settles it meets the trailing
-        // comma: read without the token after it, the comma opens another
-        // attribute, the closer turns into a repair, and the declaration's
-        // reading wins and swallows the data declaration.
+        // A call's separator ties the comma that opens another argument with
+        // the trailing one its closer follows. Read alone, the lesser mold
+        // wins and the closer after it becomes a repair; inside a window the
+        // next token is known, and only the trailing comma can precede it.
         let pbg = built()?;
-        let source = "@[ checks, ]\ndata Color : Type {\n  Red : Color;\n}\n";
-        let parsed = crate::parse(&pbg, SourceText::from(source))?;
-        assert_eq!(parsed.obligations(), &[]);
-        let tree = parsed.tree();
-        let opener = tree
-            .children(tree.root())
-            .find_map(|child| match tree.node(child) {
-                | Some(node) => match node.label() {
-                    | NodeLabel::Meld(mold) => Some(mold),
-                    | _ => None,
-                },
-                | None => None,
-            });
-        let rule = opener.map(|mold| pbg.rule_of(mold).map(gandr_surface_grammar::Rule::name));
-        assert_eq!(rule, Some(Ok(RuleName("attribute_block"))));
+        let mut molder = Molder::new(&pbg);
+        let source = SourceText::from("def x = f(a, ) ;");
+        let tokens = label(SourceFragment::from("def x = f(a, ) ;"));
+        let comma = tokens
+            .iter()
+            .position(|token| {
+                AsRef::<str>::as_ref(&token.text(&SourceFragment::from("def x = f(a, ) ;"))) == ","
+            })
+            .ok_or("the source spells a comma")?;
+        let mut state = MeldState::new(&pbg);
+        for &token in tokens.get(.. comma).ok_or("the comma is in the stream")? {
+            molder.mold(&mut state, token, source);
+        }
+        let argument_comma = mold_in(&pbg, CALL, COMMA, RightSide::Hole, &[])?;
+        let trailing_comma = mold_in(&pbg, CALL, COMMA, RightSide::Closed, &[TileLabel(")")])?;
+        let mut menu = vec![argument_comma, trailing_comma];
+        menu.sort_unstable();
+        molder.candidates.clone_from(&menu);
+        let alone = molder.choose(&mut state, TokenText::from(","), Ahead::Nothing);
+        molder.candidates = menu;
+        let ahead = Ahead::Stream {
+            tokens: &tokens,
+            index: TokenIndex::from(comma),
+            source: &SourceFragment::from("def x = f(a, ) ;"),
+        };
+        let windowed = molder.choose(&mut state, TokenText::from(","), ahead);
+        assert_eq!(
+            alone,
+            Some(argument_comma),
+            "read alone, the lesser mold wins"
+        );
+        assert_eq!(
+            windowed,
+            Some(trailing_comma),
+            "the closer after it decides"
+        );
         Ok(())
     }
 
     #[test]
-    fn a_tied_bracket_opener_is_read_past_its_closer() -> Result<(), Box<dyn Error>>
+    fn an_attribute_block_is_a_form_of_its_own() -> Result<(), Box<dyn Error>>
     {
-        // `@[` ties a declaration's attribute block with the standalone one,
-        // and only the token after `]` tells them apart: a block of any length
-        // decorates the definition after it and stands alone before a data
-        // declaration. A window that counted the block's own tokens would run
-        // out inside a long one, before the token that decides.
+        // Every block before a declaration is an `attribute_block` form of its
+        // own, whatever its length and whatever declaration follows it, so a
+        // definition's identity excludes the blocks decorating it.
         let pbg = built()?;
         let declarations = [
             ("def x = 1 ;", "def_value"),
-            ("def x : Integer ;\ndef x = 1 ;", "def_value"),
+            ("def x : Integer ;", "def_value"),
             ("def f(y : Integer) -> -F Integer { ret y }", "def_value"),
-            ("data Color : Type {\n  Red : Color;\n}", "attribute_block"),
+            ("data Color : Type {\n  Red : Color;\n}", "data_declaration"),
         ];
         for count in 1_usize ..= 6 {
             let attributes = vec!["runs(\"1\")"; count].join(", ");
             for (declaration, expected) in declarations {
-                let source = alloc::format!("@[ {attributes} ]\n{declaration}\n");
+                let source = alloc::format!("@[ {attributes} ]\n@[ checks ]\n{declaration}\n");
                 let parsed = crate::parse(&pbg, SourceText::from(source.as_str()))?;
                 assert_eq!(parsed.obligations(), &[], "{source:?} parses clean");
                 let tree = parsed.tree();
-                let first = tree
+                let rules: Vec<RuleName> = tree
                     .children(tree.root())
-                    .find_map(|child| match tree.node(child) {
-                        | Some(node) => match node.label() {
-                            | NodeLabel::Meld(mold) => Some(mold),
+                    .filter_map(|child| {
+                        match tree.node(child).map(gandr_surface_syntax::Node::label) {
+                            | Some(NodeLabel::Meld(mold) | NodeLabel::Tile(mold)) => pbg
+                                .rule_of(mold)
+                                .ok()
+                                .map(gandr_surface_grammar::Rule::name),
                             | _ => None,
-                        },
-                        | None => None,
-                    });
-                let rule =
-                    first.map(|mold| pbg.rule_of(mold).map(gandr_surface_grammar::Rule::name));
-                assert_eq!(rule, Some(Ok(RuleName(expected))), "{source:?}");
+                        }
+                    })
+                    .collect();
+                assert_eq!(
+                    rules,
+                    [
+                        RuleName("attribute_block"),
+                        RuleName("attribute_block"),
+                        RuleName(expected)
+                    ],
+                    "{source:?}"
+                );
             }
         }
         Ok(())
     }
 
     #[test]
-    fn a_bracket_is_matched_across_nested_families() -> Result<(), Box<dyn Error>>
+    fn brackets_are_classified_by_lexeme_and_text()
     {
         let source = SourceFragment::from("@[ f([x], #{ y }) ] ( \"]\" z");
-        let tokens = label(source);
-        let first = |text: &str| {
-            tokens
-                .iter()
-                .position(|token| AsRef::<str>::as_ref(&token.text(&source)) == text)
-                .map(super::TokenIndex::from)
-                .ok_or("the source spells the token")
-        };
-        let last = |text: &str| {
-            tokens
-                .iter()
-                .rposition(|token| {
-                    token.lexeme == Lexeme::Punct
-                        && AsRef::<str>::as_ref(&token.text(&source)) == text
-                })
-                .map(super::TokenIndex::from)
-                .ok_or("the source spells the token")
-        };
-        let close_of = |open: super::TokenIndex| super::matching_close(&tokens, open, &source);
-        let block = first("@[")?;
-        let record = first("#{")?;
-        let word = first("f")?;
-        let unclosed = last("(")?;
-        let block_close = last("]")?;
-        let record_close = first("}")?;
+        let classes: Vec<(String, super::Bracket)> = label(source)
+            .into_iter()
+            .filter(|token| token.lexeme != Lexeme::Space)
+            .map(|token| {
+                let text = token.text(&source);
+                let spelled = AsRef::<str>::as_ref(&text);
+                (
+                    String::from(spelled),
+                    super::bracket(token, TokenText::from(spelled)),
+                )
+            })
+            .collect();
+        let open = super::Bracket::Open;
+        let close = super::Bracket::Close;
+        let neither = super::Bracket::Neither;
+        let expected = [
+            ("@[", open),
+            ("f", neither),
+            ("(", open),
+            ("[", open),
+            ("x", neither),
+            ("]", close),
+            (",", neither),
+            ("#{", open),
+            ("y", neither),
+            ("}", close),
+            (")", close),
+            ("]", close),
+            ("(", open),
+            ("\"", neither),
+            ("]", neither),
+            ("\"", neither),
+            ("z", neither),
+        ];
         assert_eq!(
-            close_of(block),
-            Some(block_close),
-            "the block closes at its own `]`, past the call, the list and the record inside it"
+            classes,
+            expected.map(|(text, class)| (String::from(text), class)),
+            "a compound opener opens, a word and a bracket spelled inside a string do not"
         );
-        assert_eq!(close_of(record), Some(record_close));
-        assert_eq!(close_of(word), None, "a word opens nothing");
-        assert_eq!(
-            close_of(unclosed),
-            None,
-            "a `]` inside a string closes nothing, so the last `(` stays open"
-        );
-        Ok(())
     }
 
     #[test]

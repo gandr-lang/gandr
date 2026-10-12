@@ -20,6 +20,7 @@ The checked precedence-bounded grammar of the gandr surface: rules over a preced
 - [Walk index and comparison table](#walk-index-and-comparison-table)
 - [Built-in surface](#built-in-surface)
   - [Lists close on an optional separator](#lists-close-on-an-optional-separator)
+  - [An attribute block is a form of its own](#an-attribute-block-is-a-form-of-its-own)
 - [Frozen tables](#frozen-tables)
 - [The bridges and the universe are built-in spellings](#the-bridges-and-the-universe-are-built-in-spellings)
 - [Type operators: the static abstraction and the value function space](#type-operators-the-static-abstraction-and-the-value-function-space)
@@ -186,7 +187,7 @@ Each rule's tiles form a graph under adjacency. Every tile in one strongly conne
 
 ## Built-in surface
 
-`built_in` is the gandr surface: 21 precedence groups and 19 tighter-than edges, then the term forms, the type-and-shell forms and the circuit forms. The groups form one expression chain, one pattern chain and one type chain whose union, intersection and lazy-product bands are mutually incomparable between the sum and arrow bands; the item group stands apart from all three. Its pinned shape is 2495 molds, 77 labels projected to more than one mold, and the fingerprint `0xdee9_8372_a94e_34e2`; a change to any form, group or edge moves the fingerprint, and the test pinning it states the change.
+`built_in` is the gandr surface: 21 precedence groups and 19 tighter-than edges, then the term forms, the type-and-shell forms and the circuit forms. The groups form one expression chain, one pattern chain and one type chain whose union, intersection and lazy-product bands are mutually incomparable between the sum and arrow bands; the item group stands apart from all three. Its pinned shape is 2485 molds, 77 labels projected to more than one mold, and the fingerprint `0x8069_0ebc_b08c_1117`; a change to any form, group or edge moves the fingerprint, and the test pinning it states the change.
 
 ### Lists close on an optional separator
 
@@ -196,6 +197,15 @@ Every comma-separated list of one or more elements — arguments, parameters, fi
 - Reversal: a list whose trailing comma means something — a one-element tuple — takes the comma out of that list's optional tail.
 
 The optional separators and the doubled arm block moved the pinned shape from 2378 molds and the fingerprint `0xf9c2_15a1_2bea_b69c`.
+
+### An attribute block is a form of its own
+
+A block of attributes before a top-level declaration is an `attribute_block` item form of its own, whatever follows it: a definition, a signature, a function or a data declaration. `def` opens the definition family with no prefix. The design this follows has attributes ride a declaration as a leading block, carried in the tree as nodes at declaration sort and filed by the lowering under the declaration's content identity, which adding, editing or removing an attribute leaves unchanged. Standing outside the declaration's form, the blocks stay out of its digest. At the top level `@[` opens one reading; a block inside the definition's form would tie with the standalone one before a data declaration, and only the token after `]` would tell them apart, so every attributed definition would run lookahead windows past its block. Over the corpus the standalone block takes 8% off parsing, at 2485 molds against 2495.
+
+A module member keeps its blocks inside its form, `attributed_module_definition_member`: nothing else at the module-member sort opens with `@[`, so no tie arises there, and its identity covers its attributes.
+
+- Alternatives: the definition's inline block, with the lookahead window extended past a long block's closer, which runs windows on every attributed definition and keys the definition by its attributes; a longer fixed window, which moves the bound without removing it.
+- Reversal: a consumer that must key a module member by an identity its attributes leave alone moves the member's blocks into a module-member form of their own, as at the top level.
 
 ## Frozen tables
 
