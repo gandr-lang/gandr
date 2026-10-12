@@ -3,17 +3,29 @@
 //! # The locality bound
 //!
 //! [`expected_chunk_bound`] computes `2 + ceil(2d / kappa) + ceil(d / cap)`
-//! for edit depth `d` under the committed profile. It rounds each quotient
-//! up to whole chunks. See the
-//! [locality bound and its source](https://github.com/gandr-lang/gandr/blob/main/crates/storage-values/README.md#the-locality-bound).
+//! with checked arithmetic, for edit depth `d` under the committed profile's
+//! kappa and token cap, rounding each quotient up to whole chunks. This is an
+//! expectation over boundary residues, not a worst-case guarantee for one edit.
+//!
+//! The numerator is widened before division, so a depth whose double exceeds
+//! sixty-four bits still receives a bound when the result fits. At depth
+//! `u64::MAX`, the widest kappa and cap give five, not overflow. Overflow is
+//! reserved for an unrepresentable bound; a regression witness separates
+//! numerator, quotient, sum and final-addition width boundaries.
 //!
 //! # Edit measurement
 //!
-//! [`measure_edit`] counts chunks added by an edit and chunks left shared,
-//! comparing the closures the closure walk finds for the two roots. The bound
-//! is an expectation over residues, not a per-edit ceiling; the locality suite
-//! compares corpus means against it. A finite corpus supplies evidence only
-//! for the edits and codecs it exercises.
+//! [`measure_edit`] walks the closures of the input and edited roots and counts
+//! the chunks only the edited value's closure holds and the chunks the two
+//! share. The locality suite compares the mean over all leaf edits of balanced
+//! corpora at depths two through eight with the bound. That finite measurement
+//! supplies evidence for those corpora, not a proof for arbitrary codecs or
+//! edits.
+//!
+//! Executable measurement refinements require the affected and shared counts to
+//! form a nonempty, representable partition. Fixed identical and disjoint
+//! one-chunk values witness both extremes without assuming the probabilistic
+//! bound.
 
 use anodized::spec;
 use gandr_storage_chunker::TypedChunkerParams;

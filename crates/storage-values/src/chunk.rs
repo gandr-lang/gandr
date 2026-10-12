@@ -29,6 +29,19 @@
 //! takes one and [`ChunkStore::load`] must return one, so both sides of every
 //! store verify by construction: a store that returned bytes under a digest
 //! they do not hash to cannot produce the value its signature demands.
+//!
+//! Chunk insertion is first-write-wins: a fresh digest retains the offered
+//! image, while an existing digest retains its prior bytes. Reinsertion neither
+//! compares nor repairs those bytes. Loading recomputes the digest and checks
+//! the frame each time, so corrupted backing bytes are refused even after the
+//! original chunk is offered again. Equality of digests is not used as a
+//! deciding comparison of two images.
+//!
+//! The chunk refinements check the digest, frame and cached token count. A
+//! verified body's slice must point into its image, not merely contain equal
+//! bytes elsewhere. The witnesses include empty and three-record bodies, forged
+//! cached fields, corrupted storage and a wrong digest combined with a
+//! malformed domain to distinguish refusal precedence.
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;

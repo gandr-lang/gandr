@@ -43,17 +43,95 @@
 //! decoder admits exactly the images the encoder writes, so a manifest decoded
 //! from bytes re-encodes to those bytes and its identity is their BLAKE3.
 //!
+//! The chunker commitment is the bytes `gandr-storage-chunker` documents for a
+//! typed profile: its domain, the typed algorithm's discriminator, kappa and
+//! the token cap. The assigned tags: digest family 1 is BLAKE3, child index
+//! base 1 is absolute and 2 chunk-local, boundary classification 1 is every
+//! constructor exit. The version and the chunk frame version are 1.
+//!
 //! # Refusal order
 //!
 //! [`ValueManifest::decode`] reads the fields in image order and refuses at
 //! the first that is foreign, unknown or cut short, then refuses trailing
-//! bytes. [`ValueManifest::read_under`] refuses a profile the reader does not
-//! share, naming the first differing field, before any chunk is loaded; only
-//! then can a chunk be missing ([`ValueError::UnknownChunk`]) or invalid
-//! ([`ValueError::DigestMismatch`], [`ValueError::MalformedChunk`]).
+//! bytes. [`ValueManifest::read_under`] compares the manifest's profile with
+//! the reader's and refuses one it does not share with
+//! [`ValueError::IncompatibleProfile`], naming the first field that differs in
+//! image order, before the store is asked for a chunk; a matching profile reads
+//! through [`crate::cam_deref`], and only then can a chunk be missing
+//! ([`ValueError::UnknownChunk`]) or invalid ([`ValueError::DigestMismatch`],
+//! [`ValueError::MalformedChunk`]).
 //! [`ValueManifest::closure`] loads every chunk a reader would, refusing the
 //! first absent one by name, then refuses a token count the chunks do not
 //! deliver.
+//!
+//! # The value manifest
+//!
+//! A `ContentPtr` names bytes; a reader also needs the rules that produced
+//! them. `ValueManifest` carries both: the root pointer and token count, and
+//! the profile fields § The rule lists. `encode` writes the image § The image
+//! states, `decode` reads it back, and `identity` hashes it.
+//!
+//! **The identity binds the profile.** Subject to BLAKE3 collision resistance,
+//! the identity binds every field, including the profile under which a value is
+//! read.
+//!
+//! - **Alternatives.** Carrying the profile in every chunk frame lets a chunk
+//!   be read alone, but spends the profile's bytes per chunk and stops
+//!   identical bodies under different profiles from sharing. Letting each
+//!   consumer choose which fields to bind lets two consumers name one value
+//!   differently.
+//! - **Reversal.** If the chunk frame comes to carry the profile, the manifest
+//!   shrinks to the root pointer and token count.
+//!
+//! **Decoding refuses by field.** `decode` reads the image in order through a
+//! cursor over the borrowed bytes, without recursion or allocation, and stops
+//! at the first fault: `MalformedManifest` names a field holding a value this
+//! build does not read (a foreign domain, another version, an unassigned tag, a
+//! commitment under another algorithm or with zero kappa or cap),
+//! `TruncatedManifest` names the field the image ends inside, and
+//! `TrailingManifestBytes` refuses bytes after the token count. The commitment
+//! is parsed by the chunker's documented layout; if the chunker exports a
+//! parser, decoding uses it instead. The manifest domain differs from the chunk
+//! domain, so neither image verifies as the other.
+//!
+//! Manifest and profile refinements admit only the supported layout versions;
+//! they do not certify a root's presence or the truth of a declared token
+//! count. A canonical zero-count declaration remains readable as metadata and
+//! is refused by `closure` when its stored value delivers two records. Cursor
+//! witnesses cover zero-width reads, exact suffix borrowing and unchanged state
+//! on a truncated fixed-width read.
+//!
+//! **The closure is what a dereference loads.** `closure` walks the subtree the
+//! root addresses, entering every chunk a child record names, and returns the
+//! set of their digests. A chunk the store lacks is refused with `UnknownChunk`
+//! naming its digest; a stored chunk was verified when it was inserted. The
+//! walk visits each pointer once, keeps pending subtrees on a heap stack and
+//! charges the decode budget. It then compares the records a reader of the root
+//! delivers with the declared token count and refuses a difference with
+//! `TokenCountMismatch`. `measure_edit` reads the same walk. Collecting
+//! unreferenced chunks, persistent stores and re-committing under changed
+//! chunker constants belong to consumers.
+//!
+//! **The token count includes embedded values.** The count is every record a
+//! reader delivers, so a child pointer a codec embeds counts the records of the
+//! subtree it names. `cam_commit` walks each embedded pointer's closure to
+//! count them, and refuses an embedded pointer whose chunks the store lacks
+//! with `UnknownChunk`. Counting only the records the codec emitted would make
+//! every manifest with an embedding fail its own closure check. If
+//! embedding-heavy codecs make that walk costly, the commit can remember each
+//! embedded pointer's count.
+//!
+//! | Statement | Witness | Rung |
+//! | --------- | ------- | ---- |
+//! | The image and identity of one manifest, against bytes written by hand and an independent BLAKE3 tool | `the_manifest_bytes_are_pinned` | L2 |
+//! | Every field with a second admissible value moves the identity | `each_manifest_field_moves_the_identity` | L3 |
+//! | Generated commits' manifests decode and re-encode to the same bytes | `a_manifest_round_trips_through_its_bytes` | L2 |
+//! | Each malformed image is refused by name, including every prefix length | `each_malformed_manifest_is_refused_by_name` | L3 |
+//! | A manifest image is not a chunk image, nor the reverse | `a_manifest_image_is_refused_as_a_chunk` | L3 |
+//! | A profile mismatch loads nothing; a match reads the value | `a_profile_mismatch_is_refused_before_any_chunk_is_read`, `a_matching_profile_reads_the_committed_value` | L3 |
+//! | The closure is exactly what the commit wrote into an empty store, embeddings included | `the_closure_is_every_chunk_the_commit_wrote` | L2 |
+//! | A missing descendant two seams down is refused by digest | `a_missing_descendant_fails_the_closure_by_name` | L3 |
+//! | A count one over or one under is refused | `a_manifest_overstating_its_tokens_fails_the_closure` | L3 |
 
 use alloc::vec::Vec;
 use core::fmt;

@@ -3,9 +3,8 @@
 //!
 //! A consumer needing canonical bytes to hash, sign or keep in a record uses
 //! the flat form. It uses the chunk body's byte language and writer, so for a
-//! value that fits one chunk these bytes equal the body
-//! [`crate::cam_commit`] frames. See the
-//! [byte languages](https://github.com/gandr-lang/gandr/blob/main/crates/storage-values/README.md#byte-languages).
+//! value that fits one chunk these bytes equal the body [`crate::cam_commit`]
+//! frames. The body's records are stated in the `tokens` module.
 //!
 //! A flat form carries no child record. It has no store to resolve one
 //! against, so the encoder refuses a value that embeds a committed pointer and

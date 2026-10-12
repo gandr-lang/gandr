@@ -35,9 +35,6 @@ excludes = []
 # crate's rustdoc. Over budget: move more into rustdoc, never trim to pass.
 # Both rules outrank `doc_sprawl`. A pattern without a slash matches at any
 # depth, so the root rule excludes the crate and contrib trees.
-# Burn-down: the excludes under each `# Burn-down.` comment name the READMEs
-# over budget when the gate landed. Entries only leave, as their prose moves
-# into rustdoc; an entry never enters.
 [rules.readme_root]
 enabled = true
 priority = 200
@@ -57,8 +54,3 @@ description = "Crate README over its budget"
 suggestion = "Move mechanism, decisions and specification detail into the crate's rustdoc; never trim to pass"
 includes = ["contrib/*/README.md", "crates/*/README.md", "crates/README.md"]
 max_size = "12KB"
-excludes = [
-  # Burn-down.
-  "crates/storage-artifact/README.md",
-  "crates/storage-values/README.md",
-]
