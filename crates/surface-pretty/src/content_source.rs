@@ -108,7 +108,7 @@ impl Source for ContentSource<'_>
 (Some(&ContentNode::DataCase { .. } | &ContentNode::RecordProjection(..) | &ContentNode::TupleProjection(..) |
 &ContentNode::Primitive(..) | &ContentNode::Transport(..) |
 &ContentNode::Lambda(_) | &ContentNode::Application(..) |
-&ContentNode::Perform { .. } | &ContentNode::Handle { .. } | &ContentNode::Resume(..) | &ContentNode::Reset(_) | &ContentNode::Shift(_) | &ContentNode::With(..) | &ContentNode::Project(..) | &ContentNode::ListFold { .. } |
+&ContentNode::Perform { .. } | &ContentNode::Handle { .. } | &ContentNode::Resume(..) | &ContentNode::Split(..) | &ContentNode::Reset(_) | &ContentNode::Shift(_) | &ContentNode::With(..) | &ContentNode::Project(..) | &ContentNode::ListFold { .. } |
 &ContentNode::Return(_) | &ContentNode::Bind(..) | &ContentNode::Force(_) |
 &ContentNode::Case { .. } | &ContentNode::Fixpoint { .. }), Former::Computation) |
 (Some(&ContentNode::ListNil), Former::ListNil) |
@@ -184,6 +184,7 @@ impl Source for ContentSource<'_>
             | ContentNode::Perform { .. }
             | ContentNode::Handle { .. }
             | ContentNode::Resume(..)
+            | ContentNode::Split(..)
             | ContentNode::Reset(_)
             | ContentNode::Shift(_)
             | ContentNode::With(..)

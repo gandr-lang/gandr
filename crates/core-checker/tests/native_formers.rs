@@ -714,4 +714,62 @@ mod native_formers
         ));
         assert!(crossed.audit().axioms().is_empty());
     }
+
+    /// A split crosses as the projection binds the kernel judges: reading the
+    /// last of a variable pair's components, which a wrong shift would read
+    /// from the first and the kernel would refuse; reading a closed triple's
+    /// last component; and splitting the unit into its body.
+    #[test]
+    fn a_split_crosses_as_its_projection_binds()
+    {
+        use gandr_core_term::ComponentCount;
+        let mut arena = CoreArena::new();
+        let unit_type = arena.value_type_unit();
+        let pair_type = arena.value_type_product(&[unit_type, unit_type]);
+        let nested_type = arena.value_type_product(&[unit_type, pair_type]);
+        let unit = arena.value_unit();
+        let empty = arena.value_record(BTreeMap::new());
+        let pair = arena.value_tuple(&[unit, unit]);
+        let tuple = arena.value_tuple(&[unit, empty, pair]);
+        let innermost = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let returns_last = arena.computation_return(innermost);
+        let split_argument =
+            arena.computation_split(innermost, ComponentCount::from(2_usize), returns_last);
+        let lambda = arena.computation_lambda(split_argument);
+        let returns_pair = arena.comp_type_returner(pair_type);
+        let arrow = arena.comp_type_arrow(nested_type, returns_pair);
+        let function_type = arena.value_type_thunk(arrow);
+        let function = arena.value_thunk(lambda);
+        let split_tuple =
+            arena.computation_split(tuple, ComponentCount::from(3_usize), returns_last);
+        let returns_unit = arena.computation_return(unit);
+        let split_unit = arena.computation_split(unit, ComponentCount::default(), returns_unit);
+        let declared_pair = arena.value_type_thunk(returns_pair);
+        let returns_unit_type = arena.comp_type_returner(unit_type);
+        let declared_unit = arena.value_type_thunk(returns_unit_type);
+        let tuple_body = arena.value_thunk(split_tuple);
+        let unit_body = arena.value_thunk(split_unit);
+        let declarations = [
+            definition(ConstantIndex::from(0_usize), function_type, function),
+            definition(ConstantIndex::from(1_usize), declared_pair, tuple_body),
+            definition(ConstantIndex::from(2_usize), declared_unit, unit_body),
+        ];
+        let (report, crossed) = run(&mut arena, &declarations);
+        for position in 0 .. 3_usize {
+            assert!(
+                matches!(report.judged()[position].verdict(), Verdict::Checked { .. }),
+                "{position}: {:?}",
+                report.judged()[position].verdict()
+            );
+            assert!(
+                matches!(
+                    crossed.readmitted()[position].outcome(),
+                    Outcome::Defined { .. }
+                ),
+                "{position}: {:?}",
+                crossed.readmitted()[position].outcome()
+            );
+        }
+        assert!(crossed.audit().axioms().is_empty());
+    }
 }

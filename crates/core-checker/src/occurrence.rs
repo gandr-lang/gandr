@@ -565,7 +565,14 @@ fn worst(
                     pending.push((AnyNode::Computation(first), reach));
                     pending.push((AnyNode::Computation(second), reach));
                 },
-                | Some(&Computation::Resume(stack, body)) => {
+                | Some(
+                    &(Computation::Resume(stack, body)
+                    | Computation::Split {
+                        scrutinee: stack,
+                        body,
+                        ..
+                    }),
+                ) => {
                     pending.push((AnyNode::Value(stack), reach));
                     pending.push((AnyNode::Computation(body), reach));
                 },

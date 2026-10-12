@@ -873,6 +873,18 @@ enum Frame
         /// The common result type.
         expected: CompTypeId,
     },
+    /// Await the product scrutinee classifier of the split `at`.
+    SplitScrutinee
+    {
+        /// The split.
+        at: ComputationId,
+        /// The scrutinee.
+        scrutinee: ValueId,
+        /// The body's type, outside the split's binders.
+        expected: CompTypeId,
+    },
+    /// Await the split body's check, then close one binder per component.
+    SplitBody(gandr_core_term::ComponentCount),
     /// Once the previous branch has checked, check `branch` under a binder of
     /// its summand.
     CaseBranch
@@ -2514,6 +2526,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Computation::Case { .. } => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Case(term),
             }),
+            | Computation::Split { .. } => Err(CheckRefusal::NotSynthesisable {
+                form: CheckingForm::Split(term),
+            }),
             | Computation::Hole(_) | Computation::Mark { .. } => {
                 let unknown = self.context.arena_mut().comp_type_unknown();
                 Ok(Step::Ascend(Produced::CompType(unknown)))
@@ -2643,6 +2658,17 @@ impl<'context, 'arena> Machine<'context, 'arena>
             },
             | Computation::Bind(bound, body) => {
                 Ok(self.bind(term, bound, body, Direction::Check(expected)))
+            },
+            | Computation::Split { scrutinee, .. } => {
+                self.frames.push(Frame::SplitScrutinee {
+                    at: term,
+                    scrutinee,
+                    expected,
+                });
+                Ok(Step::Descend(Goal::Value {
+                    term: scrutinee,
+                    direction: Direction::Synthesise,
+                }))
             },
             | Computation::Case { scrutinee, .. } => {
                 self.frames.push(Frame::CaseScrutinee {
@@ -3802,6 +3828,20 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Ok(Step::Ascend(Produced::Checked))
             },
             | (
+                Frame::SplitScrutinee {
+                    at,
+                    scrutinee,
+                    expected,
+                },
+                Produced::ValueType(classifier),
+            ) => self.split(at, scrutinee, classifier, expected),
+            | (Frame::SplitBody(arity), Produced::Checked) => {
+                for _ in 0_usize .. usize::from(arity) {
+                    self.close()?;
+                }
+                Ok(Step::Ascend(Produced::Checked))
+            },
+            | (
                 Frame::CaseBranch {
                     branch,
                     summand,
@@ -4066,6 +4106,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::PathProductSecond { .. }
                 | Frame::TransportPath { .. }
                 | Frame::CaseScrutinee { .. }
+                | Frame::SplitScrutinee { .. }
                 | Frame::Force { .. }
                 | Frame::ValueBridge { .. }
                 | Frame::FormElement(_)
@@ -4097,6 +4138,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::ListFold { .. }
                 | Frame::TransportOperand { .. }
                 | Frame::CaseBranch { .. }
+                | Frame::SplitBody(_)
                 | Frame::ApplicationArgument { .. }
                 | Frame::LambdaBody
                 | Frame::FormBinder
@@ -4115,6 +4157,80 @@ impl<'context, 'arena> Machine<'context, 'arena>
             },
         }
     }
+    /// Open one binder per component of the split `at`'s scrutinee, whose
+    /// classifier is `classifier`, and check its body against `expected`.
+    ///
+    /// # Specification
+    /// - requires: `at` is a split of `scrutinee`, and `classifier` its
+    ///   synthesised type.
+    /// - ensures: one binder per component is open, component zero outermost,
+    ///   each typed by its component shifted past the binders before it, and
+    ///   the body is the next goal, checked against `expected` shifted past all
+    ///   of them; a split of no components checks its body against `expected`
+    ///   itself.
+    /// - fails: [`CheckRefusal::ShapeMismatch`] at the scrutinee, wanting a
+    ///   product, for a classifier that is no product or a product of another
+    ///   arity; the unfolding's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a split reading each of three components, a split of
+    ///   the unit, a split of another arity and a split of a non-product
+    ///   separate the binder order, the shift and both refusals.
+    /// - witness: `judgement::tests::a_split_binds_every_component_of_its_product`
+    ///
+    /// # Judgement
+    /// - expected: `expected`
+    #[spec(
+        captures: before = usize::from(self.context.depth(Zone::Intuitionistic)),
+        ensures: |ret| ret.is_err() || (matches!(ret, Ok(Step::Descend(Goal::Computation { .. })))
+            && self.context.arena().computation(at).is_some_and(|node| matches!(*node,
+                Computation::Split { arity, .. } if usize::from(self.context.depth(Zone::Intuitionistic)) == before.saturating_add(usize::from(arity))))),
+    )]
+    fn split(
+        &mut self,
+        at: ComputationId,
+        scrutinee: ValueId,
+        classifier: ValueTypeId,
+        expected: CompTypeId,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let Some(&Computation::Split { arity, body, .. }) = self.context.arena().computation(at)
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let components = self.product_expected(scrutinee, classifier)?;
+        let count = usize::from(arity);
+        if matches!(components, Components::Known(ref parts) if parts.len() != count) {
+            return Err(CheckRefusal::ShapeMismatch {
+                at: TermNode::Value(scrutinee),
+                wanted: ExpectedShape::Product,
+                found: TypeNode::Value(classifier),
+            });
+        }
+        let binders = u32::try_from(count).map_err(|_overflow| CheckRefusal::MachineInvariant)?;
+        let expected = shift_comp_type(self.context.arena_mut(), expected, Binders::from(binders));
+        for (index, shift) in (0_u32 .. binders).enumerate() {
+            let component = match components {
+                | Components::Known(ref parts) => {
+                    *parts.get(index).ok_or(CheckRefusal::MachineInvariant)?
+                },
+                | Components::Unknown(unknown) => unknown,
+            };
+            let component =
+                shift_value_type(self.context.arena_mut(), component, Binders::from(shift));
+            self.context.binders().open(Zone::Intuitionistic, component);
+        }
+        self.frames.push(Frame::SplitBody(arity));
+        Ok(Step::Descend(Goal::Computation {
+            term: body,
+            direction: Direction::Check(expected),
+        }))
+    }
+
     /// Read the two decoded endpoints of a native path classifier.
     ///
     /// # Specification
@@ -4739,6 +4855,74 @@ mod tests
             );
             context.binders().close(Zone::Intuitionistic).unwrap();
         }
+    }
+
+    /// A split binds one variable per component, component zero outermost:
+    /// reading component zero checks at its type and reading component one
+    /// there does not; a split of the unit binds nothing; a split of another
+    /// arity or of a non-product is a shape mismatch, and a split is never
+    /// synthesised.
+    #[test]
+    fn a_split_binds_every_component_of_its_product()
+    {
+        use gandr_core_term::ComponentCount;
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let string = arena.value_type_base(BaseType::String);
+        let unit_type = arena.value_type_unit();
+        let triple_type = arena.value_type_product(&[integer, string, unit_type]);
+        let returns_integer = arena.comp_type_returner(integer);
+        let scrutinee = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let first = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
+        let second = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let returns_first = arena.computation_return(first);
+        let returns_second = arena.computation_return(second);
+        let three = ComponentCount::from(3_usize);
+        let reads_first = arena.computation_split(scrutinee, three, returns_first);
+        let reads_second = arena.computation_split(scrutinee, three, returns_second);
+        let too_few =
+            arena.computation_split(scrutinee, ComponentCount::from(2_usize), returns_first);
+        let zero = arena.value_literal(integer_literal());
+        let returns_zero = arena.computation_return(zero);
+        let empty = arena.computation_split(scrutinee, ComponentCount::default(), returns_zero);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let triple_type = form_value_type(&mut context, triple_type).unwrap();
+        let unit_type = form_value_type(&mut context, unit_type).unwrap();
+        let integer = form_value_type(&mut context, integer).unwrap();
+        let returns_integer = form_comp_type(&mut context, returns_integer).unwrap();
+        let mismatch = |found: ValueTypeId| CheckRefusal::ShapeMismatch {
+            at: TermNode::Value(scrutinee),
+            wanted: ExpectedShape::Product,
+            found: TypeNode::Value(found),
+        };
+        for (split, scrutinised, accepted) in [
+            (reads_first, triple_type.id(), Some(true)),
+            (reads_second, triple_type.id(), Some(false)),
+            (too_few, triple_type.id(), None),
+            (empty, unit_type.id(), Some(true)),
+            (empty, integer.id(), None),
+        ] {
+            context.binders().open(Zone::Intuitionistic, scrutinised);
+            let checked = check_comp(&mut context, split, returns_integer);
+            match accepted {
+                | Some(true) => assert!(checked.is_ok(), "{split:?}: {checked:?}"),
+                | Some(false) => assert!(
+                    checked.is_err() && checked != Err(mismatch(scrutinised)),
+                    "{split:?} reads a component of another type: {checked:?}"
+                ),
+                | None => assert_eq!(checked.map(|_| ()), Err(mismatch(scrutinised)), "{split:?}"),
+            }
+            context.binders().close(Zone::Intuitionistic).unwrap();
+        }
+        context
+            .binders()
+            .open(Zone::Intuitionistic, triple_type.id());
+        assert_eq!(
+            synthesise_comp(&mut context, reads_first).map(|found| found.produced().id()),
+            Err(CheckRefusal::NotSynthesisable {
+                form: CheckingForm::Split(reads_first),
+            })
+        );
     }
 
     #[test]
@@ -6928,7 +7112,7 @@ mod tests
                     | Computation::Transport(..) | Computation::Bind(..) | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) => {
                         prop_assert!(false, "the free recipe mints no bind or native eliminator");
                     },
-                    | Computation::ListFold { .. } | Computation::Case { .. }
+                    | Computation::ListFold { .. } | Computation::Case { .. } | Computation::Split { .. }
                     | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..)
                     | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..)
                     | Computation::Hole(_) | Computation::Mark { .. } => {

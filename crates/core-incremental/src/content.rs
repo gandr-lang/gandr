@@ -237,6 +237,9 @@ pub enum ContentNode
     },
     /// Feed a computation to a first-class stack.
     Resume(NodeIndex, NodeIndex),
+    /// Bind every component of a tuple in the body, component zero
+    /// outermost.
+    Split(NodeIndex, gandr_core_term::ComponentCount, NodeIndex),
     /// A delimited answer boundary.
     Reset(NodeIndex),
     /// Capture a stack, bound in the body.
@@ -678,6 +681,7 @@ impl ContentNode
         | Self::Perform { .. }
         | Self::Handle { .. }
         | Self::Resume(..)
+        | Self::Split(..)
         | Self::Reset(_)
         | Self::Shift(_)
         | Self::With(..)
@@ -754,6 +758,7 @@ impl ContentNode
             | Self::Perform { .. }
             | Self::Handle { .. }
             | Self::Resume(..)
+            | Self::Split(..)
             | Self::Reset(_)
             | Self::Shift(_)
             | Self::With(..)
@@ -832,7 +837,7 @@ impl ContentNode
             | Self::WithType(first, second) => actual == Some(&[(first, C), (second, C)][..]),
             | Self::Perform { payload, ref signature, .. } => ret.iter().eq(core::iter::once((payload, V)).chain(signature.types().map(|ty| (ty, A)))),
             | Self::Handle { subject, on_return, ref signature, ref clauses } => ret.iter().eq([(subject, M), (on_return, M)].into_iter().chain(signature.types().map(|ty| (ty, A))).chain(clauses.iter().map(|clause| (clause.body, M)))),
-            | Self::Resume(stack, body) => actual == Some(&[(stack, V), (body, M)][..]),
+            | Self::Resume(stack, body) | Self::Split(stack, _, body) => actual == Some(&[(stack, V), (body, M)][..]),
             | Self::Reset(body) | Self::Shift(body) | Self::Project(_, body) => actual == Some(&[(body, M)][..]),
             | Self::With(first, second) => actual == Some(&[(first, M), (second, M)][..]),
             | Self::Primitive(_, arguments) => actual.is_some_and(|children| children.iter().copied().eq(arguments.iter().copied().map(|argument| (argument, V)))),
@@ -939,7 +944,9 @@ impl ContentNode
                 clauses,
                 ..Children::of(&[(subject, M), (on_return, M)])
             },
-            | Self::Resume(stack, body) => Children::of(&[(stack, V), (body, M)]),
+            | Self::Resume(stack, body) | Self::Split(stack, _, body) => {
+                Children::of(&[(stack, V), (body, M)])
+            },
             | Self::Reset(body) | Self::Shift(body) | Self::Project(_, body) => {
                 Children::of(&[(body, M)])
             },
@@ -1076,6 +1083,7 @@ impl ContentNode
             | Self::Perform { .. }
             | Self::Handle { .. }
             | Self::Resume(..)
+            | Self::Split(..)
             | Self::Reset(_)
             | Self::Shift(_)
             | Self::With(..)
@@ -2175,6 +2183,15 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 self.discover(ArenaNode::Value(stack)),
                 self.discover(ArenaNode::Computation(body)),
             ),
+            | Computation::Split {
+                scrutinee,
+                arity,
+                body,
+            } => ContentNode::Split(
+                self.discover(ArenaNode::Value(scrutinee)),
+                arity,
+                self.discover(ArenaNode::Computation(body)),
+            ),
             | Computation::Reset(body) => {
                 ContentNode::Reset(self.discover(ArenaNode::Computation(body)))
             },
@@ -2622,6 +2639,9 @@ where
             }
         },
         | ContentNode::Resume(stack, body) => ContentNode::Resume(image(stack), image(body)),
+        | ContentNode::Split(scrutinee, arity, body) => {
+            ContentNode::Split(image(scrutinee), arity, image(body))
+        },
         | ContentNode::Reset(body) => ContentNode::Reset(image(body)),
         | ContentNode::Shift(body) => ContentNode::Shift(image(body)),
         | ContentNode::With(first, second) => ContentNode::With(image(first), image(second)),
@@ -3191,6 +3211,7 @@ fn mint_node(
         | ContentNode::Perform { .. }
         | ContentNode::Handle { .. }
         | ContentNode::Resume(..)
+        | ContentNode::Split(..)
         | ContentNode::Reset(_)
         | ContentNode::Shift(_)
         | ContentNode::With(..)

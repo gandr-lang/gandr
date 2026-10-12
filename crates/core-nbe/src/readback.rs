@@ -646,6 +646,9 @@ enum Task
     Bind,
     /// Assemble a sum elimination over the value term and the two branches.
     Case(usize),
+    /// Assemble a split over the value term and the body binding this many
+    /// components.
+    Split(gandr_core_term::ComponentCount),
     /// Assemble a constructor, including its normalized nominal classifier.
     Constructor
     {
@@ -1337,12 +1340,14 @@ fn open(
     Ok((whnf, deeper))
 }
 
-/// Open a List cell branch under head then folded-result binders.
+/// Open a closure under `count` fresh intuitionistic binders, outermost first:
+/// a List cell branch under head then folded-result binders, or a split body
+/// under one binder per component.
 ///
 /// # Specification
 /// - requires: the closure and its captured environment resolve.
-/// - ensures: the branch is evaluated with two distinct fresh variables and
-///   returned at the twice-extended binder depth.
+/// - ensures: the body is evaluated with `count` distinct fresh variables and
+///   returned at the binder depth extended `count` times.
 /// - fails: existing domain, binder-ceiling and evaluation faults.
 /// - panics: none.
 ///
@@ -1353,15 +1358,17 @@ fn open(
 /// - hypothesis: L3 — a neutral fold retaining both binders and an outer
 ///   capture distinguishes the opening order and the ambient depth.
 /// - witness: `readback::tests::native_lists_and_folds_read_back_without_sum_encoding`
+/// - witness: `readback::tests::a_stuck_split_reads_back_with_its_components_bound`
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|pair|
-    binders.opened(Zone::Intuitionistic).and_then(|once| once.opened(Zone::Intuitionistic)) == Some(pair.1)
+    (0_usize .. usize::from(count)).try_fold(binders, |at, _| at.opened(Zone::Intuitionistic)) == Some(pair.1)
         && domain.computation(pair.0).is_some()) || ret.is_err())]
-fn open_list_branch(
+fn open_many(
     core: &CoreArena,
     domain: &mut DomainArena,
     machine: &mut Machine<'_>,
     closure: CompClosureId,
     binders: OpenBinders,
+    count: gandr_core_term::ComponentCount,
 ) -> Result<(DomainCompId, OpenBinders), ReadbackFault>
 {
     let held = domain
@@ -1371,7 +1378,7 @@ fn open_list_branch(
     let mut environment = held.environment().clone();
     let mut deeper = binders;
     let zone = Zone::Intuitionistic;
-    for _ in 0_u32 .. 2_u32 {
+    for _ in 0_usize .. usize::from(count) {
         let level = deeper.fresh(zone);
         deeper = deeper
             .opened(zone)
@@ -2001,6 +2008,11 @@ fn run(
             && machine.comps.last().is_some_and(|id| core.computation(*id).is_some())
             && entry_value_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.value_types.len())
             && entry_comp_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comp_types.len()),
+        | Task::Split(arity) => machine.tasks.len() == entry_tasks
+            && entry_values.checked_sub(1) == Some(machine.values.len())
+            && machine.comps.len() == entry_comps
+            && machine.comps.last().is_some_and(|&id| matches!(core.computation(id), Some(&Computation::Split { arity: actual, .. }) if actual == arity))
+            && machine.value_types.len() == entry_value_types && machine.comp_types.len() == entry_comp_types,
         | Task::ListFold => machine.tasks.len() == entry_tasks
             && entry_values.checked_sub(1) == Some(machine.values.len())
             && entry_comps.checked_sub(1) == Some(machine.comps.len())
@@ -2376,6 +2388,14 @@ fn step(
             let body = machine.pop_comp()?;
             let bound = machine.pop_comp()?;
             machine.comps.push(core.computation_bind(bound, body));
+            Ok(())
+        },
+        | Task::Split(arity) => {
+            let body = machine.pop_comp()?;
+            let scrutinee = machine.pop_value()?;
+            machine
+                .comps
+                .push(core.computation_split(scrutinee, arity, body));
             Ok(())
         },
         | Task::Case(count) => {
@@ -3512,6 +3532,7 @@ fn step_neutral(
                         | Elimination::ListFold { .. }
                         | Elimination::Case { .. }
                         | Elimination::DataCase(_)
+                        | Elimination::Split(_)
                         | Elimination::Projection(_)
                         | Elimination::Fixpoint(_) => None,
                     })
@@ -3762,6 +3783,30 @@ fn step_spine(
             });
             Ok(())
         },
+        | Elimination::Split(closure) => {
+            expect_polarity(spine.polarity, Polarity::Value, neutral)?;
+            let held = domain
+                .comp_closure(closure)
+                .ok_or(ReadbackFault::Domain(DomainFault::Dangling))?;
+            let crate::CompBody::Source(source) = held.body()
+            else {
+                return Err(ReadbackFault::MachineInvariant);
+            };
+            let Some(&Computation::Split { arity, body, .. }) = core.computation(source)
+            else {
+                return Err(ReadbackFault::MachineInvariant);
+            };
+            let environment = held.environment().clone();
+            let body = domain.comp_closure_node(body, environment);
+            let (opened, deeper) = open_many(core, domain, machine, body, binders, arity)?;
+            machine.tasks.push(onward);
+            machine.tasks.push(Task::Split(arity));
+            machine.tasks.push(Task::Comp {
+                comp: opened,
+                binders: deeper,
+            });
+            Ok(())
+        },
         | Elimination::ListFold {
             element,
             result,
@@ -3774,7 +3819,14 @@ fn step_spine(
                 .ok_or(ReadbackFault::Domain(DomainFault::Dangling))?;
             let frame = machine.hold_frame(closure.environment().clone());
             let empty = enter(core, domain, machine, on_nil, Entry::Bare)?;
-            let (cell, deeper) = open_list_branch(core, domain, machine, on_cons, binders)?;
+            let (cell, deeper) = open_many(
+                core,
+                domain,
+                machine,
+                on_cons,
+                binders,
+                gandr_core_term::ComponentCount::from(2_usize),
+            )?;
             machine.tasks.push(onward);
             machine.tasks.push(Task::ListFold);
             machine.tasks.push(Task::Comp {
@@ -4846,6 +4898,81 @@ mod tests
             core.value(produced),
             "the binder was opened at a level and the occurrence came back as the index \
              counting the other way"
+        );
+    }
+
+    /// `λy. λz. split z as (a, b) in return (b, a, y)`: the stuck split reads
+    /// back over its scrutinee's index, its arity kept and its components
+    /// bound innermost, past the outer binders.
+    #[test]
+    fn a_stuck_split_reads_back_with_its_components_bound()
+    {
+        use gandr_core_term::ComponentCount;
+        let mut core = CoreArena::new();
+        let variable = |core: &mut CoreArena, index: u32| {
+            core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+        };
+        let scrutinee = variable(&mut core, 0);
+        let produced = [0, 1, 3].map(|index| variable(&mut core, index));
+        let produced = core.value_tuple(&produced);
+        let body = core.computation_return(produced);
+        let split = core.computation_split(scrutinee, ComponentCount::from(2_usize), body);
+        let inner = core.computation_lambda(split);
+        let outer = core.computation_lambda(inner);
+        let (chain, environment) = nothing_unfolds();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let mut domain = DomainArena::new();
+        let evaluated = eval_computation(&core, &mut domain, definitions, ample(), outer)
+            .expect("a lambda is already a weak head");
+        let read = readback_computation(
+            &mut core,
+            &mut domain,
+            definitions,
+            ReadbackMode::Unfolding,
+            ample(),
+            evaluated,
+        )
+        .expect("both binders and the split's open");
+        let Some(&Computation::Lambda(inner)) = core.computation(read)
+        else {
+            panic!("the outer lambda reads back");
+        };
+        let Some(&Computation::Lambda(split)) = core.computation(inner)
+        else {
+            panic!("the inner lambda reads back");
+        };
+        let Some(&Computation::Split {
+            scrutinee,
+            arity,
+            body,
+        }) = core.computation(split)
+        else {
+            panic!("the stuck split reads back as a split");
+        };
+        assert_eq!(arity, ComponentCount::from(2_usize));
+        let index = |core: &CoreArena, value| match core.value(value) {
+            | Some(&Value::Variable {
+                zone: Zone::Intuitionistic,
+                index,
+            }) => u32::from(index),
+            | _ => panic!("a variable reads back"),
+        };
+        assert_eq!(index(&core, scrutinee), 0);
+        let Some(&Computation::Return(produced)) = core.computation(body)
+        else {
+            panic!("the body returns");
+        };
+        let Some(&[second, first, captured]) = core.value(produced).and_then(Value::components)
+        else {
+            panic!("the body's triple reads back");
+        };
+        assert_eq!(
+            [
+                index(&core, second),
+                index(&core, first),
+                index(&core, captured)
+            ],
+            [0, 1, 3]
         );
     }
 

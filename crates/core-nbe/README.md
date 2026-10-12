@@ -238,7 +238,7 @@ A refuted decomposition records `NegativeSubgoal` with the position of the first
 
 ## Native data and records
 
-Constructors and records keep lazy field closures, a case or projection demands only what it selects, and `fix x. M` is its own weak head until an application at a canonical argument or a bind unfolds it once; evaluation unfolds a partial fixpoint as readily as a structurally descending one and leaves the difference to the kernel's replay. The [native data page](docs/native-data.md) states each rule, readback, comparison and the fixpoint decision with its alternatives, reversal and witnesses.
+Constructors and records keep lazy field closures, a case or projection demands only what it selects, a split of a tuple binds each component in order and enters its body while a split of a neutral suspends whole as `Elimination::Split`, compared by arity and by its bodies opened under one fresh variable per component (`Opening::Many`), and `fix x. M` is its own weak head until an application at a canonical argument or a bind unfolds it once; evaluation unfolds a partial fixpoint as readily as a structurally descending one and leaves the difference to the kernel's replay. The [native data page](docs/native-data.md) states each rule, readback, comparison and the fixpoint decision with its alternatives, reversal and witnesses.
 
 ## Codes
 

@@ -195,10 +195,18 @@ pub enum Subgoal
     Fixpoints(CompClosureId, CompClosureId),
     /// The bodies of two fixpoints, opened under one fresh self variable.
     FixpointBodies(CompClosureId, CompClosureId),
+    /// The bodies of two splits of one arity, opened under one fresh variable
+    /// per component.
+    SplitBodies(CompClosureId, CompClosureId),
     /// Two branch bodies entered without adding a binder.
     Entered(CompClosureId, CompClosureId),
-    /// Two List cell branches opened under head then folded-result binders.
-    OpenedTwice(CompClosureId, CompClosureId),
+    /// Two closures opened under this many fresh variables, outermost first:
+    /// List cell branches under head then folded-result binders.
+    OpenedUnder(
+        CompClosureId,
+        CompClosureId,
+        gandr_core_term::ComponentCount,
+    ),
 }
 
 /// A forced rule with one premise.
@@ -361,6 +369,8 @@ enum EliminationShape<'core>
     DataCase(usize),
     /// A sum case with this many branches.
     Case(usize),
+    /// A split binding this many components.
+    Split(gandr_core_term::ComponentCount),
     /// An exact record label or tuple component.
     Projection(ProjectionKey<'core>),
 }
@@ -422,6 +432,46 @@ pub fn case_source<'core>(
         return Err(ConversionFault::MachineInvariant);
     };
     Ok((*motive, branches))
+}
+
+/// Resolve the arity and body a split capture closes over.
+///
+/// # Specification
+/// - requires: nothing; stale and ill-shaped captures are refused.
+/// - ensures: returns the source split's arity and its body, scoped under one
+///   binder per component.
+/// - fails: a dangling closure or a body that is not a source split.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two stuck splits compare by their arities and their
+///   bodies opened under one variable per component.
+/// - witness: `machine::tests::stuck_splits_compare_by_arity_and_body`
+#[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(ConversionFault::Domain(DomainFault::Dangling) | ConversionFault::MachineInvariant)))]
+pub fn split_source(
+    core: &CoreArena,
+    domain: &DomainArena,
+    closure: CompClosureId,
+) -> Result<
+    (
+        gandr_core_term::ComponentCount,
+        gandr_core_term::ComputationId,
+    ),
+    ConversionFault,
+>
+{
+    let closure = domain
+        .comp_closure(closure)
+        .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
+    let crate::closure::CompBody::Source(source) = closure.body()
+    else {
+        return Err(ConversionFault::MachineInvariant);
+    };
+    let Some(&gandr_core_term::Computation::Split { arity, body, .. }) = core.computation(source)
+    else {
+        return Err(ConversionFault::MachineInvariant);
+    };
+    Ok((arity, body))
 }
 
 /// Resolve the body a fixpoint capture closes over.
@@ -508,6 +558,7 @@ pub fn projection_key(
 #[spec(ensures:|ret| match elimination {
     Elimination::DataCase(closure) => ret == case_source(core,domain,closure).map(|(_,branches)| EliminationShape::DataCase(branches.len())),
     Elimination::Projection(source) => ret == projection_key(core,source).map(EliminationShape::Projection),
+    Elimination::Split(closure) => ret == split_source(core,domain,closure).map(|(arity,_)| EliminationShape::Split(arity)),
     Elimination::Case(branches) => ret == domain.branches(branches).map(|held| EliminationShape::Case(held.len())).map_err(ConversionFault::Domain),
     _ => ret == Ok(EliminationShape::Ordinary(core::mem::discriminant(&elimination))),
 })]
@@ -522,6 +573,9 @@ fn elimination_shape<'core>(
             .map(|(_, branches)| EliminationShape::DataCase(branches.len())),
         | Elimination::Projection(source) => {
             projection_key(core, source).map(EliminationShape::Projection)
+        },
+        | Elimination::Split(closure) => {
+            split_source(core, domain, closure).map(|(arity, _)| EliminationShape::Split(arity))
         },
         | Elimination::Case(branches) => domain
             .branches(branches)
@@ -649,6 +703,7 @@ pub enum Spines
                 EliminationShape::DataCase(branches) => branches.saturating_add(1_usize),
                 EliminationShape::Projection(_) => 0_usize,
                 EliminationShape::Case(branches) => branches,
+                EliminationShape::Split(_) => 1_usize,
                 EliminationShape::Ordinary(_) => match a { Elimination::Force => 0_usize,Elimination::ListFold { .. } => 2_usize,_ => 1_usize },
             };
             Ok((true,count.saturating_add(added)))
@@ -711,6 +766,9 @@ pub fn spine_subgoals(
             | (Elimination::Bind(left_body), Elimination::Bind(right_body)) => {
                 subgoals.push(Subgoal::Opened(left_body, right_body));
             },
+            | (Elimination::Split(left_split), Elimination::Split(right_split)) => {
+                subgoals.push(Subgoal::SplitBodies(left_split, right_split));
+            },
             | (Elimination::Fixpoint(left_fixpoint), Elimination::Fixpoint(right_fixpoint)) => {
                 subgoals.push(Subgoal::Fixpoints(left_fixpoint, right_fixpoint));
             },
@@ -727,7 +785,11 @@ pub fn spine_subgoals(
                 },
             ) => {
                 subgoals.push(Subgoal::Entered(ln, rn));
-                subgoals.push(Subgoal::OpenedTwice(lc, rc));
+                subgoals.push(Subgoal::OpenedUnder(
+                    lc,
+                    rc,
+                    gandr_core_term::ComponentCount::from(2_usize),
+                ));
             },
             | (Elimination::Case(left_branches), Elimination::Case(right_branches)) => {
                 let left_branches = domain
@@ -743,6 +805,7 @@ pub fn spine_subgoals(
             | (
                 Elimination::Transport(_)
                 | Elimination::DataCase(_)
+                | Elimination::Split(_)
                 | Elimination::Projection(_)
                 | Elimination::ProductTransport(_)
                 | Elimination::Apply(_)

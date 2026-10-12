@@ -231,6 +231,10 @@ pub enum EvalFault
     ProjectedNonTuple,
     /// The projected component is past the tuple's last.
     AbsentTupleComponent,
+    /// A split received a non-tuple, non-neutral value.
+    SplitNonTuple,
+    /// A split binds a number of components other than its tuple's.
+    SplitArity,
 }
 
 /// A definition chain with every body lowered into the core arena a run
@@ -579,6 +583,16 @@ enum Task
     },
     /// Reapply a suspended nominal case after its head unfolds.
     DataCaseClosure(CompClosureId),
+    /// Bind a tuple's components into the source split's body.
+    Split
+    {
+        /// The source split, carrying its arity and body.
+        term: ComputationId,
+        /// The environment its body extends.
+        env: EnvId,
+    },
+    /// Reapply a suspended split after its head unfolds.
+    SplitClosure(CompClosureId),
     /// Select the source's field or component from an evaluated record or
     /// tuple.
     Projection(ComputationId),
@@ -2043,13 +2057,14 @@ impl<'run> Evaluation<'run>
     /// - witness: `eval::tests::ill_shaped_reapplied_spines_return_machine_faults`
     /// - witness: `eval::tests::native_transport_sequences_product_components`
     #[spec(
-        requires: matches!(spine.first(), Some(Elimination::ListFold { .. } | Elimination::DataCase(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::Force | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint(_))),
+        requires: matches!(spine.first(), Some(Elimination::ListFold { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::Force | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint(_))),
         ensures: |ret| ret.machine.values.as_slice() == [head] && ret.machine.comps.is_empty()
             && ret.machine.fuel.0 == 0_u32 && {
                 let mut tasks = ret.machine.tasks.iter().rev();
                 let mut answer = Answer::Value;
                 let ordered = spine.iter().all(|elimination| match *elimination {
                     Elimination::DataCase(closure) => { answer = Answer::Computation; matches!(tasks.next(),Some(Task::DataCaseClosure(held)) if *held == closure) },
+                    Elimination::Split(closure) => { answer = Answer::Computation; matches!(tasks.next(),Some(Task::SplitClosure(held)) if *held == closure) },
                     Elimination::Projection(term) => { answer = Answer::Computation; matches!(tasks.next(),Some(Task::Projection(held)) if *held == term) },
                     Elimination::Transport(value) => { answer = Answer::Computation;
                         matches!(tasks.next(), Some(Task::Supply(held)) if *held == value) && matches!(tasks.next(), Some(Task::Transport)) },
@@ -2089,6 +2104,10 @@ impl<'run> Evaluation<'run>
                 | Elimination::DataCase(closure) => {
                     answer = Answer::Computation;
                     machine.tasks.push(Task::DataCaseClosure(closure));
+                },
+                | Elimination::Split(closure) => {
+                    answer = Answer::Computation;
+                    machine.tasks.push(Task::SplitClosure(closure));
                 },
                 | Elimination::Projection(term) => {
                     answer = Answer::Computation;
@@ -2185,11 +2204,11 @@ impl<'run> Evaluation<'run>
                             == usize::from(held.environment().depth(Zone::Intuitionistic)).saturating_add(1_usize)
                             && environment.depth(Zone::Linear) == held.environment().depth(Zone::Linear)
                             && environment.lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32)) == Some(variable),
-                        Bound::Variables(first, second) => usize::from(environment.depth(Zone::Intuitionistic))
-                            == usize::from(held.environment().depth(Zone::Intuitionistic)).saturating_add(2_usize)
+                        Bound::Variables(variables) => usize::from(environment.depth(Zone::Intuitionistic))
+                            == usize::from(held.environment().depth(Zone::Intuitionistic)).saturating_add(variables.len())
                             && environment.depth(Zone::Linear) == held.environment().depth(Zone::Linear)
-                            && environment.lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32)) == Some(second)
-                            && environment.lookup(Zone::Intuitionistic, DeBruijnIndex::from(1_u32)) == Some(first),
+                            && variables.iter().rev().enumerate().all(|(index, &variable)| u32::try_from(index)
+                                .is_ok_and(|index| environment.lookup(Zone::Intuitionistic, DeBruijnIndex::from(index)) == Some(variable))),
                     }),
                     _ => false,
                 }),
@@ -2199,7 +2218,7 @@ impl<'run> Evaluation<'run>
         definitions: Definitions<'run>,
         domain: &DomainArena,
         closure: CompClosureId,
-        bound: Bound,
+        bound: Bound<'_>,
     ) -> Result<Self, EvalFault>
     {
         let held = domain
@@ -2209,9 +2228,10 @@ impl<'run> Evaluation<'run>
         match bound {
             | Bound::Nothing => {},
             | Bound::Variable(variable) => environment.extend(Zone::Intuitionistic, variable),
-            | Bound::Variables(first, second) => {
-                environment.extend(Zone::Intuitionistic, first);
-                environment.extend(Zone::Intuitionistic, second);
+            | Bound::Variables(variables) => {
+                for &variable in variables {
+                    environment.extend(Zone::Intuitionistic, variable);
+                }
             },
         }
         let term = held.body();
@@ -2287,14 +2307,15 @@ impl<'run> Evaluation<'run>
 
 /// What a closure is entered with.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Bound
+pub enum Bound<'bound>
 {
     /// Nothing: the closure's own environment, as forcing a thunk reads it.
     Nothing,
     /// A variable bound innermost, as opening a binder reads it.
     Variable(DomainValueId),
-    /// Two fresh variables, outermost first, for a native List cell branch.
-    Variables(DomainValueId, DomainValueId),
+    /// Fresh variables, outermost first, for a native List cell branch or a
+    /// split body.
+    Variables(&'bound [DomainValueId]),
 }
 
 /// Drive the machine until its task stack empties or its slice runs out.
@@ -2442,7 +2463,7 @@ fn run(
     ensures: |ret| machine.fuel == entry_fuel && ret != Err(EvalFault::OutOfFuel)
         && (ret.is_err() || match task {
             Task::Constructor { .. } | Task::Record(_) => machine.comps.len() == entry_comps && machine.tasks.len() == entry_tasks && machine.values.last().is_some_and(|id| domain.value(*id).is_some()),
-            Task::DataCase { .. } | Task::DataCaseClosure(_) | Task::Projection(_) | Task::Force | Task::Apply | Task::StaticApply | Task::Bind { .. } | Task::Case { .. }
+            Task::DataCase { .. } | Task::DataCaseClosure(_) | Task::Split { .. } | Task::SplitClosure(_) | Task::Projection(_) | Task::Force | Task::Apply | Task::StaticApply | Task::Bind { .. } | Task::Case { .. }
             | Task::BindClosure(_) | Task::CaseBranches(_) | Task::Transport | Task::ProductTransport(_) | Task::FixpointClosure(_) | Task::ListFold { .. } => machine.tasks.len() >= entry_tasks,
             Task::Value { .. } => machine.comps.len() == entry_comps
                 && ((machine.values.len() == entry_values.saturating_add(1_usize) && machine.tasks.len() >= entry_tasks)
@@ -2512,6 +2533,18 @@ fn step(
             };
             let env = machine.hold_env(closure.environment().clone());
             step_data_case(core, domain, machine, term, env)
+        },
+        | Task::Split { term, env } => step_split(core, domain, machine, term, env),
+        | Task::SplitClosure(closure) => {
+            let closure = domain
+                .comp_closure(closure)
+                .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+            let crate::closure::CompBody::Source(term) = closure.body()
+            else {
+                return Err(EvalFault::MachineInvariant);
+            };
+            let env = machine.hold_env(closure.environment().clone());
+            step_split(core, domain, machine, term, env)
         },
         | Task::Value { term, env } => {
             let recalled = machine.recall(CoreTerm::Value(term), env)?;
@@ -3098,6 +3131,14 @@ fn step_comp(
             Ok(())
         },
         | Computation::Primitive { primitive, .. } => Err(EvalFault::NativePrimitive(primitive)),
+        | Computation::Split { scrutinee, .. } => {
+            machine.tasks.push(Task::Split { term, env });
+            machine.tasks.push(Task::Value {
+                term: scrutinee,
+                env,
+            });
+            Ok(())
+        },
         | Computation::DataCase { scrutinee, .. } => {
             machine.tasks.push(Task::DataCase { term, env });
             machine.tasks.push(Task::Value {
@@ -4228,6 +4269,70 @@ fn step_data_case(
             Ok(())
         },
         | _ => Err(EvalFault::CasedNonConstructor),
+    }
+}
+
+/// Bind a tuple's components into a split's body, or suspend the whole split
+/// on a neutral head.
+///
+/// # Specification
+/// - requires: the scrutinee is the top value operand.
+/// - ensures: a tuple of the split's arity extends the environment with each
+///   component in order, the last innermost, and enters the body; a neutral
+///   retains the whole split and its ambient capture.
+/// - fails: a tuple of another arity, a non-tuple, or malformed machine state.
+/// - panics: none.
+///
+/// # Errors
+/// Returns the typed tuple, domain, term or machine refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a three-component split reading each component, an empty
+///   split, a neutral scrutinee, an arity mismatch and a non-tuple distinguish
+///   binding order, suspension and both refusals.
+/// - witness: `eval::tests::a_split_binds_each_component_in_order`
+#[spec(ensures: |ret| ret != Err(EvalFault::OutOfFuel))]
+fn step_split(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    term: ComputationId,
+    env: EnvId,
+) -> Result<(), EvalFault>
+{
+    let Some(&Computation::Split { arity, body, .. }) = core.computation(term)
+    else {
+        return Err(EvalFault::DanglingTerm);
+    };
+    let scrutinee = machine.pop_value()?;
+    match *domain
+        .value(scrutinee)
+        .ok_or(EvalFault::Domain(DomainFault::Dangling))?
+    {
+        | DomainValue::Tuple { fields, .. } => {
+            let components = domain.fields(fields).map_err(EvalFault::Domain)?.to_vec();
+            if components.len() != usize::from(arity) {
+                return Err(EvalFault::SplitArity);
+            }
+            let mut extended = env;
+            for component in components {
+                extended = machine.extended(extended, Zone::Intuitionistic, component)?;
+            }
+            machine.tasks.push(Task::Comp {
+                term: body,
+                env: extended,
+            });
+            Ok(())
+        },
+        | DomainValue::Neutral { neutral, .. } => {
+            let closure = domain.comp_closure_node(term, machine.capture(env)?);
+            let grown = extend_spine(domain, neutral, Elimination::Split(closure))?;
+            machine
+                .comps
+                .push(domain.comp_neutral(grown, CompTermFace::Reduced));
+            Ok(())
+        },
+        | _ => Err(EvalFault::SplitNonTuple),
     }
 }
 
@@ -6510,6 +6615,79 @@ mod tests
             (past, EvalFault::AbsentTupleComponent),
             (of_record, EvalFault::ProjectedNonTuple),
             (of_tuple, EvalFault::ProjectedNonRecord),
+        ] {
+            assert_eq!(
+                eval_computation(&core, &mut domain, definitions, ample(), term),
+                Err(fault)
+            );
+        }
+    }
+
+    /// A three-component split binds component zero outermost and the last
+    /// innermost, a split of the unit enters its body, and a split of
+    /// another arity or of a non-tuple refuses by name.
+    #[test]
+    fn a_split_binds_each_component_in_order()
+    {
+        use gandr_core_term::ComponentCount;
+        let mut core = CoreArena::new();
+        let unit = core.value_unit();
+        let left = core.value_injection(Side::Left.into(), unit);
+        let pair = core.value_tuple(&[unit, unit]);
+        let tuple = core.value_tuple(&[unit, left, pair]);
+        let last = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let middle = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let first = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
+        let reordered = core.value_tuple(&[last, first, middle]);
+        let body = core.computation_return(reordered);
+        let split = core.computation_split(tuple, ComponentCount::from(3_usize), body);
+        let (chain, environment) = nothing_unfolds();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let mut domain = DomainArena::new();
+        let evaluated = eval_computation(&core, &mut domain, definitions, ample(), split).unwrap();
+        let Some(&DomainComp::Return { value, .. }) = domain.computation(evaluated)
+        else {
+            panic!("the body returns");
+        };
+        let read = readback_value(
+            &mut core,
+            &mut domain,
+            definitions,
+            ReadbackMode::Unfolding,
+            ample(),
+            value,
+        )
+        .unwrap();
+        let Some(&[was_last, was_first, was_middle]) = core.value(read).and_then(Value::components)
+        else {
+            panic!("the body's triple reads back");
+        };
+        assert!(matches!(
+            core.value(was_last).and_then(Value::components),
+            Some(&[_, _])
+        ));
+        assert!(
+            core.value(was_first)
+                .and_then(Value::components)
+                .is_some_and(<[_]>::is_empty)
+        );
+        assert!(matches!(
+            core.value(was_middle),
+            Some(&Value::Injection(summand, _)) if summand == Side::Left.into()
+        ));
+        let entered = core.computation_return(left);
+        let empty = core.computation_split(unit, ComponentCount::from(0_usize), entered);
+        let evaluated = eval_computation(&core, &mut domain, definitions, ample(), empty).unwrap();
+        assert!(matches!(
+            domain.computation(evaluated),
+            Some(&DomainComp::Return { value, .. })
+                if matches!(domain.value(value), Some(&DomainValue::Injection { .. }))
+        ));
+        let short = core.computation_split(tuple, ComponentCount::from(2_usize), entered);
+        let of_injection = core.computation_split(left, ComponentCount::from(1_usize), entered);
+        for (term, fault) in [
+            (short, EvalFault::SplitArity),
+            (of_injection, EvalFault::SplitNonTuple),
         ] {
             assert_eq!(
                 eval_computation(&core, &mut domain, definitions, ample(), term),

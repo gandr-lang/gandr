@@ -886,6 +886,15 @@ Err(_) => false,
                     | Computation::Resume(stack, body) => {
                         two(value(stack), computation(body), Lowering::NONE)
                     },
+                    | Computation::Split {
+                        scrutinee,
+                        arity,
+                        body,
+                    } => two(
+                        value(scrutinee),
+                        computation(body),
+                        Lowering(u32::try_from(usize::from(arity)).unwrap_or(u32::MAX)),
+                    ),
                     | Computation::With(first, second) => {
                         two(computation(first), computation(second), Lowering::NONE)
                     },

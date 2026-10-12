@@ -366,6 +366,7 @@ fn checked(
                 | CheckingForm::Injection(_) => "an injection",
                 | CheckingForm::List(_) => "a list",
                 | CheckingForm::Case(_) => "a case",
+                | CheckingForm::Split(_) => "a split",
                 | CheckingForm::Thunk(_) => "a thunk",
                 | CheckingForm::Lambda(_) => "a function",
                 | CheckingForm::Return(_) => "a return",

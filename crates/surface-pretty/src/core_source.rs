@@ -439,6 +439,7 @@ impl Source for CoreSource<'_>
                     | Computation::Perform { .. }
                     | Computation::Handle { .. }
                     | Computation::Resume(..)
+                    | Computation::Split { .. }
                     | Computation::Reset(_)
                     | Computation::Shift(_)
                     | Computation::With(..)

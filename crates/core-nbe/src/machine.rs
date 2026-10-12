@@ -923,8 +923,8 @@ enum Opening
 {
     /// A lambda or ordinary elimination branch.
     One,
-    /// A List fold cell branch.
-    Two,
+    /// A List fold cell branch or a split body, under this many variables.
+    Many(gandr_core_term::ComponentCount),
 }
 
 /// A channel: one evaluation goals demand.
@@ -1346,7 +1346,7 @@ where
     /// - witness: `machine::tests::binder_ceiling_is_refused_before_opening_or_eta_allocation`
     #[spec(
         ensures: |ret| (ret.as_ref().is_ok_and(|id| self.processes.get(id.0).is_some()) || ret.is_err())
-            && (!matches!(sides, SupportSides::Opened(_, _) | SupportSides::OpenedTwice(_, _))
+            && (!matches!(sides, SupportSides::Opened(_, _) | SupportSides::OpenedUnder(..))
             || u32::from(level) != u32::MAX || ret.is_err())
     )]
     fn start_fresh(
@@ -1382,10 +1382,10 @@ where
                 chain: Chain::default(),
                 next: Next::Classify,
             },
-            | SupportSides::OpenedTwice(left, right) => Goal {
-                left: Slot::Waiting(self.open_channel(left, level, Opening::Two)?),
-                right: Slot::Waiting(self.open_channel(right, level, Opening::Two)?),
-                depth: deeper(deeper(level)?)?,
+            | SupportSides::OpenedUnder(left, right, count) => Goal {
+                left: Slot::Waiting(self.open_channel(left, level, Opening::Many(count))?),
+                right: Slot::Waiting(self.open_channel(right, level, Opening::Many(count))?),
+                depth: (0_usize .. usize::from(count)).try_fold(level, |at, _| deeper(at))?,
                 frozen: Frozen::default(),
                 chain: Chain::default(),
                 next: Next::Classify,
@@ -2525,9 +2525,14 @@ where
                     let right = self.fixpoint_body(right)?;
                     (SupportSides::Opened(left, right), goal.depth)
                 },
+                | Subgoal::SplitBodies(left, right) => {
+                    let (arity, left) = self.split_body(left)?;
+                    let (_, right) = self.split_body(right)?;
+                    (SupportSides::OpenedUnder(left, right, arity), goal.depth)
+                },
                 | Subgoal::Entered(left, right) => (SupportSides::Closed(left, right), goal.depth),
-                | Subgoal::OpenedTwice(left, right) => {
-                    (SupportSides::OpenedTwice(left, right), goal.depth)
+                | Subgoal::OpenedUnder(left, right, count) => {
+                    (SupportSides::OpenedUnder(left, right, count), goal.depth)
                 },
             };
             let child = self.start_fresh(sides, depth)?;
@@ -2648,6 +2653,36 @@ where
             .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
         let environment = closure.environment().clone();
         Ok(self.domain.comp_closure_node(body, environment))
+    }
+
+    /// Capture a split's body over the split's own environment, to be opened
+    /// under one fresh variable per component.
+    ///
+    /// # Specification
+    /// - requires: nothing; a capture over anything but a source split is
+    ///   refused.
+    /// - ensures: returns the split's arity and its body over the capture's
+    ///   environment, with no binding added.
+    /// - fails: dangling or malformed split captures.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two stuck splits whose bodies read their components
+    ///   alike are one, and two that read different components are not.
+    /// - witness: `machine::tests::stuck_splits_compare_by_arity_and_body`
+    #[spec(ensures:|ret| ret.is_err() || ret.as_ref().is_ok_and(|&(_, closure)| self.domain.comp_closure(closure).is_some()))]
+    fn split_body(
+        &mut self,
+        split: CompClosureId,
+    ) -> Result<(gandr_core_term::ComponentCount, CompClosureId), ConversionFault>
+    {
+        let (arity, body) = crate::rules::split_source(self.core, self.domain, split)?;
+        let closure = self
+            .domain
+            .comp_closure(split)
+            .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
+        let environment = closure.environment().clone();
+        Ok((arity, self.domain.comp_closure_node(body, environment)))
     }
 
     /// The neutral a weak head is.
@@ -3744,13 +3779,32 @@ where
         if let Some(&channel) = self.openings.get(&(closure, level, arity)) {
             return Ok(channel);
         }
-        let variable = self.variable(level)?;
-        let bound = match arity {
-            | Opening::One => Bound::Variable(variable),
-            | Opening::Two => Bound::Variables(variable, self.variable(deeper(level)?)?),
-        };
-        let evaluation = Evaluation::enter(self.definitions, self.domain, closure, bound)
-            .map_err(ConversionFault::Evaluation)?;
+        let evaluation = match arity {
+            | Opening::One => {
+                let variable = self.variable(level)?;
+                Evaluation::enter(
+                    self.definitions,
+                    self.domain,
+                    closure,
+                    Bound::Variable(variable),
+                )
+            },
+            | Opening::Many(count) => {
+                let mut variables = Vec::with_capacity(usize::from(count));
+                let mut at = level;
+                for _ in 0_usize .. usize::from(count) {
+                    variables.push(self.variable(at)?);
+                    at = deeper(at)?;
+                }
+                Evaluation::enter(
+                    self.definitions,
+                    self.domain,
+                    closure,
+                    Bound::Variables(&variables),
+                )
+            },
+        }
+        .map_err(ConversionFault::Evaluation)?;
         let share = self.share_at(DefinitionHeight::default());
         let channel = self.start(
             Work::Channel(Channel::Running(evaluation)),
@@ -4575,7 +4629,7 @@ mod tests
          CoreTerm::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
           Computation::DataCase {scrutinee,ref branches,..} => ret.iter().copied().eq(core::iter::once(CoreTerm::Value(scrutinee)).chain(branches.iter().copied().map(CoreTerm::Computation))),
           Computation::RecordProjection(record,_) | Computation::TupleProjection(record,_) => ret.as_slice() == [CoreTerm::Value(record)],
-          Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) => false,
+          Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Split { .. } | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) => false,
           Computation::ListFold { list,on_nil,on_cons,.. } => ret.as_slice() == [CoreTerm::Value(list),CoreTerm::Computation(on_nil),CoreTerm::Computation(on_cons)],
           Computation::Primitive { arguments, .. } => ret.iter().copied().eq(arguments.iter().copied().map(CoreTerm::Value)),
           Computation::Transport(path, value) => ret.as_slice() == [CoreTerm::Value(path), CoreTerm::Value(value)],
@@ -4647,6 +4701,7 @@ mod tests
                     | Computation::Perform { .. }
                     | Computation::Handle { .. }
                     | Computation::Resume(..)
+                    | Computation::Split { .. }
                     | Computation::Reset(_)
                     | Computation::Shift(_)
                     | Computation::With(..)
@@ -4867,6 +4922,7 @@ mod tests
                                 | Computation::Perform { .. }
                                 | Computation::Handle { .. }
                                 | Computation::Resume(..)
+                                | Computation::Split { .. }
                                 | Computation::Reset(_)
                                 | Computation::Shift(_)
                                 | Computation::With(..)
@@ -4986,7 +5042,7 @@ mod tests
          CoreTerm::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
           Computation::DataCase {scrutinee,ref branches,..} => ret.iter().copied().eq(core::iter::once(canon[&CoreTerm::Value(scrutinee)]).chain(branches.iter().map(|branch| canon[&CoreTerm::Computation(*branch)]))),
           Computation::RecordProjection(record,_) | Computation::TupleProjection(record,_) => ret.as_slice() == [canon[&CoreTerm::Value(record)]],
-          Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) => false,
+          Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Split { .. } | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) => false,
           Computation::ListFold { list,on_nil,on_cons,.. } => ret.as_slice() == [canon[&CoreTerm::Value(list)],canon[&CoreTerm::Computation(on_nil)],canon[&CoreTerm::Computation(on_cons)]],
           Computation::Primitive { arguments, .. } => ret.iter().copied().eq(arguments.iter().map(|argument| canon[&CoreTerm::Value(*argument)])),
           Computation::Transport(path, value) => ret.as_slice() == [canon[&CoreTerm::Value(path)], canon[&CoreTerm::Value(value)]],
@@ -5277,6 +5333,7 @@ mod tests
                                 | Computation::Perform { .. }
                                 | Computation::Handle { .. }
                                 | Computation::Resume(..)
+                                | Computation::Split { .. }
                                 | Computation::Reset(_)
                                 | Computation::Shift(_)
                                 | Computation::With(..)
@@ -5579,7 +5636,7 @@ mod tests
              Node::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
               Computation::DataCase {scrutinee,motive,ref branches} => ret.iter().copied().eq([Node::Value(scrutinee),Node::CompType(motive)].into_iter().chain(branches.iter().copied().map(Node::Computation))),
               Computation::RecordProjection(record,_) | Computation::TupleProjection(record,_) => ret.as_slice() == [Node::Value(record)],
-          Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) => false,
+          Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Split { .. } | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) => false,
               Computation::ListFold { element,result,list,on_nil,on_cons } => ret.as_slice() == [Node::ValueType(element),Node::ValueType(result),Node::Value(list),Node::Computation(on_nil),Node::Computation(on_cons)],
               Computation::Primitive { arguments, .. } => ret.iter().copied().eq(arguments.iter().copied().map(Node::Value)),
               Computation::Transport(path, value) => ret.as_slice() == [Node::Value(path), Node::Value(value)],
@@ -5690,6 +5747,7 @@ mod tests
                         | Computation::Perform { .. }
                         | Computation::Handle { .. }
                         | Computation::Resume(..)
+                        | Computation::Split { .. }
                         | Computation::Reset(_)
                         | Computation::Shift(_)
                         | Computation::With(..)
@@ -5978,6 +6036,7 @@ mod tests
                         | Computation::Perform { .. }
                         | Computation::Handle { .. }
                         | Computation::Resume(..)
+                        | Computation::Split { .. }
                         | Computation::Reset(_)
                         | Computation::Shift(_)
                         | Computation::With(..)
@@ -8922,6 +8981,61 @@ mod tests
                 certified(expected),
                 "{sides:?}: {decisions:?}"
             );
+        }
+    }
+    /// A split computes on the tuple a definition unfolds to, and two splits
+    /// stuck on one neutral compare by arity and by their bodies opened under
+    /// one variable per component. The kernel has no split, so the verdicts
+    /// are not replayed: checked splits reach it as the projection binds it
+    /// judges itself.
+    #[test]
+    fn stuck_splits_compare_by_arity_and_body()
+    {
+        use gandr_core_term::ComponentCount;
+        let mut core = CoreArena::new();
+        let unit = core.value_unit();
+        let left = core.value_injection(gandr_core_term::Summand::from(0_usize), unit);
+        let pair = core.value_tuple(&[unit, unit]);
+        let tuple = core.value_tuple(&[unit, left, pair]);
+        let named_tuple = core.value_constant(Name::Zero.constant());
+        let rigid = core.value_constant(Name::Rigid.constant());
+        let innermost = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let outer = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let middle = core.computation_return(outer);
+        let last = core.computation_return(innermost);
+        let three = ComponentCount::from(3_usize);
+        let two = ComponentCount::from(2_usize);
+        let computed = core.computation_split(named_tuple, three, middle);
+        let returned_left = core.computation_return(left);
+        let returned_pair = core.computation_return(pair);
+        let stuck = core.computation_split(rigid, two, last);
+        let repeated = core.computation_split(rigid, two, last);
+        let other_component = core.computation_split(rigid, two, middle);
+        let other_arity = core.computation_split(rigid, three, last);
+        let world = World::new(core, &[(Name::Zero, tuple)]);
+        for (sides, expected) in [
+            (
+                Sides::Computations(computed, returned_left),
+                MachineVerdict::Convertible,
+            ),
+            (
+                Sides::Computations(computed, returned_pair),
+                MachineVerdict::NotConvertible,
+            ),
+            (
+                Sides::Computations(stuck, repeated),
+                MachineVerdict::Convertible,
+            ),
+            (
+                Sides::Computations(stuck, other_component),
+                MachineVerdict::NotConvertible,
+            ),
+            (
+                Sides::Computations(stuck, other_arity),
+                MachineVerdict::NotConvertible,
+            ),
+        ] {
+            assert_eq!(world.traced(sides).0, expected, "{sides:?}");
         }
     }
 }

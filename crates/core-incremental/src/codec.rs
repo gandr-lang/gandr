@@ -1274,6 +1274,12 @@ where
             write_index(writer, tuple)?;
             writer.count(Count(usize::from(component)))?;
         },
+        | ContentNode::Split(scrutinee, arity, body) => {
+            writer.tag(Tag(0x5B));
+            write_index(writer, scrutinee)?;
+            writer.count(Count(usize::from(arity)))?;
+            write_index(writer, body)?;
+        },
         | ContentNode::Reify(ref frames) => {
             writer.tag(Tag(0x71));
             writer.count(Count(frames.len()))?;
@@ -2022,6 +2028,7 @@ fn read_effect_row(
                     ContentNode::DataCase { .. } => tag == 0x54,
                     ContentNode::RecordProjection(..) => tag == 0x55,
                     ContentNode::TupleProjection(..) => tag == 0x5A,
+                    ContentNode::Split(..) => tag == 0x5B,
                     | ContentNode::Reify(_) => tag == 0x71,
                     | ContentNode::Stack { .. } => tag == 0x72,
                     | ContentNode::WithType(..) => tag == 0x73,
@@ -2125,6 +2132,11 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             read_index(reader)?,
             gandr_core_term::Component::from(reader.count()?.0),
         ),
+        | 0x5B => {
+            let scrutinee = read_index(reader)?;
+            let arity = gandr_core_term::ComponentCount::from(reader.count()?.0);
+            ContentNode::Split(scrutinee, arity, read_index(reader)?)
+        },
         | 0x71 => {
             let count = reader.count()?;
             let mut frames = Vec::new();
@@ -3698,6 +3710,10 @@ where
                     writer.tag(Tag(6));
                     write_site(writer, site)?;
                 },
+                | Form::Split(site) => {
+                    writer.tag(Tag(14));
+                    write_site(writer, site)?;
+                },
                 | Form::Thunk(site) => {
                     writer.tag(Tag(0));
                     write_site(writer, site)?;
@@ -4036,6 +4052,7 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
                 | 11 => Form::Reset(read_site(reader)?),
                 | 12 => Form::Shift(read_site(reader)?),
                 | 13 => Form::With(read_site(reader)?),
+                | 14 => Form::Split(read_site(reader)?),
                 | _ => return Err(CodecError::Corrupt),
             };
             Refusal::NotSynthesisable { form }
@@ -5199,6 +5216,46 @@ mod tests
         };
         assert_eq!(super::read_refusal(&mut reader), Ok(refusal));
         assert_eq!(reader.finish(), Ok(()));
+    }
+
+    /// A split persists its scrutinee, arity and body in place: splits that
+    /// differ only in arity, or in which child is the scrutinee, encode
+    /// apart, and the empty split survives.
+    #[test]
+    fn a_split_persists_its_arity_between_its_children()
+    {
+        use gandr_core_term::ComponentCount;
+        let index = NodeIndex::from;
+        let nodes = [
+            ContentNode::Split(
+                index(1_usize),
+                ComponentCount::from(2_usize),
+                index(2_usize),
+            ),
+            ContentNode::Split(
+                index(1_usize),
+                ComponentCount::from(3_usize),
+                index(2_usize),
+            ),
+            ContentNode::Split(
+                index(2_usize),
+                ComponentCount::from(2_usize),
+                index(1_usize),
+            ),
+            ContentNode::Split(index(1_usize), ComponentCount::default(), index(2_usize)),
+        ];
+        let mut encodings = alloc::collections::BTreeSet::new();
+        for node in nodes {
+            let mut bytes = CheckpointBytes::default();
+            super::write_node(&mut Writer { sink: &mut bytes }, &node).expect("portable split");
+            assert!(encodings.insert(bytes.as_ref().to_vec()), "distinct splits");
+            let mut reader = Reader {
+                bytes: bytes.as_ref(),
+                cursor: 0,
+            };
+            assert_eq!(super::read_node(&mut reader), Ok(node));
+            assert_eq!(reader.finish(), Ok(()));
+        }
     }
 
     #[test]

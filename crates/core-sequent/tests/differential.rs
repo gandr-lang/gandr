@@ -379,6 +379,8 @@ fn normaliser_stop(fault: EvalFault) -> Stop
         | EvalFault::AbsentRecordField
         | EvalFault::ProjectedNonTuple
         | EvalFault::AbsentTupleComponent
+        | EvalFault::SplitNonTuple
+        | EvalFault::SplitArity
         | EvalFault::RuntimeControl(_)
         | EvalFault::FoldedNonList
         | EvalFault::NativePrimitive(_)

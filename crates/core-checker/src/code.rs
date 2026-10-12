@@ -828,6 +828,17 @@ pub fn loose_reach(
                     | Computation::TupleProjection(record, _) => {
                         work.push((CoreNode::Term(TermNode::Value(record)), depth));
                     },
+                    | Computation::Split {
+                        scrutinee,
+                        arity,
+                        body,
+                    } => {
+                        let inside = depth
+                            .checked_add(usize::from(arity))
+                            .ok_or(CheckRefusal::MachineInvariant)?;
+                        work.push((CoreNode::Term(TermNode::Value(scrutinee)), depth));
+                        work.push((CoreNode::Term(TermNode::Computation(body)), inside));
+                    },
                     | Computation::Perform {
                         ref signature,
                         payload,
