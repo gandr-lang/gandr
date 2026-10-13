@@ -3115,10 +3115,11 @@ impl<'source> Lowerer<'_, 'source>
     ///   level that settled it and the case's context carried under the tree's
     ///   binders. Level zero is the scrutinee itself, carried under the binders
     ///   above its use, so no binding of it is minted. The root carries the
-    ///   written origin, every other node the inserted match origin, and the
-    ///   arms are recorded beside the root; a match whose first arm matches
-    ///   anything is that arm's body. Nothing when the scrutinee, a reached
-    ///   body or a needed answer did not lower.
+    ///   written origin, a leaf's copy of its arm's body the origin of what it
+    ///   copies, every other node the inserted match origin, and the arms are
+    ///   recorded beside the root; a match whose first arm matches anything is
+    ///   that arm's body. Nothing when the scrutinee, a reached body or a
+    ///   needed answer did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -3175,8 +3176,17 @@ impl<'source> Lowerer<'_, 'source>
                 .iter()
                 .map(|_test| Maybe::Absent(lowered::Absent::Unminted)),
         );
+        let mut copies = Vec::new();
         for (position, test) in form.tests.iter().enumerate().rev() {
-            let id = mint_test(test, scrutinised, &bodies, &minted, motive, sink);
+            let id = mint_test(
+                test,
+                scrutinised,
+                &bodies,
+                &minted,
+                motive,
+                sink,
+                &mut copies,
+            );
             if let Some(held) = minted.get_mut(position) {
                 *held = id;
             }
@@ -3184,19 +3194,32 @@ impl<'source> Lowerer<'_, 'source>
         let inserted = origin.inserted(Insertion::Match);
         let Some(&Maybe::Present(root)) = minted.first()
         else {
-            record_since(
+            record_copied_since(
                 sink,
                 mark,
                 inserted,
                 Maybe::Absent(rooted::Absent::Unminted),
+                &copies,
             );
             return Maybe::Absent(lowered::Absent::Unminted);
         };
         if sink.arena.computations_since(mark).all(|id| id != root) {
-            record_since(sink, mark, inserted, Maybe::Absent(rooted::Absent::Adopted));
+            record_copied_since(
+                sink,
+                mark,
+                inserted,
+                Maybe::Absent(rooted::Absent::Adopted),
+                &copies,
+            );
             return Maybe::Present(Lowered::Computation(root));
         }
-        record_since(sink, mark, inserted, Maybe::Present((root, origin)));
+        record_copied_since(
+            sink,
+            mark,
+            inserted,
+            Maybe::Present((root, origin)),
+            &copies,
+        );
         sink.origins.record_case(root, form.origin.clone());
 
         Maybe::Present(Lowered::Computation(root))
@@ -3230,7 +3253,8 @@ struct Scrutinised
 /// - requires: every child of `test` is minted in `minted` or absent.
 /// - ensures: as [`Lowerer::mint_case`], for one node; nothing when a child,
 ///   the arm's body or a needed motive is absent. A leaf's copy of an exit or
-///   of a bind whose rest is distributed is recorded as its original is.
+///   of a bind whose rest is distributed is recorded as its original is, and
+///   every copy a leaf makes is reported in `copies` beside its original.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -3245,6 +3269,7 @@ fn mint_test(
     minted: &[Maybe<ComputationId, lowered::Absent>],
     motive: Maybe<(CompTypeId, Depth), lowered::Absent>,
     sink: &mut Sink<'_>,
+    copies: &mut Vec<Carried>,
 ) -> Maybe<ComputationId, lowered::Absent>
 {
     let child = |at: TestAt| {
@@ -3285,6 +3310,7 @@ fn mint_test(
             ) {
                 | TermId::Computation(substituted) => {
                     exits::mark_copies(sink, &carried);
+                    copies.extend_from_slice(&carried);
                     Maybe::Present(substituted)
                 },
                 | TermId::Value(_) => Maybe::Absent(lowered::Absent::Unminted),
@@ -3706,21 +3732,64 @@ pub(super) fn record_since(
     root: Maybe<(ComputationId, Origin), rooted::Absent>,
 )
 {
+    record_copied_since(sink, mark, origin, root, &[]);
+}
+
+/// [`record_since`], each node `carried` reports as a copy at the origin of
+/// the node it was copied from.
+///
+/// # Specification
+/// - requires: nothing has been recorded for a node minted since `mark`, and
+///   `carried` reports the rewrites that minted the copies among them.
+/// - ensures: every node minted since `mark` carries an origin, in ascending
+///   order in each family: the root its own; a node `carried` reports as a copy
+///   the origin of the node it was copied from, a copy of a match's root that
+///   match's record too; every other node `origin`.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every node of a compiled tree has an origin, and a leaf's
+///   copy of its arm's body answers at the body's bytes.
+/// - witness: `lower::native::tests::a_match_keeps_its_patterns_beside_its_tree`
+/// - witness: `lower::native::tests::a_leaf_keeps_its_arm_body_written`
+#[spec(ensures: sink.arena.values_since(mark).all(|id| matches!(sink.origins.value(id), Maybe::Present(_)))
+    && sink.arena.computations_since(mark).all(|id| match root {
+        | Maybe::Present((held, written)) if held == id => sink.origins.computation(id) == Maybe::Present(written),
+        | _ => matches!(sink.origins.computation(id), Maybe::Present(_)),
+    }))]
+fn record_copied_since(
+    sink: &mut Sink<'_>,
+    mark: gandr_core_term::ArenaWatermark,
+    origin: Origin,
+    root: Maybe<(ComputationId, Origin), rooted::Absent>,
+    carried: &[Carried],
+)
+{
+    let sources = exits::Sources::of(carried);
     for id in sink.arena.values_since(mark) {
-        sink.origins.record_value(id, origin);
+        let recorded = sources.value(sink, id, origin);
+        sink.origins.record_value(id, recorded);
     }
     for id in sink.arena.computations_since(mark) {
-        let recorded = match root {
-            | Maybe::Present((held, written)) if held == id => written,
-            | Maybe::Present(_) | Maybe::Absent(_) => origin,
-        };
-        sink.origins.record_computation(id, recorded);
+        match root {
+            | Maybe::Present((held, written)) if held == id => {
+                sink.origins.record_computation(id, written);
+            },
+            | Maybe::Present(_) | Maybe::Absent(_) => {
+                let recorded = sources.computation(sink, id, origin);
+                sink.origins.record_computation(id, recorded);
+                sources.keep_case(sink, id);
+            },
+        }
     }
     for id in sink.arena.value_types_since(mark) {
-        sink.origins.record_value_type(id, origin);
+        let recorded = sources.value_type(sink, id, origin);
+        sink.origins.record_value_type(id, recorded);
     }
     for id in sink.arena.comp_types_since(mark) {
-        sink.origins.record_comp_type(id, origin);
+        let recorded = sources.comp_type(sink, id, origin);
+        sink.origins.record_comp_type(id, recorded);
     }
 }
 
