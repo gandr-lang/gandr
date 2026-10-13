@@ -488,6 +488,34 @@ impl<'arena> CheckingContext<'arena>
         }
     }
 
+    /// Keep the session type an action's endpoint stood at, when a typed run
+    /// is recording: `standing`'s term is the action, its type the endpoint's
+    /// session type read where the action stands.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a recording log's endpoints grow by `standing` at their end;
+    ///   nothing changes otherwise.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each action of the seat exchange keeps its endpoint's
+    ///   state, which advances along the protocol.
+    /// - witness: `judgement::session::tests::a_typed_run_keeps_each_endpoint_s_state`
+    #[spec(
+        captures: before = self.typings.as_ref().map(|log| log.endpoints.len()),
+        ensures: self.typings.as_ref().map(|log| log.endpoints.len()) == before.map(|count| count.saturating_add(1)),
+    )]
+    pub(crate) fn keep_endpoint(
+        &mut self,
+        standing: crate::judgement::Typing,
+    )
+    {
+        if let Some(ref mut log) = self.typings {
+            log.endpoints.push(standing);
+        }
+    }
+
     /// Keep the formation of `ty`, when a typed run is recording, at the
     /// level it forms at under the binders it was formed under: the one point
     /// every finished formation passes, as [`Self::keep_typing`] is for

@@ -22,6 +22,7 @@ use gandr_core_term::Zone;
 use gandr_core_term::effect::EffectRow;
 use gandr_core_term::effect::capability::CapabilityGrade;
 use gandr_core_term::effect::capability::Region;
+use gandr_kernel_term::BaseType;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
@@ -35,6 +36,7 @@ use crate::lower::lower_module;
 use crate::module::DeclarationOutcome;
 use crate::module::LoweredModule;
 use crate::namespace::Recognition;
+use crate::origin::Labelled;
 use crate::resolve::HeadArity;
 use crate::resolve::SurfaceName;
 
@@ -481,6 +483,61 @@ fn an_exercise_is_checked_against_the_authority_it_was_attenuated_to()
             Verdict::Refused(CheckRefusal::CapabilityOutsideAuthority { .. })
         ),
         "the write a read capability withholds is refused at check time"
+    );
+}
+
+#[test]
+fn an_exercise_s_head_answers_at_its_operation()
+{
+    let text = concat!(
+        "def peek(c : Cap {read}) -> -F [Fs] String { c.read(\"notes\") }\n",
+        "def save(c : Cap {read, write}) -> -F [Fs] Unit { c.write(\"notes\", \"x\") }\n",
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(text), &mut arena);
+    let read = |ty| arena.value_type(ty).cloned();
+    let mut heads: Vec<(&str, Option<ValueType>, Option<ValueType>)> = module
+        .origins()
+        .labels()
+        .iter()
+        .filter_map(|label| match label.labelled {
+            | Labelled::CompType { ty, ref context } if context.is_empty() => {
+                let Some(&CompType::Arrow { domain, codomain }) = arena.comp_type(ty)
+                else {
+                    return None;
+                };
+                let Some(&CompType::Returner { result: reply, .. }) = arena.comp_type(codomain)
+                else {
+                    return None;
+                };
+                Some((
+                    text.get(usize::from(label.span.start()) .. usize::from(label.span.end()))?,
+                    read(domain),
+                    read(reply),
+                ))
+            },
+            | _ => None,
+        })
+        .collect();
+    heads.sort_by_key(|&(written, ..)| written);
+    let string = Some(ValueType::Base(BaseType::String));
+    let [
+        (read_head, ref read_payload, ref read_reply),
+        (write_head, ref write_payload, ref write_reply),
+    ] = heads[..]
+    else {
+        panic!("one label per exercise's head: {heads:?}");
+    };
+    assert_eq!(
+        (read_head, read_payload, read_reply),
+        ("c.read", &string, &string),
+        "a read's head answers at its operation, a string to the returner of a string"
+    );
+    assert!(
+        write_head == "c.write"
+            && matches!(*write_payload, Some(ValueType::Product(ref factors)) if factors.len() == 2)
+            && *write_reply == Some(ValueType::unit()),
+        "a write's head answers at a pair of strings to the returner of the unit: {heads:?}"
     );
 }
 

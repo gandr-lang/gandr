@@ -74,13 +74,13 @@ mod entries
         ("Expression \"", Standing::Owed(0)),
         ("Expression #{", Standing::Owed(0)),
         ("Expression &", Standing::Owed(0)),
-        ("Expression ( application", Standing::Owed(13)),
+        ("Expression ( application", Standing::Owed(0)),
         (
             "Expression ( group",
             Standing::Design("a parenthesised group: the node inside answers"),
         ),
         ("Expression +", Standing::Owed(0)),
-        ("Expression .", Standing::Owed(8)),
+        ("Expression .", Standing::Owed(0)),
         ("Expression >", Standing::Owed(0)),
         ("Expression ?", Standing::Owed(0)),
         (
@@ -93,14 +93,14 @@ mod entries
         ("Expression break", Standing::Design(EXIT)),
         ("Expression case", Standing::Owed(0)),
         ("Expression close", Standing::Owed(0)),
-        ("Expression constructor", Standing::Owed(23)),
+        ("Expression constructor", Standing::Owed(0)),
         ("Expression continue", Standing::Owed(0)),
         ("Expression fn", Standing::Owed(0)),
         ("Expression force", Standing::Owed(0)),
         ("Expression handle", Standing::Owed(0)),
-        ("Expression identifier", Standing::Owed(52)),
+        ("Expression identifier", Standing::Owed(2)),
         ("Expression loop", Standing::Owed(0)),
-        ("Expression number", Standing::Owed(1)),
+        ("Expression number", Standing::Owed(0)),
         ("Expression offer", Standing::Owed(0)),
         ("Expression pure", Standing::Design(EXIT)),
         ("Expression return", Standing::Owed(0)),
@@ -134,12 +134,12 @@ mod entries
                 "a parenthesised group or parameter list: the type inside or around answers",
             ),
         ),
-        ("Type *", Standing::Owed(3)),
+        ("Type *", Standing::Owed(0)),
         ("Type +", Standing::Owed(0)),
         ("Type +U", Standing::Owed(0)),
         ("Type ->", Standing::Owed(0)),
         ("Type -F", Standing::Owed(0)),
-        ("Type .", Standing::Owed(4)),
+        ("Type .", Standing::Owed(0)),
         ("Type =>", Standing::Owed(0)),
         ("Type ?", Standing::Owed(0)),
         ("Type Cap", Standing::Owed(0)),
@@ -153,7 +153,7 @@ mod entries
         ("Type end", Standing::Owed(0)),
         ("Type mu", Standing::Owed(0)),
         ("Type number", Standing::Owed(0)),
-        ("Type type_identifier", Standing::Owed(44)),
+        ("Type type_identifier", Standing::Owed(0)),
         ("Type type_variable", Standing::Owed(0)),
     ];
 
@@ -162,6 +162,7 @@ mod entries
     const FORMERS: &[&str] = &[
         "arrow",
         "back",
+        "bisim",
         "cong",
         "cons",
         "equiv",
@@ -170,10 +171,33 @@ mod entries
         "funext",
         "here",
         "pathProduct",
+        "recorded",
+        "ride",
+        "sim",
         "stay",
         "transport",
         "ua",
     ];
+
+    /// The moves a run literal `recorded(m₀, …, mₙ)` is written in. A move is
+    /// read by its shape, never resolved: the run literal is the core node,
+    /// and a payload inside a move is a term of its own.
+    const MOVES: &[&str] = &["closed", "offered", "received", "selected", "sent"];
+
+    /// Where a node stands relative to a run literal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum Run
+    {
+        /// Outside every run literal.
+        Outside,
+        /// Among a run literal's moves.
+        Moves,
+        /// Inside a move that names a label, `selected(l)` or `offered(l)`.
+        Labelled,
+    }
 
     /// The corpus directory `name`, under the corpus crate.
     ///
@@ -238,7 +262,9 @@ mod entries
 
     /// Why a node needs no entry of its own by where it stands, whatever its
     /// kind: inside an attribute or documentation, inside a declaration the
-    /// lowering refused, or as the head of a former's call.
+    /// lowering refused, as the head of a former's call, as the module a path
+    /// qualifies, as a run literal's move, or as an inner link of a product
+    /// chain.
     ///
     /// # Specification
     /// trivial.
@@ -253,6 +279,16 @@ mod entries
         /// The head of a constructor's or a primitive former's call, or of an
         /// annotation: the call is the one core node, and answers.
         Head,
+        /// The module a path selects from, `M` in `M.x` or `M.T`: a
+        /// namespace, neither a term nor a type, so the path answers.
+        Qualifier,
+        /// A move of a run literal, its head, or the label it names: read by
+        /// its shape, never resolved, so the run answers.
+        Move,
+        /// An unparenthesised product inside another, `B * C` in `A * B * C`:
+        /// the chain is one product of every factor, however it associates,
+        /// and the outermost link answers.
+        Chained,
     }
 
     /// Every gated node of `tree` with its kind, its span and where it stands.
@@ -267,8 +303,20 @@ mod entries
     {
         let source: &str = tree.source().into();
         let mut gated = Vec::new();
-        let mut stack = vec![(tree.root(), None::<Placed>, None::<(MoldId, &str, bool)>)];
-        while let Some((position, placed, parent)) = stack.pop() {
+        let mut stack = vec![(
+            tree.root(),
+            None::<Placed>,
+            None::<(MoldId, &str, bool, bool)>,
+            Run::Outside,
+        )];
+        let spelled = |at: Option<NodeIndex>| {
+            at.and_then(|at| tree.node(at))
+                .and_then(|node| {
+                    source.get(usize::from(node.span().start()) .. usize::from(node.span().end()))
+                })
+                .unwrap_or("")
+        };
+        while let Some((position, placed, parent, run)) = stack.pop() {
             let Some(node) = tree.node(position)
             else {
                 continue;
@@ -286,12 +334,15 @@ mod entries
                 | NodeLabel::Doc => {
                     stack.extend(
                         tree.children(position)
-                            .map(|child| (child, Some(Placed::Quoted), None)),
+                            .map(|child| (child, Some(Placed::Quoted), None, run)),
                     );
                     continue;
                 },
                 | _ => {
-                    stack.extend(tree.children(position).map(|child| (child, placed, None)));
+                    stack.extend(
+                        tree.children(position)
+                            .map(|child| (child, placed, None, run)),
+                    );
                     continue;
                 },
             };
@@ -306,11 +357,24 @@ mod entries
             }
             let placed = placed.or_else(|| def.label.starts_with('@').then_some(Placed::Quoted));
             let opener = first(tree, position);
+            let applied = melded && def.label == "(" && def.sort == Sort::Expression;
+            let called = if applied { spelled(opener) } else { "" };
+            let within = match run {
+                | _ if called == "recorded" => Run::Moves,
+                | Run::Moves if called == "selected" || called == "offered" => Run::Labelled,
+                | held => held,
+            };
             stack.extend(tree.children(position).map(|child| {
                 let headed = melded
                     && opener == Some(child)
                     && (def.label == "[" || (def.label == "(" && def.sort == Sort::Expression));
-                (child, placed, Some((mold, def.label, headed)))
+                let qualifying = melded && opener == Some(child) && def.label == ".";
+                (
+                    child,
+                    placed,
+                    Some((mold, def.label, headed, qualifying)),
+                    within,
+                )
             }));
             if !matches!(def.sort, Sort::Expression | Sort::Type | Sort::Pattern) {
                 continue;
@@ -320,11 +384,29 @@ mod entries
                 .get(usize::from(span.start()) .. usize::from(span.end()))
                 .unwrap_or("");
             let head = !melded
-                && parent.is_some_and(|(_, label, headed)| {
+                && parent.is_some_and(|(_, label, headed, _)| {
                     headed
                         && (label == "[" || def.label == "constructor" || FORMERS.contains(&text))
                 });
-            let placed = placed.or_else(|| head.then_some(Placed::Head));
+            let qualifier = !melded
+                && parent.is_some_and(|(.., qualifying)| qualifying)
+                && (def.label == "constructor" || def.label == "type_identifier");
+            let moved = match run {
+                | Run::Outside => false,
+                | Run::Moves => {
+                    (applied && MOVES.contains(&called)) || (!melded && MOVES.contains(&text))
+                },
+                | Run::Labelled => !melded && def.label == "identifier",
+            };
+            let chained = melded
+                && def.label == "*"
+                && def.sort == Sort::Type
+                && parent.is_some_and(|(held, ..)| held == mold);
+            let placed = placed
+                .or_else(|| head.then_some(Placed::Head))
+                .or_else(|| qualifier.then_some(Placed::Qualifier))
+                .or_else(|| moved.then_some(Placed::Move))
+                .or_else(|| chained.then_some(Placed::Chained));
             gated.push((kind(grammar, tree, position, *def), span, placed));
         }
         gated

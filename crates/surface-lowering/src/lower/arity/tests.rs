@@ -1055,7 +1055,7 @@ fn each_label_names_what_it_labels()
                 arena.value_type(ty).cloned(),
                 context.clone(),
             )),
-            | Labelled::CompType { .. } | Labelled::Value(_) => None,
+            | Labelled::CompType { .. } | Labelled::Value(_) | Labelled::Endpoint(_) => None,
         })
         .collect();
     let terms: Vec<(&str, Option<Value>)> = module
@@ -1064,7 +1064,9 @@ fn each_label_names_what_it_labels()
         .iter()
         .filter_map(|label| match label.labelled {
             | Labelled::Value(value) => Some((written(label), arena.value(value).cloned())),
-            | Labelled::ValueType { .. } | Labelled::CompType { .. } => None,
+            | Labelled::ValueType { .. } | Labelled::CompType { .. } | Labelled::Endpoint(_) => {
+                None
+            },
         })
         .collect();
     let integer = Some(ValueType::Base(gandr_kernel_term::BaseType::Integer));

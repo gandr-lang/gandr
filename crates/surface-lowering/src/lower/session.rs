@@ -98,6 +98,7 @@ use gandr_core_term::session::SessionAction;
 use gandr_core_term::session::SessionType;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldLabel;
+use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
 
@@ -710,7 +711,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::session::tests::the_seat_exchange_lowers_both_ends`
     /// - witness: `lower::session::tests::an_action_on_no_endpoint_is_refused`
     /// - witness: `lower::session::tests::an_offer_arm_is_one_label`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Action(_))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Action(..))))]
     pub(super) fn session_action(
         &mut self,
         site: Site,
@@ -764,7 +765,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(site.fault(site.at.span, FormFault::MisplacedTile));
         };
-        self.plan(site, Plan::Action(action));
+        self.plan(site, Plan::Action(action, subject.span));
 
         Ok(())
     }
@@ -867,7 +868,7 @@ impl<'source> Lowerer<'_, 'source>
         captures: before = self.statements.len(),
         ensures: |ret| ret.is_err() || (self.statements.len() == before.saturating_add(1)
             && self.statements.last().is_some_and(|last| last.origin == recv.node && last.bound == recv.node)
-            && matches!(self.plans.get(usize::from(recv.node)), Some(&Plan::Action(SessionAction::Receive { .. })))),
+            && matches!(self.plans.get(usize::from(recv.node)), Some(&Plan::Action(SessionAction::Receive { .. }, _)))),
     )]
     pub(super) fn receive(
         &mut self,
@@ -893,7 +894,10 @@ impl<'source> Lowerer<'_, 'source>
         let endpoint = self.endpoint(frame, subject)?;
         let name = self.name_at(binder);
         self.note_binder(binder, name)?;
-        self.plan(statement, Plan::Action(SessionAction::Receive { endpoint }));
+        self.plan(
+            statement,
+            Plan::Action(SessionAction::Receive { endpoint }, subject.span),
+        );
         self.statements.push(Statement {
             origin: recv.node,
             bound: recv.node,
@@ -1074,22 +1078,27 @@ impl<'source> Lowerer<'_, 'source>
         Maybe::Present(Lowered::ValueType(id))
     }
 
-    /// Mint a session action over its children.
+    /// Mint a session action over its children, its endpoint written at
+    /// `subject`.
     ///
     /// # Specification
     /// - requires: every child of `action` is already minted or absent.
     /// - ensures: the action over its children's lowered nodes, with the
-    ///   written origin; nothing when a child did not lower.
+    ///   written origin, and a label at `subject` naming the action's endpoint;
+    ///   nothing when a child did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — every action of the seat exchange.
+    /// - hypothesis: L3 — every action of the seat exchange, each endpoint
+    ///   answering at its action.
     /// - witness: `lower::session::tests::the_seat_exchange_lowers_both_ends`
+    /// - witness: `lower::session::tests::each_endpoint_answers_at_its_action`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))))]
     pub(super) fn mint_action(
         &self,
         action: &SessionAction<NodeIndex, NodeIndex, NodeIndex>,
+        subject: ByteSpan,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
@@ -1113,6 +1122,10 @@ impl<'source> Lowerer<'_, 'source>
         match minted {
             | Ok(action) => {
                 let id = sink.arena.computation_session(action);
+                sink.origins.record_label(Label {
+                    span: subject,
+                    labelled: Labelled::Endpoint(id),
+                });
                 Maybe::Present(sink.computation(id, origin))
             },
             | Err(reason) => Maybe::Absent(reason),

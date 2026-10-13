@@ -2171,8 +2171,8 @@ enum Plan
     /// every site the source writes one of its states at.
     Session(Arc<Protocol>, Stretch, Arc<session::Written>),
     /// A session action over the nodes of its payload, its arms and a fork's
-    /// protocol and children.
-    Action(SessionAction<NodeIndex, NodeIndex, NodeIndex>),
+    /// protocol and children, with the bytes its endpoint is written at.
+    Action(SessionAction<NodeIndex, NodeIndex, NodeIndex>, ByteSpan),
 }
 
 /// A node's lowered core node, at the sort its own form produced.
@@ -2553,6 +2553,9 @@ struct Lowerer<'run, 'source>
     classifiers: BTreeMap<NodeIndex, NodeIndex>,
     /// Each label written against an entry, in the order planned.
     labels: Vec<LabelSite>,
+    /// Each type head that stands for a type minted elsewhere: a manifest
+    /// component's or a functor instance's, which the head adopts.
+    stand_ins: BTreeSet<NodeIndex>,
     /// The type each computation position answers, where a function's result
     /// or a match's answer states it, or the block a statement's local ends
     /// continue answers.
@@ -3111,6 +3114,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             scratch: Pieces::new(),
             classifiers: BTreeMap::new(),
             labels: Vec::new(),
+            stand_ins: BTreeSet::new(),
             answers: BTreeMap::new(),
             in_type: BTreeSet::new(),
             at_endpoint: BTreeSet::new(),
@@ -6663,6 +6667,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
         };
         self.manifests.push((stated.held, site.at.node));
+        if matches!(plan, Plan::Transparent(_) | Plan::Instantiated(..)) {
+            let _fresh = self.stand_ins.insert(site.at.node);
+        }
         self.plan(site, plan);
 
         Ok(())
@@ -8558,7 +8565,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             .get(usize::from(position))
             .copied()
             .unwrap_or(Bridge::Bare);
+        let stands_in = matches!(plan, Plan::Transparent(_) | Plan::Instantiated(..))
+            && self.stand_ins.contains(&position);
         let minted = self.mint_plan(plan, sink, origin);
+        if stands_in && let Maybe::Present(Lowered::ValueType(id)) = minted {
+            sink.origins.record_stand_in(id, origin);
+        }
         let bridged = match sink.bridge(minted, bridge, origin) {
             | Maybe::Present(Lowered::Computation(returned)) if self.crossing.contains(&position) => {
                 Maybe::Present(Lowered::Computation(Self::unwind(sink, returned, origin)))
@@ -8683,7 +8695,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::FlowProduct(..)
                 | Plan::Recorded(_)
                 | Plan::Constructor(_) => Some(Produced::Value),
-                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Action(_) | Plan::Ride(..) | Plan::FlowThen(..) => {
+                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Action(..) | Plan::Ride(..) | Plan::FlowThen(..) => {
                     Some(Produced::Computation)
                 },
                 | Plan::Atom(_)
@@ -8934,7 +8946,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Session(ref protocol, payloads, ref written) => {
                 self.mint_session(protocol, payloads, written, sink, origin)
             },
-            | Plan::Action(ref action) => self.mint_action(action, sink, origin),
+            | Plan::Action(ref action, subject) => self.mint_action(action, subject, sink, origin),
             | Plan::Recorded(ref moves) => self.mint_recorded(moves, sink, origin),
             | Plan::Ride(motive, flow, value) => {
                 self.mint_ride((motive, flow, value), sink, origin)
@@ -9671,7 +9683,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Reenter(_)
             | Plan::Derived(_)
             | Plan::Session(..)
-            | Plan::Action(_)
+            | Plan::Action(..)
             | Plan::TelescopeTransport(_)
             | Plan::Capability(..)
             | Plan::Effectful(..)
@@ -10950,6 +10962,38 @@ impl<'run, 'source> Lowerer<'run, 'source>
         })
     }
 
+    /// The key of the form that wrote a half of `slot`'s name a second time,
+    /// when that repetition is the slot's refusal.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the key at the refusing node when the slot's refusal is a
+    ///   duplicate signature or definition; absent otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a module defining one member twice keys its second
+    ///   definition, which no half reaches.
+    /// - witness: `lower::tests::a_duplicate_definition_is_keyed_at_its_form`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Present(_)) == matches!(slot.refusal, Maybe::Present((_, LoweringRefusal::DuplicateDefinition { .. } | LoweringRefusal::DuplicateSignature { .. }))))]
+    fn duplicate_key(
+        &self,
+        slot: &DeclarationSlot<'source>,
+    ) -> Maybe<NodeKey, declaration_half::Absent>
+    {
+        match slot.refusal {
+            | Maybe::Present((
+                at,
+                LoweringRefusal::DuplicateDefinition { .. }
+                | LoweringRefusal::DuplicateSignature { .. },
+            )) => Maybe::Present(self.key_at(at)),
+            | Maybe::Present(_) | Maybe::Absent(_) => {
+                Maybe::Absent(declaration_half::Absent::Unwritten)
+            },
+        }
+    }
+
     /// Mint each callable operation's type and body from its plan.
     ///
     /// # Specification
@@ -11042,6 +11086,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             row.span(),
                             row.signature(),
                             row.definition(),
+                            row.duplicate(),
                             row.outcome(),
                             origins.declaration(row.origin()),
                         )
@@ -11059,6 +11104,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                                     .map(|half| self.key_at(half.declaration.node)),
                                 slot.definition
                                     .map(|half| self.key_at(half.declaration.node)),
+                                self.duplicate_key(slot),
                                 outcome,
                                 Maybe::Present(Origin::new(
                                     slot.introduced_by.node,
@@ -11095,6 +11141,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 definition: slot
                     .definition
                     .map(|half| self.key_at(half.declaration.node)),
+                duplicate: self.duplicate_key(slot),
                 outcome,
             }));
         }
@@ -16299,6 +16346,46 @@ mod tests
     }
 
     #[test]
+    fn a_type_head_answers_at_what_it_stands_for()
+    {
+        let text = "module NatAdd : #{ type M = Integer, zero : M } {\n  type M = Integer;\n  def \
+                    zero = 0;\n}\n\nmodule MkCounter(S : #{ type T, zero : T }) :> #{ type T, \
+                    seed : T } {\n  type T = S.T;\n  def seed = S.zero;\n}\n\nmodule Seed {\n  \
+                    type T = Integer;\n  def zero = 0;\n}\n\nmodule A = MkCounter(Seed) ;\n";
+        let mut arena = CoreArena::new();
+        let module = lowered(SourceText::from(text), &mut arena);
+        let standing: Vec<&str> = module
+            .origins()
+            .stand_ins()
+            .iter()
+            .filter_map(|&(ty, origin)| {
+                arena.value_type(ty)?;
+                text.get(usize::from(origin.span().start()) .. usize::from(origin.span().end()))
+            })
+            .collect();
+        let from = |needle: &str| text.find(needle);
+        let heads: Vec<usize> = module
+            .origins()
+            .stand_ins()
+            .iter()
+            .map(|&(_, origin)| usize::from(origin.span().start()))
+            .collect();
+        assert!(
+            from("zero : M").is_some_and(|at| heads.contains(&at.saturating_add(7))),
+            "a manifest component named in a later one stands for its type: {standing:?}"
+        );
+        assert!(
+            from("zero : T })").is_some_and(|at| heads.contains(&at.saturating_add(7))),
+            "a functor parameter's type, renamed to the argument's, stands where the template \
+             writes it: {standing:?}"
+        );
+        assert!(
+            standing.contains(&"S.T"),
+            "a path to the parameter's type stands for the argument's: {standing:?}"
+        );
+    }
+
+    #[test]
     fn a_refused_declaration_leaves_the_others_lowered()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -16324,6 +16411,38 @@ mod tests
             arena.value(body),
             Some(&Value::Literal(integer(SourceFragment::from("3")))),
             "the second declaration lowers regardless"
+        );
+    }
+
+    #[test]
+    fn a_duplicate_definition_is_keyed_at_its_form()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from("def x = 1 ; def x = 2 ; def y = 3 ;"),
+            &mut arena,
+        );
+        let [ref twice, ref once] = *module.declarations()
+        else {
+            panic!("two names are declared");
+        };
+        assert!(
+            matches!(
+                twice.outcome(),
+                DeclarationOutcome::Refused(LoweringRefusal::DuplicateDefinition { .. })
+            ),
+            "the second definition refuses the name: {:?}",
+            twice.outcome()
+        );
+        let (Maybe::Present(first), Maybe::Present(second)) =
+            (twice.definition(), twice.duplicate())
+        else {
+            panic!("the first definition and the repetition are both keyed");
+        };
+        assert_ne!(first, second, "the repetition is keyed at its own form");
+        assert!(
+            matches!(once.duplicate(), Maybe::Absent(_)),
+            "a name written once keys no repetition"
         );
     }
 

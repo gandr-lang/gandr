@@ -37,7 +37,9 @@ use super::Machine;
 use super::Ordinal;
 use super::Produced;
 use super::Step;
+use super::Typing;
 use crate::context::Atom;
+use crate::context::Recording;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CoreNode;
 use crate::refusal::ExpectedShape;
@@ -594,10 +596,13 @@ impl Machine<'_, '_>
         }
     }
 
-    /// The session type `slot` stands at, when its next step is `observed`.
+    /// The session type `slot` stands at, when its next step is `observed`;
+    /// a typed run keeps that session type, read where the action `at`
+    /// stands, as the standing of its endpoint, admitted or not.
     ///
     /// # Specification
-    /// - requires: `slot` was read by [`Self::live`].
+    /// - requires: `slot` was read by [`Self::live`]; the action `at` is
+    ///   admitted once.
     /// - ensures: the slot's session type, whose step is `observed`.
     /// - fails: [`CheckRefusal::SessionMismatch`] naming the action the state
     ///   admits; [`CheckRefusal::MachineInvariant`] for a slot holding no
@@ -609,16 +614,25 @@ impl Machine<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an operator that holds the seat's end sends where the
-    ///   state receives.
+    ///   state receives; each action of the seat exchange keeps its endpoint's
+    ///   state.
     /// - witness: `judgement::session::tests::an_operator_holding_the_seat_view_is_refused`
+    /// - witness: `judgement::session::tests::a_typed_run_keeps_each_endpoint_s_state`
     #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|session| session.step().is_ok_and(|step| step.action() == observed)))]
     fn admitted(
-        &self,
+        &mut self,
         at: ComputationId,
         slot: Slot,
         observed: ActionKind,
     ) -> Result<SessionType, CheckRefusal>
     {
+        if self.context.recording() == Recording::On {
+            let state = self.here(slot.state, slot.depth)?;
+            self.context.keep_endpoint(Typing {
+                term: TermNode::Computation(at),
+                ty: TypeNode::Value(state),
+            });
+        }
         let session = session_at(self.context, slot.state)?;
         let expected = session
             .step()
@@ -1436,10 +1450,12 @@ impl Machine<'_, '_>
 mod tests
 {
     use alloc::collections::BTreeMap;
+    use alloc::collections::BTreeSet;
     use alloc::string::String;
     use alloc::sync::Arc;
     use alloc::vec::Vec;
 
+    use gandr_core_term::Computation;
     use gandr_core_term::ComputationId;
     use gandr_core_term::CoreArena;
     use gandr_core_term::LinearUse;
@@ -1481,12 +1497,15 @@ mod tests
     use crate::check_module;
     use crate::form_comp_type;
     use crate::form_value_type;
+    use crate::judgement::Direction;
     use crate::judgement::check_value_with_failure;
+    use crate::judgement::type_value;
     use crate::session::Capture;
     use crate::session::Endpoint;
     use crate::session::ForkSide;
     use crate::session::LinearityDefect;
     use crate::session::ProtocolDefect;
+    use crate::session::session_at;
 
     /// A label or a string as a test spells it.
     #[repr(transparent)]
@@ -1830,6 +1849,62 @@ mod tests
             check_unit(&mut arena, exchange),
             Ok(()),
             "the seat follows its end and the operator the dual, through both choices"
+        );
+    }
+
+    #[test]
+    fn a_typed_run_keeps_each_endpoint_s_state()
+    {
+        let mut arena = CoreArena::new();
+        let protocol = seat_end(&mut arena);
+        let seat = seat(&mut arena);
+        let operator = operator(&mut arena);
+        let exchange = fork(&mut arena, protocol, seat, operator);
+        let suspended = arena.value_thunk(exchange);
+        let unit = arena.value_type_unit();
+        let returner = arena.comp_type_returner(unit);
+        let thunk = arena.value_type_thunk(returner);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let expected = form_value_type(&mut context, thunk).unwrap();
+        let typed = type_value(&mut context, suspended, Direction::Check(expected));
+        assert!(typed.marks().is_empty(), "the exchange checks: {typed:?}");
+        let standings: Vec<(ActionKind, ActionKind, ValueTypeId)> = typed
+            .endpoints()
+            .iter()
+            .map(|standing| {
+                let (TermNode::Computation(at), TypeNode::Value(state)) =
+                    (standing.term, standing.ty)
+                else {
+                    panic!("an endpoint is kept at an action, at a value type: {standing:?}");
+                };
+                let Some(Computation::Session(action)) = context.arena().computation(at).cloned()
+                else {
+                    panic!("an endpoint is kept at an action");
+                };
+                let Maybe::Present(written) = action.kind()
+                else {
+                    panic!("a fork names no endpoint of its own");
+                };
+                let session = session_at(&context, state).unwrap();
+                let admitted = session.step().unwrap().action();
+                (written, admitted, state)
+            })
+            .collect();
+        assert_eq!(
+            standings.len(),
+            20,
+            "each of the seat's 8 actions and the operator's 12 keeps its endpoint once"
+        );
+        assert!(
+            standings
+                .iter()
+                .all(|&(written, admitted, _)| written == admitted),
+            "each endpoint is kept at the state that admits its action: {standings:?}"
+        );
+        let states: BTreeSet<ValueTypeId> = standings.iter().map(|&(.., state)| state).collect();
+        assert!(
+            states.len() > 2,
+            "an endpoint's state advances along the protocol: {standings:?}"
         );
     }
 
