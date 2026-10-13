@@ -44,9 +44,10 @@ use crate::replay::Unfoldings;
 ///   feedback is refused, even when both endpoint types coincide. A function
 ///   introduction's endpoints are function codes over first-order codes, and
 ///   each boundary flow runs in the direction its [`Boundary::variance`] fixes.
-///   Generated terms remain in `arena`; callers may restore its watermark.
-///   Session introductions recheck native payload formation, every supplied
-///   simulation pair and every native payload-path obligation.
+///   Generated terms remain in `arena`; callers may restore its watermark. A
+///   session introduction synthesizes through the ordinary closed checker,
+///   which rechecks its `Flow_U` classifier, every supplied simulation pair and
+///   every native payload-path obligation.
 /// - provides: `Flow_U source target`, never an admission capability.
 /// - fails: code, typing, coverage, naturality, replay, seam, boundary or
 ///   budget errors.
@@ -68,7 +69,8 @@ use crate::replay::Unfoldings;
 #[spec(ensures: |ret| match ret {
     Ok(classifier) => u64::from(budget) > 0 && match flows.get(root) {
         Ok(&Flow::Stay(code)) => classifier.source == classifier.target && matches!(arena.value(code), Some(&gandr_kernel_term::Value::Quote(root)) if root == classifier.source),
-        Ok(&Flow::Forward { source, target, .. } | &Flow::Session { source, target, .. } | &Flow::Function { source, target, .. }) => matches!(arena.value(source), Some(&gandr_kernel_term::Value::Quote(root)) if root == classifier.source) && matches!(arena.value(target), Some(&gandr_kernel_term::Value::Quote(root)) if root == classifier.target),
+        Ok(&Flow::Session(value)) => arena.value(value).is_some(),
+        Ok(&Flow::Forward { source, target, .. } | &Flow::Function { source, target, .. }) => matches!(arena.value(source), Some(&gandr_kernel_term::Value::Quote(root)) if root == classifier.source) && matches!(arena.value(target), Some(&gandr_kernel_term::Value::Quote(root)) if root == classifier.target),
         Ok(&Flow::Compose { seam: Seam::Sequence, .. }) => true,
         _ => false,
     },
@@ -94,31 +96,12 @@ pub fn form(
             continue;
         }
         let classifier = match flows.get(id)? {
-            | &Flow::Session {
-                source,
-                target,
-                ref evidence,
-                payload_paths,
-            } => {
-                let _source_universe = synth_closed_value(arena, source)
-                    .map_err(|error| FlowError::Typing(Box::new(error)))?;
-                let _target_universe = synth_closed_value(arena, target)
-                    .map_err(|error| FlowError::Typing(Box::new(error)))?;
-                let source =
-                    crate::path_universe::code(arena, source, budget).map_err(FlowError::Path)?;
-                let target =
-                    crate::path_universe::code(arena, target, budget).map_err(FlowError::Path)?;
-                let expected = crate::session::obligations(
-                    arena,
-                    source,
-                    target,
-                    evidence,
-                    crate::session::Relation::Simulation,
-                )
-                .map_err(FlowError::Session)?;
-                check_closed_value(arena, payload_paths, expected)
-                    .map_err(|error| FlowError::Typing(Box::new(error)))?;
-                FlowType { source, target }
+            | &Flow::Session(value) => {
+                let classifier = synth_closed_value(arena, value).map_err(|error| match error {
+                    | crate::KernelError::Session(error) => FlowError::Session(error),
+                    | error => FlowError::Typing(Box::new(error)),
+                })?;
+                super::endpoints(arena, classifier, budget)?
             },
             | &Flow::Stay(code) => {
                 let source = coverage::endpoint(arena, code, &mut allowance)?;
@@ -271,10 +254,12 @@ pub enum CertificateType
 ///
 /// # Specification
 /// - ensures: only matching tags reach that family's formation rules. Native
-///   paths synthesize through the ordinary checker before endpoint decoding.
-/// - fails: `FamilyMismatch` in both coercion directions; `Typing` for native
-///   checking failures; `Path` for a non-path classifier or invalid endpoints;
-///   otherwise a Flow formation error.
+///   paths synthesize through the ordinary checker before endpoint decoding,
+///   and a native value whose classifier is in the other family is refused
+///   under the family it was tagged with.
+/// - fails: `FamilyMismatch` in both coercion directions, by tag or by native
+///   classifier; `Typing` for native checking failures; `Path` for a non-path
+///   classifier or invalid endpoints; otherwise a Flow formation error.
 /// - panics: none.
 ///
 /// # Errors
@@ -282,14 +267,17 @@ pub enum CertificateType
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a valid equivalence fails as Flow, a valid forward
-///   certificate fails as Path, and both retain their native classifications.
+///   certificate fails as Path, and both retain their native classifications; a
+///   native session flow tagged as a path and a native session path given as a
+///   session flow each refuse by family.
 /// - witness: `flow_universe::tests::path_and_flow_never_coerce`
+/// - witness: `session::tests::session_flows_persist_and_refuse_by_family`
 #[spec(ensures: |ret| match (certificate, expected, &ret) {
     (Certificate::Path(_), Family::Flow, &Err(FlowError::FamilyMismatch { expected: Family::Flow, actual: Family::Path }))
     | (Certificate::Flow(_), Family::Path, &Err(FlowError::FamilyMismatch { expected: Family::Path, actual: Family::Flow }))
     | (Certificate::Path(_), Family::Path, &Ok(CertificateType::Path(_)))
     | (Certificate::Flow(_), Family::Flow, &Ok(CertificateType::Flow(_))) => true,
-    (Certificate::Path(_), Family::Path, &Err(ref error)) | (Certificate::Flow(_), Family::Flow, &Err(ref error)) => !matches!(error, &FlowError::FamilyMismatch { .. }),
+    (Certificate::Path(_), Family::Path, &Err(ref error)) | (Certificate::Flow(_), Family::Flow, &Err(ref error)) => !matches!(error, &FlowError::FamilyMismatch { expected: named, .. } if named != expected),
     _ => false,
 })]
 #[inline]
@@ -305,6 +293,15 @@ pub fn form_certificate(
         | (Certificate::Path(id), Family::Path) => {
             let classifier = synth_closed_value(arena, id)
                 .map_err(|error| FlowError::Typing(Box::new(error)))?;
+            if matches!(
+                arena.value_type(classifier),
+                Some(&gandr_kernel_term::ValueType::FlowUniverse(..))
+            ) {
+                return Err(FlowError::FamilyMismatch {
+                    expected,
+                    actual: Family::Flow,
+                });
+            }
             let classifier = crate::path_universe::endpoints(arena, classifier, budget)
                 .map_err(FlowError::Path)?;
             Ok(CertificateType::Path(classifier))
@@ -434,7 +431,7 @@ fn lower(
             continue;
         }
         let function = match flows.get(id)? {
-            | &Flow::Session { .. } => return Err(FlowError::RecordedRunRequired),
+            | &Flow::Session(_) => return Err(FlowError::RecordedRunRequired),
             | &Flow::Stay(_) => {
                 let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
                 let returned = arena.computation_return(variable);
@@ -663,22 +660,21 @@ mod tests
         );
         let code = arena.value_quote(ty);
         let proofs = arena.value_unit();
+        let classifier = arena.value_type_flow_universe(code, code);
+        let simulation = arena.value_session_flow(
+            classifier,
+            alloc::sync::Arc::new(gandr_kernel_term::session::Evidence {
+                pairs: [gandr_kernel_term::session::StatePair {
+                    source: gandr_kernel_term::session::State(0),
+                    target: gandr_kernel_term::session::State(0),
+                }]
+                .into(),
+                payloads: Vec::new(),
+            }),
+            proofs,
+        );
         let mut flows = Flows::new();
-        let flow = flows
-            .push(Flow::Session {
-                source: code,
-                target: code,
-                payload_paths: proofs,
-                evidence: alloc::sync::Arc::new(gandr_kernel_term::session::Evidence {
-                    pairs: [gandr_kernel_term::session::StatePair {
-                        source: gandr_kernel_term::session::State(0),
-                        target: gandr_kernel_term::session::State(0),
-                    }]
-                    .into(),
-                    payloads: Vec::new(),
-                }),
-            })
-            .expect("raw flow");
+        let flow = flows.push(Flow::Session(simulation)).expect("raw flow");
         assert!(
             matches!(form(&mut arena, &flows, flow, ReplayBudget::DEFAULT), Ok(FlowType { source, target }) if source == ty && target == ty)
         );

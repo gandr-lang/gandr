@@ -121,6 +121,8 @@ use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
+use gandr_core_term::session::RecordedMove;
+use gandr_core_term::session::SessionRelation;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Side;
@@ -1096,7 +1098,9 @@ impl<'source> Program<'source>
             Some(&Value::ListNil) => ret.0 == "nil",
             Some(&Value::ListCons(..)) => ret.0.starts_with("cons(") && ret.0.ends_with(')'),
             Some(&Value::Thunk(_)) => ret.0 == "<thunk>",
-            Some(&(Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. })) => ret.0 == "<path>",
+            Some(&(Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { relation: SessionRelation::Equivalence, .. })) => ret.0 == "<path>",
+            Some(&(Value::SessionRelated { relation: SessionRelation::Subtyping, .. } | Value::Stay(_) | Value::Then(..))) => ret.0 == "<flow>",
+            Some(&Value::Recorded(_)) => ret.0.starts_with("recorded(") && ret.0.ends_with(')'),
             Some(&(Value::Returned(_) | Value::Nested(_) | Value::Run(_))) => ret.0 == "<computation>",
             Some(&(Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..))) => ret.0 == "<code>",
             Some(&Value::Constant(constant)) => match self.name(constant) {
@@ -1132,7 +1136,7 @@ impl<'source> Program<'source>
 &(Computation::Transport(..) | Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } | Computation::Application(..) |
 Computation::DataCase {..} | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Split { .. } | Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) |
 Computation::ListFold { .. } | Computation::Bind(..) | Computation::Force(_) | Computation::Case { .. }
-| Computation::Hole(_) | Computation::Mark { .. } | Computation::Fixpoint { .. } | Computation::Session(_))) |
+| Computation::Hole(_) | Computation::Mark { .. } | Computation::Fixpoint { .. } | Computation::Session(_) | Computation::Ride { .. })) |
 None => ret.0 == "<computation>",
     })]
     fn spell(
@@ -1171,12 +1175,17 @@ None => ret.0 == "<computation>",
                 | Computation::Hole(_)
                 | Computation::Mark { .. }
                 | Computation::Fixpoint { .. }
-                | Computation::Session(_)),
+                | Computation::Session(_)
+                | Computation::Ride { .. }),
             )
             | None => Vec::from([Piece::Text("<computation>")]),
         };
         while let Some(piece) = pending.pop() {
             let value = match piece {
+                | Piece::Label(label) => {
+                    spelled.push_str(label.as_ref());
+                    continue;
+                },
                 | Piece::Field(label) => {
                     spelled.push('"');
                     spelled.extend(label.as_ref().escape_debug());
@@ -1226,8 +1235,52 @@ None => ret.0 == "<computation>",
                     | Value::Here(_)
                     | Value::Funext(..)
                     | Value::Equiv(..)
-                    | Value::Ua { .. }),
+                    | Value::Ua { .. }
+                    | Value::SessionRelated {
+                        relation: SessionRelation::Equivalence,
+                        ..
+                    }),
                 ) => spelled.push_str("<path>"),
+                | Some(
+                    &(Value::SessionRelated {
+                        relation: SessionRelation::Subtyping,
+                        ..
+                    }
+                    | Value::Stay(_)
+                    | Value::Then(..)),
+                ) => spelled.push_str("<flow>"),
+                | Some(&Value::Recorded(ref moves)) => {
+                    spelled.push_str("recorded(");
+                    pending.push(Piece::Text(")"));
+                    for (index, step) in moves.iter().enumerate().rev() {
+                        match *step {
+                            | RecordedMove::Sent(payload) => pending.extend([
+                                Piece::Text(")"),
+                                Piece::Value(payload),
+                                Piece::Text("sent("),
+                            ]),
+                            | RecordedMove::Received(payload) => pending.extend([
+                                Piece::Text(")"),
+                                Piece::Value(payload),
+                                Piece::Text("received("),
+                            ]),
+                            | RecordedMove::Selected(ref label) => pending.extend([
+                                Piece::Text(")"),
+                                Piece::Label(label),
+                                Piece::Text("selected("),
+                            ]),
+                            | RecordedMove::Offered(ref label) => pending.extend([
+                                Piece::Text(")"),
+                                Piece::Label(label),
+                                Piece::Text("offered("),
+                            ]),
+                            | RecordedMove::Closed => pending.push(Piece::Text("closed")),
+                        }
+                        if index > 0 {
+                            pending.push(Piece::Text(", "));
+                        }
+                    }
+                },
                 | Some(&(Value::Returned(_) | Value::Nested(_) | Value::Run(_))) => {
                     spelled.push_str("<computation>");
                 },
@@ -1339,6 +1392,8 @@ enum Piece<'core>
 {
     /// An exact record field label, escaped before its value.
     Field(&'core gandr_core_term::FieldLabel),
+    /// A choice label, written bare.
+    Label(&'core gandr_core_term::FieldLabel),
     /// Fixed text.
     Text(&'static str),
     /// A value, spelled in turn.
@@ -1352,8 +1407,8 @@ enum Piece<'core>
 ///   ignored rather than followed.
 /// - ensures: one index per reference occurrence, preserving multiplicity;
 ///   quoted types and static code do not contribute references, and neither
-///   does a hole. A constant root contributes only itself and an atomic
-///   non-reference root contributes none.
+///   does a hole or the flow a ride is erased past. A constant root contributes
+///   only itself and an atomic non-reference root contributes none.
 /// - fails: never.
 /// - panics: none.
 /// - intension: traversal uses an explicit worklist without recursion.
@@ -1373,6 +1428,7 @@ Value::StaticApplication(..) | Value::Hole(_))) | None => ret.is_empty(),
     Some(&(Value::Constructor { .. } | Value::Record(_)) |
 &Value::Reify(_) |
 &(Value::ListCons(..) | Value::PathRefl(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::PathProduct(..) |
+Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::Recorded(_) |
 Value::PathEquiv { .. } | Value::Tuple(_) | Value::Injection(..) |
 Value::Lift { .. } | Value::Thunk(_) | Value::Mark { .. })) => true,
 })]
@@ -1428,7 +1484,13 @@ fn references(
                         backward: second,
                         ..
                     }
-                    | Value::ListCons(first, second)),
+                    | Value::ListCons(first, second)
+                    | Value::SessionRelated {
+                        source: first,
+                        target: second,
+                        ..
+                    }
+                    | Value::Then(first, second)),
                 ) => {
                     pending.extend([Node::Value(first), Node::Value(second)]);
                 },
@@ -1438,11 +1500,18 @@ fn references(
                 | Some(
                     &(Value::PathRefl(inner)
                     | Value::Here(inner)
+                    | Value::Stay(inner)
                     | Value::Injection(_, inner)
                     | Value::Lift { body: inner, .. }
                     | Value::Mark { body: inner, .. }),
                 ) => {
                     pending.push(Node::Value(inner));
+                },
+                | Some(&Value::Recorded(ref moves)) => {
+                    pending.extend(moves.iter().filter_map(|step| match step.payload() {
+                        | Maybe::Present(payload) => Some(Node::Value(payload)),
+                        | Maybe::Absent(_) => None,
+                    }));
                 },
                 | Some(
                     &Value::Thunk(computation)
@@ -1541,6 +1610,9 @@ fn references(
                 ) => {
                     pending.extend([Node::Value(path), Node::Value(value)]);
                 },
+                // A ride runs as the return of its value: the flow it rides is
+                // erased, so the run never reaches what the flow names.
+                | Some(&Computation::Ride { value, .. }) => pending.push(Node::Value(value)),
                 | Some(&Computation::TelescopeTransport {
                     path,
                     start,

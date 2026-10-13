@@ -3099,7 +3099,8 @@ fn step(
         },
         | Task::Return { term } => {
             let produced = machine.pop_value()?;
-            let Some(&Computation::Return(source)) = core.computation(term)
+            let Some(&(Computation::Return(source) | Computation::Ride { value: source, .. })) =
+                core.computation(term)
             else {
                 return Err(EvalFault::DanglingTerm);
             };
@@ -3217,14 +3218,19 @@ fn step_value(
             machine.tasks.push(Task::Value { term: first, env });
             Ok(())
         },
-        // A closed native path, a closed funext, a closed equivalence and a
-        // univalence statement are inert certificates: nothing reduces them,
-        // and transport reads their syntax.
+        // A closed native path, a closed funext, a closed equivalence, a
+        // univalence statement, a session statement, a directed reflexivity, a
+        // directed composition and a recorded run are inert certificates:
+        // nothing reduces them, and transport reads their syntax.
         | Value::PathRefl(_)
         | Value::PathEquiv { .. }
         | Value::Funext(..)
         | Value::Equiv(..)
-        | Value::Ua { .. } => {
+        | Value::Ua { .. }
+        | Value::SessionRelated { .. }
+        | Value::Stay(_)
+        | Value::Then(..)
+        | Value::Recorded(_) => {
             machine
                 .values
                 .push(domain.value_path_certificate(term, TermFace::Source(term)));
@@ -3597,7 +3603,9 @@ fn step_comp(
             machine.comps.push(domain.comp_fixpoint(closure, face));
             Ok(())
         },
-        | Computation::Return(value) => {
+        // A ride the checker admitted moves a value along a flow without
+        // changing it: its result is the value it rides.
+        | Computation::Return(value) | Computation::Ride { value, .. } => {
             machine.tasks.push(Task::Return { term });
             machine.tasks.push(Task::Value { term: value, env });
             Ok(())

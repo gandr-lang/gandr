@@ -1116,6 +1116,7 @@ where
         lifts: report.lifts(),
         funexts: report.funexts(),
         equivalences: report.equivalences(),
+        flows: report.flows(),
         reflexivities: report.reflexivities(),
         relations: report.relations(),
         universals: report.universals(),
@@ -1322,6 +1323,8 @@ struct Source<'source>
     funexts: &'source BTreeMap<ValueId, Funext>,
     /// The universe equivalences the judgement decided, by node.
     equivalences: &'source BTreeMap<ValueId, crate::equiv::Equivalence>,
+    /// The session statements the judgement decided, by node.
+    flows: &'source BTreeMap<ValueId, crate::flow::Statement>,
     /// The reflexivities the judgement checked against a path type, by node.
     reflexivities: &'source BTreeMap<ValueId, Reflexivity>,
     /// The path endpoint pairs each accepted declaration's conversions
@@ -2000,6 +2003,33 @@ enum Frame
         at: ValueTypeId,
         /// The source code image.
         source: gandr_kernel_term::ValueId,
+    },
+    /// Await the source code of a universe flow type.
+    FlowSource
+    {
+        /// The flow type.
+        at: ValueTypeId,
+        /// The target code.
+        target_code: ValueId,
+    },
+    /// Await the target code of a universe flow type.
+    FlowTarget
+    {
+        /// The flow type.
+        at: ValueTypeId,
+        /// The source code image.
+        source: gandr_kernel_term::ValueId,
+    },
+    /// Await the native classifier of a session statement, then mint the
+    /// kernel's session certificate over the engine's pairs.
+    SessionCertificate
+    {
+        /// The statement, stay or composite.
+        at: ValueId,
+        /// Bisimilarity or simulation.
+        relation: gandr_core_term::session::SessionRelation,
+        /// The engine's pairs.
+        evidence: alloc::sync::Arc<gandr_kernel_term::session::Evidence>,
     },
     /// Await the carrier of an element path type.
     PathCarrier
@@ -3412,6 +3442,29 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     CoreNode::Type(TypeNode::Value(decided.classifier())),
                 )
             },
+            | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) => {
+                let Some(decided) = self.source.flows.get(&at)
+                else {
+                    // A statement is always recorded; a stay or a composite only
+                    // over session codes, so any other flow stays on the
+                    // checker's side.
+                    return Err(if matches!(*value, Value::SessionRelated { .. }) {
+                        Refusal::MachineInvariant
+                    }
+                    else {
+                        unadmitted(UnadmittedFormer::ElementFlow)
+                    });
+                };
+                (
+                    Frame::SessionCertificate {
+                        at,
+                        relation: decided.relation(),
+                        evidence: alloc::sync::Arc::clone(decided.evidence()),
+                    },
+                    CoreNode::Type(TypeNode::Value(decided.classifier())),
+                )
+            },
+            | Value::Recorded(_) => return Err(unadmitted(UnadmittedFormer::Run)),
             | Value::Ua { .. } => {
                 let Some(&path) = self.source.universals.get(&at)
                 else {
@@ -3889,6 +3942,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | Computation::Shift(_) => return Err(unadmitted(UnadmittedFormer::Shift)),
             | Computation::Exercise { .. } => return Err(unadmitted(UnadmittedFormer::Exercise)),
             | Computation::Scope { .. } => return Err(unadmitted(UnadmittedFormer::Scope)),
+            | Computation::Ride { .. } => return Err(unadmitted(UnadmittedFormer::Run)),
             | Computation::With(first, second) => (
                 Frame::WithFirst { at, second },
                 TermNode::Computation(first),
@@ -4032,9 +4086,44 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | ValueTypeView::Product(_) => {
                 return self.prepare_native(target, CoreNode::Type(TypeNode::Value(at)));
             },
-            | ValueTypeView::Session(_) => {
-                return Err(Refusal::Session {
+            | ValueTypeView::Session(session) => {
+                if session.state() != session.protocol().root() {
+                    return Err(Refusal::Session {
+                        at: CoreNode::Type(TypeNode::Value(at)),
+                    });
+                }
+                return self.prepare_native(target, CoreNode::Type(TypeNode::Value(at)));
+            },
+            | ValueTypeView::Flow {
+                carrier,
+                source,
+                target: target_code,
+            } => {
+                let Ok(ValueTypeView::Universe {
+                    sort: GroundSort::Value,
+                    level,
+                }) = value_type_view(self.arena, carrier)
+                else {
+                    return Err(Refusal::OutOfFragment {
+                        at: CoreNode::Type(TypeNode::Value(at)),
+                        former: UnadmittedFormer::ElementFlow,
+                    });
+                };
+                if *level != Level::zero() {
+                    return Err(Refusal::OutOfFragment {
+                        at: CoreNode::Type(TypeNode::Value(at)),
+                        former: UnadmittedFormer::ElementFlow,
+                    });
+                }
+                (
+                    Frame::FlowSource { at, target_code },
+                    CoreNode::Term(TermNode::Value(source)),
+                )
+            },
+            | ValueTypeView::Run(_) => {
+                return Err(Refusal::OutOfFragment {
                     at: CoreNode::Type(TypeNode::Value(at)),
+                    former: UnadmittedFormer::Run,
                 });
             },
             | ValueTypeView::Stack { .. } => {
@@ -4344,7 +4433,11 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     | Value::ListCons(..)
                     | Value::Injection(..)
                     | Value::Lift { .. }
-                    | Value::StaticLambda(_),
+                    | Value::StaticLambda(_)
+                    | Value::SessionRelated { .. }
+                    | Value::Stay(_)
+                    | Value::Then(..)
+                    | Value::Recorded(_),
                     _,
                 ) => return Err(Refusal::MachineInvariant),
             };
@@ -4604,6 +4697,33 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | (Frame::PathTarget { at, source }, AnyNode::Value(target_code)) => Ok(
                 self.erased_value_type(at, target.value_type_path_universe(source, target_code))
             ),
+            | (Frame::FlowSource { at, target_code }, AnyNode::Value(source)) => {
+                self.frames.push(Frame::FlowTarget { at, source });
+                self.argument(target_code)
+            },
+            | (Frame::FlowTarget { at, source }, AnyNode::Value(target_code)) => Ok(
+                self.erased_value_type(at, target.value_type_flow_universe(source, target_code))
+            ),
+            | (
+                Frame::SessionCertificate {
+                    at,
+                    relation,
+                    ref evidence,
+                },
+                AnyNode::ValueType(classifier),
+            ) => {
+                let evidence = alloc::sync::Arc::clone(evidence);
+                let unit = target.value_tuple(&[]);
+                let image = match relation {
+                    | gandr_core_term::session::SessionRelation::Equivalence => {
+                        target.value_session_path(classifier, evidence, unit)
+                    },
+                    | gandr_core_term::session::SessionRelation::Subtyping => {
+                        target.value_session_flow(classifier, evidence, unit)
+                    },
+                };
+                Ok(self.erased_value(at, image))
+            },
             | (Frame::Injection { at, summand }, AnyNode::Value(body)) => {
                 Ok(self.erased_value(at, target.value_injection(summand, body)))
             },
@@ -4903,6 +5023,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 | Frame::PathEquivBackward { .. }
                 | Frame::PathSource { .. }
                 | Frame::PathTarget { .. }
+                | Frame::FlowSource { .. }
+                | Frame::FlowTarget { .. }
                 | Frame::PathLeft { .. }
                 | Frame::PathRight { .. }
                 | Frame::Here { .. }
@@ -4931,6 +5053,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             )
             | (
                 Frame::PathEquivType { .. }
+                | Frame::SessionCertificate { .. }
                 | Frame::ListType { .. }
                 | Frame::PathCarrier { .. }
                 | Frame::PathTransportMotive { .. }
@@ -5406,6 +5529,7 @@ mod tests
             lifts: &lifts,
             funexts: &BTreeMap::new(),
             equivalences: &BTreeMap::new(),
+            flows: &BTreeMap::new(),
             reflexivities: &BTreeMap::new(),
             relations: &BTreeMap::new(),
             universals: &BTreeMap::new(),
@@ -7665,6 +7789,7 @@ mod tests
             lifts: &lifts,
             funexts: &BTreeMap::new(),
             equivalences: &BTreeMap::new(),
+            flows: &BTreeMap::new(),
             reflexivities: &BTreeMap::new(),
             relations: &BTreeMap::new(),
             universals: &BTreeMap::new(),
@@ -8369,6 +8494,7 @@ mod tests
             lifts: &lifts,
             funexts: &BTreeMap::new(),
             equivalences: &BTreeMap::new(),
+            flows: &BTreeMap::new(),
             reflexivities: &BTreeMap::new(),
             relations: &BTreeMap::new(),
             universals: &BTreeMap::new(),

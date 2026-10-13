@@ -720,6 +720,8 @@ enum ExtraChildren<'arena>
     Types(core::slice::Iter<'arena, ValueTypeId>),
     /// Offer arms in label order; each binds nothing.
     Arms(alloc::collections::btree_map::Values<'arena, gandr_core_term::FieldLabel, ComputationId>),
+    /// A recorded run's moves; a send's or a receive's payload is a value.
+    Moves(core::slice::Iter<'arena, gandr_core_term::session::RecordedMove>),
 }
 
 impl Iterator for ExtraChildren<'_>
@@ -755,6 +757,9 @@ impl Iterator for ExtraChildren<'_>
             | Self::Arms(ref mut arms) => arms
                 .next()
                 .map(|id| (Reached::Term(CoreTerm::Computation(*id)), Lowering::NONE)),
+            | Self::Moves(ref mut moves) => moves
+                .find_map(recorded_payload)
+                .map(|id| (Reached::Term(CoreTerm::Value(id)), Lowering::NONE)),
         }
     }
 }
@@ -790,7 +795,26 @@ impl DoubleEndedIterator for ExtraChildren<'_>
             | Self::Types(ref mut types) => types
                 .next_back()
                 .map(|id| (Reached::ValueType(*id), Lowering::NONE)),
+            | Self::Moves(ref mut moves) => moves
+                .rev()
+                .find_map(recorded_payload)
+                .map(|id| (Reached::Term(CoreTerm::Value(id)), Lowering::NONE)),
         }
+    }
+}
+
+/// The payload value a recorded send or receive carries.
+///
+/// # Specification
+/// trivial.
+fn recorded_payload(movement: &gandr_core_term::session::RecordedMove) -> Option<ValueId>
+{
+    match *movement {
+        | gandr_core_term::session::RecordedMove::Sent(payload)
+        | gandr_core_term::session::RecordedMove::Received(payload) => Some(payload),
+        | gandr_core_term::session::RecordedMove::Selected(_)
+        | gandr_core_term::session::RecordedMove::Offered(_)
+        | gandr_core_term::session::RecordedMove::Closed => None,
     }
 }
 
@@ -938,6 +962,10 @@ Err(_) => false,
                         extra = ExtraChildren::Values(components.iter());
                         [None, None, None, None, None]
                     },
+                    | Value::Recorded(ref moves) => {
+                        extra = ExtraChildren::Moves(moves.iter());
+                        [None, None, None, None, None]
+                    },
                     | Value::Record(ref fields) => {
                         extra = ExtraChildren::RecordValues(fields.values());
                         [None, None, None, None, None]
@@ -965,10 +993,18 @@ Err(_) => false,
                         None,
                         None,
                     ],
-                    | Value::PathRefl(code) | Value::Here(code) => one(value(code), Lowering::NONE),
+                    | Value::PathRefl(code) | Value::Here(code) | Value::Stay(code) => {
+                        one(value(code), Lowering::NONE)
+                    },
                     | Value::PathProduct(first, second)
                     | Value::Funext(first, second)
                     | Value::Equiv(first, second)
+                    | Value::Then(first, second)
+                    | Value::SessionRelated {
+                        source: first,
+                        target: second,
+                        ..
+                    }
                     | Value::Ua {
                         forward: first,
                         backward: second,
@@ -1104,6 +1140,17 @@ Err(_) => false,
                         None,
                         None,
                     ],
+                    | Computation::Ride {
+                        motive,
+                        flow,
+                        value: operand,
+                    } => [
+                        Some((Reached::ValueType(motive), Lowering::ONE)),
+                        Some((value(flow), Lowering::NONE)),
+                        Some((value(operand), Lowering::NONE)),
+                        None,
+                        None,
+                    ],
                     | Computation::TelescopeTransport {
                         motive,
                         path,
@@ -1192,6 +1239,18 @@ Err(_) => false,
                         None,
                         None,
                     ],
+                    | ValueType::Flow {
+                        carrier,
+                        source,
+                        target,
+                    } => [
+                        Some((Reached::ValueType(carrier), Lowering::NONE)),
+                        Some((value(source), Lowering::NONE)),
+                        Some((value(target), Lowering::NONE)),
+                        None,
+                        None,
+                    ],
+                    | ValueType::Run(session) => one(value(session), Lowering::NONE),
                     | ValueType::Product(ref components) | ValueType::Sum(ref components) => {
                         extra = ExtraChildren::Types(components.iter());
                         [None, None, None, None, None]

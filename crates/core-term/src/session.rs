@@ -1584,6 +1584,169 @@ impl<V: Copy, C: Copy, T: Copy> SessionAction<V, C, T>
     }
 }
 
+/// The identity a session statement claims between two session codes.
+///
+/// `bisim(a, b)` inhabits `Path(Type, a, b)` and `sim(a, b)` inhabits
+/// `Flow(Type, a, b)`. The checker decides the statement with the session
+/// engine and the kernel replays it.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SessionRelation
+{
+    /// Bisimilar protocols: the same endpoint behaviour, either way round.
+    Equivalence,
+    /// Gay–Hole subtyping: fewer selections, more offers.
+    Subtyping,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a recorded move carries no payload.
+    pub mod carried {
+        /// The reason a move has no payload value.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// A choice carries a label, not a value.
+            Choice,
+            /// A close carries nothing.
+            Close,
+        }
+    }
+}
+
+/// One move of a recorded run, read from the side of the endpoint that
+/// recorded it; the checker replays a run's moves against a protocol with the
+/// session monitor.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum RecordedMove<V = ValueId>
+{
+    /// `sent(v)`: the endpoint sent `v`.
+    Sent(V),
+    /// `received(v)`: the endpoint received `v`.
+    Received(V),
+    /// `selected(l)`: the endpoint chose `l`.
+    Selected(FieldLabel),
+    /// `offered(l)`: the endpoint offered a choice and the peer chose `l`.
+    Offered(FieldLabel),
+    /// `closed`: the endpoint closed.
+    Closed,
+}
+
+impl<V: Copy> RecordedMove<V>
+{
+    /// The action the move takes.
+    ///
+    /// # Specification
+    /// - ensures: a sent move sends, a received one receives, a selected one
+    ///   selects, an offered one offers and a closed one closes.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every move kind is asserted.
+    /// - witness: `session::tests::recorded_moves_name_their_payload_and_action`
+    #[spec(ensures: |ret| matches!((self, ret),
+        (&Self::Sent(_), ActionKind::Send) | (&Self::Received(_), ActionKind::Receive)
+        | (&Self::Selected(_), ActionKind::Select) | (&Self::Offered(_), ActionKind::Offer)
+        | (&Self::Closed, ActionKind::Close)))]
+    #[inline]
+    #[must_use]
+    pub const fn kind(&self) -> ActionKind
+    {
+        match *self {
+            | Self::Sent(_) => ActionKind::Send,
+            | Self::Received(_) => ActionKind::Receive,
+            | Self::Selected(_) => ActionKind::Select,
+            | Self::Offered(_) => ActionKind::Offer,
+            | Self::Closed => ActionKind::Close,
+        }
+    }
+
+    /// The payload value a send or a receive carries.
+    ///
+    /// # Specification
+    /// - ensures: the value of a sent or received move.
+    /// - provides: [`carried::Absent::Choice`] for a choice and
+    ///   [`carried::Absent::Close`] for a close.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every move kind's payload or absence is asserted.
+    /// - witness: `session::tests::recorded_moves_name_their_payload_and_action`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Present(_)) == matches!(*self, Self::Sent(_) | Self::Received(_)))]
+    #[inline]
+    pub const fn payload(&self) -> Maybe<V, carried::Absent>
+    {
+        match *self {
+            | Self::Sent(value) | Self::Received(value) => Maybe::Present(value),
+            | Self::Selected(_) | Self::Offered(_) => Maybe::Absent(carried::Absent::Choice),
+            | Self::Closed => Maybe::Absent(carried::Absent::Close),
+        }
+    }
+
+    /// The same move carrying `payload` in place of its own, when it carries
+    /// one.
+    ///
+    /// # Specification
+    /// - ensures: the action and label are kept; a send or receive carries
+    ///   `payload`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a rewritten send keeps its action and a choice keeps
+    ///   its label.
+    /// - witness: `session::tests::recorded_moves_name_their_payload_and_action`
+    #[spec(ensures: |ret| ret.kind() == self.kind())]
+    #[inline]
+    #[must_use]
+    pub fn carrying<W>(
+        &self,
+        payload: W,
+    ) -> RecordedMove<W>
+    where
+        W: Copy,
+    {
+        match *self {
+            | Self::Sent(_) => RecordedMove::Sent(payload),
+            | Self::Received(_) => RecordedMove::Received(payload),
+            | Self::Selected(ref label) => RecordedMove::Selected(label.clone()),
+            | Self::Offered(ref label) => RecordedMove::Offered(label.clone()),
+            | Self::Closed => RecordedMove::Closed,
+        }
+    }
+
+    /// The same move, its payload mapped by `mapper`.
+    ///
+    /// # Specification
+    /// - ensures: the action and label are kept; a send or receive carries what
+    ///   `mapper` returns for its payload, and `mapper` runs for no other move.
+    /// - fails: the first error `mapper` returns.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The first error `mapper` returns, for a send's or a receive's payload.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a mapped send and receive carry the image and a
+    ///   choice and a close never call the mapper.
+    /// - witness: `session::tests::recorded_moves_name_their_payload_and_action`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |moved| moved.kind() == self.kind()))]
+    #[inline]
+    pub fn try_map<W, E, Mapper>(
+        &self,
+        mapper: Mapper,
+    ) -> Result<RecordedMove<W>, E>
+    where
+        W: Copy,
+        Mapper: FnOnce(V) -> Result<W, E>,
+    {
+        Ok(match *self {
+            | Self::Sent(payload) => RecordedMove::Sent(mapper(payload)?),
+            | Self::Received(payload) => RecordedMove::Received(mapper(payload)?),
+            | Self::Selected(ref label) => RecordedMove::Selected(label.clone()),
+            | Self::Offered(ref label) => RecordedMove::Offered(label.clone()),
+            | Self::Closed => RecordedMove::Closed,
+        })
+    }
+}
+
 impl CoreArena
 {
     /// Mint the endpoint type `session`.
@@ -1655,10 +1818,12 @@ mod tests
     use super::ProtocolNode;
     use super::ProtocolState;
     use super::ProtocolSyntax;
+    use super::RecordedMove;
     use super::RecursionIndex;
     use super::SessionAction;
     use super::SessionType;
     use super::Step;
+    use super::carried;
     use crate::Computation;
     use crate::CoreArena;
     use crate::ValueId;
@@ -2207,6 +2372,86 @@ mod tests
             arena.computation(minted),
             Some(&Computation::Session(fork)),
             "a minted fork reads back whole"
+        );
+    }
+
+    #[test]
+    fn recorded_moves_name_their_payload_and_action()
+    {
+        let mut arena = CoreArena::new();
+        let first = arena.value_unit();
+        let second = arena.value_variable(crate::Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let moves = [
+            RecordedMove::Sent(first),
+            RecordedMove::Received(first),
+            RecordedMove::Selected(label(Spelled("report"))),
+            RecordedMove::Offered(label(Spelled("next"))),
+            RecordedMove::Closed,
+        ];
+        let read: Vec<_> = moves
+            .iter()
+            .map(|movement| (movement.kind(), movement.payload()))
+            .collect();
+        assert_eq!(
+            read,
+            [
+                (ActionKind::Send, Maybe::Present(first)),
+                (ActionKind::Receive, Maybe::Present(first)),
+                (ActionKind::Select, Maybe::Absent(carried::Absent::Choice)),
+                (ActionKind::Offer, Maybe::Absent(carried::Absent::Choice)),
+                (ActionKind::Close, Maybe::Absent(carried::Absent::Close)),
+            ],
+            "each move names its own action and only a send or receive carries a value"
+        );
+        let carried: Vec<_> = moves
+            .iter()
+            .map(|movement| movement.carrying(second))
+            .collect();
+        assert_eq!(
+            carried,
+            [
+                RecordedMove::Sent(second),
+                RecordedMove::Received(second),
+                RecordedMove::Selected(label(Spelled("report"))),
+                RecordedMove::Offered(label(Spelled("next"))),
+                RecordedMove::Closed,
+            ],
+            "a rewritten move keeps its action and its label"
+        );
+        let mut called = 0_u32;
+        let mapped: Result<Vec<_>, ()> = moves
+            .iter()
+            .map(|movement| {
+                movement.try_map(|payload| {
+                    called = called.saturating_add(1);
+                    Ok(payload == first)
+                })
+            })
+            .collect();
+        assert_eq!(
+            (mapped, called),
+            (
+                Ok(alloc::vec![
+                    RecordedMove::Sent(true),
+                    RecordedMove::Received(true),
+                    RecordedMove::Selected(label(Spelled("report"))),
+                    RecordedMove::Offered(label(Spelled("next"))),
+                    RecordedMove::Closed,
+                ]),
+                2
+            ),
+            "a mapped move carries the image, and only a send or receive calls the mapper"
+        );
+        assert_eq!(
+            RecordedMove::Sent(first).try_map(|_payload| Err::<bool, _>("refused")),
+            Err("refused"),
+            "the mapper's error is the move's"
+        );
+        let minted = arena.value_recorded(Arc::from(moves.to_vec()));
+        assert_eq!(
+            arena.value(minted),
+            Some(&crate::Value::Recorded(Arc::from(moves.to_vec()))),
+            "a minted run reads back whole"
         );
     }
 

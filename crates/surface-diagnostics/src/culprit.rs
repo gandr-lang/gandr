@@ -51,6 +51,7 @@ use anodized::spec;
 use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::CheckingForm;
 use gandr_core_checker::Mismatch;
+use gandr_core_checker::RunFault;
 use gandr_core_checker::session::LinearityDefect;
 use gandr_core_checker::session::ProtocolDefect;
 use gandr_core_checker::ua::StratumDefect;
@@ -303,6 +304,18 @@ const fn checked(refusal: CheckRefusal) -> Culprit
         | CheckRefusal::CapabilityEscaped { .. } => "a capability outliving its scope",
         | CheckRefusal::CapabilityConsumable(_) => "a consumable capability",
         | CheckRefusal::CapabilityUngranted { .. } => "authority the host did not grant",
+        | CheckRefusal::SessionNotEquivalent { .. } => "protocols that are not bisimilar",
+        | CheckRefusal::SessionNotSubtype { .. } => "a protocol that does not simulate the target",
+        | CheckRefusal::SessionCodeExpected { .. } => "not a session code",
+        | CheckRefusal::NonCovariantMotive { .. } => "the moving endpoint other than covariantly",
+        | CheckRefusal::RideUnsupported { .. } => "a motive the ride cannot move",
+        | CheckRefusal::RunNotAdmitted { fault, .. } => match fault {
+            | RunFault::WrongDirection(_) => "a move in the other direction",
+            | RunFault::WrongLabel(_) => "a label the protocol does not admit here",
+            | RunFault::ResumeAfterEnd(_) => "a move after the run closed",
+            | RunFault::Incomplete(_) => "a run that stops before the protocol ends",
+            | RunFault::OfferNarrowed => "a run that may take an offer the target drops",
+        },
     })
 }
 

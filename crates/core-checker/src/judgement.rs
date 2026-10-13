@@ -1423,6 +1423,73 @@ enum Frame
         /// The path's right endpoint.
         right: ValueId,
     },
+    /// Await both operands of the session statement `at`, checked against the
+    /// value universe; the engine then decides it.
+    SessionStatement
+    {
+        /// The statement.
+        at: ValueId,
+    },
+    /// Await the type a stay's point synthesised.
+    StaySynthesised
+    {
+        /// The stay.
+        at: ValueId,
+        /// Its point.
+        point: ValueId,
+    },
+    /// Await the first flow of a composite.
+    ThenFirst
+    {
+        /// The composite.
+        at: ValueId,
+        /// Its second flow.
+        second: ValueId,
+    },
+    /// Await the second flow of a composite, which must start where the first
+    /// ends.
+    ThenSecond
+    {
+        /// The composite.
+        at: ValueId,
+        /// The first flow's type.
+        first: ValueTypeId,
+    },
+    /// Await the flow a ride moves along; its motive then forms under a binder
+    /// of the flow's carrier.
+    RideFlow
+    {
+        /// The ride.
+        at: ComputationId,
+        /// The motive, under one binder.
+        motive: ValueTypeId,
+        /// The ridden value.
+        value: ValueId,
+    },
+    /// Await the motive's formation under its binder, closed again; the ride
+    /// is then classified and the value checks at the motive's source fibre.
+    RideMotive
+    {
+        /// The ride.
+        at: ComputationId,
+        /// The flow's type.
+        flow: ValueTypeId,
+    },
+    /// Await the ridden value's check; a run moving between distinct sessions
+    /// is then admitted by the recorded-run consumer.
+    RideValue
+    {
+        /// The ride.
+        at: ComputationId,
+        /// The ridden value.
+        value: ValueId,
+        /// The flow's type.
+        flow: ValueTypeId,
+        /// The returner of the motive's target fibre.
+        result: CompTypeId,
+        /// Whether the value is a run moving between distinct sessions.
+        moving: crate::flow::Moving,
+    },
     /// Await the path classifier of the telescope transport `at`; its motive
     /// then forms.
     TelescopePath
@@ -1837,6 +1904,13 @@ impl Frame
             | Self::ForkProtocol { .. } => FrameRole::ForkProtocol,
             | Self::ForkChild { .. } => FrameRole::ForkChild,
             | Self::ForkParent { .. } => FrameRole::ForkParent,
+            | Self::SessionStatement { .. } => FrameRole::SessionStatement,
+            | Self::StaySynthesised { .. } => FrameRole::StaySynthesised,
+            | Self::ThenFirst { .. } => FrameRole::ThenFirst,
+            | Self::ThenSecond { .. } => FrameRole::ThenSecond,
+            | Self::RideFlow { .. } => FrameRole::RideFlow,
+            | Self::RideMotive { .. } => FrameRole::RideMotive,
+            | Self::RideValue { .. } => FrameRole::RideValue,
         }
     }
 
@@ -1937,7 +2011,14 @@ impl Frame
             | Self::OfferArm { .. }
             | Self::ForkProtocol { .. }
             | Self::ForkChild { .. }
-            | Self::ForkParent { .. } => 0_usize,
+            | Self::ForkParent { .. }
+            | Self::SessionStatement { .. }
+            | Self::StaySynthesised { .. }
+            | Self::ThenFirst { .. }
+            | Self::ThenSecond { .. }
+            | Self::RideFlow { .. }
+            | Self::RideMotive { .. }
+            | Self::RideValue { .. } => 0_usize,
         })
     }
 }
@@ -3488,6 +3569,42 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
+            | Value::SessionRelated { source, target, .. } => {
+                let universe = crate::flow::universe(self.context.arena_mut());
+                let owner = self.owner;
+                self.frames.push(Waiting {
+                    frame: Frame::SessionStatement { at: term },
+                    owner,
+                });
+                for code in [target, source] {
+                    self.frames.push(Waiting {
+                        frame: Frame::NativeNext(Goal::Value {
+                            term: code,
+                            direction: Direction::Check(universe),
+                        }),
+                        owner,
+                    });
+                }
+                let first = self.frames.pop().ok_or(CheckRefusal::MachineInvariant)?;
+                self.resume(first.frame, Produced::Checked)
+            },
+            | Value::Stay(point) => {
+                self.wait(Frame::StaySynthesised { at: term, point });
+                Ok(Step::Descend(Goal::Value {
+                    term: point,
+                    direction: Direction::Synthesise,
+                }))
+            },
+            | Value::Then(first, second) => {
+                self.wait(Frame::ThenFirst { at: term, second });
+                Ok(Step::Descend(Goal::Value {
+                    term: first,
+                    direction: Direction::Synthesise,
+                }))
+            },
+            | Value::Recorded(_) => Err(CheckRefusal::NotSynthesisable {
+                form: CheckingForm::Run(term),
+            }),
             | Value::Hole(_) | Value::Mark { .. } => {
                 let unknown = self.context.arena_mut().value_type_unknown();
                 Ok(Step::Ascend(Produced::ValueType(unknown)))
@@ -3733,6 +3850,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(unknown),
                 })),
             },
+            | Value::Recorded(_) => self.check_recorded(term, expected),
             | Value::PathRefl(_)
             | Value::Returned(_)
             | Value::Run(_)
@@ -3749,7 +3867,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::Literal(_)
             | Value::Quote(_)
             | Value::QuoteComputation(_)
-            | Value::StaticApplication(..) => {
+            | Value::StaticApplication(..)
+            | Value::SessionRelated { .. }
+            | Value::Stay(_)
+            | Value::Then(..) => {
                 self.wait(Frame::ValueBridge { at: term, expected });
                 Ok(Step::Descend(Goal::Value {
                     term,
@@ -3846,6 +3967,51 @@ impl<'context, 'arena> Machine<'context, 'arena>
         }))
     }
 
+    /// Check the recorded run `term` against `expected`: the monitor replays
+    /// its skeleton, then each payload checks against the type its move names.
+    ///
+    /// # Specification
+    /// - requires: `term` is a recorded run.
+    /// - ensures: one queued check per payload, in move order, once the
+    ///   protocol of the run type `expected` accepts the run's skeleton.
+    /// - fails: as [`crate::flow::run_premises`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a complete seat run checks, a run with a payload of
+    ///   the wrong type is refused by that payload's mismatch, a paused run is
+    ///   refused at its pause.
+    /// - witness: `flow::tests::a_run_rides_forward_and_refuses_by_move`
+    #[spec(
+        captures: depth = self.frames.len(),
+        ensures: |ret| ret.is_err() || (ret == Ok(Step::Ascend(Produced::Checked)) && self.frames.len() >= depth),
+    )]
+    fn check_recorded(
+        &mut self,
+        term: ValueId,
+        expected: ValueTypeId,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let premises = crate::flow::run_premises(self.context, term, expected)?;
+        let owner = self.owner;
+        self.frames.extend(
+            premises
+                .iter()
+                .rev()
+                .map(|&(payload, payload_type)| Waiting {
+                    frame: Frame::NativeNext(Goal::Value {
+                        term: payload,
+                        direction: Direction::Check(payload_type),
+                    }),
+                    owner,
+                }),
+        );
+        Ok(Step::Ascend(Produced::Checked))
+    }
+
     /// Whether the argument `argument` a computation applies at a static Pi is
     /// rigid: a static lambda, a static definition and an unsaturated
     /// instance of one normalize away, and the kernel has no static lambda.
@@ -3915,7 +4081,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::QuoteComputation(_)
             | Value::StaticApplication(..)
             | Value::Hole(_)
-            | Value::Mark { .. } => false,
+            | Value::Mark { .. }
+            | Value::SessionRelated { .. }
+            | Value::Stay(_)
+            | Value::Then(..)
+            | Value::Recorded(_) => false,
         };
         if normalizes_away {
             Err(CheckRefusal::StaticLambdaArgument { at: argument })
@@ -4092,6 +4262,21 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
+            | Computation::Ride {
+                motive,
+                flow,
+                value,
+            } => {
+                self.wait(Frame::RideFlow {
+                    at: term,
+                    motive,
+                    value,
+                });
+                Ok(Step::Descend(Goal::Value {
+                    term: flow,
+                    direction: Direction::Synthesise,
+                }))
+            },
             | Computation::TelescopeTransport { path, .. } => {
                 self.wait(Frame::TelescopePath { at: term });
                 Ok(Step::Descend(Goal::Value {
@@ -4262,6 +4447,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Computation::ListFold { .. }
             | Computation::Transport(..)
             | Computation::PathTransport { .. }
+            | Computation::Ride { .. }
             | Computation::TelescopeTransport { .. }
             | Computation::Force(_)
             | Computation::Application(..)
@@ -4661,14 +4847,15 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   then awaits the raise; a decode awaits its code's synthesised type; an
     ///   eager product and a sum form each component, an empty sum at once; a
     ///   static Pi forms both classifiers, then awaits their check as static
-    ///   classifiers; a path type forms its carrier, open or closed, then
-    ///   checks each endpoint against it, left first; a session type forms each
-    ///   payload, then awaits their check as no session types; a capability
-    ///   forms the payload and reply of every operation its authority grants,
-    ///   and is refused when consumable. A former formed at once leaves the
-    ///   frames as found, but for a data type, a record, a product, a sum, a
-    ///   session type and a capability, which queue their components; one that
-    ///   descends leaves them no shorter.
+    ///   classifiers; a path type and a flow type form their carrier, open or
+    ///   closed, then check each endpoint against it, source first; a run type
+    ///   checks its protocol against the value universe; a session type forms
+    ///   each payload, then awaits their check as no session types; a
+    ///   capability forms the payload and reply of every operation its
+    ///   authority grants, and is refused when consumable. A former formed at
+    ///   once leaves the frames as found, but for a data type, a record, a
+    ///   product, a sum, a session type and a capability, which queue their
+    ///   components; one that descends leaves them no shorter.
     /// - fails: the view's refusal for a former outside the fragment or a
     ///   dangling id; [`CheckRefusal::OutOfFragment`] naming
     ///   [`UnadmittedFormer::TopUniverse`]; [`CheckRefusal::NotAnAbstractType`]
@@ -4724,6 +4911,28 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(carrier),
                 }));
                 Ok(Step::Descend(Goal::Form(TypeNode::Value(carrier))))
+            },
+            | ValueTypeView::Flow {
+                carrier,
+                source,
+                target,
+            } => {
+                self.wait(Frame::Next(Goal::Value {
+                    term: target,
+                    direction: Direction::Check(carrier),
+                }));
+                self.wait(Frame::Next(Goal::Value {
+                    term: source,
+                    direction: Direction::Check(carrier),
+                }));
+                Ok(Step::Descend(Goal::Form(TypeNode::Value(carrier))))
+            },
+            | ValueTypeView::Run(protocol) => {
+                let universe = crate::flow::universe(self.context.arena_mut());
+                Ok(Step::Descend(Goal::Value {
+                    term: protocol,
+                    direction: Direction::Check(universe),
+                }))
             },
             | ValueTypeView::PathUniverse(source, target) => {
                 let _source = crate::formation::path_code(self.context.arena(), source)?;
@@ -5062,6 +5271,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::Unknown => {},
                 | ValueTypeView::PathUniverse(..)
                 | ValueTypeView::Path { .. }
+                | ValueTypeView::Flow { .. }
+                | ValueTypeView::Run(_)
                 | ValueTypeView::Data { .. }
                 | ValueTypeView::Record(_)
                 | ValueTypeView::Sum(..)
@@ -5126,6 +5337,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 },
                 | ValueTypeView::PathUniverse(..)
                 | ValueTypeView::Path { .. }
+                | ValueTypeView::Flow { .. }
+                | ValueTypeView::Run(_)
                 | ValueTypeView::Data { .. }
                 | ValueTypeView::Record(_)
                 | ValueTypeView::Sum(..)
@@ -5686,6 +5899,98 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(source),
                 }))
             },
+            | (Frame::SessionStatement { at }, Produced::Checked) => {
+                let Value::SessionRelated {
+                    relation,
+                    source,
+                    target,
+                } = *self.value(at)?
+                else {
+                    return Err(CheckRefusal::MachineInvariant);
+                };
+                let statement = crate::flow::decide(self.context, at, relation, (source, target))?;
+                self.context.record_flow(at, statement);
+                let identity =
+                    crate::flow::identity(self.context.arena_mut(), relation, (source, target));
+                Ok(Step::Ascend(Produced::ValueType(identity)))
+            },
+            | (Frame::StaySynthesised { at, point }, Produced::ValueType(carrier)) => {
+                crate::flow::record_simulation(self.context, at, carrier, (point, point))?;
+                let flow = self
+                    .context
+                    .arena_mut()
+                    .value_type_flow(carrier, point, point);
+                Ok(Step::Ascend(Produced::ValueType(flow)))
+            },
+            | (Frame::ThenFirst { at, second }, Produced::ValueType(first)) => {
+                self.wait(Frame::ThenSecond { at, first });
+                Ok(Step::Descend(Goal::Value {
+                    term: second,
+                    direction: Direction::Synthesise,
+                }))
+            },
+            | (Frame::ThenSecond { at, first }, Produced::ValueType(synthesised)) => {
+                let Value::Then(_, second) = *self.value(at)?
+                else {
+                    return Err(CheckRefusal::MachineInvariant);
+                };
+                let (carrier, source, middle) =
+                    crate::flow::endpoints(self.context, TermNode::Value(at), first)?;
+                let (_, _, end) =
+                    crate::flow::endpoints(self.context, TermNode::Value(second), synthesised)?;
+                let expected = self
+                    .context
+                    .arena_mut()
+                    .value_type_flow(carrier, middle, end);
+                value_bridge(
+                    self.context,
+                    second,
+                    synthesised,
+                    expected,
+                    &mut self.conversions,
+                )?;
+                crate::flow::record_simulation(self.context, at, carrier, (source, end))?;
+                let composite = self
+                    .context
+                    .arena_mut()
+                    .value_type_flow(carrier, source, end);
+                Ok(Step::Ascend(Produced::ValueType(composite)))
+            },
+            | (Frame::RideFlow { at, motive, .. }, Produced::ValueType(flow)) => {
+                let (carrier, ..) =
+                    crate::flow::endpoints(self.context, TermNode::Computation(at), flow)?;
+                self.context.binders().open(Zone::Intuitionistic, carrier);
+                self.wait(Frame::RideMotive { at, flow });
+                self.wait(Frame::FormBinder);
+                Ok(Step::Descend(Goal::Form(TypeNode::Value(motive))))
+            },
+            | (Frame::RideMotive { at, flow }, Produced::Checked) => {
+                let ride = crate::flow::ride(self.context, at, flow)?;
+                self.wait(Frame::RideValue {
+                    at,
+                    value: ride.value,
+                    flow,
+                    result: ride.result,
+                    moving: ride.moving,
+                });
+                Ok(Step::Descend(Goal::Value {
+                    term: ride.value,
+                    direction: Direction::Check(ride.source),
+                }))
+            },
+            | (
+                Frame::RideValue {
+                    at,
+                    value,
+                    flow,
+                    result,
+                    moving,
+                },
+                Produced::Checked,
+            ) => {
+                crate::flow::admit(self.context, at, value, flow, moving)?;
+                Ok(Step::Ascend(Produced::CompType(result)))
+            },
             | (Frame::TelescopePath { at }, Produced::ValueType(classifier)) => {
                 let PathReading::Known {
                     carrier,
@@ -6171,7 +6476,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::FormElement(_)
                 | Frame::StaticSpine { .. }
                 | Frame::StaticArgument { .. }
-                | Frame::ExerciseCapability { .. },
+                | Frame::ExerciseCapability { .. }
+                | Frame::StaySynthesised { .. }
+                | Frame::ThenFirst { .. }
+                | Frame::ThenSecond { .. }
+                | Frame::RideFlow { .. },
                 Produced::CompType(_) | Produced::Checked,
             )
             | (
@@ -6228,7 +6537,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::SessionSend { .. }
                 | Frame::OfferArm { .. }
                 | Frame::ForkProtocol { .. }
-                | Frame::ForkChild { .. },
+                | Frame::ForkChild { .. }
+                | Frame::SessionStatement { .. }
+                | Frame::RideMotive { .. }
+                | Frame::RideValue { .. },
                 Produced::ValueType(_) | Produced::CompType(_),
             )
             | (Frame::BindBody { .. }, Produced::ValueType(_)) => {
@@ -9917,7 +10229,8 @@ mod tests
                     | Value::StaticLambda(_)
                     | Value::StaticApplication(..)
                     | Value::Hole(_)
-                    | Value::Mark { .. } => {
+                    | Value::Mark { .. }
+                    | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::Recorded(_) => {
                         prop_assert!(false, "the recipe mints no pair, injection, lift, quote, static operator, hole or mark");
                     },
                 }
@@ -9961,7 +10274,7 @@ mod tests
                             "a synthesising computation checks exactly as it synthesises, then crosses the computation bridge"
                         );
                     },
-                    | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } | Computation::Bind(..) | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) => {
+                    | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Bind(..) | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) => {
                         prop_assert!(false, "the free recipe mints no bind or native eliminator");
                     },
                     | Computation::ListFold { .. } | Computation::Case { .. } | Computation::Split { .. }

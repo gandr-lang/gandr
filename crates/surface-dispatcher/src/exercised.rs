@@ -562,7 +562,9 @@ fn checking_row(
                 | ExpectedShape::Path
                 | ExpectedShape::Telescope
                 | ExpectedShape::Session
-                | ExpectedShape::Capability,
+                | ExpectedShape::Capability
+                | ExpectedShape::Flow
+                | ExpectedShape::Run,
             ..
         }
         | CheckRefusal::NotSynthesisable {
@@ -582,7 +584,8 @@ fn checking_row(
                 | CheckingForm::Fixpoint(_)
                 | CheckingForm::Nested(_)
                 | CheckingForm::Offer(_)
-                | CheckingForm::Scope(_),
+                | CheckingForm::Scope(_)
+                | CheckingForm::Run(_),
         }
         | CheckRefusal::PathCode(_)
         | CheckRefusal::EndpointMismatch { .. }
@@ -630,7 +633,13 @@ fn checking_row(
         | CheckRefusal::CapabilityOutsideAuthority { .. }
         | CheckRefusal::CapabilityEscaped { .. }
         | CheckRefusal::CapabilityConsumable(_)
-        | CheckRefusal::CapabilityUngranted { .. } => {},
+        | CheckRefusal::CapabilityUngranted { .. }
+        | CheckRefusal::SessionNotEquivalent { .. }
+        | CheckRefusal::SessionNotSubtype { .. }
+        | CheckRefusal::SessionCodeExpected { .. }
+        | CheckRefusal::NonCovariantMotive { .. }
+        | CheckRefusal::RideUnsupported { .. }
+        | CheckRefusal::RunNotAdmitted { .. } => {},
     }
 }
 
@@ -825,7 +834,13 @@ fn formers(
                         backward: second,
                         ..
                     }
-                    | Value::ListCons(first, second)),
+                    | Value::ListCons(first, second)
+                    | Value::SessionRelated {
+                        source: first,
+                        target: second,
+                        ..
+                    }
+                    | Value::Then(first, second)),
                 ) => {
                     worklist.push(Node::Value(first));
                     worklist.push(Node::Value(second));
@@ -836,9 +851,18 @@ fn formers(
                 | Some(
                     &(Value::PathRefl(injected)
                     | Value::Here(injected)
+                    | Value::Stay(injected)
                     | Value::Injection(_, injected)),
                 ) => {
                     worklist.push(Node::Value(injected));
+                },
+                | Some(&Value::Recorded(ref moves)) => {
+                    worklist.extend(moves.iter().filter_map(|step| match step.payload() {
+                        | quenchant_shape::shape::Maybe::Present(payload) => {
+                            Some(Node::Value(payload))
+                        },
+                        | quenchant_shape::shape::Maybe::Absent(_) => None,
+                    }));
                 },
                 | Some(&Value::Lift { body: lifted, .. }) => worklist.push(Node::Value(lifted)),
                 | Some(
@@ -941,7 +965,10 @@ fn formers(
                 },
                 | Some(
                     &(Computation::Transport(path, value)
-                    | Computation::PathTransport { path, value, .. }),
+                    | Computation::PathTransport { path, value, .. }
+                    | Computation::Ride {
+                        flow: path, value, ..
+                    }),
                 ) => {
                     worklist.extend([Node::Value(path), Node::Value(value)]);
                 },

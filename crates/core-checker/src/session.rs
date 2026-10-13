@@ -74,8 +74,10 @@
 //! receive that binds a fresh one; the frames above take both without a new
 //! machine.
 //!
-//! The kernel has no session former, so the bridge refuses a declaration that
-//! holds a session type, an action or a linear variable as
+//! The kernel has no channels: a session type crosses only as a code, at its
+//! protocol's root, where a session statement relates it
+//! ([`crate::flow`]). The bridge refuses a declaration that holds an action,
+//! a session past its root or a linear variable as
 //! [`crate::bridge::Refusal::Session`], and the declaration stays on the
 //! checker's side, accepted and not re-derived.
 //!
@@ -285,6 +287,8 @@ pub(crate) fn session_at(
         | ValueTypeView::Stack { .. }
         | ValueTypeView::PathUniverse(..)
         | ValueTypeView::Path { .. }
+        | ValueTypeView::Flow { .. }
+        | ValueTypeView::Run(_)
         | ValueTypeView::Sum(_)
         | ValueTypeView::List(_)
         | ValueTypeView::Integer
@@ -363,7 +367,7 @@ pub(crate) fn unrestricted(
 ///   to a differing one, separates a node mistranslated.
 /// - witness: `session::tests::equivalence_sees_through_unfolding_and_payloads`
 #[spec(ensures: |ret| ret.as_ref().err().is_none_or(|refusal| *refusal == CheckRefusal::MachineInvariant))]
-fn engine(session: &SessionType) -> Result<Session, CheckRefusal>
+pub(crate) fn engine(session: &SessionType) -> Result<Session, CheckRefusal>
 {
     let payload = gandr_core_session::ValueTypeId([0_u8; 32]);
     let id = |state: ProtocolState| NodeId(usize::from(state));
@@ -390,6 +394,17 @@ fn engine(session: &SessionType) -> Result<Session, CheckRefusal>
         .collect();
     Session::new(nodes, id(session.protocol().root()))
         .map_err(|_fault| CheckRefusal::MachineInvariant)
+}
+
+/// Two session types the engine related: the candidate evidence the kernel
+/// replays, and the payload pairs conversion still compares.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct Related
+{
+    /// The engine's coinductive pairs, over the protocols' node positions.
+    pub evidence: gandr_kernel_term::session::Evidence,
+    /// The payload types of every send and receive pair, left first.
+    pub payloads: Vec<(ValueTypeId, ValueTypeId)>,
 }
 
 /// Relate the session types `left` and `right` by `relation`: the engine's
@@ -430,12 +445,47 @@ pub(crate) fn relate(
 {
     let left = session_at(context, left)?;
     let right = session_at(context, right)?;
+    Ok(match related(&left, &right, relation)? {
+        | Maybe::Present(decided) => Maybe::Present(decided.payloads),
+        | Maybe::Absent(absent) => Maybe::Absent(absent),
+    })
+}
+
+/// Relate the session types `left` and `right` by `relation`, keeping the
+/// engine's evidence beside the payload pairs.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: as [`relate`], with the engine's pairs: they contain the pair of
+///   the two states' heads and are the evidence the kernel replays over
+///   protocols erased node for node.
+/// - provides: the decision a session statement records.
+/// - fails: as [`relate`].
+/// - panics: none.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a widened selection relates by subtyping with evidence
+///   the kernel replays, and not by equivalence.
+/// - witness: `flow::tests::statements_decide_by_the_engine_and_replay`
+#[spec(ensures: |ret| match ret {
+    | Ok(Maybe::Present(ref decided)) => !decided.evidence.pairs.is_empty(),
+    | Ok(Maybe::Absent(_)) | Err(_) => true,
+})]
+pub(crate) fn related(
+    left: &SessionType,
+    right: &SessionType,
+    relation: Relation,
+) -> Result<Maybe<Related, related::Absent>, CheckRefusal>
+{
     let state = |session: &SessionType| NodeId(usize::from(session.state()));
     let decided = gandr_core_session::relate_states(
-        &engine(&left)?,
-        state(&left),
-        &engine(&right)?,
-        state(&right),
+        &engine(left)?,
+        state(left),
+        &engine(right)?,
+        state(right),
         relation,
     )
     .map_err(|_fault| CheckRefusal::MachineInvariant)?;
@@ -458,16 +508,16 @@ pub(crate) fn relate(
         | Ok(_) => Ok(None),
         | Err(_) => Err(CheckRefusal::MachineInvariant),
     };
-    let mut pairs = Vec::new();
+    let mut payloads = Vec::new();
     for pair in &evidence.pairs {
         if let (Some(a), Some(b)) = (
-            payload(&left, pair.source.0)?,
-            payload(&right, pair.target.0)?,
+            payload(left, pair.source.0)?,
+            payload(right, pair.target.0)?,
         ) {
-            pairs.push((a, b));
+            payloads.push((a, b));
         }
     }
-    Ok(Maybe::Present(pairs))
+    Ok(Maybe::Present(Related { evidence, payloads }))
 }
 
 #[cfg(test)]

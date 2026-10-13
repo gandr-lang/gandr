@@ -125,6 +125,96 @@ fn session_artifact_retains_graph_payloads_and_evidence()
 }
 
 #[test]
+fn session_flow_artifact_retains_its_classifier_and_evidence()
+{
+    let mut arena = crate::TermArena::new();
+    let payload = arena.value_type_base(crate::BaseType::String);
+    let payloads = arena.value_type_product(&[payload]);
+    let select = |labels: &[&str]| {
+        Node::Select(
+            labels
+                .iter()
+                .zip(1_usize ..)
+                .map(|(label, state)| (Label(String::from(*label)), State(state)))
+                .collect(),
+        )
+    };
+    let narrow = arena.value_type_session(
+        alloc::sync::Arc::new(Graph {
+            root: State(0),
+            nodes: vec![select(&["old"]), Node::End],
+        }),
+        payloads,
+    );
+    let wide = arena.value_type_session(
+        alloc::sync::Arc::new(Graph {
+            root: State(0),
+            nodes: vec![select(&["old", "pause"]), Node::End, Node::End],
+        }),
+        payloads,
+    );
+    let evidence = alloc::sync::Arc::new(Evidence {
+        pairs: [
+            StatePair {
+                source: State(0),
+                target: State(0),
+            },
+            StatePair {
+                source: State(1),
+                target: State(1),
+            },
+        ]
+        .into(),
+        payloads: vec![],
+    });
+    let source = arena.value_quote(narrow);
+    let target = arena.value_quote(wide);
+    let classifier = arena.value_type_flow_universe(source, target);
+    let proofs = arena.value_unit();
+    let value = arena.value_session_flow(classifier, alloc::sync::Arc::clone(&evidence), proofs);
+    let declaration = crate::DeclarationBuilder::new(&mut arena).def(
+        crate::LevelSignature::monomorphic(),
+        classifier,
+        value,
+    );
+    let declarations = [crate::MarkedDeclaration::new(
+        crate::AdmissionMark::Checked,
+        declaration,
+    )];
+    let bytes = crate::encode(&arena, &declarations);
+    let decoded = crate::decode(bytes.as_image()).expect("native session-flow artifact");
+    assert_eq!(
+        bytes,
+        crate::encode(decoded.arena(), decoded.declarations())
+    );
+    let crate::DeclarationContent::Def { declared, body, .. } =
+        *decoded.declarations()[0].declaration().content()
+    else {
+        panic!("definition retained")
+    };
+    let crate::Value::SessionFlow {
+        flow_type,
+        evidence: ref actual,
+        ..
+    } = *decoded.arena().value(body).expect("body")
+    else {
+        panic!("a simulation stays a simulation, never a session path")
+    };
+    assert_eq!(actual, &evidence);
+    assert_eq!(flow_type, declared);
+    let crate::ValueType::FlowUniverse(source, target) =
+        *decoded.arena().value_type(flow_type).expect("classifier")
+    else {
+        panic!("a flow classifier stays a flow classifier, never a path classifier")
+    };
+    assert_ne!(
+        decoded.arena().value(source),
+        decoded.arena().value(target),
+        "the direction survives the round trip"
+    );
+}
+
+#[test]
 fn session_words_preserve_graph_and_relation()
 {
     let graph = Graph {

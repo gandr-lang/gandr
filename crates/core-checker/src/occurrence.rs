@@ -39,6 +39,7 @@ use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldPosition;
 use gandr_kernel_term::OccurrenceSite;
 use gandr_kernel_term::ParameterPosition;
+use quenchant_shape::shape::Maybe;
 
 use crate::CheckRefusal;
 
@@ -402,6 +403,18 @@ fn worst(
                     pending.push((AnyNode::Value(left), term(reach)));
                     pending.push((AnyNode::Value(right), term(reach)));
                 },
+                | Some(&ValueType::Flow {
+                    carrier,
+                    source,
+                    target,
+                }) => {
+                    pending.push((AnyNode::ValueType(carrier), nest(reach)));
+                    pending.push((AnyNode::Value(source), term(reach)));
+                    pending.push((AnyNode::Value(target), term(reach)));
+                },
+                | Some(&ValueType::Run(session)) => {
+                    pending.push((AnyNode::Value(session), term(reach)));
+                },
                 | Some(&ValueType::Thunk(body)) => {
                     pending.push((AnyNode::CompType(body), thunked(reach)));
                 },
@@ -512,10 +525,26 @@ fn worst(
                             .map(|&component| (AnyNode::Value(component), reach)),
                     );
                 },
+                | Some(&Value::Recorded(ref moves)) => {
+                    pending.extend(
+                        moves
+                            .iter()
+                            .filter_map(|movement| match movement.payload() {
+                                | Maybe::Present(payload) => Some((AnyNode::Value(payload), reach)),
+                                | Maybe::Absent(_) => None,
+                            }),
+                    );
+                },
                 | Some(
                     &(Value::PathProduct(first, second)
                     | Value::Funext(first, second)
                     | Value::Equiv(first, second)
+                    | Value::Then(first, second)
+                    | Value::SessionRelated {
+                        source: first,
+                        target: second,
+                        ..
+                    }
                     | Value::Ua {
                         forward: first,
                         backward: second,
@@ -543,6 +572,7 @@ fn worst(
                 | Some(
                     &(Value::PathRefl(body)
                     | Value::Here(body)
+                    | Value::Stay(body)
                     | Value::Injection(_, body)
                     | Value::Lift { body, .. }
                     | Value::StaticLambda(body)
@@ -714,11 +744,18 @@ fn worst(
                     pending.push((AnyNode::Value(path), reach));
                     pending.push((AnyNode::Value(value), reach));
                 },
-                | Some(&Computation::PathTransport {
-                    motive,
-                    path,
-                    value,
-                }) => {
+                | Some(
+                    &(Computation::PathTransport {
+                        motive,
+                        path,
+                        value,
+                    }
+                    | Computation::Ride {
+                        motive,
+                        flow: path,
+                        value,
+                    }),
+                ) => {
                     pending.push((AnyNode::ValueType(motive), term(reach)));
                     pending.push((AnyNode::Value(path), reach));
                     pending.push((AnyNode::Value(value), reach));

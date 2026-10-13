@@ -1075,17 +1075,18 @@ Value::Reify(ref frames) => frames.iter().filter(|frame| !matches!(frame, crate:
 Value::Constructor { ref fields, .. } => fields.len().saturating_add(1),
 Value::Record(ref fields) => fields.len(),
 Value::Tuple(ref components) => components.len(),
+Value::Recorded(ref moves) => moves.iter().filter(|movement| matches!(movement.payload(), quenchant_shape::shape::Maybe::Present(_))).count(),
 Value::ListNil | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Hole(_) => 0_usize,
-Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } => 2,
+Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Then(..) => 2,
 Value::PathEquiv { .. } => 3,
-Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::PathRefl(_) | Value::Here(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Mark { .. } => 1,
+Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::PathRefl(_) | Value::Here(_) | Value::Stay(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Mark { .. } => 1,
 }),
         | Node::Computation(id) => self.arena.computation(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
 Computation::Perform { ref signature, .. } => 1_usize.saturating_add(signature.types().count()),
 Computation::Exercise { ref signature, .. } => 2_usize.saturating_add(signature.types().count()),
 Computation::Handle { ref signature, ref clauses, .. } | Computation::Scope { ref signature, ref clauses, .. } => 2_usize.saturating_add(signature.types().count()).saturating_add(clauses.len()),
 Computation::ListFold { .. } | Computation::TelescopeTransport { .. } => 5,
-Computation::PathTransport { .. } => 3,
+Computation::PathTransport { .. } | Computation::Ride { .. } => 3,
 Computation::Primitive { ref arguments, .. } => arguments.len(),
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
 Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 1,
@@ -1102,8 +1103,8 @@ ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | Value
 ValueType::Session(ref session) => session.payloads().len(),
 ValueType::Capability { ref authority, .. } => authority.types().count(),
 ValueType::Stack { .. } | ValueType::StaticPi { .. } | ValueType::PathUniverse(..) => 2,
-ValueType::Path { .. } => 3,
-ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
+ValueType::Path { .. } | ValueType::Flow { .. } => 3,
+ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Run(_) => 1,
 }),
         | Node::CompType(id) => match self.arena.comp_type(id) {
             | None | Some(&CompType::Unknown) => 0_usize,
@@ -1181,6 +1182,7 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                     &Value::PathRefl(body)
                     | &Value::Here(body)
                     | &Value::Injection(_, body)
+                    | &Value::Stay(body)
                     | &Value::Lift { body, .. }
                     | &Value::Mark { body, .. },
                 ) => self.tasks.push(open(Node::Value(body), depth)),
@@ -1196,6 +1198,12 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                     | &Value::PathProduct(first, second)
                     | &Value::Funext(first, second)
                     | &Value::Equiv(first, second)
+                    | &Value::Then(first, second)
+                    | &Value::SessionRelated {
+                        source: first,
+                        target: second,
+                        ..
+                    }
                     | &Value::Ua {
                         forward: first,
                         backward: second,
@@ -1211,6 +1219,16 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                         .iter()
                         .rev()
                         .map(|&component| open(Node::Value(component), depth)),
+                ),
+                | Some(&Value::Recorded(ref moves)) => self.tasks.extend(
+                    moves
+                        .iter()
+                        .rev()
+                        .filter_map(|movement| match movement.payload() {
+                            | quenchant_shape::shape::Maybe::Present(payload) => Some(payload),
+                            | quenchant_shape::shape::Maybe::Absent(_) => None,
+                        })
+                        .map(|payload| open(Node::Value(payload), depth)),
                 ),
                 | Some(&Value::Thunk(body)) => {
                     self.tasks.push(open(Node::Computation(body), depth));
@@ -1373,6 +1391,16 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                     self.tasks
                         .push(open(Node::ValueType(motive), depth.deeper()));
                 },
+                | Some(&Computation::Ride {
+                    motive,
+                    flow,
+                    value,
+                }) => {
+                    self.tasks.push(open(Node::Value(value), depth));
+                    self.tasks.push(open(Node::Value(flow), depth));
+                    self.tasks
+                        .push(open(Node::ValueType(motive), depth.deeper()));
+                },
                 // The motive's own arrows bind the telescope.
                 | Some(&Computation::TelescopeTransport {
                     motive,
@@ -1494,10 +1522,18 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                         carrier,
                         left,
                         right,
+                    }
+                    | ValueType::Flow {
+                        carrier,
+                        source: left,
+                        target: right,
                     } => {
                         self.tasks.push(open(Node::Value(right), depth));
                         self.tasks.push(open(Node::Value(left), depth));
                         self.tasks.push(open(Node::ValueType(carrier), depth));
+                    },
+                    | ValueType::Run(session) => {
+                        self.tasks.push(open(Node::Value(session), depth));
                     },
                     | ValueType::Thunk(body) => {
                         self.tasks.push(open(Node::CompType(body), depth));
@@ -1779,10 +1815,11 @@ Value::Reify(ref frames) => frames.iter().filter(|frame| !matches!(frame, crate:
 Value::Constructor { ref fields, .. } => fields.len().saturating_add(1),
 Value::Record(ref fields) => fields.len(),
 Value::Tuple(ref components) => components.len(),
+Value::Recorded(ref moves) => moves.iter().filter(|movement| matches!(movement.payload(), quenchant_shape::shape::Maybe::Present(_))).count(),
 Value::ListNil | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Hole(_) => 0_usize,
-Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } => 2,
+Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Then(..) => 2,
 Value::PathEquiv { .. } => 3,
-Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::PathRefl(_) | Value::Here(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Mark { .. } => 1,
+Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::PathRefl(_) | Value::Here(_) | Value::Stay(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Mark { .. } => 1,
 })],
         ensures: |ret| self.results.len() == ready.saturating_sub(children)
             && (ret == id || self.arena.value(id).is_some_and(|original| self.arena.value(ret).is_some_and(|rewritten|
@@ -1946,6 +1983,60 @@ Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | 
                 else {
                     self.arena
                         .value_equiv(rewritten_forward, rewritten_backward)
+                }
+            },
+            | Value::SessionRelated {
+                relation,
+                source,
+                target,
+            } => {
+                let rewritten_target = Self::value(&mut self.results, target);
+                let rewritten_source = Self::value(&mut self.results, source);
+                if (rewritten_source, rewritten_target) == (source, target) {
+                    id
+                }
+                else {
+                    self.arena
+                        .value_session_related(relation, rewritten_source, rewritten_target)
+                }
+            },
+            | Value::Stay(point) => {
+                let rewritten = Self::value(&mut self.results, point);
+                if rewritten == point {
+                    id
+                }
+                else {
+                    self.arena.value_stay(rewritten)
+                }
+            },
+            | Value::Then(first, second) => {
+                let rewritten_second = Self::value(&mut self.results, second);
+                let rewritten_first = Self::value(&mut self.results, first);
+                if (rewritten_first, rewritten_second) == (first, second) {
+                    id
+                }
+                else {
+                    self.arena.value_then(rewritten_first, rewritten_second)
+                }
+            },
+            | Value::Recorded(ref moves) => {
+                let mut changed: Option<Vec<crate::session::RecordedMove>> = None;
+                for (index, original) in moves.iter().enumerate().rev() {
+                    let quenchant_shape::shape::Maybe::Present(payload) = original.payload()
+                    else {
+                        continue;
+                    };
+                    let rewritten = Self::value(&mut self.results, payload);
+                    if rewritten != payload {
+                        let changed = changed.get_or_insert_with(|| moves.to_vec());
+                        if let Some(slot) = changed.get_mut(index) {
+                            *slot = original.carrying(rewritten);
+                        }
+                    }
+                }
+                match changed {
+                    | Some(moves) => self.arena.value_recorded(alloc::sync::Arc::from(moves)),
+                    | None => id,
                 }
             },
             | Value::Ua {
@@ -2121,7 +2212,7 @@ Computation::Perform { ref signature, .. } => 1_usize.saturating_add(signature.t
 Computation::Exercise { ref signature, .. } => 2_usize.saturating_add(signature.types().count()),
 Computation::Handle { ref signature, ref clauses, .. } | Computation::Scope { ref signature, ref clauses, .. } => 2_usize.saturating_add(signature.types().count()).saturating_add(clauses.len()),
 Computation::ListFold { .. } | Computation::TelescopeTransport { .. } => 5,
-Computation::PathTransport { .. } => 3,
+Computation::PathTransport { .. } | Computation::Ride { .. } => 3,
 Computation::Primitive { ref arguments, .. } => arguments.len(),
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
 Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 1,
@@ -2444,6 +2535,22 @@ Computation::Session(ref action) => action.values().count().saturating_add(actio
                     )
                 }
             },
+            | Computation::Ride {
+                motive,
+                flow,
+                value,
+            } => {
+                let rewritten_value = Self::value(&mut self.results, value);
+                let rewritten_flow = Self::value(&mut self.results, flow);
+                let rewritten_motive = Self::value_type(&mut self.results, motive);
+                if (rewritten_motive, rewritten_flow, rewritten_value) == (motive, flow, value) {
+                    id
+                }
+                else {
+                    self.arena
+                        .computation_ride(rewritten_motive, rewritten_flow, rewritten_value)
+                }
+            },
             | Computation::TelescopeTransport {
                 motive,
                 path,
@@ -2611,8 +2718,8 @@ ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | Value
 ValueType::Session(ref session) => session.payloads().len(),
 ValueType::Capability { ref authority, .. } => authority.types().count(),
 ValueType::Stack { .. } | ValueType::StaticPi { .. } | ValueType::PathUniverse(..) => 2,
-ValueType::Path { .. } => 3,
-ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
+ValueType::Path { .. } | ValueType::Flow { .. } => 3,
+ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Run(_) => 1,
 })],
         ensures: |ret| self.results.len() == ready.saturating_sub(children)
             && (ret == id || self.arena.value_type(id).is_some_and(|original| self.arena.value_type(ret).is_some_and(|rewritten|
@@ -2708,6 +2815,36 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                 else {
                     self.arena
                         .value_type_path(rewritten_carrier, rewritten_left, rewritten_right)
+                }
+            },
+            | ValueType::Flow {
+                carrier,
+                source,
+                target,
+            } => {
+                let rewritten_target = Self::value(&mut self.results, target);
+                let rewritten_source = Self::value(&mut self.results, source);
+                let rewritten_carrier = Self::value_type(&mut self.results, carrier);
+                if (rewritten_carrier, rewritten_source, rewritten_target)
+                    == (carrier, source, target)
+                {
+                    id
+                }
+                else {
+                    self.arena.value_type_flow(
+                        rewritten_carrier,
+                        rewritten_source,
+                        rewritten_target,
+                    )
+                }
+            },
+            | ValueType::Run(session) => {
+                let rewritten = Self::value(&mut self.results, session);
+                if rewritten == session {
+                    id
+                }
+                else {
+                    self.arena.value_type_run(rewritten)
                 }
             },
             | ValueType::Base(_)
@@ -3509,12 +3646,14 @@ fn survey_value(
         },
         | Value::PathRefl(inner)
         | Value::Here(inner)
+        | Value::Stay(inner)
         | Value::Injection(_, inner)
         | Value::Lift { body: inner, .. }
         | Value::Mark { body: inner, .. } => next.push(Position::Value(inner, region)),
         | Value::PathProduct(left, right)
         | Value::Funext(left, right)
         | Value::Equiv(left, right)
+        | Value::Then(left, right)
         | Value::ListCons(left, right)
         | Value::PathEquiv {
             forward: left,
@@ -3532,6 +3671,19 @@ fn survey_value(
         | Value::StaticLambda(body) => next.push(Position::Value(body, own)),
         | Value::StaticApplication(head, argument) => {
             next.extend([Position::Value(head, own), Position::Value(argument, own)]);
+        },
+        | Value::SessionRelated { source, target, .. } => {
+            next.extend([Position::Value(source, own), Position::Value(target, own)]);
+        },
+        | Value::Recorded(ref moves) => {
+            next.extend(
+                moves
+                    .iter()
+                    .filter_map(|movement| match movement.payload() {
+                        | Maybe::Present(payload) => Some(Position::Value(payload, region)),
+                        | Maybe::Absent(_) => None,
+                    }),
+            );
         },
         | Value::Tuple(ref components) => next.extend(
             components
@@ -3598,7 +3750,11 @@ fn survey_computation(
                 .iter()
                 .map(|&argument| Position::Value(argument, region)),
         ),
-        | Computation::Transport(path, value) | Computation::PathTransport { path, value, .. } => {
+        | Computation::Transport(path, value)
+        | Computation::PathTransport { path, value, .. }
+        | Computation::Ride {
+            flow: path, value, ..
+        } => {
             next.extend([
                 Position::Value(path, region),
                 Position::Value(value, region),
@@ -4480,7 +4636,7 @@ mod tests
             Some(&ValueType::Stack { .. } | &ValueType::List(_) | &ValueType::Data { .. } | &ValueType::Record(_) |
 &ValueType::Sum(..) | &ValueType::PathUniverse(..) | &ValueType::Path { .. } | &ValueType::Universe { ..
 } | &ValueType::Lift { .. } | &ValueType::Abstract(_) | &ValueType::StaticPi {
-.. } | &ValueType::Capability { .. } | &ValueType::Unknown | &ValueType::Session(_)) | None => Token::Other,
+.. } | &ValueType::Capability { .. } | &ValueType::Unknown | &ValueType::Session(_) | &ValueType::Flow { .. } | &ValueType::Run(_)) | None => Token::Other,
             },
         | Visit::Value(id) => match arena.value(id) {
             | Some(&Value::Variable { index, .. }) => Token::Variable(u32::from(index)),
@@ -4493,6 +4649,7 @@ mod tests
             Some(&Value::Reify(_) | &Value::ListNil | &Value::ListCons(..) | &Value::Constructor { .. } | &Value::Record(_) | &Value::Primitive { .. }
 | &Value::Literal(_) | &Value::Injection(..) | &Value::Thunk(_)
 | &Value::Lift { .. } | &Value::PathRefl(_) | &Value::Here(_) | &Value::Funext(..) | &Value::Equiv(..) | &Value::Ua { .. } | &Value::Returned(_) | &Value::Nested(_) | &Value::Run(_) | &Value::PathProduct(..) |
+&Value::SessionRelated { .. } | &Value::Stay(_) | &Value::Then(..) | &Value::Recorded(_) |
 &Value::PathEquiv { .. } | &Value::Hole(_) | &Value::Mark { .. }) | None => Token::Other,
             },
     }))]

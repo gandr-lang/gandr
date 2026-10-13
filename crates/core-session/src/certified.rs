@@ -367,10 +367,19 @@ fn checked_transport(
     else {
         return Err(TransportError::ExpectedSessionFlow);
     };
-    let Flow::Session { ref evidence, .. } = *flows.get(id).map_err(TransportError::Flow)?
+    let Flow::Session(simulation) = *flows.get(id).map_err(TransportError::Flow)?
     else {
         return Err(TransportError::ExpectedSessionFlow);
     };
+    let Some(node) = arena.value(simulation)
+    else {
+        return Err(TransportError::ExpectedSessionFlow);
+    };
+    let Value::SessionFlow { ref evidence, .. } = *node
+    else {
+        return Err(TransportError::ExpectedSessionFlow);
+    };
+    let evidence = Arc::clone(evidence);
     let (source, target) = protocols;
     let source_code = binding(arena, source)?;
     let target_code = binding(arena, target)?;
@@ -380,19 +389,48 @@ fn checked_transport(
     {
         return Err(TransportError::Direction);
     }
-    replay(source.session, moves).map_err(TransportError::Replay)?;
-    let mut source_state = source.session.root();
-    let mut target_state = target.session.root();
+    advance((source.session, target.session), &evidence, moves)
+}
+
+/// Move a complete recorded skeleton forward along a finite simulation.
+///
+/// # Specification
+/// - requires: `evidence` relates `protocols.0` to `protocols.1` under the
+///   simulation the kernel replays; this function reads only the pairs it steps
+///   through and certifies nothing.
+/// - ensures: both monitors accept; each move follows a supplied related pair;
+///   labels and payload digests are unchanged, while payload identities are the
+///   target protocol's. No payload body is read.
+/// - fails: `Replay` when the source monitor refuses the run or the target
+///   monitor refuses its image; `Move` naming the first move the relation or
+///   the target protocol does not admit, including a source-only offered label.
+/// - panics: none.
+///
+/// # Errors
+/// `Replay`, `Type` or `Move`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a run through a widened selection moves forward; a run
+///   through an offer the target drops refuses at that move as `WrongLabel`.
+/// - witness: `tests::certified::recorded_runs_transport_only_forward`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |output| replay(protocols.0, moves) == Ok(crate::Completion)
+    && replay(protocols.1, output) == Ok(crate::Completion)
+    && output.len() == moves.len()))]
+#[inline]
+pub fn advance(
+    protocols: (&Session, &Session),
+    evidence: &gandr_kernel_term::session::Evidence,
+    moves: &[Move],
+) -> Result<Vec<Move>, TransportError>
+{
+    let (source, target) = protocols;
+    replay(source, moves).map_err(TransportError::Replay)?;
+    let mut source_state = source.root();
+    let mut target_state = target.root();
     let mut output = Vec::with_capacity(moves.len());
     for (index, movement) in moves.iter().enumerate() {
-        let (left, a) = source
-            .session
-            .head(source_state)
-            .map_err(TransportError::Type)?;
-        let (right, b) = target
-            .session
-            .head(target_state)
-            .map_err(TransportError::Type)?;
+        let (left, a) = source.head(source_state).map_err(TransportError::Type)?;
+        let (right, b) = target.head(target_state).map_err(TransportError::Type)?;
         let refusal = |reason| TransportError::Move {
             at: MoveIndex(index),
             reason,
@@ -449,6 +487,6 @@ fn checked_transport(
         };
         output.push(mapped);
     }
-    replay(target.session, &output).map_err(TransportError::Replay)?;
+    replay(target, &output).map_err(TransportError::Replay)?;
     Ok(output)
 }

@@ -42,6 +42,8 @@ use gandr_core_checker::ArgumentPosition;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::ConversionCount;
 use gandr_core_checker::ExpectedShape;
+use gandr_core_checker::RunFault;
+use gandr_core_checker::RunStep;
 use gandr_core_checker::StaticArity;
 use gandr_core_checker::UnadmittedFormer;
 use gandr_core_checker::body;
@@ -61,8 +63,10 @@ use gandr_core_term::session::PayloadSlot;
 use gandr_core_term::session::Protocol;
 use gandr_core_term::session::ProtocolState;
 use gandr_core_term::session::ProtocolSyntax;
+use gandr_core_term::session::RecordedMove;
 use gandr_core_term::session::RecursionIndex;
 use gandr_core_term::session::SessionAction;
+use gandr_core_term::session::SessionRelation;
 use gandr_core_term::session::SessionType;
 use gandr_kernel_strata::Level;
 use gandr_kernel_strata::LevelConstant;
@@ -1350,6 +1354,77 @@ where
         | ContentNode::Session(ref action) => {
             writer.tag(Tag(0x61));
             write_session_action(writer, action)?;
+        },
+        | ContentNode::SessionRelated {
+            relation,
+            source,
+            target,
+        } => {
+            writer.tag(Tag(0x62));
+            writer.tag(Tag(match relation {
+                | SessionRelation::Equivalence => 0,
+                | SessionRelation::Subtyping => 1,
+            }));
+            write_index(writer, source)?;
+            write_index(writer, target)?;
+        },
+        | ContentNode::Stay(point) => {
+            writer.tag(Tag(0x63));
+            write_index(writer, point)?;
+        },
+        | ContentNode::Then(first, second) => {
+            writer.tag(Tag(0x64));
+            write_index(writer, first)?;
+            write_index(writer, second)?;
+        },
+        | ContentNode::Recorded(ref moves) => {
+            writer.tag(Tag(0x65));
+            writer.count(Count(moves.len()))?;
+            for step in moves.iter() {
+                match *step {
+                    | RecordedMove::Sent(payload) => {
+                        writer.tag(Tag(0));
+                        write_index(writer, payload)?;
+                    },
+                    | RecordedMove::Received(payload) => {
+                        writer.tag(Tag(1));
+                        write_index(writer, payload)?;
+                    },
+                    | RecordedMove::Selected(ref label) => {
+                        writer.tag(Tag(2));
+                        writer.bytes(Bytes(label.as_ref().as_bytes()))?;
+                    },
+                    | RecordedMove::Offered(ref label) => {
+                        writer.tag(Tag(3));
+                        writer.bytes(Bytes(label.as_ref().as_bytes()))?;
+                    },
+                    | RecordedMove::Closed => writer.tag(Tag(4)),
+                }
+            }
+        },
+        | ContentNode::Ride {
+            motive,
+            flow,
+            value,
+        } => {
+            writer.tag(Tag(0x66));
+            write_index(writer, motive)?;
+            write_index(writer, flow)?;
+            write_index(writer, value)?;
+        },
+        | ContentNode::FlowType {
+            carrier,
+            source,
+            target,
+        } => {
+            writer.tag(Tag(0x67));
+            write_index(writer, carrier)?;
+            write_index(writer, source)?;
+            write_index(writer, target)?;
+        },
+        | ContentNode::RunType(code) => {
+            writer.tag(Tag(0x68));
+            write_index(writer, code)?;
         },
         | ContentNode::Perform {
             ref signature,
@@ -2869,6 +2944,13 @@ fn read_effect_row(
                     | ContentNode::WithType(..) => tag == 0x73,
                     | ContentNode::SessionType(_) => tag == 0x60,
                     | ContentNode::Session(_) => tag == 0x61,
+                    | ContentNode::SessionRelated { .. } => tag == 0x62,
+                    | ContentNode::Stay(_) => tag == 0x63,
+                    | ContentNode::Then(..) => tag == 0x64,
+                    | ContentNode::Recorded(_) => tag == 0x65,
+                    | ContentNode::Ride { .. } => tag == 0x66,
+                    | ContentNode::FlowType { .. } => tag == 0x67,
+                    | ContentNode::RunType(_) => tag == 0x68,
                     | ContentNode::Perform { .. } => tag == 0x74,
                     | ContentNode::Handle { .. } => tag == 0x75,
                     | ContentNode::Exercise { .. } => tag == 0x7B,
@@ -3011,6 +3093,43 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
         | 0x73 => ContentNode::WithType(read_index(reader)?, read_index(reader)?),
         | 0x60 => ContentNode::SessionType(read_session_type(reader)?),
         | 0x61 => ContentNode::Session(read_session_action(reader)?),
+        | 0x62 => ContentNode::SessionRelated {
+            relation: match reader.tag()?.0 {
+                | 0 => SessionRelation::Equivalence,
+                | 1 => SessionRelation::Subtyping,
+                | _ => return Err(CodecError::Corrupt),
+            },
+            source: read_index(reader)?,
+            target: read_index(reader)?,
+        },
+        | 0x63 => ContentNode::Stay(read_index(reader)?),
+        | 0x64 => ContentNode::Then(read_index(reader)?, read_index(reader)?),
+        | 0x65 => {
+            let count = reader.count()?;
+            let mut moves = Vec::new();
+            for _ in 0 .. count.0 {
+                moves.push(match reader.tag()?.0 {
+                    | 0 => RecordedMove::Sent(read_index(reader)?),
+                    | 1 => RecordedMove::Received(read_index(reader)?),
+                    | 2 => RecordedMove::Selected(read_field_label(reader)?),
+                    | 3 => RecordedMove::Offered(read_field_label(reader)?),
+                    | 4 => RecordedMove::Closed,
+                    | _ => return Err(CodecError::Corrupt),
+                });
+            }
+            ContentNode::Recorded(moves.into())
+        },
+        | 0x66 => ContentNode::Ride {
+            motive: read_index(reader)?,
+            flow: read_index(reader)?,
+            value: read_index(reader)?,
+        },
+        | 0x67 => ContentNode::FlowType {
+            carrier: read_index(reader)?,
+            source: read_index(reader)?,
+            target: read_index(reader)?,
+        },
+        | 0x68 => ContentNode::RunType(read_index(reader)?),
         | 0x74 => {
             let payload = read_index(reader)?;
             let signature = read_effect_signature(reader)?;
@@ -4265,7 +4384,7 @@ fn read_site(reader: &mut Reader<'_>) -> Result<Site, CodecError>
 }
 
 /// The tags of the unadmitted formers, in stable wire order.
-const FORMERS: [UnadmittedFormer; 19] = [
+const FORMERS: [UnadmittedFormer; 21] = [
     UnadmittedFormer::ValueLift,
     UnadmittedFormer::NumericLiteral,
     UnadmittedFormer::NumericAtom,
@@ -4285,10 +4404,12 @@ const FORMERS: [UnadmittedFormer; 19] = [
     UnadmittedFormer::Capability,
     UnadmittedFormer::Exercise,
     UnadmittedFormer::Scope,
+    UnadmittedFormer::Run,
+    UnadmittedFormer::ElementFlow,
 ];
 
 /// The shapes a rule can require, in stable wire order.
-const SHAPES: [ExpectedShape; 14] = [
+const SHAPES: [ExpectedShape; 16] = [
     ExpectedShape::Thunk,
     ExpectedShape::Returner,
     ExpectedShape::Arrow,
@@ -4303,6 +4424,8 @@ const SHAPES: [ExpectedShape; 14] = [
     ExpectedShape::List,
     ExpectedShape::Session,
     ExpectedShape::Capability,
+    ExpectedShape::Flow,
+    ExpectedShape::Run,
 ];
 
 /// The actions a session state admits, in stable wire order.
@@ -4814,6 +4937,10 @@ where
                     writer.tag(Tag(17));
                     write_site(writer, site)?;
                 },
+                | Form::Run(site) => {
+                    writer.tag(Tag(18));
+                    write_site(writer, site)?;
+                },
             }
         },
         | Refusal::UnknownConstant { at, ref constant } => {
@@ -5000,6 +5127,39 @@ where
             writer.tag(Tag(63));
             write_site(writer, declared)?;
         },
+        | Refusal::SessionNotEquivalent(at) => {
+            writer.tag(Tag(64));
+            write_site(writer, at)?;
+        },
+        | Refusal::SessionNotSubtype(at) => {
+            writer.tag(Tag(65));
+            write_site(writer, at)?;
+        },
+        | Refusal::SessionCodeExpected(at) => {
+            writer.tag(Tag(66));
+            write_site(writer, at)?;
+        },
+        | Refusal::NonCovariantMotive(at) => {
+            writer.tag(Tag(67));
+            write_site(writer, at)?;
+        },
+        | Refusal::RideUnsupported(at) => {
+            writer.tag(Tag(68));
+            write_site(writer, at)?;
+        },
+        | Refusal::RunNotAdmitted { at, fault } => {
+            writer.tag(Tag(69));
+            write_site(writer, at)?;
+            let (kind, step) = match fault {
+                | RunFault::WrongDirection(step) => (0, step),
+                | RunFault::WrongLabel(step) => (1, step),
+                | RunFault::ResumeAfterEnd(step) => (2, step),
+                | RunFault::Incomplete(step) => (3, step),
+                | RunFault::OfferNarrowed => (4, RunStep::from(0_u32)),
+            };
+            writer.tag(Tag(kind));
+            writer.word(Word(u64::from(u32::from(step))));
+        },
     }
     Ok(())
 }
@@ -5135,6 +5295,12 @@ where
                     | Refusal::CapabilityEscaped { .. } => 61,
                     | Refusal::CapabilityConsumable(_) => 62,
                     | Refusal::CapabilityUngranted(_) => 63,
+                    | Refusal::SessionNotEquivalent(_) => 64,
+                    | Refusal::SessionNotSubtype(_) => 65,
+                    | Refusal::SessionCodeExpected(_) => 66,
+                    | Refusal::NonCovariantMotive(_) => 67,
+                    | Refusal::RideUnsupported(_) => 68,
+                    | Refusal::RunNotAdmitted { .. } => 69,
                 })
         },
         | Err(CodecError::LevelOffsetTooLarge { offset }) => {
@@ -5227,6 +5393,7 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
                 | 15 => Form::Nested(read_site(reader)?),
                 | 16 => Form::Offer(read_site(reader)?),
                 | 17 => Form::Scope(read_site(reader)?),
+                | 18 => Form::Run(read_site(reader)?),
                 | _ => return Err(CodecError::Corrupt),
             };
             Refusal::NotSynthesisable { form }
@@ -5414,6 +5581,27 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
         },
         | 62 => Refusal::CapabilityConsumable(read_site(reader)?),
         | 63 => Refusal::CapabilityUngranted(read_site(reader)?),
+        | 64 => Refusal::SessionNotEquivalent(read_site(reader)?),
+        | 65 => Refusal::SessionNotSubtype(read_site(reader)?),
+        | 66 => Refusal::SessionCodeExpected(read_site(reader)?),
+        | 67 => Refusal::NonCovariantMotive(read_site(reader)?),
+        | 68 => Refusal::RideUnsupported(read_site(reader)?),
+        | 69 => {
+            let at = read_site(reader)?;
+            let kind = reader.tag()?.0;
+            let step = RunStep::from(
+                u32::try_from(reader.word()?.0).map_err(|_cause| CodecError::Corrupt)?,
+            );
+            let fault = match kind {
+                | 0 => RunFault::WrongDirection(step),
+                | 1 => RunFault::WrongLabel(step),
+                | 2 => RunFault::ResumeAfterEnd(step),
+                | 3 => RunFault::Incomplete(step),
+                | 4 if u32::from(step) == 0 => RunFault::OfferNarrowed,
+                | _ => return Err(CodecError::NonCanonical),
+            };
+            Refusal::RunNotAdmitted { at, fault }
+        },
         | 28 => Refusal::NegativeOccurrence(read_occurrence_site(reader)?),
         | 29 => Refusal::NestedOccurrence(read_occurrence_site(reader)?),
         | 30 => Refusal::IndexOccurrence(read_occurrence_site(reader)?),

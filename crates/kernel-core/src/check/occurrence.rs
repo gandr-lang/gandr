@@ -331,7 +331,10 @@ fn worst(
                 | Some(&ValueType::Element { code, .. }) => {
                     pending.push((AnyNode::Value(code), term(reach)));
                 },
-                | Some(&ValueType::PathUniverse(source, target)) => {
+                | Some(
+                    &ValueType::PathUniverse(source, target)
+                    | &ValueType::FlowUniverse(source, target),
+                ) => {
                     pending.push((AnyNode::Value(source), term(reach)));
                     pending.push((AnyNode::Value(target), term(reach)));
                 },
@@ -433,11 +436,18 @@ fn worst(
                 | Some(&Value::Record(ref fields)) => {
                     pending.extend(fields.values().map(|&field| (AnyNode::Value(field), reach)));
                 },
-                | Some(&Value::SessionPath {
-                    path_type,
-                    payload_paths,
-                    ..
-                }) => {
+                | Some(
+                    &Value::SessionPath {
+                        path_type,
+                        payload_paths,
+                        ..
+                    }
+                    | &Value::SessionFlow {
+                        flow_type: path_type,
+                        payload_paths,
+                        ..
+                    },
+                ) => {
                     pending.push((AnyNode::ValueType(path_type), reach));
                     pending.push((AnyNode::Value(payload_paths), reach));
                 },

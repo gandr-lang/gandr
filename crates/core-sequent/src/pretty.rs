@@ -723,10 +723,11 @@ fn applied(
 /// - requires: nothing.
 /// - ensures: unit for the empty tuple, pair for a tuple of two, tuple for any
 ///   other; record for a record; inl and inr for the first two summands, inj
-///   past them; nil, cons, lift or ctor for the corresponding constructor.
+///   past them; nil, cons, lift, ctor or recorded for the corresponding
+///   constructor.
 /// - provides: the fixed head spelling, independent of a lift's level; a
-///   datatype constructor's ordinal, a record's labels and a summand past the
-///   second are written after it by the caller.
+///   datatype constructor's ordinal, a record's labels, a recorded run's moves
+///   and a summand past the second are written after it by the caller.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -753,6 +754,7 @@ fn applied(
     },
     | ConstructorTag::Lift(_) => matches!(ret.0.as_bytes(), b"lift"),
     | ConstructorTag::Data { .. } => matches!(ret.0.as_bytes(), b"ctor"),
+    | ConstructorTag::Recorded(_) => matches!(ret.0.as_bytes(), b"recorded"),
 })]
 fn constructor_name(tag: &ConstructorTag) -> Token
 {
@@ -770,11 +772,13 @@ fn constructor_name(tag: &ConstructorTag) -> Token
         },
         | ConstructorTag::Lift(_) => Token("lift"),
         | ConstructorTag::Data { .. } => Token("ctor"),
+        | ConstructorTag::Recorded(_) => Token("recorded"),
     }
 }
 
 /// The position a head's name is qualified by: a datatype constructor's
-/// ordinal, a record's labels, and a summand past the second.
+/// ordinal, a record's labels, a recorded run's moves and a summand past the
+/// second.
 ///
 /// # Specification
 /// trivial.
@@ -788,6 +792,7 @@ fn qualifier(tag: &ConstructorTag) -> Option<Piece<'static>>
             Some(Piece::Owned(alloc::format!("[{}]", usize::from(summand))))
         },
         | ConstructorTag::Record(ref labels) => Some(Piece::Owned(labels_spelled(labels))),
+        | ConstructorTag::Recorded(ref moves) => Some(Piece::Owned(moves_spelled(moves))),
         | _ => None,
     }
 }
@@ -830,6 +835,8 @@ fn qualifier(tag: &ConstructorTag) -> Option<Piece<'static>>
     | (&ConstructorTag::Data { tag: ordinal, arity }, &Piece::Owned(ref text)) =>
         text.starts_with(&alloc::format!("ctor[{}](", usize::from(ordinal)))
             && text.matches('x').count() == usize::from(arity),
+    | (&ConstructorTag::Recorded(ref moves), &Piece::Owned(ref text)) =>
+        *text == alloc::format!("recorded{}({}) ⇒ ", moves_spelled(moves), alloc::vec!["x"; usize::from(tag.producer_arity())].join(", ")),
     | _ => false,
 })]
 fn pattern(tag: &ConstructorTag) -> Piece<'static>
@@ -866,7 +873,35 @@ fn pattern(tag: &ConstructorTag) -> Piece<'static>
                 usize::from(ordinal)
             ))
         },
+        | ConstructorTag::Recorded(ref moves) => {
+            let binders = alloc::vec!["x"; usize::from(tag.producer_arity())].join(", ");
+            Piece::Owned(alloc::format!(
+                "recorded{}({binders}) ⇒ ",
+                moves_spelled(moves)
+            ))
+        },
     }
+}
+
+/// A recorded run head's moves, in order, between brackets: `[sent,
+/// selected(l), closed]`.
+///
+/// # Specification
+/// trivial.
+fn moves_spelled(moves: &[gandr_core_term::session::RecordedMove<()>]) -> String
+{
+    use gandr_core_term::session::RecordedMove;
+    let spelled: Vec<String> = moves
+        .iter()
+        .map(|movement| match *movement {
+            | RecordedMove::Sent(()) => String::from("sent"),
+            | RecordedMove::Received(()) => String::from("received"),
+            | RecordedMove::Selected(ref label) => alloc::format!("selected({})", label.as_ref()),
+            | RecordedMove::Offered(ref label) => alloc::format!("offered({})", label.as_ref()),
+            | RecordedMove::Closed => String::from("closed"),
+        })
+        .collect();
+    alloc::format!("[{}]", spelled.join(", "))
 }
 
 /// A record head's labels, in its order, between braces: `{a, b}`.

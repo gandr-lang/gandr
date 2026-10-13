@@ -355,6 +355,32 @@ pub enum Value
         /// generators.
         backward: ValueId,
     },
+    /// A session identity statement between two session codes: `bisim(a, b)`,
+    /// an element of `Path(Type, a, b)` when the protocols are bisimilar, or
+    /// `sim(a, b)`, an element of `Flow(Type, a, b)` when `a` is a Gay–Hole
+    /// subtype of `b`. The checker decides it with the session engine and
+    /// records the relation, and the kernel replays that relation as a native
+    /// session path or session flow; it is inert, as a native certificate is.
+    SessionRelated
+    {
+        /// The identity claimed.
+        relation: crate::session::SessionRelation,
+        /// The source code.
+        source: ValueId,
+        /// The target code.
+        target: ValueId,
+    },
+    /// Directed reflexivity `stay(a)`: the canonical element of `Flow(A, a,
+    /// a)`.
+    Stay(ValueId),
+    /// Directed composition `then(f, g)`: given `f : Flow(A, a, b)` and `g :
+    /// Flow(A, b, c)`, an element of `Flow(A, a, c)`.
+    Then(ValueId, ValueId),
+    /// A recorded run `recorded(m₁, …, mₙ)`: one endpoint's complete trace,
+    /// each payload a value. It checks against `Run(s)` by replay of its
+    /// moves through the session monitor and of its payloads at the types
+    /// the protocol assigns them.
+    Recorded(alloc::sync::Arc<[crate::session::RecordedMove]>),
     /// The value a pure computation returns, standing where a value is read:
     /// a compound path endpoint such as `n + 1` or `f(x)`. It types as the
     /// computation's result when the computation is a returner with no
@@ -562,6 +588,19 @@ pub enum Computation
         /// left endpoint.
         value: ValueId,
     },
+    /// Directed transport `ride(P, f, x)` along a flow: given `f : Flow(A, a,
+    /// b)` and `x : P[a]`, it returns `P[b]`. The motive `P` is a value type
+    /// under one intuitionistic binder of the carrier `A`, in which the
+    /// binder occurs only covariantly.
+    Ride
+    {
+        /// The motive, under one intuitionistic binder: the moving endpoint.
+        motive: ValueTypeId,
+        /// The flow ridden along.
+        flow: ValueId,
+        /// The value moved, an inhabitant of the motive at the flow's source.
+        value: ValueId,
+    },
     /// Transport over a two-entry telescope: given `p : Path(A, a, b)`, `z₀ :
     /// B[a]`, `q : Path(B[b], ⟨tr(B, p, z₀)⟩, z₁)` and `x : C[a, z₀]`, it
     /// returns `C[b, z₁]`. The motive is the dependent arrow `Π (y : A). Π (z
@@ -763,6 +802,21 @@ pub enum ValueType
         /// The right endpoint.
         right: ValueId,
     },
+    /// Directed identity `Flow(A, a, b)`: the type of forward-only flows from
+    /// `a` to `b` in the value type `A`. It has no inverse: a flow transports
+    /// along itself in one direction only.
+    Flow
+    {
+        /// The carrier the two endpoints inhabit.
+        carrier: ValueTypeId,
+        /// The source endpoint.
+        source: ValueId,
+        /// The target endpoint.
+        target: ValueId,
+    },
+    /// `Run(s)`: the complete recorded runs of the session code `s`, each a
+    /// finite trace the protocol's monitor accepts.
+    Run(ValueId),
     /// A rigid base-type atom.
     Base(BaseType),
     /// The product of its components, in order: `Product([])` is the unit
@@ -1149,8 +1203,9 @@ fn equal_syntax(
                     {
                         pending.push(V(a, b));
                     }
-                    else if let Value::Here(a) = *matched_left_value
-                        && let Value::Here(b) = *matched_right_value
+                    else if let (&Value::Here(a), &Value::Here(b))
+                    | (&Value::Stay(a), &Value::Stay(b)) =
+                        (matched_left_value, matched_right_value)
                     {
                         pending.push(V(a, b));
                     }
@@ -1178,10 +1233,55 @@ fn equal_syntax(
                         }
                     }
                     else if let (&Value::Funext(a, b), &Value::Funext(c, d))
-                    | (&Value::Equiv(a, b), &Value::Equiv(c, d)) =
+                    | (&Value::Equiv(a, b), &Value::Equiv(c, d))
+                    | (&Value::Then(a, b), &Value::Then(c, d)) =
                         (matched_left_value, matched_right_value)
                     {
                         pending.extend([V(a, c), V(b, d)]);
+                    }
+                    else if let Value::SessionRelated {
+                        relation: left_relation,
+                        source: a,
+                        target: b,
+                    } = *matched_left_value
+                        && let Value::SessionRelated {
+                            relation: right_relation,
+                            source: c,
+                            target: d,
+                        } = *matched_right_value
+                        && left_relation == right_relation
+                    {
+                        pending.extend([V(a, c), V(b, d)]);
+                    }
+                    else if let Value::Recorded(ref left) = *matched_left_value
+                        && let Value::Recorded(ref right) = *matched_right_value
+                        && left.len() == right.len()
+                    {
+                        for (left, right) in left.iter().zip(right.iter()) {
+                            match (left, right) {
+                                | (
+                                    &crate::session::RecordedMove::Sent(a),
+                                    &crate::session::RecordedMove::Sent(b),
+                                )
+                                | (
+                                    &crate::session::RecordedMove::Received(a),
+                                    &crate::session::RecordedMove::Received(b),
+                                ) => pending.push(V(a, b)),
+                                | (
+                                    &crate::session::RecordedMove::Selected(ref a),
+                                    &crate::session::RecordedMove::Selected(ref b),
+                                )
+                                | (
+                                    &crate::session::RecordedMove::Offered(ref a),
+                                    &crate::session::RecordedMove::Offered(ref b),
+                                ) if a == b => {},
+                                | (
+                                    &crate::session::RecordedMove::Closed,
+                                    &crate::session::RecordedMove::Closed,
+                                ) => {},
+                                | _ => return CertificateEquality::Different,
+                            }
+                        }
                     }
                     else if let Value::Tuple(ref a) = *matched_left_value
                         && let Value::Tuple(ref b) = *matched_right_value
@@ -1488,6 +1588,18 @@ fn equal_syntax(
                             path: right_path,
                             value: right_value,
                         },
+                    )
+                    | (
+                        &Computation::Ride {
+                            motive: left_motive,
+                            flow: left_path,
+                            value: left_value,
+                        },
+                        &Computation::Ride {
+                            motive: right_motive,
+                            flow: right_path,
+                            value: right_value,
+                        },
                     ) => pending.extend([
                         VT(left_motive, right_motive),
                         V(left_path, right_path),
@@ -1648,6 +1760,18 @@ fn equal_syntax(
                             left: e,
                             right: f,
                         },
+                    )
+                    | (
+                        &ValueType::Flow {
+                            carrier: a,
+                            source: b,
+                            target: c,
+                        },
+                        &ValueType::Flow {
+                            carrier: d,
+                            source: e,
+                            target: f,
+                        },
                     ) = (matched_left_value, matched_right_value)
                     {
                         pending.extend([VT(a, d), V(b, e), V(c, f)]);
@@ -1656,6 +1780,11 @@ fn equal_syntax(
                         (matched_left_value, matched_right_value)
                     {
                         pending.push(VT(a, b));
+                    }
+                    else if let (&ValueType::Run(a), &ValueType::Run(b)) =
+                        (matched_left_value, matched_right_value)
+                    {
+                        pending.push(V(a, b));
                     }
                     else if let ValueType::PathUniverse(a, b) = *matched_left_value
                         && let ValueType::PathUniverse(c, d) = *matched_right_value

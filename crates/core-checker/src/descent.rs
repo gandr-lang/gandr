@@ -309,110 +309,129 @@ fn walk(
     while let Some((node, depth, results)) = pending.pop() {
         let deeper = depth.deeper();
         match node {
-            | AnyNode::Value(id) => match arena.value(id) {
-                | Some(&Value::Variable { .. }) => {
-                    if reference(arena, id, depth) == Reference::ToSelf {
-                        return Err(DescentRefusal::UnguardedSelfReference);
-                    }
-                },
-                | Some(&Value::Constructor {
-                    datatype,
-                    ref fields,
-                    ..
-                }) => {
-                    pending.push((AnyNode::ValueType(datatype), depth, results));
-                    pending.extend(
-                        fields
-                            .iter()
-                            .map(|&field| (AnyNode::Value(field), depth, results)),
-                    );
-                },
-                | Some(&Value::Record(ref fields)) => {
-                    pending.extend(
-                        fields
-                            .values()
-                            .map(|&field| (AnyNode::Value(field), depth, results)),
-                    );
-                },
-                | Some(&Value::PathEquiv {
-                    path_type,
-                    forward,
-                    backward,
-                    ..
-                }) => {
-                    pending.push((AnyNode::ValueType(path_type), depth, results));
-                    pending.push((AnyNode::Value(forward), depth, results));
-                    pending.push((AnyNode::Value(backward), depth, results));
-                },
-                | Some(&Value::Tuple(ref components)) => {
-                    pending.extend(
-                        components
-                            .iter()
-                            .map(|&component| (AnyNode::Value(component), depth, results)),
-                    );
-                },
-                | Some(
-                    &(Value::PathProduct(first, second)
-                    | Value::Funext(first, second)
-                    | Value::Equiv(first, second)
-                    | Value::Ua {
-                        forward: first,
-                        backward: second,
-                        ..
-                    }
-                    | Value::ListCons(first, second)
-                    | Value::StaticApplication(first, second)),
-                ) => {
-                    pending.push((AnyNode::Value(first), depth, results));
-                    pending.push((AnyNode::Value(second), depth, results));
-                },
-                | Some(&Value::Reify(ref frames)) => {
-                    for frame in frames.iter() {
-                        match *frame {
-                            | StackFrame::Apply(value) => {
-                                pending.push((AnyNode::Value(value), depth, results));
-                            },
-                            | StackFrame::Bind(body) => {
-                                pending.push((AnyNode::Computation(body), deeper, results));
-                            },
-                            | StackFrame::Project(_) => {},
+            | AnyNode::Value(id) => {
+                match arena.value(id) {
+                    | Some(&Value::Variable { .. }) => {
+                        if reference(arena, id, depth) == Reference::ToSelf {
+                            return Err(DescentRefusal::UnguardedSelfReference);
                         }
-                    }
-                },
-                | Some(
-                    &(Value::PathRefl(body)
-                    | Value::Here(body)
-                    | Value::Injection(_, body)
-                    | Value::Lift { body, .. }
-                    | Value::Mark { body, .. }),
-                ) => {
-                    pending.push((AnyNode::Value(body), depth, results));
-                },
-                | Some(&Value::StaticLambda(body)) => {
-                    pending.push((AnyNode::Value(body), deeper, results));
-                },
-                | Some(
-                    &(Value::Thunk(body)
-                    | Value::Returned(body)
-                    | Value::Nested(body)
-                    | Value::Run(body)),
-                ) => {
-                    pending.push((AnyNode::Computation(body), depth, results));
-                },
-                | Some(&Value::Quote(quoted)) => {
-                    pending.push((AnyNode::ValueType(quoted), depth, results));
-                },
-                | Some(&Value::QuoteComputation(quoted)) => {
-                    pending.push((AnyNode::CompType(quoted), depth, results));
-                },
-                | Some(
-                    &(Value::Primitive { .. }
-                    | Value::Constant(_)
-                    | Value::ListNil
-                    | Value::Literal(_)
-                    | Value::Hole(_)),
-                )
-                | None => {},
+                    },
+                    | Some(&Value::Constructor {
+                        datatype,
+                        ref fields,
+                        ..
+                    }) => {
+                        pending.push((AnyNode::ValueType(datatype), depth, results));
+                        pending.extend(
+                            fields
+                                .iter()
+                                .map(|&field| (AnyNode::Value(field), depth, results)),
+                        );
+                    },
+                    | Some(&Value::Record(ref fields)) => {
+                        pending.extend(
+                            fields
+                                .values()
+                                .map(|&field| (AnyNode::Value(field), depth, results)),
+                        );
+                    },
+                    | Some(&Value::PathEquiv {
+                        path_type,
+                        forward,
+                        backward,
+                        ..
+                    }) => {
+                        pending.push((AnyNode::ValueType(path_type), depth, results));
+                        pending.push((AnyNode::Value(forward), depth, results));
+                        pending.push((AnyNode::Value(backward), depth, results));
+                    },
+                    | Some(&Value::Tuple(ref components)) => {
+                        pending.extend(
+                            components
+                                .iter()
+                                .map(|&component| (AnyNode::Value(component), depth, results)),
+                        );
+                    },
+                    | Some(&Value::Recorded(ref moves)) => {
+                        pending.extend(moves.iter().filter_map(
+                            |movement| match movement.payload() {
+                                | Maybe::Present(payload) => {
+                                    Some((AnyNode::Value(payload), depth, results))
+                                },
+                                | Maybe::Absent(_) => None,
+                            },
+                        ));
+                    },
+                    | Some(
+                        &(Value::PathProduct(first, second)
+                        | Value::Funext(first, second)
+                        | Value::Equiv(first, second)
+                        | Value::Then(first, second)
+                        | Value::SessionRelated {
+                            source: first,
+                            target: second,
+                            ..
+                        }
+                        | Value::Ua {
+                            forward: first,
+                            backward: second,
+                            ..
+                        }
+                        | Value::ListCons(first, second)
+                        | Value::StaticApplication(first, second)),
+                    ) => {
+                        pending.push((AnyNode::Value(first), depth, results));
+                        pending.push((AnyNode::Value(second), depth, results));
+                    },
+                    | Some(&Value::Reify(ref frames)) => {
+                        for frame in frames.iter() {
+                            match *frame {
+                                | StackFrame::Apply(value) => {
+                                    pending.push((AnyNode::Value(value), depth, results));
+                                },
+                                | StackFrame::Bind(body) => {
+                                    pending.push((AnyNode::Computation(body), deeper, results));
+                                },
+                                | StackFrame::Project(_) => {},
+                            }
+                        }
+                    },
+                    | Some(
+                        &(Value::PathRefl(body)
+                        | Value::Here(body)
+                        | Value::Stay(body)
+                        | Value::Injection(_, body)
+                        | Value::Lift { body, .. }
+                        | Value::Mark { body, .. }),
+                    ) => {
+                        pending.push((AnyNode::Value(body), depth, results));
+                    },
+                    | Some(&Value::StaticLambda(body)) => {
+                        pending.push((AnyNode::Value(body), deeper, results));
+                    },
+                    | Some(
+                        &(Value::Thunk(body)
+                        | Value::Returned(body)
+                        | Value::Nested(body)
+                        | Value::Run(body)),
+                    ) => {
+                        pending.push((AnyNode::Computation(body), depth, results));
+                    },
+                    | Some(&Value::Quote(quoted)) => {
+                        pending.push((AnyNode::ValueType(quoted), depth, results));
+                    },
+                    | Some(&Value::QuoteComputation(quoted)) => {
+                        pending.push((AnyNode::CompType(quoted), depth, results));
+                    },
+                    | Some(
+                        &(Value::Primitive { .. }
+                        | Value::Constant(_)
+                        | Value::ListNil
+                        | Value::Literal(_)
+                        | Value::Hole(_)),
+                    )
+                    | None => {},
+                }
             },
             | AnyNode::Computation(id) => match arena.computation(id) {
                 | Some(&Computation::Application(head, argument)) => {
@@ -605,11 +624,18 @@ fn walk(
                     pending.push((AnyNode::Value(path), depth, results));
                     pending.push((AnyNode::Value(value), depth, results));
                 },
-                | Some(&Computation::PathTransport {
-                    motive,
-                    path,
-                    value,
-                }) => {
+                | Some(
+                    &(Computation::PathTransport {
+                        motive,
+                        path,
+                        value,
+                    }
+                    | Computation::Ride {
+                        motive,
+                        flow: path,
+                        value,
+                    }),
+                ) => {
                     pending.push((AnyNode::ValueType(motive), deeper, results));
                     pending.push((AnyNode::Value(path), depth, results));
                     pending.push((AnyNode::Value(value), depth, results));
@@ -697,6 +723,18 @@ fn walk(
                     pending.push((AnyNode::ValueType(carrier), depth, results));
                     pending.push((AnyNode::Value(left), depth, results));
                     pending.push((AnyNode::Value(right), depth, results));
+                },
+                | Some(&ValueType::Flow {
+                    carrier,
+                    source,
+                    target,
+                }) => {
+                    pending.push((AnyNode::ValueType(carrier), depth, results));
+                    pending.push((AnyNode::Value(source), depth, results));
+                    pending.push((AnyNode::Value(target), depth, results));
+                },
+                | Some(&ValueType::Run(session)) => {
+                    pending.push((AnyNode::Value(session), depth, results));
                 },
                 | Some(&ValueType::Thunk(body)) => {
                     pending.push((AnyNode::CompType(body), depth, results));

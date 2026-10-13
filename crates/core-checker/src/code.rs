@@ -772,6 +772,10 @@ impl CodeDefinitions
             },
             | Value::PathRefl(_)
             | Value::Here(_)
+            | Value::Stay(_)
+            | Value::Then(..)
+            | Value::SessionRelated { .. }
+            | Value::Recorded(_)
             | Value::Funext(..)
             | Value::Equiv(..)
             | Value::Ua { .. }
@@ -1647,9 +1651,27 @@ pub fn loose_reach(
                             .iter()
                             .map(|&component| (CoreNode::Term(TermNode::Value(component)), depth)),
                     ),
+                    | Value::Recorded(ref moves) => {
+                        work.extend(
+                            moves
+                                .iter()
+                                .filter_map(|movement| match movement.payload() {
+                                    | Maybe::Present(payload) => {
+                                        Some((CoreNode::Term(TermNode::Value(payload)), depth))
+                                    },
+                                    | Maybe::Absent(_) => None,
+                                }),
+                        );
+                    },
                     | Value::PathProduct(first, second)
                     | Value::Funext(first, second)
                     | Value::Equiv(first, second)
+                    | Value::Then(first, second)
+                    | Value::SessionRelated {
+                        source: first,
+                        target: second,
+                        ..
+                    }
                     | Value::Ua {
                         forward: first,
                         backward: second,
@@ -1662,6 +1684,7 @@ pub fn loose_reach(
                     },
                     | Value::PathRefl(body)
                     | Value::Here(body)
+                    | Value::Stay(body)
                     | Value::Injection(_, body)
                     | Value::Lift { body, .. }
                     | Value::Mark { body, .. } => {
@@ -1838,6 +1861,11 @@ pub fn loose_reach(
                         motive,
                         path,
                         value,
+                    }
+                    | Computation::Ride {
+                        motive,
+                        flow: path,
+                        value,
                     } => {
                         work.push((CoreNode::Type(TypeNode::Value(motive)), under));
                         work.push((CoreNode::Term(TermNode::Value(path)), depth));
@@ -1928,6 +1956,18 @@ pub fn loose_reach(
                         (CoreNode::Term(TermNode::Value(left)), depth),
                         (CoreNode::Term(TermNode::Value(right)), depth),
                     ]),
+                    | ValueType::Flow {
+                        carrier,
+                        source,
+                        target,
+                    } => work.extend([
+                        (CoreNode::Type(TypeNode::Value(carrier)), depth),
+                        (CoreNode::Term(TermNode::Value(source)), depth),
+                        (CoreNode::Term(TermNode::Value(target)), depth),
+                    ]),
+                    | ValueType::Run(session) => {
+                        work.push((CoreNode::Term(TermNode::Value(session)), depth));
+                    },
                     | ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
                         work.extend(
                             parts

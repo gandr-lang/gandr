@@ -128,7 +128,10 @@ fn children(
                 .chain(fields.iter().copied().map(V))
                 .collect(),
             | Value::Record(ref fields) => fields.values().copied().map(V).collect(),
-            | Value::ListNil | Value::ListCons(..) | Value::SessionPath { .. } => {
+            | Value::ListNil
+            | Value::ListCons(..)
+            | Value::SessionPath { .. }
+            | Value::SessionFlow { .. } => {
                 panic!("session evidence has a separate finite producer")
             },
             | Value::Here { .. }
@@ -193,7 +196,10 @@ fn children(
         | A(id) => match *(arena.value_type(id).expect("fixture value type")) {
             | ValueType::Data { ref arguments, .. } => arguments.iter().copied().map(V).collect(),
             | ValueType::Record(ref fields) => fields.values().copied().map(A).collect(),
-            | ValueType::List(_) | ValueType::Session { .. } | ValueType::Path { .. } => {
+            | ValueType::List(_)
+            | ValueType::Session { .. }
+            | ValueType::Path { .. }
+            | ValueType::FlowUniverse(..) => {
                 panic!("recursive inhabitants stay outside the first-order path producer")
             },
             | ValueType::PathUniverse(a, b) => vec![V(a), V(b)],
@@ -427,7 +433,10 @@ fn translate(
                             .map(|(label, field)| (label.clone(), values[field]))
                             .collect(),
                     ),
-                    | Value::ListNil | Value::ListCons(..) | Value::SessionPath { .. } => {
+                    | Value::ListNil
+                    | Value::ListCons(..)
+                    | Value::SessionPath { .. }
+                    | Value::SessionFlow { .. } => {
                         panic!("session evidence has a separate finite producer")
                     },
                     | Value::Here { .. }
@@ -552,7 +561,10 @@ fn translate(
                             .map(|(label, field)| (label.clone(), types[field]))
                             .collect(),
                     ),
-                    | ValueType::List(_) | ValueType::Session { .. } | ValueType::Path { .. } => {
+                    | ValueType::List(_)
+                    | ValueType::Session { .. }
+                    | ValueType::Path { .. }
+                    | ValueType::FlowUniverse(..) => {
                         panic!("recursive inhabitants stay outside the first-order path producer")
                     },
                     | ValueType::PathUniverse(source, target) => {

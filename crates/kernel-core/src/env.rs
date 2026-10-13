@@ -1846,11 +1846,18 @@ fn collect_reachable(
                     pending.push(AnyNode::Value(forward));
                     pending.push(AnyNode::Value(backward));
                 },
-                | Some(&Value::SessionPath {
-                    path_type,
-                    payload_paths,
-                    ..
-                }) => {
+                | Some(
+                    &Value::SessionPath {
+                        path_type,
+                        payload_paths,
+                        ..
+                    }
+                    | &Value::SessionFlow {
+                        flow_type: path_type,
+                        payload_paths,
+                        ..
+                    },
+                ) => {
                     pending.push(AnyNode::ValueType(path_type));
                     pending.push(AnyNode::Value(payload_paths));
                 },
@@ -2009,7 +2016,10 @@ fn collect_reachable(
                 | Some(&ValueType::Abstract(index)) => {
                     let _fresh = found.insert(index);
                 },
-                | Some(&ValueType::PathUniverse(source, target)) => {
+                | Some(
+                    &ValueType::PathUniverse(source, target)
+                    | &ValueType::FlowUniverse(source, target),
+                ) => {
                     if follow {
                         pending.push(AnyNode::Value(source));
                         pending.push(AnyNode::Value(target));

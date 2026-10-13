@@ -2917,6 +2917,15 @@ fn read(
                 Value::PathProduct(..) => matches!(ret, ContentNode::PathProduct(..)),
                 Value::Funext(..) => matches!(ret, ContentNode::Funext(..)),
                 Value::Equiv(..) => matches!(ret, ContentNode::Equiv(..)),
+                Value::SessionRelated { relation, .. } => {
+                    matches!(ret, ContentNode::SessionRelated { relation: found, .. } if found == relation)
+                }
+                Value::Stay(_) => matches!(ret, ContentNode::Stay(_)),
+                Value::Then(..) => matches!(ret, ContentNode::Then(..)),
+                Value::Recorded(ref moves) => {
+                    matches!(ret, ContentNode::Recorded(ref found) if found.len() == moves.len()
+                        && found.iter().zip(moves.iter()).all(|(left, right)| left.carrying(()) == right.carrying(())))
+                }
                 Value::Ua { stratum, ref sides, .. } => {
                     matches!(
                         ret, ContentNode::Ua { stratum: found, sides: ref other, .. } if found
@@ -3043,6 +3052,34 @@ where
             let forward = child(Root::Value(forward));
             ContentNode::Equiv(forward, child(Root::Value(backward)))
         },
+        | Some(&Value::SessionRelated {
+            relation,
+            source,
+            target,
+        }) => {
+            let source = child(Root::Value(source));
+            ContentNode::SessionRelated {
+                relation,
+                source,
+                target: child(Root::Value(target)),
+            }
+        },
+        | Some(&Value::Stay(point)) => ContentNode::Stay(child(Root::Value(point))),
+        | Some(&Value::Then(first, second)) => {
+            let first = child(Root::Value(first));
+            ContentNode::Then(first, child(Root::Value(second)))
+        },
+        | Some(&Value::Recorded(ref moves)) => ContentNode::Recorded(
+            moves
+                .iter()
+                .map(|step| {
+                    step.try_map(|payload| {
+                        Ok::<_, core::convert::Infallible>(child(Root::Value(payload)))
+                    })
+                    .unwrap_or_else(|never| match never {})
+                })
+                .collect(),
+        ),
         | Some(&Value::Ua {
             stratum,
             ref sides,
@@ -3153,6 +3190,7 @@ where
                 Computation::Transport(..) => matches!(ret, ContentNode::Transport(..)),
                 Computation::PathTransport { .. } => matches!(ret, ContentNode::ElementTransport { .. }),
                 Computation::TelescopeTransport { .. } => matches!(ret, ContentNode::TelescopeTransport { .. }),
+                Computation::Ride { .. } => matches!(ret, ContentNode::Ride { .. }),
                 Computation::Lambda(..) => matches!(ret, ContentNode::Lambda(..)),
                 Computation::Application(..) => {
                     matches!(ret, ContentNode::Application(..))
@@ -3200,6 +3238,19 @@ where
         },
         | Some(&Computation::TupleProjection(tuple, component)) => {
             ContentNode::TupleProjection(child(Root::Value(tuple)), component)
+        },
+        | Some(&Computation::Ride {
+            motive,
+            flow,
+            value,
+        }) => {
+            let motive = child(Root::ValueType(motive));
+            let flow = child(Root::Value(flow));
+            ContentNode::Ride {
+                motive,
+                flow,
+                value: child(Root::Value(value)),
+            }
         },
         | Some(&Computation::Perform {
             ref signature,
@@ -3445,6 +3496,8 @@ where
                     matches!(ret, ContentNode::PathUniverse(..))
                 }
                 ValueType::Path { .. } => matches!(ret, ContentNode::PathType { .. }),
+                ValueType::Flow { .. } => matches!(ret, ContentNode::FlowType { .. }),
+                ValueType::Run(_) => matches!(ret, ContentNode::RunType(_)),
                 ValueType::Base(base) => {
                     matches!(ret, ContentNode::Base(found) if found == base)
                 }
@@ -3545,6 +3598,20 @@ where
                 right: child(Root::Value(right)),
             }
         },
+        | Some(&ValueType::Flow {
+            carrier,
+            source,
+            target,
+        }) => {
+            let carrier = child(Root::ValueType(carrier));
+            let source = child(Root::Value(source));
+            ContentNode::FlowType {
+                carrier,
+                source,
+                target: child(Root::Value(target)),
+            }
+        },
+        | Some(&ValueType::Run(code)) => ContentNode::RunType(child(Root::Value(code))),
         | Some(&ValueType::Base(base)) => ContentNode::Base(base),
         | Some(&ValueType::Product(ref parts)) => ContentNode::Product(
             parts

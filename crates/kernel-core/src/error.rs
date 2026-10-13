@@ -49,6 +49,8 @@ pub enum ValueTypeHead
     Session,
     /// A universe-path classifier.
     PathUniverse,
+    /// A universe-flow classifier.
+    FlowUniverse,
     /// An identity type between two elements.
     Path,
     /// A rigid base-type atom.
@@ -89,6 +91,7 @@ impl ValueTypeHead
             | ValueType::Data { .. } => Self::Data,
             | ValueType::Record(_) => Self::Record,
             | ValueType::PathUniverse(..) => Self::PathUniverse,
+            | ValueType::FlowUniverse(..) => Self::FlowUniverse,
             | ValueType::Path { .. } => Self::Path,
             | ValueType::Base(_) => Self::Base,
             | ValueType::Element { .. } => Self::Element,
@@ -551,6 +554,9 @@ pub enum KernelError
     Session(crate::session::SessionError),
     /// A native universe-path formation or replay obligation failed.
     Path(crate::path_universe::PathError),
+    /// A native universe-flow classifier refused; a session simulation's
+    /// replay refuses as [`KernelError::Session`].
+    Flow(crate::flow_universe::ClassifierError),
     /// An element-identity formation, introduction or elimination failed.
     Identity(crate::element_identity::IdentityError),
     /// A value variable's de Bruijn index escaped the typing context.
@@ -807,6 +813,7 @@ impl core::fmt::Display for KernelError
             },
             | Self::Session(ref error) => error.fmt(f),
             | Self::Path(ref error) => error.fmt(f),
+            | Self::Flow(ref error) => error.fmt(f),
             | Self::Identity(ref error) => error.fmt(f),
             | Self::UnboundVariable { .. } => f.write_str("a variable escaped its context"),
             | Self::UnboundConstant { .. } => {

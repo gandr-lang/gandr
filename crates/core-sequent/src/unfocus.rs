@@ -429,6 +429,9 @@ enum Task
     Tuple(ProducerArity),
     /// Pop one value per label and build the record of those labels.
     Record(alloc::sync::Arc<[gandr_core_term::FieldLabel]>),
+    /// Pop one value per payload move and build the recorded run of these
+    /// moves.
+    Recorded(alloc::sync::Arc<[gandr_core_term::session::RecordedMove<()>]>),
     /// Pop one value and build its projection of the selected field.
     Select(Selector),
     /// Pop one value and build its injection into this summand.
@@ -596,6 +599,7 @@ impl Unfocusing<'_>
             | &Task::ListFold(..) => !self.values.is_empty() && self.computations.len() >= 2,
             | &Task::Tuple(arity) | &Task::Native { arity, .. } => self.values.len() >= usize::from(arity),
             | &Task::Record(ref labels) => self.values.len() >= labels.len(),
+            | &Task::Recorded(ref moves) => self.values.len() >= usize::from(ConstructorTag::Recorded(alloc::sync::Arc::clone(moves)).producer_arity()),
             | &Task::Case(branches) | &Task::DataCase(branches) => !self.values.is_empty() && self.computations.len() >= usize::from(branches),
             | &Task::Value(..) | &Task::Command(..) => true,
         },
@@ -673,6 +677,33 @@ impl Unfocusing<'_>
                     .collect();
                 let record = self.core.value_record(fields);
                 self.values.push(record);
+                Ok(())
+            },
+            | Task::Recorded(shape) => {
+                use gandr_core_term::session::RecordedMove;
+                let arity =
+                    ConstructorTag::Recorded(alloc::sync::Arc::clone(&shape)).producer_arity();
+                let start = self
+                    .values
+                    .len()
+                    .checked_sub(usize::from(arity))
+                    .ok_or(UnfocusRefusal::DecodeInvariant)?;
+                let mut payloads = self.values.drain(start ..);
+                let mut moves = Vec::with_capacity(shape.len());
+                for movement in shape.iter() {
+                    moves.push(match *movement {
+                        | RecordedMove::Sent(()) | RecordedMove::Received(()) => movement
+                            .carrying(payloads.next().ok_or(UnfocusRefusal::DecodeInvariant)?),
+                        | RecordedMove::Selected(ref label) => {
+                            RecordedMove::Selected(label.clone())
+                        },
+                        | RecordedMove::Offered(ref label) => RecordedMove::Offered(label.clone()),
+                        | RecordedMove::Closed => RecordedMove::Closed,
+                    });
+                }
+                drop(payloads);
+                let run = self.core.value_recorded(alloc::sync::Arc::from(moves));
+                self.values.push(run);
                 Ok(())
             },
             | Task::Select(selector) => {
@@ -1160,6 +1191,14 @@ impl Unfocusing<'_>
                         self.tasks.push(Task::Native { tag, arity });
                         for &field in fields.iter().rev() {
                             self.tasks.push(Task::Value(field, depth));
+                        }
+                        return Ok(());
+                    },
+                    | (&ConstructorTag::Recorded(ref shape), payloads) => {
+                        self.tasks
+                            .push(Task::Recorded(alloc::sync::Arc::clone(shape)));
+                        for &payload in payloads.iter().rev() {
+                            self.tasks.push(Task::Value(payload, depth));
                         }
                         return Ok(());
                     },

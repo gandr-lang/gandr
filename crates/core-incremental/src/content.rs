@@ -158,6 +158,25 @@
 //! then its grade and its region, a scoped region by its depth; it seats like
 //! any closed type. The capability refusals keep their sites and type payloads.
 //!
+//! The session identities persist under their own tags, beside the session
+//! classifier (`0x60`) and action (`0x61`):
+//!
+//! | Tag | Former |
+//! | --- | ------ |
+//! | `0x62` | Session statement, `bisim` or `sim` |
+//! | `0x63` | Stay |
+//! | `0x64` | Then |
+//! | `0x65` | Recorded run |
+//! | `0x66` | Ride |
+//! | `0x67` | Flow classifier |
+//! | `0x68` | Run classifier |
+//!
+//! A statement keeps its relation, so `bisim(a, b)` and `sim(a, b)` never
+//! share an address; the decided simulation is checker output and is not
+//! content. A recorded run keeps its moves in order, its payloads as value
+//! edges and its labels inline. Flow and run classifiers hold terms and do
+//! not seat, as an element path does not.
+//!
 //! **Choice.** Preserve typed interfaces and control syntax as content, not
 //! runtime heap addresses or captured delimiter stacks. Omitting annotations
 //! permits stale adoption; persisting a runtime continuation would require a
@@ -524,6 +543,45 @@ pub enum ContentNode
         /// The transported value.
         value: NodeIndex,
     },
+    /// A session statement over two session codes, retaining the relation it
+    /// claims.
+    SessionRelated
+    {
+        /// Equivalence or subtyping.
+        relation: gandr_core_term::session::SessionRelation,
+        /// The source code.
+        source: NodeIndex,
+        /// The target code.
+        target: NodeIndex,
+    },
+    /// The identity flow at its point.
+    Stay(NodeIndex),
+    /// Two flows composed, the first first.
+    Then(NodeIndex, NodeIndex),
+    /// A recorded run, its moves in order, each payload an edge.
+    Recorded(alloc::sync::Arc<[gandr_core_term::session::RecordedMove<NodeIndex>]>),
+    /// Transport of a value along a flow in a motive under one binder.
+    Ride
+    {
+        /// The motive, under one binder.
+        motive: NodeIndex,
+        /// The flow.
+        flow: NodeIndex,
+        /// The ridden value.
+        value: NodeIndex,
+    },
+    /// A flow type over its carrier and two endpoints.
+    FlowType
+    {
+        /// The carrier.
+        carrier: NodeIndex,
+        /// The source endpoint.
+        source: NodeIndex,
+        /// The target endpoint.
+        target: NodeIndex,
+    },
+    /// The type of recorded runs of a session code.
+    RunType(NodeIndex),
     /// A bound variable.
     Variable
     {
@@ -746,6 +804,8 @@ pub struct Children<'node>
     clauses: &'node [gandr_core_term::control::EffectClause<NodeIndex>],
     /// Literal stack edges, retaining frame order and omitting projections.
     frames: &'node [gandr_core_term::control::StackFrame<NodeIndex, NodeIndex>],
+    /// Recorded moves, contributing their payload values in order.
+    moves: &'node [gandr_core_term::session::RecordedMove<NodeIndex>],
 }
 
 impl Default for Sort
@@ -846,6 +906,10 @@ impl<'node> Children<'node>
                 },
                 | gandr_core_term::control::StackFrame::Project(_) => None,
             }))
+            .chain(self.moves.iter().filter_map(|step| match step.payload() {
+                | Maybe::Present(payload) => Some((payload, Sort::Value)),
+                | Maybe::Absent(_) => None,
+            }))
     }
     /// Append a borrowed variadic child suffix.
     ///
@@ -915,6 +979,10 @@ impl ContentNode
         | Self::Returned(_)
         | Self::Nested(_)
         | Self::Run(_)
+        | Self::SessionRelated { .. }
+        | Self::Stay(_)
+        | Self::Then(..)
+        | Self::Recorded(_)
         | Self::PrimitiveValue(_)
         | Self::PathProduct(..)
         | Self::Funext(..)
@@ -952,6 +1020,7 @@ impl ContentNode
         | Self::Transport(..)
         | Self::ElementTransport { .. }
         | Self::TelescopeTransport { .. }
+        | Self::Ride { .. }
         | Self::Primitive(..)
         | Self::Lambda(_)
         | Self::Application(..)
@@ -970,6 +1039,8 @@ impl ContentNode
         | Self::Capability { .. }
         | Self::PathUniverse(..)
         | Self::PathType { .. }
+        | Self::FlowType { .. }
+        | Self::RunType(_)
         | Self::Base(_)
         | Self::Product(_)
         | Self::Sum(_)
@@ -1007,6 +1078,10 @@ impl ContentNode
             | Self::Returned(_)
             | Self::Nested(_)
             | Self::Run(_)
+            | Self::SessionRelated { .. }
+            | Self::Stay(_)
+            | Self::Then(..)
+            | Self::Recorded(_)
             | Self::PrimitiveValue(_)
             | Self::PathProduct(..)
             | Self::Funext(..)
@@ -1044,6 +1119,7 @@ impl ContentNode
             | Self::Transport(..)
             | Self::ElementTransport { .. }
             | Self::TelescopeTransport { .. }
+            | Self::Ride { .. }
             | Self::Primitive(..)
             | Self::Lambda(_)
             | Self::Application(..)
@@ -1062,6 +1138,8 @@ impl ContentNode
             | Self::Capability { .. }
             | Self::PathUniverse(..)
             | Self::PathType { .. }
+            | Self::FlowType { .. }
+            | Self::RunType(_)
             | Self::Base(_)
             | Self::Product(_)
             | Self::Sum(_)
@@ -1143,16 +1221,19 @@ impl ContentNode
             | Self::UnknownComputationType => ret.count == 0,
             | Self::Tuple(ref components) => ret.iter().eq(components.iter().map(|&component| (component, V))),
             | Self::ListFold { element, result, list, on_nil, on_cons } => actual == Some(&[(element, A), (result, A), (list, V), (on_nil, M), (on_cons, M)][..]),
-            | Self::ListCons(a, b) | Self::StaticApplication(a, b) | Self::PathUniverse(a, b) | Self::PathProduct(a, b) | Self::Funext(a, b) | Self::Equiv(a, b) | Self::Ua { forward: a, backward: b, .. } | Self::Transport(a, b) => {
+            | Self::ListCons(a, b) | Self::StaticApplication(a, b) | Self::PathUniverse(a, b) | Self::PathProduct(a, b) | Self::Funext(a, b) | Self::Equiv(a, b) | Self::Ua { forward: a, backward: b, .. } | Self::Transport(a, b) | Self::SessionRelated { source: a, target: b, .. } | Self::Then(a, b) => {
                 actual == Some(&[(a, V), (b, V)][..])
             },
             | Self::PathEquiv { path_type, forward, backward, .. } => actual == Some(&[(path_type, A), (forward, V), (backward, V)][..]),
-            | Self::PathType { carrier, left, right } => actual == Some(&[(carrier, A), (left, V), (right, V)][..]),
-            | Self::ElementTransport { motive, path, value } => actual == Some(&[(motive, A), (path, V), (value, V)][..]),
+            | Self::PathType { carrier, left, right } | Self::FlowType { carrier, source: left, target: right } => actual == Some(&[(carrier, A), (left, V), (right, V)][..]),
+            | Self::ElementTransport { motive, path, value } | Self::Ride { motive, flow: path, value } => actual == Some(&[(motive, A), (path, V), (value, V)][..]),
+            | Self::Recorded(ref moves) => ret.iter().eq(moves.iter().filter_map(|step| match step.payload() { Maybe::Present(payload) => Some((payload, V)), Maybe::Absent(_) => None })),
             | Self::TelescopeTransport { motive, path, start, over, value } => actual == Some(&[(motive, C), (path, V), (start, V), (over, V), (value, V)][..]),
             | Self::Returned(a) | Self::Nested(a) | Self::Run(a) => actual == Some(&[(a, M)][..]),
             | Self::PathRefl(a)
             | Self::Here(a)
+            | Self::Stay(a)
+            | Self::RunType(a)
             | Self::StaticLambda(a)
             | Self::Injection(_, a)
             | Self::ValueLift { body: a, .. }
@@ -1296,12 +1377,26 @@ impl ContentNode
                 carrier,
                 left,
                 right,
+            }
+            | Self::FlowType {
+                carrier,
+                source: left,
+                target: right,
             } => Children::of(&[(carrier, A), (left, V), (right, V)]),
             | Self::ElementTransport {
                 motive,
                 path,
                 value,
+            }
+            | Self::Ride {
+                motive,
+                flow: path,
+                value,
             } => Children::of(&[(motive, A), (path, V), (value, V)]),
+            | Self::Recorded(ref moves) => Children {
+                moves,
+                ..Children::default()
+            },
             | Self::TelescopeTransport {
                 motive,
                 path,
@@ -1333,10 +1428,18 @@ impl ContentNode
                 ..
             }
             | Self::Transport(first, second)
+            | Self::SessionRelated {
+                source: first,
+                target: second,
+                ..
+            }
+            | Self::Then(first, second)
             | Self::ListCons(first, second)
             | Self::StaticApplication(first, second) => Children::of(&[(first, V), (second, V)]),
             | Self::PathRefl(body)
             | Self::Here(body)
+            | Self::Stay(body)
+            | Self::RunType(body)
             | Self::StaticLambda(body)
             | Self::Injection(_, body)
             | Self::ValueLift { body, .. }
@@ -1456,6 +1559,13 @@ impl ContentNode
             | Self::Nested(_)
             | Self::Run(_)
             | Self::PathType { .. }
+            | Self::FlowType { .. }
+            | Self::RunType(_)
+            | Self::SessionRelated { .. }
+            | Self::Stay(_)
+            | Self::Then(..)
+            | Self::Recorded(_)
+            | Self::Ride { .. }
             | Self::ElementTransport { .. }
             | Self::TelescopeTransport { .. }
             | Self::PathProduct(..)
@@ -2451,6 +2561,36 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
             | Value::Primitive { primitive, .. } => ContentNode::PrimitiveValue(primitive),
             | Value::PathRefl(code) => ContentNode::PathRefl(self.discover(ArenaNode::Value(code))),
             | Value::Here(point) => ContentNode::Here(self.discover(ArenaNode::Value(point))),
+            | Value::SessionRelated {
+                relation,
+                source,
+                target,
+            } => {
+                let source = self.discover(ArenaNode::Value(source));
+                ContentNode::SessionRelated {
+                    relation,
+                    source,
+                    target: self.discover(ArenaNode::Value(target)),
+                }
+            },
+            | Value::Stay(point) => ContentNode::Stay(self.discover(ArenaNode::Value(point))),
+            | Value::Then(first, second) => {
+                let first = self.discover(ArenaNode::Value(first));
+                ContentNode::Then(first, self.discover(ArenaNode::Value(second)))
+            },
+            | Value::Recorded(ref moves) => ContentNode::Recorded(
+                moves
+                    .iter()
+                    .map(|step| {
+                        step.try_map(|payload| {
+                            Ok::<_, core::convert::Infallible>(
+                                self.discover(ArenaNode::Value(payload)),
+                            )
+                        })
+                        .unwrap_or_else(|never| match never {})
+                    })
+                    .collect(),
+            ),
             | Value::Returned(computation) => {
                 ContentNode::Returned(self.discover(ArenaNode::Computation(computation)))
             },
@@ -2577,6 +2717,19 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
             ),
             | Computation::TupleProjection(tuple, component) => {
                 ContentNode::TupleProjection(self.discover(ArenaNode::Value(tuple)), component)
+            },
+            | Computation::Ride {
+                motive,
+                flow,
+                value,
+            } => {
+                let motive = self.discover(ArenaNode::ValueType(motive));
+                let flow = self.discover(ArenaNode::Value(flow));
+                ContentNode::Ride {
+                    motive,
+                    flow,
+                    value: self.discover(ArenaNode::Value(value)),
+                }
             },
             | Computation::Session(ref action) => ContentNode::Session(
                 action
@@ -2874,6 +3027,16 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 left: self.discover(ArenaNode::Value(left)),
                 right: self.discover(ArenaNode::Value(right)),
             },
+            | ValueType::Flow {
+                carrier,
+                source,
+                target,
+            } => ContentNode::FlowType {
+                carrier: self.discover(ArenaNode::ValueType(carrier)),
+                source: self.discover(ArenaNode::Value(source)),
+                target: self.discover(ArenaNode::Value(target)),
+            },
+            | ValueType::Run(code) => ContentNode::RunType(self.discover(ArenaNode::Value(code))),
             | ValueType::Base(base) => ContentNode::Base(base),
             | ValueType::List(element) => {
                 ContentNode::List(self.discover(ArenaNode::ValueType(element)))
@@ -3267,6 +3430,48 @@ where
             carrier: image(carrier),
             left: image(left),
             right: image(right),
+        },
+        | ContentNode::FlowType {
+            carrier,
+            source,
+            target,
+        } => ContentNode::FlowType {
+            carrier: image(carrier),
+            source: image(source),
+            target: image(target),
+        },
+        | ContentNode::RunType(code) => ContentNode::RunType(image(code)),
+        | ContentNode::SessionRelated {
+            relation,
+            source,
+            target,
+        } => ContentNode::SessionRelated {
+            relation,
+            source: image(source),
+            target: image(target),
+        },
+        | ContentNode::Stay(point) => ContentNode::Stay(image(point)),
+        | ContentNode::Then(first, second) => {
+            let first = image(first);
+            ContentNode::Then(first, image(second))
+        },
+        | ContentNode::Recorded(ref moves) => ContentNode::Recorded(
+            moves
+                .iter()
+                .map(|step| {
+                    step.try_map(|payload| Ok::<_, core::convert::Infallible>(image(payload)))
+                        .unwrap_or_else(|never| match never {})
+                })
+                .collect(),
+        ),
+        | ContentNode::Ride {
+            motive,
+            flow,
+            value,
+        } => ContentNode::Ride {
+            motive: image(motive),
+            flow: image(flow),
+            value: image(value),
         },
         | ContentNode::ElementTransport {
             motive,
@@ -3705,7 +3910,7 @@ fn minted_comp_type(
         Maybe::Absent(reason) => if matches!(*node, ContentNode::Unresolved(_)) {
             reason == seating::Absent::Unresolved
         } else if matches!(node.sort(), Sort::Value | Sort::Computation)
-            || matches!(*node, ContentNode::Element { .. } | ContentNode::ComputationElement { .. } | ContentNode::PathUniverse(..) | ContentNode::PathType { .. })
+            || matches!(*node, ContentNode::Element { .. } | ContentNode::ComputationElement { .. } | ContentNode::PathUniverse(..) | ContentNode::PathType { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_))
             || matches!(node,ContentNode::Data { arguments,.. } if !arguments.is_empty()) {
             reason == seating::Absent::Unseatable
         } else {
@@ -3897,6 +4102,13 @@ fn mint_node(
         | ContentNode::Unresolved(_) => Maybe::Absent(seating::Absent::Unresolved),
         | ContentNode::PathUniverse(..)
         | ContentNode::PathType { .. }
+        | ContentNode::FlowType { .. }
+        | ContentNode::RunType(_)
+        | ContentNode::SessionRelated { .. }
+        | ContentNode::Stay(_)
+        | ContentNode::Then(..)
+        | ContentNode::Recorded(_)
+        | ContentNode::Ride { .. }
         | ContentNode::Here(_)
         | ContentNode::Returned(_)
         | ContentNode::Nested(_)

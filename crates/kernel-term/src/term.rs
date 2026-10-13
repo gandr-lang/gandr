@@ -248,6 +248,18 @@ pub enum Value
         /// Native payload-path tuple, one path per payload, in order.
         payload_paths: ValueId,
     },
+    /// A session simulation inhabiting a native `Flow_U` classifier: Gay–Hole
+    /// subtyping from the source code to the target, with no inverse.
+    SessionFlow
+    {
+        /// Source and target session codes.
+        flow_type: ValueTypeId,
+        /// Finite untrusted relation, replayed at formation.
+        evidence: alloc::sync::Arc<crate::session::Evidence>,
+        /// Native payload-path tuple, one path per payload obligation, in
+        /// order.
+        payload_paths: ValueId,
+    },
     /// Reflexivity at a quoted closed first-order or session code.
     PathRefl(ValueId),
     /// A componentwise path between product codes.

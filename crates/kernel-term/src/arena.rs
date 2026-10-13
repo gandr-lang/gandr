@@ -578,6 +578,40 @@ impl TermArena
             payload_paths,
         })
     }
+
+    /// Append an untrusted session-simulation introduction.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_session_flow(
+        &mut self,
+        flow_type: ValueTypeId,
+        evidence: alloc::sync::Arc<crate::session::Evidence>,
+        payload_paths: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::SessionFlow {
+            flow_type,
+            evidence,
+            payload_paths,
+        })
+    }
+
+    /// Mint `Flow_U source target` without claiming that its codes form.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_flow_universe(
+        &mut self,
+        source: ValueId,
+        target: ValueId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::FlowUniverse(source, target))
+    }
+
     /// An empty arena.
     ///
     /// # Specification
@@ -837,7 +871,7 @@ impl TermArena
             Value::HigherEvaluation { ref components, .. } => components.iter().all(|component| self.value(component.left).is_some() && self.value(component.right).is_some() && self.value(component.evidence).is_some()),
             Value::QuantifiedEvaluation { ref children, .. } => children.iter().all(|item| self.value(*item).is_some()),
             Value::PathEquiv { path_type, forward, backward, .. } => self.value_type(path_type).is_some() && self.value(forward).is_some() && self.value(backward).is_some(),
-            Value::SessionPath { path_type, payload_paths, .. } => self.value_type(path_type).is_some() && self.value(payload_paths).is_some(),
+            Value::SessionPath { path_type: classifier, payload_paths, .. } | Value::SessionFlow { flow_type: classifier, payload_paths, .. } => self.value_type(classifier).is_some() && self.value(payload_paths).is_some(),
             Value::Thunk(body) | Value::Returned(body) => self.computation(body).is_some(),
             Value::Quote(quoted) => self.value_type(quoted).is_some(),
             Value::QuoteComputation(quoted) => self.comp_type(quoted).is_some(),
@@ -941,7 +975,7 @@ impl TermArena
             ValueType::Record(ref fields) => fields.values().all(|field| self.value_type(*field).is_some()),
             ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.iter().all(|part| self.value_type(*part).is_some()),
             ValueType::StaticPi { domain: first, codomain: second } => self.value_type(first).is_some() && self.value_type(second).is_some(),
-            ValueType::PathUniverse(first, second) => self.value(first).is_some() && self.value(second).is_some(),
+            ValueType::PathUniverse(first, second) | ValueType::FlowUniverse(first, second) => self.value(first).is_some() && self.value(second).is_some(),
             ValueType::Path { domain, left, right } => self.value_type(domain).is_some() && self.value(left).is_some() && self.value(right).is_some(),
             ValueType::Thunk(body) => self.comp_type(body).is_some(),
             ValueType::Session { payloads, .. } => self.value_type(payloads).is_some(),
@@ -2675,7 +2709,7 @@ Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => 
 Value::Tuple(ref components) => ret.iter().copied().eq(components.iter().copied().map(AnyNode::Value)),
 Value::PathEquiv { path_type, forward, backward, .. } =>
                 ret.as_slice() == [AnyNode::ValueType(path_type), AnyNode::Value(forward), AnyNode::Value(backward)],
-Value::SessionPath { path_type, payload_paths, .. } => ret.as_slice() == [AnyNode::ValueType(path_type), AnyNode::Value(payload_paths)],
+Value::SessionPath { path_type: classifier, payload_paths, .. } | Value::SessionFlow { flow_type: classifier, payload_paths, .. } => ret.as_slice() == [AnyNode::ValueType(classifier), AnyNode::Value(payload_paths)],
 Value::PathRefl(code) | Value::Here { point: code, .. } => ret.as_slice() == [AnyNode::Value(code)],
 Value::Higher { ref evidence, .. } => ret.iter().copied().eq(evidence.iter().copied().map(AnyNode::Value)),
 Value::HigherEvaluation { ref components, .. } => ret.iter().copied().eq(components.iter().flat_map(|component| [AnyNode::Value(component.left), AnyNode::Value(component.right), AnyNode::Value(component.evidence)])),
@@ -2716,7 +2750,7 @@ ValueType::Product(ref parts) | ValueType::Sum(ref parts) => ret.iter().copied()
 ValueType::StaticPi { domain: first, codomain: second } =>
                 ret.as_slice() == [AnyNode::ValueType(first), AnyNode::ValueType(second)],
 ValueType::Session { payloads, .. } => ret.as_slice() == [AnyNode::ValueType(payloads)],
-ValueType::PathUniverse(source, target) => ret.as_slice() == [AnyNode::Value(source), AnyNode::Value(target)],
+ValueType::PathUniverse(source, target) | ValueType::FlowUniverse(source, target) => ret.as_slice() == [AnyNode::Value(source), AnyNode::Value(target)],
 ValueType::Path { domain, left, right } => ret.as_slice() == [AnyNode::ValueType(domain), AnyNode::Value(left), AnyNode::Value(right)],
 ValueType::Thunk(body) => ret.as_slice() == [AnyNode::CompType(body)],
 ValueType::Lift { inner, .. } | ValueType::List(inner) => ret.as_slice() == [AnyNode::ValueType(inner)],
@@ -2770,11 +2804,18 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                     children.push(AnyNode::Value(forward));
                     children.push(AnyNode::Value(backward));
                 },
-                | Some(&Value::SessionPath {
-                    path_type,
-                    payload_paths,
-                    ..
-                }) => {
+                | Some(
+                    &Value::SessionPath {
+                        path_type,
+                        payload_paths,
+                        ..
+                    }
+                    | &Value::SessionFlow {
+                        flow_type: path_type,
+                        payload_paths,
+                        ..
+                    },
+                ) => {
                     children.push(AnyNode::ValueType(path_type));
                     children.push(AnyNode::Value(payload_paths));
                 },
@@ -2947,7 +2988,10 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                 | Some(&ValueType::Session { payloads, .. }) => {
                     children.push(AnyNode::ValueType(payloads));
                 },
-                | Some(&ValueType::PathUniverse(source, target)) => {
+                | Some(
+                    &ValueType::PathUniverse(source, target)
+                    | &ValueType::FlowUniverse(source, target),
+                ) => {
                     children.push(AnyNode::Value(source));
                     children.push(AnyNode::Value(target));
                 },

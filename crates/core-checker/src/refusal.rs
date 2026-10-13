@@ -141,6 +141,11 @@ pub enum ExpectedShape
     Capability,
     /// A session type: what a fork's protocol annotation must denote.
     Session,
+    /// A directed identity `Flow(A, a, b)`: what a ride moves along and what
+    /// a composite's two flows must synthesise.
+    Flow,
+    /// A run type `Run(S)`: what a recorded run is checked against.
+    Run,
 }
 
 /// A checking-only form, met where a type had to be synthesised.
@@ -187,6 +192,8 @@ pub enum CheckingForm
     Offer(ComputationId),
     /// A capability scope needs its answer type.
     Scope(ComputationId),
+    /// A recorded run is checked against the run type naming its protocol.
+    Run(ValueId),
 }
 
 /// A former of the core vocabulary the judgement has no rule for.
@@ -239,6 +246,14 @@ pub enum UnadmittedFormer
     Exercise,
     /// A capability scope.
     Scope,
+    /// A run type, a recorded run or a ride: runs move by the recorded-run
+    /// consumer, and the kernel's lowering of a session flow refuses to run
+    /// one.
+    Run,
+    /// A flow over a carrier other than the value universe, or between codes
+    /// that are no sessions: the kernel's native flows are session
+    /// simulations.
+    ElementFlow,
 }
 
 /// A count of static arguments: how many a static application passes, or how
@@ -303,6 +318,56 @@ impl From<ArgumentPosition> for u32
     {
         position.0
     }
+}
+
+/// A zero-based position among a recorded run's moves; a count past `u32`
+/// saturates.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RunStep(u32);
+
+impl From<u32> for RunStep
+{
+    /// The step of a raw position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(step: u32) -> Self
+    {
+        Self(step)
+    }
+}
+
+impl From<RunStep> for u32
+{
+    /// The raw position of a step.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(step: RunStep) -> Self
+    {
+        step.0
+    }
+}
+
+/// Why a session refuses a recorded run.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RunFault
+{
+    /// The move at the step is of another kind or direction than the action
+    /// the protocol owes there.
+    WrongDirection(RunStep),
+    /// The move at the step takes a label the choice there does not name.
+    WrongLabel(RunStep),
+    /// The move at the step follows the close.
+    ResumeAfterEnd(RunStep),
+    /// The run stops at the step, its count of moves, without closing.
+    Incomplete(RunStep),
+    /// An open run rides a flow that narrows an offer: some run of the source
+    /// takes a label the target does not offer.
+    OfferNarrowed,
 }
 
 /// A synthesised type that does not convert to the type it was checked
@@ -800,6 +865,53 @@ pub enum CheckRefusal
         /// Its declared capability type.
         declared: ValueTypeId,
     },
+    /// A bisimilarity statement `bisim(A, B)` whose two sessions are not
+    /// bisimilar: some observation of one is no observation of the other.
+    SessionNotEquivalent
+    {
+        /// The statement.
+        at: ValueId,
+    },
+    /// A simulation `sim(A, B)` whose source session is no Gay–Hole subtype of
+    /// its target, or a ride along a flow whose sessions are not so related.
+    SessionNotSubtype
+    {
+        /// The statement, or the flow ridden.
+        at: ValueId,
+    },
+    /// A session statement's operand, a run's protocol or a flow endpoint a
+    /// run rides from or to that is no closed session code at its protocol's
+    /// root.
+    SessionCodeExpected
+    {
+        /// The code.
+        at: ValueId,
+    },
+    /// A ride whose motive reads its code variable anywhere but a covariant
+    /// position: a flow moves forward only, so no ride derives its reverse.
+    NonCovariantMotive
+    {
+        /// The ride.
+        at: ComputationId,
+    },
+    /// A ride along a flow between distinct session codes whose motive is no
+    /// run over the code: the recorded-run consumer moves runs, and nothing
+    /// else crosses a session flow.
+    RideUnsupported
+    {
+        /// The ride.
+        at: ComputationId,
+    },
+    /// A recorded run its session does not admit: a literal checked at a
+    /// protocol whose moves it breaks, or a run ridden to a target that does
+    /// not admit it.
+    RunNotAdmitted
+    {
+        /// The run.
+        at: ValueId,
+        /// What the session refuses.
+        fault: RunFault,
+    },
 }
 
 impl CheckRefusal
@@ -822,13 +934,17 @@ impl CheckRefusal
     ///   universe, a representation above it, an atom naming no abstract type,
     ///   translators that are no equivalence of species, a run with no
     ///   computation enclosing it, a session action its endpoint's state
-    ///   refuses, a break of an endpoint's linear use, and a forged, amplified,
+    ///   refuses, a break of an endpoint's linear use, a forged, amplified,
     ///   escaping, consumable or ungranted capability or one exercised outside
-    ///   its authority are malformed source; a former outside the fragment and
-    ///   a stratum the checker does not certify are unrepresentable; an unbound
-    ///   index, an exhausted allowance, a dangling id, an admission out of
-    ///   order, a repeated sealing site, a machine invariant and an undecided
-    ///   unfolding are engine faults; nothing is a user absence.
+    ///   its authority, sessions that are not bisimilar or not related by
+    ///   subtyping, an operand that is no session code, a ride whose motive is
+    ///   not covariant and a run its session does not admit are malformed
+    ///   source; a former outside the fragment, a stratum the checker does not
+    ///   certify and a ride the recorded-run consumer does not perform are
+    ///   unrepresentable; an unbound index, an exhausted allowance, a dangling
+    ///   id, an admission out of order, a repeated sealing site, a machine
+    ///   invariant and an undecided unfolding are engine faults; nothing is a
+    ///   user absence.
     /// - provides: the fact a report groups by and an exit code reads.
     /// - fails: never.
     /// - panics: none.
@@ -839,7 +955,7 @@ impl CheckRefusal
     ///   than turning the rejection into an obligation.
     /// - witness: `judgement::tests::a_mismatched_literal_is_refused_with_both_types`
     #[spec(ensures: |ret| match *self {
-        | Self::OutOfFragment { .. } | Self::FunextUnsupported { .. } | Self::EquivUnsupported { .. } | Self::UncertifiedStratum { .. } | Self::UaUncertified { .. } => matches!(ret, FailureClass::Unrepresentable),
+        | Self::OutOfFragment { .. } | Self::FunextUnsupported { .. } | Self::EquivUnsupported { .. } | Self::UncertifiedStratum { .. } | Self::UaUncertified { .. } | Self::RideUnsupported { .. } => matches!(ret, FailureClass::Unrepresentable),
         | Self::UnboundIndex { .. }
         | Self::BudgetExceeded { .. }
         | Self::DanglingNode { .. }
@@ -865,7 +981,8 @@ impl CheckRefusal
         | Self::StaticClassifierExpected { .. }
         | Self::NegativeOccurrence(_) | Self::NestedOccurrence(_) | Self::IndexOccurrence(_) | Self::NonUniformOccurrence(_) | Self::CrossBlockReference { .. } | Self::DescentNotReplayed { .. } | Self::UnenclosedRun { .. }
         | Self::SessionMismatch { .. } | Self::Linearity { .. }
-        | Self::CapabilityForged { .. } | Self::CapabilityAmplified(_) | Self::CapabilityOutsideAuthority { .. } | Self::CapabilityEscaped { .. } | Self::CapabilityConsumable(_) | Self::CapabilityUngranted { .. } => matches!(ret, FailureClass::MalformedSource),
+        | Self::CapabilityForged { .. } | Self::CapabilityAmplified(_) | Self::CapabilityOutsideAuthority { .. } | Self::CapabilityEscaped { .. } | Self::CapabilityConsumable(_) | Self::CapabilityUngranted { .. }
+        | Self::SessionNotEquivalent { .. } | Self::SessionNotSubtype { .. } | Self::SessionCodeExpected { .. } | Self::NonCovariantMotive { .. } | Self::RunNotAdmitted { .. } => matches!(ret, FailureClass::MalformedSource),
     })]
     #[inline]
     #[must_use]
@@ -922,12 +1039,18 @@ impl CheckRefusal
             | Self::CapabilityOutsideAuthority { .. }
             | Self::CapabilityEscaped { .. }
             | Self::CapabilityConsumable(_)
-            | Self::CapabilityUngranted { .. } => FailureClass::MalformedSource,
+            | Self::CapabilityUngranted { .. }
+            | Self::SessionNotEquivalent { .. }
+            | Self::SessionNotSubtype { .. }
+            | Self::SessionCodeExpected { .. }
+            | Self::NonCovariantMotive { .. }
+            | Self::RunNotAdmitted { .. } => FailureClass::MalformedSource,
             | Self::OutOfFragment { .. }
             | Self::FunextUnsupported { .. }
             | Self::EquivUnsupported { .. }
             | Self::UncertifiedStratum { .. }
-            | Self::UaUncertified { .. } => FailureClass::Unrepresentable,
+            | Self::UaUncertified { .. }
+            | Self::RideUnsupported { .. } => FailureClass::Unrepresentable,
             | Self::UnboundIndex { .. }
             | Self::BudgetExceeded { .. }
             | Self::DanglingNode { .. }
@@ -1109,7 +1232,13 @@ impl CheckRefusal
             | Self::CrossBlockReference { .. }
             | Self::DescentNotReplayed { .. }
             | Self::UnenclosedRun { .. }
-            | Self::Linearity { .. } => (UNNAMED, UNNAMED),
+            | Self::Linearity { .. }
+            | Self::SessionNotEquivalent { .. }
+            | Self::SessionNotSubtype { .. }
+            | Self::SessionCodeExpected { .. }
+            | Self::NonCovariantMotive { .. }
+            | Self::RideUnsupported { .. }
+            | Self::RunNotAdmitted { .. } => (UNNAMED, UNNAMED),
         };
         Compared { expected, found }
     }

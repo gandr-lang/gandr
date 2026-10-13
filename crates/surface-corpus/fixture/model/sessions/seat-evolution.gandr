@@ -1,0 +1,62 @@
+module Seat :> #{
+  type Dispatch,
+  type Report,
+  type Handoff,
+  type SeatEnd = ?Dispatch. mu turn. +{ report : !Report. &{ next : turn, retire : end }, handoff : !Handoff. end },
+  task : Dispatch,
+  progress : Report,
+  notes : Handoff
+} {
+  type Dispatch = String;
+  type Report = String;
+  type Handoff = String;
+  @[ checks ]
+  def task = "task";
+  @[ checks ]
+  def progress = "progress";
+  @[ checks ]
+  def notes = "notes";
+}
+
+module Evolution {
+  type Dispatch = Seat.Dispatch;
+  type Report = Seat.Report;
+  type Handoff = Seat.Handoff;
+  type SeatEnd = Seat.SeatEnd;
+  type SeatEnd′ = ?Dispatch. mu turn. +{ report : !Report. &{ next : turn, retire : end }, handoff : !Handoff. end, pause : !Report. turn };
+  type SeatEnd2 = ?Dispatch. +{ report : !Report. &{ next : mu again. +{ report : !Report. &{ next : again, retire : end }, handoff : !Handoff. end }, retire : end }, handoff : !Handoff. end };
+  @[ checks ]
+  def sub : Flow(Type, SeatEnd, SeatEnd′) ;
+  def sub = sim(SeatEnd, SeatEnd′) ;
+  @[ checks ]
+  def eq : Path(Type, SeatEnd, SeatEnd2) ;
+  def eq = bisim(SeatEnd, SeatEnd2) ;
+  @[ checks ]
+  def kept : Flow(Type, SeatEnd, SeatEnd) ;
+  def kept = stay(SeatEnd) ;
+  @[ checks ]
+  def widened() -> -F Flow(Type, SeatEnd, SeatEnd′) {
+    become kept then sub
+  }
+}
+
+@[ checks ]
+def served : Run(Seat.SeatEnd) ;
+def served = recorded(received(Seat.task), selected(report), sent(Seat.progress), offered(retire), closed) ;
+
+@[ checks ]
+def forward(receipt : Run(Seat.SeatEnd)) -> -F Run(Evolution.SeatEnd′) {
+  become ride(\X. Run(X), Evolution.sub, receipt)
+}
+
+@[ runs("recorded(received(\"task\"), selected(report), sent(\"progress\"), offered(retire), closed)") ]
+def moved : +U (-F Run(Evolution.SeatEnd′)) ;
+def moved = thunk { become forward(served) } ;
+
+@[ checks ]
+def paused : Run(Evolution.SeatEnd′) ;
+def paused = recorded(received(Seat.task), selected(pause), sent(Seat.progress), selected(handoff), sent(Seat.notes), closed) ;
+
+@[ refuses("RunNotAdmitted") ]
+def backward : Run(Seat.SeatEnd) ;
+def backward = recorded(received(Seat.task), selected(pause), sent(Seat.progress), selected(handoff), sent(Seat.notes), closed) ;

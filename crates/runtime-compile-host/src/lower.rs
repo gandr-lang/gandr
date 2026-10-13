@@ -102,6 +102,13 @@ pub enum Form
     Fixpoint,
     /// A session action: the image has no channels.
     Session,
+    /// A session statement, stay or composite flow: a certificate with no
+    /// runtime content.
+    SessionIdentity,
+    /// A recorded run: the image has no traces.
+    RecordedRun,
+    /// A ride along a flow: the recorded-run consumer moves it.
+    Ride,
     /// A tuple of other than zero or two components: the image's products
     /// are binary.
     TupleArity,
@@ -170,6 +177,9 @@ impl core::fmt::Display for Form
             | Self::Mark => "a mark",
             | Self::Fixpoint => "a fixpoint",
             | Self::Session => "a session action",
+            | Self::SessionIdentity => "a session identity",
+            | Self::RecordedRun => "a recorded run",
+            | Self::Ride => "a ride along a flow",
             | Self::TupleArity => "a tuple of neither zero nor two components",
             | Self::SumArity => "a sum other than binary",
         })
@@ -453,6 +463,9 @@ pub fn lower_computation(
                     | Computation::Session(_) => {
                         return Err(LowerError::OutsideSlice(Form::Session));
                     },
+                    | Computation::Ride { .. } => {
+                        return Err(LowerError::OutsideSlice(Form::Ride));
+                    },
                 }
             },
             | Step::Value(id, depth) => {
@@ -547,6 +560,12 @@ pub fn lower_computation(
                     },
                     | Value::Nested(_) | Value::Run(_) => {
                         return Err(LowerError::OutsideSlice(Form::Nested));
+                    },
+                    | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) => {
+                        return Err(LowerError::OutsideSlice(Form::SessionIdentity));
+                    },
+                    | Value::Recorded(_) => {
+                        return Err(LowerError::OutsideSlice(Form::RecordedRun));
                     },
                     | Value::Hole(_) => return Err(LowerError::OutsideSlice(Form::Hole)),
                     | Value::Mark { .. } => return Err(LowerError::OutsideSlice(Form::Mark)),

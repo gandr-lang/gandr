@@ -509,6 +509,26 @@ fn checked(
             "a computation read as a value runs before the computation around it, and none \
              stands around this one",
         ),
+        | CheckRefusal::SessionNotEquivalent { .. } => {
+            f.write_str("`bisim` needs the two protocols to behave alike at every step")
+        },
+        | CheckRefusal::SessionNotSubtype { .. } => f.write_str(
+            "`sim` needs its first protocol to select no more and offer no less than its second",
+        ),
+        | CheckRefusal::SessionCodeExpected { .. } => {
+            f.write_str("a session identity relates two session types")
+        },
+        | CheckRefusal::NonCovariantMotive { .. } => f.write_str(
+            "a flow runs one way: `ride` may use the moving endpoint only where a run of it \
+             would be produced",
+        ),
+        | CheckRefusal::RideUnsupported { .. } => f.write_str(
+            "`ride` moves a run of the moving endpoint, or a value whose type does not \
+             depend on it",
+        ),
+        | CheckRefusal::RunNotAdmitted { .. } => {
+            f.write_str("the protocol does not admit this run")
+        },
         | CheckRefusal::TypeMismatch(_) => f.write_str("mismatched types"),
         | CheckRefusal::ShapeMismatch { wanted, .. } => write!(f, "expected {}", Shape(wanted)),
         | CheckRefusal::NotSynthesisable { form } => write!(
@@ -533,6 +553,7 @@ fn checked(
                 | CheckingForm::Nested(_) => "a computation written where a value is read",
                 | CheckingForm::Offer(_) => "an offer",
                 | CheckingForm::Scope(_) => "a capability scope",
+                | CheckingForm::Run(_) => "a recorded run",
             }
         ),
         | CheckRefusal::UnknownConstant { .. } => {
@@ -1181,6 +1202,17 @@ mod tests
                 declared: value_type,
             },
             CheckRefusal::UnenclosedRun { at: value },
+            CheckRefusal::SessionNotEquivalent { at: value },
+            CheckRefusal::SessionNotSubtype { at: value },
+            CheckRefusal::SessionCodeExpected { at: value },
+            CheckRefusal::NonCovariantMotive { at: computation },
+            CheckRefusal::RideUnsupported { at: computation },
+            CheckRefusal::RunNotAdmitted {
+                at: value,
+                fault: gandr_core_checker::RunFault::WrongLabel(gandr_core_checker::RunStep::from(
+                    1_u32,
+                )),
+            },
         ]
         .map(Refusal::Checking);
         let corpus = Refusal::Corpus(CorpusRefusal::ExpectationOutsideFixtureRoot {

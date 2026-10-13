@@ -256,12 +256,16 @@ impl<'arena> CoreSource<'arena>
         | (Some(&Value::ListCons(head, tail)), Former::ListCons(h, t)) => h == CoreNode::Value(head) && t == CoreNode::Value(tail),
         | (Some(&Value::Primitive { primitive, .. }), Former::Constant(name)) => name.as_ref() == primitive.name().as_ref(),
         | (Some(&Value::PathRefl(code)), Former::PathRefl(actual)) => actual == CoreNode::Value(code),
-        | (Some(&Value::Here(point)), Former::Here(actual)) => actual == CoreNode::Value(point),
-        | (Some(&Value::Funext(left, right)), Former::Funext(actual_left, actual_right)) =>
+        | (Some(&Value::Here(point)), Former::Here(actual))
+        | (Some(&Value::Stay(point)), Former::Stay(actual)) => actual == CoreNode::Value(point),
+        | (Some(&Value::Funext(left, right)), Former::Funext(actual_left, actual_right))
+        | (Some(&Value::Then(left, right)), Former::Then(actual_left, actual_right)) =>
             actual_left == CoreNode::Value(left) && actual_right == CoreNode::Value(right),
         | (Some(&Value::Equiv(forward, backward)), Former::Equiv(actual_forward, actual_backward))
         | (Some(&Value::PathEquiv { forward, backward, .. }), Former::PathEquiv(actual_forward, actual_backward)) =>
             actual_forward == CoreNode::Value(forward) && actual_backward == CoreNode::Value(backward),
+        | (Some(&Value::SessionRelated { relation, source, target }), Former::SessionRelated(actual, actual_source, actual_target)) =>
+            relation == actual && actual_source == CoreNode::Value(source) && actual_target == CoreNode::Value(target),
         | (Some(&Value::Ua { stratum, ref sides, forward, backward }), Former::Ua { stratum: actual_stratum, source, target, forward: actual_forward, backward: actual_backward }) =>
             stratum == actual_stratum && source.as_ref() == sides.source.name.as_ref() && target.as_ref() == sides.target.name.as_ref()
                 && actual_forward == CoreNode::Value(forward) && actual_backward == CoreNode::Value(backward),
@@ -270,7 +274,7 @@ impl<'arena> CoreSource<'arena>
         | (Some(&Value::Constant(index)), Former::Constant(name)) => self.names.get(usize::from(index))
             .is_some_and(|held| held.as_ref() == name.as_ref()),
         | (Some(&Value::Constant(index)), Former::Unreadable) => usize::from(index) >= self.names.len(),
-        (Some(&Value::Constructor { .. } | &Value::Hole(_) | &Value::Mark { .. } | &Value::Returned(_)) | None,
+        (Some(&Value::Constructor { .. } | &Value::Hole(_) | &Value::Mark { .. } | &Value::Returned(_) | &Value::Recorded(_)) | None,
 Former::Unreadable) | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::ListNil), Former::ListNil) |
 (Some(&Value::Lift { .. }), Former::ValueLift) => true,
         | (Some(&Value::Thunk(body)), Former::Thunk(actual))
@@ -305,14 +309,25 @@ Former::Unreadable) | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::Li
         match *value {
             // The source grammar has no native data reader. A hole or a mark
             // is displayed by the session, not spelled here, a compound
-            // endpoint has no former of its own, and the surface writes no
-            // empty record: `#{}` is the unit. Element identity is `here`,
-            // function extensionality `funext`, universe equivalence `equiv`
-            // and univalence at a stratum `ua[n, k]`.
+            // endpoint has no former of its own, a recorded run is a trace
+            // the printer does not spell, and the surface writes no empty
+            // record: `#{}` is the unit. Element identity is `here`, function
+            // extensionality `funext`, universe equivalence `equiv` and
+            // univalence at a stratum `ua[n, k]`.
             | Value::Constructor { .. }
             | Value::Hole(_)
             | Value::Mark { .. }
-            | Value::Returned(_) => Former::Unreadable,
+            | Value::Returned(_)
+            | Value::Recorded(_) => Former::Unreadable,
+            | Value::SessionRelated {
+                relation,
+                source,
+                target,
+            } => Former::SessionRelated(relation, CoreNode::Value(source), CoreNode::Value(target)),
+            | Value::Stay(point) => Former::Stay(CoreNode::Value(point)),
+            | Value::Then(first, second) => {
+                Former::Then(CoreNode::Value(first), CoreNode::Value(second))
+            },
             | Value::Here(point) => Former::Here(CoreNode::Value(point)),
             | Value::Nested(body) => Former::Nested(CoreNode::Computation(body)),
             | Value::Run(body) => Former::Run(CoreNode::Computation(body)),
@@ -399,7 +414,7 @@ Former::Unreadable) | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::Li
     #[spec(ensures: |ret| match (self.arena.value_type(id), ret) {
         | (Some(&ValueType::Stack { input, output }), Former::Stack(a, b)) => a == CoreNode::CompType(input) && b == CoreNode::CompType(output),
         | (Some(&ValueType::PathUniverse(source, target)), Former::PathUniverse(actual_source, actual_target)) => actual_source == CoreNode::Value(source) && actual_target == CoreNode::Value(target),
-        (Some(&ValueType::Data { .. } | &ValueType::Unknown | &ValueType::Path { .. }) | None,
+        (Some(&ValueType::Data { .. } | &ValueType::Unknown | &ValueType::Path { .. } | &ValueType::Flow { .. }) | None,
 Former::Unreadable) |
 (Some(&ValueType::Lift { .. }), Former::TypeLift) => true,
         | (Some(&ValueType::Record(ref fields)), Former::Unreadable) => fields.is_empty(),
@@ -411,7 +426,8 @@ Former::Unreadable) |
         | (Some(&ValueType::Thunk(body)), Former::ThunkType(actual)) => actual == CoreNode::CompType(body),
         | (Some(&ValueType::Universe { sort, ref level }), Former::Universe { sort: actual_sort, level: actual_level }) =>
             sort == actual_sort && core::ptr::eq(core::ptr::from_ref(level), core::ptr::from_ref(actual_level)),
-        | (Some(&ValueType::Element { code, .. }), Former::Element(actual)) => actual == CoreNode::Value(code),
+        | (Some(&ValueType::Element { code, .. }), Former::Element(actual))
+        | (Some(&ValueType::Run(code)), Former::RunType(actual)) => actual == CoreNode::Value(code),
         | (Some(&ValueType::Abstract(index)), Former::Abstract(name)) => self.names.get(usize::from(index))
             .is_some_and(|held| held.as_ref() == name.as_ref()),
         | (Some(&ValueType::Abstract(index)), Former::Unreadable) => usize::from(index) >= self.names.len(),
@@ -433,12 +449,14 @@ Former::Unreadable) |
             return Former::Unreadable;
         };
         match *value_type {
-            // A native data classifier and a path type have no spelling in the
-            // source grammar, and the surface writes no empty record type:
-            // `#{}` is `Unit`.
-            | ValueType::Data { .. } | ValueType::Unknown | ValueType::Path { .. } => {
-                Former::Unreadable
-            },
+            // A native data classifier, a path type and a flow type have no
+            // spelling in the source grammar's bracket joins, and the surface
+            // writes no empty record type: `#{}` is `Unit`.
+            | ValueType::Data { .. }
+            | ValueType::Unknown
+            | ValueType::Path { .. }
+            | ValueType::Flow { .. } => Former::Unreadable,
+            | ValueType::Run(code) => Former::RunType(CoreNode::Value(code)),
             | ValueType::Record(ref fields) if fields.is_empty() => Former::Unreadable,
             | ValueType::Record(ref fields) => Former::RecordType(Arity::from(fields.len())),
             | ValueType::Product(ref parts) => Former::Product(Arity::from(parts.len())),
@@ -605,11 +623,11 @@ impl Source for CoreSource<'_>
             | Former::ValueLift | Former::Reify | Former::ListNil | Former::ListCons(..)
             | Former::Quote(_) | Former::QuoteComputation(_) | Former::StaticLambda(_) | Former::StaticApplication(..)
             | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_) | Former::Funext(..) | Former::Equiv(..)
-            | Former::Ua { .. } | Former::Nested(_) | Former::Run(_) | Former::Unreadable),
+            | Former::Ua { .. } | Former::Nested(_) | Former::Run(_) | Former::SessionRelated(..) | Former::Stay(_) | Former::Then(..) | Former::Unreadable),
         | CoreNode::ValueType(_) => matches!(ret, Former::BaseType(_) | Former::Product(_) | Former::RecordType(_)
             | Former::Stack(..) | Former::List(_)
             | Former::Sum(_) | Former::ThunkType(_) | Former::Universe { .. } | Former::TypeLift
-            | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::Capability { .. } | Former::PathUniverse(..) | Former::Session { .. } | Former::Unreadable),
+            | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::Capability { .. } | Former::PathUniverse(..) | Former::Session { .. } | Former::RunType(_) | Former::Unreadable),
         | CoreNode::CompType(_) => matches!(ret, Former::Returner(_) | Former::EffectfulReturner { .. } | Former::Arrow { .. } | Former::Pi { .. }
             | Former::With(..) | Former::ComputationElement(_) | Former::Unreadable),
     })]
@@ -652,7 +670,8 @@ impl Source for CoreSource<'_>
                     | Computation::Fixpoint { .. }
                     | Computation::ListFold { .. }
                     | Computation::Case { .. }
-                    | Computation::Session(_)),
+                    | Computation::Session(_)
+                    | Computation::Ride { .. }),
                 ) => Former::Computation,
                 | Some(&(Computation::Hole(_) | Computation::Mark { .. })) | None => {
                     Former::Unreadable

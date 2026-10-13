@@ -34,14 +34,18 @@
 //!
 //! # Directed flows
 //!
-//! `Flow::Session` checks Gay–Hole subtyping: source selections are a subset
-//! of target selections; target offers are a subset of source offers. Each
+//! `Value::SessionFlow` introduces native `Flow_U` by local simulation replay,
+//! the Gay–Hole subtyping of the same supplied-pair discipline: source
+//! selections are a subset of target selections; target offers are a subset of
+//! source offers. Both the classifier and the introduction persist, so a
+//! declared session subtyping readmits by replay like a session path. Each
 //! consumer rechecks formation, simulation and payload proofs. This is
-//! forward-only evidence with no inverse or Path coercion. CBPV lowering
-//! refuses it as `RecordedRunRequired`; the recorded-run consumer in
-//! `gandr-core-session` supplies finite skeleton transport. Relation replay
-//! terminates over finite supplied data, not an observation budget that could
-//! declare an unfinished relation valid.
+//! forward-only evidence with no inverse or Path coercion: a session flow at a
+//! `Path_U` boundary, or a session path at a `Flow_U` one, refuses as
+//! `FamilyMismatch`. CBPV lowering refuses it as `RecordedRunRequired`; the
+//! recorded-run consumer in `gandr-core-session` supplies finite skeleton
+//! transport. Relation replay terminates over finite supplied data, not an
+//! observation budget that could declare an unfinished relation valid.
 //!
 //! # Witnesses
 //!

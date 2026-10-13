@@ -182,6 +182,15 @@ pub fn sentence(role: FrameRole) -> Sentence
         | FrameRole::UaTranslators => {
             "checking the translators of this univalence against their corollas"
         },
+        | FrameRole::SessionStatement => "relating the two protocols of this session statement",
+        | FrameRole::StaySynthesised => "synthesising the point of this stay",
+        | FrameRole::ThenFirst => "synthesising the first flow of this composite",
+        | FrameRole::ThenSecond => {
+            "checking the second flow of this composite against the first one's target"
+        },
+        | FrameRole::RideFlow => "synthesising the flow this ride follows",
+        | FrameRole::RideMotive => "forming the motive of this ride",
+        | FrameRole::RideValue => "checking the value this ride moves against the flow's source",
         | FrameRole::ReturnedEndpoint => "synthesising the computation of this endpoint",
         | FrameRole::Ran => "synthesising the computation this runs where a value is read",
         | FrameRole::PrimitiveSecond => "checking the first argument of this operation",
@@ -437,6 +446,13 @@ mod tests
             FrameRole::EquivForward,
             FrameRole::EquivBackward,
             FrameRole::UaTranslators,
+            FrameRole::SessionStatement,
+            FrameRole::StaySynthesised,
+            FrameRole::ThenFirst,
+            FrameRole::ThenSecond,
+            FrameRole::RideFlow,
+            FrameRole::RideMotive,
+            FrameRole::RideValue,
             FrameRole::ReturnedEndpoint,
             FrameRole::Ran,
             FrameRole::ElementTransportPath,

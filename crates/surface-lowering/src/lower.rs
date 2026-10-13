@@ -2068,6 +2068,25 @@ enum Plan
     /// Transport along a path, over the static abstraction its motive is
     /// written as, the path, and the transported value.
     Transport(NodeIndex, NodeIndex, NodeIndex),
+    /// A directed identity type over its carrier and its two endpoints:
+    /// `Flow(A, a, b)`.
+    Flow(NodeIndex, NodeIndex, NodeIndex),
+    /// A session statement, `bisim(A, B)` or `sim(A, B)`, over its two codes.
+    SessionRelated(
+        gandr_core_term::session::SessionRelation,
+        NodeIndex,
+        NodeIndex,
+    ),
+    /// The identity flow at its point.
+    Stay(NodeIndex),
+    /// Two flows composed, returned: `f then g` where a flow is answered.
+    FlowThen(NodeIndex, NodeIndex),
+    /// A recorded run, its moves in order, each payload the node it was
+    /// written as.
+    Recorded(Arc<[gandr_core_term::session::RecordedMove<NodeIndex>]>),
+    /// A ride along a flow, over the static abstraction its motive is written
+    /// as, the flow, and the value moved.
+    Ride(NodeIndex, NodeIndex, NodeIndex),
     /// `back`, `then` or `cong`, unfolded to the transport it derives
     /// against the path type its position answers.
     Derived(identity::Derived),
@@ -4504,8 +4523,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   family an earlier declaration answers stands as its type, which a
     ///   value position quotes, and any other name a binder or an earlier
     ///   declaration answers stands as the value it resolved to; otherwise a
-    ///   type atom, or `Type` for the value universe at the fuss-free level,
-    ///   stands as a type, which a value position quotes.
+    ///   type component or type member the name states, read as
+    ///   [`Self::stated_type`] reads it, or a type atom, or `Type` for the
+    ///   value universe at the fuss-free level, stands as a type, which a value
+    ///   position quotes.
     /// - provides: the term-position spelling of a type, of a nullary
     ///   constructor, and of a declaration named with a capital.
     /// - fails: yields the wrong-sort refusal for a resolved name or a type
@@ -4526,6 +4547,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
     /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
     /// - witness: `lower::native::tests::a_data_family_named_where_a_value_is_read_is_quoted`
+    /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -4538,7 +4560,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             | Plan::Atom(_)
                             | Plan::Universe(_)
                             | Plan::Constructor(_)
-                            | Plan::Data(..))
+                            | Plan::Data(..)
+                            | Plan::Transparent(_)
+                            | Plan::Sealed(_)
+                            | Plan::Instantiated(..))
                     )
                 )
         },
@@ -4570,6 +4595,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             let plan = self.resolved_term(site, frame, resolved);
             self.plan(site, plan);
             return Ok(());
+        }
+        if let Maybe::Present(stated) = self.stated_named(site, name)? {
+            return self.stated_type(site, stated);
         }
         let quoted = match type_atom(name) {
             | Maybe::Present(atom) => Plan::Atom(atom),
@@ -5915,7 +5943,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         constructed.fields.start == start
                             && constructed.fields.end == self.operands.len()
                     },
-                    | Some(&(Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::Ua { .. } | Plan::ListCons(..) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Derived(_) | Plan::Exercise(_) | Plan::Resume(..))) => true,
+                    | Some(&(Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::Ua { .. } | Plan::ListCons(..) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Derived(_) | Plan::Exercise(_) | Plan::Resume(..) | Plan::SessionRelated(..) | Plan::Stay(_) | Plan::Recorded(_) | Plan::Ride(..))) => true,
                     | _ => false,
                 }
         },
@@ -6003,7 +6031,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - ensures: the table row selected by the operator receives value
     ///   operands in source order; the infix `then` is the composite of two
-    ///   paths, derived as [`Self::derive`] does.
+    ///   paths, or of two flows where a flow is answered, as [`Self::derive`]
+    ///   plans it.
     /// - fails: malformed tiles or operators outside the admitted vocabulary
     ///   are refused; `then` refuses as [`Self::derive`] does.
     /// - panics: none.
@@ -6016,7 +6045,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   choice; unsupported operators are rejected.
     /// - witness: `lower::tests::native_operator_plans_preserve_order`
     /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(Plan::PrimitiveCall(..) | Plan::Derived(_))))]
+    /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(Plan::PrimitiveCall(..) | Plan::Derived(_) | Plan::FlowThen(..))))]
     fn operator(
         &mut self,
         site: Site,
@@ -7054,10 +7084,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - ensures: a head naming a type family, as a component or a member,
     ///   expands to the family's type over the arguments; a head a binder or an
     ///   earlier declaration answers is read as the static application of that
-    ///   code to the arguments, left to right; any other head applied to one
-    ///   argument resolves against the unary table, stands at the sort its
-    ///   former produces, reads its argument at the sort the former takes, and
-    ///   is planned over it.
+    ///   code to the arguments, left to right; any other head named `Flow` and
+    ///   applied to three arguments is the directed identity type
+    ///   [`Self::flow_type`] plans; any other head applied to one argument
+    ///   resolves against the unary table, stands at the sort its former
+    ///   produces, reads its argument at the sort the former takes, and is
+    ///   planned over it.
     /// - provides: the applied half of type-head resolution.
     /// - fails: yields the unresolved-head refusal for a head nothing answers
     ///   and no former takes at the arity it was written with, the wrong-sort
@@ -7076,12 +7108,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::u_and_f_are_names`
     /// - witness: `lower::tests::an_applied_head_no_former_answers_is_refused`
     /// - witness: `lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
+    /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.plans.get(usize::from(site.at.node)),
-                    Some(&(Plan::Former(..) | Plan::Decode(..) | Plan::StaticApplication(..) | Plan::Data(..) | Plan::Expansion(..)))
+                    Some(&(Plan::Former(..) | Plan::Decode(..) | Plan::StaticApplication(..) | Plan::Data(..) | Plan::Expansion(..) | Plan::Flow(..)))
                 )
         },
     )]
@@ -7143,7 +7176,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         let count = self.operands.len().saturating_sub(start);
         let first = self.operands.get(start).copied();
+        let flow = self
+            .operands
+            .get(start ..)
+            .and_then(|written| <[NodeIndex; 3]>::try_from(written).ok());
         self.operands.truncate(start);
+        if let Some(written) = flow
+            && name.as_ref() == identity::FLOW
+        {
+            return self.flow_type(site, written);
+        }
         let unresolved = |arity| LoweringRefusal::UnresolvedTypeHead {
             span: head.span,
             name,
@@ -7332,7 +7374,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     exhausted(site, &cursor)?;
                     return self.effectful(site, row, argument.node);
                 },
-                | TypeFormer::List => {
+                | TypeFormer::List | TypeFormer::Run => {
                     return Err(site.folded(FormName::GRADE, FragmentBoundary::Unadmitted));
                 },
             }
@@ -7413,10 +7455,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: `argument` is the one operand the former was written with.
     /// - ensures: the thunk former stands at value-type sort with its argument
     ///   read at computation-type sort, the returner former stands at
-    ///   computation-type sort with its argument read at value-type sort, and
-    ///   the list former stands at value-type sort with its element type read
-    ///   at value-type sort; the former decides both, so nothing is pushed down
-    ///   that has to be re-derived.
+    ///   computation-type sort with its argument read at value-type sort, the
+    ///   list former stands at value-type sort with its element type read at
+    ///   value-type sort, and the run former stands at value-type sort with its
+    ///   session code read as a value; the former decides both, so nothing is
+    ///   pushed down that has to be re-derived.
     /// - provides: the one place a type former's sorts are decided.
     /// - fails: yields the wrong-sort refusal for a former whose produced sort
     ///   does not suit the position.
@@ -7440,6 +7483,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         == match former {
                             | TypeFormer::Thunk => Reading::CompType(site.reading.frame()),
                             | TypeFormer::Returner | TypeFormer::List => Reading::ValueType(site.reading.frame()),
+                            | TypeFormer::Run => Reading::Value(site.reading.frame()),
                         })
         },
     )]
@@ -7451,13 +7495,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let produced = match former {
-            | TypeFormer::Thunk | TypeFormer::List => Produced::ValueType,
+            | TypeFormer::Thunk | TypeFormer::List | TypeFormer::Run => Produced::ValueType,
             | TypeFormer::Returner => Produced::CompType,
         };
         let frame = self.require(site, produced)?;
         let inner = match former {
             | TypeFormer::Thunk => Reading::CompType(frame),
             | TypeFormer::Returner | TypeFormer::List => Reading::ValueType(frame),
+            | TypeFormer::Run => Reading::Value(frame),
         };
         self.read(argument, inner);
 
@@ -8416,8 +8461,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::ListNil
                 | Plan::ListCons(..)
                 | Plan::Run(_)
+                | Plan::SessionRelated(..)
+                | Plan::Stay(_)
+                | Plan::Recorded(_)
                 | Plan::Constructor(_) => Some(Produced::Value),
-                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(_) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Action(_) => {
+                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(_) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Action(_) | Plan::Ride(..) | Plan::FlowThen(..) => {
                     Some(Produced::Computation)
                 },
                 | Plan::Atom(_)
@@ -8430,8 +8478,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Product(..)
                 | Plan::RecordType(_)
                 | Plan::Sum(_)
-                | Plan::Former(TypeFormer::Thunk | TypeFormer::List, _)
+                | Plan::Former(TypeFormer::Thunk | TypeFormer::List | TypeFormer::Run, _)
                 | Plan::Path(..)
+                | Plan::Flow(..)
                 | Plan::Data(..)
                 | Plan::Expansion(..)
                 | Plan::Capability(..)
@@ -8665,9 +8714,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.mint_session(protocol, payloads, sink, origin)
             },
             | Plan::Action(ref action) => self.mint_action(action, sink, origin),
+            | Plan::Recorded(ref moves) => self.mint_recorded(moves, sink, origin),
+            | Plan::Ride(motive, flow, value) => {
+                self.mint_ride((motive, flow, value), sink, origin)
+            },
+            | Plan::FlowThen(first, second) => self.mint_flow_then(first, second, sink, origin),
             | Plan::Arrow(..)
             | Plan::StaticPi(..)
             | Plan::Path(..)
+            | Plan::Flow(..)
+            | Plan::SessionRelated(..)
+            | Plan::Stay(_)
             | Plan::StaticLambda(_)
             | Plan::Thunk(_)
             | Plan::Here(_)
@@ -9081,10 +9138,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// - requires: the argument position is interpreted in this lowering run.
-    /// - ensures: a thunk consumes a computation type, and a returner and a
-    ///   list each consume a value type; successful nodes carry the supplied
-    ///   origin.
-    /// - provides: the core bridge or list type over the already lowered
+    /// - ensures: a thunk consumes a computation type, a returner and a list
+    ///   each consume a value type, and a run type consumes the session code as
+    ///   a value; successful nodes carry the supplied origin.
+    /// - provides: the core bridge, list or run type over the already lowered
     ///   argument.
     /// - fails: a missing or wrong-sort argument preserves its absence reason.
     /// - panics: none under the origin table’s ordered-identifier invariant.
@@ -9097,6 +9154,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::the_bridge_tokens_are_compound_and_sum_is_unaffected`
     /// - witness: `lower::tests::u_and_f_are_names`
     /// - witness: `lower::identity::tests::a_list_moves_along_a_universe_equivalence`
+    /// - witness: `lower::identity::tests::a_run_rides_a_flow_between_sessions`
     #[spec(
         ensures: |ret| match former {
             | TypeFormer::Thunk => match self.comp_type_at(argument) {
@@ -9112,6 +9170,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 },
             },
             | TypeFormer::List => match self.value_type_at(argument) {
+                | Maybe::Absent(reason) => ret == Maybe::Absent(reason),
+                | Maybe::Present(_) => {
+                    matches!(ret, Maybe::Present(Lowered::ValueType(id)) if sink.origins.value_type(id) == Maybe::Present(origin))
+                },
+            },
+            | TypeFormer::Run => match self.value_at(argument) {
                 | Maybe::Absent(reason) => ret == Maybe::Absent(reason),
                 | Maybe::Present(_) => {
                     matches!(ret, Maybe::Present(Lowered::ValueType(id)) if sink.origins.value_type(id) == Maybe::Present(origin))
@@ -9143,6 +9207,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 sink.origins.record_value_type(id, origin);
                 Lowered::ValueType(id)
             }),
+            | TypeFormer::Run => self.value_at(argument).map(|session| {
+                let id = sink.arena.value_type_run(session);
+                sink.origins.record_value_type(id, origin);
+                Lowered::ValueType(id)
+            }),
         }
     }
 
@@ -9171,7 +9240,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| match ret {
             | Maybe::Absent(_) => true,
             | Maybe::Present(Lowered::Value(id)) => {
-                matches!(*plan, Plan::StaticLambda(_) | Plan::Thunk(_) | Plan::Run(_) | Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::Ua { .. } | Plan::ListNil | Plan::ListCons(..))
+                matches!(*plan, Plan::StaticLambda(_) | Plan::Thunk(_) | Plan::Run(_) | Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::Ua { .. } | Plan::ListNil | Plan::ListCons(..) | Plan::SessionRelated(..) | Plan::Stay(_))
                     && sink.origins.value(id) == Maybe::Present(origin)
             },
             | Maybe::Present(Lowered::Computation(id)) => {
@@ -9179,7 +9248,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     && sink.origins.computation(id) == Maybe::Present(origin)
             },
             | Maybe::Present(Lowered::ValueType(id)) => {
-                matches!(*plan, Plan::StaticPi(_, _) | Plan::Path(..))
+                matches!(*plan, Plan::StaticPi(_, _) | Plan::Path(..) | Plan::Flow(..))
                     && sink.origins.value_type(id) == Maybe::Present(origin)
             },
             | Maybe::Present(Lowered::CompType(id)) => {
@@ -9282,6 +9351,25 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 let id = sink.arena.value_run(ran);
                 sink.value(id, origin)
             }),
+            | Plan::Flow(carrier, left, right) => self.value_type_at(carrier).and_then(|over| {
+                self.value_at(left).and_then(|from| {
+                    self.value_at(right).map(|to| {
+                        let id = sink.arena.value_type_flow(over, from, to);
+                        sink.origins.record_value_type(id, origin);
+                        Lowered::ValueType(id)
+                    })
+                })
+            }),
+            | Plan::SessionRelated(relation, left, right) => self.value_at(left).and_then(|from| {
+                self.value_at(right).map(|to| {
+                    let id = sink.arena.value_session_related(relation, from, to);
+                    sink.value(id, origin)
+                })
+            }),
+            | Plan::Stay(point) => self.value_at(point).map(|at| {
+                let id = sink.arena.value_stay(at);
+                sink.value(id, origin)
+            }),
             | Plan::Lambda(body) => self.mint_body(body, sink, origin).map(|under| {
                 let id = sink.arena.computation_lambda(under);
                 sink.computation(id, origin)
@@ -9335,7 +9423,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Effectful(..)
             | Plan::Exercise(_)
             | Plan::Scope(_)
-            | Plan::Resume(..) => Maybe::Absent(lowered::Absent::Unminted),
+            | Plan::Resume(..)
+            | Plan::Recorded(_)
+            | Plan::Ride(..)
+            | Plan::FlowThen(..) => Maybe::Absent(lowered::Absent::Unminted),
         }
     }
 

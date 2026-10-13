@@ -1861,6 +1861,117 @@ impl CoreArena
         })
     }
 
+    /// Mint a session identity statement, `bisim(a, b)` or `sim(a, b)`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_session_related(
+        &mut self,
+        relation: crate::session::SessionRelation,
+        source: ValueId,
+        target: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::SessionRelated {
+            relation,
+            source,
+            target,
+        })
+    }
+
+    /// Mint directed reflexivity `stay(a)`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_stay(
+        &mut self,
+        point: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Stay(point))
+    }
+
+    /// Mint directed composition `then(f, g)`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_then(
+        &mut self,
+        first: ValueId,
+        second: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Then(first, second))
+    }
+
+    /// Mint the recorded run of `moves`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_recorded(
+        &mut self,
+        moves: alloc::sync::Arc<[crate::session::RecordedMove]>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Recorded(moves))
+    }
+
+    /// Mint the directed identity `Flow(A, a, b)`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_flow(
+        &mut self,
+        carrier: ValueTypeId,
+        source: ValueId,
+        target: ValueId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Flow {
+            carrier,
+            source,
+            target,
+        })
+    }
+
+    /// Mint the run type `Run(s)` of the session code `s`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_run(
+        &mut self,
+        session: ValueId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Run(session))
+    }
+
+    /// Mint directed transport `ride(P, f, x)`, the motive under one
+    /// intuitionistic binder.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_ride(
+        &mut self,
+        motive: ValueTypeId,
+        flow: ValueId,
+        value: ValueId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Ride {
+            motive,
+            flow,
+            value,
+        })
+    }
+
     /// Mint the value a pure computation returns, standing as a value.
     ///
     /// # Specification

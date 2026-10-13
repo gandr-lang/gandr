@@ -308,6 +308,11 @@ pub enum ValueType
     /// Certified equivalences between two quoted closed first-order codes.
     /// Both endpoints form at level zero; formation checks each code.
     PathUniverse(ValueId, ValueId),
+    /// Forward-only certificates between two quoted closed codes of the
+    /// `Flow_U` vocabulary: first-order, function and session codes. Both
+    /// endpoints form at level zero; formation checks each code and grants no
+    /// inverse.
+    FlowUniverse(ValueId, ValueId),
     /// Element identity `Path(A, a, b)` between two values of one value type.
     /// Formation checks both endpoints at the domain and refuses an open
     /// domain; an introduction form other than `here` checks against the

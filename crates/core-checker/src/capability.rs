@@ -290,6 +290,8 @@ pub fn authorise(
         | ValueTypeView::Unknown => Ok(()),
         | ValueTypeView::PathUniverse(..)
         | ValueTypeView::Path { .. }
+        | ValueTypeView::Flow { .. }
+        | ValueTypeView::Run(_)
         | ValueTypeView::Data { .. }
         | ValueTypeView::Record(_)
         | ValueTypeView::Sum(..)
@@ -377,7 +379,8 @@ pub fn reaches(
                 },
                 | ValueType::List(inner)
                 | ValueType::Lift { inner, .. }
-                | ValueType::Path { carrier: inner, .. } => pending.push(TypeNode::Value(inner)),
+                | ValueType::Path { carrier: inner, .. }
+                | ValueType::Flow { carrier: inner, .. } => pending.push(TypeNode::Value(inner)),
                 | ValueType::Thunk(body) => pending.push(TypeNode::Computation(body)),
                 | ValueType::StaticPi { domain, codomain } => {
                     pending.extend([TypeNode::Value(domain), TypeNode::Value(codomain)]);
@@ -389,6 +392,7 @@ pub fn reaches(
                     pending.extend(session.payloads().iter().copied().map(TypeNode::Value));
                 },
                 | ValueType::PathUniverse(..)
+                | ValueType::Run(_)
                 | ValueType::Base(_)
                 | ValueType::Universe { .. }
                 | ValueType::Element { .. }
