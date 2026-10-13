@@ -192,8 +192,13 @@ const fn checked(refusal: CheckRefusal) -> Culprit
 {
     Culprit(match refusal {
         | CheckRefusal::NotADataType(_) => "not an admitted datatype",
-        | CheckRefusal::DataKindNotUniverse(_) => "not a value universe",
+        | CheckRefusal::DataKindNotUniverse(_) | CheckRefusal::AbstractKindNotUniverse(_) => {
+            "not a value universe"
+        },
         | CheckRefusal::DataFieldLevel { .. } => "above the declared universe",
+        | CheckRefusal::RepresentationAboveKind { .. } => "above the abstract type's universe",
+        | CheckRefusal::NotAnAbstractType(_) => "not an abstract type",
+        | CheckRefusal::SealSiteRepeated(_) => "a component sealed twice",
         | CheckRefusal::DataArgumentArity(_) => "the wrong number of parameters",
         | CheckRefusal::UnknownConstructor { .. } => "no constructor of the datatype",
         | CheckRefusal::ConstructorArity(_) => "the wrong number of fields",

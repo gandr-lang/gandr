@@ -334,12 +334,14 @@
 //! synthesises and checks at it by the endpoint rule above, transport along it
 //! is stuck except on reflexivity, where it reduces, and two such path types
 //! convert structurally. The kernel reads the same neutral fibre, so a judged
-//! identity readmits. A sealed atom, the fragment's other open type, is
-//! refused wherever a type is read. The alternatives were refusing the path
-//! type and reflexivity at such a carrier, which left every law over an
-//! abstract carrier unstatable, and refusing it at readmission alone, which
-//! let a reflexivity inside a body reach the kernel. Reversal: a recursion
-//! clause for type variables computes the fibre this leaves neutral.
+//! identity readmits. A sealed atom past its seal is the fragment's other open
+//! type and its identity is the same neutral fibre; inside its seal the weak
+//! head reads its representation, whose fibre the recursion computes. The
+//! alternatives were refusing the path type and reflexivity at such a
+//! carrier, which left every law over an abstract carrier unstatable, and
+//! refusing it at readmission alone, which let a reflexivity inside a body
+//! reach the kernel. Reversal: a recursion clause for type variables computes
+//! the fibre this leaves neutral.
 //!
 //! **Function extensionality is decided by computation.** `funext(f, g)`
 //! synthesises `Path(U (A → F B), f, g)` for closed functions over a
@@ -3990,19 +3992,21 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: an atom and the unit type are formed; a thunk type forms its
-    ///   body; a universe is formed below the greatest level; a lift forms its
-    ///   type, then awaits the raise; a decode awaits its code's synthesised
-    ///   type; an eager product and a sum form each component, an empty sum at
-    ///   once; a static Pi forms both classifiers, then awaits their check as
-    ///   static classifiers; a path type forms its carrier, open or closed,
-    ///   then checks each endpoint against it, left first. A former formed at
-    ///   once leaves the frames as found, but for a data type, a record, a
-    ///   product and a sum, which queue their components; one that descends
-    ///   leaves them no shorter.
+    /// - ensures: an atom and the unit type are formed; a sealed atom is formed
+    ///   when its abstract type was admitted; a thunk type forms its body; a
+    ///   universe is formed below the greatest level; a lift forms its type,
+    ///   then awaits the raise; a decode awaits its code's synthesised type; an
+    ///   eager product and a sum form each component, an empty sum at once; a
+    ///   static Pi forms both classifiers, then awaits their check as static
+    ///   classifiers; a path type forms its carrier, open or closed, then
+    ///   checks each endpoint against it, left first. A former formed at once
+    ///   leaves the frames as found, but for a data type, a record, a product
+    ///   and a sum, which queue their components; one that descends leaves them
+    ///   no shorter.
     /// - fails: the view's refusal for a former outside the fragment or a
     ///   dangling id; [`CheckRefusal::OutOfFragment`] naming
-    ///   [`UnadmittedFormer::TopUniverse`].
+    ///   [`UnadmittedFormer::TopUniverse`]; [`CheckRefusal::NotAnAbstractType`]
+    ///   for a sealed atom no admitted abstract type declares.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -4062,6 +4066,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | ValueTypeView::String
             | ValueTypeView::Unit
             | ValueTypeView::Unknown => Ok(Step::Ascend(Produced::Checked)),
+            | ValueTypeView::Abstract(atom) => {
+                let _level = self.context.abstract_level(atom)?;
+                Ok(Step::Ascend(Produced::Checked))
+            },
             | ValueTypeView::List(element) => {
                 Ok(Step::Descend(Goal::Form(TypeNode::Value(element))))
             },
@@ -4369,7 +4377,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::Thunk(_)
                 | ValueTypeView::Lift { .. }
                 | ValueTypeView::Element { .. }
-                | ValueTypeView::Product(..) => {
+                | ValueTypeView::Product(..)
+                | ValueTypeView::Abstract(_) => {
                     return Err(CheckRefusal::StaticClassifierExpected {
                         at,
                         found: classifier,
@@ -4432,6 +4441,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::Lift { .. }
                 | ValueTypeView::Product(..)
                 | ValueTypeView::StaticPi { .. }
+                | ValueTypeView::Abstract(_)
                 | ValueTypeView::Unknown => return Err(CheckRefusal::MachineInvariant),
             },
             | TypeNode::Computation(at) => match comp_type_view(arena, at)? {

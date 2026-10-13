@@ -344,15 +344,17 @@ enum Task
 ///   admissible input and refused.
 /// - ensures: zero for an atom, the unit type and the unknown type, whichever
 ///   spelling it has; the successor of its level for a universe; its own level
-///   for a lift and a decode; its child's level for a thunk type and a
-///   returner, and its carrier's for a path type; the join of its children's
-///   for an eager product, a static Pi, an arrow and a dependent arrow, whose
-///   codomain's level does not depend on the binder.
+///   for a lift and a decode; its kind's level for a sealed atom; its child's
+///   level for a thunk type and a returner, and its carrier's for a path type;
+///   the join of its children's for an eager product, a static Pi, an arrow and
+///   a dependent arrow, whose codomain's level does not depend on the binder.
 /// - provides: the level part of every classifier, and the level a code is
 ///   decoded at when the judgement unfolds a code constant.
 /// - fails: the view's refusal for a node outside the fragment or a dangling
 ///   id; [`CheckRefusal::OutOfFragment`] naming
-///   [`UnadmittedFormer::TopUniverse`] for a universe at the greatest level.
+///   [`UnadmittedFormer::TopUniverse`] for a universe at the greatest level;
+///   [`CheckRefusal::NotAnAbstractType`] for a sealed atom no admitted abstract
+///   type declares.
 /// - panics: none.
 /// - intension: an explicit task stack, so no depth overflows a native one.
 ///
@@ -429,6 +431,7 @@ pub fn level_of(
                 | ValueTypeView::Unknown => {
                     levels.push(Level::zero());
                 },
+                | ValueTypeView::Abstract(atom) => levels.push(context.abstract_level(atom)?),
                 | ValueTypeView::List(element)
                 | ValueTypeView::Path {
                     carrier: element, ..
@@ -702,7 +705,7 @@ mod tests
         let element_path = arena.value_type_path(unit, point, point);
         let one = LevelConstant::from(1_u64);
         let zero = LevelConstant::from(0_u64);
-        let rows: [(ValueTypeId, Result<Classifier, UnadmittedFormer>); 15] = [
+        let rows: [(ValueTypeId, Result<Classifier, UnadmittedFormer>); 14] = [
             (path, Ok(value_at(zero))),
             (element_path, Ok(value_at(zero))),
             (
@@ -725,10 +728,6 @@ mod tests
                 arena.value_type_element(code, Level::zero()),
                 Ok(value_at(zero)),
             ),
-            (
-                arena.value_type_abstract(ConstantIndex::from(0_usize)),
-                Err(UnadmittedFormer::Abstract),
-            ),
             (arena.value_type_static_pi(small, small), Ok(value_at(one))),
         ];
 
@@ -745,6 +744,16 @@ mod tests
                 "every value-type former forms at its classifier or is refused by name"
             );
         }
+        let atom = context
+            .arena_mut()
+            .value_type_abstract(ConstantIndex::from(0_usize));
+        assert_eq!(
+            classified(&mut context, atom),
+            Err(CheckRefusal::NotAnAbstractType(ConstantIndex::from(
+                0_usize
+            ))),
+            "a sealed atom no abstract type declares is refused by name"
+        );
     }
 
     #[test]
@@ -790,10 +799,6 @@ mod tests
             (
                 arena.value_type_base(BaseType::Numeric),
                 UnadmittedFormer::NumericAtom,
-            ),
-            (
-                arena.value_type_abstract(ConstantIndex::from(0_usize)),
-                UnadmittedFormer::Abstract,
             ),
             (
                 arena.value_type_universe(
@@ -920,10 +925,10 @@ mod tests
         );
     }
 
-    /// The core vocabulary has no dependent pair and no package; the sealed
-    /// atom a package's abstract component is stays refused by name, and the
-    /// eager product a dependent pair generalises and the dependent arrow,
-    /// refused beside it before, now form.
+    /// The core vocabulary has no dependent pair and no package; a sealed atom
+    /// no abstract type declares is refused by name, and the eager product a
+    /// dependent pair generalises and the dependent arrow, refused beside it
+    /// before, now form.
     #[test]
     fn sigma_and_package_are_refused_by_name()
     {
@@ -944,10 +949,10 @@ mod tests
         );
         assert_eq!(
             form_value_type(&mut context, sealed),
-            Err(CheckRefusal::OutOfFragment {
-                at: CoreNode::Type(TypeNode::Value(sealed)),
-                former: UnadmittedFormer::Abstract,
-            })
+            Err(CheckRefusal::NotAnAbstractType(ConstantIndex::from(
+                0_usize
+            ))),
+            "an atom forms only once its abstract type is admitted"
         );
         assert_eq!(
             form_comp_type(&mut context, pi).map(super::FormedCompType::id),

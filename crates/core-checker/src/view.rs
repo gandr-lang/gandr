@@ -34,13 +34,13 @@
 //! # The fragment
 //!
 //! The judgement admits integer and string atoms, unit, products, sums, native
-//! Lists, nominal data, structural records, thunks, effect-qualified returners,
-//! arrows, dependent arrows, static operators, universes, raising type lifts
-//! and decodes, and effects and control. Injection checks against its sum; case
-//! checks both payload-bound branches against one expected computation type.
-//! Numeric atoms and literals, value lifts, abstract atoms, non-raising lifts,
-//! sort-parameter universes and top-level universes are named `OutOfFragment`
-//! refusals.
+//! Lists, nominal data, sealed abstract types, structural records, thunks,
+//! effect-qualified returners, arrows, dependent arrows, static operators,
+//! universes, raising type lifts and decodes, and effects and control.
+//! Injection checks against its sum; case checks both payload-bound branches
+//! against one expected computation type. Numeric atoms and literals, value
+//! lifts, non-raising lifts, sort-parameter universes and top-level universes
+//! are named `OutOfFragment` refusals.
 
 use anodized::spec;
 use gandr_core_term::CompType;
@@ -193,6 +193,8 @@ pub enum ValueTypeView<'arena>
         /// The classifier of what it builds.
         codomain: ValueTypeId,
     },
+    /// A sealed abstract type: the atom declared at this admission position.
+    Abstract(gandr_kernel_term::ConstantIndex),
     /// The unknown type: a hole's or a mark's, or the decode of one.
     Unknown,
 }
@@ -250,14 +252,14 @@ pub enum CompTypeView<'arena>
 /// - ensures: the node's view when its former is the integer atom, the string
 ///   atom, the empty product (the unit type), a thunk type, a universe of a
 ///   ground sort, a lift, a decode, a product of one or more components, a sum
-///   of any number of summands, a static Pi or a path type; the children are
-///   the node's own. The unknown type, and a decode whose code is a hole or a
-///   mark, view as [`ValueTypeView::Unknown`].
+///   of any number of summands, a static Pi, a path type or a sealed atom; the
+///   children are the node's own. The unknown type, and a decode whose code is
+///   a hole or a mark, view as [`ValueTypeView::Unknown`].
 /// - provides: the one decision of which value types the judgement and the
 ///   bridge reason about.
 /// - fails: [`FragmentRefusal::DanglingNode`] when the id names no node of
 ///   `arena`; [`FragmentRefusal::OutOfFragment`], naming the former, for the
-///   numeric atom, an abstract atom and a universe over a sort parameter.
+///   numeric atom and a universe over a sort parameter.
 /// - panics: none.
 ///
 /// # Errors
@@ -294,12 +296,12 @@ pub enum CompTypeView<'arena>
     | Ok(ValueTypeView::Element { code, target }) => matches!(arena.value_type(value_type), Some(ValueType::Element { code: found, target: found_target }) if *found == code && found_target == target)
         && value_type_knowledge(arena, value_type) == Knowledge::Known,
     | Ok(ValueTypeView::StaticPi { domain, codomain }) => matches!(arena.value_type(value_type), Some(ValueType::StaticPi { domain: found_domain, codomain: found_codomain }) if *found_domain == domain && *found_codomain == codomain),
+    | Ok(ValueTypeView::Abstract(atom)) => matches!(arena.value_type(value_type), Some(&ValueType::Abstract(found)) if found == atom),
     | Ok(ValueTypeView::Unknown) => value_type_knowledge(arena, value_type) == Knowledge::Unknown,
     | Err(FragmentRefusal::DanglingNode { node }) => arena.value_type(value_type).is_none() && node == CoreNode::Type(TypeNode::Value(value_type)),
     | Err(FragmentRefusal::OutOfFragment { at, former }) => at == CoreNode::Type(TypeNode::Value(value_type))
         && match (arena.value_type(value_type), former) {
             | (Some(&ValueType::Base(BaseType::Numeric)), UnadmittedFormer::NumericAtom)
-            | (Some(&ValueType::Abstract(_)), UnadmittedFormer::Abstract)
             | (Some(&ValueType::Universe { sort: Sort::Parameter(_), .. }), UnadmittedFormer::SortParameter) => true,
             | _ => false,
         },
@@ -360,7 +362,7 @@ pub fn value_type_view(
                 | Knowledge::Unknown => Ok(ValueTypeView::Unknown),
             }
         },
-        | ValueType::Abstract(_) => Err(unadmitted(UnadmittedFormer::Abstract)),
+        | ValueType::Abstract(atom) => Ok(ValueTypeView::Abstract(atom)),
         | ValueType::StaticPi { domain, codomain } => {
             Ok(ValueTypeView::StaticPi { domain, codomain })
         },

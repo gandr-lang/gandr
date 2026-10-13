@@ -878,6 +878,124 @@ fn an_opaque_footprint_is_never_adopted()
     );
 }
 
+/// `module Counter :> #{ type T, seed : T } { type T = R ; def seed = r ; }`
+/// as the lowering admits it — the atom, the body member, the witness
+/// exporting it at the atom — then a client at the atom, a leak at the
+/// representation and a bystander. `unit` seals `Unit` over `()` instead of
+/// `Integer` over `7`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: six items at ascending positions, the abstract type first.
+/// - panics: the positions do not ascend.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an unedited and a re-represented seal separate adoption
+///   of the atom from re-judging its readers.
+/// - witness: `tests::incremental::a_sealed_module_is_adopted_and_its_seal_still_holds`
+fn sealed_counter(unit: bool) -> Program
+{
+    use gandr_core_checker::AbstractType;
+    use gandr_core_checker::ComponentOrdinal;
+    use gandr_core_checker::SealSite;
+    use gandr_core_checker::SealingSite;
+    use gandr_core_term::Sort;
+    use gandr_kernel_strata::Level;
+    use gandr_kernel_term::GroundSort;
+    use gandr_kernel_term::SealExtent;
+    let mut arena = CoreArena::new();
+    let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let (representation, seed) = if unit {
+        (arena.value_type_unit(), arena.value_unit())
+    }
+    else {
+        (
+            arena.value_type_base(gandr_kernel_term::BaseType::Integer),
+            arena.value_literal(integer(Natural(7))),
+        )
+    };
+    let integer_type = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+    let atom = arena.value_type_abstract(ConstantIndex::from(0_usize));
+    let member = arena.value_constant(ConstantIndex::from(1_usize));
+    let export = arena.value_constant(ConstantIndex::from(2_usize));
+    let nine = arena.value_literal(integer(Natural(9)));
+    let value = |position: usize, declared, body| {
+        Declaration::new(
+            ConstantIndex::from(position),
+            Maybe::Present(declared),
+            Maybe::Present(body),
+            OriginToken::from(position),
+        )
+    };
+    let items = vec![
+        Item::new(
+            ItemKey::from("Counter.T"),
+            Declaration::abstract_type(
+                ConstantIndex::from(0_usize),
+                AbstractType::new(
+                    small,
+                    representation,
+                    SealExtent::from(2_usize),
+                    SealSite::new(SealingSite::from(0_usize), ComponentOrdinal::from(0_usize)),
+                ),
+                OriginToken::from(0_usize),
+            ),
+        ),
+        Item::new(ItemKey::from("seed"), value(1, representation, seed)),
+        Item::new(ItemKey::from("Counter.seed"), value(2, atom, member)),
+        Item::new(ItemKey::from("client"), value(3, atom, export)),
+        Item::new(ItemKey::from("leak"), value(4, integer_type, export)),
+        Item::new(ItemKey::from("bystander"), value(5, integer_type, nine)),
+    ];
+    Program::new(arena, items).expect("positions ascend")
+}
+
+#[test]
+fn a_sealed_module_is_adopted_and_its_seal_still_holds()
+{
+    let base = || {
+        check_program(&mut sealed_counter(false), CheckBudget::DEFAULT).expect("the order builds")
+    };
+    let typings: Vec<Typing> = base().typings().cloned().collect();
+    assert!(
+        matches!(typings.as_slice(), [
+            Typing::Data,
+            Typing::Checked { .. },
+            Typing::Checked { .. },
+            Typing::Checked { .. },
+            Typing::Refused(_),
+            Typing::Checked { .. },
+        ]),
+        "the witness checks inside the seal, the client at the atom, and the leak is refused: {typings:?}"
+    );
+    let mut unedited = sealed_counter(false);
+    let expected = batch(&unedited);
+    let resumed = resume(base(), &mut unedited).expect("the order builds");
+    assert_eq!(
+        resumed.adoptions(),
+        [Adopted; 6],
+        "unedited, the abstract type is adopted with everything it seals"
+    );
+    assert_eq!(
+        resumed.typings().cloned().collect::<Vec<Typing>>(),
+        expected,
+        "and the adopted atom keeps the leak refused"
+    );
+    let mut represented = sealed_counter(true);
+    let expected = batch(&represented);
+    let resumed = resume(base(), &mut represented).expect("the order builds");
+    assert_eq!(
+        resumed.adoptions(),
+        [Judged, Judged, Judged, Judged, Judged, Adopted],
+        "a new representation reaches every reader of the atom, and not the bystander"
+    );
+    assert_eq!(
+        resumed.typings().cloned().collect::<Vec<Typing>>(),
+        expected,
+        "incremental equals batch"
+    );
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(CASES))]
 

@@ -96,6 +96,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::code::Lift;
 use crate::context::CheckingContext;
+use crate::declaration::AbstractType;
 use crate::declaration::Declaration;
 use crate::declaration::OriginToken;
 use crate::declaration::body;
@@ -117,6 +118,7 @@ use crate::ledger::ObligationEntry;
 use crate::ledger::ObligationLedger;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CheckingForm;
+use crate::seal::SealTable;
 use crate::support::Supported;
 
 /// The judgement's answer for one declaration.
@@ -126,7 +128,9 @@ use crate::support::Supported;
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Verdict
 {
-    /// A native nominal declaration whose complete signature formed.
+    /// A nominal declaration that formed: a native data declaration's complete
+    /// signature, or a sealed abstract type's kind and representation, its
+    /// atom minted.
     Data,
     /// The body checked against the declared type.
     Checked
@@ -220,8 +224,13 @@ pub struct ModuleReport
     definitions: BTreeMap<ConstantIndex, ValueId>,
     /// Native signatures retained for kernel readmission.
     data_signatures: BTreeMap<ConstantIndex, alloc::sync::Arc<gandr_core_term::DataSignature>>,
+    /// The sealed abstract types that formed, by position, for kernel
+    /// readmission.
+    abstract_types: BTreeMap<ConstantIndex, AbstractType>,
     /// The failure of each body the judgement refused, by position.
     failures: BTreeMap<ConstantIndex, Failure>,
+    /// The sealing sites the run minted atoms for, in minting order.
+    seal_table: SealTable,
 }
 
 impl ModuleReport
@@ -238,6 +247,30 @@ impl ModuleReport
     {
         &self.data_signatures
     }
+
+    /// The sealed abstract types that formed, by position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub const fn abstract_types(&self) -> &BTreeMap<ConstantIndex, AbstractType>
+    {
+        &self.abstract_types
+    }
+
+    /// The sealing sites the run minted atoms for, in minting order: the
+    /// record a re-elaboration verifies with [`SealTable::verify_reminting`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub const fn seal_table(&self) -> &SealTable
+    {
+        &self.seal_table
+    }
+
     /// One entry per declaration, in the order given.
     ///
     /// # Specification
@@ -394,8 +427,11 @@ enum Run
 #[spec(
     captures: depth = context.depth(gandr_core_term::Zone::Intuitionistic),
     ensures: |ret| context.depth(gandr_core_term::Zone::Intuitionistic) == depth && match ret {
-        | Verdict::Data => matches!(declaration.content(), crate::DeclarationContent::Data(signature)
-            if context.data_signatures().get(&declaration.constant()) == Some(signature)),
+        | Verdict::Data => match *declaration.content() {
+            | crate::DeclarationContent::Data(ref signature) => context.data_signatures().get(&declaration.constant()) == Some(signature),
+            | crate::DeclarationContent::Abstract(_) => context.abstract_types().any(|(constant, _)| constant == declaration.constant()),
+            | crate::DeclarationContent::Value { .. } => false,
+        },
         | Verdict::Checked { declared, body, .. } => matches!(declaration.content(), crate::DeclarationContent::Value { signature: Maybe::Present(ty), body: Maybe::Present(value) } if *ty == declared.id() && *value == body)
             && context.signature(declaration.constant()) == Maybe::Present(declared),
         | Verdict::Synthesised { synthesised, body } => matches!(declaration.content(), crate::DeclarationContent::Value { signature: Maybe::Absent(_), body: Maybe::Present(value) } if *value == body)
@@ -479,6 +515,18 @@ fn decide(
                         Maybe::Absent(untyped),
                     )
                 },
+                | Err(refusal) => unrun(refusal),
+            };
+        },
+        | crate::DeclarationContent::Abstract(declared) => {
+            let sealed = crate::former::form_abstract(context, declared)
+                .and_then(|level| context.seal_abstract(constant, declared, level));
+            return match sealed {
+                | Ok(_atom) => (
+                    Verdict::Data,
+                    Maybe::Absent(kept::Absent::Accepted),
+                    Maybe::Absent(untyped),
+                ),
                 | Err(refusal) => unrun(refusal),
             };
         },
@@ -672,6 +720,8 @@ pub fn check_module(
         equivalences: context.equivalences().clone(),
         definitions: context.definitions().definitions().collect(),
         data_signatures: context.data_signatures().clone(),
+        abstract_types: context.abstract_types().collect(),
+        seal_table: context.seal_table().clone(),
         failures,
     }
 }
@@ -757,10 +807,14 @@ mod tests
     use anodized::spec;
     use gandr_core_term::CoreArena;
     use gandr_core_term::FailureClass;
+    use gandr_core_term::Sort;
     use gandr_core_term::ValueId;
     use gandr_core_term::ValueTypeId;
+    use gandr_kernel_strata::Level;
     use gandr_kernel_term::BaseType;
     use gandr_kernel_term::ConstantIndex;
+    use gandr_kernel_term::GroundSort;
+    use gandr_kernel_term::SealExtent;
     use quenchant_shape::shape::Maybe;
 
     use super::Verdict;
@@ -771,6 +825,7 @@ mod tests
     use crate::context::CheckBudget;
     use crate::context::CheckingContext;
     use crate::conversion::ConversionCount;
+    use crate::declaration::AbstractType;
     use crate::declaration::Declaration;
     use crate::declaration::OriginToken;
     use crate::declaration::body;
@@ -788,6 +843,9 @@ mod tests
     use crate::refusal::TermNode;
     use crate::refusal::TypeNode;
     use crate::refusal::UnadmittedFormer;
+    use crate::seal::ComponentOrdinal;
+    use crate::seal::SealSite;
+    use crate::seal::SealingSite;
 
     /// An admission position in a fixture module.
     #[repr(transparent)]
@@ -1614,6 +1672,189 @@ mod tests
                 Verdict::Checked { .. }
             ),
             "a decode of the adopted code unfolds to the adopted body"
+        );
+    }
+
+    /// The abstract type at `position`, of `kind`, represented by
+    /// `representation`, sealing the `extent` declarations after it, minted at
+    /// component `component` of ascription zero; its origin `position + 100`.
+    ///
+    /// # Specification
+    /// - requires: adding the origin offset one hundred does not overflow.
+    /// - ensures: the abstract type is offered at the fixture position with the
+    ///   distinct origin.
+    /// - panics: the position lies outside the offset domain.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a sealed module observes each premise of abstract
+    ///   type formation and the reach of its seal.
+    /// - witness: `module::tests::an_abstract_type_forms_at_a_value_universe_and_mints_its_site`
+    /// - witness: `module::tests::a_sealed_member_checks_at_the_representation_inside`
+    #[spec(
+        requires: position.0.checked_add(100).is_some(),
+        ensures: |ret| usize::from(ret.constant()) == position.0
+            && matches!(ret.content(), &crate::DeclarationContent::Abstract(held)
+                if held.kind() == kind && held.representation() == representation),
+    )]
+    fn sealed(
+        position: At,
+        kind: ValueTypeId,
+        representation: ValueTypeId,
+        extent: usize,
+        component: usize,
+    ) -> Declaration
+    {
+        Declaration::abstract_type(
+            ConstantIndex::from(position.0),
+            AbstractType::new(
+                kind,
+                representation,
+                SealExtent::from(extent),
+                SealSite::new(
+                    SealingSite::from(0_usize),
+                    ComponentOrdinal::from(component),
+                ),
+            ),
+            OriginToken::from(position.0.checked_add(100).unwrap()),
+        )
+    }
+
+    #[test]
+    fn an_abstract_type_forms_at_a_value_universe_and_mints_its_site()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let module = [
+            sealed(At(0), small, integer, 0, 0),
+            sealed(At(1), integer, integer, 0, 1),
+            sealed(At(2), small, small, 0, 2),
+        ];
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let report = check_module(&mut context, &module);
+        let verdicts: Vec<_> = report.judged().iter().map(super::Judged::verdict).collect();
+        assert_eq!(
+            verdicts,
+            [
+                Verdict::Data,
+                Verdict::Refused(CheckRefusal::AbstractKindNotUniverse(integer)),
+                Verdict::Refused(CheckRefusal::RepresentationAboveKind {
+                    representation: small,
+                    kind: small,
+                }),
+            ],
+            "a kind at a value universe forms; a kind that is no universe and a representation above its kind are refused by name"
+        );
+        assert_eq!(
+            report.seal_table().sites(),
+            [SealSite::new(
+                SealingSite::from(0_usize),
+                ComponentOrdinal::from(0_usize)
+            )],
+            "only the abstract type that formed minted its site"
+        );
+        assert_eq!(
+            report.abstract_types().keys().copied().collect::<Vec<_>>(),
+            [ConstantIndex::from(0_usize)],
+            "and only it is retained for readmission"
+        );
+        assert_eq!(
+            context.abstract_level(ConstantIndex::from(0_usize)),
+            Ok(Level::zero()),
+            "its atom inhabits its kind's universe"
+        );
+    }
+
+    #[test]
+    fn a_repeated_sealing_site_is_refused_and_mints_nothing()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let module = [
+            sealed(At(0), small, integer, 0, 0),
+            sealed(At(1), small, integer, 0, 0),
+        ];
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let report = check_module(&mut context, &module);
+        let site = SealSite::new(SealingSite::from(0_usize), ComponentOrdinal::from(0_usize));
+        assert_eq!(
+            report.judged()[1].verdict(),
+            Verdict::Refused(CheckRefusal::SealSiteRepeated(site)),
+            "a second abstract type at one site is refused naming the site"
+        );
+        assert_eq!(
+            (report.seal_table().sites(), report.abstract_types().len()),
+            ([site].as_slice(), 1),
+            "the refused one minted no second atom and was not retained"
+        );
+    }
+
+    #[test]
+    fn an_atom_naming_no_abstract_type_is_refused()
+    {
+        let mut arena = CoreArena::new();
+        let zero = arena.value_literal(integer_literal());
+        let named = arena.value_type_abstract(ConstantIndex::from(0_usize));
+        let module = [
+            declaration(At(0), UNSIGNED, Maybe::Present(zero)),
+            declaration(At(1), Maybe::Present(named), HOLE),
+        ];
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let report = check_module(&mut context, &module);
+        assert_eq!(
+            report.judged()[1].verdict(),
+            Verdict::Refused(CheckRefusal::NotAnAbstractType(ConstantIndex::from(
+                0_usize
+            ))),
+            "an atom at a value declaration's position is no type"
+        );
+    }
+
+    /// `module Counter :> #{ type T, seed : T } { type T = Integer ; def seed
+    /// = 7 ; }` as the lowering admits it: the atom, the body member, the
+    /// witness exporting it at the component type, then two clients.
+    #[test]
+    fn a_sealed_member_checks_at_the_representation_inside()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let seven = arena.value_literal(integer_literal());
+        let atom = arena.value_type_abstract(ConstantIndex::from(0_usize));
+        let member = arena.value_constant(ConstantIndex::from(1_usize));
+        let export = arena.value_constant(ConstantIndex::from(2_usize));
+        let module = [
+            sealed(At(0), small, integer, 2, 0),
+            declaration(At(1), Maybe::Present(integer), Maybe::Present(seven)),
+            declaration(At(2), Maybe::Present(atom), Maybe::Present(member)),
+            declaration(At(3), Maybe::Present(atom), Maybe::Present(export)),
+            declaration(At(4), Maybe::Present(integer), Maybe::Present(export)),
+            declaration(At(5), Maybe::Present(atom), Maybe::Present(seven)),
+        ];
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let report = check_module(&mut context, &module);
+        let verdicts: Vec<_> = report.judged().iter().map(super::Judged::verdict).collect();
+        assert!(
+            matches!(verdicts[2], Verdict::Checked { .. }),
+            "inside the seal the member's Integer is the atom's representation"
+        );
+        assert!(
+            matches!(verdicts[3], Verdict::Checked { .. }),
+            "outside, the export reads at the atom, which is itself"
+        );
+        assert_eq!(
+            verdicts[4],
+            Verdict::Refused(CheckRefusal::TypeMismatch(Mismatch::Value {
+                at: export,
+                synthesised: atom,
+                expected: integer,
+            })),
+            "outside, the atom is not its representation, and the mismatch names it"
+        );
+        assert!(
+            matches!(verdicts[5], Verdict::Refused(CheckRefusal::TypeMismatch(_))),
+            "nor does a literal of the representation inhabit it"
         );
     }
 }

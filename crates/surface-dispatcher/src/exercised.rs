@@ -533,6 +533,10 @@ fn checking_row(
         | CheckRefusal::NotADataType(_)
         | CheckRefusal::DataKindNotUniverse(_)
         | CheckRefusal::DataFieldLevel { .. }
+        | CheckRefusal::AbstractKindNotUniverse(_)
+        | CheckRefusal::RepresentationAboveKind { .. }
+        | CheckRefusal::NotAnAbstractType(_)
+        | CheckRefusal::SealSiteRepeated(_)
         | CheckRefusal::DataArgumentArity(_)
         | CheckRefusal::UnknownConstructor { .. }
         | CheckRefusal::ConstructorArity(_)

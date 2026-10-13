@@ -23,15 +23,18 @@
 //! parameter and a static Pi over a classifier that holds no codes are
 //! malformed source, the author's mistake. A former outside the fragment is
 //! unrepresentable. An unbound index, an exhausted allowance, a dangling id, an
-//! admission out of order, a machine invariant and an unfolding the normaliser
-//! did not certify are engine faults: a producer that resolves binders and
-//! positions never hands the checker an unbound index or an out-of-order
-//! admission, so either one is the producer's fault, not the author's; the
-//! machine invariant reports a miscount of the machine's own frames instead of
-//! asserting it. The alternative for the unbound index — classing it as the
-//! author's — would hide a resolution bug in the producer behind a source
-//! diagnostic; it reverses if a producer ever hands over unresolved author
-//! text.
+//! admission out of order, a sealing site claimed twice, a machine invariant
+//! and an unfolding the normaliser did not certify are engine faults: a
+//! producer that resolves binders and positions never hands the checker an
+//! unbound index or an out-of-order admission, and one that numbers each
+//! ascription's abstract components never repeats a site, so each is the
+//! producer's fault, not the author's; the machine invariant reports a
+//! miscount of the machine's own frames instead of asserting it. An abstract
+//! type's kind that is no value universe, a representation above it and an
+//! atom naming no admitted abstract type are the author's. The alternative for
+//! the unbound index — classing it as the author's — would hide a resolution
+//! bug in the producer behind a source diagnostic; it reverses if a producer
+//! ever hands over unresolved author text.
 //!
 //! # The absence class has no refusal, and that is the point
 //!
@@ -55,6 +58,7 @@ use gandr_kernel_term::DeBruijnIndex;
 use quenchant_shape::shape::Maybe;
 
 use crate::context::CheckBudget;
+use crate::seal::SealSite;
 
 /// A term node of the core arena.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -313,6 +317,22 @@ pub enum CheckRefusal
         /// The declaration's universe.
         kind: ValueTypeId,
     },
+    /// An abstract type's kind is not a value universe.
+    AbstractKindNotUniverse(ValueTypeId),
+    /// A sealed representation forms above its abstract type's universe.
+    RepresentationAboveKind
+    {
+        /// The representation.
+        representation: ValueTypeId,
+        /// The abstract type's universe.
+        kind: ValueTypeId,
+    },
+    /// A sealed atom names no admitted abstract type: none was declared at
+    /// the position, or its declaration was refused.
+    NotAnAbstractType(ConstantIndex),
+    /// Two abstract types claimed one sealing site. The producer issues one
+    /// site per abstract component of each ascription, so this is its fault.
+    SealSiteRepeated(SealSite),
     /// A nominal application supplies the wrong number of parameters.
     DataArgumentArity(ValueTypeId),
     /// The constructor tag is not in the nominal declaration.
@@ -652,12 +672,14 @@ impl CheckRefusal
     ///   over a type that classifies no codes, an occurrence of a data
     ///   declaration's own family outside a strictly positive, uniform field, a
     ///   reference past its block, a descent claim that does not replay,
-    ///   reflexivity at endpoints its point does not reach and a compound
-    ///   endpoint that returns no pure value are malformed source; a former
-    ///   outside the fragment is unrepresentable; an unbound index, an
-    ///   exhausted allowance, a dangling id, an admission out of order, a
-    ///   machine invariant and an undecided unfolding are engine faults;
-    ///   nothing is a user absence.
+    ///   reflexivity at endpoints its point does not reach, a compound endpoint
+    ///   that returns no pure value, an abstract type's kind that is no
+    ///   universe, a representation above it and an atom naming no abstract
+    ///   type are malformed source; a former outside the fragment is
+    ///   unrepresentable; an unbound index, an exhausted allowance, a dangling
+    ///   id, an admission out of order, a repeated sealing site, a machine
+    ///   invariant and an undecided unfolding are engine faults; nothing is a
+    ///   user absence.
     /// - provides: the fact a report groups by and an exit code reads.
     /// - fails: never.
     /// - panics: none.
@@ -673,10 +695,11 @@ impl CheckRefusal
         | Self::BudgetExceeded { .. }
         | Self::DanglingNode { .. }
         | Self::AdmissionOrder { .. }
+        | Self::SealSiteRepeated(_)
         | Self::MachineInvariant
         | Self::Undecided { .. } => matches!(ret, FailureClass::EngineFault),
         | Self::PathCode(_) | Self::EndpointMismatch { .. } | Self::CompoundEndpoint { .. } | Self::PointwiseDistinct { .. } | Self::RoundTripDistinct { .. }
-        | Self::NotADataType(_) | Self::DataKindNotUniverse(_) | Self::DataFieldLevel { .. } | Self::DataArgumentArity(_) | Self::UnknownConstructor { .. } | Self::ConstructorArity(_) | Self::NonExhaustiveDataCase(_) | Self::AbsentRecordField(_) | Self::AbsentTupleComponent(_) | Self::MissingRecordField { .. }
+        | Self::NotADataType(_) | Self::DataKindNotUniverse(_) | Self::DataFieldLevel { .. } | Self::AbstractKindNotUniverse(_) | Self::RepresentationAboveKind { .. } | Self::NotAnAbstractType(_) | Self::DataArgumentArity(_) | Self::UnknownConstructor { .. } | Self::ConstructorArity(_) | Self::NonExhaustiveDataCase(_) | Self::AbsentRecordField(_) | Self::AbsentTupleComponent(_) | Self::MissingRecordField { .. }
         | Self::TypeMismatch(_)
         | Self::EffectSignatureConflict { .. }
         | Self::UnknownOperation { .. } | Self::HandlerCoverage { .. }
@@ -706,6 +729,9 @@ impl CheckRefusal
             | Self::NotADataType(_)
             | Self::DataKindNotUniverse(_)
             | Self::DataFieldLevel { .. }
+            | Self::AbstractKindNotUniverse(_)
+            | Self::RepresentationAboveKind { .. }
+            | Self::NotAnAbstractType(_)
             | Self::DataArgumentArity(_)
             | Self::UnknownConstructor { .. }
             | Self::ConstructorArity(_)
@@ -743,6 +769,7 @@ impl CheckRefusal
             | Self::BudgetExceeded { .. }
             | Self::DanglingNode { .. }
             | Self::AdmissionOrder { .. }
+            | Self::SealSiteRepeated(_)
             | Self::MachineInvariant
             | Self::Undecided { .. } => FailureClass::EngineFault,
         }
@@ -840,6 +867,10 @@ impl CheckRefusal
             | Self::NotADataType(_)
             | Self::DataKindNotUniverse(_)
             | Self::DataFieldLevel { .. }
+            | Self::AbstractKindNotUniverse(_)
+            | Self::RepresentationAboveKind { .. }
+            | Self::NotAnAbstractType(_)
+            | Self::SealSiteRepeated(_)
             | Self::DataArgumentArity(_)
             | Self::UnknownConstructor { .. }
             | Self::ConstructorArity(_)

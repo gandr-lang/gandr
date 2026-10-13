@@ -155,6 +155,7 @@ fn spelled_type(
     match *checkpoint.typing() {
         | Typing::Data => match *(content.declaration()) {
             | DeclarationRoots::Data(ref roots) => laid_out(content.nodes(), roots.kind),
+            | DeclarationRoots::Abstract(roots) => laid_out(content.nodes(), roots.kind),
             | DeclarationRoots::Value { .. } => Maybe::Absent(spelled::Absent::Unpresentable),
         },
         | Typing::Checked { .. } | Typing::Owed => match *(content.declaration()) {
@@ -166,7 +167,9 @@ fn spelled_type(
                 signature: Maybe::Absent(_),
                 ..
             } => Maybe::Absent(spelled::Absent::Unsigned),
-            | DeclarationRoots::Data(_) => Maybe::Absent(spelled::Absent::Unpresentable),
+            | DeclarationRoots::Data(_) | DeclarationRoots::Abstract(_) => {
+                Maybe::Absent(spelled::Absent::Unpresentable)
+            },
         },
         | Typing::Synthesised { ref produced, .. } => {
             laid_out(produced.nodes(), NodeIndex::from(0))

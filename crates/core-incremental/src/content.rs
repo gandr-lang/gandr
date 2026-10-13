@@ -63,13 +63,21 @@
 //!
 //! # Native declaration content and support
 //!
-//! A declaration's roots are `DeclarationRoots::Value` or
-//! `DeclarationRoots::Data`; the latter retains the kind, every parameter and
-//! every constructor field. Cache node tags `0x50–0x55` represent the six
-//! native data/record forms independently of kernel artifact tags, `0x5A` the
-//! positional tuple projection, its component a count after its tuple child,
-//! and `0x5B` the split, its arity a count between its scrutinee and body
-//! children. Field labels and arbitrary child counts survive persistence.
+//! A declaration's roots are `DeclarationRoots::Value`,
+//! `DeclarationRoots::Data` or `DeclarationRoots::Abstract`; data retains the
+//! kind, every parameter and every constructor field, and an abstract type its
+//! kind, its representation, the extent of its seal and the site that mints
+//! its atom. Cache node tags `0x50–0x55` represent the six native data/record
+//! forms independently of kernel artifact tags, `0x5A` the positional tuple
+//! projection, its component a count after its tuple child, and `0x5B` the
+//! split, its arity a count between its scrutinee and body children. Field
+//! labels and arbitrary child counts survive persistence.
+//!
+//! An abstract type answers no support query: a reader of its atom records
+//! the atom in a type position, so an edit to the representation, the extent
+//! or the site changes the abstract type's content and reaches every reader
+//! through the value-changed closure. Adoption forms it again and mints its
+//! atom in the new context.
 //!
 //! Support keys distinguish a value-signature query from a data-signature query
 //! at the same reference. A data answer contains the complete nominal schema or
@@ -1442,6 +1450,23 @@ pub enum DeclarationRoots
     },
     /// A complete nominal signature.
     Data(DataRoots),
+    /// A sealed abstract type.
+    Abstract(AbstractRoots),
+}
+
+/// The roots of a sealed abstract type, with the reach of its seal and the
+/// site that mints its atom.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct AbstractRoots
+{
+    /// The universe classifying the atom.
+    pub kind: NodeIndex,
+    /// The type the atom is sealed over.
+    pub representation: NodeIndex,
+    /// How many declarations after the abstract type its seal reaches.
+    pub extent: gandr_kernel_term::SealExtent,
+    /// The site that mints the atom.
+    pub site: gandr_core_checker::SealSite,
 }
 
 impl DeclarationRoots
@@ -1449,8 +1474,8 @@ impl DeclarationRoots
     /// Each root and its required family, in discovery order.
     ///
     /// # Specification
-    /// - ensures: value signature before body, or all nominal classifiers in
-    ///   order.
+    /// - ensures: value signature before body, all nominal classifiers in
+    ///   order, or an abstract type's kind before its representation.
     /// - executable: none — the return is an opaque iterator.
     ///
     /// # Adequacy
@@ -1477,6 +1502,13 @@ impl DeclarationRoots
                 None,
             ),
             | Self::Data(ref roots) => ([None, None], Some(roots)),
+            | Self::Abstract(roots) => (
+                [
+                    Some((roots.kind, Sort::ValueType)),
+                    Some((roots.representation, Sort::ValueType)),
+                ],
+                None,
+            ),
         };
         values.into_iter().flatten().chain(
             data.into_iter()
@@ -1670,7 +1702,7 @@ impl ItemContent
 if let DeclarationRoots::Value { signature:Maybe::Present(ref root),.. } = *matched_left_value && let Some(content) = matched_right_value { self.nodes.get(usize::from(*root)).map_or_else(
             || content.nodes == [ContentNode::Unresolved(Sort::Value)],
             |node| content.nodes.first().is_some_and(|first| first.sort() == node.sort())) }
- else { matches!(*matched_left_value, DeclarationRoots::Value { signature:Maybe::Absent(_),.. } | DeclarationRoots::Data(_)) && matched_right_value.is_none() }
+ else { matches!(*matched_left_value, DeclarationRoots::Value { signature:Maybe::Absent(_),.. } | DeclarationRoots::Data(_) | DeclarationRoots::Abstract(_)) && matched_right_value.is_none() }
 })]
     pub(crate) fn signature_type(&self) -> Option<TypeContent>
     {
@@ -1685,7 +1717,8 @@ if let DeclarationRoots::Value { signature:Maybe::Present(ref root),.. } = *matc
                 signature: Maybe::Absent(_),
                 ..
             }
-            | DeclarationRoots::Data(_) => None,
+            | DeclarationRoots::Data(_)
+            | DeclarationRoots::Abstract(_) => None,
         }
     }
 }
@@ -1898,6 +1931,9 @@ if let gandr_core_checker::DeclarationContent::Value { ref signature,ref body } 
                     && signature.parameters().iter().map(|&ty| ret.sites.0.get(&ArenaNode::ValueType(ty))).eq(roots.parameters.iter().map(Some))
                     && signature.constructors().len() == roots.constructors.len()
                     && signature.constructors().iter().zip(&roots.constructors).all(|(fields,roots)| fields.iter().map(|&ty| ret.sites.0.get(&ArenaNode::ValueType(ty))).eq(roots.iter().map(Some))) }
+ else if let gandr_core_checker::DeclarationContent::Abstract(sealed) = *matched_left_value && let DeclarationRoots::Abstract(roots) = *matched_right_value { ret.sites.0.get(&ArenaNode::ValueType(sealed.kind())) == Some(&roots.kind)
+                    && ret.sites.0.get(&ArenaNode::ValueType(sealed.representation())) == Some(&roots.representation)
+                    && roots.extent == sealed.extent() && roots.site == sealed.site() }
  else { false }
 },
         None => ret.content.reference == Reference::Unoccupied
@@ -1923,6 +1959,15 @@ pub fn encode_item(
                 },
                 | gandr_core_checker::DeclarationContent::Data(ref signature) => {
                     DeclarationRoots::Data(encoder.data_roots(signature))
+                },
+                | gandr_core_checker::DeclarationContent::Abstract(sealed) => {
+                    DeclarationRoots::Abstract(AbstractRoots {
+                        kind: encoder.discover(ArenaNode::ValueType(sealed.kind())),
+                        representation: encoder
+                            .discover(ArenaNode::ValueType(sealed.representation())),
+                        extent: sealed.extent(),
+                        site: sealed.site(),
+                    })
                 },
             };
             let reference = layout

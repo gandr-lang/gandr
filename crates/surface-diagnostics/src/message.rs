@@ -360,6 +360,18 @@ fn checked(
         | CheckRefusal::DataFieldLevel { .. } => {
             f.write_str("a constructor field lives in a larger universe than its datatype")
         },
+        | CheckRefusal::AbstractKindNotUniverse(_) => {
+            f.write_str("an abstract type's kind must be a universe")
+        },
+        | CheckRefusal::RepresentationAboveKind { .. } => {
+            f.write_str("the type sealed here lives in a larger universe than its abstract type")
+        },
+        | CheckRefusal::NotAnAbstractType(_) => {
+            f.write_str("this names an abstract type that was not admitted")
+        },
+        | CheckRefusal::SealSiteRepeated(_) => {
+            f.write_str("internal error: one abstract component was sealed twice")
+        },
         | CheckRefusal::DataArgumentArity(_) => {
             f.write_str("the datatype is given the wrong number of arguments")
         },
@@ -529,9 +541,12 @@ mod tests
     use gandr_core_checker::CheckBudget;
     use gandr_core_checker::CheckRefusal;
     use gandr_core_checker::CheckingForm;
+    use gandr_core_checker::ComponentOrdinal;
     use gandr_core_checker::CoreNode;
     use gandr_core_checker::ExpectedShape;
     use gandr_core_checker::Mismatch;
+    use gandr_core_checker::SealSite;
+    use gandr_core_checker::SealingSite;
     use gandr_core_checker::StaticArity;
     use gandr_core_checker::TermNode;
     use gandr_core_checker::TypeNode;
@@ -688,6 +703,16 @@ mod tests
                 field: value_type,
                 kind: value_type,
             },
+            CheckRefusal::AbstractKindNotUniverse(value_type),
+            CheckRefusal::RepresentationAboveKind {
+                representation: value_type,
+                kind: value_type,
+            },
+            CheckRefusal::NotAnAbstractType(ConstantIndex::from(0_usize)),
+            CheckRefusal::SealSiteRepeated(SealSite::new(
+                SealingSite::from(0_usize),
+                ComponentOrdinal::from(0_usize),
+            )),
             CheckRefusal::DataArgumentArity(value_type),
             CheckRefusal::UnknownConstructor {
                 at: value,

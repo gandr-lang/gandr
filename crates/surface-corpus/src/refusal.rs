@@ -271,6 +271,14 @@ pub enum RefusalName
     DataKindNotUniverse,
     /// The checker reports `DataFieldLevel`.
     DataFieldLevel,
+    /// The checker reports `AbstractKindNotUniverse`.
+    AbstractKindNotUniverse,
+    /// The checker reports `RepresentationAboveKind`.
+    RepresentationAboveKind,
+    /// The checker reports `NotAnAbstractType`.
+    NotAnAbstractType,
+    /// The checker reports `SealSiteRepeated`.
+    SealSiteRepeated,
     /// The checker reports `DataArgumentArity`.
     DataArgumentArity,
     /// The checker reports `UnknownConstructor`.
@@ -433,10 +441,14 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 74_usize] = [
+    pub const VOCABULARY: [Self; 78_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
+        Self::AbstractKindNotUniverse,
+        Self::RepresentationAboveKind,
+        Self::NotAnAbstractType,
+        Self::SealSiteRepeated,
         Self::DataArgumentArity,
         Self::UnknownConstructor,
         Self::ConstructorArity,
@@ -565,6 +577,10 @@ impl RefusalName
         | (Self::NotADataType, b"NotADataType")
         | (Self::DataKindNotUniverse, b"DataKindNotUniverse")
         | (Self::DataFieldLevel, b"DataFieldLevel")
+        | (Self::AbstractKindNotUniverse, b"AbstractKindNotUniverse")
+        | (Self::RepresentationAboveKind, b"RepresentationAboveKind")
+        | (Self::NotAnAbstractType, b"NotAnAbstractType")
+        | (Self::SealSiteRepeated, b"SealSiteRepeated")
         | (Self::DataArgumentArity, b"DataArgumentArity")
         | (Self::UnknownConstructor, b"UnknownConstructor")
         | (Self::ConstructorArity, b"ConstructorArity")
@@ -599,6 +615,10 @@ impl RefusalName
             | Self::NotADataType => "NotADataType",
             | Self::DataKindNotUniverse => "DataKindNotUniverse",
             | Self::DataFieldLevel => "DataFieldLevel",
+            | Self::AbstractKindNotUniverse => "AbstractKindNotUniverse",
+            | Self::RepresentationAboveKind => "RepresentationAboveKind",
+            | Self::NotAnAbstractType => "NotAnAbstractType",
+            | Self::SealSiteRepeated => "SealSiteRepeated",
             | Self::DataArgumentArity => "DataArgumentArity",
             | Self::UnknownConstructor => "UnknownConstructor",
             | Self::ConstructorArity => "ConstructorArity",
@@ -865,6 +885,10 @@ impl Refusal<'_>
         (Self::Checking(CheckRefusal::NotADataType(_)), RefusalName::NotADataType)
         | (Self::Checking(CheckRefusal::DataKindNotUniverse(_)), RefusalName::DataKindNotUniverse)
         | (Self::Checking(CheckRefusal::DataFieldLevel { .. }), RefusalName::DataFieldLevel)
+        | (Self::Checking(CheckRefusal::AbstractKindNotUniverse(_)), RefusalName::AbstractKindNotUniverse)
+        | (Self::Checking(CheckRefusal::RepresentationAboveKind { .. }), RefusalName::RepresentationAboveKind)
+        | (Self::Checking(CheckRefusal::NotAnAbstractType(_)), RefusalName::NotAnAbstractType)
+        | (Self::Checking(CheckRefusal::SealSiteRepeated(_)), RefusalName::SealSiteRepeated)
         | (Self::Checking(CheckRefusal::DataArgumentArity(_)), RefusalName::DataArgumentArity)
         | (Self::Checking(CheckRefusal::UnknownConstructor { .. }), RefusalName::UnknownConstructor)
         | (Self::Checking(CheckRefusal::ConstructorArity(_)), RefusalName::ConstructorArity)
@@ -1067,6 +1091,10 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::NotADataType(_), RefusalName::NotADataType)
         | (CheckRefusal::DataKindNotUniverse(_), RefusalName::DataKindNotUniverse)
         | (CheckRefusal::DataFieldLevel { .. }, RefusalName::DataFieldLevel)
+        | (CheckRefusal::AbstractKindNotUniverse(_), RefusalName::AbstractKindNotUniverse)
+        | (CheckRefusal::RepresentationAboveKind { .. }, RefusalName::RepresentationAboveKind)
+        | (CheckRefusal::NotAnAbstractType(_), RefusalName::NotAnAbstractType)
+        | (CheckRefusal::SealSiteRepeated(_), RefusalName::SealSiteRepeated)
         | (CheckRefusal::DataArgumentArity(_), RefusalName::DataArgumentArity)
         | (CheckRefusal::UnknownConstructor { .. }, RefusalName::UnknownConstructor)
         | (CheckRefusal::ConstructorArity(_), RefusalName::ConstructorArity)
@@ -1101,6 +1129,10 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
         | CheckRefusal::NotADataType(_) => RefusalName::NotADataType,
         | CheckRefusal::DataKindNotUniverse(_) => RefusalName::DataKindNotUniverse,
         | CheckRefusal::DataFieldLevel { .. } => RefusalName::DataFieldLevel,
+        | CheckRefusal::AbstractKindNotUniverse(_) => RefusalName::AbstractKindNotUniverse,
+        | CheckRefusal::RepresentationAboveKind { .. } => RefusalName::RepresentationAboveKind,
+        | CheckRefusal::NotAnAbstractType(_) => RefusalName::NotAnAbstractType,
+        | CheckRefusal::SealSiteRepeated(_) => RefusalName::SealSiteRepeated,
         | CheckRefusal::DataArgumentArity(_) => RefusalName::DataArgumentArity,
         | CheckRefusal::UnknownConstructor { .. } => RefusalName::UnknownConstructor,
         | CheckRefusal::ConstructorArity(_) => RefusalName::ConstructorArity,
