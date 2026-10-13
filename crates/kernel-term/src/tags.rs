@@ -58,7 +58,8 @@
 //! | `0x31` | `here`, one point value child | Admitted |
 //! | `0x32` | Dependent transport, motive (value type under one binder), path and input children | Admitted |
 //! | `0x33` | Guarded higher field, inline depth and layers, one evidence child per guard | Admitted |
-//! | `0x34–0x37` | Unassigned element-identity growth | Refused |
+//! | `0x34` | Returned endpoint, one computation child | Assigned; refused until kernel checking lands |
+//! | `0x35–0x37` | Unassigned element-identity growth | Refused |
 //! | `0x38` | Higher evaluation, inline dialogues and three value children per component | Admitted |
 //! | `0x39` | Related-inputs application, path, two arguments, evidence and a body under three binders | Admitted |
 //! | `0x3A` | Reserved: quantified higher evaluation | Refused |
@@ -150,6 +151,7 @@
 //! | `0x31` | [`NODE_V_HERE`] | value | the point `a` | none |
 //! | `0x32` | [`NODE_C_PATH_TRANSPORT`] | computation | the motive, a value type under one value binder; the path; the input value | none |
 //! | `0x33` | [`NODE_V_HIGHER`] | value | one evidence value per guard layer, in layer order | depth, root, layer count, layers |
+//! | `0x34` | [`NODE_V_RETURNED`] | value | the pure computation whose returned value the node stands for | none |
 //! | `0x38` | [`NODE_V_HIGHER_EVALUATION`] | value | per component: left returned value, right returned value, output evidence | component count, then per component the left and the right dialogue |
 //! | `0x39` | [`NODE_C_RELATED_APPLICATION`] | computation | the function path; left and right arguments; argument evidence; the body under three value binders | none |
 //!
@@ -160,7 +162,9 @@
 //! the endpoint binder. A higher-field layer is [`HIGHER_GUARD`] followed by
 //! its tail position, or [`HIGHER_REDIRECT`] followed by its target position;
 //! positions, depth and counts are unsigned varints, and dialogues use the
-//! decision alphabet of [`NODE_V_PATH_EQUIV`]'s evidence.
+//! decision alphabet of [`NODE_V_PATH_EQUIV`]'s evidence. The child of
+//! [`NODE_V_RETURNED`] is a computation-family node, so a value or type
+//! child is refused as a polarity fault.
 //!
 //! [`NODE_V_QUANTIFIED_EVALUATION`] and [`NODE_V_DEPENDENT_EVALUATION`] name
 //! the next two function-identity introductions — a component whose body
@@ -540,6 +544,15 @@ pub const NODE_V_HIGHER: WireTag = WireTag(0x33);
 pub const HIGHER_GUARD: WireTag = WireTag(0);
 /// Higher-field layer kind: follow an edge without exposing a constructor.
 pub const HIGHER_REDIRECT: WireTag = WireTag(1);
+
+/// Node tag: a returned endpoint, the value a pure computation returns,
+/// standing where a value is read, over that one computation.
+///
+/// An identity endpoint such as `mul(neutral, x)` is a computation's result
+/// rather than a value former; the node keeps the computation, so the kernel
+/// re-derives the result by its own reduction instead of trusting a value a
+/// producer computed.
+pub const NODE_V_RETURNED: WireTag = WireTag(0x34);
 
 /// Node tag: higher evaluation, the introduction of identity at a thunk code,
 /// with inline replay dialogues over three values per coverage component.
