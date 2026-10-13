@@ -39,6 +39,7 @@
 //! [`synthesise_value`]: crate::synthesise_value
 //! [`check_module`]: crate::check_module
 
+use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::fmt;
 
@@ -49,6 +50,7 @@ use quenchant_shape::shape::Maybe;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CoreNode;
 use crate::refusal::TypeNode;
+use crate::session::LiveEndpoint;
 
 quenchant_shape::reason_enum! {
     /// Why a judgement names no type it was checked against.
@@ -235,6 +237,19 @@ pub enum FrameRole
     ReturnValue,
     /// An injection's payload is being checked.
     InjectionPayload,
+    /// A session type waits on its payloads' formation, none of which may be
+    /// a session type.
+    FormSession,
+    /// A send waits on its payload's check, then advances its endpoint.
+    SessionSend,
+    /// An offer's arm is being checked from the zone the offer found.
+    OfferArm,
+    /// A fork waits on its protocol annotation's formation.
+    ForkProtocol,
+    /// A fork's child is being checked with its end.
+    ForkChild,
+    /// A fork's parent is being judged with its end.
+    ForkParent,
 }
 
 impl fmt::Display for FrameRole
@@ -332,6 +347,12 @@ impl fmt::Display for FrameRole
             | Self::ThunkBody => "ThunkBody",
             | Self::ReturnValue => "ReturnValue",
             | Self::InjectionPayload => "InjectionPayload",
+            | Self::FormSession => "FormSession",
+            | Self::SessionSend => "SessionSend",
+            | Self::OfferArm => "OfferArm",
+            | Self::ForkProtocol => "ForkProtocol",
+            | Self::ForkChild => "ForkChild",
+            | Self::ForkParent => "ForkParent",
         })
     }
 }
@@ -498,7 +519,8 @@ impl Pursuit
 }
 
 /// A refused run's state: the refusal, the obligations pending outermost
-/// first, the goal under way and the hypotheses the run had opened.
+/// first, the goal under way, the hypotheses the run had opened and the
+/// endpoints its linear zone held.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Failure
 {
@@ -508,29 +530,37 @@ pub struct Failure
     obligations: Vec<Obligation>,
     /// The goal under way.
     pursuit: Pursuit,
-    /// The binders the run had opened, outermost first.
-    hypotheses: Vec<ValueTypeId>,
+    /// The binders the run had opened, outermost first. Boxed slices, not
+    /// vectors: a failure is returned by value on every refused path, and
+    /// the two capacities it would never use kept it past the size an error
+    /// is passed at cheaply.
+    hypotheses: Box<[ValueTypeId]>,
+    /// The endpoints the run had bound, outermost first.
+    endpoints: Box<[LiveEndpoint]>,
 }
 
 impl Failure
 {
     /// The failure of a run that refused with `refusal` while pursuing
-    /// `pursuit`, `obligations` pending and `hypotheses` open.
+    /// `pursuit`, `obligations` pending, `hypotheses` open and `endpoints`
+    /// bound.
     ///
     /// # Specification
     /// trivial.
-    pub(crate) const fn new(
+    pub(crate) fn new(
         refusal: CheckRefusal,
         obligations: Vec<Obligation>,
         pursuit: Pursuit,
         hypotheses: Vec<ValueTypeId>,
+        endpoints: Vec<LiveEndpoint>,
     ) -> Self
     {
         Self {
             refusal,
             obligations,
             pursuit,
-            hypotheses,
+            hypotheses: hypotheses.into_boxed_slice(),
+            endpoints: endpoints.into_boxed_slice(),
         }
     }
 
@@ -539,7 +569,7 @@ impl Failure
     ///
     /// # Specification
     /// trivial.
-    pub(crate) const fn bare(
+    pub(crate) fn bare(
         refusal: CheckRefusal,
         pursuit: Pursuit,
     ) -> Self
@@ -548,7 +578,8 @@ impl Failure
             refusal,
             obligations: Vec::new(),
             pursuit,
-            hypotheses: Vec::new(),
+            hypotheses: Box::default(),
+            endpoints: Box::default(),
         }
     }
 
@@ -596,16 +627,29 @@ impl Failure
         &self.hypotheses
     }
 
+    /// The endpoints the run had bound, outermost first, each with its
+    /// session type and whether it was still unconsumed: a leftover
+    /// endpoint's refusal names one, and these name every one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn endpoints(&self) -> &[LiveEndpoint]
+    {
+        &self.endpoints
+    }
+
     /// Every type node the failure names: the types its refusal compares,
     /// each obligation's expected type and binders, the pursuit's expected
-    /// type and the hypotheses.
+    /// type, the hypotheses and the endpoints' session types.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: each type node the refusal compares, then the pursuit's
     ///   expected type, then each obligation's expected type and binders in
-    ///   order, then the hypotheses, each when present; a node named twice is
-    ///   yielded twice.
+    ///   order, then the hypotheses, then the endpoints' session types, each
+    ///   when present; a node named twice is yielded twice.
     /// - provides: the nodes a face spells while the arena is at hand.
     /// - fails: never.
     /// - panics: none.
@@ -638,6 +682,11 @@ impl Failure
             types.extend(obligation.binders.iter().copied().map(TypeNode::Value));
         }
         types.extend(self.hypotheses.iter().copied().map(TypeNode::Value));
+        types.extend(
+            self.endpoints
+                .iter()
+                .map(|live| TypeNode::Value(live.state)),
+        );
         types
     }
 }
@@ -726,6 +775,12 @@ mod tests
             FrameRole::ThunkBody,
             FrameRole::ReturnValue,
             FrameRole::InjectionPayload,
+            FrameRole::FormSession,
+            FrameRole::SessionSend,
+            FrameRole::OfferArm,
+            FrameRole::ForkProtocol,
+            FrameRole::ForkChild,
+            FrameRole::ForkParent,
         ];
         let names: Vec<_> = roles.iter().map(ToString::to_string).collect();
         for (index, name) in names.iter().enumerate() {

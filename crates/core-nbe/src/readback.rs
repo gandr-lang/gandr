@@ -700,6 +700,9 @@ enum Task
     DataType(ValueTypeId),
     /// Assemble a record type with the source's exact labels.
     RecordType(ValueTypeId),
+    /// Assemble a session type with the source's protocol and state over as
+    /// many types on the stack as the source has payloads.
+    SessionType(ValueTypeId),
     /// Assemble a case with a normalized motive and ambient branch functions.
     DataCase(ComputationId),
     /// Assemble a projection with the source's exact label or component.
@@ -2162,6 +2165,10 @@ fn run(
         | Task::RecordType(source) => matches!(core.value_type(source), Some(ValueType::Record(fields))
             if entry_value_types.checked_sub(fields.len()).and_then(|n| n.checked_add(1)) == Some(machine.value_types.len())
             && machine.value_types.last().is_some_and(|&id| matches!(core.value_type(id), Some(ValueType::Record(result)) if fields.keys().eq(result.keys())))),
+        | Task::SessionType(source) => matches!(core.value_type(source), Some(ValueType::Session(session))
+            if entry_value_types.checked_sub(session.payloads().len()).and_then(|n| n.checked_add(1)) == Some(machine.value_types.len())
+            && machine.value_types.last().is_some_and(|&id| matches!(core.value_type(id), Some(ValueType::Session(result))
+                if result.protocol() == session.protocol() && result.state() == session.state()))),
         | Task::DataCase(source) => matches!(core.computation(source), Some(Computation::DataCase { branches, .. })
             if entry_values.checked_sub(1) == Some(machine.values.len())
             && entry_comp_types.checked_sub(1) == Some(machine.comp_types.len())
@@ -2291,6 +2298,29 @@ fn step(
                 .zip(machine.value_types.drain(start ..))
                 .collect();
             machine.value_types.push(core.value_type_record(fields));
+            Ok(())
+        },
+        | Task::SessionType(source) => {
+            let Some(matched_native_node) = core.value_type(source)
+            else {
+                return Err(ReadbackFault::MachineInvariant);
+            };
+            let ValueType::Session(ref session) = *matched_native_node
+            else {
+                return Err(ReadbackFault::MachineInvariant);
+            };
+            let start = machine
+                .value_types
+                .len()
+                .checked_sub(session.payloads().len())
+                .ok_or(ReadbackFault::MachineInvariant)?;
+            let mut payloads = machine.value_types.drain(start ..);
+            let rebuilt = session
+                .try_map_payloads(gandr_core_term::session::ChildOrder::Forward, |_| {
+                    payloads.next().ok_or(ReadbackFault::MachineInvariant)
+                })?;
+            drop(payloads);
+            machine.value_types.push(core.value_type_session(rebuilt));
             Ok(())
         },
         | Task::DataCase(source) => {
@@ -2854,6 +2884,10 @@ ValueType::Record(ref fields) => machine.value_types.len() == entry_results
             && new_tasks.first() == Some(&Task::RecordType(quoted))
             && new_tasks.len() == fields.len().saturating_add(1)
             && new_tasks.iter().skip(1).zip(fields.values().rev()).all(|(task, field)| *task == Task::QuotedValueType { quoted: *field, frame, binders }),
+ValueType::Session(ref session) => machine.value_types.len() == entry_results
+            && new_tasks.first() == Some(&Task::SessionType(quoted))
+            && new_tasks.len() == session.payloads().len().saturating_add(1)
+            && new_tasks.iter().skip(1).zip(session.payloads().iter().rev()).all(|(task, payload)| *task == Task::QuotedValueType { quoted: *payload, frame, binders }),
 ValueType::Path { carrier, left, right } => machine.value_types.len() == entry_results
             && matches!(new_tasks, [Task::PathType, Task::QuotedCode { code: second, .. }, Task::QuotedCode { code: first, .. }, Task::QuotedValueType { quoted: child, .. }]
                 if *second == right && *first == left && *child == carrier),
@@ -2942,6 +2976,12 @@ fn step_quoted_value_type(
             machine
                 .tasks
                 .extend(fields.values().rev().map(|&field| at(field)));
+        },
+        | ValueType::Session(ref session) => {
+            machine.tasks.push(Task::SessionType(quoted));
+            machine
+                .tasks
+                .extend(session.payloads().iter().rev().map(|&payload| at(payload)));
         },
         | ValueType::Product(ref parts) => {
             machine.tasks.push(Task::ProductType(quoted));

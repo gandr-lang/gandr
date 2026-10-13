@@ -5108,7 +5108,7 @@ mod tests
          CoreTerm::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
           Computation::DataCase {scrutinee,ref branches,..} => ret.iter().copied().eq(core::iter::once(CoreTerm::Value(scrutinee)).chain(branches.iter().copied().map(CoreTerm::Computation))),
           Computation::RecordProjection(record,_) | Computation::TupleProjection(record,_) => ret.as_slice() == [CoreTerm::Value(record)],
-          Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Split { .. } | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } => false,
+          Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Split { .. } | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } | Computation::Session(_) => false,
           Computation::ListFold { list,on_nil,on_cons,.. } => ret.as_slice() == [CoreTerm::Value(list),CoreTerm::Computation(on_nil),CoreTerm::Computation(on_cons)],
           Computation::Primitive { arguments, .. } => ret.iter().copied().eq(arguments.iter().copied().map(CoreTerm::Value)),
           Computation::Transport(path, value) => ret.as_slice() == [CoreTerm::Value(path), CoreTerm::Value(value)],
@@ -5195,7 +5195,8 @@ mod tests
                     | Computation::Reset(_)
                     | Computation::Shift(_)
                     | Computation::With(..)
-                    | Computation::Project(..) => {
+                    | Computation::Project(..)
+                    | Computation::Session(_) => {
                         panic!("the pure fixture language has no runtime control formers")
                     },
                     | Computation::ListFold {
@@ -5425,7 +5426,8 @@ mod tests
                                 | Computation::Reset(_)
                                 | Computation::Shift(_)
                                 | Computation::With(..)
-                                | Computation::Project(..) => panic!(
+                                | Computation::Project(..)
+                                | Computation::Session(_) => panic!(
                                     "the pure fixture language has no runtime control formers"
                                 ),
                                 | Computation::ListFold {
@@ -5541,7 +5543,7 @@ mod tests
          CoreTerm::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
           Computation::DataCase {scrutinee,ref branches,..} => ret.iter().copied().eq(core::iter::once(canon[&CoreTerm::Value(scrutinee)]).chain(branches.iter().map(|branch| canon[&CoreTerm::Computation(*branch)]))),
           Computation::RecordProjection(record,_) | Computation::TupleProjection(record,_) => ret.as_slice() == [canon[&CoreTerm::Value(record)]],
-          Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Split { .. } | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } => false,
+          Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Split { .. } | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } | Computation::Session(_) => false,
           Computation::ListFold { list,on_nil,on_cons,.. } => ret.as_slice() == [canon[&CoreTerm::Value(list)],canon[&CoreTerm::Computation(on_nil)],canon[&CoreTerm::Computation(on_cons)]],
           Computation::Primitive { arguments, .. } => ret.iter().copied().eq(arguments.iter().map(|argument| canon[&CoreTerm::Value(*argument)])),
           Computation::Transport(path, value) => ret.as_slice() == [canon[&CoreTerm::Value(path)], canon[&CoreTerm::Value(value)]],
@@ -5845,7 +5847,8 @@ mod tests
                                 | Computation::Reset(_)
                                 | Computation::Shift(_)
                                 | Computation::With(..)
-                                | Computation::Project(..) => panic!(
+                                | Computation::Project(..)
+                                | Computation::Session(_) => panic!(
                                     "the pure fixture language has no runtime control formers"
                                 ),
                                 | Computation::Primitive { .. } => {
@@ -6151,7 +6154,7 @@ mod tests
              Node::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
               Computation::DataCase {scrutinee,motive,ref branches} => ret.iter().copied().eq([Node::Value(scrutinee),Node::CompType(motive)].into_iter().chain(branches.iter().copied().map(Node::Computation))),
               Computation::RecordProjection(record,_) | Computation::TupleProjection(record,_) => ret.as_slice() == [Node::Value(record)],
-          Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Split { .. } | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } => false,
+          Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Split { .. } | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } | Computation::Session(_) => false,
               Computation::ListFold { element,result,list,on_nil,on_cons } => ret.as_slice() == [Node::ValueType(element),Node::ValueType(result),Node::Value(list),Node::Computation(on_nil),Node::Computation(on_cons)],
               Computation::Primitive { arguments, .. } => ret.iter().copied().eq(arguments.iter().copied().map(Node::Value)),
               Computation::Transport(path, value) => ret.as_slice() == [Node::Value(path), Node::Value(value)],
@@ -6165,7 +6168,7 @@ mod tests
              Node::ValueType(id) => core.value_type(id).is_some_and(|value_type| match *value_type {
               ValueType::Data {ref arguments,..} => ret.iter().copied().eq(arguments.iter().copied().map(Node::Value)),
               ValueType::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(Node::ValueType)),
-              ValueType::Stack { .. } | ValueType::Path { .. } => false,
+              ValueType::Stack { .. } | ValueType::Path { .. } | ValueType::Session(_) => false,
               ValueType::PathUniverse(source, target) => ret.as_slice() == [Node::Value(source), Node::Value(target)],
               ValueType::Product(ref parts) | ValueType::Sum(ref parts) => ret.iter().copied().eq(parts.iter().copied().map(Node::ValueType)),
               ValueType::StaticPi{domain:a,codomain:b} => ret.as_slice() == [Node::ValueType(a),Node::ValueType(b)],
@@ -6275,7 +6278,8 @@ mod tests
                         | Computation::Reset(_)
                         | Computation::Shift(_)
                         | Computation::With(..)
-                        | Computation::Project(..) => {
+                        | Computation::Project(..)
+                        | Computation::Session(_) => {
                             panic!("the pure fixture language has no runtime control formers")
                         },
                         | Computation::ListFold {
@@ -6332,6 +6336,7 @@ mod tests
                             fields.values().copied().map(Node::ValueType).collect()
                         },
                         | ValueType::Stack { .. } => panic!("the kernel has no stack type"),
+                        | ValueType::Session(_) => panic!("the kernel has no session type"),
                         | ValueType::Path { .. } => {
                             panic!("the pure fixture language has no element identity")
                         },
@@ -6644,6 +6649,9 @@ mod tests
                         | Computation::Hole(_) | Computation::Mark { .. } => {
                             panic!("the kernel admits no hole or mark: a replay fixture has none")
                         },
+                        | Computation::Session(_) => {
+                            panic!("the kernel has no session action: a replay fixture has none")
+                        },
                     };
                     self.computations.insert(id, copy);
                 },
@@ -6673,6 +6681,7 @@ mod tests
                             self.arena.value_type_record(fields)
                         },
                         | ValueType::Stack { .. } => panic!("the kernel has no stack type"),
+                        | ValueType::Session(_) => panic!("the kernel has no session type"),
                         | ValueType::Path { .. } => {
                             panic!("the pure fixture language has no element identity")
                         },

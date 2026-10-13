@@ -179,6 +179,7 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::hole::HoleId;
 use gandr_core_term::hole::MarkIndex;
+use gandr_core_term::session::SessionAction;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::DeBruijnIndex;
@@ -572,6 +573,9 @@ pub enum ContentNode
         /// The cell branch beneath two binders.
         on_cons: NodeIndex,
     },
+    /// A session action: payload, arms, fork protocol and halves as edges,
+    /// endpoints and labels as written.
+    Session(gandr_core_term::session::SessionAction<NodeIndex, NodeIndex, NodeIndex>),
     /// A base-type atom.
     Base(BaseType),
     /// A product type over its components, in order; the empty product is
@@ -615,6 +619,8 @@ pub enum ContentNode
         /// The codomain.
         codomain: NodeIndex,
     },
+    /// A session type: its protocol and state, payload edges in slot order.
+    SessionType(gandr_core_term::session::SessionType<NodeIndex>),
     /// A sealed abstract type, by what its position names.
     Abstract(Reference),
     /// The unknown value type.
@@ -905,6 +911,7 @@ impl ContentNode
         | Self::Case { .. }
         | Self::ComputationHole(_)
         | Self::ComputationMark { .. }
+        | Self::Session(_)
         | Self::Fixpoint { .. } => matches!(ret, Sort::Computation),
         | Self::Data { .. }
         | Self::RecordType(_)
@@ -920,6 +927,7 @@ impl ContentNode
         | Self::TypeLift { .. }
         | Self::Element { .. }
         | Self::Abstract(_)
+        | Self::SessionType(_)
         | Self::StaticPi { .. }
         | Self::UnknownType => matches!(ret, Sort::ValueType),
         | Self::WithType(..)
@@ -992,6 +1000,7 @@ impl ContentNode
             | Self::Case { .. }
             | Self::ComputationHole(_)
             | Self::ComputationMark { .. }
+            | Self::Session(_)
             | Self::Fixpoint { .. } => Sort::Computation,
             | Self::Data { .. }
             | Self::RecordType(_)
@@ -1007,6 +1016,7 @@ impl ContentNode
             | Self::TypeLift { .. }
             | Self::Element { .. }
             | Self::Abstract(_)
+            | Self::SessionType(_)
             | Self::StaticPi { .. }
             | Self::UnknownType => Sort::ValueType,
             | Self::WithType(..)
@@ -1060,6 +1070,8 @@ impl ContentNode
             | Self::Reset(body) | Self::Shift(body) | Self::Project(_, body) => actual == Some(&[(body, M)][..]),
             | Self::With(first, second) => actual == Some(&[(first, M), (second, M)][..]),
             | Self::Primitive(_, arguments) => actual.is_some_and(|children| children.iter().copied().eq(arguments.iter().copied().map(|argument| (argument, V)))),
+            | Self::Session(ref action) => ret.iter().eq(action.value_types().map(|ty| (ty, A)).chain(action.values().map(|value| (value, V))).chain(action.computations().map(|body| (body, M)))),
+            | Self::SessionType(ref session) => ret.iter().eq(session.payloads().iter().map(|&payload| (payload, A))),
             | Self::PrimitiveValue(_) | Self::Variable { .. }
             | Self::Constant(_)
             | Self::ListNil
@@ -1175,6 +1187,21 @@ impl ContentNode
                 Children::of(&[(body, M)])
             },
             | Self::With(first, second) => Children::of(&[(first, M), (second, M)]),
+            | Self::Session(ref action) => match *action {
+                | SessionAction::Send { payload, .. } => Children::of(&[(payload, V)]),
+                | SessionAction::Offer { ref arms, .. } => Children::fields(arms, M),
+                | SessionAction::Fork {
+                    protocol,
+                    child,
+                    parent,
+                } => Children::of(&[(protocol, A), (child, M), (parent, M)]),
+                | SessionAction::Receive { .. }
+                | SessionAction::Select { .. }
+                | SessionAction::Close { .. } => Children::default(),
+            },
+            | Self::SessionType(ref session) => {
+                Children::default().followed_by(session.payloads(), A)
+            },
             | Self::Primitive(_, arguments) => match arguments {
                 | gandr_core_term::primitive::Arguments::Unary(argument) => {
                     Children::of(&[(argument, V)])
@@ -1339,6 +1366,8 @@ impl ContentNode
             | Self::Reset(_)
             | Self::Shift(_)
             | Self::With(..)
+            | Self::Session(_)
+            | Self::SessionType(_)
             | Self::Project(..)
             | Self::PrimitiveValue(_)
             | Self::Primitive(..)
@@ -2470,6 +2499,21 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
             | Computation::TupleProjection(tuple, component) => {
                 ContentNode::TupleProjection(self.discover(ArenaNode::Value(tuple)), component)
             },
+            | Computation::Session(ref action) => ContentNode::Session(
+                action
+                    .try_map(
+                        gandr_core_term::session::ChildOrder::Forward,
+                        self,
+                        |reader, value| {
+                            Ok::<_, core::convert::Infallible>(
+                                reader.discover(ArenaNode::Value(value)),
+                            )
+                        },
+                        |reader, body| Ok(reader.discover(ArenaNode::Computation(body))),
+                        |reader, ty| Ok(reader.discover(ArenaNode::ValueType(ty))),
+                    )
+                    .unwrap_or_else(|never| match never {}),
+            ),
             | Computation::Perform {
                 ref signature,
                 ref operation,
@@ -2660,6 +2704,13 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ) -> ContentNode
     {
         match *value_type {
+            | ValueType::Session(ref session) => ContentNode::SessionType(
+                session
+                    .try_relocate(|ty| {
+                        Ok::<_, core::convert::Infallible>(self.discover(ArenaNode::ValueType(ty)))
+                    })
+                    .unwrap_or_else(|never| match never {}),
+            ),
             | ValueType::Data {
                 declaration,
                 ref arguments,
@@ -2958,6 +3009,22 @@ where
         | ContentNode::WithType(first, second) => {
             ContentNode::WithType(image(first), image(second))
         },
+        | ContentNode::Session(ref action) => ContentNode::Session(
+            action
+                .try_map(
+                    gandr_core_term::session::ChildOrder::Forward,
+                    image,
+                    |image, value| Ok::<_, core::convert::Infallible>(image(value)),
+                    |image, body| Ok(image(body)),
+                    |image, ty| Ok(image(ty)),
+                )
+                .unwrap_or_else(|never| match never {}),
+        ),
+        | ContentNode::SessionType(ref session) => ContentNode::SessionType(
+            session
+                .try_relocate(|ty| Ok::<_, core::convert::Infallible>(image(ty)))
+                .unwrap_or_else(|never| match never {}),
+        ),
         | ContentNode::Perform {
             ref signature,
             ref operation,
@@ -3597,6 +3664,17 @@ fn mint_node(
                 | Err(reason) => Maybe::Absent(reason),
             }
         },
+        | ContentNode::SessionType(ref session) => {
+            match session.try_relocate(|ty| match minted_value_type(states, ty) {
+                | Maybe::Present(ty) => Ok(ty),
+                | Maybe::Absent(reason) => Err(reason),
+            }) {
+                | Ok(session) => {
+                    Maybe::Present(Minted::ValueType(arena.value_type_session(session)))
+                },
+                | Err(reason) => Maybe::Absent(reason),
+            }
+        },
         | ContentNode::Arrow { domain, codomain } => {
             match (
                 minted_value_type(states, domain),
@@ -3639,6 +3717,7 @@ fn mint_node(
         | ContentNode::TupleProjection(..)
         | ContentNode::Reify(_)
         | ContentNode::Perform { .. }
+        | ContentNode::Session(_)
         | ContentNode::Handle { .. }
         | ContentNode::Resume(..)
         | ContentNode::Split(..)

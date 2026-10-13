@@ -699,6 +699,9 @@ pub enum Computation
     With(ComputationId, ComputationId),
     /// Observe one component of a negative product.
     Project(Side, ComputationId),
+    /// A session action: send, receive, select, offer or close on a linear
+    /// endpoint, or fork a new pair of endpoints.
+    Session(crate::session::SessionAction),
 }
 
 /// A value type: the positive fragment of the core type vocabulary.
@@ -805,6 +808,9 @@ pub enum ValueType
         /// The answer delivered by the stack.
         output: CompTypeId,
     },
+    /// The type of a linear endpoint: a protocol, its payload types and the
+    /// state the endpoint stands at.
+    Session(crate::session::SessionType),
 }
 
 impl ValueType
@@ -1475,6 +1481,22 @@ fn equal_syntax(
                             body: right_body,
                         },
                     ) if left_mark == right_mark => pending.push(C(left_body, right_body)),
+                    | (&Computation::Session(ref left), &Computation::Session(ref right)) => {
+                        if left.shape() != right.shape() {
+                            return CertificateEquality::Different;
+                        }
+                        pending.extend(
+                            left.value_types()
+                                .zip(right.value_types())
+                                .map(|(a, b)| VT(a, b)),
+                        );
+                        pending.extend(left.values().zip(right.values()).map(|(a, b)| V(a, b)));
+                        pending.extend(
+                            left.computations()
+                                .zip(right.computations())
+                                .map(|(a, b)| C(a, b)),
+                        );
+                    },
                     | _ => return CertificateEquality::Different,
                 }
             },
@@ -1598,6 +1620,18 @@ fn equal_syntax(
                         && (target == other)
                     {
                         pending.push(V(a, b));
+                    }
+                    else if let ValueType::Session(ref a) = *matched_left_value
+                        && let ValueType::Session(ref b) = *matched_right_value
+                        && a.protocol() == b.protocol()
+                        && a.state() == b.state()
+                    {
+                        pending.extend(
+                            a.payloads()
+                                .iter()
+                                .zip(b.payloads())
+                                .map(|(a, b)| VT(*a, *b)),
+                        );
                     }
                     else if (matches!(
                         *matched_left_value,

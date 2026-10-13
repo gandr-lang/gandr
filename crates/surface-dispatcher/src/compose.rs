@@ -1287,12 +1287,15 @@ fn abstract_type(sealing: Sealing) -> AbstractType
 ///   crossed as a definition or an axiom, or stays on the checker's side as a
 ///   static definition; a refused declaration crosses as its mark, a
 ///   declaration withheld because it names a refused one carries that one's
-///   reason, and a declaration holding a term hole or the unknown type stays
-///   behind as the user absence it is, so none of these is a disagreement.
+///   reason, a declaration holding a term hole or the unknown type stays behind
+///   as the user absence it is, and a declaration holding a session stays
+///   behind on the checker's side, the kernel having no session former, so none
+///   of these is a disagreement.
 /// - provides: the kernel's repetition of every acceptance a run reports, and
 ///   the environment the run's kernel artifact is exported from.
 /// - fails: the readmission of the first declaration the kernel rejected or the
-///   bridge refused for any reason but a withheld constant or a user absence.
+///   bridge refused for any reason but a withheld constant, a user absence or a
+///   session.
 /// - panics: none.
 ///
 /// # Errors
@@ -1314,12 +1317,13 @@ fn abstract_type(sealing: Sealing) -> AbstractType
                     | bridge::Outcome::Data { .. }
                     | bridge::Outcome::Marked(_) | bridge::Outcome::Static
                     | bridge::Outcome::Refused(bridge::Refusal::Withheld { .. } | bridge::Refusal::WithheldData { .. }
-                        | bridge::Refusal::Hole { .. } | bridge::Refusal::Unknown { .. }))),
+                        | bridge::Refusal::Hole { .. } | bridge::Refusal::Unknown { .. }
+                        | bridge::Refusal::Session { .. }))),
     Err(ref fault) =>
         verdicts.judged().iter().any(|judged| judged.constant() == fault.constant())
             && matches!(*fault.outcome(), bridge::Outcome::Rejected(_)
                 | bridge::Outcome::Refused(bridge::Refusal::OutOfFragment { .. }
-                    | bridge::Refusal::LinearVariable { .. } | bridge::Refusal::DanglingNode { .. }
+                    | bridge::Refusal::DanglingNode { .. }
                     | bridge::Refusal::Cyclic { .. } | bridge::Refusal::CertificateDeclined { .. }
                     | bridge::Refusal::MachineInvariant)),
 })]
@@ -1340,11 +1344,11 @@ fn readmitted(
                 bridge::Refusal::Withheld { .. }
                 | bridge::Refusal::WithheldData { .. }
                 | bridge::Refusal::Hole { .. }
-                | bridge::Refusal::Unknown { .. },
+                | bridge::Refusal::Unknown { .. }
+                | bridge::Refusal::Session { .. },
             ) => {},
             | bridge::Outcome::Refused(
                 bridge::Refusal::OutOfFragment { .. }
-                | bridge::Refusal::LinearVariable { .. }
                 | bridge::Refusal::DanglingNode { .. }
                 | bridge::Refusal::Cyclic { .. }
                 | bridge::Refusal::CertificateDeclined { .. }

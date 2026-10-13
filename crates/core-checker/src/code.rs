@@ -1766,6 +1766,25 @@ pub fn loose_reach(
                             }),
                         );
                     },
+                    | Computation::Session(ref action) => {
+                        // A fork binds linearly, which this intuitionistic
+                        // reach does not count.
+                        work.extend(
+                            action
+                                .values()
+                                .map(|value| (CoreNode::Term(TermNode::Value(value)), depth)),
+                        );
+                        work.extend(
+                            action
+                                .value_types()
+                                .map(|ty| (CoreNode::Type(TypeNode::Value(ty)), depth)),
+                        );
+                        work.extend(
+                            action
+                                .computations()
+                                .map(|child| (CoreNode::Term(TermNode::Computation(child)), depth)),
+                        );
+                    },
                     | Computation::Hole(_) => {},
                 }
             },
@@ -1803,6 +1822,14 @@ pub fn loose_reach(
                             parts
                                 .iter()
                                 .map(|&part| (CoreNode::Type(TypeNode::Value(part)), depth)),
+                        );
+                    },
+                    | ValueType::Session(ref session) => {
+                        work.extend(
+                            session
+                                .payloads()
+                                .iter()
+                                .map(|&payload| (CoreNode::Type(TypeNode::Value(payload)), depth)),
                         );
                     },
                     | ValueType::Base(_)

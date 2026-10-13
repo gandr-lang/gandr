@@ -119,6 +119,7 @@ mod import;
 pub mod pattern;
 pub mod primitive;
 mod rewrite;
+pub mod session;
 mod syntax;
 pub mod ua;
 
@@ -140,6 +141,7 @@ pub use crate::context::BinderDepth;
 pub use crate::context::Context;
 pub use crate::context::ContextError;
 pub use crate::context::LinearUse;
+pub use crate::context::LinearZone;
 pub use crate::definition::DefinitionChain;
 pub use crate::definition::DefinitionEntry;
 pub use crate::definition::DefinitionError;

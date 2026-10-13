@@ -103,7 +103,8 @@ enum Root
 /// - requires: the fixture producer preserves the source and boundary
 ///   correspondence represented.
 /// - ensures: Distinguishes definitions and assumptions that enter the artifact
-///   from marked, withheld, static and never-offered declarations.
+///   from marked, withheld, static, unfinished, session and never-offered
+///   declarations.
 /// - panics: none.
 /// - executable: none — The enum holds no checker/readmission pair or artifact;
 ///   `class_of`, `export` and the partition witness establish its
@@ -140,6 +141,9 @@ enum Class
     /// The checker accepted it with a hole or the unknown type, which the
     /// kernel has no image of: an unfinished program crosses nothing.
     Unfinished,
+    /// The checker accepted it holding a session, which the kernel has no
+    /// former for: it stays on the checker's side.
+    Session,
     /// The lowering refused it, under this name, and nothing was offered.
     NeverOffered(RefusalName),
 }
@@ -285,8 +289,9 @@ fn sources(root: Root) -> Vec<PathBuf>
 /// # Specification
 /// - requires: the checker verdict and kernel readmission agree: accepted
 ///   definitions or static operators, owed assumptions, matching refusal marks,
-///   accepted/owed declarations withheld by a dependency, or accepted/owed
-///   declarations holding a hole or the unknown type.
+///   accepted/owed declarations withheld by a dependency, accepted/owed
+///   declarations holding a hole or the unknown type, or accepted declarations
+///   holding a session.
 /// - ensures: returns exactly the corresponding boundary class, retaining the
 ///   checker refusal’s canonical name for a mark.
 /// - panics: when the fixture’s verdict and readmission disagree.
@@ -309,6 +314,7 @@ fn sources(root: Root) -> Vec<PathBuf>
             bridge::Refusal::Withheld { .. }
             | bridge::Refusal::Hole { .. }
             | bridge::Refusal::Unknown { .. }
+            | bridge::Refusal::Session { .. }
         )),
     )
     | (
@@ -338,7 +344,8 @@ fn sources(root: Root) -> Vec<PathBuf>
         _,
         &bridge::Outcome::Refused(bridge::Refusal::Hole { .. } | bridge::Refusal::Unknown { .. }),
         Class::Unfinished,
-    ) => true,
+    )
+    | (_, &bridge::Outcome::Refused(bridge::Refusal::Session { .. }), Class::Session) => true,
     (Verdict::Refused(refusal), &bridge::Outcome::Marked(mark), Class::Marked(name)) => {
         refusal == mark && name == Refusal::Checking(refusal).name()
     }
@@ -374,6 +381,10 @@ fn class_of(
                 bridge::Refusal::Hole { .. } | bridge::Refusal::Unknown { .. },
             ),
         ) => Class::Unfinished,
+        | (
+            Verdict::Checked { .. } | Verdict::Synthesised { .. },
+            &bridge::Outcome::Refused(bridge::Refusal::Session { .. }),
+        ) => Class::Session,
         | (verdict, outcome) => panic!(
             "{}: the verdict {verdict:?} and the kernel's outcome {outcome:?} disagree",
             path.display()

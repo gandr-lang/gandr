@@ -51,6 +51,8 @@ use anodized::spec;
 use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::CheckingForm;
 use gandr_core_checker::Mismatch;
+use gandr_core_checker::session::LinearityDefect;
+use gandr_core_checker::session::ProtocolDefect;
 use gandr_core_checker::ua::StratumDefect;
 use gandr_core_checker::ua::UaDefect;
 use gandr_surface_corpus::CorpusRefusal;
@@ -269,6 +271,22 @@ const fn checked(refusal: CheckRefusal) -> Culprit
         | CheckRefusal::NonUniformOccurrence(_) => "the declared type at other arguments",
         | CheckRefusal::CrossBlockReference { .. } => "names a later declaration",
         | CheckRefusal::DescentNotReplayed { .. } => "a descent claim that does not replay",
+        | CheckRefusal::SessionMismatch { defect, .. } => match defect {
+            | ProtocolDefect::Action { .. } => "an action the endpoint's state does not admit",
+            | ProtocolDefect::Label => "a label the endpoint's state does not offer",
+            | ProtocolDefect::Arms => "not every offered label once",
+        },
+        | CheckRefusal::Linearity { defect, .. } => match defect {
+            | LinearityDefect::Residue { .. } => "an endpoint left unconsumed",
+            | LinearityDefect::Closed { .. } => "an endpoint already closed",
+            | LinearityDefect::UsedTwice { .. } => "an endpoint used twice in one action",
+            | LinearityDefect::Captured { .. } => "an endpoint that may be used other than once",
+            | LinearityDefect::Delegated => "an endpoint sent as a payload",
+            | LinearityDefect::AsValue { .. } => "an endpoint read as a value",
+            | LinearityDefect::ArmsDisagree { .. } => "an arm that leaves the endpoints otherwise",
+            | LinearityDefect::Unrestricted => "an endpoint outside a fork",
+            | LinearityDefect::Unbound { .. } => "no endpoint bound here",
+        },
     })
 }
 

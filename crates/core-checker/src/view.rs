@@ -195,6 +195,9 @@ pub enum ValueTypeView<'arena>
     },
     /// A sealed abstract type: the atom declared at this admission position.
     Abstract(gandr_kernel_term::ConstantIndex),
+    /// A session type: the protocol state an endpoint is at, with its
+    /// payloads.
+    Session(&'arena gandr_core_term::session::SessionType),
     /// The unknown type: a hole's or a mark's, or the decode of one.
     Unknown,
 }
@@ -252,9 +255,9 @@ pub enum CompTypeView<'arena>
 /// - ensures: the node's view when its former is the integer atom, the string
 ///   atom, the empty product (the unit type), a thunk type, a universe of a
 ///   ground sort, a lift, a decode, a product of one or more components, a sum
-///   of any number of summands, a static Pi, a path type or a sealed atom; the
-///   children are the node's own. The unknown type, and a decode whose code is
-///   a hole or a mark, view as [`ValueTypeView::Unknown`].
+///   of any number of summands, a static Pi, a path type, a sealed atom or a
+///   session type; the children are the node's own. The unknown type, and a
+///   decode whose code is a hole or a mark, view as [`ValueTypeView::Unknown`].
 /// - provides: the one decision of which value types the judgement and the
 ///   bridge reason about.
 /// - fails: [`FragmentRefusal::DanglingNode`] when the id names no node of
@@ -297,6 +300,7 @@ pub enum CompTypeView<'arena>
         && value_type_knowledge(arena, value_type) == Knowledge::Known,
     | Ok(ValueTypeView::StaticPi { domain, codomain }) => matches!(arena.value_type(value_type), Some(ValueType::StaticPi { domain: found_domain, codomain: found_codomain }) if *found_domain == domain && *found_codomain == codomain),
     | Ok(ValueTypeView::Abstract(atom)) => matches!(arena.value_type(value_type), Some(&ValueType::Abstract(found)) if found == atom),
+    | Ok(ValueTypeView::Session(session)) => arena.value_type(value_type).is_some_and(|held| matches!(*held, ValueType::Session(ref found) if found == session)),
     | Ok(ValueTypeView::Unknown) => value_type_knowledge(arena, value_type) == Knowledge::Unknown,
     | Err(FragmentRefusal::DanglingNode { node }) => arena.value_type(value_type).is_none() && node == CoreNode::Type(TypeNode::Value(value_type)),
     | Err(FragmentRefusal::OutOfFragment { at, former }) => at == CoreNode::Type(TypeNode::Value(value_type))
@@ -363,6 +367,7 @@ pub fn value_type_view(
             }
         },
         | ValueType::Abstract(atom) => Ok(ValueTypeView::Abstract(atom)),
+        | ValueType::Session(ref session) => Ok(ValueTypeView::Session(session)),
         | ValueType::StaticPi { domain, codomain } => {
             Ok(ValueTypeView::StaticPi { domain, codomain })
         },

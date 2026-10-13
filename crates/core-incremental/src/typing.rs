@@ -26,6 +26,11 @@ use gandr_core_checker::TermNode;
 use gandr_core_checker::TypeNode;
 use gandr_core_checker::UnadmittedFormer;
 use gandr_core_checker::Verdict;
+use gandr_core_checker::session::Capture;
+use gandr_core_checker::session::Endpoint;
+use gandr_core_checker::session::ForkSide;
+use gandr_core_checker::session::LinearityDefect;
+use gandr_core_checker::session::ProtocolDefect;
 use gandr_core_term::BinderDepth;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Zone;
@@ -119,6 +124,99 @@ pub enum Form
     Fixpoint(Site),
     /// A computation written where a value is read.
     Nested(Site),
+    /// An offer.
+    Offer(Site),
+}
+
+/// An endpoint, by the site of the fork that bound it and its side.
+///
+/// # Specification
+/// - requires: the fork's site is interpreted in its item's table.
+/// - ensures: projection keeps the side and maps the fork to its item site.
+/// - executable: none — this declaration has no call boundary.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a residue at a fork's child end projects the fork's item
+///   site and the side.
+/// - witness: `typing::tests::session_refusals_project_their_endpoints_and_states`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct EndpointSite
+{
+    /// The fork.
+    pub fork: Site,
+    /// Which of its ends.
+    pub side: ForkSide,
+}
+
+/// How an endpoint escaped its one linear use, projected: endpoints and arms
+/// as item sites, a residue's session type as its own type table.
+///
+/// # Specification
+/// - requires: sites are interpreted in their item's table.
+/// - ensures: projection preserves the defect kind and its scalar payloads.
+/// - executable: none — this declaration has no call boundary.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a residue and an arm disagreement project their endpoint,
+///   state and arm sites.
+/// - witness: `typing::tests::session_refusals_project_their_endpoints_and_states`
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum Linearity
+{
+    /// A half of a fork finished with the endpoint unconsumed.
+    Residue
+    {
+        /// The endpoint.
+        endpoint: EndpointSite,
+        /// Its session type when the half finished.
+        state: TypeContent,
+    },
+    /// The endpoint was acted on after it was closed.
+    Closed
+    {
+        /// The endpoint.
+        endpoint: EndpointSite,
+    },
+    /// The endpoint was used twice in one action.
+    UsedTwice
+    {
+        /// The endpoint.
+        endpoint: EndpointSite,
+    },
+    /// The endpoint was named where its use may run other than once.
+    Captured
+    {
+        /// The endpoint.
+        endpoint: EndpointSite,
+        /// What may run it.
+        by: Capture,
+    },
+    /// An endpoint, or a session type, was sent as a payload.
+    Delegated,
+    /// The endpoint was read as a value outside an action.
+    AsValue
+    {
+        /// The endpoint.
+        endpoint: EndpointSite,
+    },
+    /// Two arms of an offer left the endpoint in different states.
+    ArmsDisagree
+    {
+        /// The endpoint.
+        endpoint: EndpointSite,
+        /// The first arm.
+        first: Site,
+        /// The arm that disagrees with it.
+        other: Site,
+    },
+    /// A declaration's type is a session type.
+    Unrestricted,
+    /// An action names a linear index no fork bound.
+    Unbound
+    {
+        /// The index.
+        index: DeBruijnIndex,
+    },
 }
 
 /// A refusal, projected.
@@ -486,6 +584,26 @@ pub enum Refusal
         /// The nested computation or written run.
         at: Site,
     },
+    /// An action the endpoint's session type does not admit.
+    SessionMismatch
+    {
+        /// The action.
+        at: Site,
+        /// The endpoint it acts on.
+        endpoint: EndpointSite,
+        /// The endpoint's session type when it was acted on.
+        state: TypeContent,
+        /// What the state admits instead.
+        defect: ProtocolDefect,
+    },
+    /// An endpoint escaped its one linear use.
+    Linearity
+    {
+        /// The node where the escape was found.
+        at: Site,
+        /// How it escaped.
+        defect: Linearity,
+    },
 }
 
 /// An item's typing: its verdict, projected.
@@ -696,6 +814,76 @@ impl Projection<'_, '_, '_>
         }
     }
 
+    /// The site of an endpoint's fork, beside its side.
+    ///
+    /// # Specification
+    /// trivial.
+    fn endpoint(
+        &self,
+        endpoint: Endpoint,
+    ) -> EndpointSite
+    {
+        EndpointSite {
+            fork: self.site(ArenaNode::Computation(endpoint.fork)),
+            side: endpoint.side,
+        }
+    }
+
+    /// The projected linearity defect.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the defect kind and scalar payloads are kept; endpoints and
+    ///   arms are item sites and a residue's state its own type table.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a residue and an arm disagreement project their
+    ///   endpoint, state and arm sites.
+    /// - witness: `typing::tests::session_refusals_project_their_endpoints_and_states`
+    #[spec(ensures: |ret| core::mem::discriminant(&ret) == match defect {
+        | LinearityDefect::Delegated => core::mem::discriminant(&Linearity::Delegated),
+        | LinearityDefect::Unrestricted => core::mem::discriminant(&Linearity::Unrestricted),
+        | _ => core::mem::discriminant(&ret),
+    })]
+    fn linearity(
+        &self,
+        defect: LinearityDefect,
+    ) -> Linearity
+    {
+        match defect {
+            | LinearityDefect::Residue { endpoint, state } => Linearity::Residue {
+                endpoint: self.endpoint(endpoint),
+                state: self.value_type(state),
+            },
+            | LinearityDefect::Closed { endpoint } => Linearity::Closed {
+                endpoint: self.endpoint(endpoint),
+            },
+            | LinearityDefect::UsedTwice { endpoint } => Linearity::UsedTwice {
+                endpoint: self.endpoint(endpoint),
+            },
+            | LinearityDefect::Captured { endpoint, by } => Linearity::Captured {
+                endpoint: self.endpoint(endpoint),
+                by,
+            },
+            | LinearityDefect::Delegated => Linearity::Delegated,
+            | LinearityDefect::AsValue { endpoint } => Linearity::AsValue {
+                endpoint: self.endpoint(endpoint),
+            },
+            | LinearityDefect::ArmsDisagree {
+                endpoint,
+                first,
+                other,
+            } => Linearity::ArmsDisagree {
+                endpoint: self.endpoint(endpoint),
+                first: self.site(ArenaNode::Computation(first)),
+                other: self.site(ArenaNode::Computation(other)),
+            },
+            | LinearityDefect::Unrestricted => Linearity::Unrestricted,
+            | LinearityDefect::Unbound { index } => Linearity::Unbound { index },
+        }
+    }
+
     /// The projected refusal.
     ///
     /// # Specification
@@ -781,7 +969,8 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
             | (CheckingForm::With(id), Form::With(at))
             | (CheckingForm::Lambda(id), Form::Lambda(at))
             | (CheckingForm::Return(id), Form::Return(at))
-            | (CheckingForm::Fixpoint(id), Form::Fixpoint(at)) => {
+            | (CheckingForm::Fixpoint(id), Form::Fixpoint(at))
+            | (CheckingForm::Offer(id), Form::Offer(at)) => {
                 at == self.site(ArenaNode::Computation(id))
             },
             | (CheckingForm::Hole(_), Form::Hole) => true,
@@ -854,6 +1043,8 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
  else if let CheckRefusal::CrossBlockReference { site, index } = matched_left_value && let Refusal::CrossBlockReference { site: projected, index: ref returned } = *matched_right_value { site == projected && *returned == self.layout.resolve(index) }
  else if let CheckRefusal::DescentNotReplayed { at, reason } = matched_left_value && let Refusal::DescentNotReplayed { at: projected, reason: returned } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) && reason == returned }
  else if let CheckRefusal::UnenclosedRun { at } = matched_left_value && let Refusal::UnenclosedRun { at: projected } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
+ else if let CheckRefusal::SessionMismatch { at, endpoint, state, defect } = matched_left_value && let Refusal::SessionMismatch { at: projected, endpoint: returned, state: ref stored, defect: kept } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) && returned == self.endpoint(endpoint) && *stored == self.value_type(state) && kept == defect }
+ else if let CheckRefusal::Linearity { at, defect } = matched_left_value && let Refusal::Linearity { at: projected, defect: ref stored } = *matched_right_value { projected == self.core_site(at) && *stored == self.linearity(defect) }
  else { false }
 })]
     fn refusal(
@@ -1027,6 +1218,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                         Form::Fixpoint(self.site(ArenaNode::Computation(id)))
                     },
                     | CheckingForm::Nested(id) => Form::Nested(self.site(ArenaNode::Value(id))),
+                    | CheckingForm::Offer(id) => Form::Offer(self.site(ArenaNode::Computation(id))),
                 },
             },
             | CheckRefusal::UnknownConstant { at, constant } => Refusal::UnknownConstant {
@@ -1122,6 +1314,21 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
             },
             | CheckRefusal::UnenclosedRun { at } => Refusal::UnenclosedRun {
                 at: self.site(ArenaNode::Value(at)),
+            },
+            | CheckRefusal::SessionMismatch {
+                at,
+                endpoint,
+                state,
+                defect,
+            } => Refusal::SessionMismatch {
+                at: self.site(ArenaNode::Computation(at)),
+                endpoint: self.endpoint(endpoint),
+                state: self.value_type(state),
+                defect,
+            },
+            | CheckRefusal::Linearity { at, defect } => Refusal::Linearity {
+                at: self.core_site(at),
+                defect: self.linearity(defect),
             },
         }
     }
@@ -1725,5 +1932,147 @@ mod tests
         for (refusal, expected) in cases {
             assert_eq!(projection.refusal(refusal), expected);
         }
+    }
+
+    #[test]
+    fn session_refusals_project_their_endpoints_and_states()
+    {
+        use alloc::collections::BTreeMap;
+        use alloc::sync::Arc;
+
+        use gandr_core_checker::session::ForkSide;
+        use gandr_core_term::session::PayloadCount;
+        use gandr_core_term::session::Protocol;
+        use gandr_core_term::session::ProtocolState;
+        use gandr_core_term::session::ProtocolSyntax;
+        use gandr_core_term::session::SessionAction;
+        use gandr_core_term::session::SessionType;
+
+        use super::EndpointSite;
+        use super::Linearity;
+        let label = |text: &str| gandr_core_term::FieldLabel::from(String::from(text));
+        let session = |syntax: Vec<ProtocolSyntax>| {
+            let protocol = Protocol::new(
+                syntax,
+                ProtocolState::from(0_usize),
+                PayloadCount::default(),
+            )
+            .expect("a protocol without payloads");
+            SessionType::new(Arc::new(protocol), Arc::from([])).expect("no payloads")
+        };
+        let close = |arena: &mut CoreArena| {
+            arena.computation_session(SessionAction::Close {
+                endpoint: DeBruijnIndex::from(0_u32),
+            })
+        };
+        let suspended = |arena: &mut CoreArena| {
+            let unit = arena.value_type_unit();
+            let returner = arena.comp_type_returner(unit);
+            arena.value_type_thunk(returner)
+        };
+
+        // A child that never closes its `end`.
+        let ended = session(vec![ProtocolSyntax::End]);
+        let mut arena = CoreArena::new();
+        let protocol = arena.value_type_session(ended.clone());
+        let unit = arena.value_unit();
+        let idle = arena.computation_return(unit);
+        let closed = close(&mut arena);
+        let fork = arena.computation_session(SessionAction::Fork {
+            protocol,
+            child: idle,
+            parent: closed,
+        });
+        let body = arena.value_thunk(fork);
+        let signature = suspended(&mut arena);
+        let (_, typing) = judged(
+            arena,
+            Maybe::Present(signature),
+            Maybe::Present(body),
+            CheckBudget::DEFAULT,
+        );
+        let Typing::Refused(Refusal::Linearity {
+            at,
+            defect:
+                Linearity::Residue {
+                    endpoint: EndpointSite { fork, side },
+                    ref state,
+                },
+        }) = typing
+        else {
+            panic!("a residue, not {typing:?}");
+        };
+        assert!(
+            matches!(at, Site::Node(_)) && at == fork,
+            "the residue stands at the fork that bound the endpoint"
+        );
+        assert_eq!(side, ForkSide::Child, "the child left it open");
+        assert_eq!(
+            state.nodes(),
+            [ContentNode::SessionType(
+                ended
+                    .try_relocate(|_| Ok::<NodeIndex, core::convert::Infallible>(
+                        NodeIndex::default()
+                    ))
+                    .unwrap_or_else(|never| match never {})
+            )],
+            "the state is its own type table"
+        );
+
+        // An offer whose arms leave the endpoint closed and open.
+        let choice = session(vec![
+            ProtocolSyntax::Offer(BTreeMap::from([
+                (label("a"), ProtocolState::from(1_usize)),
+                (label("b"), ProtocolState::from(2_usize)),
+            ])),
+            ProtocolSyntax::End,
+            ProtocolSyntax::End,
+        ]);
+        let mut arena = CoreArena::new();
+        let protocol = arena.value_type_session(choice);
+        let unit = arena.value_unit();
+        let left_open = arena.computation_return(unit);
+        let closed = close(&mut arena);
+        let offer = arena.computation_session(SessionAction::Offer {
+            endpoint: DeBruijnIndex::from(0_u32),
+            arms: BTreeMap::from([(label("a"), closed), (label("b"), left_open)]),
+        });
+        let parent_closed = close(&mut arena);
+        let select = arena.computation_session(SessionAction::Select {
+            endpoint: DeBruijnIndex::from(0_u32),
+            label: label("a"),
+        });
+        let parent = arena.computation_bind(select, parent_closed);
+        let fork = arena.computation_session(SessionAction::Fork {
+            protocol,
+            child: offer,
+            parent,
+        });
+        let body = arena.value_thunk(fork);
+        let signature = suspended(&mut arena);
+        let (_, typing) = judged(
+            arena,
+            Maybe::Present(signature),
+            Maybe::Present(body),
+            CheckBudget::DEFAULT,
+        );
+        let Typing::Refused(Refusal::Linearity {
+            at,
+            defect:
+                Linearity::ArmsDisagree {
+                    endpoint: EndpointSite { side, .. },
+                    first,
+                    other,
+                },
+        }) = typing
+        else {
+            panic!("an arm disagreement, not {typing:?}");
+        };
+        assert_eq!(side, ForkSide::Child, "the offer acts on the child's end");
+        assert!(
+            matches!((first, other), (Site::Node(_), Site::Node(_))) && first != other,
+            "both arms are item sites, distinct"
+        );
+        assert_eq!(at, other, "the refusal stands at the disagreeing arm");
     }
 }

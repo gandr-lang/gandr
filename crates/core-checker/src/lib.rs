@@ -103,6 +103,18 @@
 //! primitive `J`. Reversal: a Σ type in the core makes this the one-binder
 //! transport over the Σ of the two entries.
 //!
+//! # Binary sessions
+//!
+//! A fork binds its two endpoints into the linear zone, at a session type and
+//! its dual; `send`, `recv`, `select`, `offer` and `close` advance an endpoint
+//! along its protocol as frames of the one machine, and every way an endpoint
+//! escapes its one use is refused by name: [`CheckRefusal::SessionMismatch`]
+//! for an action its state does not admit, [`CheckRefusal::Linearity`] for an
+//! endpoint left, reused, captured, sent or declared. Session types relate
+//! through `gandr-core-session`'s engine. The kernel has no session former,
+//! so a declaration holding one stays on the checker's side. The rules, the
+//! frames and the decisions are in [`session`].
+//!
 //! # Example
 //!
 //! ```
@@ -304,6 +316,7 @@ mod nested;
 mod occurrence;
 mod refusal;
 mod seal;
+pub mod session;
 pub mod stage;
 pub mod staging;
 mod support;

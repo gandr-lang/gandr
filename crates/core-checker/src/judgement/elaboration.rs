@@ -122,6 +122,9 @@ pub(super) struct Anchor
     depth: BinderDepth,
     /// How many inferred record-field types stood when the goal began.
     native: usize,
+    /// Where the linear zone and the offers' zones stood when the goal
+    /// began.
+    sessions: super::session::Scope,
 }
 
 /// One refusal a total run marked, at the term it stands on.
@@ -454,6 +457,7 @@ pub fn type_value(
 ) -> Typings
 {
     let entry = context.binders().depth(Zone::Intuitionistic);
+    let base = context.depth(Zone::Linear);
     let remaining = usize::from(context.budget());
     let goal = Goal::Value {
         term: value,
@@ -473,9 +477,12 @@ pub fn type_value(
         anchors: Vec::new(),
         marks: Vec::new(),
         typings: Vec::new(),
+        sessions: super::Sessions::new(base),
     };
+    let scope = machine.session_scope();
     let _outcome = machine.drive(goal);
     machine.unwind(entry);
+    machine.close_sessions(scope);
     Typings {
         typings: machine.typings,
         marks: machine.marks,
@@ -551,11 +558,13 @@ impl Machine<'_, '_>
         match (self.marking, goal) {
             | (Marking::Total | Marking::Typed, Goal::Value { .. } | Goal::Computation { .. }) => {
                 let depth = self.context.depth(Zone::Intuitionistic);
+                let sessions = self.session_scope();
                 self.anchors.push(Anchor {
                     goal,
                     frames: self.frames.len(),
                     depth,
                     native: self.native_types.len(),
+                    sessions,
                 });
             },
             | (Marking::Strict, _)
@@ -742,6 +751,7 @@ impl Machine<'_, '_>
         self.frames.truncate(anchor.frames);
         self.native_types.truncate(anchor.native);
         self.unwind(anchor.depth);
+        self.close_sessions(anchor.sessions);
         self.owner = anchor.goal;
         let (at, node) = match anchor.goal {
             | Goal::Value { term, .. } => (TermId::Value(term), TermNode::Value(term)),

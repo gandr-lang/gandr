@@ -113,6 +113,7 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::hole::Knowledge;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::GroundSort;
+use quenchant_shape::shape::Maybe;
 
 use crate::code::Lift;
 use crate::context::CheckingContext;
@@ -219,7 +220,7 @@ enum Pairing
 
 /// The decision's verdict on a pair.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-enum Agreement
+pub enum Agreement
 {
     /// The two types are the same tree at their weak heads.
     Convertible,
@@ -486,12 +487,41 @@ pub fn decode_bridge(
         | ValueTypeView::Element { .. }
         | ValueTypeView::Product(..)
         | ValueTypeView::Abstract(_)
+        | ValueTypeView::Session(_)
         | ValueTypeView::StaticPi { .. } => Err(CheckRefusal::TypeMismatch(Mismatch::Value {
             at: code,
             synthesised: found,
             expected,
         })),
     }
+}
+
+/// Whether the formed value types `left` and `right` are equivalent: the
+/// decision [`convert`] makes, invariantly.
+///
+/// # Specification
+/// - requires: both types are formed, in the context's arena.
+/// - ensures: [`Agreement::Convertible`] exactly when [`convert`] answers it
+///   for the pair compared invariantly; one id against itself is convertible.
+/// - provides: the comparison an offer's arms agree on an endpoint's state by.
+/// - fails: as [`convert`].
+/// - panics: none.
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two arms leaving one endpoint at the same state minted
+///   twice agree, and an arm leaving it at another state is refused.
+/// - witness: `judgement::session::tests::offer_arms_leaving_different_endpoints_are_refused`
+#[spec(ensures: |ret| left != right || ret == Ok(Agreement::Convertible))]
+pub fn equivalent(
+    context: &mut CheckingContext<'_>,
+    left: ValueTypeId,
+    right: ValueTypeId,
+) -> Result<Agreement, CheckRefusal>
+{
+    convert(context, Pairing::Values(left, right))
 }
 
 /// Decide whether the two types of `root` are the same tree at their weak
@@ -750,6 +780,25 @@ fn convert(
                         }
                         same
                     },
+                    | (ValueTypeView::Session(_), ValueTypeView::Session(_)) => {
+                        let relation = if subtyping {
+                            gandr_core_session::Relation::Subtype
+                        }
+                        else {
+                            gandr_core_session::Relation::Equivalent
+                        };
+                        match crate::session::relate(context, left, right, relation)? {
+                            | Maybe::Present(payloads) => {
+                                pending.extend(
+                                    payloads
+                                        .into_iter()
+                                        .map(|(left, right)| Pairing::Values(left, right)),
+                                );
+                                true
+                            },
+                            | Maybe::Absent(_) => false,
+                        }
+                    },
                     | (
                         ValueTypeView::StaticPi {
                             domain: left_first,
@@ -781,6 +830,7 @@ fn convert(
                         | ValueTypeView::Element { .. }
                         | ValueTypeView::Product(..)
                         | ValueTypeView::Abstract(_)
+                        | ValueTypeView::Session(_)
                         | ValueTypeView::StaticPi { .. },
                         _,
                     ) => false,

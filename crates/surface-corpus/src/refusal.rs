@@ -58,6 +58,8 @@ use core::fmt;
 
 use anodized::spec;
 use gandr_core_checker::CheckRefusal;
+use gandr_core_checker::session::LinearityDefect;
+use gandr_core_checker::session::ProtocolDefect;
 use gandr_core_checker::ua::StratumDefect;
 use gandr_core_checker::ua::UaDefect;
 use gandr_core_term::FailureClass;
@@ -456,6 +458,30 @@ pub enum RefusalName
     ExpectationOutsideFixtureRoot,
     /// Two rows disagree on the operation types of a shared interface.
     EffectSignatureConflict,
+    /// An action the endpoint's session type does not admit.
+    SessionMismatch,
+    /// A selection of a label the endpoint's state does not offer.
+    UnofferedLabel,
+    /// An offer whose arms are not exactly the labels its state offers.
+    OfferArms,
+    /// A half of a fork that finished with an endpoint unconsumed.
+    LinearResidue,
+    /// An endpoint acted on after it was closed.
+    UsedAfterClose,
+    /// An endpoint named twice in one action.
+    EndpointUsedTwice,
+    /// An endpoint named where its use may run other than once.
+    CapturedEndpoint,
+    /// An endpoint, or a session type, sent as a payload.
+    Delegation,
+    /// An endpoint read as a value outside an action.
+    EndpointAsValue,
+    /// Two arms of an offer leaving an endpoint in different states.
+    ArmsDisagree,
+    /// A declaration whose type is a session type.
+    UnrestrictedEndpoint,
+    /// An action naming a linear index no fork bound.
+    UnboundEndpoint,
 }
 
 impl RefusalName
@@ -475,7 +501,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 91_usize] = [
+    pub const VOCABULARY: [Self; 103_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -567,6 +593,18 @@ impl RefusalName
         Self::HandlerCoverage,
         Self::ShiftWithoutReset,
         Self::DependentStack,
+        Self::SessionMismatch,
+        Self::UnofferedLabel,
+        Self::OfferArms,
+        Self::LinearResidue,
+        Self::UsedAfterClose,
+        Self::EndpointUsedTwice,
+        Self::CapturedEndpoint,
+        Self::Delegation,
+        Self::EndpointAsValue,
+        Self::ArmsDisagree,
+        Self::UnrestrictedEndpoint,
+        Self::UnboundEndpoint,
     ];
 
     /// The name as a `refuses` payload spells it: the name of the variant it
@@ -665,6 +703,18 @@ impl RefusalName
         | (Self::NotNatural, b"NotNatural")
         | (Self::TranslatorStuck, b"TranslatorStuck")
         | (Self::UnenclosedRun, b"UnenclosedRun")
+        | (Self::SessionMismatch, b"SessionMismatch")
+        | (Self::UnofferedLabel, b"UnofferedLabel")
+        | (Self::OfferArms, b"OfferArms")
+        | (Self::LinearResidue, b"LinearResidue")
+        | (Self::UsedAfterClose, b"UsedAfterClose")
+        | (Self::EndpointUsedTwice, b"EndpointUsedTwice")
+        | (Self::CapturedEndpoint, b"CapturedEndpoint")
+        | (Self::Delegation, b"Delegation")
+        | (Self::EndpointAsValue, b"EndpointAsValue")
+        | (Self::ArmsDisagree, b"ArmsDisagree")
+        | (Self::UnrestrictedEndpoint, b"UnrestrictedEndpoint")
+        | (Self::UnboundEndpoint, b"UnboundEndpoint")
     )
 },
     )]
@@ -724,6 +774,18 @@ impl RefusalName
             | Self::NotNatural => "NotNatural",
             | Self::TranslatorStuck => "TranslatorStuck",
             | Self::UnenclosedRun => "UnenclosedRun",
+            | Self::SessionMismatch => "SessionMismatch",
+            | Self::UnofferedLabel => "UnofferedLabel",
+            | Self::OfferArms => "OfferArms",
+            | Self::LinearResidue => "LinearResidue",
+            | Self::UsedAfterClose => "UsedAfterClose",
+            | Self::EndpointUsedTwice => "EndpointUsedTwice",
+            | Self::CapturedEndpoint => "CapturedEndpoint",
+            | Self::Delegation => "Delegation",
+            | Self::EndpointAsValue => "EndpointAsValue",
+            | Self::ArmsDisagree => "ArmsDisagree",
+            | Self::UnrestrictedEndpoint => "UnrestrictedEndpoint",
+            | Self::UnboundEndpoint => "UnboundEndpoint",
             | Self::ShadowedBuiltin => "ShadowedBuiltin",
             | Self::OutOfFragment => "OutOfFragment",
             | Self::GradedBridge => "GradedBridge",
@@ -996,6 +1058,8 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::UaUncertified { .. }), RefusalName::UncertifiedDegree | RefusalName::UncertifiedCondition | RefusalName::UncertifiedAllowance)
         | (Self::Checking(CheckRefusal::UaInequivalent { .. }), RefusalName::UnknownGenerator | RefusalName::PastTheBound | RefusalName::CorollaCardinality | RefusalName::CorollaTables | RefusalName::NotInverse | RefusalName::NotNatural | RefusalName::TranslatorStuck)
         | (Self::Checking(CheckRefusal::UnenclosedRun { .. }), RefusalName::UnenclosedRun)
+        | (Self::Checking(CheckRefusal::SessionMismatch { .. }), RefusalName::SessionMismatch | RefusalName::UnofferedLabel | RefusalName::OfferArms)
+        | (Self::Checking(CheckRefusal::Linearity { .. }), RefusalName::LinearResidue | RefusalName::UsedAfterClose | RefusalName::EndpointUsedTwice | RefusalName::CapturedEndpoint | RefusalName::Delegation | RefusalName::EndpointAsValue | RefusalName::ArmsDisagree | RefusalName::UnrestrictedEndpoint | RefusalName::UnboundEndpoint)
     )
 },
     )]
@@ -1214,6 +1278,18 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::UaInequivalent { defect: UaDefect::NotNatural { .. }, .. }, RefusalName::NotNatural)
         | (CheckRefusal::UaInequivalent { defect: UaDefect::Stuck { .. }, .. }, RefusalName::TranslatorStuck)
         | (CheckRefusal::UnenclosedRun { .. }, RefusalName::UnenclosedRun)
+        | (CheckRefusal::SessionMismatch { defect: ProtocolDefect::Action { .. }, .. }, RefusalName::SessionMismatch)
+        | (CheckRefusal::SessionMismatch { defect: ProtocolDefect::Label, .. }, RefusalName::UnofferedLabel)
+        | (CheckRefusal::SessionMismatch { defect: ProtocolDefect::Arms, .. }, RefusalName::OfferArms)
+        | (CheckRefusal::Linearity { defect: LinearityDefect::Residue { .. }, .. }, RefusalName::LinearResidue)
+        | (CheckRefusal::Linearity { defect: LinearityDefect::Closed { .. }, .. }, RefusalName::UsedAfterClose)
+        | (CheckRefusal::Linearity { defect: LinearityDefect::UsedTwice { .. }, .. }, RefusalName::EndpointUsedTwice)
+        | (CheckRefusal::Linearity { defect: LinearityDefect::Captured { .. }, .. }, RefusalName::CapturedEndpoint)
+        | (CheckRefusal::Linearity { defect: LinearityDefect::Delegated, .. }, RefusalName::Delegation)
+        | (CheckRefusal::Linearity { defect: LinearityDefect::AsValue { .. }, .. }, RefusalName::EndpointAsValue)
+        | (CheckRefusal::Linearity { defect: LinearityDefect::ArmsDisagree { .. }, .. }, RefusalName::ArmsDisagree)
+        | (CheckRefusal::Linearity { defect: LinearityDefect::Unrestricted, .. }, RefusalName::UnrestrictedEndpoint)
+        | (CheckRefusal::Linearity { defect: LinearityDefect::Unbound { .. }, .. }, RefusalName::UnboundEndpoint)
     )
 },
 )]
@@ -1263,6 +1339,22 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
             | UaDefect::Stuck { .. } => RefusalName::TranslatorStuck,
         },
         | CheckRefusal::UnenclosedRun { .. } => RefusalName::UnenclosedRun,
+        | CheckRefusal::SessionMismatch { defect, .. } => match defect {
+            | ProtocolDefect::Action { .. } => RefusalName::SessionMismatch,
+            | ProtocolDefect::Label => RefusalName::UnofferedLabel,
+            | ProtocolDefect::Arms => RefusalName::OfferArms,
+        },
+        | CheckRefusal::Linearity { defect, .. } => match defect {
+            | LinearityDefect::Residue { .. } => RefusalName::LinearResidue,
+            | LinearityDefect::Closed { .. } => RefusalName::UsedAfterClose,
+            | LinearityDefect::UsedTwice { .. } => RefusalName::EndpointUsedTwice,
+            | LinearityDefect::Captured { .. } => RefusalName::CapturedEndpoint,
+            | LinearityDefect::Delegated => RefusalName::Delegation,
+            | LinearityDefect::AsValue { .. } => RefusalName::EndpointAsValue,
+            | LinearityDefect::ArmsDisagree { .. } => RefusalName::ArmsDisagree,
+            | LinearityDefect::Unrestricted => RefusalName::UnrestrictedEndpoint,
+            | LinearityDefect::Unbound { .. } => RefusalName::UnboundEndpoint,
+        },
         | CheckRefusal::TypeMismatch(_) => RefusalName::TypeMismatch,
         | CheckRefusal::ShapeMismatch { .. } => RefusalName::ShapeMismatch,
         | CheckRefusal::NotSynthesisable { .. } => RefusalName::NotSynthesisable,

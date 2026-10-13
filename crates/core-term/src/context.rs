@@ -20,10 +20,12 @@
 //! Each zone has its own binder stack and its own de Bruijn index space, which
 //! is why [`Value::Variable`] carries the zone beside the index.
 //!
-//! The linear zone is the type-level form of "a control capture cannot be
-//! naively duplicated": it is the half a duplication policy asks rather than
-//! re-decides. No former in the core vocabulary binds into it, so its laws are
-//! unit-tested here against a context opened with [`Zone::Linear`] directly.
+//! The linear zone holds session endpoints: a fork binds the two ends of a
+//! channel into it, an action rebinds its endpoint's slot at the
+//! continuation type ([`Context::advance`]), and `close` is the endpoint's
+//! one occurrence. It is also the type-level form of "a control capture
+//! cannot be naively duplicated": the half a duplication policy asks rather
+//! than re-decides.
 //!
 //! # The error path is single-valued
 //!
@@ -39,11 +41,9 @@
 //! `Γ` admits weakening and contraction: an occurrence spends nothing. `Σ` is
 //! linear: an occurrence consumes its slot, a second occurrence is refused with
 //! `ContextError::LinearSlotConsumed`, and closing a scope whose slot is
-//! unspent is refused with `ContextError::LinearSlotUnconsumed`. The linear
-//! zone is the type-level form of "a control capture cannot be naively
-//! duplicated". No former in the vocabulary binds into `Σ`; a context opened
-//! with `Zone::Linear` reaches it directly, and the tests exercise both
-//! refusals there.
+//! unspent is refused with `ContextError::LinearSlotUnconsumed`. The session
+//! fork binds into `Σ`; the tests exercise both refusals against a context
+//! opened with `Zone::Linear` directly.
 //!
 //! # Failure state
 //!
@@ -113,6 +113,39 @@ struct LinearSlot
     declared: ValueTypeId,
     /// Whether the slot's single use is still available.
     use_state: LinearUse,
+}
+
+/// A snapshot of the linear zone, outermost slot first: what a branching
+/// rule restores before each arm and compares after it.
+#[repr(transparent)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+pub struct LinearZone(Vec<LinearSlot>);
+
+impl LinearZone
+{
+    /// How many linear binders the snapshot holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn depth(&self) -> BinderDepth
+    {
+        BinderDepth(self.0.len())
+    }
+
+    /// Every slot's declared type and remaining use, outermost first.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn slots(
+        &self
+    ) -> impl DoubleEndedIterator<Item = (ValueTypeId, LinearUse)> + ExactSizeIterator + '_
+    {
+        self.0.iter().map(|slot| (slot.declared, slot.use_state))
+    }
 }
 
 /// Why a context operation was refused.
@@ -592,6 +625,152 @@ impl Context
             .map(|slot| slot.use_state)
             .ok_or(unbound)
     }
+
+    /// Rebind an available linear slot at `continuation`: the typestate move
+    /// a session action makes, `Σ, c : S ⇒ Σ, c : S′`, spending nothing.
+    ///
+    /// # Specification
+    /// - requires: nothing — an unbound or consumed index is admissible input.
+    /// - ensures: on success the slot's declared type is `continuation`, its
+    ///   use is still available, every other slot and both depths are
+    ///   unchanged, and the slot's previous declared type is returned.
+    /// - fails: [`ContextError::UnboundIndex`] when the index names no linear
+    ///   binder; [`ContextError::LinearSlotConsumed`] when its use is spent. A
+    ///   refusal changes nothing.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`ContextError::UnboundIndex`] — the index names no linear binder.
+    /// - [`ContextError::LinearSlotConsumed`] — the endpoint was closed.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the decision surfaces are the index arithmetic and
+    ///   the consumed guard, separated by advancing an outer slot past an inner
+    ///   one, a consumed slot, and an index past the depth, with the context
+    ///   after each refusal asserted equal to the one before.
+    /// - witness: `context::tests::advancing_rebinds_one_available_slot`
+    #[spec(
+        captures: [before = self.clone(), declared = self.declared(Zone::Linear, index), use_state = self.linear_use(index)],
+        ensures: |ret| match (declared, use_state) {
+            | (Ok(previous), Ok(LinearUse::Available)) => ret == Ok(previous)
+                && self.declared(Zone::Linear, index) == Ok(continuation)
+                && self.linear_use(index) == Ok(LinearUse::Available)
+                && self.linear.len() == before.linear.len()
+                && self.intuitionistic == before.intuitionistic,
+            | (Ok(_), Ok(LinearUse::Consumed)) => ret == Err(ContextError::LinearSlotConsumed { index }) && *self == before,
+            | (Err(error), _) | (_, Err(error)) => ret == Err(error) && *self == before,
+        },
+    )]
+    #[inline]
+    pub fn advance(
+        &mut self,
+        index: DeBruijnIndex,
+        continuation: ValueTypeId,
+    ) -> Result<ValueTypeId, ContextError>
+    {
+        let depth = self.depth(Zone::Linear);
+        let unbound = ContextError::UnboundIndex {
+            zone: Zone::Linear,
+            index,
+            depth,
+        };
+        let slot = slot_offset(depth, index)
+            .and_then(|offset| self.linear.get_mut(offset.0))
+            .ok_or(unbound)?;
+        if slot.use_state == LinearUse::Consumed {
+            return Err(ContextError::LinearSlotConsumed { index });
+        }
+        Ok(core::mem::replace(&mut slot.declared, continuation))
+    }
+
+    /// The linear zone as it stands: every slot's declared type and use.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn linear_zone(&self) -> LinearZone
+    {
+        LinearZone(self.linear.clone())
+    }
+
+    /// Every linear slot's declared type and use, outermost first, read in
+    /// place.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn linear_slots(
+        &self
+    ) -> impl DoubleEndedIterator<Item = (ValueTypeId, LinearUse)> + ExactSizeIterator + '_
+    {
+        self.linear
+            .iter()
+            .map(|slot| (slot.declared, slot.use_state))
+    }
+
+    /// Put the linear zone back as `zone` recorded it: a branching rule's
+    /// return to the state before its first arm.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the linear zone equals `zone` slot for slot and the
+    ///   intuitionistic zone is unchanged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a slot consumed and a slot advanced after the
+    ///   snapshot both read as recorded once it is restored.
+    /// - witness: `context::tests::a_restored_snapshot_undoes_uses_and_advances`
+    #[spec(
+        captures: [structural = self.intuitionistic.clone()],
+        ensures: self.linear == zone.0 && self.intuitionistic == structural,
+    )]
+    #[inline]
+    pub fn restore_linear(
+        &mut self,
+        zone: &LinearZone,
+    )
+    {
+        self.linear.clone_from(&zone.0);
+    }
+
+    /// Drop every binder of `zone` above `depth`, spent or not: the unwinding
+    /// of a refused judgement, which discharges no obligation.
+    ///
+    /// # Specification
+    /// - requires: nothing — a depth at or above the zone's is admissible.
+    /// - ensures: the zone holds the lesser of its depth and `depth` binders,
+    ///   the outermost kept unchanged; the other zone is unchanged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an unconsumed linear slot above the depth is dropped
+    ///   without refusal, a slot below it is kept, and a depth above the zone's
+    ///   changes nothing.
+    /// - witness: `context::tests::truncating_drops_unspent_slots_without_refusal`
+    #[spec(
+        captures: [before = self.clone()],
+        ensures: match zone {
+            | Zone::Intuitionistic => self.intuitionistic.len() == before.intuitionistic.len().min(depth.0)
+                && before.intuitionistic.starts_with(&self.intuitionistic) && self.linear == before.linear,
+            | Zone::Linear => self.linear.len() == before.linear.len().min(depth.0)
+                && before.linear.starts_with(&self.linear) && self.intuitionistic == before.intuitionistic,
+        },
+    )]
+    #[inline]
+    pub fn truncate(
+        &mut self,
+        zone: Zone,
+        depth: BinderDepth,
+    )
+    {
+        match zone {
+            | Zone::Intuitionistic => self.intuitionistic.truncate(depth.0),
+            | Zone::Linear => self.linear.truncate(depth.0),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -782,6 +961,126 @@ mod tests
             }),
             context.linear_use(DeBruijnIndex::from(1_u32)),
             "an index past the linear depth has no use to report"
+        );
+    }
+
+    #[test]
+    fn advancing_rebinds_one_available_slot()
+    {
+        let (_arena, declared, other) = two_types();
+        let mut context = Context::new();
+        context.open(Zone::Linear, declared);
+        context.open(Zone::Linear, declared);
+        let outer = DeBruijnIndex::from(1_u32);
+        let inner = DeBruijnIndex::from(0_u32);
+        assert_eq!(
+            Ok(declared),
+            context.advance(outer, other),
+            "the move answers the type it replaced"
+        );
+        assert_eq!(
+            Ok(other),
+            context.declared(Zone::Linear, outer),
+            "the outer slot moved"
+        );
+        assert_eq!(
+            Ok(declared),
+            context.declared(Zone::Linear, inner),
+            "the inner did not"
+        );
+        assert_eq!(
+            Ok(LinearUse::Available),
+            context.linear_use(outer),
+            "a move spends no use"
+        );
+        assert_eq!(Ok(declared), context.occurrence(Zone::Linear, inner));
+        let before = context.clone();
+        assert_eq!(
+            Err(ContextError::LinearSlotConsumed { index: inner }),
+            context.advance(inner, other),
+            "a closed endpoint does not move"
+        );
+        assert_eq!(
+            Err(ContextError::UnboundIndex {
+                zone: Zone::Linear,
+                index: DeBruijnIndex::from(2_u32),
+                depth: BinderDepth::from(2_usize),
+            }),
+            context.advance(DeBruijnIndex::from(2_u32), other),
+            "nor does an index past the depth"
+        );
+        assert_eq!(before, context, "a refused move changes nothing");
+    }
+
+    #[test]
+    fn a_restored_snapshot_undoes_uses_and_advances()
+    {
+        let (_arena, declared, other) = two_types();
+        let mut context = Context::new();
+        context.open(Zone::Intuitionistic, other);
+        context.open(Zone::Linear, declared);
+        context.open(Zone::Linear, declared);
+        let snapshot = context.linear_zone();
+        assert_eq!(
+            BinderDepth::from(2_usize),
+            snapshot.depth(),
+            "both slots are recorded"
+        );
+        assert_eq!(
+            Ok(declared),
+            context.advance(DeBruijnIndex::from(1_u32), other)
+        );
+        assert_eq!(
+            Ok(declared),
+            context.occurrence(Zone::Linear, DeBruijnIndex::from(0_u32))
+        );
+        assert_ne!(snapshot, context.linear_zone(), "the zone moved on");
+        context.restore_linear(&snapshot);
+        assert_eq!(snapshot, context.linear_zone(), "and is back as recorded");
+        assert_eq!(
+            [
+                (declared, LinearUse::Available),
+                (declared, LinearUse::Available)
+            ],
+            *context.linear_slots().collect::<alloc::vec::Vec<_>>(),
+            "outermost first, both available at their first type"
+        );
+        assert_eq!(
+            BinderDepth::from(1_usize),
+            context.depth(Zone::Intuitionistic),
+            "the intuitionistic zone is untouched"
+        );
+    }
+
+    #[test]
+    fn truncating_drops_unspent_slots_without_refusal()
+    {
+        let (_arena, declared, other) = two_types();
+        let mut context = Context::new();
+        context.open(Zone::Linear, declared);
+        context.open(Zone::Linear, other);
+        context.open(Zone::Intuitionistic, declared);
+        context.truncate(Zone::Linear, BinderDepth::from(3_usize));
+        assert_eq!(
+            BinderDepth::from(2_usize),
+            context.depth(Zone::Linear),
+            "a depth above the zone's drops nothing"
+        );
+        context.truncate(Zone::Linear, BinderDepth::from(1_usize));
+        assert_eq!(
+            BinderDepth::from(1_usize),
+            context.depth(Zone::Linear),
+            "the unspent inner slot is dropped without a refusal"
+        );
+        assert_eq!(
+            Ok(declared),
+            context.declared(Zone::Linear, DeBruijnIndex::from(0_u32)),
+            "the outer slot is kept"
+        );
+        assert_eq!(
+            BinderDepth::from(1_usize),
+            context.depth(Zone::Intuitionistic),
+            "and the other zone is untouched"
         );
     }
 

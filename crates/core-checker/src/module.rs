@@ -631,7 +631,9 @@ fn decide(
         } => (*signature, *body),
     };
     let direction = match signature {
-        | Maybe::Present(declared) => match form_value_type(context, declared) {
+        | Maybe::Present(declared) => match form_value_type(context, declared)
+            .and_then(|formed| crate::session::unrestricted(context, formed.id()).map(|()| formed))
+        {
             | Ok(formed) => Direction::Check(formed),
             | Err(refusal) => return unrun(refusal),
         },

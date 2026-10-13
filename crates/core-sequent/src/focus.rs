@@ -358,6 +358,9 @@ pub enum FocusRefusal
     IncompleteValue(ValueId),
     /// A hole or a mark in computation position.
     IncompleteComputation(ComputationId),
+    /// A session action: the command IL carries no channels, so a send, a
+    /// receive, a choice, a close or a fork has no image in it.
+    Session(ComputationId),
     /// A computation standing where a value is read, before the checker's
     /// elaboration replaced it: only an elaborated body has a command-IL
     /// image, as only one has a kernel image.
@@ -402,6 +405,7 @@ impl fmt::Display for FocusRefusal
             | Self::Unelaborated(_) => f.write_str(
                 "a computation standing as a value before elaboration has no command-IL producer",
             ),
+            | Self::Session(_) => f.write_str("a session action has no image in the command IL"),
         }
     }
 }
@@ -1448,6 +1452,7 @@ impl<'run> Focusing<'run>
     /// - provides: the `𝓕` rows.
     /// - fails: [`FocusRefusal::DanglingComputation`],
     ///   [`FocusRefusal::IncompleteComputation`] for a hole or a mark,
+    ///   [`FocusRefusal::Session`] for a session action,
     ///   [`FocusRefusal::UniverseTransport`] for a universe transport,
     ///   [`FocusRefusal::ElementTransport`] for an element transport, or a
     ///   refused mint.
@@ -1467,11 +1472,13 @@ impl<'run> Focusing<'run>
     /// - witness: `focus::tests::a_projection_selects_by_position_or_label`
     /// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
     /// - witness: `focus::tests::a_hole_or_a_mark_is_refused_by_name`
+    /// - witness: `focus::tests::a_session_action_is_refused_by_name`
     #[spec(
         captures: [work = self.tasks.len()],
         ensures: |ret| match self.core.computation(id) {
             | None => ret == Err(FocusRefusal::DanglingComputation(id)),
             | Some(&Computation::Hole(_) | &Computation::Mark { .. }) => ret == Err(FocusRefusal::IncompleteComputation(id)),
+            | Some(&Computation::Session(_)) => ret == Err(FocusRefusal::Session(id)),
             | Some(_) => ret.is_err() || self.tasks.len() > work,
         },
     )]
@@ -1664,6 +1671,7 @@ impl<'run> Focusing<'run>
             | Computation::Hole(_) | Computation::Mark { .. } => {
                 return Err(FocusRefusal::IncompleteComputation(id));
             },
+            | Computation::Session(_) => return Err(FocusRefusal::Session(id)),
             | Computation::Fixpoint { body, evidence } => {
                 let frame = self.arena.mint_consumer(ConsumerNode::Destructor {
                     tag: DestructorTag::Force,
@@ -2230,6 +2238,29 @@ mod tests
                 "the computation is refused by name"
             );
         }
+    }
+
+    #[test]
+    fn a_session_action_is_refused_by_name()
+    {
+        let mut core = CoreArena::new();
+        let returned = {
+            let unit = core.value_unit();
+            core.computation_return(unit)
+        };
+        let close = core.computation_session(gandr_core_term::session::SessionAction::Close {
+            endpoint: gandr_kernel_term::DeBruijnIndex::from(0_u32),
+        });
+        let term = core.computation_bind(close, returned);
+        let mut arena = CommandArena::new();
+        let mut provenance = Provenance::new();
+        let mark = arena.watermark();
+        assert_eq!(
+            focus_computation(&core, term, &mut arena, &mut provenance),
+            Err(FocusRefusal::Session(close)),
+            "the action is refused by name"
+        );
+        assert_eq!(mark, arena.watermark(), "the arena is back at its mark");
     }
 
     /// A record focuses to the record head of its labels in the core's

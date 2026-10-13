@@ -45,6 +45,9 @@ use gandr_core_checker::ExpectedShape;
 use gandr_core_checker::StaticArity;
 use gandr_core_checker::UnadmittedFormer;
 use gandr_core_checker::body;
+use gandr_core_checker::session::Capture;
+use gandr_core_checker::session::ForkSide;
+use gandr_core_checker::session::ProtocolDefect;
 use gandr_core_checker::signature;
 use gandr_core_term::BinderDepth;
 use gandr_core_term::Sort as TypeSort;
@@ -52,6 +55,15 @@ use gandr_core_term::SortParameter;
 use gandr_core_term::Zone;
 use gandr_core_term::hole::HoleId;
 use gandr_core_term::hole::MarkIndex;
+use gandr_core_term::session::ActionKind;
+use gandr_core_term::session::PayloadCount;
+use gandr_core_term::session::PayloadSlot;
+use gandr_core_term::session::Protocol;
+use gandr_core_term::session::ProtocolState;
+use gandr_core_term::session::ProtocolSyntax;
+use gandr_core_term::session::RecursionIndex;
+use gandr_core_term::session::SessionAction;
+use gandr_core_term::session::SessionType;
 use gandr_kernel_strata::Level;
 use gandr_kernel_strata::LevelConstant;
 use gandr_kernel_strata::LevelOffset;
@@ -92,7 +104,9 @@ use crate::footprint::Footprint;
 use crate::footprint::HoleMark;
 use crate::region::ItemKey;
 use crate::region::Reference;
+use crate::typing::EndpointSite;
 use crate::typing::Form;
+use crate::typing::Linearity;
 use crate::typing::Refusal;
 use crate::typing::Site;
 use crate::typing::Typing;
@@ -1329,6 +1343,14 @@ where
             write_index(writer, first)?;
             write_index(writer, second)?;
         },
+        | ContentNode::SessionType(ref session) => {
+            writer.tag(Tag(0x60));
+            write_session_type(writer, session)?;
+        },
+        | ContentNode::Session(ref action) => {
+            writer.tag(Tag(0x61));
+            write_session_action(writer, action)?;
+        },
         | ContentNode::Perform {
             ref signature,
             ref operation,
@@ -1852,6 +1874,294 @@ fn read_fields(
     Ok(fields)
 }
 
+/// Write a protocol's labelled branches: the count, then each label and the
+/// state it continues at, in label order.
+///
+/// # Specification
+/// - ensures: the count, then each label's bytes and state follow in order.
+/// - fails: an unrepresentable count or label length.
+/// - executable: none — a generic sink exposes no byte observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a selection and an offer survive persistence with their
+///   labels and continuations.
+/// - witness: `codec::tests::session_nodes_persist_their_protocol_and_children`
+fn write_branches<Out>(
+    writer: &mut Writer<'_, Out>,
+    branches: &alloc::collections::BTreeMap<gandr_core_term::FieldLabel, ProtocolState>,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    writer.count(Count(branches.len()))?;
+    for (label, &state) in branches {
+        writer.bytes(Bytes(label.as_ref().as_bytes()))?;
+        writer.count(Count(usize::from(state)))?;
+    }
+    Ok(())
+}
+
+/// Read a protocol's labelled branches, refusing duplicate or out-of-order
+/// labels.
+///
+/// # Specification
+/// - ensures: one continuation for each strictly ordered label.
+/// - fails: malformed branches or noncanonical label order.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a selection and an offer survive persistence with their
+///   labels and continuations.
+/// - witness: `codec::tests::session_nodes_persist_their_protocol_and_children`
+#[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor >= before.saturating_add(8))]
+fn read_branches(
+    reader: &mut Reader<'_>
+) -> Result<alloc::collections::BTreeMap<gandr_core_term::FieldLabel, ProtocolState>, CodecError>
+{
+    let count = reader.count()?;
+    let mut branches = alloc::collections::BTreeMap::new();
+    for _ in 0 .. count.0 {
+        let label = read_field_label(reader)?;
+        if branches
+            .last_key_value()
+            .is_some_and(|(previous, _)| previous >= &label)
+        {
+            return Err(CodecError::NonCanonical);
+        }
+        let state = ProtocolState::from(reader.count()?.0);
+        let _previous = branches.insert(label, state);
+    }
+    Ok(branches)
+}
+
+/// Write a session type: its protocol in written form, the root, the state,
+/// then the payload edges in slot order.
+///
+/// # Specification
+/// - ensures: the node count, each written node, the root, the state and the
+///   payload indices follow in order. The written form counts recursion
+///   variables outward, so the bytes are a function of the protocol alone.
+/// - fails: an unrepresentable count or label length.
+/// - executable: none — a generic sink exposes no byte observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a recursive protocol with every former survives
+///   persistence at a state past its root.
+/// - witness: `codec::tests::session_nodes_persist_their_protocol_and_children`
+fn write_session_type<Out>(
+    writer: &mut Writer<'_, Out>,
+    session: &SessionType<NodeIndex>,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    let written = session.protocol().syntax();
+    writer.count(Count(written.len()))?;
+    for node in &written {
+        match *node {
+            | ProtocolSyntax::Send { payload, next } => {
+                writer.tag(Tag(0));
+                writer.count(Count(usize::from(payload)))?;
+                writer.count(Count(usize::from(next)))?;
+            },
+            | ProtocolSyntax::Receive { payload, next } => {
+                writer.tag(Tag(1));
+                writer.count(Count(usize::from(payload)))?;
+                writer.count(Count(usize::from(next)))?;
+            },
+            | ProtocolSyntax::Select(ref branches) => {
+                writer.tag(Tag(2));
+                write_branches(writer, branches)?;
+            },
+            | ProtocolSyntax::Offer(ref branches) => {
+                writer.tag(Tag(3));
+                write_branches(writer, branches)?;
+            },
+            | ProtocolSyntax::End => writer.tag(Tag(4)),
+            | ProtocolSyntax::Mu(body) => {
+                writer.tag(Tag(5));
+                writer.count(Count(usize::from(body)))?;
+            },
+            | ProtocolSyntax::Recur(outward) => {
+                writer.tag(Tag(6));
+                writer.count(Count(usize::from(outward)))?;
+            },
+        }
+    }
+    writer.count(Count(usize::from(session.protocol().root())))?;
+    writer.count(Count(usize::from(session.state())))?;
+    write_indices(writer, session.payloads())
+}
+
+/// Read a session type written by [`write_session_type`], validating the
+/// protocol through the one constructor that admits protocols.
+///
+/// # Specification
+/// - ensures: the session type of the written protocol, at the written state,
+///   over the written payload edges.
+/// - fails: [`CodecError::Corrupt`] for malformed bytes, an unknown node tag,
+///   or a protocol or state the validation refuses.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a recursive protocol round-trips, and a protocol whose
+///   recursion is not contractive is refused as corrupt.
+/// - witness: `codec::tests::session_nodes_persist_their_protocol_and_children`
+#[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor > before)]
+fn read_session_type(reader: &mut Reader<'_>) -> Result<SessionType<NodeIndex>, CodecError>
+{
+    let count = reader.count()?;
+    let mut written = Vec::new();
+    for _ in 0 .. count.0 {
+        written.push(match reader.tag()?.0 {
+            | 0 => ProtocolSyntax::Send {
+                payload: PayloadSlot::from(reader.count()?.0),
+                next: ProtocolState::from(reader.count()?.0),
+            },
+            | 1 => ProtocolSyntax::Receive {
+                payload: PayloadSlot::from(reader.count()?.0),
+                next: ProtocolState::from(reader.count()?.0),
+            },
+            | 2 => ProtocolSyntax::Select(read_branches(reader)?),
+            | 3 => ProtocolSyntax::Offer(read_branches(reader)?),
+            | 4 => ProtocolSyntax::End,
+            | 5 => ProtocolSyntax::Mu(ProtocolState::from(reader.count()?.0)),
+            | 6 => ProtocolSyntax::Recur(RecursionIndex::from(reader.count()?.0)),
+            | _ => return Err(CodecError::Corrupt),
+        });
+    }
+    let root = ProtocolState::from(reader.count()?.0);
+    let state = ProtocolState::from(reader.count()?.0);
+    let payloads = read_indices(reader)?;
+    let protocol = Protocol::new(written, root, PayloadCount::from(payloads.len()))
+        .map_err(|_refused| CodecError::Corrupt)?;
+    SessionType::new(alloc::sync::Arc::new(protocol), payloads.into())
+        .and_then(|session| session.at(state))
+        .map_err(|_refused| CodecError::Corrupt)
+}
+
+/// Write a session action: its kind, its endpoint, then its label, payload,
+/// arms or fork edges.
+///
+/// # Specification
+/// - ensures: the kind's tag, then the endpoint for an action on one, then the
+///   action's own fields in [`SessionAction`] order.
+/// - fails: an unrepresentable count or label length.
+/// - executable: none — a generic sink exposes no byte observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every action kind survives persistence with its endpoint,
+///   label and children.
+/// - witness: `codec::tests::session_nodes_persist_their_protocol_and_children`
+fn write_session_action<Out>(
+    writer: &mut Writer<'_, Out>,
+    action: &SessionAction<NodeIndex, NodeIndex, NodeIndex>,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    let endpoint = |writer: &mut Writer<'_, Out>, index: DeBruijnIndex| {
+        writer.word(Word(u64::from(u32::from(index))));
+    };
+    match *action {
+        | SessionAction::Send {
+            endpoint: subject,
+            payload,
+        } => {
+            writer.tag(Tag(0));
+            endpoint(writer, subject);
+            write_index(writer, payload)?;
+        },
+        | SessionAction::Receive { endpoint: subject } => {
+            writer.tag(Tag(1));
+            endpoint(writer, subject);
+        },
+        | SessionAction::Select {
+            endpoint: subject,
+            ref label,
+        } => {
+            writer.tag(Tag(2));
+            endpoint(writer, subject);
+            writer.bytes(Bytes(label.as_ref().as_bytes()))?;
+        },
+        | SessionAction::Offer {
+            endpoint: subject,
+            ref arms,
+        } => {
+            writer.tag(Tag(3));
+            endpoint(writer, subject);
+            write_fields(writer, arms)?;
+        },
+        | SessionAction::Close { endpoint: subject } => {
+            writer.tag(Tag(4));
+            endpoint(writer, subject);
+        },
+        | SessionAction::Fork {
+            protocol,
+            child,
+            parent,
+        } => {
+            writer.tag(Tag(5));
+            write_index(writer, protocol)?;
+            write_index(writer, child)?;
+            write_index(writer, parent)?;
+        },
+    }
+    Ok(())
+}
+
+/// Read a session action written by [`write_session_action`].
+///
+/// # Specification
+/// - ensures: the action of the written kind over the written endpoint, label,
+///   payload, arms or fork edges.
+/// - fails: [`CodecError::Corrupt`] for malformed bytes, an unknown kind or an
+///   endpoint past the `u32` ceiling; [`CodecError::NonCanonical`] for arms out
+///   of label order.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every action kind round-trips.
+/// - witness: `codec::tests::session_nodes_persist_their_protocol_and_children`
+#[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor > before)]
+fn read_session_action(
+    reader: &mut Reader<'_>
+) -> Result<SessionAction<NodeIndex, NodeIndex, NodeIndex>, CodecError>
+{
+    let endpoint = |reader: &mut Reader<'_>| {
+        let word = reader.word()?;
+        u32::try_from(word.0)
+            .map(DeBruijnIndex::from)
+            .map_err(|_overflow| CodecError::Corrupt)
+    };
+    Ok(match reader.tag()?.0 {
+        | 0 => SessionAction::Send {
+            endpoint: endpoint(reader)?,
+            payload: read_index(reader)?,
+        },
+        | 1 => SessionAction::Receive {
+            endpoint: endpoint(reader)?,
+        },
+        | 2 => SessionAction::Select {
+            endpoint: endpoint(reader)?,
+            label: read_field_label(reader)?,
+        },
+        | 3 => SessionAction::Offer {
+            endpoint: endpoint(reader)?,
+            arms: read_fields(reader)?,
+        },
+        | 4 => SessionAction::Close {
+            endpoint: endpoint(reader)?,
+        },
+        | 5 => SessionAction::Fork {
+            protocol: read_index(reader)?,
+            child: read_index(reader)?,
+            parent: read_index(reader)?,
+        },
+        | _ => return Err(CodecError::Corrupt),
+    })
+}
+
 /// Write a description as univalence at a stratum reads it: its name, then
 /// each generator's label and port counts, in written order.
 ///
@@ -2079,6 +2389,163 @@ fn read_ua_defect(reader: &mut Reader<'_>) -> Result<gandr_core_checker::ua::UaD
         | 6 => UaDefect::Stuck {
             corolla: ShapeIndex::from(count()?),
             element: ElementIndex::from(count()?),
+        },
+        | _ => return Err(CodecError::Corrupt),
+    })
+}
+
+/// Write an endpoint: its fork's site, then its side.
+///
+/// # Specification
+/// - ensures: the site and the side's wire tag follow in order.
+/// - fails: an unrepresentable site.
+/// - executable: none — a generic sink exposes no byte observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a residue and an arm disagreement round-trip with their
+///   endpoints.
+/// - witness: `codec::tests::session_refusals_round_trip_with_their_endpoints`
+fn write_endpoint<Out>(
+    writer: &mut Writer<'_, Out>,
+    endpoint: EndpointSite,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    write_site(writer, endpoint.fork)?;
+    write_listed(writer, &SIDES, &endpoint.side)
+}
+
+/// Read an endpoint written by [`write_endpoint`].
+///
+/// # Specification
+/// - ensures: the written fork site and side.
+/// - fails: malformed bytes or an unknown side.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a residue and an arm disagreement round-trip with their
+///   endpoints.
+/// - witness: `codec::tests::session_refusals_round_trip_with_their_endpoints`
+#[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor > before)]
+fn read_endpoint(reader: &mut Reader<'_>) -> Result<EndpointSite, CodecError>
+{
+    Ok(EndpointSite {
+        fork: read_site(reader)?,
+        side: read_listed(reader, &SIDES)?,
+    })
+}
+
+/// Write how an endpoint escaped its one linear use: the kind's tag, then its
+/// endpoint, state, capture, arms or index.
+///
+/// # Specification
+/// - ensures: the tag, then the defect's payloads in declaration order.
+/// - fails: an unrepresentable site or type table.
+/// - executable: none — a generic sink exposes no byte observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every defect kind round-trips with its payload.
+/// - witness: `codec::tests::session_refusals_round_trip_with_their_endpoints`
+fn write_linearity<Out>(
+    writer: &mut Writer<'_, Out>,
+    defect: &Linearity,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    match *defect {
+        | Linearity::Residue {
+            endpoint,
+            ref state,
+        } => {
+            writer.tag(Tag(0));
+            write_endpoint(writer, endpoint)?;
+            write_type(writer, state)?;
+        },
+        | Linearity::Closed { endpoint } => {
+            writer.tag(Tag(1));
+            write_endpoint(writer, endpoint)?;
+        },
+        | Linearity::UsedTwice { endpoint } => {
+            writer.tag(Tag(2));
+            write_endpoint(writer, endpoint)?;
+        },
+        | Linearity::Captured { endpoint, by } => {
+            writer.tag(Tag(3));
+            write_endpoint(writer, endpoint)?;
+            write_listed(writer, &CAPTURES, &by)?;
+        },
+        | Linearity::Delegated => writer.tag(Tag(4)),
+        | Linearity::AsValue { endpoint } => {
+            writer.tag(Tag(5));
+            write_endpoint(writer, endpoint)?;
+        },
+        | Linearity::ArmsDisagree {
+            endpoint,
+            first,
+            other,
+        } => {
+            writer.tag(Tag(6));
+            write_endpoint(writer, endpoint)?;
+            write_site(writer, first)?;
+            write_site(writer, other)?;
+        },
+        | Linearity::Unrestricted => writer.tag(Tag(7)),
+        | Linearity::Unbound { index } => {
+            writer.tag(Tag(8));
+            writer.word(Word(u64::from(u32::from(index))));
+        },
+    }
+    Ok(())
+}
+
+/// Read a linearity defect written by [`write_linearity`].
+///
+/// # Specification
+/// - ensures: the defect of the written kind over the written payloads.
+/// - fails: malformed bytes, an unknown kind, capture or side, or an index past
+///   the `u32` ceiling.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every defect kind round-trips with its payload.
+/// - witness: `codec::tests::session_refusals_round_trip_with_their_endpoints`
+#[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor > before)]
+fn read_linearity(reader: &mut Reader<'_>) -> Result<Linearity, CodecError>
+{
+    Ok(match reader.tag()?.0 {
+        | 0 => Linearity::Residue {
+            endpoint: read_endpoint(reader)?,
+            state: read_type(reader)?,
+        },
+        | 1 => Linearity::Closed {
+            endpoint: read_endpoint(reader)?,
+        },
+        | 2 => Linearity::UsedTwice {
+            endpoint: read_endpoint(reader)?,
+        },
+        | 3 => Linearity::Captured {
+            endpoint: read_endpoint(reader)?,
+            by: read_listed(reader, &CAPTURES)?,
+        },
+        | 4 => Linearity::Delegated,
+        | 5 => Linearity::AsValue {
+            endpoint: read_endpoint(reader)?,
+        },
+        | 6 => Linearity::ArmsDisagree {
+            endpoint: read_endpoint(reader)?,
+            first: read_site(reader)?,
+            other: read_site(reader)?,
+        },
+        | 7 => Linearity::Unrestricted,
+        | 8 => {
+            let word = reader.word()?;
+            Linearity::Unbound {
+                index: u32::try_from(word.0)
+                    .map(DeBruijnIndex::from)
+                    .map_err(|_overflow| CodecError::Corrupt)?,
+            }
         },
         | _ => return Err(CodecError::Corrupt),
     })
@@ -2353,6 +2820,8 @@ fn read_effect_row(
                     | ContentNode::Reify(_) => tag == 0x71,
                     | ContentNode::Stack { .. } => tag == 0x72,
                     | ContentNode::WithType(..) => tag == 0x73,
+                    | ContentNode::SessionType(_) => tag == 0x60,
+                    | ContentNode::Session(_) => tag == 0x61,
                     | ContentNode::Perform { .. } => tag == 0x74,
                     | ContentNode::Handle { .. } => tag == 0x75,
                     | ContentNode::Resume(..) => tag == 0x76,
@@ -2490,6 +2959,8 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             output: read_index(reader)?,
         },
         | 0x73 => ContentNode::WithType(read_index(reader)?, read_index(reader)?),
+        | 0x60 => ContentNode::SessionType(read_session_type(reader)?),
+        | 0x61 => ContentNode::Session(read_session_action(reader)?),
         | 0x74 => {
             let payload = read_index(reader)?;
             let signature = read_effect_signature(reader)?;
@@ -3714,7 +4185,7 @@ const FORMERS: [UnadmittedFormer; 16] = [
 ];
 
 /// The shapes a rule can require, in stable wire order.
-const SHAPES: [ExpectedShape; 12] = [
+const SHAPES: [ExpectedShape; 13] = [
     ExpectedShape::Thunk,
     ExpectedShape::Returner,
     ExpectedShape::Arrow,
@@ -3727,6 +4198,28 @@ const SHAPES: [ExpectedShape; 12] = [
     ExpectedShape::Stack,
     ExpectedShape::With,
     ExpectedShape::List,
+    ExpectedShape::Session,
+];
+
+/// The actions a session state admits, in stable wire order.
+const ACTIONS: [ActionKind; 5] = [
+    ActionKind::Send,
+    ActionKind::Receive,
+    ActionKind::Select,
+    ActionKind::Offer,
+    ActionKind::Close,
+];
+
+/// The sides of a fork, in stable wire order.
+const SIDES: [ForkSide; 2] = [ForkSide::Child, ForkSide::Parent];
+
+/// What may run an endpoint's use other than once, in stable wire order.
+const CAPTURES: [Capture; 5] = [
+    Capture::Thunk,
+    Capture::Recursion,
+    Capture::Branch,
+    Capture::Stack,
+    Capture::Continuation,
 ];
 
 /// The termination evidence a fixpoint carries, in stable wire order.
@@ -3935,6 +4428,7 @@ where
                 ..
             } => [synthesised.nodes(), expected.nodes()],
             Refusal::DataFieldLevel {kind:ref found,..} | Refusal::RepresentationAboveKind {kind:ref found,..} | Refusal::MissingRecordField {expected:ref found,..} | Refusal::ShapeMismatch { ref found, .. }
+            | Refusal::SessionMismatch { state: ref found, .. } | Refusal::Linearity { defect: Linearity::Residue { state: ref found, .. }, .. }
             | Refusal::StaticClassifierExpected { ref found, .. } => [found.nodes(), &[]],
             | Refusal::DependentBind {
                 ref synthesised, ..
@@ -4208,6 +4702,10 @@ where
                     writer.tag(Tag(7));
                     write_site(writer, site)?;
                 },
+                | Form::Offer(site) => {
+                    writer.tag(Tag(16));
+                    write_site(writer, site)?;
+                },
             }
         },
         | Refusal::UnknownConstant { at, ref constant } => {
@@ -4336,6 +4834,31 @@ where
             write_site(writer, at)?;
             write_listed(writer, &DESCENT_REFUSALS, &reason)?;
         },
+        | Refusal::SessionMismatch {
+            at,
+            endpoint,
+            ref state,
+            defect,
+        } => {
+            writer.tag(Tag(56));
+            write_site(writer, at)?;
+            write_endpoint(writer, endpoint)?;
+            write_type(writer, state)?;
+            match defect {
+                | ProtocolDefect::Action { expected, observed } => {
+                    writer.tag(Tag(0));
+                    write_listed(writer, &ACTIONS, &expected)?;
+                    write_listed(writer, &ACTIONS, &observed)?;
+                },
+                | ProtocolDefect::Label => writer.tag(Tag(1)),
+                | ProtocolDefect::Arms => writer.tag(Tag(2)),
+            }
+        },
+        | Refusal::Linearity { at, ref defect } => {
+            writer.tag(Tag(57));
+            write_site(writer, at)?;
+            write_linearity(writer, defect)?;
+        },
     }
     Ok(())
 }
@@ -4463,6 +4986,8 @@ where
                     | Refusal::UaUncertified { .. } => 53,
                     | Refusal::UaInequivalent { .. } => 54,
                     | Refusal::UnenclosedRun { .. } => 55,
+                    | Refusal::SessionMismatch { .. } => 56,
+                    | Refusal::Linearity { .. } => 57,
                 })
         },
         | Err(CodecError::LevelOffsetTooLarge { offset }) => {
@@ -4553,6 +5078,7 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
                 | 13 => Form::With(read_site(reader)?),
                 | 14 => Form::Split(read_site(reader)?),
                 | 15 => Form::Nested(read_site(reader)?),
+                | 16 => Form::Offer(read_site(reader)?),
                 | _ => return Err(CodecError::Corrupt),
             };
             Refusal::NotSynthesisable { form }
@@ -4697,6 +5223,30 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
         | 55 => Refusal::UnenclosedRun {
             at: read_site(reader)?,
         },
+        | 56 => {
+            let at = read_site(reader)?;
+            let endpoint = read_endpoint(reader)?;
+            let state = read_type(reader)?;
+            let defect = match reader.tag()?.0 {
+                | 0 => ProtocolDefect::Action {
+                    expected: read_listed(reader, &ACTIONS)?,
+                    observed: read_listed(reader, &ACTIONS)?,
+                },
+                | 1 => ProtocolDefect::Label,
+                | 2 => ProtocolDefect::Arms,
+                | _ => return Err(CodecError::Corrupt),
+            };
+            Refusal::SessionMismatch {
+                at,
+                endpoint,
+                state,
+                defect,
+            }
+        },
+        | 57 => Refusal::Linearity {
+            at: read_site(reader)?,
+            defect: read_linearity(reader)?,
+        },
         | 28 => Refusal::NegativeOccurrence(read_occurrence_site(reader)?),
         | 29 => Refusal::NestedOccurrence(read_occurrence_site(reader)?),
         | 30 => Refusal::IndexOccurrence(read_occurrence_site(reader)?),
@@ -4781,6 +5331,15 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
                         ..
                     } => [synthesised.nodes(), expected.nodes()],
                     | Refusal::ShapeMismatch { ref found, .. }
+                    | Refusal::SessionMismatch {
+                        state: ref found, ..
+                    }
+                    | Refusal::Linearity {
+                        defect: Linearity::Residue {
+                            state: ref found, ..
+                        },
+                        ..
+                    }
                     | Refusal::StaticClassifierExpected { ref found, .. } => {
                         [found.nodes(), &[]]
                     },
@@ -5032,6 +5591,7 @@ fn read_answer(reader: &mut Reader<'_>) -> Result<Answer, CodecError>
                     ..
                 } => [synthesised.nodes(), expected.nodes()],
                 Refusal::DataFieldLevel {kind:ref found,..} | Refusal::RepresentationAboveKind {kind:ref found,..} | Refusal::MissingRecordField {expected:ref found,..} | Refusal::ShapeMismatch { ref found, .. }
+                | Refusal::SessionMismatch { state: ref found, .. } | Refusal::Linearity { defect: Linearity::Residue { state: ref found, .. }, .. }
                 | Refusal::StaticClassifierExpected { ref found, .. } => [found.nodes(), &[]],
                 | Refusal::DependentBind {
                     ref synthesised, ..
@@ -5225,6 +5785,16 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
                 ..
             }
             | Refusal::ShapeMismatch { ref found, .. }
+            | Refusal::SessionMismatch {
+                state: ref found, ..
+            }
+            | Refusal::Linearity {
+                defect:
+                    Linearity::Residue {
+                        state: ref found, ..
+                    },
+                ..
+            }
             | Refusal::StaticClassifierExpected { ref found, .. } => [Some(found), None],
             | Refusal::DependentBind {
                 ref synthesised, ..
@@ -5906,6 +6476,226 @@ mod tests
             let mut bytes = CheckpointBytes::default();
             super::write_refusal(&mut Writer { sink: &mut bytes }, &refusal)
                 .expect("portable control refusal");
+            let mut reader = Reader {
+                bytes: bytes.as_ref(),
+                cursor: 0,
+            };
+            assert_eq!(super::read_refusal(&mut reader), Ok(refusal));
+            assert_eq!(reader.finish(), Ok(()));
+        }
+    }
+
+    #[test]
+    fn session_nodes_persist_their_protocol_and_children()
+    {
+        use alloc::collections::BTreeMap;
+        use alloc::sync::Arc;
+
+        use gandr_core_term::session::PayloadCount;
+        use gandr_core_term::session::PayloadSlot;
+        use gandr_core_term::session::Protocol;
+        use gandr_core_term::session::ProtocolState;
+        use gandr_core_term::session::ProtocolSyntax;
+        use gandr_core_term::session::RecursionIndex;
+        use gandr_core_term::session::SessionAction;
+        use gandr_core_term::session::SessionType;
+        use gandr_kernel_term::DeBruijnIndex;
+        let index = NodeIndex::from;
+        let state = ProtocolState::from;
+        let label =
+            |text: &str| gandr_core_term::FieldLabel::from(alloc::string::String::from(text));
+        // ?A. mu t. +{ report : !B. &{ next : t, retire : end }, handoff : !A. end }
+        let protocol = Protocol::new(
+            vec![
+                ProtocolSyntax::Receive {
+                    payload: PayloadSlot::from(0_usize),
+                    next: state(1),
+                },
+                ProtocolSyntax::Mu(state(2)),
+                ProtocolSyntax::Select(BTreeMap::from([
+                    (label("handoff"), state(6)),
+                    (label("report"), state(3)),
+                ])),
+                ProtocolSyntax::Send {
+                    payload: PayloadSlot::from(1_usize),
+                    next: state(4),
+                },
+                ProtocolSyntax::Offer(BTreeMap::from([
+                    (label("next"), state(5)),
+                    (label("retire"), state(7)),
+                ])),
+                ProtocolSyntax::Recur(RecursionIndex::from(0_usize)),
+                ProtocolSyntax::Send {
+                    payload: PayloadSlot::from(0_usize),
+                    next: state(8),
+                },
+                ProtocolSyntax::End,
+                ProtocolSyntax::End,
+            ],
+            state(0),
+            PayloadCount::from(2_usize),
+        )
+        .expect("a contractive protocol");
+        let at_root = SessionType::new(
+            Arc::new(protocol),
+            Arc::from([index(1_usize), index(2_usize)]),
+        )
+        .expect("two payloads");
+        let inside = at_root.at(state(4)).expect("a state of the protocol");
+        let endpoint = DeBruijnIndex::from(1_u32);
+        let nodes = [
+            ContentNode::SessionType(at_root.clone()),
+            ContentNode::SessionType(inside),
+            ContentNode::SessionType(at_root.dual()),
+            ContentNode::Session(SessionAction::Send {
+                endpoint,
+                payload: index(1_usize),
+            }),
+            ContentNode::Session(SessionAction::Receive { endpoint }),
+            ContentNode::Session(SessionAction::Select {
+                endpoint,
+                label: label("report"),
+            }),
+            ContentNode::Session(SessionAction::Offer {
+                endpoint,
+                arms: BTreeMap::from([
+                    (label("next"), index(1_usize)),
+                    (label("retire"), index(2_usize)),
+                ]),
+            }),
+            ContentNode::Session(SessionAction::Close { endpoint }),
+            ContentNode::Session(SessionAction::Fork {
+                protocol: index(1_usize),
+                child: index(2_usize),
+                parent: index(3_usize),
+            }),
+        ];
+        let mut encodings = alloc::collections::BTreeSet::new();
+        for node in nodes {
+            let mut bytes = CheckpointBytes::default();
+            super::write_node(&mut Writer { sink: &mut bytes }, &node)
+                .expect("portable session node");
+            assert!(
+                encodings.insert(bytes.as_ref().to_vec()),
+                "distinct session identities, a state and a dual included"
+            );
+            let mut reader = Reader {
+                bytes: bytes.as_ref(),
+                cursor: 0,
+            };
+            assert_eq!(super::read_node(&mut reader), Ok(node));
+            assert_eq!(reader.finish(), Ok(()));
+        }
+
+        // mu t. t, written by hand: the reader validates and refuses it.
+        let mut bytes = CheckpointBytes::default();
+        let mut writer = Writer { sink: &mut bytes };
+        writer.tag(Tag(0x60));
+        writer.count(Count(2)).expect("two nodes");
+        writer.tag(Tag(5));
+        writer.count(Count(1)).expect("the mu's body");
+        writer.tag(Tag(6));
+        writer.count(Count(0)).expect("the variable's binder");
+        writer.count(Count(0)).expect("the root");
+        writer.count(Count(0)).expect("the state");
+        super::write_indices(&mut writer, &[]).expect("no payloads");
+        let mut reader = Reader {
+            bytes: bytes.as_ref(),
+            cursor: 0,
+        };
+        assert_eq!(
+            super::read_node(&mut reader),
+            Err(CodecError::Corrupt),
+            "a non-contractive protocol is refused at the one constructor"
+        );
+    }
+
+    #[test]
+    fn session_refusals_round_trip_with_their_endpoints()
+    {
+        use gandr_core_checker::session::Capture;
+        use gandr_core_checker::session::ForkSide;
+        use gandr_core_checker::session::ProtocolDefect;
+        use gandr_core_term::session::ActionKind;
+        use gandr_kernel_term::DeBruijnIndex;
+
+        use super::EndpointSite;
+        use super::Linearity;
+        let at = Site::Node(NodeIndex::from(3_usize));
+        let child = EndpointSite {
+            fork: Site::Node(NodeIndex::from(1_usize)),
+            side: ForkSide::Child,
+        };
+        let parent = EndpointSite {
+            side: ForkSide::Parent,
+            ..child
+        };
+        let state = || TypeContent::from_nodes(vec![ContentNode::Product(Vec::new())]);
+        let mut refusals = vec![
+            Refusal::SessionMismatch {
+                at,
+                endpoint: parent,
+                state: state(),
+                defect: ProtocolDefect::Action {
+                    expected: ActionKind::Send,
+                    observed: ActionKind::Receive,
+                },
+            },
+            Refusal::SessionMismatch {
+                at,
+                endpoint: child,
+                state: state(),
+                defect: ProtocolDefect::Label,
+            },
+            Refusal::SessionMismatch {
+                at,
+                endpoint: child,
+                state: state(),
+                defect: ProtocolDefect::Arms,
+            },
+            Refusal::NotSynthesisable {
+                form: super::Form::Offer(at),
+            },
+            Refusal::ShapeMismatch {
+                at,
+                wanted: super::ExpectedShape::Session,
+                found: state(),
+            },
+        ];
+        for defect in [
+            Linearity::Residue {
+                endpoint: child,
+                state: state(),
+            },
+            Linearity::Closed { endpoint: parent },
+            Linearity::UsedTwice { endpoint: child },
+            Linearity::Captured {
+                endpoint: child,
+                by: Capture::Continuation,
+            },
+            Linearity::Delegated,
+            Linearity::AsValue { endpoint: parent },
+            Linearity::ArmsDisagree {
+                endpoint: child,
+                first: Site::Node(NodeIndex::from(4_usize)),
+                other: Site::Unreached,
+            },
+            Linearity::Unrestricted,
+            Linearity::Unbound {
+                index: DeBruijnIndex::from(2_u32),
+            },
+        ] {
+            refusals.push(Refusal::Linearity { at, defect });
+        }
+        let mut encodings = alloc::collections::BTreeSet::new();
+        for refusal in refusals {
+            let mut bytes = CheckpointBytes::default();
+            super::write_refusal(&mut Writer { sink: &mut bytes }, &refusal)
+                .expect("portable session refusal");
+            assert!(
+                encodings.insert(bytes.as_ref().to_vec()),
+                "each defect and side keeps its own encoding"
+            );
             let mut reader = Reader {
                 bytes: bytes.as_ref(),
                 cursor: 0,

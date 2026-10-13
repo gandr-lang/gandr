@@ -1402,6 +1402,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 | ValueTypeView::Lift { .. }
                 | ValueTypeView::Product(_)
                 | ValueTypeView::StaticPi { .. }
+                | ValueTypeView::Session(_)
                 | ValueTypeView::Unknown => return Ok(head),
             };
             let Maybe::Present(body) = self.unfold(code)?
@@ -1611,6 +1612,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                     | ValueTypeView::Product(..)
                     | ValueTypeView::StaticPi { .. }
                     | ValueTypeView::Abstract(_)
+                    | ValueTypeView::Session(_)
                     | ValueTypeView::Unknown => Ok(otherwise.clone()),
                 },
                 | Maybe::Absent(_) => Ok(otherwise.clone()),

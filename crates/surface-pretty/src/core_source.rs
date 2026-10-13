@@ -395,6 +395,7 @@ Former::Unreadable) | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::Li
     /// - witness: `core_source::tests::holes_marks_and_the_unknown_type_read_as_unreadable`
     /// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
     /// - witness: `goldens::tests::native_paths_preserve_ordered_endpoints_and_maps`
+    /// - witness: `goldens::tests::session_types_spell_their_protocol_and_payloads`
     #[spec(ensures: |ret| match (self.arena.value_type(id), ret) {
         | (Some(&ValueType::Stack { input, output }), Former::Stack(a, b)) => a == CoreNode::CompType(input) && b == CoreNode::CompType(output),
         | (Some(&ValueType::PathUniverse(source, target)), Former::PathUniverse(actual_source, actual_target)) => actual_source == CoreNode::Value(source) && actual_target == CoreNode::Value(target),
@@ -416,6 +417,8 @@ Former::Unreadable) |
         | (Some(&ValueType::Abstract(index)), Former::Unreadable) => usize::from(index) >= self.names.len(),
         | (Some(&ValueType::StaticPi { domain, codomain }), Former::StaticPi { domain: actual_domain, codomain: actual_codomain }) =>
             actual_domain == CoreNode::ValueType(domain) && actual_codomain == CoreNode::ValueType(codomain),
+        | (Some(&ValueType::Session(ref session)), Former::Session { protocol, state, payloads }) =>
+            core::ptr::eq(core::ptr::from_ref(protocol), core::ptr::from_ref(session.protocol())) && state == session.state() && usize::from(payloads) == session.payloads().len(),
         | _ => false,
     })]
     fn value_type(
@@ -454,6 +457,11 @@ Former::Unreadable) |
             | ValueType::StaticPi { domain, codomain } => Former::StaticPi {
                 domain: CoreNode::ValueType(domain),
                 codomain: CoreNode::ValueType(codomain),
+            },
+            | ValueType::Session(ref session) => Former::Session {
+                protocol: session.protocol(),
+                state: session.state(),
+                payloads: Arity::from(session.payloads().len()),
             },
         }
     }
@@ -590,7 +598,7 @@ impl Source for CoreSource<'_>
         | CoreNode::ValueType(_) => matches!(ret, Former::BaseType(_) | Former::Product(_) | Former::RecordType(_)
             | Former::Stack(..) | Former::List(_)
             | Former::Sum(_) | Former::ThunkType(_) | Former::Universe { .. } | Former::TypeLift
-            | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::PathUniverse(..) | Former::Unreadable),
+            | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::PathUniverse(..) | Former::Session { .. } | Former::Unreadable),
         | CoreNode::CompType(_) => matches!(ret, Former::Returner(_) | Former::EffectfulReturner { .. } | Former::Arrow { .. } | Former::Pi { .. }
             | Former::With(..) | Former::ComputationElement(_) | Former::Unreadable),
     })]
@@ -630,7 +638,8 @@ impl Source for CoreSource<'_>
                     | Computation::Project(..)
                     | Computation::Fixpoint { .. }
                     | Computation::ListFold { .. }
-                    | Computation::Case { .. }),
+                    | Computation::Case { .. }
+                    | Computation::Session(_)),
                 ) => Former::Computation,
                 | Some(&(Computation::Hole(_) | Computation::Mark { .. })) | None => {
                     Former::Unreadable
@@ -669,6 +678,7 @@ impl Source for CoreSource<'_>
     #[spec(captures: restored = self.restoration.restored(node), ensures: |ret| ret == match restored {
         | CoreNode::ValueType(id) => match self.arena.value_type(id) {
             | Some(&(ValueType::Product(ref parts) | ValueType::Sum(ref parts))) => parts.get(usize::from(index)).map(|&part| CoreNode::ValueType(part)),
+            | Some(&ValueType::Session(ref session)) => session.payloads().get(usize::from(index)).map(|&payload| CoreNode::ValueType(payload)),
             | Some(&ValueType::Record(ref fields)) => fields.values().nth(usize::from(index)).map(|&field| CoreNode::ValueType(field)),
             | _ => None,
         },
@@ -695,6 +705,10 @@ impl Source for CoreSource<'_>
                     .values()
                     .nth(usize::from(index))
                     .map(|&field| CoreNode::ValueType(field)),
+                | ValueType::Session(ref session) => session
+                    .payloads()
+                    .get(usize::from(index))
+                    .map(|&payload| CoreNode::ValueType(payload)),
                 | _ => None,
             },
             | CoreNode::Value(id) => match *self.arena.value(id)? {
