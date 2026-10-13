@@ -502,6 +502,8 @@ impl Annotations
             | LoweringRefusal::IllTypedPayload { .. }
             | LoweringRefusal::UnknownMember { .. }
             | LoweringRefusal::UnreadAscription { .. }
+            | LoweringRefusal::UnstatedComponent { .. }
+            | LoweringRefusal::FamilyTelescope { .. }
             | LoweringRefusal::LowercaseModuleName { .. }
             | LoweringRefusal::NonExhaustiveMatch { .. }
             | LoweringRefusal::UnmarkedSelfReference { .. }

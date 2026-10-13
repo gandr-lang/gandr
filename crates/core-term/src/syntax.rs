@@ -923,6 +923,8 @@ pub fn equal_certificate_syntax(
     (Some(left), Some(right)) => core::mem::discriminant(left) == core::mem::discriminant(right),
     _ => false,
 })]
+#[inline]
+#[must_use]
 pub fn equal_type_syntax(
     arena: &crate::CoreArena,
     left: ValueTypeId,

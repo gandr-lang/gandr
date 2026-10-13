@@ -266,13 +266,21 @@ use crate::origin::OriginToken;
 use crate::resolve::SurfaceName;
 
 mod data;
-
+mod model;
 mod sealing;
 
 pub use self::data::Constructor;
 pub use self::data::DataForm;
+pub use self::model::FamilyCheck;
+pub use self::model::FamilyForm;
+pub use self::model::FamilyIndex;
+pub use self::model::FamilyMember;
+pub use self::model::ModelIndex;
+pub use self::model::ModelPart;
+pub use self::model::derived;
 pub use self::sealing::AbstractSlot;
 pub use self::sealing::ComponentPlace;
+use self::sealing::KindForm;
 pub use self::sealing::Sealed;
 pub use self::sealing::SealedComponent;
 pub use self::sealing::Sealing;
@@ -347,6 +355,9 @@ quenchant_shape::reason_enum! {
             /// No `: κ` follows the component's name, so it inhabits the
             /// fuss-free universe `Type`.
             Unkinded,
+            /// The component is a sort a model signature derives, which
+            /// states no kind: a sort is as large as its model makes it.
+            Derived,
         }
     }
 }
@@ -602,9 +613,10 @@ pub enum Member
 /// - requires: nothing to construct this data; its producers and consumers
 ///   state coordinate preconditions separately.
 /// - ensures: Value signatures and manifest definitions retain their operands;
-///   an abstract component retains its written kind, when it has one; unread
-///   type components retain the specific ascription form rather than being
-///   treated as values.
+///   an abstract component retains its written kind, when it has one, and a
+///   family its written kind or its derivation; a derived value component is
+///   read off the model signature at its own place; unread type components
+///   retain the specific ascription form rather than being treated as values.
 /// - fails: not applicable to the data item.
 /// - panics: not applicable to the data item.
 /// - executable: none — the enabled specification facade does not expose
@@ -612,11 +624,12 @@ pub enum Member
 ///   consuming operations.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — manifest, abstract, universe-kinded and family-kinded
-///   components have distinct outcomes.
+/// - hypothesis: L3 — manifest, abstract, universe-kinded, family-kinded and
+///   derived components have distinct outcomes.
 /// - witness: `modules::modules::a_kinded_type_component_is_declined_by_name_and_a_manifest_one_is_not`
 /// - witness: `modules::modules::a_transparent_abstract_component_reads_its_type_member`
 /// - witness: `modules::modules::an_abstract_component_kinds_at_a_universe`
+/// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ComponentForm
 {
@@ -628,6 +641,13 @@ pub enum ComponentForm
     /// written for it: its meaning is the body's type member of its name,
     /// sealed by an opaque ascription and strengthened by a transparent one.
     Abstract(Maybe<Placed, component_kind::Absent>),
+    /// A type family component `type F : (a : A, …) => Type`, or an indexed
+    /// sort a model signature derives: its meaning is the body's family
+    /// member of its name.
+    Family(FamilyForm),
+    /// A value component a model signature derives at the component's own
+    /// place: an operation, a law, or a member the derivation cannot state.
+    Derived,
     /// A type component the fragment does not read yet.
     Unread(AscriptionForm),
 }
@@ -784,6 +804,9 @@ pub struct Structure<'source>
     /// The inline signature's components, in signature order, when the
     /// module is ascribed.
     pub ascription: Maybe<Vec<Component<'source>>, ascription::Absent>,
+    /// The model signature the ascription derives, `: Model(S)`, at its place
+    /// in the collection's model list.
+    pub model: Maybe<ModelIndex, derived::Absent>,
     /// Whether the ascription is opaque, `:>`, and seals what it hides.
     pub sealed: Sealed,
     /// The body's members, in source order.
@@ -845,6 +868,9 @@ pub enum Operand
     /// until a model of the signature is derived from it: the half that
     /// carries a member refusal and the expectation stating it.
     Signature,
+    /// The type a model signature derives for one of its value components,
+    /// minted from the derivation rather than from a written form.
+    Model(ModelPart),
 }
 
 /// One half of a declared name: the declaration form that wrote it and what
@@ -1139,6 +1165,14 @@ pub struct Collected<'source>
     pub abstracts: BTreeMap<SlotIndex, AbstractSlot>,
     /// Every top-level module an attribute block decorates, in source order.
     pub decorated: Vec<DecoratedModule<'source>>,
+    /// The type family members, `type F(a : A, …) = τ ;`, in source order.
+    pub families: Vec<FamilyMember>,
+    /// The model signatures ascriptions derive, in the order their modules
+    /// open.
+    pub models: Vec<crate::model::ModelSignature>,
+    /// Each family component's check slot — the witness checking a written
+    /// kind, or the held slot of a derived sort — with what it compares.
+    pub family_checks: BTreeMap<SlotIndex, FamilyCheck>,
 }
 
 /// A top-level module an attribute block decorates, with the slots of the
@@ -1666,6 +1700,9 @@ pub fn collect<'source>(
             operation_names: BTreeMap::new(),
             abstracts: BTreeMap::new(),
             decorated: Vec::new(),
+            families: Vec::new(),
+            models: Vec::new(),
+            family_checks: BTreeMap::new(),
         },
         pieces: Pieces::new(),
     };
@@ -3103,6 +3140,8 @@ struct Opened<'source>
     named: Placed,
     /// The inline signature's components, when ascribed.
     ascription: Maybe<Vec<Component<'source>>, ascription::Absent>,
+    /// The model signature the ascription derives, when it is `Model(S)`.
+    model: Maybe<crate::model::ModelSignature, derived::Absent>,
     /// Whether the ascription is opaque.
     sealed: Sealed,
     /// The body's member forms, in source order.
@@ -3399,8 +3438,9 @@ impl<'source> Collector<'_, 'source>
     /// - requires: `pieces` is the reading of the module form `form`, declared
     ///   in `container`.
     /// - ensures: the opened module when its tiles read `module Name ((: | :>)
-    ///   #{ … })? { members }`, a top-level name taking the uppercase spelling
-    ///   and a nested one either, sealed exactly when the ascription is `:>`; a
+    ///   (#{ … } | Model(S)))? { members }`, a top-level name taking the
+    ///   uppercase spelling and a nested one either, sealed exactly when the
+    ///   ascription is `:>`, carrying the model signature `Model(S)` derives; a
     ///   top-level module named in lowercase, a repair no operand carries, or a
     ///   signature or body out of shape refuses the module under its name; a
     ///   form with no name is unnamed.
@@ -3496,8 +3536,19 @@ impl<'source> Collector<'_, 'source>
             return refused(repaired.refusal(FormName::MODULE));
         }
         let sealed = Sealed(matches!(cursor.tile(TileName::SEAL), Maybe::Present(_)));
+        let mut model = Maybe::Absent(derived::Absent::Written);
         let ascription = if sealed.0 || matches!(cursor.tile(TileName::COLON), Maybe::Present(_)) {
-            match self.signature(&mut cursor) {
+            let read = if let Maybe::Present(_) = cursor.at(TileName::TYPE_IDENTIFIER) {
+                self.model_signature(&mut cursor, form)
+                    .map(|(components, derived)| {
+                        model = Maybe::Present(derived);
+                        components
+                    })
+            }
+            else {
+                self.signature(&mut cursor)
+            };
+            match read {
                 | Ok(components) => Maybe::Present(components),
                 | Err(refusal) => return refused(refusal),
             }
@@ -3522,6 +3573,7 @@ impl<'source> Collector<'_, 'source>
             name,
             named,
             ascription,
+            model,
             sealed,
             members,
         }))
@@ -3654,8 +3706,12 @@ impl<'source> Collector<'_, 'source>
                     return Err(misplaced_in(FormName::MODULE, cursor.here()));
                 };
                 let form = match type_component(cursor)? {
-                    | ComponentForm::Abstract(Maybe::Present(kind)) if self.family_kind(kind)?.0 => {
-                        ComponentForm::Unread(AscriptionForm::Kinded)
+                    | ComponentForm::Abstract(Maybe::Present(kind)) => {
+                        match self.kind_form(kind)? {
+                            | KindForm::Universe => ComponentForm::Abstract(Maybe::Present(kind)),
+                            | KindForm::Family => ComponentForm::Family(FamilyForm::Written(kind)),
+                            | KindForm::Arrow => ComponentForm::Unread(AscriptionForm::Kinded),
+                        }
                     },
                     | form => form,
                 };
@@ -3769,12 +3825,18 @@ impl<'source> Collector<'_, 'source>
             return;
         }
         let structure = StructureIndex(self.collected.structures.len());
+        let model = opened.model.map(|derived| {
+            let index = ModelIndex(self.collected.models.len());
+            self.collected.models.push(derived);
+            index
+        });
         self.collected.structures.push(Structure {
             name: opened.name,
             container,
             declared_by: form,
             named: opened.named,
             ascription: opened.ascription,
+            model,
             sealed: opened.sealed,
             members: Vec::new(),
             exports: Vec::new(),
@@ -4341,6 +4403,8 @@ impl<'source> Collector<'_, 'source>
                                         },
                                         | ComponentForm::Value(_)
                                         | ComponentForm::Abstract(_)
+                                        | ComponentForm::Family(_)
+                                        | ComponentForm::Derived
                                         | ComponentForm::Unread(_) => None,
                                     })
                                     .all(|stated| {
@@ -4415,6 +4479,26 @@ impl<'source> Collector<'_, 'source>
                         kind,
                         &mut types,
                     );
+                    continue;
+                },
+                | ComponentForm::Family(form) => {
+                    self.family_component(
+                        structure,
+                        ComponentPlace(ordinal),
+                        component,
+                        form,
+                        scope,
+                        &mut types,
+                    );
+                    continue;
+                },
+                | ComponentForm::Derived => {
+                    if let Maybe::Present(found) =
+                        self.derived_component(structure, component, ComponentPlace(ordinal), scope)
+                        && !exports.contains(&found)
+                    {
+                        exports.push(found);
+                    }
                     continue;
                 },
                 | ComponentForm::Unread(form) => {
@@ -4507,7 +4591,12 @@ impl<'source> Collector<'_, 'source>
         let found = self.member_named(container, component.name);
         match found {
             | Maybe::Present(Member::Slot(slot)) => {
-                self.state(slot, stated, component.named, Maybe::Present(scope));
+                self.state(
+                    slot,
+                    Operand::Written(stated),
+                    component.named,
+                    Maybe::Present(scope),
+                );
             },
             | Maybe::Present(Member::Module(nested)) => {
                 let form = self.form_name(stated)?;
@@ -4594,17 +4683,17 @@ impl<'source> Collector<'_, 'source>
         }
     }
 
-    /// State `stated`, a type written at `at`, for the definition member at
-    /// `member`.
+    /// State `operand`, a type written or derived at `at`, for the definition
+    /// member at `member`.
     ///
     /// # Specification
     /// - requires: `member` names a live slot.
     /// - ensures: a member with no signature, or with only the one a function
-    ///   tail derives, takes `stated` as its signature, the derived one filed
-    ///   as a witness; a member with a written signature keeps it and `stated`
+    ///   tail derives, takes `operand` as its signature, the derived one filed
+    ///   as a witness; a member with a written signature keeps it and `operand`
     ///   is filed as a witness, which a sealing `scope` exports in the member's
-    ///   place. The slot `stated` lands on owns it, and it sees `scope`'s type
-    ///   components.
+    ///   place. A written type is owned by the slot it lands on and sees
+    ///   `scope`'s type components; a derived one has no node to own.
     /// - provides: the one way a signature types a member.
     /// - fails: never.
     /// - panics: none.
@@ -4633,13 +4722,22 @@ impl<'source> Collector<'_, 'source>
             };
             let half = Half {
                 declaration: at,
-                operand: Operand::Written(stated),
+                operand,
+            };
+            let written = match operand {
+                | Operand::Written(stated) => Some(stated.node),
+                | Operand::Function
+                | Operand::Member(_)
+                | Operand::Data(_)
+                | Operand::Operation
+                | Operand::Signature
+                | Operand::Model(_) => None,
             };
             let has_signature = matches!(prior, Maybe::Present(_));
             let keeps_signature = matches!(
                 prior,
                 Maybe::Present(Half {
-                    operand: Operand::Written(_) | Operand::Member(_),
+                    operand: Operand::Written(_) | Operand::Member(_) | Operand::Model(_),
                     ..
                 })
             );
@@ -4659,31 +4757,34 @@ impl<'source> Collector<'_, 'source>
                             Maybe::Present(half)
                         }
                 })
-                && self
-                    .collected
-                    .owner
-                    .get(usize::from(stated.node))
-                    .is_none_or(|held| *held == Maybe::Present(owner))
-                && match scope {
-                    | Maybe::Present(seen) => {
+                && written.is_none_or(|node| {
+                    self.collected
+                        .owner
+                        .get(usize::from(node))
+                        .is_none_or(|held| *held == Maybe::Present(owner))
+                })
+                && match (scope, written) {
+                    | (Maybe::Present(seen), Some(node)) => {
                         self.collected.scopes.len() == before.1.saturating_add(1)
-                            && self.collected.scopes.last() == Some(&(stated.node, seen))
+                            && self.collected.scopes.last() == Some(&(node, seen))
                     },
-                    | Maybe::Absent(_) => self.collected.scopes.len() == before.1,
+                    | (Maybe::Present(_) | Maybe::Absent(_), _) => {
+                        self.collected.scopes.len() == before.1
+                    },
                 }
         },
     )]
     fn state(
         &mut self,
         member: SlotIndex,
-        stated: Placed,
+        operand: Operand,
         at: Placed,
         scope: Maybe<ComponentScope, component_scope::Absent>,
     )
     {
         let half = Half {
             declaration: at,
-            operand: Operand::Written(stated),
+            operand,
         };
         let Some(entry) = self.collected.slots.get_mut(member.0)
         else {
@@ -4707,9 +4808,13 @@ impl<'source> Collector<'_, 'source>
             },
             | Maybe::Present(_) => self.witness(member, half),
         };
-        self.collected.own(stated.node, owner);
+        if let Operand::Written(stated) = operand {
+            self.collected.own(stated.node, owner);
+        }
         if let Maybe::Present(seen) = scope {
-            self.collected.scopes.push((stated.node, seen));
+            if let Operand::Written(stated) = operand {
+                self.collected.scopes.push((stated.node, seen));
+            }
             let sealing = self
                 .collected
                 .structures
@@ -4811,7 +4916,12 @@ impl<'source> Collector<'_, 'source>
                 .find(|export| self.member_name(*export) == field.name);
             match found {
                 | Some(Member::Slot(slot)) => {
-                    self.state(slot, field.stated, field.named, layer.scope);
+                    self.state(
+                        slot,
+                        Operand::Written(field.stated),
+                        field.named,
+                        layer.scope,
+                    );
                 },
                 | Some(Member::Module(nested)) => {
                     let form = self.form_name(field.stated)?;
@@ -6093,6 +6203,35 @@ impl<'source> LoweredModule<'source>
     pub const fn descriptions(&self) -> &crate::description::DescriptionReport
     {
         &self.descriptions
+    }
+
+    /// Every `sign` block the module declares, in declaration order: its
+    /// description and the presentation its models' signature derives from.
+    ///
+    /// # Specification
+    /// - ensures: one handle per described declaration presenting a model
+    ///   signature, in the report's order; a family and a top-level operation
+    ///   present none.
+    /// - executable: none — the handles are read lazily off the report.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a module declaring `CatShape` beside a family hands
+    ///   back the sign alone.
+    /// - witness: `modules::modules::models::a_lowered_sign_exposes_its_description_and_its_model`
+    #[inline]
+    pub fn signs(&self) -> impl Iterator<Item = crate::model::LoweredSign<'_>>
+    {
+        self.descriptions
+            .declarations
+            .iter()
+            .filter_map(|declaration| match declaration.presentation {
+                | Maybe::Present(ref presentation) => Some(crate::model::LoweredSign {
+                    named: declaration.named,
+                    description: &declaration.description,
+                    presentation,
+                }),
+                | Maybe::Absent(_) => None,
+            })
     }
 
     /// The cell stores reached through the production description route.

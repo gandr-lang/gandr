@@ -491,10 +491,19 @@ fn def_family() -> Regex
 /// signature surface is under. The body is one signature either way: sealing
 /// changes what the ascription *does*, never what it is written against.
 ///
+/// The signature is written inline, `#{ … }`, or computed by a signature
+/// former applied to a declaration, `Model(CatShape)`: the signature of the
+/// models of a `sign` block, which the lowering derives from the block rather
+/// than reading it off a written list. The two are first-token-discriminated —
+/// `#{` against a type name — so the choice stays one token deep. The former is
+/// a type name rather than a reserved word, so the lowering names an unknown
+/// former instead of the lexer refusing an ordinary identifier.
+///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: transparent and opaque ascription branches whose signature shapes
-///   agree and whose opening tiles differ.
+///   agree and whose opening tiles differ, each offering the inline signature
+///   and the applied signature former.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -504,12 +513,45 @@ fn def_family() -> Regex
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.iter().zip([":", ":>"]).all(|(part, lead)| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|item| matches!(item.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == lead)) && sequence.get(1).is_some_and(|item| matches!(item.shape(), RegexShape::Seq(_)))))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.iter().zip([":", ":>"]).all(|(part, lead)| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|item| matches!(item.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == lead)) && sequence.get(1).is_some_and(|item| matches!(item.shape(), RegexShape::Alt(ref signatures) if signatures.len() == 2))))))]
 fn module_ascription_tail() -> Regex
 {
     alt([
-        seq([t(TileLabel(":")), module_signature()]),
-        seq([t(TileLabel(":>")), module_signature()]),
+        seq([
+            t(TileLabel(":")),
+            alt([module_signature(), signature_former()]),
+        ]),
+        seq([
+            t(TileLabel(":>")),
+            alt([module_signature(), signature_former()]),
+        ]),
+    ])
+}
+
+/// Build an applied signature former, `Model(CatShape)`: a former's name and
+/// the declaration it is applied to, in parentheses.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a type name, an opening parenthesis, one type name and its
+///   closer.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 4 && parts.iter().zip(["type_identifier", "(", "type_identifier", ")"]).all(|(part, label)| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label))))]
+fn signature_former() -> Regex
+{
+    seq([
+        t(TileLabel("type_identifier")),
+        t(TileLabel("(")),
+        t(TileLabel("type_identifier")),
+        t(TileLabel(")")),
     ])
 }
 
@@ -3132,6 +3174,7 @@ fn module_members(
         seq([
             t(TileLabel("type")),
             t(TileLabel("type_identifier")),
+            opt(head_params()),
             t(TileLabel("=")),
             h(Sort::Type),
             t(TileLabel(";")),

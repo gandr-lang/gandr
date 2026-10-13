@@ -64,8 +64,10 @@
 //!   signature does not classify. Reversal: a transparent ascription that must
 //!   hide a component, which is what `:>` is for.
 //!
-//! A kind written as an arrow, `type Hom : Ob -> Ob -> Type`, declares a type
-//! family; families wait on static operators and stay
+//! A kind written as a telescope Π into a universe, `type Hom : (a : Ob, b :
+//! Ob) => Type`, declares a type family, matched against a family member
+//! (`super::model`); a kind written as a computation arrow, `Ob -> Ob ->
+//! Type`, stays
 //! [`AscriptionForm::Kinded`](crate::error::AscriptionForm::Kinded).
 //!
 //! # References
@@ -103,6 +105,7 @@ use super::misplaced_in;
 use super::one_in;
 use super::slot_refusal;
 use crate::error::LoweringRefusal;
+use crate::error::TelescopeFault;
 use crate::form::Cursor;
 use crate::form::FormName;
 use crate::form::Former;
@@ -112,6 +115,7 @@ use crate::form::Placed;
 use crate::form::Shape;
 use crate::form::TileName;
 use crate::form::shape_of;
+use crate::resolve::OperandCount;
 use crate::resolve::SurfaceName;
 
 quenchant_shape::reason_enum! {
@@ -163,6 +167,9 @@ pub enum TypeMeaning
     Manifest(Placed),
     /// The atom the abstract slot holding the component declares.
     Sealed,
+    /// The type family member at this place of the collection's family list,
+    /// expanded at each application.
+    Family(super::FamilyIndex),
 }
 
 /// The body member an abstract component reads, once matched.
@@ -321,19 +328,30 @@ impl From<ComponentPlace> for usize
     }
 }
 
-/// Whether a kind is written as an arrow, declaring a type family.
-#[repr(transparent)]
+/// What a kind a type component states declares.
+///
+/// # Specification
+/// trivial.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(super) struct FamilyKind(pub bool);
+pub(super) enum KindForm
+{
+    /// A universe, or any form other than an arrow: an abstract type.
+    Universe,
+    /// A value function space `(a : A, …) => U`: a type family.
+    Family,
+    /// A computation arrow `A -> … -> U`, which the fragment does not read
+    /// as a kind.
+    Arrow,
+}
 
 impl<'source> Collector<'_, 'source>
 {
-    /// Whether `kind`, the kind a type component states, is an arrow.
+    /// What `kind`, the kind a type component states, declares.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: affirmative exactly for a function type or a value function
-    ///   type; a missing node is no arrow.
+    /// - ensures: a family for a value function space, an arrow for a function
+    ///   type, and a universe for any other form or a missing node.
     /// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold.
     /// - panics: none.
     ///
@@ -341,38 +359,47 @@ impl<'source> Collector<'_, 'source>
     /// [`LoweringRefusal::UnknownMold`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — an arrow kind and a universe kind separate a family
-    ///   from an abstract type.
+    /// - hypothesis: L3 — a telescope kind, an arrow kind and a universe kind
+    ///   separate a family, an unread form and an abstract type.
     /// - witness: `modules::modules::a_kinded_type_component_is_declined_by_name_and_a_manifest_one_is_not`
     /// - witness: `modules::modules::an_abstract_component_kinds_at_a_universe`
+    /// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
     #[spec(
-        ensures: |ret| ret.as_ref().map_or(true, |family| {
-            family.0
-                == self.tree.node(kind.node).is_some_and(|node| {
-                    matches!(
-                        shape_of(self.pbg, node),
-                        Ok(Shape::Form { former: Former::ArrowType | Former::ValueFunctionType, .. })
-                    )
-                })
+        ensures: |ret| ret.as_ref().map_or(true, |form| {
+            let former = self.tree.node(kind.node).and_then(|node| match shape_of(self.pbg, node) {
+                | Ok(Shape::Form { former, .. }) => Some(former),
+                | Ok(_) | Err(_) => None,
+            });
+            *form == match former {
+                | Some(Former::ValueFunctionType) => KindForm::Family,
+                | Some(Former::ArrowType) => KindForm::Arrow,
+                | Some(_) | None => KindForm::Universe,
+            }
         }),
     )]
-    pub(super) fn family_kind(
+    pub(super) fn kind_form(
         &self,
         kind: Placed,
-    ) -> Result<FamilyKind, LoweringRefusal<'source>>
+    ) -> Result<KindForm, LoweringRefusal<'source>>
     {
         let Some(node) = self.tree.node(kind.node)
         else {
-            return Ok(FamilyKind(false));
+            return Ok(KindForm::Universe);
         };
 
-        Ok(FamilyKind(matches!(
-            shape_of(self.pbg, node)?,
-            Shape::Form {
-                former: Former::ArrowType | Former::ValueFunctionType,
+        Ok(match shape_of(self.pbg, node)? {
+            | Shape::Form {
+                former: Former::ValueFunctionType,
                 ..
-            }
-        )))
+            } => KindForm::Family,
+            | Shape::Form {
+                former: Former::ArrowType,
+                ..
+            } => KindForm::Arrow,
+            | Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => {
+                KindForm::Universe
+            },
+        })
     }
 
     /// Declare one abstract type for each abstract component of the opaquely
@@ -467,16 +494,17 @@ impl<'source> Collector<'_, 'source>
         }
     }
 
-    /// Read the type member `member`, `type T = τ ;`, of the module at
-    /// `structure`.
+    /// Read the type member `member`, `type T = τ ;` or the family `type T(a :
+    /// A, …) = τ ;`, of the module at `structure`.
     ///
     /// # Specification
     /// - requires: `pieces` is the reading of `member`, a member form of the
     ///   module at `structure` whose first tile is `type`.
     /// - ensures: a member reading `type T = τ ;` is filed among the module's
-    ///   type members with a fresh held slot owning `τ`; a second member of an
-    ///   earlier one's name is refused naming the first; a member out of shape
-    ///   is refused under the module's name at the member.
+    ///   type members with a fresh held slot owning `τ`; one binding parameters
+    ///   is filed as a family, its slot owning the parameters' types too; a
+    ///   second member of an earlier one's name is refused naming the first; a
+    ///   member out of shape is refused under the module's name at the member.
     /// - provides: the type-member half of [`Self::member`].
     /// - fails: never; a fault is filed rather than raised.
     /// - panics: none.
@@ -512,10 +540,7 @@ impl<'source> Collector<'_, 'source>
         }
         let mut cursor = Cursor::new(&pieces.pieces, member.span);
         let _keyword = cursor.tile(TileName::TYPE);
-        let (Maybe::Present(named), Maybe::Present(_equals)) = (
-            cursor.tile(TileName::TYPE_IDENTIFIER),
-            cursor.tile(TileName::EQUALS),
-        )
+        let Maybe::Present(named) = cursor.tile(TileName::TYPE_IDENTIFIER)
         else {
             self.fault_at(
                 structure,
@@ -524,6 +549,21 @@ impl<'source> Collector<'_, 'source>
             );
             return;
         };
+        let parameters = match Self::family_parameters(&mut cursor) {
+            | Ok(parameters) => parameters,
+            | Err(refusal) => {
+                self.fault_at(structure, member, refusal);
+                return;
+            },
+        };
+        if let Maybe::Absent(_) = cursor.tile(TileName::EQUALS) {
+            self.fault_at(
+                structure,
+                member,
+                misplaced_in(FormName::MODULE, cursor.here()),
+            );
+            return;
+        }
         let defined = match one_in(FormName::MODULE, cursor.operands()) {
             | Ok(defined) => defined,
             | Err(refusal) => {
@@ -564,10 +604,25 @@ impl<'source> Collector<'_, 'source>
         }
         let held = self.held(container, name, member, named);
         self.collected.own(defined.node, held);
+        for parameter in &parameters {
+            self.collected.own(parameter.classifier.node, held);
+        }
+        let meaning = if parameters.is_empty() {
+            super::TypeMeaning::Manifest(defined)
+        }
+        else {
+            let family = super::FamilyIndex(self.collected.families.len());
+            self.collected.families.push(super::FamilyMember {
+                held,
+                parameters,
+                defined,
+            });
+            super::TypeMeaning::Family(family)
+        };
         if let Some(entry) = self.collected.structures.get_mut(structure.0) {
             entry.type_members.push(TypeComponent {
                 name,
-                meaning: super::TypeMeaning::Manifest(defined),
+                meaning,
                 held,
             });
         }
@@ -583,10 +638,12 @@ impl<'source> Collector<'_, 'source>
     /// - ensures: under an opaque ascription the component's abstract slot
     ///   records the member as its representation and the component reads as
     ///   its atom; under a transparent one the component reads as the member's
-    ///   type, and a witness slot owning the kind checks that type at it. A
-    ///   component no member supplies files its refusal on the abstract slot,
-    ///   so a later component and a client reading it inherit the refusal, or
-    ///   on a held slot under a transparent ascription.
+    ///   type, and a witness slot owning the kind checks that type at it,
+    ///   unless the component is a sort a model derives, which states no kind
+    ///   to check. A component no member supplies, or a family member supplies,
+    ///   files its refusal on the abstract slot, so a later component and a
+    ///   client reading it inherit the refusal, or on a held slot under a
+    ///   transparent ascription.
     /// - provides: the abstract-component half of [`Self::match_signature`].
     /// - fails: never.
     /// - panics: none.
@@ -627,12 +684,35 @@ impl<'source> Collector<'_, 'source>
                 defined,
                 held: member.held,
             }),
-            | super::TypeMeaning::Sealed => None,
+            | super::TypeMeaning::Sealed | super::TypeMeaning::Family(_) => None,
         });
-        let unmatched = LoweringRefusal::UnknownMember {
-            span: component.named.span,
-            module,
-            member: component.name,
+        let unmatched = match member {
+            | Some(TypeComponent {
+                meaning: super::TypeMeaning::Family(family),
+                held,
+                ..
+            }) => LoweringRefusal::FamilyTelescope {
+                span: self
+                    .collected
+                    .slots
+                    .get(held.0)
+                    .map_or(component.named.span, |slot| slot.named.span),
+                name: component.name,
+                fault: TelescopeFault::Arity {
+                    stated: OperandCount::from(0_usize),
+                    written: OperandCount::from(
+                        self.collected
+                            .families
+                            .get(family.0)
+                            .map_or(0_usize, |found| found.parameters.len()),
+                    ),
+                },
+            },
+            | Some(_) | None => LoweringRefusal::UnknownMember {
+                span: component.named.span,
+                module,
+                member: component.name,
+            },
         };
         if sealed.0 {
             let Some(atom) = self
@@ -681,6 +761,9 @@ impl<'source> Collector<'_, 'source>
             meaning: super::TypeMeaning::Manifest(represented.defined),
             held: represented.held,
         });
+        if kind == Maybe::Absent(component_kind::Absent::Derived) {
+            return;
+        }
         let witness = SlotIndex(self.collected.slots.len());
         self.collected.slots.push(DeclarationSlot {
             name: component.name,

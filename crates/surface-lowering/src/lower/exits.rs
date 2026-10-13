@@ -1047,7 +1047,7 @@ fn carry(
 /// - witness: `lower::tests::every_minted_node_has_an_origin`
 #[spec(ensures: sink.arena.computations_since(mark).all(|id| matches!(sink.origins.computation(id), Maybe::Present(_)))
     && sink.arena.values_since(mark).all(|id| matches!(sink.origins.value(id), Maybe::Present(_))))]
-fn record_copies(
+pub(super) fn record_copies(
     sink: &mut Sink<'_>,
     mark: ArenaWatermark,
     carried: &[Carried],

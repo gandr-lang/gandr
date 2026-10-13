@@ -44,6 +44,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - `LoweredStructure`, `ValueComponent`, `ManifestComponent`, `manifest_type`, `Coerced`, `Container`, `Role`, `StructureIndex`, `AscriptionForm`, `LoweredModule::structures`, `LoweredModule::path_of` and `LoweredModule::structured_names`: modules flattened to named members, their stratum items and their structured names.
 - Type members `type T = τ ;`, type paths `M.T`, abstract components `type T` and `type T : κ`, and `Recognized::ModuleType`: a module's types, named inside it and through its namespace.
 - `DeclarationOutcome::Abstract`, `Sealing` and `SealedComponent`: an opaque ascription `:>` declaring one abstract type per abstract component, keyed by its site, and the atoms a sealed module exports.
+- `model::derive`, `ModelSignature`, `LoweredModule::signs` and `LoweredSign`: `Model(S)` derived from a `sign` block's presentation, a module ascribed `: Model(S)` checked against it, and a sign's description and presentation handed to later passes; type members with parameters, `type Hom(a : Ob, b : Ob) = τ`, expanding where they are applied.
 
 ## Expected features
 
@@ -92,6 +93,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Name resolution through tables | [`resolve`](src/resolve.rs) |
 | Module collection, one refusal per declaration, module declarations | [`module`](src/module.rs) |
 | Type members, abstract components and opaque ascription | [`module::sealing`](src/module/sealing.rs), [`lower::sealing`](src/lower/sealing.rs) |
+| `Model(S)`: the derivation, sort inference over index terms, type families, and the instance check | [`model`](src/model.rs), [`module::model`](src/module/model.rs), [`lower::model`](src/lower/model.rs) |
 | Descriptions, one producer for a data form, signature blocks, cells and circuit wiring | [`description`](src/description.rs), [`description::sign`](src/description/sign.rs), [`desc_cells`](src/desc_cells.rs) |
 | The namespace engine, its trie and the outermost scope | [`namespace`](src/namespace.rs), [`namespace::trie`](src/namespace/trie.rs), [`namespace::recognition`](src/namespace/recognition.rs) |
 | Imports | [`import`](src/import.rs) |

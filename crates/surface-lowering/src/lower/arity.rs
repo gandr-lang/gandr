@@ -77,18 +77,37 @@
 //! session types is refused by the select's or the offer's name, and one
 //! mixing session types with other entries as a misplaced entry.
 //!
-//! # A telescope Π binds every entry
+//! # A telescope Π binds an entry a later type names
 //!
-//! `(x : A, y : B(x)) => C` is `+U (Π x : A. Π y : B(x). -F C)`. Once any
-//! entry of the domain list names its binder, every entry binds, an unnamed
-//! one under a name no source can write, so a variable written in a later
-//! entry counts every entry before it. A list of unnamed entries stays the
-//! value function space of plain arrows.
+//! `(x : A, y : B(x)) => C` is `+U (Π x : A. Π y : B(x). -F C)`: an entry is a
+//! dependent arrow exactly where a later entry or the codomain names its
+//! binder, as a type or as a value standing in one, and a plain arrow
+//! everywhere else, an unnamed entry always. A variable written in a later
+//! entry counts only the dependent arrows before it. The dependent arrow
+//! `(x : A) -> C` reads by the same rule: a Π where `C` names `x`, the plain
+//! arrow otherwise. So `(n : Integer) => Integer` is the type `def f(n :
+//! Integer) -> -F Integer` declares, `(n : Integer) -> -F Integer` the
+//! computation under its thunk, and a model's operation whose clause binds an
+//! index nothing later reads converts with the member that implements it.
 //!
-//! - Alternatives: a Π only where a later entry names the binder, which the
-//!   lowering cannot tell where a value names it.
-//! - Reversal: a binder whose value uses are recorded as its type uses are
-//!   would let an unused binder lower as a plain arrow.
+//! - Recorded choice, reversed: the dependent arrow's introduction (#266) read
+//!   every named binder of `(x : A) -> C` as a Π whether or not `C` names it,
+//!   the author's spelling taken as written so a transport motive's two entries
+//!   always bind.
+//! - Change: the arrow and the telescope entry bind exactly where a later type
+//!   names their binder, as a function's parameters do.
+//! - Reason: the kernel keeps a Π whose codomain ignores its binder and the
+//!   plain arrow over the same children distinct, and asks the producer to emit
+//!   the dependent former only where the codomain is scoped; reading the
+//!   spelling as written made `def g : (n : Integer) => Integer` and the `def
+//!   g(n : Integer) -> -F Integer` that defines it two types, and a model's
+//!   `def` members unable to meet the components `Model(S)` derives. A
+//!   transport motive is unaffected: the motive reader takes a plain arrow and
+//!   a Π alike (`lower::identity`).
+//! - Alternatives: a Π for every entry once any entry is named, which reads as
+//!   one rule but leaves the same two types.
+//! - Reversal: a conversion that identifies a Π ignoring its binder with the
+//!   plain arrow would make the choice unobservable, and either rule would do.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -1582,10 +1601,10 @@ impl<'source> Lowerer<'_, 'source>
     ///   function space at `site`, whose frame is `frame`.
     /// - ensures: planned when `domain` is a parenthesised list one of whose
     ///   entries is `k : T`: every entry binds a frame extending the one before
-    ///   it, mentioned so its arrow is dependent, an unnamed entry's under a
-    ///   name no source writes; each entry's type is read as a value type under
-    ///   the frames before it and the codomain under all of them; nothing is
-    ///   planned otherwise.
+    ///   it, an unnamed entry's under a name no source writes, and its arrow is
+    ///   dependent exactly when a later entry or the codomain names it; each
+    ///   entry's type is read as a value type under the frames before it and
+    ///   the codomain under all of them; nothing is planned otherwise.
     /// - fails: a duplicate definition for a name bound twice; the binder
     ///   policy's refusal; a misplaced key; a hole's own fault.
     /// - panics: none.
@@ -1662,7 +1681,6 @@ impl<'source> Lowerer<'_, 'source>
             let extended = self
                 .scope
                 .extend_typed(inner, bound, declared.node, written);
-            self.scope.mention(extended);
             self.parameters.push(Parameter {
                 binder: binder.node,
                 frame: extended,
@@ -1692,10 +1710,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: `domain` and `codomain` are the operands of the computation
     ///   arrow at `site`, whose frame is `frame`.
     /// - ensures: planned when `domain` is a parenthesised type holding exactly
-    ///   one entry, `k : T`: the binder extends `frame`, mentioned so its arrow
-    ///   is dependent, its type is read as a value type under `frame` and the
-    ///   codomain as a computation type under the binder; nothing is planned
-    ///   otherwise.
+    ///   one entry, `k : T`: the binder extends `frame`, its type is read as a
+    ///   value type under `frame` and the codomain as a computation type under
+    ///   the binder, which mints the dependent former exactly when the codomain
+    ///   names it, as a telescope entry does; nothing is planned otherwise.
     /// - fails: the binder policy's refusal; a misplaced key; a hole's own
     ///   fault.
     /// - panics: none.
@@ -1706,7 +1724,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — two dependent arrows nested to the right, each naming
     ///   the binder before it, mint the same telescope the value-function alias
-    ///   spells.
+    ///   spells, and a binder nothing names mints the plain arrow.
     /// - witness: `lower::arity::tests::a_dependent_arrow_is_the_telescope_the_alias_abbreviates`
     #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::DependentArrow(..))))]
     pub(super) fn dependent_arrow(
@@ -1754,7 +1772,6 @@ impl<'source> Lowerer<'_, 'source>
         let extended =
             self.scope
                 .extend_typed(frame, bound, declared.node, Maybe::Present(key.span));
-        self.scope.mention(extended);
         let start = self.parameters.len();
         self.parameters.push(Parameter {
             binder: key.node,
@@ -2092,13 +2109,13 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Mint a dependent arrow: the Π over its one binder's type into its
-    /// codomain.
+    /// codomain, or the plain arrow when the codomain does not name it.
     ///
     /// # Specification
     /// - requires: the binder's type and the codomain are already minted or
     ///   absent.
-    /// - ensures: `Π (x : A). C` with the written origin; nothing when a type
-    ///   did not lower.
+    /// - ensures: `Π (x : A). C` when the codomain names the binder, `A → C`
+    ///   otherwise, with the written origin; nothing when a type did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -2116,6 +2133,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let Some(&Parameter {
             declared: Maybe::Present(declared),
+            frame,
             ..
         }) = stretch(&self.parameters, entries).first()
         else {
@@ -2127,7 +2145,12 @@ impl<'source> Lowerer<'_, 'source>
                 return Maybe::Absent(reason);
             },
         };
-        let id = sink.arena.comp_type_pi(domain, body);
+        let id = if bool::from(self.scope.mentioned(frame)) {
+            sink.arena.comp_type_pi(domain, body)
+        }
+        else {
+            sink.arena.comp_type_arrow(domain, body)
+        };
         sink.origins.record_comp_type(id, origin);
 
         Maybe::Present(Lowered::CompType(id))

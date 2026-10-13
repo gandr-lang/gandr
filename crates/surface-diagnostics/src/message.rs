@@ -293,6 +293,15 @@ fn lowered(
         | LoweringRefusal::UnreadAscription { name, form, .. } => {
             write!(f, "`{name}` {form}, which is not supported yet")
         },
+        | LoweringRefusal::UnstatedComponent { name, fault, .. } => {
+            write!(
+                f,
+                "the model signature cannot state `{name}`, which {fault}"
+            )
+        },
+        | LoweringRefusal::FamilyTelescope { name, fault, .. } => {
+            write!(f, "the type family `{name}` {fault}")
+        },
         | LoweringRefusal::LowercaseModuleName { name, .. } => write!(
             f,
             "the module `{name}` must start with an uppercase letter at the top level"
@@ -574,8 +583,11 @@ mod tests
     use gandr_surface_lowering::FragmentSort;
     use gandr_surface_lowering::HeadArity;
     use gandr_surface_lowering::LoweringRefusal;
+    use gandr_surface_lowering::OperandCount;
     use gandr_surface_lowering::PayloadForm;
     use gandr_surface_lowering::SurfaceName;
+    use gandr_surface_lowering::TelescopeFault;
+    use gandr_surface_lowering::model::ModelFault;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::ByteSpan;
     use gandr_surface_syntax::GrammarFingerprint;
@@ -677,6 +689,16 @@ mod tests
                 span,
                 name,
                 form: AscriptionForm::Kinded,
+            },
+            LoweringRefusal::UnstatedComponent {
+                span,
+                name,
+                fault: ModelFault::Inherited,
+            },
+            LoweringRefusal::FamilyTelescope {
+                span,
+                name,
+                fault: TelescopeFault::Index(OperandCount::from(1_usize)),
             },
             LoweringRefusal::LowercaseModuleName { span, name },
             LoweringRefusal::NonExhaustiveMatch { span },

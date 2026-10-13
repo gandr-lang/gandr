@@ -388,6 +388,69 @@ impl fmt::Display for AscriptionForm
     }
 }
 
+/// Where a type family's parameters part from the index telescope its
+/// component states.
+///
+/// # Specification
+/// - requires: a producer compares a family member's parameters with the
+///   indices its component states.
+/// - ensures: a count mismatch names both counts; a type mismatch names the
+///   first parameter, counted from one, whose type is not its index's.
+/// - provides: which part of the telescope a refusal is about.
+/// - fails: not applicable to the report itself.
+/// - panics: none.
+/// - executable: none — the fault holds neither telescope.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a family binding too few parameters and one binding a
+///   parameter at another sort are refused with their faults.
+/// - witness: `modules::modules::models::a_family_of_the_wrong_telescope_is_refused`
+/// - witness: `modules::modules::models::a_written_family_of_the_wrong_telescope_is_refused`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum TelescopeFault
+{
+    /// The member binds another number of parameters than the component
+    /// states indices.
+    Arity
+    {
+        /// The indices the component states.
+        stated: OperandCount,
+        /// The parameters the member binds.
+        written: OperandCount,
+    },
+    /// The parameter at this place, counted from one, has a type its index
+    /// does not state.
+    Index(OperandCount),
+}
+
+impl fmt::Display for TelescopeFault
+{
+    /// Writes where the telescopes part.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            | Self::Arity { stated, written } => write!(
+                f,
+                "binds {} parameters where its component states {} indices",
+                usize::from(written),
+                usize::from(stated)
+            ),
+            | Self::Index(place) => write!(
+                f,
+                "binds parameter {} at a type its component's index does not state",
+                usize::from(place)
+            ),
+        }
+    }
+}
+
 /// The crate's global and declaration-local refusals.
 ///
 /// The vocabulary is closed and every refusal carries a class, which the
@@ -629,6 +692,32 @@ pub enum LoweringRefusal<'source>
         form: AscriptionForm,
     },
 
+    /// A component of a derived model signature the derivation cannot state,
+    /// kept on the component of its name rather than dropped from the
+    /// signature.
+    UnstatedComponent
+    {
+        /// The bytes of the sign the signature is derived from, as the
+        /// ascription names it.
+        span: ByteSpan,
+        /// The component's name.
+        name: SurfaceName<'source>,
+        /// Why it cannot be stated.
+        fault: crate::model::ModelFault,
+    },
+
+    /// A type family member whose parameters disagree with the index
+    /// telescope its component states.
+    FamilyTelescope
+    {
+        /// The bytes of the family member's name.
+        span: ByteSpan,
+        /// The family's name.
+        name: SurfaceName<'source>,
+        /// Where the parameters and the indices part.
+        fault: TelescopeFault,
+    },
+
     /// A top-level module named with a lowercase initial, a spelling the
     /// grammar admits so it is declined here by name, and reserves for nested
     /// modules.
@@ -794,6 +883,13 @@ impl fmt::Display for LoweringRefusal<'_>
             | Self::UnreadAscription { name, form, .. } => {
                 write!(f, "`{name}` {form}; the fragment does not read it yet")
             },
+            | Self::UnstatedComponent { name, fault, .. } => write!(
+                f,
+                "the model signature cannot state `{name}`, which {fault}"
+            ),
+            | Self::FamilyTelescope { name, fault, .. } => {
+                write!(f, "the type family `{name}` {fault}")
+            },
             | Self::LowercaseModuleName { name, .. } => write!(
                 f,
                 "the module `{name}` is named with a lowercase initial; a top-level module's \
@@ -889,6 +985,8 @@ impl LoweringRefusal<'_>
             | Self::ForwardMemberReference { span, .. }
             | Self::UnknownMember { span, .. }
             | Self::UnreadAscription { span, .. }
+            | Self::UnstatedComponent { span, .. }
+            | Self::FamilyTelescope { span, .. }
             | Self::LowercaseModuleName { span, .. }
             | Self::NonExhaustiveMatch { span }
             | Self::UnmarkedSelfReference { span, .. }
@@ -917,6 +1015,7 @@ mod tests
     use super::FragmentBoundary;
     use super::FragmentSort;
     use super::LoweringRefusal;
+    use super::TelescopeFault;
     use super::refusal_span;
     use crate::attribute::AttributeSchema;
     use crate::attribute::PayloadForm;
@@ -925,13 +1024,14 @@ mod tests
     use crate::form::FormName;
     use crate::lower::LoweringBudget;
     use crate::resolve::HeadArity;
+    use crate::resolve::OperandCount;
     use crate::resolve::SurfaceName;
 
     /// One inhabitant of every variant, each with its own rejected span.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the current 25-variant fixture has no repeated variant tag;
+    /// - ensures: the current 27-variant fixture has no repeated variant tag;
     ///   source-bearing variants carry separately observable rejected spans.
     /// - provides: a finite domain for the exact span projection witness.
     /// - fails: never.
@@ -952,7 +1052,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 25_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 27_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -1072,6 +1172,19 @@ mod tests
             LoweringRefusal::Unreachable {
                 span: s(45_usize, 46_usize),
             },
+            LoweringRefusal::UnstatedComponent {
+                span: s(47_usize, 48_usize),
+                name: SurfaceName::from("assoc"),
+                fault: crate::model::ModelFault::Circuit,
+            },
+            LoweringRefusal::FamilyTelescope {
+                span: s(49_usize, 50_usize),
+                name: SurfaceName::from("Hom"),
+                fault: TelescopeFault::Arity {
+                    stated: OperandCount::from(2_usize),
+                    written: OperandCount::from(1_usize),
+                },
+            },
         ]
     }
 
@@ -1108,6 +1221,8 @@ mod tests
             s(41_usize, 42_usize),
             s(43_usize, 44_usize),
             s(45_usize, 46_usize),
+            s(47_usize, 48_usize),
+            s(49_usize, 50_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {
