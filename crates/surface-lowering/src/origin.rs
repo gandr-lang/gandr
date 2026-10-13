@@ -70,6 +70,15 @@
 //! token yields the unrecorded absence. Callers retain the associated arena and
 //! table. Authenticating minting context would require a different identifier
 //! model; revisit this choice if the side table becomes an ownership boundary.
+//!
+//! # A variable keeps its binder
+//!
+//! Every variable the lowering mints for a name the source wrote records the
+//! span of the binder the name resolved to, so a face goes from a use to its
+//! binder — a hover over the binder answers its uses' type; a definition
+//! request, its binder — without resolving the name again. A variable the
+//! lowering inserts, and one whose binder the source names nothing, records
+//! none. Witness: `lower::tests::a_variable_keeps_its_binder`.
 
 use alloc::vec::Vec;
 
@@ -397,6 +406,9 @@ pub struct OriginTable
     /// The name each lambda or bind binds, by the computation that opens the
     /// binder, ascending by id: the syntax the binder's name was written at.
     binders: Vec<(ComputationId, Origin)>,
+    /// Each variable written in the source, with its binder's span, ascending
+    /// by id.
+    bindings: Vec<(ValueId, ByteSpan)>,
 }
 
 /// Record one family's origin, keeping the vector ascending by id.
@@ -770,6 +782,100 @@ impl OriginTable
             .get(token.0)
             .copied()
             .map_or(Maybe::Absent(origin::Absent::Unrecorded), Maybe::Present)
+    }
+
+    /// Record that the freshly minted variable `id` is bound at `binder`.
+    ///
+    /// # Specification
+    /// - requires: `id` follows every variable already recorded.
+    /// - ensures: the pair is appended, so the list stays ascending by id and
+    ///   [`Self::binding`] finds it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a use under two binders of one name is recorded at
+    ///   the inner one.
+    /// - witness: `lower::tests::a_variable_keeps_its_binder`
+    #[spec(
+        requires: self.bindings.last().is_none_or(|&(held, _)| held < id),
+        captures: before = self.bindings.len(),
+        ensures: before.checked_add(1_usize) == Some(self.bindings.len())
+            && self.bindings.last() == Some(&(id, binder)),
+    )]
+    #[inline]
+    pub fn record_binding(
+        &mut self,
+        id: ValueId,
+        binder: ByteSpan,
+    )
+    {
+        self.bindings.push((id, binder));
+    }
+
+    /// The span of the binder the variable `id` was written against.
+    ///
+    /// # Specification
+    /// - requires: nothing — an unrecorded id is admissible input.
+    /// - ensures: the binder span recorded under an equal id, or the unrecorded
+    ///   absence.
+    /// - provides: the use-to-binder lookup.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a recorded variable and a node the lowering did not
+    ///   mint as a written variable answer their exact binders.
+    /// - witness: `lower::tests::a_variable_keeps_its_binder`
+    #[spec(ensures: |ret| ret == self.bindings.iter().find(|&&(held, _)| held == id)
+        .map_or(Maybe::Absent(origin::Absent::Unrecorded), |&(_, binder)| Maybe::Present(binder)))]
+    #[inline]
+    pub fn binding(
+        &self,
+        id: ValueId,
+    ) -> Maybe<ByteSpan, origin::Absent>
+    {
+        self.bindings
+            .binary_search_by_key(&id, |&(held, _)| held)
+            .ok()
+            .and_then(|position| self.bindings.get(position))
+            .map_or(Maybe::Absent(origin::Absent::Unrecorded), |&(_, binder)| {
+                Maybe::Present(binder)
+            })
+    }
+
+    /// Every variable written in the source, with its binder's span, in mint
+    /// order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn bindings(&self) -> &[(ValueId, ByteSpan)]
+    {
+        &self.bindings
+    }
+
+    /// Every value type's origin, in mint order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn value_types(&self) -> &[(ValueTypeId, Origin)]
+    {
+        &self.value_types
+    }
+
+    /// Every computation type's origin, in mint order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn comp_types(&self) -> &[(CompTypeId, Origin)]
+    {
+        &self.comp_types
     }
 
     /// How many core nodes this table recorded an origin for.

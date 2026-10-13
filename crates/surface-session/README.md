@@ -32,7 +32,7 @@ The interactive session: each revision of one source lowered, judged exactly as 
 - **The import scope.** `Session::resolve_import`, `ImportRow`, `import::Absent`.
 - **The item source.** `program`, `SurfaceItems` (an `ItemSource`), `Revision`, `RevisionFault`, `fault_span::Absent`.
 - **Evaluation.** `Submission::evaluate`, `evaluate`, `evaluation::Absent`: a hole-free item run on the dispatcher's run stage.
-- **Types and documentation.** `type_of`, `type_at`, `spelled::Absent`, `Session::documentation`: a declaration's type spelled at a page width from the latest resume, by name or by item, and its documentation by its form's identity.
+- **Types and documentation.** `type_of`, `spelled::Absent`, `Session::documentation`: a declaration's type spelled at a page width from the latest resume, by name, and its documentation by its form's identity.
 - **Edit-action reconstruction.** `Snapshot` (`of`, `items`, `node`, `span`, `localize`, `edit_locus`), `diff`, `apply`, `EditScript`, `Action`, `CorePath`, `ChildSlot`, `Tree`, `ItemTree`, `SourceEdit`, the reasons `addressed`, `spanned`, `located` and `body_path`; `Submission::edits`, `Session::snapshot`.
 
 ## Expected features

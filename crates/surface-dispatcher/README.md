@@ -30,6 +30,7 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 - `Entries` and `entries`: what one step prints under a verb, in order, each a diagnostic the diagnostics model builds — refusals, unsettled declarations, goals, shadowing warnings and ledger lines.
 - `shadowed` on `Composed::Settled`: every builtin the source's declarations and binders shadowed under the warn-and-allow policy, in the order shadowed, copied out of the lowered module's `Recognition` before its origin table moves; a face reports each as a warning.
 - `adapt`: the lowering's module as checker declaration input.
+- `TypeTable`, `TypedSpan`, `Subject`, `Declared`, `typing::Absent` and `checked_against::Absent`: the type of every node of one source a face can point at — each binder, term and written type with its span, spelled when a face asks, with the type a term was checked against when it differs — and each declaration's type or refusal under both its signature's and its definition's keys, from one typed run of the checker.
 - `SourceRoot` and `classify`: the root a source sits under, by its path.
 - `Walk`, `Walk::visit`, `Step`, `Standing`, `Standing::of`, `SourceFault` and `walk_step::Absent`: the walk at any width, and the standing a step or a session submission carries.
 - `RunReport`, `RunVerdict`, `SourceCounts`, `SourceCount`, `Verb`, `Goals`, `Shown` and `shown`: the runner's report, the gate and what each verb prints.

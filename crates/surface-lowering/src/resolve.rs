@@ -74,12 +74,25 @@
 //!
 //! Witness for the nullary table:
 //! `tests::every_nullary_type_head_answers_its_atom`.
+//!
+//! # A frame keeps where its binder was written
+//!
+//! Each frame a written binder enters keeps the binder's span; a frame the
+//! lowering enters for a value the source names nothing — a discarded
+//! statement's, a split's tuple, a positional parameter's — keeps none. A
+//! variable the lowering mints reads its binder's span here and records it in
+//! the origin table, so a face goes from a use to its binder without a second
+//! resolution. The alternative was a side table of binder spans in the
+//! lowerer, keyed by frame, which is a second copy of the frame's identity;
+//! the frame is where the binder already lives. Witness:
+//! `tests::a_frame_keeps_its_binder_s_span`.
 
 use alloc::vec::Vec;
 use core::fmt;
 
 use anodized::spec;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::SourceFragment;
 use quenchant_shape::shape::Maybe;
@@ -119,6 +132,19 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// A lambda's binder, a statement's, or a parameter written untyped.
             Untyped,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a binder frame keeps no span.
+    pub mod binder_site {
+        /// The frame binds a value the source names nothing.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// A discarded statement's result, the tuple a split takes apart,
+            /// or a positional parameter, which no name in the source binds.
+            Unwritten,
         }
     }
 }
@@ -505,6 +531,8 @@ struct ScopeFrame<'source>
     declared: Maybe<NodeIndex, binder_type::Absent>,
     /// Whether a type position names this binder.
     mentioned: Mentioned,
+    /// Where the binder was written, when the source names it.
+    site: Maybe<ByteSpan, binder_site::Absent>,
 }
 
 /// Whether a type position names a binder, which makes a typed parameter's
@@ -597,15 +625,17 @@ impl<'source> Scope<'source>
         Self { frames: Vec::new() }
     }
 
-    /// The frame that extends `parent` with an untyped binder for `name`.
+    /// The frame that extends `parent` with an untyped binder for `name`,
+    /// written at `site`.
     ///
     /// # Specification
     /// - requires: `parent` is outermost or an existing frame position in the
     ///   intended scope; a coordinate does not authenticate its minting scope.
     /// - ensures: the returned identity names a fresh frame whose parent is
     ///   `parent`, so the chain from it is one longer than the chain from
-    ///   `parent`; existing frames are unchanged, which is what lets two
-    ///   sibling subtrees hold different extensions of one scope at once.
+    ///   `parent`, and which keeps `site`; existing frames are unchanged, which
+    ///   is what lets two sibling subtrees hold different extensions of one
+    ///   scope at once.
     /// - provides: the binder half of term-name resolution.
     /// - fails: never.
     /// - panics: none.
@@ -630,6 +660,7 @@ impl<'source> Scope<'source>
                     entry.parent == parent
                         && entry.name == name
                         && entry.declared == Maybe::Absent(binder_type::Absent::Untyped)
+                        && entry.site == site
                         && !entry.mentioned.0
                 })
         },
@@ -639,13 +670,19 @@ impl<'source> Scope<'source>
         &mut self,
         parent: Frame,
         name: SurfaceName<'source>,
+        site: Maybe<ByteSpan, binder_site::Absent>,
     ) -> ScopeId
     {
-        self.push(parent, name, Maybe::Absent(binder_type::Absent::Untyped))
+        self.push(
+            parent,
+            name,
+            Maybe::Absent(binder_type::Absent::Untyped),
+            site,
+        )
     }
 
-    /// The frame that extends `parent` with a binder for `name` written with
-    /// the type at `declared`.
+    /// The frame that extends `parent` with a binder for `name` written at
+    /// `site` with the type at `declared`.
     ///
     /// # Specification
     /// - requires: as [`Self::extend`]; `declared` is the syntax node of the
@@ -674,6 +711,7 @@ impl<'source> Scope<'source>
                     entry.parent == parent
                         && entry.name == name
                         && entry.declared == Maybe::Present(declared)
+                        && entry.site == site
                         && !entry.mentioned.0
                 })
         },
@@ -684,17 +722,18 @@ impl<'source> Scope<'source>
         parent: Frame,
         name: SurfaceName<'source>,
         declared: NodeIndex,
+        site: Maybe<ByteSpan, binder_site::Absent>,
     ) -> ScopeId
     {
-        self.push(parent, name, Maybe::Present(declared))
+        self.push(parent, name, Maybe::Present(declared), site)
     }
 
     /// Push one binder frame over `parent`.
     ///
     /// # Specification
     /// - requires: parent is outermost or names an existing frame position.
-    /// - ensures: the new last frame retains parent, name and written type,
-    ///   starts unmentioned and leaves earlier frame positions intact.
+    /// - ensures: the new last frame retains parent, name, written type and
+    ///   site, starts unmentioned and leaves earlier frame positions intact.
     /// - provides: the append boundary shared by typed and untyped extension.
     ///
     /// # Adequacy
@@ -717,6 +756,7 @@ impl<'source> Scope<'source>
                     entry.parent == parent
                         && entry.name == name
                         && entry.declared == declared
+                        && entry.site == site
                         && !entry.mentioned.0
                 })
         },
@@ -726,6 +766,7 @@ impl<'source> Scope<'source>
         parent: Frame,
         name: SurfaceName<'source>,
         declared: Maybe<NodeIndex, binder_type::Absent>,
+        site: Maybe<ByteSpan, binder_site::Absent>,
     ) -> ScopeId
     {
         let minted = ScopeId(self.frames.len());
@@ -734,9 +775,37 @@ impl<'source> Scope<'source>
             parent,
             declared,
             mentioned: Mentioned(false),
+            site,
         });
 
         minted
+    }
+
+    /// Where the binder that introduced `binder` was written.
+    ///
+    /// # Specification
+    /// - requires: nothing — an out-of-range coordinate is admissible.
+    /// - ensures: a stored frame answers the site it was extended with; an
+    ///   out-of-range coordinate answers the unwritten absence.
+    /// - provides: the use-to-binder half a minted variable records.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a written binder, an unwritten frame and an
+    ///   out-of-range coordinate answer their exact sites.
+    /// - witness: `resolve::tests::a_frame_keeps_its_binder_s_span`
+    #[spec(ensures: |ret| ret == self.frames.get(binder.0)
+        .map_or(Maybe::Absent(binder_site::Absent::Unwritten), |entry| entry.site))]
+    #[inline]
+    pub fn site(
+        &self,
+        binder: ScopeId,
+    ) -> Maybe<ByteSpan, binder_site::Absent>
+    {
+        self.frames
+            .get(binder.0)
+            .map_or(Maybe::Absent(binder_site::Absent::Unwritten), |entry| {
+                entry.site
+            })
     }
 
     /// The de Bruijn index `name` has in the chain rooted at `frame`.
@@ -1093,6 +1162,8 @@ impl<'source> Scope<'source>
 mod tests
 {
     use gandr_kernel_term::DeBruijnIndex;
+    use gandr_surface_syntax::ByteOffset;
+    use gandr_surface_syntax::ByteSpan;
     use gandr_surface_syntax::NodeIndex;
     use quenchant_shape::shape::Maybe;
 
@@ -1102,6 +1173,7 @@ mod tests
     use super::SurfaceName;
     use super::TypeFormer;
     use super::binder;
+    use super::binder_site;
     use super::binder_type;
     use super::type_atom;
     use super::type_former;
@@ -1119,14 +1191,52 @@ mod tests
         Fuel::new(LoweringBudget::from(8_usize))
     }
 
+    /// A frame no written binder enters.
+    const UNWRITTEN: Maybe<ByteSpan, binder_site::Absent> =
+        Maybe::Absent(binder_site::Absent::Unwritten);
+
+    #[test]
+    fn a_frame_keeps_its_binder_s_span()
+    {
+        let written = ByteSpan::new(ByteOffset::from(4_usize), ByteOffset::from(5_usize)).unwrap();
+        let mut scope = Scope::new();
+        let named = scope.extend(
+            Frame::Outermost,
+            SurfaceName::from("x"),
+            Maybe::Present(written),
+        );
+        let hidden = scope.extend(Frame::Inner(named), SurfaceName::from(""), UNWRITTEN);
+        assert_eq!(
+            scope.site(named),
+            Maybe::Present(written),
+            "a written binder keeps its span"
+        );
+        assert_eq!(
+            scope.site(hidden),
+            UNWRITTEN,
+            "an unwritten frame keeps none"
+        );
+        let mut other = Scope::new();
+        let _only = other.extend(Frame::Outermost, SurfaceName::from("y"), UNWRITTEN);
+        assert_eq!(
+            other.site(hidden),
+            UNWRITTEN,
+            "a coordinate past the scope's frames answers none"
+        );
+    }
+
     #[test]
     fn binder_positions_do_not_authenticate_their_minting_scope()
     {
         let mut first = Scope::new();
-        let foreign = first.extend(Frame::Outermost, SurfaceName::from("foreign"));
-        let outside = first.extend(Frame::Inner(foreign), SurfaceName::from("outside"));
+        let foreign = first.extend(Frame::Outermost, SurfaceName::from("foreign"), UNWRITTEN);
+        let outside = first.extend(
+            Frame::Inner(foreign),
+            SurfaceName::from("outside"),
+            UNWRITTEN,
+        );
         let mut receiving = Scope::new();
-        let local = receiving.extend(Frame::Outermost, SurfaceName::from("local"));
+        let local = receiving.extend(Frame::Outermost, SurfaceName::from("local"), UNWRITTEN);
         assert_eq!(foreign, local);
         receiving.mention(outside);
         assert!(!bool::from(receiving.mentioned(outside)));
@@ -1156,8 +1266,8 @@ mod tests
     fn lookup_spends_one_charge_per_visited_binder()
     {
         let mut scope = Scope::new();
-        let outer = scope.extend(Frame::Outermost, SurfaceName::from("x"));
-        let inner = scope.extend(Frame::Inner(outer), SurfaceName::from("y"));
+        let outer = scope.extend(Frame::Outermost, SurfaceName::from("x"), UNWRITTEN);
+        let inner = scope.extend(Frame::Inner(outer), SurfaceName::from("y"), UNWRITTEN);
         let cases = [
             (
                 Frame::Outermost,
@@ -1221,14 +1331,15 @@ mod tests
     fn telescope_counts_to_the_end_when_the_target_is_not_on_the_chain()
     {
         let mut scope = Scope::new();
-        let outer = scope.extend(Frame::Outermost, SurfaceName::from("outer"));
+        let outer = scope.extend(Frame::Outermost, SurfaceName::from("outer"), UNWRITTEN);
         let typed = scope.extend_typed(
             Frame::Inner(outer),
             SurfaceName::from("typed"),
             NodeIndex::from(7_usize),
+            UNWRITTEN,
         );
-        let inner = scope.extend(Frame::Inner(typed), SurfaceName::from("inner"));
-        let sibling = scope.extend(Frame::Outermost, SurfaceName::from("sibling"));
+        let inner = scope.extend(Frame::Inner(typed), SurfaceName::from("inner"), UNWRITTEN);
+        let sibling = scope.extend(Frame::Outermost, SurfaceName::from("sibling"), UNWRITTEN);
         assert_eq!(
             scope.telescope_index(Frame::Inner(inner), sibling),
             DeBruijnIndex::from(2_u32)
@@ -1290,7 +1401,7 @@ mod tests
     fn the_innermost_binder_resolves_at_index_zero()
     {
         let mut scope = Scope::new();
-        let inner = scope.extend(Frame::Outermost, SurfaceName::from("x"));
+        let inner = scope.extend(Frame::Outermost, SurfaceName::from("x"), UNWRITTEN);
 
         assert_eq!(
             scope.index_of(Frame::Inner(inner), SurfaceName::from("x"), &mut tank()),
@@ -1303,8 +1414,8 @@ mod tests
     fn an_outer_binder_resolves_one_index_further()
     {
         let mut scope = Scope::new();
-        let outer = scope.extend(Frame::Outermost, SurfaceName::from("x"));
-        let inner = scope.extend(Frame::Inner(outer), SurfaceName::from("y"));
+        let outer = scope.extend(Frame::Outermost, SurfaceName::from("x"), UNWRITTEN);
+        let inner = scope.extend(Frame::Inner(outer), SurfaceName::from("y"), UNWRITTEN);
 
         assert_eq!(
             scope.index_of(Frame::Inner(inner), SurfaceName::from("x"), &mut tank()),
@@ -1322,8 +1433,8 @@ mod tests
     fn an_inner_binder_shadows_an_outer_one()
     {
         let mut scope = Scope::new();
-        let outer = scope.extend(Frame::Outermost, SurfaceName::from("x"));
-        let inner = scope.extend(Frame::Inner(outer), SurfaceName::from("x"));
+        let outer = scope.extend(Frame::Outermost, SurfaceName::from("x"), UNWRITTEN);
+        let inner = scope.extend(Frame::Inner(outer), SurfaceName::from("x"), UNWRITTEN);
 
         assert_eq!(
             scope.index_of(Frame::Inner(inner), SurfaceName::from("x"), &mut tank()),
@@ -1341,9 +1452,9 @@ mod tests
     fn sibling_extensions_of_one_scope_are_independent()
     {
         let mut scope = Scope::new();
-        let shared = scope.extend(Frame::Outermost, SurfaceName::from("x"));
-        let left = scope.extend(Frame::Inner(shared), SurfaceName::from("y"));
-        let right = scope.extend(Frame::Inner(shared), SurfaceName::from("z"));
+        let shared = scope.extend(Frame::Outermost, SurfaceName::from("x"), UNWRITTEN);
+        let left = scope.extend(Frame::Inner(shared), SurfaceName::from("y"), UNWRITTEN);
+        let right = scope.extend(Frame::Inner(shared), SurfaceName::from("z"), UNWRITTEN);
 
         assert_eq!(
             scope.index_of(Frame::Inner(left), SurfaceName::from("z"), &mut tank()),
@@ -1361,7 +1472,7 @@ mod tests
     fn an_unbound_name_resolves_to_nothing()
     {
         let mut scope = Scope::new();
-        let frame = scope.extend(Frame::Outermost, SurfaceName::from("x"));
+        let frame = scope.extend(Frame::Outermost, SurfaceName::from("x"), UNWRITTEN);
 
         assert_eq!(
             scope.index_of(Frame::Inner(frame), SurfaceName::from("y"), &mut tank()),
@@ -1379,8 +1490,8 @@ mod tests
     fn a_chain_walk_past_the_allowance_is_refused()
     {
         let mut scope = Scope::new();
-        let outer = scope.extend(Frame::Outermost, SurfaceName::from("x"));
-        let inner = scope.extend(Frame::Inner(outer), SurfaceName::from("y"));
+        let outer = scope.extend(Frame::Outermost, SurfaceName::from("x"), UNWRITTEN);
+        let inner = scope.extend(Frame::Inner(outer), SurfaceName::from("y"), UNWRITTEN);
         let budget = LoweringBudget::from(1_usize);
 
         assert_eq!(
@@ -1402,8 +1513,9 @@ mod tests
             Frame::Outermost,
             SurfaceName::from("a"),
             NodeIndex::from(7_usize),
+            UNWRITTEN,
         );
-        let untyped = scope.extend(Frame::Inner(typed), SurfaceName::from("x"));
+        let untyped = scope.extend(Frame::Inner(typed), SurfaceName::from("x"), UNWRITTEN);
 
         assert_eq!(
             scope.resolve(Frame::Inner(untyped), SurfaceName::from("a"), &mut tank()),
@@ -1430,12 +1542,17 @@ mod tests
     {
         let mut scope = Scope::new();
         let typed = |scope: &mut Scope<'static>, parent: Frame, name: &'static str| {
-            scope.extend_typed(parent, SurfaceName::from(name), NodeIndex::from(1_usize))
+            scope.extend_typed(
+                parent,
+                SurfaceName::from(name),
+                NodeIndex::from(1_usize),
+                UNWRITTEN,
+            )
         };
         let a = typed(&mut scope, Frame::Outermost, "a");
         let b = typed(&mut scope, Frame::Inner(a), "b");
         let x = typed(&mut scope, Frame::Inner(b), "x");
-        let y = scope.extend(Frame::Inner(x), SurfaceName::from("y"));
+        let y = scope.extend(Frame::Inner(x), SurfaceName::from("y"), UNWRITTEN);
         scope.mention(a);
         scope.mention(b);
 
@@ -1470,13 +1587,15 @@ mod tests
             Frame::Outermost,
             SurfaceName::from("a"),
             NodeIndex::from(1_usize),
+            UNWRITTEN,
         );
         let x = scope.extend_typed(
             Frame::Inner(a),
             SurfaceName::from("x"),
             NodeIndex::from(2_usize),
+            UNWRITTEN,
         );
-        let y = scope.extend(Frame::Inner(x), SurfaceName::from("y"));
+        let y = scope.extend(Frame::Inner(x), SurfaceName::from("y"), UNWRITTEN);
         scope.mention(a);
 
         assert_eq!(

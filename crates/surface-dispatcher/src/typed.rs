@@ -1,0 +1,766 @@
+//! The type of every node of a source a reader can point at: each term its
+//! declarations judge, each binder a use resolves to, each type written, and
+//! each declaration, spelled and keyed by where the source wrote it.
+//!
+//! # One typed run per revision a face asks about
+//!
+//! `TypeTable::of` parses and lowers the source, judges every declaration in
+//! the checker's typed run (`gandr_core_checker::type_module`), and keeps the
+//! type the run gave each node, spelled through the printer every face shares
+//! when a reader asks for it:
+//!
+//! - **A term** is spelled at the type its innermost judgement gave it — the
+//!   type it synthesised, or the type it was checked against when it was only
+//!   checked — and, when an outer judgement checked it against a type spelled
+//!   otherwise, at that type too, so a mismatched term shows both sides. The
+//!   typed run marks a refusal where it stands and goes on, so the terms past a
+//!   refusal are typed as well.
+//! - **A binder** is spelled at the type of the uses that resolve to it, read
+//!   through the origin table's use-to-binder record; a binder no use resolves
+//!   to takes no entry, and a reader there is answered by the node around it.
+//! - **A written type** is spelled at its universe: the sort it inhabits at its
+//!   natural level. A type the lowering inserted takes no entry.
+//! - **A declaration** is spelled at its declared type, at the type its body
+//!   synthesised when it states none, and at its universe when it declares
+//!   data; a declaration the lowering refused keeps its refusal instead, since
+//!   no judgement reached it. Either is keyed by the cross-tree key of each of
+//!   its signature and definition forms, so a face holding either form finds
+//!   the one declaration both halves make.
+//!
+//! The table answers a byte offset with the innermost entry whose span holds
+//! it. Among entries of one span a binder comes first, then a written node
+//! before an inserted one, then the node judged last, which is the outer one
+//! when two nodes share the span.
+//!
+//! A reader asks about one position, so the table keeps the type nodes and
+//! the arena they live in, and spells only the entry it answers with. The
+//! alternative was spelling every entry as the table is built: a type laid out
+//! for every node the source writes, of which a hover reads one, made spelling
+//! half the table's cost.
+//!
+//! The alternatives were keeping the types in the composition every revision
+//! builds, which pays a second judgement of every declaration on every
+//! keystroke for a table read only when a reader points, and reading types off
+//! the session's resume, which keeps one type per declaration and none for
+//! the nodes inside it. The choice reverses when a face reads the table on
+//! every revision — inlay hints of every binder's type — and the composition
+//! should then carry it from the run that already judges.
+
+use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
+use alloc::string::String;
+use alloc::string::ToString as _;
+use alloc::vec::Vec;
+
+use anodized::spec;
+use gandr_core_checker::CheckBudget;
+use gandr_core_checker::CheckingContext;
+use gandr_core_checker::TermNode;
+use gandr_core_checker::TypeNode;
+use gandr_core_checker::level_of;
+use gandr_core_checker::type_module;
+use gandr_core_term::CoreArena;
+use gandr_core_term::Sort;
+use gandr_kernel_term::GroundSort;
+use gandr_surface_diagnostics::constant_names;
+use gandr_surface_grammar::Pbg;
+use gandr_surface_lowering::DeclarationOutcome;
+use gandr_surface_lowering::Origin;
+use gandr_surface_lowering::Provenance;
+use gandr_surface_pretty::CoreNode;
+use gandr_surface_pretty::CoreSource;
+use gandr_surface_pretty::Name;
+use gandr_surface_pretty::PageWidth;
+use gandr_surface_pretty::Presentation;
+use gandr_surface_pretty::present_type;
+use gandr_surface_syntax::ByteOffset;
+use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::NodeKey;
+use gandr_surface_syntax::SourceText;
+use quenchant_shape::shape::Maybe;
+
+use crate::compose::ComposeFault;
+use crate::compose::Lowered;
+use crate::compose::LoweringCount;
+use crate::compose::adapt;
+use crate::compose::lower_source;
+
+quenchant_shape::reason_enum! {
+    /// Why a position or a declaration has no type in the table.
+    pub mod typing {
+        /// The reason nothing is spelled.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No entry's span holds the position, or no declaration has the
+            /// form's key.
+            Untyped,
+            /// The printer could not lay the type out at the page width.
+            Unspelled,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why an entry carries no second type.
+    pub mod checked_against {
+        /// The reason only one type is spelled.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No outer judgement checked the term against a type spelled
+            /// otherwise, or the entry is no term.
+            Agreed,
+        }
+    }
+}
+
+/// What an entry of the table stands for.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Subject
+{
+    /// A name binding the uses that resolve to it, spelled at their type.
+    Binder,
+    /// A term a judgement typed, spelled at its type.
+    Term,
+    /// A written type, spelled at its universe.
+    Type,
+}
+
+/// One node the source wrote, with the type a face shows for it.
+///
+/// # Specification
+/// - requires: answered by [`TypeTable::at`].
+/// - ensures: the span is the node's in the source the table was built from;
+///   the type is spelled through [`present_type`].
+/// - panics: none.
+/// - executable: none — this data type has no call boundary; [`TypeTable::at`]
+///   carries the predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a term, a binder and a written type each carry their own
+///   subject, span and spelling.
+/// - witness: `typed::tests::every_kind_of_node_is_typed_where_it_was_written`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TypedSpan
+{
+    /// The bytes the node covers.
+    span: ByteSpan,
+    /// What the node is.
+    subject: Subject,
+    /// Whether the source wrote the node or the lowering inserted it.
+    provenance: Provenance,
+    /// The node's type: a term's own, a binder's uses', a type's universe.
+    ty: Presentation,
+    /// The type an outer judgement checked a term against, when spelled
+    /// otherwise than its own.
+    expected: Maybe<Presentation, checked_against::Absent>,
+}
+
+impl TypedSpan
+{
+    /// The bytes the node covers.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn span(&self) -> ByteSpan
+    {
+        self.span
+    }
+
+    /// What the node is.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn subject(&self) -> Subject
+    {
+        self.subject
+    }
+
+    /// The node's type: a term's own, a binder's uses', a type's universe.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn ty(&self) -> &Presentation
+    {
+        &self.ty
+    }
+
+    /// The type an outer judgement checked a term against, when spelled
+    /// otherwise than its own.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn expected(&self) -> Maybe<&Presentation, checked_against::Absent>
+    {
+        match self.expected {
+            | Maybe::Present(ref expected) => Maybe::Present(expected),
+            | Maybe::Absent(reason) => Maybe::Absent(reason),
+        }
+    }
+}
+
+/// What the table holds for a declaration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Declared
+{
+    /// The declaration's type: its signature, its body's synthesised type, or
+    /// its data universe.
+    Typed(Presentation),
+    /// The lowering's refusal of the declaration, as text: no judgement
+    /// reached it.
+    Refused(String),
+}
+
+/// One typed node as the table keeps it: the type nodes it is spelled at when
+/// a reader asks.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Entry
+{
+    /// The bytes the node covers.
+    span: ByteSpan,
+    /// What the node is.
+    subject: Subject,
+    /// Whether the source wrote the node or the lowering inserted it.
+    provenance: Provenance,
+    /// The node's type: a term's first kept type, a binder's uses', a type's
+    /// universe.
+    ty: TypeNode,
+    /// A term's last kept type, the type an outer judgement checked it
+    /// against; [`Self::ty`] for any other entry.
+    last: TypeNode,
+}
+
+/// What the table keeps for a declaration: its type node, or the lowering's
+/// refusal of it as text.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Held
+{
+    /// The declaration's type node.
+    Typed(TypeNode),
+    /// The lowering's refusal, as text.
+    Refused(String),
+}
+
+/// The type of every node of one source a face can point at, and of every
+/// declaration.
+///
+/// # Specification
+/// - requires: built by [`TypeTable::of`].
+/// - ensures: the entries are in the order the typed run finished them, binders
+///   and types after the terms; each declaration is keyed by each of its forms;
+///   every type node lives in the table's arena, and the names are the source's
+///   constants by admission position.
+/// - panics: none.
+/// - executable: none — this data type has no call boundary; [`TypeTable::of`]
+///   and [`TypeTable::at`] carry the predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`TypeTable::of`].
+/// - witness: `typed::tests::every_kind_of_node_is_typed_where_it_was_written`
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct TypeTable
+{
+    /// The typed nodes.
+    entries: Vec<Entry>,
+    /// Each declaration's type or refusal, by the key of each of its forms.
+    declared: BTreeMap<NodeKey, Held>,
+    /// The arena every type node lives in.
+    arena: CoreArena,
+    /// The name the printer writes for each constant, by admission position.
+    names: Vec<String>,
+}
+
+/// The printer's root for `node`.
+///
+/// # Specification
+/// trivial.
+const fn root(node: TypeNode) -> CoreNode
+{
+    match node {
+        | TypeNode::Value(id) => CoreNode::ValueType(id),
+        | TypeNode::Computation(id) => CoreNode::CompType(id),
+    }
+}
+
+impl TypeTable
+{
+    /// Type every node of `source` a face can point at.
+    ///
+    /// # Specification
+    /// - requires: `grammar` is the checked grammar the source is parsed under.
+    /// - ensures: the source is parsed, lowered and judged in the checker's
+    ///   typed run; each term the run typed and the origin table places is an
+    ///   entry at its span, at the first type the run kept for it and the last;
+    ///   each binder the origin table records for a typed use is one entry at
+    ///   the binder's span, at that use's type; each written value or
+    ///   computation type whose level the checker reads is an entry at its
+    ///   universe; each declaration is keyed by each form key it carries, at
+    ///   its declared type, its body's synthesised type, or its data universe,
+    ///   or holding the lowering's refusal of it as text. A source the lowering
+    ///   refuses whole types nothing.
+    /// - provides: what a face answers a reader pointing into the source with.
+    /// - fails: [`ComposeFault::Parse`] when the parser cannot commit its tree;
+    ///   [`ComposeFault::Lowering`] for a lowering engine fault.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`ComposeFault::Parse`]: the tree could not be committed.
+    /// - [`ComposeFault::Lowering`]: the lowering faulted.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a function with a parameter used in its body, a
+    ///   signature and its definition, a synthesised definition, a data
+    ///   declaration and a mismatched body separate the term, binder, type and
+    ///   declaration entries and the expected type.
+    /// - witness: `typed::tests::every_kind_of_node_is_typed_where_it_was_written`
+    /// - witness: `typed::tests::a_mismatched_term_shows_both_types`
+    /// - witness: `typed::tests::both_halves_of_a_declaration_find_its_type`
+    #[spec(ensures: |ret| ret.as_ref().is_ok_and(|table| table.entries.iter().all(|entry|
+        usize::from(entry.span.end()) <= <&str>::from(source).len()
+            && (entry.subject == Subject::Term || entry.last == entry.ty)))
+        || ret.is_err())]
+    #[inline]
+    pub fn of<'source>(
+        grammar: &Pbg,
+        source: SourceText<'source>,
+    ) -> Result<Self, ComposeFault<'source>>
+    {
+        let lowering = lower_source(grammar, source, &mut LoweringCount::default())?;
+        let Lowered::Module { module, mut arena } = lowering.into_lowered()
+        else {
+            return Ok(Self::default());
+        };
+        let declarations = adapt(&module);
+        let origins = module.origins();
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let typed = type_module(&mut context, &declarations);
+        let mut universes = Vec::new();
+        let value_types = origins
+            .value_types()
+            .iter()
+            .map(|&(id, origin)| (TypeNode::Value(id), origin, GroundSort::Value));
+        let comp_types = origins
+            .comp_types()
+            .iter()
+            .map(|&(id, origin)| (TypeNode::Computation(id), origin, GroundSort::Computation));
+        for (node, origin, sort) in value_types.chain(comp_types) {
+            if origin.provenance() != Provenance::Written {
+                continue;
+            }
+            if let Ok(level) = level_of(&context, node) {
+                universes.push((origin, sort, level));
+            }
+        }
+        let universes: Vec<(Origin, TypeNode)> = universes
+            .into_iter()
+            .map(|(origin, sort, level)| {
+                let universe = arena.value_type_universe(Sort::Ground(sort), level);
+                (origin, TypeNode::Value(universe))
+            })
+            .collect();
+        // Each term's first and last type, and when its last was kept.
+        let mut kept: BTreeMap<TermNode, (TypeNode, TypeNode, usize)> = BTreeMap::new();
+        let mut finished = 0_usize;
+        for typings in typed.values() {
+            for typing in typings.typings() {
+                let entry = kept
+                    .entry(typing.term)
+                    .or_insert((typing.ty, typing.ty, finished));
+                entry.1 = typing.ty;
+                entry.2 = finished;
+                finished = finished.saturating_add(1);
+            }
+        }
+        let mut order: Vec<(&TermNode, &(TypeNode, TypeNode, usize))> = kept.iter().collect();
+        order.sort_by_key(|&(_, &(_, _, at))| at);
+        let mut entries = Vec::with_capacity(order.len());
+        for (&term, &(first, last, _)) in order {
+            let origin = match term {
+                | TermNode::Value(id) => origins.value(id),
+                | TermNode::Computation(id) => origins.computation(id),
+            };
+            if let Maybe::Present(origin) = origin {
+                entries.push(Entry {
+                    span: origin.span(),
+                    subject: Subject::Term,
+                    provenance: origin.provenance(),
+                    ty: first,
+                    last,
+                });
+            }
+        }
+        let mut bound = BTreeSet::new();
+        for &(variable, binder) in origins.bindings() {
+            if let Some(&(first, ..)) = kept.get(&TermNode::Value(variable))
+                && bound.insert(binder)
+            {
+                entries.push(Entry {
+                    span: binder,
+                    subject: Subject::Binder,
+                    provenance: Provenance::Written,
+                    ty: first,
+                    last: first,
+                });
+            }
+        }
+        for (origin, universe) in universes {
+            entries.push(Entry {
+                span: origin.span(),
+                subject: Subject::Type,
+                provenance: origin.provenance(),
+                ty: universe,
+                last: universe,
+            });
+        }
+        let mut declared = BTreeMap::new();
+        for declaration in module.declarations() {
+            let held = match declaration.outcome() {
+                | DeclarationOutcome::Completed { declared_type, .. }
+                | DeclarationOutcome::Uncompleted { declared_type } => {
+                    Held::Typed(TypeNode::Value(declared_type))
+                },
+                | DeclarationOutcome::Bodied { body } => match kept.get(&TermNode::Value(body)) {
+                    | Some(&(first, ..)) => Held::Typed(first),
+                    | None => continue,
+                },
+                | DeclarationOutcome::Data(index) => match module.data(index) {
+                    | Maybe::Present(signature) => Held::Typed(TypeNode::Value(signature.kind())),
+                    | Maybe::Absent(_) => continue,
+                },
+                | DeclarationOutcome::Refused(refusal) => Held::Refused(refusal.to_string()),
+            };
+            for key in [declaration.signature(), declaration.definition()] {
+                if let Maybe::Present(key) = key {
+                    let _replaced = declared.insert(key, held.clone());
+                }
+            }
+        }
+        let names = constant_names(&module)
+            .into_iter()
+            .map(|name| String::from(name.as_ref()))
+            .collect();
+        Ok(Self {
+            entries,
+            declared,
+            arena,
+            names,
+        })
+    }
+
+    /// The innermost typed node whose span holds `offset`, spelled on a page
+    /// of `page` columns.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: among the entries whose span starts at or before `offset` and
+    ///   ends after it, one of the shortest; among those, a binder before a
+    ///   term before a type, a written node before an inserted one, and then
+    ///   the entry latest in the table. It is spelled at its type and, for a
+    ///   term whose last kept type is spelled otherwise, carries that one as
+    ///   its expected type. Absent as [`typing::Absent::Untyped`] when no span
+    ///   holds `offset`, and as [`typing::Absent::Unspelled`] when the printer
+    ///   cannot lay the chosen entry's type out.
+    /// - provides: the node a reader pointing at `offset` means.
+    /// - fails: never; an absence names its reason.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a variable inside a function body and the body around
+    ///   it, a mismatched term, and a position between declarations, separate
+    ///   the innermost entry, the enclosing one, the expected type and none.
+    /// - witness: `typed::tests::every_kind_of_node_is_typed_where_it_was_written`
+    /// - witness: `typed::tests::a_mismatched_term_shows_both_types`
+    #[spec(ensures: |ret| {
+        let holding = |entry: &&Entry| entry.span.start() <= offset && offset < entry.span.end();
+        let width = |span: ByteSpan| usize::from(span.end()).saturating_sub(usize::from(span.start()));
+        match ret {
+            Maybe::Present(ref answer) => answer.span.start() <= offset && offset < answer.span.end()
+                && self.entries.iter().filter(holding).all(|other| width(other.span) >= width(answer.span)),
+            Maybe::Absent(typing::Absent::Untyped) => !self.entries.iter().any(|entry| holding(&entry)),
+            Maybe::Absent(typing::Absent::Unspelled) => self.entries.iter().any(|entry| holding(&entry)),
+        }
+    })]
+    #[inline]
+    pub fn at(
+        &self,
+        offset: ByteOffset,
+        page: PageWidth,
+    ) -> Maybe<TypedSpan, typing::Absent>
+    {
+        let Some((_, entry)) = self
+            .entries
+            .iter()
+            .enumerate()
+            .filter(|&(_, entry)| entry.span.start() <= offset && offset < entry.span.end())
+            .min_by_key(|&(position, entry)| {
+                (
+                    usize::from(entry.span.end()).saturating_sub(usize::from(entry.span.start())),
+                    entry.subject,
+                    matches!(entry.provenance, Provenance::Inserted(_)),
+                    core::cmp::Reverse(position),
+                )
+            })
+        else {
+            return Maybe::Absent(typing::Absent::Untyped);
+        };
+        let Maybe::Present(ty) = self.spell(entry.ty, page)
+        else {
+            return Maybe::Absent(typing::Absent::Unspelled);
+        };
+        let expected = match self.spell(entry.last, page) {
+            | Maybe::Present(other) if entry.last != entry.ty && other != ty => {
+                Maybe::Present(other)
+            },
+            | Maybe::Present(_) | Maybe::Absent(_) => {
+                Maybe::Absent(checked_against::Absent::Agreed)
+            },
+        };
+        Maybe::Present(TypedSpan {
+            span: entry.span,
+            subject: entry.subject,
+            provenance: entry.provenance,
+            ty,
+            expected,
+        })
+    }
+
+    /// The type or refusal of the declaration one of whose forms has the key
+    /// `key`, a type spelled on a page of `page` columns.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the refusal the table holds for the declaration, or its type
+    ///   spelled; absent as [`typing::Absent::Untyped`] when no declaration has
+    ///   the key, and as [`typing::Absent::Unspelled`] when the printer cannot
+    ///   lay its type out.
+    /// - provides: the declaration half of a face's answer.
+    /// - fails: never; an absence names its reason.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a signature, its definition and a synthesised
+    ///   declaration are each keyed at their type.
+    /// - witness: `typed::tests::both_halves_of_a_declaration_find_its_type`
+    #[spec(ensures: |ret| match (self.declared.get(&key), &ret) {
+        (None, &Maybe::Absent(typing::Absent::Untyped))
+            | (Some(&Held::Typed(_)), &(Maybe::Present(Declared::Typed(_)) | Maybe::Absent(typing::Absent::Unspelled))) => true,
+        (Some(held), &Maybe::Present(Declared::Refused(ref refusal))) => *held == Held::Refused(refusal.clone()),
+        _ => false,
+    })]
+    #[inline]
+    pub fn declared(
+        &self,
+        key: NodeKey,
+        page: PageWidth,
+    ) -> Maybe<Declared, typing::Absent>
+    {
+        match self.declared.get(&key) {
+            | Some(&Held::Typed(node)) => match self.spell(node, page) {
+                | Maybe::Present(spelled) => Maybe::Present(Declared::Typed(spelled)),
+                | Maybe::Absent(reason) => Maybe::Absent(reason),
+            },
+            | Some(&Held::Refused(ref refusal)) => {
+                Maybe::Present(Declared::Refused(refusal.clone()))
+            },
+            | None => Maybe::Absent(typing::Absent::Untyped),
+        }
+    }
+
+    /// `node` spelled through the shared printer on a page of `page` columns,
+    /// writing each constant by its name.
+    ///
+    /// # Specification
+    /// trivial.
+    fn spell(
+        &self,
+        node: TypeNode,
+        page: PageWidth,
+    ) -> Maybe<Presentation, typing::Absent>
+    {
+        let names: Vec<Name<'_>> = self
+            .names
+            .iter()
+            .map(|name| Name::from(name.as_str()))
+            .collect();
+        let printer = CoreSource::new(&self.arena, &names);
+        match present_type(&printer, root(node), page) {
+            | Ok(spelled) => Maybe::Present(spelled),
+            | Err(_) => Maybe::Absent(typing::Absent::Unspelled),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::string::String;
+    use alloc::vec::Vec;
+
+    use gandr_surface_grammar::built_in;
+    use gandr_surface_pretty::PageWidth;
+    use gandr_surface_syntax::ByteOffset;
+    use gandr_surface_syntax::SourceText;
+    use quenchant_shape::shape::Maybe;
+
+    use super::Declared;
+    use super::Subject;
+    use super::TypeTable;
+    use super::checked_against;
+    use super::typing;
+
+    /// What the table answers at a position, as text.
+    #[derive(Debug, Eq, PartialEq)]
+    struct Answer
+    {
+        /// What the node is.
+        subject: Subject,
+        /// Its type.
+        ty: String,
+        /// The type it was checked against, when spelled otherwise.
+        expected: Maybe<String, checked_against::Absent>,
+    }
+
+    /// What `table` answers at the first byte of the first occurrence of
+    /// `needle` in `source`, as text; panics when `needle` does not occur.
+    ///
+    /// # Specification
+    /// trivial.
+    fn answer(
+        table: &TypeTable,
+        source: SourceText<'_>,
+        needle: SourceText<'_>,
+    ) -> Maybe<Answer, typing::Absent>
+    {
+        let offset = <&str>::from(source)
+            .find(<&str>::from(needle))
+            .expect("the needle occurs");
+        match table.at(ByteOffset::from(offset), PageWidth::from(80_u32)) {
+            | Maybe::Present(entry) => Maybe::Present(Answer {
+                subject: entry.subject(),
+                ty: String::from(entry.ty().as_ref()),
+                expected: match entry.expected() {
+                    | Maybe::Present(expected) => Maybe::Present(String::from(expected.as_ref())),
+                    | Maybe::Absent(reason) => Maybe::Absent(reason),
+                },
+            }),
+            | Maybe::Absent(reason) => Maybe::Absent(reason),
+        }
+    }
+
+    /// The table [`TypeTable::of`] builds for `source`; panics when the grammar
+    /// or the parse fails.
+    ///
+    /// # Specification
+    /// trivial.
+    fn table(source: SourceText<'_>) -> TypeTable
+    {
+        let grammar = built_in().expect("the built-in grammar builds");
+        TypeTable::of(&grammar, source).expect("the source parses")
+    }
+
+    /// An answer of `subject` at `ty`, checked against nothing else.
+    ///
+    /// # Specification
+    /// trivial.
+    fn agreed(
+        subject: Subject,
+        ty: SourceText<'_>,
+    ) -> Maybe<Answer, typing::Absent>
+    {
+        Maybe::Present(Answer {
+            subject,
+            ty: String::from(<&str>::from(ty)),
+            expected: Maybe::Absent(checked_against::Absent::Agreed),
+        })
+    }
+
+    #[test]
+    fn every_kind_of_node_is_typed_where_it_was_written()
+    {
+        let source =
+            SourceText::from("def f(x: Integer) -> -F Integer { return x }\n\ndef g = 1 ;");
+        let table = table(source);
+        let at = |needle: &'static str| answer(&table, source, SourceText::from(needle));
+        assert_eq!(
+            at("x }"),
+            agreed(Subject::Term, SourceText::from("Integer")),
+            "the use is a term of its binder's type"
+        );
+        assert_eq!(
+            at("x:"),
+            agreed(Subject::Binder, SourceText::from("Integer")),
+            "the binder is spelled at its use's type"
+        );
+        assert_eq!(
+            at("Integer)"),
+            agreed(Subject::Type, SourceText::from("Type")),
+            "a written type is spelled at its universe"
+        );
+        assert_eq!(
+            at("-F"),
+            agreed(Subject::Type, SourceText::from("Type[-]")),
+            "a written computation type is spelled at its universe"
+        );
+        assert!(
+            matches!(
+                at("return"),
+                Maybe::Present(Answer {
+                    subject: Subject::Term,
+                    ..
+                })
+            ),
+            "the keyword answers the term it opens"
+        );
+        assert_eq!(
+            at("\n\n"),
+            Maybe::Absent(typing::Absent::Untyped),
+            "layout between declarations is no node's"
+        );
+    }
+
+    #[test]
+    fn a_mismatched_term_shows_both_types()
+    {
+        let source = SourceText::from("def answer : Integer ; def answer = unit ;");
+        let table = table(source);
+        assert_eq!(
+            answer(&table, source, SourceText::from("unit")),
+            Maybe::Present(Answer {
+                subject: Subject::Term,
+                ty: String::from("Unit"),
+                expected: Maybe::Present(String::from("Integer")),
+            }),
+            "the term has its own type and the one it was checked against"
+        );
+    }
+
+    #[test]
+    fn both_halves_of_a_declaration_find_its_type()
+    {
+        let source = SourceText::from("def answer : Integer ; def answer = 42 ; def other = 7 ;");
+        let grammar = built_in().expect("the built-in grammar builds");
+        let tree = gandr_surface_parser::parse(&grammar, source)
+            .expect("the source parses")
+            .into_tree();
+        let table = table(source);
+        let keyed: Vec<String> = tree
+            .positions()
+            .filter_map(|position| tree.key(position))
+            .filter_map(|key| match table.declared(key, PageWidth::from(80_u32)) {
+                | Maybe::Present(Declared::Typed(spelled)) => Some(String::from(spelled.as_ref())),
+                | Maybe::Present(Declared::Refused(_)) | Maybe::Absent(_) => None,
+            })
+            .collect();
+        assert_eq!(
+            keyed,
+            ["Integer", "Integer", "Integer"],
+            "the signature, the definition and the synthesised declaration are each keyed"
+        );
+    }
+}

@@ -18,8 +18,13 @@
 //! request molds the form the cursor ends and answers, as a snippet, the
 //! material the parser expects to close it. An outline request reads the
 //! document's declarations, its multi-line forms or the forms around a
-//! position off its parsed tree, and a hover the type and documentation the
-//! document's session holds for the declaration whose name the cursor is on.
+//! position off its parsed tree. A hover answers the innermost node under the
+//! cursor with its type: a declaration's name its declared type and
+//! documentation, a binder the type its uses were judged at, a term its type
+//! (and the type it was checked against when the two differ), a written type
+//! its universe, and any other position inside a declaration that
+//! declaration. The types come from a typed run over the document's text,
+//! built at the first hover after an edit and kept until the next.
 //! A formatting request lays the document out through `gandr-surface-format`
 //! and answers the edits that turn the held text into that layout: one
 //! trimmed edit for the whole document, or one per top-level form a range
@@ -100,10 +105,10 @@
 //! | folding ranges | `textDocument/foldingRange` | served |
 //! | selection ranges | `textDocument/selectionRange` | served |
 //! | hover | `textDocument/hover` | served |
-//! | inlay hints | `textDocument/inlayHint` | blocked: a binder's inferred type, which the resume records per item and not per binder |
-//! | signature help | `textDocument/signatureHelp` | blocked: the declaration a call applies, which needs the use-to-binder map below |
+//! | inlay hints | `textDocument/inlayHint` | blocked: a face that reads each binder's type off the hover's type table, which is built on demand rather than per revision |
+//! | signature help | `textDocument/signatureHelp` | blocked: the declaration a call applies, which the use-to-binder map keys for local binders but not for constants |
 //! | completion | `textDocument/completion` | blocked: goals whose types the checker spells |
-//! | definition, declaration, type definition, implementation | `textDocument/definition`, `declaration`, `typeDefinition`, `implementation` | blocked: the lowering resolves every name but does not expose a use's binder |
+//! | definition, declaration, type definition, implementation | `textDocument/definition`, `declaration`, `typeDefinition`, `implementation` | blocked: the lowering's origin table keys each local use to its binder's span, but no face reads it and constants are not keyed |
 //! | references, document highlight | `textDocument/references`, `documentHighlight` | blocked: the same use-to-binder map |
 //! | rename, linked editing | `textDocument/prepareRename`, `rename`, `linkedEditingRange` | blocked: the same use-to-binder map |
 //! | call hierarchy | `textDocument/prepareCallHierarchy`, `callHierarchy/*` | blocked: the same use-to-binder map |
@@ -205,10 +210,12 @@
 //! folding, selection ranges and inline completion must equal its answers,
 //! at every keystroke of the erasure and the scripts, and at every line of
 //! the corpus typing, where a whole reparse per keystroke would cost minutes
-//! with specifications enforced. A hover reads the session's last accepted
-//! revision, which a fresh connection lacks, so it is held to answering, not
-//! to agreeing. Each recorded session replays message for message through
-//! `serve` over framed streams.
+//! with specifications enforced. A hover's documentation reads the session's
+//! last accepted revision, which a fresh connection lacks, so it is held to
+//! answering, not to agreeing. A hover at every byte of every corpus source
+//! answers without a fault, and the share it answers is recorded as a floor
+//! that may only rise. Each recorded session replays message for message
+//! through `serve` over framed streams.
 //!
 //! Two effects cannot be observed by a useful return-value predicate: `serve`
 //! owns opaque generic input/output streams, and `Capabilities::fmt` writes

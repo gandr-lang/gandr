@@ -31,8 +31,16 @@ use super::buffer::Offset;
 use super::buffer::Position;
 use super::buffer::Text;
 use super::buffer::Typing;
+use super::client::Client;
+use super::client::Method;
+use super::client::Record;
 use super::editing::Oracle;
 use super::editing::Session;
+
+/// The share of corpus positions a hover answers, in thousandths, below
+/// which hovering has regressed: the share measured when it was last raised.
+/// A change that answers more positions raises it.
+const ANSWERED_FLOOR: usize = 735;
 
 /// The random edit scripts each run generates.
 const CASES: u32 = 32;
@@ -390,6 +398,56 @@ fn erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful()
         );
         session.replays_over_streams();
     });
+}
+
+#[test]
+fn hovering_every_position_of_each_corpus_source_answers_without_fault()
+{
+    let sources = corpus();
+    assert!(
+        sources.len() > 100,
+        "the corpus is walked whole: {}",
+        sources.len()
+    );
+    let positions = AtomicUsize::new(0_usize);
+    let answered = AtomicUsize::new(0_usize);
+    each_in_parallel(&sources, |source| {
+        let mut client = Client::initialized(Record::Dropped);
+        let _opened = client.notify(
+            Method("textDocument/didOpen"),
+            &json!({ "textDocument": {
+                "uri": source.uri, "languageId": "gandr", "version": 1_i32, "text": source.text,
+            }}),
+        );
+        let text = Text(&source.text);
+        let offsets = source
+            .text
+            .char_indices()
+            .map(|(offset, _)| offset)
+            .chain([source.text.len()]);
+        for offset in offsets {
+            let at = Position::of(text, Offset(offset));
+            let shown = client.request(
+                Method("textDocument/hover"),
+                &json!({ "textDocument": { "uri": source.uri }, "position": at.json() }),
+            );
+            let _counted = positions.fetch_add(1_usize, Ordering::Relaxed);
+            if !shown.is_null() {
+                let _counted = answered.fetch_add(1_usize, Ordering::Relaxed);
+            }
+        }
+    });
+    let positions = positions.into_inner();
+    let answered = answered.into_inner();
+    let share = answered
+        .saturating_mul(1000_usize)
+        .checked_div(positions)
+        .unwrap_or_default();
+    assert!(
+        share >= ANSWERED_FLOOR,
+        "hovers answer {answered} of {positions} corpus positions, {share}‰, below the floor of \
+         {ANSWERED_FLOOR}‰"
+    );
 }
 
 #[test]

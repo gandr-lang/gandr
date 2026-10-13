@@ -137,6 +137,7 @@ pub use crate::report::report_note;
 pub use crate::report::report_span;
 pub use crate::spelled::Failures;
 pub use crate::spelled::Spellings;
+pub use crate::spelled::constant_names;
 pub use crate::spelled::kept;
 pub use crate::spelled::spelling;
 pub use crate::verbosity::Verbosity;

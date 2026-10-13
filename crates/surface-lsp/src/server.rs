@@ -49,6 +49,7 @@
 //! authorities, which needs a parser.
 
 use alloc::collections::BTreeMap;
+use core::cell::OnceCell;
 use core::fmt;
 use std::io::BufRead;
 use std::io::Write;
@@ -65,7 +66,9 @@ use serde::Deserialize as _;
 use serde_json::Value;
 
 use crate::format::edits;
+use crate::hover::Hovering;
 use crate::hover::hover;
+use crate::hover::hovering;
 use crate::inline::ghost;
 use crate::outline::folds;
 use crate::outline::selections;
@@ -162,6 +165,9 @@ struct Document
     published: Vec<Diagnostic>,
     /// The checked proposals kept for its version, in the order kept.
     proposals: Vec<Proposal>,
+    /// What its hovers read — the type table and the declarations of its text
+    /// — built at the first hover after the text last changed.
+    hovering: OnceCell<Hovering>,
 }
 
 impl Document
@@ -182,6 +188,7 @@ impl Document
             session: open(uri),
             published: Vec::new(),
             proposals: Vec::new(),
+            hovering: OnceCell::new(),
         }
     }
 }
@@ -1480,6 +1487,7 @@ impl Server
                 let document = &mut held.document;
                 document.version = text_document.version;
                 document.text = text_document.text;
+                document.hovering = OnceCell::new();
                 document.proposals.clear();
                 let outcome = synchronised(&uri, document, self.verbosity);
                 for message in &outcome.messages {
@@ -1506,6 +1514,7 @@ impl Server
                 };
                 document.version = text_document.version;
                 document.proposals.clear();
+                document.hovering = OnceCell::new();
                 for change in content_changes {
                     apply(&mut document.text, change);
                 }
@@ -1730,11 +1739,11 @@ impl Workspace
     /// # Specification
     /// - requires: nothing; an unknown URI and any position are admitted.
     /// - ensures: an unknown document yields Nothing; otherwise the hover
-    ///   [`hover()`] shows read against the copy's session, followed by the
-    ///   notes of the kept proposals whose range holds the position and explain
-    ///   themselves, or those notes alone over the first one's range when the
-    ///   session shows nothing there or the grammar did not build. Nothing when
-    ///   neither shows anything.
+    ///   [`hover()`] shows read against what the copy keeps for its hovers and
+    ///   its session, followed by the notes of the kept proposals whose range
+    ///   holds the position and explain themselves, or those notes alone over
+    ///   the first one's range when the hover shows nothing there or the
+    ///   grammar did not build. Nothing when neither shows anything.
     /// - provides: the answer to `textDocument/hover`.
     /// - fails: never.
     /// - panics: none.
@@ -1759,7 +1768,11 @@ impl Workspace
             return Answer::Nothing;
         };
         let shown = match document.session {
-            | Ok(ref session) => hover(SourceText::from(document.text.as_str()), session, position),
+            | Ok(ref session) => {
+                let text = SourceText::from(document.text.as_str());
+                let kept = document.hovering.get_or_init(|| hovering(text));
+                hover(text, session, kept, position)
+            },
             | Err(_) => Maybe::Absent(crate::hover::hovered::Absent::Unparsed),
         };
         match (shown, notes(&document.proposals, position)) {
@@ -2503,8 +2516,21 @@ mod tests
         );
         assert_eq!(
             ask(&mut server, "file:///tmp/example.gandr", 1),
-            wire(Json(r#"[{"jsonrpc":"2.0","id":5,"result":null}]"#)),
-            "on the keyword: no declaration's name, so null"
+            wire(Json(
+                r#"[{"jsonrpc":"2.0","id":5,"result":{
+                    "contents":{"kind":"markdown","value":"```gandr\nf : Integer\n```"},
+                    "range":{"start":{"line":0,"character":0},"end":{"line":0,"character":12}}}}]"#
+            )),
+            "on the keyword: the declaration it introduces, about the declaration"
+        );
+        assert_eq!(
+            ask(&mut server, "file:///tmp/example.gandr", 8),
+            wire(Json(
+                r#"[{"jsonrpc":"2.0","id":5,"result":{
+                    "contents":{"kind":"markdown","value":"```gandr\nInteger\n```"},
+                    "range":{"start":{"line":0,"character":8},"end":{"line":0,"character":10}}}}]"#
+            )),
+            "on the literal: its type, about the literal"
         );
         assert_eq!(
             ask(&mut server, "file:///tmp/closed.gandr", 4),

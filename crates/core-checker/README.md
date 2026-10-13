@@ -28,6 +28,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 - Native list introductions check against `List A`; the pure fold synthesises `F B` from explicit element and result annotations. Nil and cons branches are checked in their zero- and two-binder contexts, and readmission preserves the native kernel syntax without assumptions.
 - `ConversionCount`: the declared projection of the conversion boundary, returned by every face.
 - `form_value_type`, `form_comp_type`, `FormedValueType` and `FormedCompType`: formation as a judgement, and the types the check faces take.
+- `type_value`, `type_module`, `Typing` and `Typings`: the typed run, which keeps the type of every term it judged, refused terms included.
 - `classify_value_type`, `classify_comp_type` and `level_of`: the unique classifier of each formed type.
 - `CodeDefinitions`, `Certificate`, `Unfolded`, `unfolding::Absent` and `Lift`: static definitions, certified reductions and recorded universe lifts.
 - `Declaration`, `DeclarationContent` and `OriginToken`: name-free value/data input. Values retain optional signature/body halves; data retain a `DataSignature`.
@@ -115,7 +116,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 | ----- | ------ |
 | Modes, static operators, the dependent arrow and the bind, splits, holes in the faces, effects and control, native universe paths, element identity | [`judgement`](src/judgement.rs) |
 | Function extensionality | [`funext`](src/funext.rs) |
-| Total elaboration and the traced run | [`judgement::elaboration`](src/judgement/elaboration.rs) |
+| Total elaboration and the typed run | [`judgement::elaboration`](src/judgement/elaboration.rs) |
 | Records | [`judgement::native`](src/judgement/native.rs) |
 | The three bridges, consistency, smallness and variance | [`conversion`](src/conversion.rs) |
 | Formation, the classifier, universes, quotes and decodes | [`formation`](src/formation.rs) |

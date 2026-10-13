@@ -525,6 +525,7 @@ path = "crates/surface-parser"
 # out at a page width through the layout engine.
 # consumers:
 # - surface-diagnostics
+# - surface-dispatcher
 # - surface-lsp
 # - surface-repl
 # - surface-session

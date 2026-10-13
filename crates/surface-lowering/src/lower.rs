@@ -531,6 +531,7 @@ use crate::resolve::ScopeId;
 use crate::resolve::SurfaceName;
 use crate::resolve::TypeAtom;
 use crate::resolve::TypeFormer;
+use crate::resolve::binder_site;
 use crate::resolve::binder_type;
 use crate::resolve::type_atom;
 use crate::resolve::type_former;
@@ -1663,7 +1664,7 @@ impl Resolved
         ensures: |ret| {
             matches!(
                 (self, &ret),
-                (Self::Binder(_), &Plan::Variable(_))
+                (Self::Binder(_), &Plan::Variable(..))
                     | (Self::Declaration { .. }, &Plan::Constant(_))
             )
         },
@@ -1671,7 +1672,7 @@ impl Resolved
     const fn term(self) -> Plan
     {
         match self {
-            | Self::Binder(bound) => Plan::Variable(bound.index),
+            | Self::Binder(bound) => Plan::Variable(bound.index, bound.binder),
             | Self::Declaration { constant, .. } => Plan::Constant(constant),
         }
     }
@@ -1744,8 +1745,8 @@ enum Plan
     ValueHole(gandr_core_term::hole::HoleId),
     /// A computation hole at its source occurrence.
     CompHole(gandr_core_term::hole::HoleId),
-    /// A variable at this index.
-    Variable(DeBruijnIndex),
+    /// A variable at this index, bound by the binder that entered this frame.
+    Variable(DeBruijnIndex, ScopeId),
     /// A constant at this admission position.
     Constant(ConstantIndex),
     /// A table-typed native prelude thunk.
@@ -3902,7 +3903,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(usize::from(site.at.node)),
-                    Some(&(Plan::Variable(_) | Plan::Constant(_) | Plan::Primitive(_) | Plan::StaticApplication(..)))
+                    Some(&(Plan::Variable(..) | Plan::Constant(_) | Plan::Primitive(_) | Plan::StaticApplication(..)))
                 )
         },
     )]
@@ -3975,7 +3976,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 || matches!(
                     self.plans.get(usize::from(site.at.node)),
                     Some(
-                        &(Plan::Variable(_)
+                        &(Plan::Variable(..)
                             | Plan::StaticApplication(..)
                             | Plan::Constant(_)
                             | Plan::Atom(_)
@@ -4420,7 +4421,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let binder = parameter(site, &mut cursor)?;
         let name = self.name_at(binder);
         self.note_binder(binder, name)?;
-        let extended = self.scope.extend(frame, name);
+        let extended = self.scope.extend(frame, name, Maybe::Present(binder.span));
         let body = self.block(site, &mut cursor, Frame::Inner(extended))?;
         self.open_body(
             site,
@@ -4608,8 +4609,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             if let (Maybe::Present(_), Maybe::Present(own), Maybe::Present(_)) =
                 (recursive, named, ahead.at(TileName::PAREN_CLOSE))
             {
+                let own_site = Maybe::Present(own.span);
                 let own = self.name_at(own);
-                let bound = self.scope.extend_typed(frame, own, site.at.node);
+                let bound = self.scope.extend_typed(frame, own, site.at.node, own_site);
                 let _first = self.recursions.insert(bound, native::Recursion {
                     uniform: Stretch {
                         start,
@@ -4620,9 +4622,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 recursion = Maybe::Present(bound);
                 frame = Frame::Inner(bound);
             }
+            let written = Maybe::Present(binder.span);
             let bound = match declared {
-                | Maybe::Present(written) => self.scope.extend_typed(frame, name, written),
-                | Maybe::Absent(_) => self.scope.extend(frame, name),
+                | Maybe::Present(declared) => {
+                    self.scope.extend_typed(frame, name, declared, written)
+                },
+                | Maybe::Absent(_) => self.scope.extend(frame, name, written),
             };
             self.parameters.push(Parameter {
                 binder: binder.node,
@@ -4779,7 +4784,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             binding: StatementBinding::Discarded,
                             rest: exits::Rest::Bound,
                         });
-                        frame = Frame::Inner(self.scope.extend(frame, SurfaceName::from("")));
+                        frame = Frame::Inner(self.scope.extend(
+                            frame,
+                            SurfaceName::from(""),
+                            Maybe::Absent(binder_site::Absent::Unwritten),
+                        ));
                         continue;
                     }
                     let last = site.one(run)?;
@@ -4896,7 +4905,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             for &component in &components {
                 let name = self.binder_name(statement, component)?;
                 self.note_binder(component, name)?;
-                names.push(name);
+                names.push((name, component.span));
             }
             self.read(bound.node, Reading::Computation(frame));
             self.statements.push(Statement {
@@ -4907,9 +4916,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 )),
                 rest: exits::Rest::Bound,
             });
-            let mut inner = self.scope.extend(frame, SurfaceName::from(""));
-            for name in names {
-                inner = self.scope.extend(Frame::Inner(inner), name);
+            let mut inner = self.scope.extend(
+                frame,
+                SurfaceName::from(""),
+                Maybe::Absent(binder_site::Absent::Unwritten),
+            );
+            for (name, written) in names {
+                inner = self
+                    .scope
+                    .extend(Frame::Inner(inner), name, Maybe::Present(written));
             }
             return Ok(Frame::Inner(inner));
         }
@@ -4923,7 +4938,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             rest: exits::Rest::Bound,
         });
 
-        Ok(Frame::Inner(self.scope.extend(frame, name)))
+        Ok(Frame::Inner(self.scope.extend(
+            frame,
+            name,
+            Maybe::Present(binder.span),
+        )))
     }
 
     /// The component patterns of a tuple pattern standing as a `run`
@@ -6764,7 +6783,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         exhausted(site, &cursor)?;
         let name = self.name_at(binder);
         self.note_binder(binder, name)?;
-        let extended = self.scope.extend(frame, name);
+        let extended = self.scope.extend(frame, name, Maybe::Present(binder.span));
         self.read(body.node, Reading::Value(Frame::Inner(extended)));
 
         self.plan(site, Plan::StaticLambda(body.node));
@@ -7226,7 +7245,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     #[spec(
         captures: promised = (
             match plan {
-                | Plan::Variable(_)
+                | Plan::Variable(..)
                 | Plan::ValueHole(_)
                 | Plan::Constant(_)
                 | Plan::Primitive(_)
@@ -7366,8 +7385,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 })
             },
             | Plan::Unplanned => Maybe::Absent(lowered::Absent::Unminted),
-            | Plan::Variable(index) => {
+            | Plan::Variable(index, binder) => {
                 let id = sink.arena.value_variable(Zone::Intuitionistic, index);
+                if let Maybe::Present(site) = self.scope.site(binder) {
+                    sink.origins.record_binding(id, site);
+                }
                 Maybe::Present(sink.value(id, origin))
             },
             | Plan::Constant(constant) => {
@@ -7999,7 +8021,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Unplanned
             | Plan::ValueHole(_)
             | Plan::CompHole(_)
-            | Plan::Variable(_)
+            | Plan::Variable(..)
             | Plan::Constant(_)
             | Plan::Primitive(_)
             | Plan::PrimitiveCall(..)
@@ -11742,6 +11764,45 @@ mod tests
                 index: DeBruijnIndex::from(0_u32),
             }),
             "the parameter is the innermost binder"
+        );
+    }
+
+    #[test]
+    fn a_variable_keeps_its_binder()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let source = "def k = thunk { fn (y) { fn (y) { fn (z) { return y } } } } ;";
+        let mut arena = CoreArena::new();
+        let module = lowered(SourceText::from(source), &mut arena);
+        let inner = source
+            .match_indices("(y)")
+            .nth(1)
+            .unwrap()
+            .0
+            .saturating_add(1);
+        let [(variable, binder)] = *module.origins().bindings()
+        else {
+            panic!("one variable is written: {:?}", module.origins().bindings());
+        };
+        assert_eq!(
+            binder,
+            at(inner, inner.saturating_add(1)),
+            "the use is bound at the inner `y`, which shadows the outer one"
+        );
+        assert_eq!(
+            module.origins().binding(variable),
+            Maybe::Present(binder),
+            "the lookup answers the recorded binder"
+        );
+        assert!(
+            matches!(arena.value(variable), Some(&Value::Variable { .. })),
+            "the recorded node is the variable"
+        );
+        let unrecorded = arena.value_unit();
+        assert_eq!(
+            module.origins().binding(unrecorded),
+            Maybe::Absent(crate::origin::origin::Absent::Unrecorded),
+            "a node the lowering did not mint as a written variable keeps no binder"
         );
     }
 
