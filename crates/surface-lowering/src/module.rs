@@ -6060,6 +6060,9 @@ pub struct DeclarationParts<'source>
     pub signature: Maybe<NodeKey, declaration_half::Absent>,
     /// The cross-tree key of this name's definition form.
     pub definition: Maybe<NodeKey, declaration_half::Absent>,
+    /// The cross-tree key of the form that wrote a half of this name a second
+    /// time, when that repetition is the name's refusal.
+    pub duplicate: Maybe<NodeKey, declaration_half::Absent>,
     /// What the name's declarations amount to.
     pub outcome: DeclarationOutcome<'source>,
 }
@@ -6194,6 +6197,18 @@ impl<'source> LoweredDeclaration<'source>
     pub const fn definition(&self) -> Maybe<NodeKey, declaration_half::Absent>
     {
         self.parts.definition
+    }
+
+    /// The cross-tree key of the form that wrote a half of this name a second
+    /// time, when that repetition is the name's refusal: the form no other
+    /// key reaches, which answers at that refusal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn duplicate(&self) -> Maybe<NodeKey, declaration_half::Absent>
+    {
+        self.parts.duplicate
     }
 
     /// What the name's declarations amount to.

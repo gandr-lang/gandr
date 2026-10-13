@@ -10962,6 +10962,38 @@ impl<'run, 'source> Lowerer<'run, 'source>
         })
     }
 
+    /// The key of the form that wrote a half of `slot`'s name a second time,
+    /// when that repetition is the slot's refusal.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the key at the refusing node when the slot's refusal is a
+    ///   duplicate signature or definition; absent otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a module defining one member twice keys its second
+    ///   definition, which no half reaches.
+    /// - witness: `lower::tests::a_duplicate_definition_is_keyed_at_its_form`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Present(_)) == matches!(slot.refusal, Maybe::Present((_, LoweringRefusal::DuplicateDefinition { .. } | LoweringRefusal::DuplicateSignature { .. }))))]
+    fn duplicate_key(
+        &self,
+        slot: &DeclarationSlot<'source>,
+    ) -> Maybe<NodeKey, declaration_half::Absent>
+    {
+        match slot.refusal {
+            | Maybe::Present((
+                at,
+                LoweringRefusal::DuplicateDefinition { .. }
+                | LoweringRefusal::DuplicateSignature { .. },
+            )) => Maybe::Present(self.key_at(at)),
+            | Maybe::Present(_) | Maybe::Absent(_) => {
+                Maybe::Absent(declaration_half::Absent::Unwritten)
+            },
+        }
+    }
+
     /// Mint each callable operation's type and body from its plan.
     ///
     /// # Specification
@@ -11054,6 +11086,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             row.span(),
                             row.signature(),
                             row.definition(),
+                            row.duplicate(),
                             row.outcome(),
                             origins.declaration(row.origin()),
                         )
@@ -11071,6 +11104,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                                     .map(|half| self.key_at(half.declaration.node)),
                                 slot.definition
                                     .map(|half| self.key_at(half.declaration.node)),
+                                self.duplicate_key(slot),
                                 outcome,
                                 Maybe::Present(Origin::new(
                                     slot.introduced_by.node,
@@ -11107,6 +11141,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 definition: slot
                     .definition
                     .map(|half| self.key_at(half.declaration.node)),
+                duplicate: self.duplicate_key(slot),
                 outcome,
             }));
         }
@@ -16376,6 +16411,38 @@ mod tests
             arena.value(body),
             Some(&Value::Literal(integer(SourceFragment::from("3")))),
             "the second declaration lowers regardless"
+        );
+    }
+
+    #[test]
+    fn a_duplicate_definition_is_keyed_at_its_form()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from("def x = 1 ; def x = 2 ; def y = 3 ;"),
+            &mut arena,
+        );
+        let [ref twice, ref once] = *module.declarations()
+        else {
+            panic!("two names are declared");
+        };
+        assert!(
+            matches!(
+                twice.outcome(),
+                DeclarationOutcome::Refused(LoweringRefusal::DuplicateDefinition { .. })
+            ),
+            "the second definition refuses the name: {:?}",
+            twice.outcome()
+        );
+        let (Maybe::Present(first), Maybe::Present(second)) =
+            (twice.definition(), twice.duplicate())
+        else {
+            panic!("the first definition and the repetition are both keyed");
+        };
+        assert_ne!(first, second, "the repetition is keyed at its own form");
+        assert!(
+            matches!(once.duplicate(), Maybe::Absent(_)),
+            "a name written once keys no repetition"
         );
     }
 

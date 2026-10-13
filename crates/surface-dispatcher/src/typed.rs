@@ -951,7 +951,11 @@ impl TypeTable
                 },
                 | DeclarationOutcome::Refused(refusal) => Held::Refused(refusal.to_string()),
             };
-            for key in [declaration.signature(), declaration.definition()] {
+            for key in [
+                declaration.signature(),
+                declaration.definition(),
+                declaration.duplicate(),
+            ] {
                 if let Maybe::Present(key) = key {
                     let _replaced = declared.insert(key, held.clone());
                 }

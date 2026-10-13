@@ -100,7 +100,7 @@ mod entries
         ("Expression handle", Standing::Owed(0)),
         ("Expression identifier", Standing::Owed(2)),
         ("Expression loop", Standing::Owed(0)),
-        ("Expression number", Standing::Owed(1)),
+        ("Expression number", Standing::Owed(0)),
         ("Expression offer", Standing::Owed(0)),
         ("Expression pure", Standing::Design(EXIT)),
         ("Expression return", Standing::Owed(0)),
