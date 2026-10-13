@@ -710,8 +710,11 @@ default-features = false
 # features:
 # - none: allocation-only description syntax.
 # consumers:
+# - core-checker (dev)
+# - core-incremental
 # - core-term
 # - surface-lowering
+# - surface-pretty (dev)
 # - theory-computads
 # - theory-decomposition-spaces (dev)
 # - theory-virtual-doctrines
@@ -734,6 +737,11 @@ default-features = false
 # the certified strata's species and their equivalences.
 # consumers:
 # - core-checker
+# - core-incremental
+# - core-term
+# - surface-diagnostics (dev)
+# - surface-lowering (dev)
+# - surface-pretty (dev)
 [workspace.dependencies.gandr-theory-sites]
 path = "crates/theory-sites"
 
@@ -778,6 +786,19 @@ default-features = false
 [workspace.dependencies.num-bigint]
 version = "0.5.1"
 default-features = false
+
+# Race-initialised single-assignment cells without std: the corolla strata
+# `ua_n` certifies once per process. The choice, its alternatives and its
+# reversal are in the checker's `ua` module.
+# features:
+# - alloc: `race::OnceBox`, which holds a boxed value; `std` stays off in the
+#   no_std checker
+# consumers:
+# - core-checker
+[workspace.dependencies.once_cell]
+version = "1.21.4"
+default-features = false
+features = ["alloc"]
 
 # Percent-decoding: the path a `file` URI names. The choice and its reversal
 # are in the language server's README.

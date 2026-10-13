@@ -1434,6 +1434,20 @@ where
             write_index(writer, forward)?;
             write_index(writer, backward)?;
         },
+        | ContentNode::Ua {
+            stratum,
+            ref sides,
+            forward,
+            backward,
+        } => {
+            writer.tag(Tag(0x4C));
+            writer.count(Count(usize::from(stratum.degree)))?;
+            writer.count(Count(usize::from(stratum.bound)))?;
+            write_description(writer, &sides.source)?;
+            write_description(writer, &sides.target)?;
+            write_index(writer, forward)?;
+            write_index(writer, backward)?;
+        },
         | ContentNode::Transport(path, value) => {
             writer.tag(Tag(0x44));
             write_index(writer, path)?;
@@ -1830,6 +1844,238 @@ fn read_fields(
     Ok(fields)
 }
 
+/// Write a description as univalence at a stratum reads it: its name, then
+/// each generator's label and port counts, in written order.
+///
+/// # Specification
+/// - ensures: the name, the generator count and each generator follow in order.
+/// - fails: an unrepresentable count or string length.
+/// - executable: none — a generic sink exposes no byte observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a statement's descriptions survive persistence with their
+///   generators' order and profiles.
+/// - witness: `tests::native_formers::a_univalence_statement_round_trips_with_its_descriptions`
+fn write_description<Out>(
+    writer: &mut Writer<'_, Out>,
+    description: &gandr_core_term::ua::Description,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    writer.bytes(Bytes(description.name.as_ref().as_bytes()))?;
+    writer.count(Count(description.generators.len()))?;
+    for generator in &description.generators {
+        writer.bytes(Bytes(generator.label.as_ref().as_bytes()))?;
+        writer.count(Count(usize::from(generator.profile.inputs)))?;
+        writer.count(Count(usize::from(generator.profile.outputs)))?;
+    }
+    Ok(())
+}
+
+/// Read a description [`write_description`] wrote.
+///
+/// # Specification
+/// - ensures: the name and the generators in the order written.
+/// - fails: invalid UTF-8 or a truncated frame.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a statement's descriptions survive persistence with their
+///   generators' order and profiles.
+/// - witness: `tests::native_formers::a_univalence_statement_round_trips_with_its_descriptions`
+#[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor >= before.saturating_add(16))]
+fn read_description(reader: &mut Reader<'_>)
+-> Result<gandr_core_term::ua::Description, CodecError>
+{
+    let name = reader.text()?;
+    let count = reader.count()?;
+    let mut generators = Vec::new();
+    for _ in 0 .. count.0 {
+        let label = read_field_label(reader)?;
+        let inputs = reader.count()?;
+        let outputs = reader.count()?;
+        generators.push(gandr_core_term::ua::Generator {
+            label,
+            profile: gandr_theory_sites::Profile {
+                inputs: gandr_theory_sites::PortCount::from(inputs.0),
+                outputs: gandr_theory_sites::PortCount::from(outputs.0),
+            },
+        });
+    }
+    Ok(gandr_core_term::ua::Description {
+        name: gandr_theory_levitation::Name::from(name),
+        generators: generators.into_boxed_slice(),
+    })
+}
+
+/// Write why a univalence statement's stratum is not certified.
+///
+/// # Specification
+/// - ensures: a tag naming the defect, then the degree or the bound it carries.
+/// - fails: an unrepresentable count.
+/// - executable: none — a generic sink exposes no byte observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each defect of the stratum survives persistence under its
+///   own name.
+/// - witness: `tests::native_formers::a_univalence_statement_round_trips_with_its_descriptions`
+fn write_stratum_defect<Out>(
+    writer: &mut Writer<'_, Out>,
+    defect: gandr_core_checker::ua::StratumDefect,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    match defect {
+        | gandr_core_checker::ua::StratumDefect::Degree { degree } => {
+            writer.tag(Tag(0));
+            writer.count(Count(usize::from(degree)))
+        },
+        | gandr_core_checker::ua::StratumDefect::Condition { degree } => {
+            writer.tag(Tag(1));
+            writer.count(Count(usize::from(degree)))
+        },
+        | gandr_core_checker::ua::StratumDefect::Allowance { bound } => {
+            writer.tag(Tag(2));
+            writer.count(Count(usize::from(bound)))
+        },
+    }
+}
+
+/// Read a stratum defect [`write_stratum_defect`] wrote.
+///
+/// # Specification
+/// - ensures: the defect the tag names, with its count.
+/// - fails: an unknown tag or a truncated frame.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each defect of the stratum survives persistence under its
+///   own name.
+/// - witness: `tests::native_formers::a_univalence_statement_round_trips_with_its_descriptions`
+#[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor > before)]
+fn read_stratum_defect(
+    reader: &mut Reader<'_>
+) -> Result<gandr_core_checker::ua::StratumDefect, CodecError>
+{
+    match reader.tag()?.0 {
+        | 0 => Ok(gandr_core_checker::ua::StratumDefect::Degree {
+            degree: gandr_theory_sites::Degree::from(reader.count()?.0),
+        }),
+        | 1 => Ok(gandr_core_checker::ua::StratumDefect::Condition {
+            degree: gandr_theory_sites::Degree::from(reader.count()?.0),
+        }),
+        | 2 => Ok(gandr_core_checker::ua::StratumDefect::Allowance {
+            bound: gandr_theory_sites::ShapeSize::from(reader.count()?.0),
+        }),
+        | _ => Err(CodecError::Corrupt),
+    }
+}
+
+/// Write why a univalence statement's translators are no equivalence.
+///
+/// # Specification
+/// - ensures: a tag naming the defect, then the way, profile, corolla and
+///   element it carries.
+/// - fails: an unrepresentable count.
+/// - executable: none — a generic sink exposes no byte observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each defect of the translators survives persistence under
+///   its own name.
+/// - witness: `tests::native_formers::a_univalence_statement_round_trips_with_its_descriptions`
+fn write_ua_defect<Out>(
+    writer: &mut Writer<'_, Out>,
+    defect: gandr_core_checker::ua::UaDefect,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    use gandr_core_checker::ua::UaDefect;
+    use gandr_core_checker::ua::Way;
+    let (tag, counts): (u8, &[usize]) = match defect {
+        | UaDefect::UnknownGenerator { way: Way::Forward } => (0, &[0]),
+        | UaDefect::UnknownGenerator { way: Way::Backward } => (0, &[1]),
+        | UaDefect::PastTheBound { profile } => (1, &[
+            usize::from(profile.inputs),
+            usize::from(profile.outputs),
+        ]),
+        | UaDefect::Cardinality { corolla } => (2, &[usize::from(corolla)]),
+        | UaDefect::Tables { corolla } => (3, &[usize::from(corolla)]),
+        | UaDefect::NotInverse { corolla, element } => {
+            (4, &[usize::from(corolla), usize::from(element)])
+        },
+        | UaDefect::NotNatural { corolla, element } => {
+            (5, &[usize::from(corolla), usize::from(element)])
+        },
+        | UaDefect::Stuck { corolla, element } => {
+            (6, &[usize::from(corolla), usize::from(element)])
+        },
+    };
+    writer.tag(Tag(tag));
+    for &count in counts {
+        writer.count(Count(count))?;
+    }
+    Ok(())
+}
+
+/// Read a translator defect [`write_ua_defect`] wrote.
+///
+/// # Specification
+/// - ensures: the defect the tag names, with its counts.
+/// - fails: an unknown tag or way, or a truncated frame.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each defect of the translators survives persistence under
+///   its own name.
+/// - witness: `tests::native_formers::a_univalence_statement_round_trips_with_its_descriptions`
+#[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor > before)]
+fn read_ua_defect(reader: &mut Reader<'_>) -> Result<gandr_core_checker::ua::UaDefect, CodecError>
+{
+    use gandr_core_checker::ua::UaDefect;
+    use gandr_core_checker::ua::Way;
+    use gandr_theory_sites::ElementIndex;
+    use gandr_theory_sites::ShapeIndex;
+    let tag = reader.tag()?.0;
+    let mut count = || reader.count().map(|count| count.0);
+    Ok(match tag {
+        | 0 => UaDefect::UnknownGenerator {
+            way: match count()? {
+                | 0 => Way::Forward,
+                | 1 => Way::Backward,
+                | _ => return Err(CodecError::Corrupt),
+            },
+        },
+        | 1 => UaDefect::PastTheBound {
+            profile: gandr_theory_sites::Profile {
+                inputs: gandr_theory_sites::PortCount::from(count()?),
+                outputs: gandr_theory_sites::PortCount::from(count()?),
+            },
+        },
+        | 2 => UaDefect::Cardinality {
+            corolla: ShapeIndex::from(count()?),
+        },
+        | 3 => UaDefect::Tables {
+            corolla: ShapeIndex::from(count()?),
+        },
+        | 4 => UaDefect::NotInverse {
+            corolla: ShapeIndex::from(count()?),
+            element: ElementIndex::from(count()?),
+        },
+        | 5 => UaDefect::NotNatural {
+            corolla: ShapeIndex::from(count()?),
+            element: ElementIndex::from(count()?),
+        },
+        | 6 => UaDefect::Stuck {
+            corolla: ShapeIndex::from(count()?),
+            element: ElementIndex::from(count()?),
+        },
+        | _ => return Err(CodecError::Corrupt),
+    })
+}
+
 /// Write every root of a nominal signature.
 ///
 /// # Specification
@@ -2120,6 +2366,7 @@ fn read_effect_row(
                     | ContentNode::Funext(..) => tag == 0x49,
                     | ContentNode::Equiv(..) => tag == 0x4A,
                     | ContentNode::TelescopeTransport { .. } => tag == 0x4B,
+                    | ContentNode::Ua { .. } => tag == 0x4C,
                     | ContentNode::Variable { .. } => tag == 0x01,
                     | ContentNode::Constant(_) => tag == 0x02,
                     | ContentNode::Literal(_) => tag == 0x04,
@@ -2552,6 +2799,20 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             start: read_index(reader)?,
             over: read_index(reader)?,
             value: read_index(reader)?,
+        },
+        | 0x4C => {
+            let stratum = gandr_core_term::ua::Stratum {
+                degree: gandr_theory_sites::Degree::from(reader.count()?.0),
+                bound: gandr_theory_sites::ShapeSize::from(reader.count()?.0),
+            };
+            let source = read_description(reader)?;
+            let target = read_description(reader)?;
+            ContentNode::Ua {
+                stratum,
+                sides: alloc::sync::Arc::new(gandr_core_term::ua::Sides { source, target }),
+                forward: read_index(reader)?,
+                backward: read_index(reader)?,
+            }
         },
         | _ => return Err(CodecError::Corrupt),
     };
@@ -3837,6 +4098,16 @@ where
             write_type(writer, synthesised)?;
             write_type(writer, expected)?;
         },
+        | Refusal::UaUncertified { at, stratum } => {
+            writer.tag(Tag(53));
+            write_site(writer, at)?;
+            write_stratum_defect(writer, stratum)?;
+        },
+        | Refusal::UaInequivalent { at, defect } => {
+            writer.tag(Tag(54));
+            write_site(writer, at)?;
+            write_ua_defect(writer, defect)?;
+        },
         | Refusal::TypeMismatch {
             at,
             ref synthesised,
@@ -4169,6 +4440,8 @@ where
                     | Refusal::NotAnAbstractType(_) => 50,
                     | Refusal::SealSiteRepeated(_) => 51,
                     | Refusal::NotOver { .. } => 52,
+                    | Refusal::UaUncertified { .. } => 53,
+                    | Refusal::UaInequivalent { .. } => 54,
                 })
         },
         | Err(CodecError::LevelOffsetTooLarge { offset }) => {
@@ -4390,6 +4663,14 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
             at: read_site(reader)?,
             synthesised: read_type(reader)?,
             expected: read_type(reader)?,
+        },
+        | 53 => Refusal::UaUncertified {
+            at: read_site(reader)?,
+            stratum: read_stratum_defect(reader)?,
+        },
+        | 54 => Refusal::UaInequivalent {
+            at: read_site(reader)?,
+            defect: read_ua_defect(reader)?,
         },
         | 28 => Refusal::NegativeOccurrence(read_occurrence_site(reader)?),
         | 29 => Refusal::NestedOccurrence(read_occurrence_site(reader)?),

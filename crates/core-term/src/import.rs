@@ -213,6 +213,11 @@ impl Image
                 Value::PathProduct(ref mut first, ref mut second)
                 | Value::Funext(ref mut first, ref mut second)
                 | Value::Equiv(ref mut first, ref mut second)
+                | Value::Ua {
+                    forward: ref mut first,
+                    backward: ref mut second,
+                    ..
+                }
                 | Value::ListCons(ref mut first, ref mut second)
                 | Value::StaticApplication(ref mut first, ref mut second),
             )

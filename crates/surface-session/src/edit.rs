@@ -2844,6 +2844,12 @@ fn read(
                 Value::PathProduct(..) => matches!(ret, ContentNode::PathProduct(..)),
                 Value::Funext(..) => matches!(ret, ContentNode::Funext(..)),
                 Value::Equiv(..) => matches!(ret, ContentNode::Equiv(..)),
+                Value::Ua { stratum, ref sides, .. } => {
+                    matches!(
+                        ret, ContentNode::Ua { stratum: found, sides: ref other, .. } if found
+                        == stratum && other == sides
+                    )
+                }
                 Value::PathEquiv { ref evidence, .. } => {
                     matches!(
                         ret, ContentNode::PathEquiv { evidence : ref found, .. } if found
@@ -2959,6 +2965,20 @@ where
         | Some(&Value::Equiv(forward, backward)) => {
             let forward = child(Root::Value(forward));
             ContentNode::Equiv(forward, child(Root::Value(backward)))
+        },
+        | Some(&Value::Ua {
+            stratum,
+            ref sides,
+            forward,
+            backward,
+        }) => {
+            let forward = child(Root::Value(forward));
+            ContentNode::Ua {
+                stratum,
+                sides: alloc::sync::Arc::clone(sides),
+                forward,
+                backward: child(Root::Value(backward)),
+            }
         },
         | Some(&Value::PathEquiv {
             path_type,

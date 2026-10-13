@@ -1840,6 +1840,27 @@ impl CoreArena
         self.alloc_value(Value::Equiv(forward, backward))
     }
 
+    /// Mint univalence at a stratum, `ua[n, k](a, b, f, g)`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_ua(
+        &mut self,
+        stratum: crate::ua::Stratum,
+        sides: alloc::sync::Arc<crate::ua::Sides>,
+        forward: ValueId,
+        backward: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Ua {
+            stratum,
+            sides,
+            forward,
+            backward,
+        })
+    }
+
     /// Mint the value a pure computation returns, standing as a value.
     ///
     /// # Specification

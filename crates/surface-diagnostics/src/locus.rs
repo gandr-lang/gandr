@@ -43,6 +43,8 @@ use gandr_core_checker::TermNode;
 use gandr_core_checker::TypeNode;
 use gandr_core_checker::UnadmittedFormer;
 use gandr_core_checker::compared;
+use gandr_core_checker::ua::StratumDefect;
+use gandr_core_checker::ua::UaDefect;
 use gandr_kernel_term::DescentRefusal;
 use gandr_kernel_term::OccurrenceSite;
 use gandr_surface_corpus::CorpusRefusal;
@@ -745,7 +747,9 @@ fn checked(
         | CheckRefusal::FamilyArity { at, .. }
         | CheckRefusal::StaticLambdaArgument { at }
         | CheckRefusal::PointwiseDistinct { at }
-        | CheckRefusal::RoundTripDistinct { at } => (spanned(origins.value(at)), UNNAMED),
+        | CheckRefusal::RoundTripDistinct { at }
+        | CheckRefusal::UaUncertified { at, .. }
+        | CheckRefusal::UaInequivalent { at, .. } => (spanned(origins.value(at)), UNNAMED),
         | CheckRefusal::StaticClassifierExpected { found, .. } => {
             (spanned(origins.value_type(found)), UNNAMED)
         },
@@ -982,6 +986,52 @@ impl fmt::Display for Checked
             | CheckRefusal::UncertifiedStratum { .. } => f.write_str("a universe equivalence over a recursive type has no finite coverage to certify its round trips"),
             | CheckRefusal::RoundTripDistinct { .. } => f.write_str("a universe equivalence requires each round trip to return its input at every pattern"),
             | CheckRefusal::NotOver { .. } => f.write_str("a telescope transport requires its second identity to lie over its path, from the start transported along it"),
+            | CheckRefusal::UaUncertified { stratum, .. } => match stratum {
+                | StratumDefect::Degree { degree } => write!(
+                    f,
+                    "univalence is certified from degree 1 to the largest degree of a shape in the catalogue, not degree {}",
+                    usize::from(degree)
+                ),
+                | StratumDefect::Condition { degree } if usize::from(degree) == 1 => f.write_str(
+                    "univalence needs a catalogue of size 1 or more, whose site satisfies the corolla condition",
+                ),
+                | StratumDefect::Condition { degree } => write!(
+                    f,
+                    "univalence above degree 1 needs every shape up to its degree to be the colimit of its corollas; a shape of degree {} is not",
+                    usize::from(degree)
+                ),
+                | StratumDefect::Allowance { bound } => write!(
+                    f,
+                    "univalence enumerates catalogues of size up to 5, not {}",
+                    usize::from(bound)
+                ),
+            },
+            | CheckRefusal::UaInequivalent { defect, .. } => match defect {
+                | UaDefect::UnknownGenerator { .. } => f.write_str(
+                    "a translator record must be keyed by generators its description declares",
+                ),
+                | UaDefect::PastTheBound { profile } => write!(
+                    f,
+                    "a generator of {} inputs and {} outputs stands past the catalogue's bound",
+                    usize::from(profile.inputs),
+                    usize::from(profile.outputs)
+                ),
+                | UaDefect::Cardinality { .. } => {
+                    f.write_str("the two species have different numbers of elements at a corolla")
+                },
+                | UaDefect::Tables { .. } => {
+                    f.write_str("each corolla needs exactly one translator on each side")
+                },
+                | UaDefect::NotInverse { .. } => {
+                    f.write_str("the backward translator does not return what the forward one sends")
+                },
+                | UaDefect::NotNatural { .. } => {
+                    f.write_str("the translators do not commute with the corolla's symmetries")
+                },
+                | UaDefect::Stuck { .. } => {
+                    f.write_str("a translator returns no element of its target code")
+                },
+            },
             | CheckRefusal::TypeMismatch(_) => f.write_str(
                 "the type this term synthesises does not convert to the type it is checked against",
             ),

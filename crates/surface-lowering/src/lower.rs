@@ -595,6 +595,8 @@ mod native;
 
 mod sealing;
 
+mod ua;
+
 quenchant_shape::reason_enum! {
     /// Why a node has no lowered core node.
     pub mod lowered {
@@ -1908,6 +1910,19 @@ enum Plan
     Funext(NodeIndex, NodeIndex),
     /// A universe equivalence between its two translators.
     Equiv(NodeIndex, NodeIndex),
+    /// Univalence at a stratum between two descriptions, over its forward
+    /// and backward translator records.
+    Ua
+    {
+        /// The degree and catalogue bound written in the head.
+        stratum: gandr_core_term::ua::Stratum,
+        /// The two descriptions as a stratum reads them.
+        sides: Arc<gandr_core_term::ua::Sides>,
+        /// The forward translator record.
+        forward: NodeIndex,
+        /// The backward translator record.
+        backward: NodeIndex,
+    },
     /// The empty native list.
     ListNil,
     /// A native list cell over its head and tail.
@@ -5483,7 +5498,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         constructed.fields.start == start
                             && constructed.fields.end == self.operands.len()
                     },
-                    | Some(&(Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::ListCons(..) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Derived(_))) => true,
+                    | Some(&(Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::Ua { .. } | Plan::ListCons(..) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Derived(_))) => true,
                     | _ => false,
                 }
         },
@@ -5511,6 +5526,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
         {
             let _head = cursor.operands();
             return self.identity_call(site, operation, cursor);
+        }
+        if let Run::One(head) = cursor.clone().operands()
+            && let Maybe::Present(stratum) = self.ua_head(site, head)?
+        {
+            let _head = cursor.operands();
+            return self.ua_call(site, stratum, cursor);
         }
         let frame = self.require(site, Produced::Computation)?;
         let head = site.one(cursor.operands())?;
@@ -7888,6 +7909,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Here(_)
                 | Plan::Funext(..)
                 | Plan::Equiv(..)
+                | Plan::Ua { .. }
                 | Plan::ListNil
                 | Plan::ListCons(..)
                 | Plan::Constructor(_) => Some(Produced::Value),
@@ -8108,6 +8130,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Here(_)
             | Plan::Funext(..)
             | Plan::Equiv(..)
+            | Plan::Ua { .. }
             | Plan::ListNil
             | Plan::ListCons(..)
             | Plan::Transport(..)
@@ -8604,7 +8627,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| match ret {
             | Maybe::Absent(_) => true,
             | Maybe::Present(Lowered::Value(id)) => {
-                matches!(*plan, Plan::StaticLambda(_) | Plan::Thunk(_) | Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::ListNil | Plan::ListCons(..))
+                matches!(*plan, Plan::StaticLambda(_) | Plan::Thunk(_) | Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::Ua { .. } | Plan::ListNil | Plan::ListCons(..))
                     && sink.origins.value(id) == Maybe::Present(origin)
             },
             | Maybe::Present(Lowered::Computation(id)) => {
@@ -8666,6 +8689,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Equiv(forward, backward) => self.value_at(forward).and_then(|first| {
                 self.value_at(backward).map(|second| {
                     let id = sink.arena.value_equiv(first, second);
+                    sink.value(id, origin)
+                })
+            }),
+            | Plan::Ua {
+                stratum,
+                ref sides,
+                forward,
+                backward,
+            } => self.value_at(forward).and_then(|first| {
+                self.value_at(backward).map(|second| {
+                    let id = sink
+                        .arena
+                        .value_ua(stratum, Arc::clone(sides), first, second);
                     sink.value(id, origin)
                 })
             }),

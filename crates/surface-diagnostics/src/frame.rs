@@ -176,6 +176,9 @@ pub fn sentence(role: FrameRole) -> Sentence
         | FrameRole::EquivBackward => {
             "checking the backward map of this equivalence against the forward one"
         },
+        | FrameRole::UaTranslators => {
+            "checking the translators of this univalence against their corollas"
+        },
         | FrameRole::ReturnedEndpoint => "synthesising the computation of this endpoint",
         | FrameRole::PrimitiveSecond => "checking the first argument of this operation",
         | FrameRole::PrimitiveResult => "checking the arguments of this operation",
@@ -420,6 +423,7 @@ mod tests
             FrameRole::FunextRight,
             FrameRole::EquivForward,
             FrameRole::EquivBackward,
+            FrameRole::UaTranslators,
             FrameRole::ReturnedEndpoint,
             FrameRole::ElementTransportPath,
             FrameRole::ElementTransportMotive,

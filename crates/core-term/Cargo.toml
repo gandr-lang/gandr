@@ -20,12 +20,14 @@ publish.workspace = true
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled in this no_std library. The quenchant shapes
 # give the rewrite machines their clamped index arithmetic and their named
-# absence.
+# absence. The site crate's vocabulary — degrees, shape sizes and profiles —
+# names the stratum and the descriptions univalence at a stratum reads.
 [dependencies]
 anodized.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
 gandr-theory-levitation.workspace = true
+gandr-theory-sites.workspace = true
 num-bigint.workspace = true
 quenchant-arith.workspace = true
 quenchant-shape.workspace = true

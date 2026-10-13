@@ -335,6 +335,21 @@ pub enum Former<'source, Node>
     Application(Node, Node),
     /// A lambda over its body, which stands under one binder: `fn (x) { c }`.
     Lambda(Node),
+    /// Univalence at a stratum, `ua[n, k](a, b, f, g)`, over its two
+    /// translator records.
+    Ua
+    {
+        /// The degree and the catalogue bound.
+        stratum: gandr_core_term::ua::Stratum,
+        /// The source description's name.
+        source: Name<'source>,
+        /// The target description's name.
+        target: Name<'source>,
+        /// The forward translator record.
+        forward: Node,
+        /// The backward translator record.
+        backward: Node,
+    },
     /// A computation the printer has no spelling for: a case analysis, a
     /// split, a projection, a fixpoint, a native operation, a transport, an
     /// effect or a control operator.

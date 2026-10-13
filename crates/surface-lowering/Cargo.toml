@@ -28,11 +28,12 @@ gandr-theory-levitation.workspace = true
 quenchant-shape.workspace = true
 
 # The kernel's content digest witnesses that two spellings readmit as one
-# declaration content.
+# declaration content; the univalence witnesses name the stratum they lower.
 [dev-dependencies]
 gandr-core-checker.workspace = true
 gandr-kernel-core.workspace = true
 gandr-surface-parser.workspace = true
+gandr-theory-sites.workspace = true
 
 [lints]
 workspace = true

@@ -813,7 +813,6 @@
 1152 Keyword hold_expression hold L[] R[<expression>]
 1155 Other pack_expression , L[<type>] R[<type>]
 1156 Other pack_expression , L[<type>] R[]]
-1163 Other instantiation_expression , L[<instantiation>] R[<instantiation>]
 1164 Other instantiation_expression , L[<instantiation>] R[]]
 1172 Other parenthesized_expression ) L[<expression>] R[]
 1176 Other parenthesized_expression , L[<expression>] R[)]

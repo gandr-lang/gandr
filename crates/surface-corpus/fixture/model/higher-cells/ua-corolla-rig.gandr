@@ -1,0 +1,64 @@
+sign Rig {
+  sort R : Type;
+  oper plus : (x : R, y : R) --> (z : R);
+  oper times : (x : R, y : R) --> (z : R);
+}
+
+sign Semi {
+  sort S : Type;
+  oper mul : (x : S, y : S) --> (z : S);
+}
+
+@[ checks ]
+def rename(e : +{Unit, Unit, Unit, Unit}) -> -F +{Unit, Unit, Unit, Unit} {
+  case e {
+    +{.0 = u} => return +{.2 = u},
+    +{.1 = u} => return +{.3 = u},
+    +{.2 = u} => return +{.0 = u},
+    +{.3 = u} => return +{.1 = u}
+  }
+}
+
+@[ checks ]
+def cross(e : +{Unit, Unit, Unit, Unit}) -> -F +{Unit, Unit, Unit, Unit} {
+  case e {
+    +{.0 = u} => return +{.2 = u},
+    +{.1 = u} => return +{.1 = u},
+    +{.2 = u} => return +{.0 = u},
+    +{.3 = u} => return +{.3 = u}
+  }
+}
+
+@[ checks ]
+def dual = ua[1, 4](Rig, Rig, #{.plus = rename}, #{.plus = rename}) ;
+
+@[ checks ]
+def swaps : Path(#{Unit, +{Unit, Unit, Unit, Unit}}, transport(\X. X, dual, #{unit, +{.1 = unit}}), #{unit, +{.3 = unit}}) ;
+def swaps = here(#{unit, +{.3 = unit}}) ;
+
+@[ refuses("NotNatural") ]
+def crossed = ua[1, 4](Rig, Rig, #{.plus = cross}, #{.plus = cross}) ;
+
+@[ refuses("CorollaTables") ]
+def twice = ua[1, 4](Rig, Rig, #{.plus = rename, .times = rename}, #{.plus = rename}) ;
+
+@[ checks ]
+def widen(b : Bool) -> -F +{Unit, Unit, Unit, Unit} {
+  case b {
+    true => return +{.0 = unit},
+    false => return +{.1 = unit}
+  }
+}
+
+@[ checks ]
+def narrow(e : +{Unit, Unit, Unit, Unit}) -> -F Bool {
+  case e {
+    +{.0 = u} => return +{.0 = u},
+    +{.1 = u} => return +{.1 = u},
+    +{.2 = u} => return +{.0 = u},
+    +{.3 = u} => return +{.1 = u}
+  }
+}
+
+@[ refuses("CorollaCardinality") ]
+def uneven = ua[1, 4](Semi, Rig, #{.mul = widen}, #{.plus = narrow}) ;

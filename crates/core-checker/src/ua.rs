@@ -60,6 +60,39 @@
 //! classifier and checked, it crosses the bridge as the kernel's native path,
 //! and admission replays every corolla's round trips.
 //!
+//! # The written statement
+//!
+//! `ua[n, k](a, b, f, g)` states univalence at the stratum of degree `n` over
+//! the catalogue of shapes up to size `k`: the statement fixes its alphabet
+//! and its quantifier range, so a check never ranges past what it names. `a`
+//! and `b` are two signature descriptions, one generator per operation at the
+//! corolla of its arity; `f` and `g` are records keyed by generator labels,
+//! each field the translator at the corolla its label names, `f` from the
+//! codes of `a` to those of `b` and `g` back. The lowering resolves the
+//! descriptions by name and the node carries them, so the checker reads no
+//! name.
+//!
+//! Checking runs in two steps. The premises check every translator against
+//! the arrow between its corolla's two [`code`]s, so a translator at the wrong
+//! code is a type mismatch before any table is read. The decision then
+//! certifies the stratum — the bound within an allowance of five, the degree
+//! one or more, the catalogue's site meeting the corolla condition and, from
+//! degree two, the Segal condition — sends each label to its generator's
+//! corolla, requires one translator per corolla on each side and runs
+//! [`derive()`]. A refusal names its defect: a [`StratumDefect`] for the
+//! stratum, a [`UaDefect`] for the translators.
+//!
+//! The statement synthesises `Path(Type, ⌜Telₙ a⌝, ⌜Telₙ b⌝)`, as
+//! `equiv(f, g)` does: the element identity at the universe, whose fibre the
+//! kernel computes as the universe path, so the target stays the certificate
+//! universe and transport along it is element transport in any motive over the
+//! universe. The derived path is recorded at the statement's node and read
+//! back by the bridge, which erases the node to it; a constant defined as a
+//! statement unfolds to it, so transport along the constant moves an element
+//! through the translators. The node itself is inert under evaluation: a
+//! transport along a statement written in place, rather than through a
+//! constant, does not compute.
+//!
 //! # Obligations
 //!
 //! - **The corolla restriction.** `ua-desc : Terms a ≅ Terms b → a ≅ b` is not
@@ -127,6 +160,33 @@
 //!   omitting the stages makes `ua_n` one path at every degree, and the
 //!   classifier forgets which Segal condition stood behind it. Reversal: a
 //!   stratum certified by a weak Segal condition, whose fibres carry data.
+//! - **The stratum in the statement's head.** `ua[n, k]` names its degree and
+//!   its bound as instantiation arguments, so the stratum is fixed where the
+//!   statement stands and the printer writes it back. The alternatives were a
+//!   checker-wide stratum, which makes two modules' statements incomparable,
+//!   and a bound inferred from the largest generator, a catalogue that grows
+//!   silently with an edit. A degree the catalogue does not certify is refused
+//!   by name, not unparsed. Reversal: a site whose catalogue the descriptions
+//!   determine alone.
+//! - **Labels key the translators.** A field names the generator whose corolla
+//!   it translates; generators sharing a corolla share its translator, written
+//!   once under any one of their labels, and a second is refused as
+//!   [`UaDefect::Tables`]. The alternatives were a record keyed by corolla,
+//!   which the surface has no spelling for, and a list by position, which a
+//!   reordered signature silently re-wires. Reversal: a surface spelling for
+//!   corollas.
+//! - **Each stratum is certified once per process.** Building the catalogue and
+//!   certifying its stratum take about a millisecond at bound four and degree
+//!   one, most of a decision, and depend on the bound and the degree alone; an
+//!   editor re-decides every accepted statement on each keystroke. Both are
+//!   held in statics, raced into place by `once_cell`'s `OnceBox`, the
+//!   ecosystem's `no_std` single-assignment cell, with `alloc` its only
+//!   feature. The alternatives were a cache per checking context, which an
+//!   editor rebuilds on each keystroke, a cache the caller threads through the
+//!   incremental checker, which every face would have to own, and a spinning
+//!   `Once` from `spin`, whose initialiser has carried an unsoundness advisory
+//!   where a race loser here only drops its copy. Reversal: a bound the checker
+//!   no longer fixes in advance, or an advisory against `once_cell`.
 //!
 //! # References
 //!
@@ -142,7 +202,10 @@
 //!   `doi:10.1017/S0960129514000565` — diagrams built degree by degree, each
 //!   stage over its matching object: the telescope.
 
+use alloc::borrow::Cow;
+use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -151,17 +214,25 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::ua::Description;
+use gandr_core_term::ua::Sides;
+use gandr_core_term::ua::Stratum;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_theory_sites::Bijection;
+use gandr_theory_sites::Catalogue;
 use gandr_theory_sites::Defect;
+use gandr_theory_sites::Degree;
 use gandr_theory_sites::Element;
 use gandr_theory_sites::ElementIndex;
 use gandr_theory_sites::Equivalence;
 use gandr_theory_sites::Profile;
 use gandr_theory_sites::SegalStratum;
 use gandr_theory_sites::ShapeIndex;
+use gandr_theory_sites::ShapeSize;
 use gandr_theory_sites::Species;
 use gandr_theory_sites::Table;
+use gandr_theory_sites::Uncertified;
+use once_cell::race::OnceBox;
 use quenchant_shape::shape::Maybe;
 
 use crate::context::CheckingContext;
@@ -213,6 +284,10 @@ pub struct Universal
 {
     /// The native path.
     path: ValueId,
+    /// `⌜Tel a⌝`, the quote the path starts at.
+    source: ValueId,
+    /// `⌜Tel b⌝`, the quote the path ends at.
+    target: ValueId,
     /// `Path_U(⌜Tel a⌝, ⌜Tel b⌝)`.
     classifier: ValueTypeId,
     /// The equivalence of species the translators compute.
@@ -245,6 +320,34 @@ impl Universal
     pub const fn classifier(&self) -> ValueTypeId
     {
         self.classifier
+    }
+
+    /// The identity the path inhabits at the universe, `Path(Type, ⌜Tel a⌝,
+    /// ⌜Tel b⌝)`, as `equiv(f, g)` inhabits its own.
+    ///
+    /// # Specification
+    /// - ensures: a path type over the value universe at level zero whose
+    ///   endpoints are the two quotes the classifier relates.
+    /// - panics: none.
+    /// - executable: none — the minted node is checked by the judgement that
+    ///   compares it against the type it is checked at.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a written statement synthesises the identity at the
+    ///   universe between the quotes of its two telescopes, the type element
+    ///   transport reads its endpoints from.
+    /// - witness: `ua::tests::a_written_statement_derives_the_path_at_its_stratum`
+    #[inline]
+    pub fn identity(
+        &self,
+        arena: &mut CoreArena,
+    ) -> ValueTypeId
+    {
+        let universe = arena.value_type_universe(
+            gandr_core_term::Sort::Ground(gandr_kernel_term::GroundSort::Value),
+            gandr_kernel_strata::Level::zero(),
+        );
+        arena.value_type_path(universe, self.source, self.target)
     }
 
     /// The equivalence of species the translators compute.
@@ -564,8 +667,463 @@ pub fn derive(
     let classifier = arena.value_type_path_universe(source, target);
     Ok(Universal {
         path: telescope.path,
+        source,
+        target,
         classifier,
         equivalence,
         corollas,
+    })
+}
+
+/// The largest catalogue bound a `ua` statement may name.
+///
+/// economy: the catalogue grows about threefold per size — 31 shapes at 4,
+/// 81 at 5, 223 at 6 — and building it at 6 takes a third of a second
+/// optimised; 5 reaches every corolla of up to four legs.
+const ALLOWANCE: usize = 5;
+
+/// The catalogue at each bound within the allowance, built on first use.
+static CATALOGUES: [OnceBox<Catalogue>; ALLOWANCE + 1] = [const { OnceBox::new() }; ALLOWANCE + 1];
+
+/// The stratum of each catalogue in [`CATALOGUES`] at each degree up to the
+/// allowance, by bound then degree, certified on first use. No shape is of a
+/// degree past its size, so a degree past the allowance is past every bound.
+static STRATA: [[OnceBox<SegalStratum<'static>>; ALLOWANCE + 1]; ALLOWANCE + 1] =
+    [const { [const { OnceBox::new() }; ALLOWANCE + 1] }; ALLOWANCE + 1];
+
+/// The stratum of `degree` over the catalogue at `bound`, certified once per
+/// process.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the stratum [`SegalStratum::certify`] gives at `degree` over
+///   [`Catalogue::build`] at `bound`; every call at one bound and one degree
+///   within the allowance answers the same stratum.
+/// - fails: [`StratumDefect::Allowance`] for a bound past [`ALLOWANCE`] or a
+///   catalogue that does not build; [`StratumDefect::Degree`] and
+///   [`StratumDefect::Condition`] as [`SegalStratum::certify`] refuses.
+/// - panics: none.
+/// - intension: the first call at a bound builds its catalogue and the first at
+///   a degree within the allowance certifies; a degree past it is certified
+///   anew, and a refusal is not held, so a refused stratum is checked again.
+///
+/// # Errors
+/// [`StratumDefect`] as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every written statement is decided over the stratum this
+///   answers; a wrong bound or degree refuses or derives another path, and the
+///   degree, condition and allowance refusals are each written in the corpus.
+/// - witness: `ua::tests::a_written_statement_derives_the_path_at_its_stratum`
+/// - witness: `ua::tests::a_written_statement_refuses_each_defect_by_name`
+#[spec(ensures: |ref ret| match *ret {
+    | Ok(ref stratum) => usize::from(bound) <= ALLOWANCE && stratum.degree() == degree,
+    | Err(StratumDefect::Allowance { bound: refused }) => refused == bound,
+    | Err(StratumDefect::Degree { degree: refused }) => refused == degree,
+    | Err(StratumDefect::Condition { degree: failing }) => failing <= degree,
+})]
+fn certified(
+    bound: ShapeSize,
+    degree: Degree,
+) -> Result<Cow<'static, SegalStratum<'static>>, StratumDefect>
+{
+    let Some(catalogue) = CATALOGUES.get(usize::from(bound))
+    else {
+        return Err(StratumDefect::Allowance { bound });
+    };
+    let catalogue = catalogue
+        .get_or_try_init(|| Catalogue::build(bound).map(Box::new))
+        .map_err(|_obstruction| StratumDefect::Allowance { bound })?;
+    let certify = || {
+        SegalStratum::certify(catalogue, degree).map_err(|refused| match refused {
+            | Uncertified::Degree { degree: refused } => StratumDefect::Degree { degree: refused },
+            | Uncertified::Condition {
+                degree: failing, ..
+            } => StratumDefect::Condition { degree: failing },
+        })
+    };
+    match STRATA
+        .get(usize::from(bound))
+        .and_then(|row| row.get(usize::from(degree)))
+    {
+        | Some(held) => held
+            .get_or_try_init(|| certify().map(Box::new))
+            .map(Cow::Borrowed),
+        | None => certify().map(Cow::Owned),
+    }
+}
+
+/// Why the stratum a `ua` statement names is not certified.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum StratumDefect
+{
+    /// The degree asked for is zero, or above every shape of the catalogue.
+    Degree
+    {
+        /// The degree asked for.
+        degree: Degree,
+    },
+    /// The catalogue's site fails a condition the stratum rests on: the
+    /// corolla condition, or the Segal condition at a shape of degree two or
+    /// more.
+    Condition
+    {
+        /// The degree whose condition fails: one for the corolla condition,
+        /// the failing shape's own for the Segal condition.
+        degree: Degree,
+    },
+    /// The bound is past the largest catalogue the checker enumerates.
+    Allowance
+    {
+        /// The bound asked for.
+        bound: ShapeSize,
+    },
+}
+
+/// Which way a translator record reads.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Way
+{
+    /// From the source description to the target.
+    Forward,
+    /// From the target description to the source.
+    Backward,
+}
+
+/// Why a `ua` statement's translators are no equivalence of its species at
+/// its stratum.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum UaDefect
+{
+    /// A translator record is no record, or names a generator the description
+    /// it reads from does not declare.
+    UnknownGenerator
+    {
+        /// The record.
+        way: Way,
+    },
+    /// A generator's corolla is larger than the catalogue's bound.
+    PastTheBound
+    {
+        /// The generator's profile.
+        profile: Profile,
+    },
+    /// The species have different numbers of elements at a corolla.
+    Cardinality
+    {
+        /// The corolla.
+        corolla: ShapeIndex,
+    },
+    /// A corolla's translators are missing on one side or given twice.
+    Tables
+    {
+        /// The corolla.
+        corolla: ShapeIndex,
+    },
+    /// The backward table does not return an element the forward one sends.
+    NotInverse
+    {
+        /// The corolla.
+        corolla: ShapeIndex,
+        /// The element on the source side.
+        element: ElementIndex,
+    },
+    /// The forward tables do not commute with an automorphism of a corolla.
+    NotNatural
+    {
+        /// The corolla.
+        corolla: ShapeIndex,
+        /// The element on the source side.
+        element: ElementIndex,
+    },
+    /// A translator does not return an element of its target code.
+    Stuck
+    {
+        /// The corolla.
+        corolla: ShapeIndex,
+        /// The element it was applied to.
+        element: ElementIndex,
+    },
+}
+
+impl UaDefect
+{
+    /// The defect `defect` names, at the corollas and elements it names.
+    ///
+    /// # Specification
+    /// - ensures: each defect maps to the variant of its own name with the
+    ///   corolla, profile and element it carries; a naturality defect keeps the
+    ///   corolla and the element and drops the map and the shape it reaches,
+    ///   which name no node of the statement.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — crossed generators and a non-inverse pair are refused
+    ///   under their own names at the binary corolla.
+    /// - witness: `ua::tests::a_written_statement_refuses_each_defect_by_name`
+    #[spec(ensures: |ret| !matches!(ret, Self::UnknownGenerator { .. } | Self::Stuck { .. }))]
+    fn of(defect: &Defect) -> Self
+    {
+        match *defect {
+            | Defect::PastTheBound { profile } => Self::PastTheBound { profile },
+            | Defect::Cardinality { shape } => Self::Cardinality { corolla: shape },
+            | Defect::Tables { shape } => Self::Tables { corolla: shape },
+            | Defect::NotInverse { shape, element } => Self::NotInverse {
+                corolla: shape,
+                element,
+            },
+            | Defect::NotNatural {
+                corolla, element, ..
+            } => Self::NotNatural { corolla, element },
+        }
+    }
+}
+
+/// What a `ua` node holds: its stratum, its descriptions and its two
+/// translator records.
+#[derive(Debug)]
+struct Statement
+{
+    /// The degree and the catalogue bound.
+    stratum: Stratum,
+    /// The two descriptions, shared with the node.
+    sides: Arc<Sides>,
+    /// The forward and the backward translator records.
+    records: (ValueId, ValueId),
+}
+
+/// The parts of the `ua` node at `at`.
+///
+/// # Specification
+/// - ensures: the parts of the `ua` at `at`, the descriptions shared.
+/// - fails: a node that is no `ua`.
+/// - panics: none.
+///
+/// # Errors
+/// [`CheckRefusal::DanglingNode`] for an id naming no value, and
+/// [`CheckRefusal::MachineInvariant`] for a value that is no `ua`: the
+/// judgement only asks this of a node it matched as one.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a written statement's parts are read as written by its
+///   premises and its decision.
+/// - witness: `ua::tests::a_written_statement_derives_the_path_at_its_stratum`
+#[spec(ensures: |ret| ret.is_err() || matches!(arena.value(at), Some(Value::Ua { .. })))]
+fn statement(
+    arena: &CoreArena,
+    at: ValueId,
+) -> Result<Statement, CheckRefusal>
+{
+    match arena.value(at) {
+        | Some(&Value::Ua {
+            stratum,
+            ref sides,
+            forward,
+            backward,
+        }) => Ok(Statement {
+            stratum,
+            sides: Arc::clone(sides),
+            records: (forward, backward),
+        }),
+        | Some(_) => Err(CheckRefusal::MachineInvariant),
+        | None => Err(CheckRefusal::DanglingNode {
+            node: crate::CoreNode::Term(crate::TermNode::Value(at)),
+        }),
+    }
+}
+
+/// Each translator `record` gives, with the profile of the generator its
+/// label names in `description`, in label order.
+///
+/// # Specification
+/// - ensures: one entry per field of the record, at the profile of the
+///   generator of the field's label.
+/// - fails: a record operand that is no record, or a label no generator of
+///   `description` carries.
+/// - panics: none.
+///
+/// # Errors
+/// [`CheckRefusal::UaInequivalent`] with [`UaDefect::UnknownGenerator`] at
+/// `at`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a misspelt generator is refused before any translator is
+///   checked.
+/// - witness: `ua::tests::a_written_statement_refuses_each_defect_by_name`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |labelled| matches!(arena.value(record), Some(Value::Record(fields)) if fields.len() == labelled.len())))]
+fn labelled(
+    arena: &CoreArena,
+    at: ValueId,
+    (way, record): (Way, ValueId),
+    description: &Description,
+) -> Result<Vec<(Profile, ValueId)>, CheckRefusal>
+{
+    let unknown = CheckRefusal::UaInequivalent {
+        at,
+        defect: UaDefect::UnknownGenerator { way },
+    };
+    let Some(value) = arena.value(record)
+    else {
+        return Err(unknown);
+    };
+    let Value::Record(ref fields) = *value
+    else {
+        return Err(unknown);
+    };
+    let mut labelled = Vec::with_capacity(fields.len());
+    for (label, &translator) in fields {
+        let Maybe::Present(generator) = description.generator(label)
+        else {
+            return Err(unknown);
+        };
+        labelled.push((generator.profile, translator));
+    }
+    Ok(labelled)
+}
+
+/// The premises of the `ua` at `at`: each translator its two records give,
+/// with the function type between its corolla's two [`code`]s it is checked
+/// against, the forward record first, each in label order.
+///
+/// # Specification
+/// - ensures: one premise per field of the two records; a forward translator at
+///   a generator of profile `P` is checked at `U(⌜a(P)⌝ → F ⌜b(P)⌝)`, a
+///   backward one at `U(⌜b(P)⌝ → F ⌜a(P)⌝)`.
+/// - fails: as [`labelled`] does.
+/// - panics: none.
+///
+/// # Errors
+/// [`CheckRefusal::UaInequivalent`] with [`UaDefect::UnknownGenerator`] for a
+/// record that is no record or names no generator.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the swap and the constant's identity are checked at their
+///   corollas' function types and a translator at the wrong code is refused as
+///   a mismatch.
+/// - witness: `ua::tests::a_written_statement_derives_the_path_at_its_stratum`
+#[spec(ensures: |ret| ret.is_err() || matches!(context.arena().value(at), Some(Value::Ua { .. })))]
+pub(crate) fn premises(
+    context: &mut CheckingContext<'_>,
+    at: ValueId,
+) -> Result<Vec<(ValueId, ValueTypeId)>, CheckRefusal>
+{
+    let Statement {
+        sides,
+        records: (forward, backward),
+        ..
+    } = statement(context.arena(), at)?;
+    let species = (sides.source.species(), sides.target.species());
+    let ways = [
+        (
+            Way::Forward,
+            forward,
+            &sides.source,
+            (&species.0, &species.1),
+        ),
+        (
+            Way::Backward,
+            backward,
+            &sides.target,
+            (&species.1, &species.0),
+        ),
+    ];
+    let mut premises = Vec::new();
+    for (way, record, description, (from, to)) in ways {
+        for (profile, translator) in labelled(context.arena(), at, (way, record), description)? {
+            let source = code(context.arena_mut(), from, profile);
+            let target = code(context.arena_mut(), to, profile);
+            let expected = crate::equiv::translator(context, (source, target));
+            premises.push((translator, expected));
+        }
+    }
+    Ok(premises)
+}
+
+/// `ua[n, k](a, b, f, g)` decided: the stratum certified, each record read as
+/// the translators of the corollas its labels name, and [`derive()`] run over
+/// them.
+///
+/// # Specification
+/// - requires: the statement's [`premises`] checked.
+/// - ensures: the path [`derive()`] gives at the catalogue of the bound, the
+///   stratum of the degree certified there, the two descriptions' species and
+///   one pair of translators per corolla a label names.
+/// - fails: a stratum that is not certified; translators that are no
+///   equivalence of the species there; code univalence's own refusal.
+/// - panics: none.
+/// - intension: the stratum comes from [`certified`], certified once per bound,
+///   degree and process and shared by every statement decided after.
+///
+/// # Errors
+/// [`CheckRefusal::UaUncertified`] for a bound past the allowance, a degree
+/// zero or above every shape of the catalogue and a site failing the corolla
+/// or the Segal condition;
+/// [`CheckRefusal::UaInequivalent`] for a record naming no generator, a
+/// generator past the bound, a corolla given twice or on one side only,
+/// tables that are not mutually inverse or not natural, a stuck translator
+/// and species of different sizes; a refusal of [`crate::equiv::decide`] as
+/// it raises it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the swap of a binary generator beside a constant derives
+///   the path the kernel admits; each defect of the stratum and of the
+///   translators is refused under its own name.
+/// - witness: `ua::tests::a_written_statement_derives_the_path_at_its_stratum`
+/// - witness: `ua::tests::a_written_statement_refuses_each_defect_by_name`
+#[spec(ensures: |ret| match ret {
+    | Err(CheckRefusal::UaUncertified { at: site, .. } | CheckRefusal::UaInequivalent { at: site, .. }) => site == at,
+    | Ok(_) | Err(_) => true,
+})]
+pub(crate) fn decide(
+    context: &mut CheckingContext<'_>,
+    at: ValueId,
+) -> Result<Universal, CheckRefusal>
+{
+    let Statement {
+        stratum,
+        sides,
+        records: (forward, backward),
+    } = statement(context.arena(), at)?;
+    let uncertified = |stratum| CheckRefusal::UaUncertified { at, stratum };
+    let inequivalent = |defect| CheckRefusal::UaInequivalent { at, defect };
+    let certified = certified(stratum.bound, stratum.degree).map_err(uncertified)?;
+    let ways = [
+        (Way::Forward, forward, &sides.source),
+        (Way::Backward, backward, &sides.target),
+    ];
+    let mut given: BTreeMap<ShapeIndex, (Option<ValueId>, Option<ValueId>)> = BTreeMap::new();
+    for (way, record, description) in ways {
+        for (profile, translator) in labelled(context.arena(), at, (way, record), description)? {
+            let corolla = match certified.corolla(profile) {
+                | Maybe::Present(corolla) => corolla.index(),
+                | Maybe::Absent(_) => return Err(inequivalent(UaDefect::PastTheBound { profile })),
+            };
+            let slot = given.entry(corolla).or_default();
+            let held = match way {
+                | Way::Forward => &mut slot.0,
+                | Way::Backward => &mut slot.1,
+            };
+            if held.replace(translator).is_some() {
+                return Err(inequivalent(UaDefect::Tables { corolla }));
+            }
+        }
+    }
+    let mut translators = BTreeMap::new();
+    for (corolla, held) in given {
+        let (Some(forward), Some(backward)) = held
+        else {
+            return Err(inequivalent(UaDefect::Tables { corolla }));
+        };
+        translators.insert(corolla, Translators { forward, backward });
+    }
+    let species = (sides.source.species(), sides.target.species());
+    derive(context, &certified, (&species.0, &species.1), &translators).map_err(|refused| {
+        match refused {
+            | UaRefusal::Species(ref defect) => inequivalent(UaDefect::of(defect)),
+            | UaRefusal::Stuck { corolla, element } => {
+                inequivalent(UaDefect::Stuck { corolla, element })
+            },
+            | UaRefusal::Code { refusal, .. } => refusal,
+        }
     })
 }

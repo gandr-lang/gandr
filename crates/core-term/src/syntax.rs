@@ -336,6 +336,25 @@ pub enum Value
     /// computation, and the kernel admits it as the native universe path its
     /// fibre is; it is inert, as a native path certificate is.
     Equiv(ValueId, ValueId),
+    /// Univalence at a stated stratum, `ua[n, k](a, b, f, g)`: an element of
+    /// `Path(U, ⌜Tel a⌝, ⌜Tel b⌝)` for two descriptions read as graphical
+    /// species, `Tel` the telescope of their elements at each corolla of the
+    /// catalogue, and a record of translators each way keyed by generator. The
+    /// checker decides it at the stratum and records the path it derives, and
+    /// the kernel admits that path; it is inert, as a native path certificate
+    /// is.
+    Ua
+    {
+        /// The degree and the catalogue bound the statement is made at.
+        stratum: crate::ua::Stratum,
+        /// The two descriptions, the source first.
+        sides: alloc::sync::Arc<crate::ua::Sides>,
+        /// The forward translators: a record keyed by the source's generators.
+        forward: ValueId,
+        /// The backward translators: a record keyed by the target's
+        /// generators.
+        backward: ValueId,
+    },
     /// The value a pure computation returns, standing where a value is read:
     /// a compound path endpoint such as `n + 1` or `f(x)`. It types as the
     /// computation's result when the computation is a returner with no
@@ -1122,6 +1141,26 @@ fn equal_syntax(
                     {
                         pending.extend([
                             VT(left_type, right_type),
+                            V(left_forward, right_forward),
+                            V(left_backward, right_backward),
+                        ]);
+                    }
+                    else if let Value::Ua {
+                        stratum: left_stratum,
+                        sides: ref left_sides,
+                        forward: left_forward,
+                        backward: left_backward,
+                    } = *matched_left_value
+                        && let Value::Ua {
+                            stratum: right_stratum,
+                            sides: ref right_sides,
+                            forward: right_forward,
+                            backward: right_backward,
+                        } = *matched_right_value
+                        && left_stratum == right_stratum
+                        && left_sides == right_sides
+                    {
+                        pending.extend([
                             V(left_forward, right_forward),
                             V(left_backward, right_backward),
                         ]);

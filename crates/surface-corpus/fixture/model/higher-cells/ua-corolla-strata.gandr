@@ -1,0 +1,54 @@
+sign Magma {
+  sort M : Type;
+  oper mul : (x : M, y : M) --> (z : M);
+  oper one : () --> (z : M);
+}
+
+@[ checks ]
+def exchange(b : Bool) -> -F Bool {
+  case b {
+    true => return +{.1 = unit},
+    false => return +{.0 = unit}
+  }
+}
+
+@[ checks ]
+def stay(b : Bool) -> -F Bool {
+  return b
+}
+
+@[ checks ]
+def keep(e : +{Unit}) -> -F +{Unit} {
+  return e
+}
+
+@[ checks ]
+def raised = ua[2, 4](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
+
+@[ checks ]
+def lifts : Path(#{Unit, #{+{Unit}, #{Bool, Unit}}}, transport(\X. X, raised, #{unit, #{+{.0 = unit}, #{+{.0 = unit}, unit}}}), #{unit, #{+{.0 = unit}, #{+{.1 = unit}, unit}}}) ;
+def lifts = here(#{unit, #{+{.0 = unit}, #{+{.1 = unit}, unit}}}) ;
+
+@[ refuses("UncertifiedDegree") ]
+def above = ua[5, 4](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
+
+@[ refuses("UncertifiedCondition") ]
+def empty = ua[1, 0](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
+
+@[ refuses("UncertifiedAllowance") ]
+def wide = ua[1, 6](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
+
+@[ refuses("PastTheBound") ]
+def short = ua[1, 3](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
+
+@[ refuses("NotInverse") ]
+def lopsided = ua[1, 4](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = stay, .one = keep}) ;
+
+@[ refuses("CorollaTables") ]
+def partial = ua[1, 4](Magma, Magma, #{.mul = exchange}, #{.mul = exchange, .one = keep}) ;
+
+@[ refuses("UnknownGenerator") ]
+def misspelt = ua[1, 4](Magma, Magma, #{.mul = exchange, .zero = keep}, #{.mul = exchange, .one = keep}) ;
+
+@[ refuses("UnresolvedName") ]
+def unnamed = ua[1, 4](Monoid, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;

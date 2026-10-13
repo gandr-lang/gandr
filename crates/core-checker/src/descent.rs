@@ -355,6 +355,11 @@ fn walk(
                     &(Value::PathProduct(first, second)
                     | Value::Funext(first, second)
                     | Value::Equiv(first, second)
+                    | Value::Ua {
+                        forward: first,
+                        backward: second,
+                        ..
+                    }
                     | Value::ListCons(first, second)
                     | Value::StaticApplication(first, second)),
                 ) => {

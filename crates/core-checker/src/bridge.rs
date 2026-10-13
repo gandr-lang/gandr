@@ -1119,6 +1119,7 @@ where
         funexts: report.funexts(),
         equivalences: report.equivalences(),
         reflexivities: report.reflexivities(),
+        universals: report.universals(),
         definitions: report.definitions(),
     };
     for judged in report.judged() {
@@ -1312,6 +1313,9 @@ struct Source<'source>
     equivalences: &'source BTreeMap<ValueId, crate::equiv::Equivalence>,
     /// The reflexivities the judgement checked against a path type, by node.
     reflexivities: &'source BTreeMap<ValueId, Reflexivity>,
+    /// The path each univalence statement the judgement decided derives, by
+    /// node.
+    universals: &'source BTreeMap<ValueId, ValueId>,
     /// The body each accepted declaration defines its constant as, elaborated
     /// to the universe it was declared at.
     definitions: &'source BTreeMap<ConstantIndex, ValueId>,
@@ -2313,11 +2317,11 @@ enum Frame
         /// The domain's image.
         domain: gandr_kernel_term::ValueTypeId,
     },
-    /// A static application at a reducible head, erased as its reduct,
-    /// awaiting the reduct's value.
+    /// A static application at a reducible head, or a `ua`, erased as its
+    /// reduct or its derived path, awaiting that value's image.
     Reduced
     {
-        /// The static application.
+        /// The static application or the `ua`.
         at: ValueId,
     },
     /// A static application at a rigid head, awaiting its head's value.
@@ -3357,6 +3361,15 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     CoreNode::Type(TypeNode::Value(decided.classifier())),
                 )
             },
+            | Value::Ua { .. } => {
+                let Some(&path) = self.source.universals.get(&at)
+                else {
+                    return Err(Refusal::MachineInvariant);
+                };
+                self.memo().values.insert(at, Image::Open);
+                self.frames.push(Frame::Reduced { at });
+                return Ok(Step::Descend(CoreNode::Term(TermNode::Value(path))));
+            },
             | Value::Returned(computation) => (
                 Frame::Returned { at },
                 CoreNode::Term(TermNode::Computation(computation)),
@@ -4244,6 +4257,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     | Value::Here(_)
                     | Value::Funext(..)
                     | Value::Equiv(..)
+                    | Value::Ua { .. }
                     | Value::Returned(_)
                     | Value::Constructor { .. }
                     | Value::Record(_)
@@ -5320,6 +5334,7 @@ mod tests
             funexts: &BTreeMap::new(),
             equivalences: &BTreeMap::new(),
             reflexivities: &BTreeMap::new(),
+            universals: &BTreeMap::new(),
             definitions: &definitions,
         };
         let image = Erasure::new(arena, source, &positions, ConstantIndex::from(0_usize))
@@ -7516,6 +7531,7 @@ mod tests
             funexts: &BTreeMap::new(),
             equivalences: &BTreeMap::new(),
             reflexivities: &BTreeMap::new(),
+            universals: &BTreeMap::new(),
             definitions: &definitions,
         };
         assert_eq!(
@@ -8218,6 +8234,7 @@ mod tests
             funexts: &BTreeMap::new(),
             equivalences: &BTreeMap::new(),
             reflexivities: &BTreeMap::new(),
+            universals: &BTreeMap::new(),
             definitions: &definitions,
         };
         let base = ConstantIndex::from(3_usize);

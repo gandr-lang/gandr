@@ -13,7 +13,9 @@ extern crate alloc;
 #[cfg(test)]
 mod tests
 {
+    use alloc::boxed::Box;
     use alloc::collections::BTreeMap;
+    use alloc::string::String;
     use alloc::sync::Arc;
     use std::path::Path;
 
@@ -33,6 +35,10 @@ mod tests
     use gandr_core_term::ValueId;
     use gandr_core_term::ValueTypeId;
     use gandr_core_term::Zone;
+    use gandr_core_term::ua::Description;
+    use gandr_core_term::ua::Generator;
+    use gandr_core_term::ua::Sides;
+    use gandr_core_term::ua::Stratum;
     use gandr_kernel_strata::Level;
     use gandr_kernel_strata::LevelConstant;
     use gandr_kernel_strata::LevelVar;
@@ -65,6 +71,10 @@ mod tests
     use gandr_surface_pretty::present_computation;
     use gandr_surface_pretty::present_type;
     use gandr_surface_pretty::present_value;
+    use gandr_theory_sites::Degree;
+    use gandr_theory_sites::PortCount;
+    use gandr_theory_sites::Profile;
+    use gandr_theory_sites::ShapeSize;
 
     /// The narrow page of every golden pair.
     ///
@@ -1306,6 +1316,66 @@ mod tests
                 "the surface writes it so"
             );
         }
+    }
+
+    /// Univalence at a stratum spells `ua[n, k](a, b, f, g)`, its stratum and
+    /// its descriptions in the head and its records in label order, faithful:
+    /// the lowering reads it back. At the narrow page it breaks after the head
+    /// and between the records.
+    #[test]
+    fn univalence_spells_its_stratum_and_descriptions()
+    {
+        let mut core = CoreArena::new();
+        let exchange = core.value_constant(ConstantIndex::from(0_usize));
+        let keep = core.value_constant(ConstantIndex::from(1_usize));
+        let label = |text: &str| FieldLabel::from(String::from(text));
+        let [forward, backward] = [(); 2].map(|()| {
+            core.value_record(BTreeMap::from([
+                (label("one"), keep),
+                (label("mul"), exchange),
+            ]))
+        });
+        let magma = || Description {
+            name: gandr_theory_levitation::Name::from("Magma"),
+            generators: Box::from([
+                Generator {
+                    label: label("mul"),
+                    profile: Profile {
+                        inputs: PortCount::from(2_usize),
+                        outputs: PortCount::from(1_usize),
+                    },
+                },
+                Generator {
+                    label: label("one"),
+                    profile: Profile {
+                        inputs: PortCount::from(0_usize),
+                        outputs: PortCount::from(1_usize),
+                    },
+                },
+            ]),
+        };
+        let statement = core.value_ua(
+            Stratum {
+                degree: Degree::from(1_usize),
+                bound: ShapeSize::from(4_usize),
+            },
+            Arc::new(Sides {
+                source: magma(),
+                target: magma(),
+            }),
+            forward,
+            backward,
+        );
+        let names = [Name::from("exchange"), Name::from("keep")];
+        pin(
+            &CoreSource::new(&core, &names),
+            Root::Value(CoreNode::Value(statement)),
+            Pinned {
+                name: "ua_corolla",
+                flat: "ua[1, 4](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep})",
+                fidelity: Fidelity::Faithful,
+            },
+        );
     }
 
     /// Native introductions retain endpoint and map order but cannot claim

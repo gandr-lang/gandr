@@ -159,6 +159,9 @@ pub enum FrameRole
     /// A universe equivalence's backward translator is being checked against
     /// the inverse of the forward's type.
     EquivBackward,
+    /// A univalence statement's translators are being checked against their
+    /// corollas' codes.
+    UaTranslators,
     /// A compound endpoint waits on its computation's type.
     ReturnedEndpoint,
     /// A transport waits on its element path's type.
@@ -290,6 +293,7 @@ impl fmt::Display for FrameRole
             | Self::FunextRight => "FunextRight",
             | Self::EquivForward => "EquivForward",
             | Self::EquivBackward => "EquivBackward",
+            | Self::UaTranslators => "UaTranslators",
             | Self::ReturnedEndpoint => "ReturnedEndpoint",
             | Self::ElementTransportPath => "ElementTransportPath",
             | Self::ElementTransportMotive => "ElementTransportMotive",
@@ -682,6 +686,7 @@ mod tests
             FrameRole::FunextRight,
             FrameRole::EquivForward,
             FrameRole::EquivBackward,
+            FrameRole::UaTranslators,
             FrameRole::ReturnedEndpoint,
             FrameRole::ElementTransportPath,
             FrameRole::ElementTransportMotive,

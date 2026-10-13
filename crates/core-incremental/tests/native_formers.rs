@@ -1,7 +1,9 @@
 //! Native declaration schemas remain complete across persistence and reuse.
 
+use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::string::String;
+use alloc::sync::Arc;
 use alloc::vec;
 
 use anodized::spec;
@@ -9,6 +11,10 @@ use gandr_core_checker::CheckBudget;
 use gandr_core_checker::Declaration;
 use gandr_core_checker::DeclarationContent;
 use gandr_core_checker::OriginToken;
+use gandr_core_checker::signature;
+use gandr_core_checker::ua::StratumDefect;
+use gandr_core_checker::ua::UaDefect;
+use gandr_core_checker::ua::tabulate;
 use gandr_core_incremental::Adoption;
 use gandr_core_incremental::Answer;
 use gandr_core_incremental::Item;
@@ -24,13 +30,25 @@ use gandr_core_term::Component;
 use gandr_core_term::CoreArena;
 use gandr_core_term::DataSignature;
 use gandr_core_term::Sort;
+use gandr_core_term::ValueId;
 use gandr_core_term::Zone;
+use gandr_core_term::ua::Description;
+use gandr_core_term::ua::Generator;
+use gandr_core_term::ua::Sides;
+use gandr_core_term::ua::Stratum;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldLabel;
 use gandr_kernel_term::GroundSort;
+use gandr_theory_levitation::Name;
+use gandr_theory_sites::Degree;
+use gandr_theory_sites::ElementIndex;
+use gandr_theory_sites::PortCount;
+use gandr_theory_sites::Profile;
+use gandr_theory_sites::ShapeSize;
+use gandr_theory_sites::Table;
 use quenchant_shape::shape::Maybe;
 
 /// Whether the constructor retains its record field.
@@ -215,5 +233,128 @@ fn native_checkpoint_round_trip_and_signature_invalidation()
     assert_eq!(
         decode_checkpoints(&refused).expect("native refusals decode"),
         *changed.checkpoints()
+    );
+}
+
+/// The magma's description: `mul : 2 → 1`, then `one : 0 → 1`.
+///
+/// # Specification
+/// trivial.
+fn magma() -> Description
+{
+    let generator = |label: &str, inputs: usize| Generator {
+        label: FieldLabel::from(String::from(label)),
+        profile: Profile {
+            inputs: PortCount::from(inputs),
+            outputs: PortCount::from(1_usize),
+        },
+    };
+    Description {
+        name: Name::from("Magma"),
+        generators: Box::from([generator("mul", 2), generator("one", 0)]),
+    }
+}
+
+/// Three statements of univalence between the magma and itself: the swap of
+/// its binary generator at degree one, the same at a degree no shape of the
+/// catalogue reaches, and a backward table that does not invert the forward
+/// one.
+///
+/// # Specification
+/// - ensures: three unsigned declarations, each a `ua` statement.
+/// - panics: only if the ordered fixture is rejected by the program container.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an accepted statement and two refused ones persist and
+///   resume as a fresh check gives them.
+/// - witness: `tests::native_formers::a_univalence_statement_round_trips_with_its_descriptions`
+#[spec(ensures: |ret| ret.items().len() == 3)]
+fn univalence() -> Program
+{
+    let mut arena = CoreArena::new();
+    let [swap, same, keep] = [&[1_usize, 0][..], &[0, 1], &[0]].map(|images| {
+        tabulate(
+            &mut arena,
+            &Table::new(images.iter().copied().map(ElementIndex::from).collect()),
+        )
+    });
+    let sides = Arc::new(Sides {
+        source: magma(),
+        target: magma(),
+    });
+    let mut statement = |degree: usize, backward: ValueId| {
+        let [forward, backward] = [swap, backward].map(|binary| {
+            arena.value_record(BTreeMap::from([
+                (FieldLabel::from(String::from("mul")), binary),
+                (FieldLabel::from(String::from("one")), keep),
+            ]))
+        });
+        arena.value_ua(
+            Stratum {
+                degree: Degree::from(degree),
+                bound: ShapeSize::from(4_usize),
+            },
+            Arc::clone(&sides),
+            forward,
+            backward,
+        )
+    };
+    let statements = [statement(1, swap), statement(5, swap), statement(1, same)];
+    let items = ["opposite", "above", "lopsided"]
+        .into_iter()
+        .zip(statements)
+        .enumerate()
+        .map(|(position, (key, body))| {
+            Item::new(
+                ItemKey::from(key),
+                Declaration::new(
+                    ConstantIndex::from(position),
+                    Maybe::Absent(signature::Absent::Unsigned),
+                    Maybe::Present(body),
+                    OriginToken::from(position),
+                ),
+            )
+        })
+        .collect();
+    Program::new(arena, items).expect("fixture positions ascend")
+}
+
+#[test]
+fn a_univalence_statement_round_trips_with_its_descriptions()
+{
+    let original =
+        check_program(&mut univalence(), CheckBudget::DEFAULT).expect("the initial pass succeeds");
+    let checkpoints = original.checkpoints();
+    assert!(
+        matches!(checkpoints.items()[0].typing(), Typing::Synthesised { .. }),
+        "the swap derives its path"
+    );
+    assert!(matches!(
+        checkpoints.items()[1].typing(),
+        Typing::Refused(Refusal::UaUncertified {
+            stratum: StratumDefect::Degree { degree },
+            ..
+        }) if *degree == Degree::from(5_usize)
+    ));
+    assert!(matches!(
+        checkpoints.items()[2].typing(),
+        Typing::Refused(Refusal::UaInequivalent {
+            defect: UaDefect::NotInverse { .. },
+            ..
+        })
+    ));
+    let encoded = encode_checkpoints(checkpoints).expect("the statements persist");
+    let restored = decode_checkpoints(&encoded).expect("the statements decode");
+    assert_eq!(
+        &restored, checkpoints,
+        "the stratum, both descriptions and every refusal survive the codec"
+    );
+    let resumed =
+        resume_from(&restored, &mut univalence()).expect("restored statements can be resumed");
+    assert_eq!(resumed.checkpoints(), checkpoints);
+    assert_eq!(
+        resumed.adoptions(),
+        [Adoption::Judged, Adoption::Adopted, Adoption::Adopted],
+        "an accepted statement is judged again for its derived path; a refused one is adopted"
     );
 }

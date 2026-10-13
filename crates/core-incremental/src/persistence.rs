@@ -1770,6 +1770,8 @@ mod tests
             | Typing::Refused(Refusal::UncertifiedStratum { .. }) => "uncertified-stratum",
             | Typing::Refused(Refusal::RoundTripDistinct(_)) => "round-trip-distinct",
             | Typing::Refused(Refusal::NotOver { .. }) => "not-over",
+            | Typing::Refused(Refusal::UaUncertified { .. }) => "ua-uncertified",
+            | Typing::Refused(Refusal::UaInequivalent { .. }) => "ua-inequivalent",
             | Typing::Refused(Refusal::EffectSignatureConflict { .. }) => {
                 "effect-signature-conflict"
             },

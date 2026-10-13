@@ -24,6 +24,8 @@
 //! - [`identity`] derives `back`, `then` and `cong` as transports in families
 //!   of paths, so element identity has one eliminator, `tr`, beside its type
 //!   `Path` and its reflexivity `here`.
+//! - [`ua`] holds what univalence at a stratum reads: the stratum a statement
+//!   fixes and the two descriptions it relates, read as graphical species.
 //! - [`FailureClass`] is the four-class vocabulary every refusal of the core
 //!   pipeline answers to, whichever crate produced it.
 //!
@@ -118,6 +120,7 @@ pub mod pattern;
 pub mod primitive;
 mod rewrite;
 mod syntax;
+pub mod ua;
 
 pub use gandr_kernel_term::Component;
 pub use gandr_kernel_term::ConstructorTag;

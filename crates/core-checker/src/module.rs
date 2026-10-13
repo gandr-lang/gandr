@@ -222,6 +222,8 @@ pub struct ModuleReport
     equivalences: BTreeMap<ValueId, Equivalence>,
     /// The reflexivities the run checked, by node.
     reflexivities: BTreeMap<ValueId, Reflexivity>,
+    /// The path each univalence statement the run decided derives, by node.
+    universals: BTreeMap<ValueId, ValueId>,
     /// The body each accepted declaration defines its constant as, elaborated
     /// to the universe it was declared at, by position.
     definitions: BTreeMap<ConstantIndex, ValueId>,
@@ -341,6 +343,18 @@ impl ModuleReport
     pub const fn reflexivities(&self) -> &BTreeMap<ValueId, Reflexivity>
     {
         &self.reflexivities
+    }
+
+    /// The path each univalence statement the run decided derives, by node:
+    /// what the statement crosses to the kernel as.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn universals(&self) -> &BTreeMap<ValueId, ValueId>
+    {
+        &self.universals
     }
 
     /// The body each accepted declaration defines its constant as: its body,
@@ -699,6 +713,7 @@ pub fn check_declaration_supported(
     && &ret.funexts == context.funexts()
     && &ret.equivalences == context.equivalences()
     && &ret.reflexivities == context.reflexivities()
+    && &ret.universals == context.universals()
     && ret.definitions.iter().map(|(&constant, &body)| (constant, body))
         .eq(context.definitions().definitions())
     && ret.failures.iter().all(|(constant, failure)|
@@ -735,6 +750,7 @@ pub fn check_module(
         funexts: context.funexts().clone(),
         equivalences: context.equivalences().clone(),
         reflexivities: context.reflexivities().clone(),
+        universals: context.universals().clone(),
         definitions: context.definitions().definitions().collect(),
         data_signatures: context.data_signatures().clone(),
         abstract_types: context.abstract_types().collect(),

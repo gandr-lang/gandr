@@ -66,6 +66,9 @@
 //! `funext(f, g)` and a universe equivalence `equiv(f, g)` by the same
 //! reasoning, their two functions in order; the native certificate a checked
 //! `equiv` erases to prints the same call, approximately, without its evidence.
+//! Univalence at a stratum is `ua[n, k](a, b, f, g)`, faithful too: the
+//! stratum's degree and bound in the head, the descriptions by name and the
+//! translator records in label order, as the lowering reads them.
 //!
 //! - **Alternatives.** Writing `?`, the spelling of a node the surface does not
 //!   write, would hide a former the grammar parses.
@@ -306,7 +309,7 @@ enum Kind
         | Former::Literal(_) | Former::Tuple(_) | Former::Record(_) | Former::Injection(..) | Former::Thunk(_) | Former::ValueLift
         | Former::Reify | Former::ListNil | Former::ListCons(..)
         | Former::Quote(_) | Former::QuoteComputation(_) | Former::StaticLambda(_) | Former::StaticApplication(..)
-        | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_) | Former::Funext(..) | Former::Equiv(..)),
+        | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_) | Former::Funext(..) | Former::Equiv(..) | Former::Ua { .. }),
     | Kind::Computation => matches!(*former, Former::Return(_) | Former::Bind(..) | Former::Force(_)
         | Former::Application(..) | Former::Lambda(_) | Former::Computation),
     | Kind::Unknown => matches!(*former, Former::Unreadable),
@@ -354,7 +357,8 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::StaticApplication(..)
         | Former::Here(_)
         | Former::Funext(..)
-        | Former::Equiv(..) => Kind::Value,
+        | Former::Equiv(..)
+        | Former::Ua { .. } => Kind::Value,
         | Former::Return(_)
         | Former::Bind(..)
         | Former::Force(_)
@@ -584,7 +588,7 @@ enum Children<Node>
         Children::Two(Slot { admits: Admits::ValueType, .. }, Slot { admits: Admits::ValueType, .. })),
     | Former::Arrow { .. } | Former::Pi { .. } => matches!(ret,
         Children::Two(Slot { admits: Admits::ValueType, .. }, Slot { admits: Admits::CompType, .. })),
-    | Former::ListCons(..) | Former::PathUniverse(..) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Funext(..) | Former::Equiv(..) | Former::StaticApplication(..) => matches!(ret,
+    | Former::ListCons(..) | Former::PathUniverse(..) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Funext(..) | Former::Equiv(..) | Former::Ua { .. } | Former::StaticApplication(..) => matches!(ret,
         Children::Two(Slot { admits: Admits::Value, .. }, Slot { admits: Admits::Value, .. })),
     | Former::ThunkType(_) | Former::QuoteComputation(_) => matches!(ret,
         Children::One(Slot { admits: Admits::CompType, .. })),
@@ -651,6 +655,11 @@ where
         | Former::PathProduct(first, second)
         | Former::Funext(first, second)
         | Former::Equiv(first, second)
+        | Former::Ua {
+            forward: first,
+            backward: second,
+            ..
+        }
         | Former::PathEquiv(first, second)
         | Former::ListCons(first, second)
         | Former::StaticApplication(first, second) => {
@@ -924,6 +933,9 @@ enum Join
     Thunk,
     /// A bracketed value former over its items.
     Bracket(Bracket),
+    /// Univalence at a stratum over its two translator records, after the
+    /// head spelling its stratum and its descriptions, `ua[n, k](a, b,`.
+    Ua(DocId),
 }
 
 /// One unit of the walk's pending work.
@@ -2005,6 +2017,22 @@ impl Walk<'_, '_, '_>
             | Former::Here(_) => Some(Join::Bracket(Bracket::Here)),
             | Former::Funext(..) => Some(Join::Bracket(Bracket::Funext)),
             | Former::Equiv(..) => Some(Join::Bracket(Bracket::Equiv)),
+            | Former::Ua {
+                stratum,
+                source: from,
+                target: to,
+                ..
+            } => {
+                let head = alloc::format!(
+                    "ua[{}, {}]({}, {},",
+                    usize::from(stratum.degree),
+                    usize::from(stratum.bound),
+                    from.as_ref(),
+                    to.as_ref(),
+                );
+                let head = self.leaf(Glyphs(&head))?;
+                Some(Join::Ua(head))
+            },
             | Former::PathEquiv(..) => {
                 self.fidelity = Fidelity::Approximate;
                 Some(Join::Bracket(Bracket::PathEquiv))
@@ -2392,7 +2420,7 @@ impl Walk<'_, '_, '_>
                 | Join::Bracket(Bracket::PathRefl | Bracket::Here | Bracket::List) => Some(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Positional, .. } => Some(count),
             Join::Braced { arity: Arity(count), entries: Entries::Labelled(_), .. } => count.checked_mul(2_usize),
-            Join::Arrow | Join::Pi | Join::Sequence | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv) => Some(2_usize),
+            Join::Arrow | Join::Pi | Join::Sequence | Join::Ua(_) | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv) => Some(2_usize),
             Join::Apply(Arity(arguments)) => arguments.checked_add(1_usize),
         }],
         ensures: |ref ret| match *ret {
@@ -2401,7 +2429,7 @@ impl Walk<'_, '_, '_>
                     Join::Prefix(_) | Join::EffectReturner(_) | Join::Lambda | Join::Thunk => Binding::Prefix,
                     Join::Arrow | Join::Pi | Join::StaticLambda => Binding::Arrow,
                     Join::Sequence => Binding::Sequence,
-                    Join::Apply(_) | Join::Bracket(_) | Join::Braced { .. } => Binding::Atom,
+                    Join::Apply(_) | Join::Bracket(_) | Join::Braced { .. } | Join::Ua(_) => Binding::Atom,
                 }),
             | Err(PresentationError::Build(_) | PresentationError::Unbalanced) => self.pieces.len() <= entry,
             | Err(PresentationError::Render(_)) => false,
@@ -2563,6 +2591,19 @@ impl Walk<'_, '_, '_>
                     },
                 }
                 let inner = self.builder.concat_all(items)?;
+                let inner = self.none_or_break(inner)?;
+                let close = self.leaf(Glyphs(")"))?;
+                (self.builder.concat(inner, close)?, Binding::Atom)
+            },
+            | Join::Ua(head) => {
+                let backward = self.pop()?;
+                let forward = self.pop()?;
+                let head = self.space_or_break(head)?;
+                let comma = self.leaf(Glyphs(","))?;
+                let comma = self.space_or_break(comma)?;
+                let inner = self
+                    .builder
+                    .concat_all([head, forward.doc, comma, backward.doc])?;
                 let inner = self.none_or_break(inner)?;
                 let close = self.leaf(Glyphs(")"))?;
                 (self.builder.concat(inner, close)?, Binding::Atom)

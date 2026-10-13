@@ -588,6 +588,8 @@ fn checking_row(
         | CheckRefusal::UncertifiedStratum { .. }
         | CheckRefusal::RoundTripDistinct { .. }
         | CheckRefusal::NotOver { .. }
+        | CheckRefusal::UaUncertified { .. }
+        | CheckRefusal::UaInequivalent { .. }
         | CheckRefusal::EffectSignatureConflict { .. }
         | CheckRefusal::UnknownOperation { .. }
         | CheckRefusal::HandlerCoverage { .. }
@@ -793,6 +795,11 @@ fn formers(
                     &(Value::PathProduct(first, second)
                     | Value::Funext(first, second)
                     | Value::Equiv(first, second)
+                    | Value::Ua {
+                        forward: first,
+                        backward: second,
+                        ..
+                    }
                     | Value::PathEquiv {
                         forward: first,
                         backward: second,

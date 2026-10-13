@@ -290,6 +290,9 @@ pub struct CheckingContext<'arena>
     /// The reflexivities the judgement checked, by node, with the dialogues
     /// relating each point to its endpoints.
     reflexivities: BTreeMap<ValueId, crate::code::Reflexivity>,
+    /// The path each univalence statement the judgement decided derives, by
+    /// node.
+    universals: BTreeMap<ValueId, ValueId>,
     /// The abstract types admitted, by position.
     sealed: BTreeMap<ConstantIndex, Sealed>,
     /// The sites that minted them, in minting order.
@@ -361,6 +364,7 @@ impl<'arena> CheckingContext<'arena>
             funexts: BTreeMap::new(),
             equivalences: BTreeMap::new(),
             reflexivities: BTreeMap::new(),
+            universals: BTreeMap::new(),
             sealed: BTreeMap::new(),
             seals: SealTable::new(),
             budget,
@@ -938,10 +942,12 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Specification
     /// - requires: `body` was accepted at `declared`.
     /// - ensures: [`Self::definitions`] holds, at `constant`, `body` itself
-    ///   unless `declared` is, at its weak head, a value universe above the
-    ///   level of the universe `body` inhabits; then the lift of `body` to that
-    ///   universe, minted. The definition is the code the kernel admits for the
-    ///   declaration, so a decode unfolds alike on either side.
+    ///   unless `body` is a `ua` the judgement derived a path for, which it
+    ///   holds instead, or `declared` is, at its weak head, a value universe
+    ///   above the level of the universe `body` inhabits; then the lift of
+    ///   `body` to that universe, minted. The definition is the code the kernel
+    ///   admits for the declaration, so a decode or a transport unfolds alike
+    ///   on either side.
     /// - fails: never; a body whose level cannot be read is defined as it
     ///   stands, and the kernel's replay of an unfolding over it declines
     ///   rather than certifies a wrong one.
@@ -950,11 +956,15 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Adequacy
     /// - hypothesis: L3 — code definitions at their natural universe and a
     ///   larger universe are observed by subsequent decoding and independent
-    ///   readmission; a missing body or lift changes those outcomes.
+    ///   readmission, and a transport along a constant defined by `ua` computes
+    ///   along its derived path; a missing body, lift or path changes those
+    ///   outcomes.
     /// - witness: `bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
     /// - witness: `bridge::tests::a_smaller_type_at_a_larger_universe_readmits_with_a_lift`
+    /// - witness: `ua::tests::a_written_statement_derives_the_path_at_its_stratum`
     #[spec(ensures: matches!(self.definitions.body(constant), Maybe::Present(defined)
-        if defined == body || matches!(self.arena.value(defined), Some(Value::Quote(lifted))
+        if defined == body || self.universals.get(&body) == Some(&defined)
+            || matches!(self.arena.value(defined), Some(Value::Quote(lifted))
             if matches!(value_type_view(self.arena, *lifted), Ok(ValueTypeView::Lift { .. })))))]
     pub(crate) fn define(
         &mut self,
@@ -963,7 +973,10 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         body: ValueId,
     )
     {
-        let elaborated = self.elaborate(declared, body).unwrap_or(body);
+        let elaborated = match self.universals.get(&body) {
+            | Some(&path) => path,
+            | None => self.elaborate(declared, body).unwrap_or(body),
+        };
         self.definitions.define(constant, elaborated);
     }
 
@@ -1145,6 +1158,39 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     )
     {
         self.reflexivities.insert(at, reflexivity);
+    }
+
+    /// The path each univalence statement the judgement decided derives, by
+    /// node.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn universals(&self) -> &BTreeMap<ValueId, ValueId>
+    {
+        &self.universals
+    }
+
+    /// Record the path the judgement derived for the `ua` at `at`.
+    ///
+    /// # Specification
+    /// - requires: `path` is the path [`crate::ua::decide`] derived at `at`.
+    /// - ensures: `at` has `path` as its record, replacing an earlier one.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a decided statement crosses as exactly its recorded
+    ///   path, which the kernel admits.
+    /// - witness: `ua::tests::a_written_statement_derives_the_path_at_its_stratum`
+    #[spec(ensures: self.universals.get(&at) == Some(&path))]
+    pub(crate) fn record_universal(
+        &mut self,
+        at: ValueId,
+        path: ValueId,
+    )
+    {
+        self.universals.insert(at, path);
     }
 
     /// Trace the conversion of two computations as
@@ -1528,6 +1574,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
             | Value::Here(_)
             | Value::Funext(..)
             | Value::Equiv(..)
+            | Value::Ua { .. }
             | Value::Returned(_)
             | Value::Constructor { .. }
             | Value::Record(_)

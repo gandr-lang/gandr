@@ -43,7 +43,8 @@
 //! `funext(f, g)` and `equiv(f, g)` stand as values, as `here` does, and read
 //! both functions as values; the checker synthesises the path type from the
 //! first and decides it by computation (`gandr_core_checker`'s funext and
-//! equiv rules).
+//! equiv rules). Univalence at a stratum, `ua[n, k](a, b, f, g)`, is the same
+//! kind of name with its stratum in the head; [`super::ua`] lowers it.
 //!
 //! # `transport` states its motive
 //!
@@ -146,7 +147,7 @@ use crate::resolve::TypeFormer;
 use crate::resolve::type_former;
 
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;
 
 /// Reflexivity's spelling, which no pattern may take.
 pub(super) const HERE: &str = "here";
@@ -161,8 +162,9 @@ quenchant_shape::reason_enum! {
         /// The head is not one of the identity operations' names, free.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
-            /// The head is no bare name, spells another name, or names a
-            /// binder or an earlier declaration that shadows the operation.
+            /// The head is no bare name or `ua[n, k]` instantiation, spells
+            /// another name, or names a binder or an earlier declaration that
+            /// shadows the operation.
             Unspelled,
         }
     }

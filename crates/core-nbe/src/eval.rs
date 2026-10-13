@@ -353,6 +353,11 @@ pub enum EvalFault
     NativePrimitive(gandr_core_term::primitive::Primitive),
     /// Transport met neither a native path nor a neutral path operand.
     TransportedNonPath,
+    /// Transport met `ua` written in place. The path it names is the one the
+    /// checker derives at its stratum, which a declaration whose body is the
+    /// statement unfolds to; written in place, it has no path to compute
+    /// along.
+    TransportedUnderived,
     /// The budget ran out. The term may or may not have a weak-head form; the
     /// machine declines rather than continuing.
     OutOfFuel,
@@ -3208,10 +3213,14 @@ fn step_value(
             machine.tasks.push(Task::Value { term: first, env });
             Ok(())
         },
-        // A closed native path, a closed funext and a closed equivalence are
-        // inert certificates: nothing reduces them, and transport reads their
-        // syntax.
-        | Value::PathRefl(_) | Value::PathEquiv { .. } | Value::Funext(..) | Value::Equiv(..) => {
+        // A closed native path, a closed funext, a closed equivalence and a
+        // univalence statement are inert certificates: nothing reduces them,
+        // and transport reads their syntax.
+        | Value::PathRefl(_)
+        | Value::PathEquiv { .. }
+        | Value::Funext(..)
+        | Value::Equiv(..)
+        | Value::Ua { .. } => {
             machine
                 .values
                 .push(domain.value_path_certificate(term, TermFace::Source(term)));
@@ -4454,6 +4463,7 @@ fn step_transport(
                 });
                 Ok(())
             },
+            | Some(&Value::Ua { .. }) => Err(EvalFault::TransportedUnderived),
             | _ => Err(EvalFault::DanglingTerm),
         },
         | DomainValue::PathProduct { first, second, .. } => {

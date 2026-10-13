@@ -1411,7 +1411,11 @@ impl<'run> Focusing<'run>
             | Value::QuoteComputation(_)
             | Value::StaticLambda(_)
             | Value::StaticApplication(..) => return Err(FocusRefusal::Code(id)),
-            | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Returned(_) => {
+            | Value::Here(_)
+            | Value::Funext(..)
+            | Value::Equiv(..)
+            | Value::Ua { .. }
+            | Value::Returned(_) => {
                 return Err(FocusRefusal::ElementPath(id));
             },
             | Value::Hole(_) | Value::Mark { .. } => {

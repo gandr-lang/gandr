@@ -25,10 +25,11 @@ test = true
 # bridge erases into the term crate's arena and admits through the kernel's
 # choke point, which re-derives every declaration the judgement accepts. The
 # certified strata's species and equivalences come from the site crate,
-# which `ua_n` reads its range and alphabet from. The pinned anodized facade
-# supplies the executable specifications; logic/BigInt stays disabled in this
-# no_std library. Nothing here names a surface crate: names, spans and syntax
-# stay above the core.
+# which `ua_n` reads its range and alphabet from; alloc-only `once_cell`
+# cells hold each bound's catalogue and each stratum once per process. The
+# pinned anodized facade supplies the executable specifications; logic/BigInt
+# stays disabled in this no_std library. Nothing here names a surface crate:
+# names, spans and syntax stay above the core.
 [dependencies]
 anodized.workspace = true
 gandr-core-nbe.workspace = true
@@ -40,13 +41,16 @@ gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
 gandr-theory-deep-inference.workspace = true
 gandr-theory-sites.workspace = true
+once_cell.workspace = true
 quenchant-shape.workspace = true
 serde.workspace = true
 
+# The univalence witnesses name the descriptions their statements relate.
 [dev-dependencies]
 allocation-counter.workspace = true
 crossbeam-channel.workspace = true
 crossbeam-deque.workspace = true
+gandr-theory-levitation.workspace = true
 proptest.workspace = true
 ringbuf.workspace = true
 rtrb.workspace = true
