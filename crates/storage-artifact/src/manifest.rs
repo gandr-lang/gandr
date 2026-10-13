@@ -29,6 +29,35 @@
 //! [`ArtifactManifest::read_under`] hands the reassembled bytes to the
 //! kernel's decoder, which refuses what it refuses whatever the identity.
 //!
+//! **Choice.** The identity binds the record plane's boundary commitment, the
+//! record count, the root node identity and the kernel format version, under
+//! its own domain and its own type, `ArtifactIdentity`. The commitment is
+//! `TreeParams::boundary_commitment`, carried opaque; the root node's bytes
+//! carry the record encoding version, so the node identity binds that too. The
+//! hashing scheme is the value plane's, not a second one — one domain-separated
+//! image per manifest, BLAKE3 over it, a fixed-width little-endian layout, the
+//! reader's profile checked before any load. The type is distinct because an
+//! artifact identity and a value manifest digest name different things, and a
+//! signature that takes one must refuse the other. `decode` admits every kernel
+//! format and commitment, and `read_under` decides whether the reader shares
+//! them.
+//!
+//! **Alternatives.** Typing the identity as `gandr-storage-values`'
+//! `ManifestDigest` would let an artifact identity stand where a committed
+//! value's is expected and compile. Binding the record tree's `TreeRoot` digest
+//! instead of its root node identity would leave a reader nothing to load the
+//! tree by. A fixed 93-byte chunker commitment would carry a second commitment
+//! format beside the record plane's own. **Reversal.** A second manifest
+//! layout, or a reader that must recognise a value manifest and an artifact
+//! manifest in one slot, makes the shared scheme a shared type.
+//!
+//! The manifest refinement admits only layout version one without narrowing the
+//! opaque metadata. The owned image refinement checks the exact domain, version
+//! and commitment length against the complete frame without allocating or
+//! decoding the kernel. Fixed witnesses reject every proper golden prefix,
+//! inconsistent lengths and trailing bytes, while retaining empty commitments,
+//! zero and maximum record counts, and future kernel versions as metadata.
+//!
 //! # Refusal order
 //!
 //! [`ArtifactManifest::decode`] reads the fields in image order and refuses at

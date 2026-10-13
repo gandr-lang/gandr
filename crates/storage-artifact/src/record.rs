@@ -21,6 +21,27 @@
 //! independently decodable unit: a reader reassembles the whole image and
 //! decodes it once.
 //!
+//! | Key | Value |
+//! | --- | ----- |
+//! | the empty key | the header: magic, version, minted-atom table, declaration count |
+//! | admission index `i`, eight bytes big-endian | declaration segment `i` |
+//!
+//! Executable record refinements bind each key to its index and require
+//! strictly increasing, unique keys. Raw header and segment bytes, empty sets
+//! and noncontiguous indices remain admissible; those refinements do not
+//! certify kernel validity. Mutation witnesses separately corrupt the key
+//! binding, ordering and uniqueness.
+//!
+//! **Choice.** The key is big-endian at a fixed width of eight bytes, and the
+//! header is a record of its own. **Alternatives.** A little-endian key sorts
+//! index 256 before index 2 bytewise, and the record plane orders keys
+//! bytewise, so key order would stop being admission order past 255
+//! declarations. Keeping the header beside the tree rather than in it would
+//! leave the header's bytes outside the identity and send a reader elsewhere
+//! for the header; here one root covers the whole image. **Reversal.** A record
+//! plane that orders keys by a typed comparison rather than bytewise makes the
+//! key's byte order free.
+//!
 //! # Where the cuts come from
 //!
 //! [`ArtifactRecordSet::from_artifact`] cuts an image where the kernel's
@@ -28,6 +49,33 @@
 //! segment boundary never reaches storage from this path.
 //! [`ArtifactRecordSet::ensure_cut_at`] holds a stored set to the same
 //! boundaries on the way back.
+//!
+//! `from_artifact` decodes the image before it cuts it, and cuts where
+//! `DecodedArtifact::segments` reports each segment ends, so every set the
+//! commit path builds was decoded, budget-checked and delimited by the kernel
+//! first. On the way back, `ensure_cut_at` refuses a stored set whose bytes
+//! decode but whose records straddle or split segments: the boundaries a reader
+//! trusts are its own decoder's, never a writer's.
+//!
+//! **Alternatives.** A segmenting encoder that reports its own cuts makes the
+//! writer the authority on where records end. A second parser of the format
+//! here would drift from the kernel's. **Reversal.** None planned: the decoder
+//! is the format's one reader.
+//!
+//! # The declaration is the record grain
+//!
+//! The record is the declaration segment, and nothing cuts inside one: no
+//! scanner here reads `NODE_TAG_TABLE`'s storage columns, and the record
+//! plane's content-defined leaves group whole records. The declaration boundary
+//! is the replay grain and the checkpoint grain as well, so one grain serves
+//! all three. Were a codec to cut inside segments, the table's conservative
+//! alias column governs which constructors are boundaries; the threshold column
+//! stays recorded with no reader. **Alternatives.** A value-plane codec over
+//! each segment, cut at the conservative column's boundary set, shares
+//! structure below a declaration at the cost of a second chunk language for one
+//! artifact. **Reversal.** A measured artifact whose single declarations
+//! outgrow the record plane's node budget, or whose edits land inside large
+//! declarations often enough that per-declaration records stop sharing.
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;

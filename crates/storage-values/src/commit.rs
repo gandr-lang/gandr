@@ -35,6 +35,14 @@
 //! read as a record. Each emitted byte is hashed once, under the constructor
 //! that emitted it, whatever the depth.
 //!
+//! Each record appended to a body joins the scanner's count once, at the next
+//! boundary event: every record the value emits, and the one child record that
+//! takes a cut subtree's place in its parent. Every constructor exit except the
+//! outermost is a candidate: the scanner cuts when the pending count reaches
+//! the cap, otherwise when the residue is divisible by kappa, and a cut empties
+//! the count. The outermost constructor becomes the root chunk directly,
+//! avoiding an extra pointer-only root.
+//!
 //! # Root framing
 //!
 //! The outermost constructor is framed directly as the root chunk. Applying

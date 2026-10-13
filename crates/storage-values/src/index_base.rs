@@ -2,10 +2,12 @@
 //!
 //! # Child representation
 //!
-//! Constructors nest in place. A cut subtree becomes a child record naming
-//! its chunk at offset zero, so an insertion cannot renumber sibling
-//! references through a shared index table. See the
-//! [byte languages](https://github.com/gandr-lang/gandr/blob/main/crates/storage-values/README.md#byte-languages).
+//! Constructors nest in place. A cut subtree becomes a child record naming its
+//! chunk at offset zero, so an insertion cannot renumber sibling references
+//! through a shared index table; interior content pointers can address other
+//! token offsets. The child record's layout is stated in the `tokens` module. A
+//! flat encoding is the same canonical body for a value that fits one chunk,
+//! and holds no child records.
 //!
 //! [`crate::cam_commit`] accepts [`ChildIndexBase::Absolute`] and refuses
 //! [`ChildIndexBase::ChunkLocal`], because the encoding carries no relative
