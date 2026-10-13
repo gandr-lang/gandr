@@ -214,7 +214,9 @@ jobs:
   # pull-request runs of ci.yml against its budget, as the job summary and on
   # one issue while any lane is over (`mise run ci:lane-budget`). Alerting,
   # never a gate: nothing waits on this job. A budget changes with its lane's
-  # shape, in the same commit; the name is the job's display name.
+  # shape, in the same commit; the name is the job's display name. Each budget
+  # is about 1.5 times the lane's median once build state was pruned and the
+  # toolchain installed once (Clippy, which builds cold, about 1.3 times).
   lane-budget:
     name: hold each CI lane to its budget
     needs: ci-image-ref
@@ -238,10 +240,10 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: >-
           mise run ci:lane-budget --issue "CI lane budgets"
-          --budget "test enforcing targets (linux)=600"
-          --budget "test enforcing targets (macos-arm64)=720"
-          --budget "test plain-only targets (linux)=240"
-          --budget "check quenchant compiler policy=300"
-          --budget "check Clippy wall=300"
-          --budget "re-verify obligated specifications (linux)=300"
+          --budget "test enforcing targets (linux)=360"
+          --budget "test enforcing targets (macos-arm64)=420"
+          --budget "test plain-only targets (linux)=150"
+          --budget "check quenchant compiler policy=180"
+          --budget "check Clippy wall=330"
+          --budget "re-verify obligated specifications (linux)=180"
           >> "$GITHUB_STEP_SUMMARY"
