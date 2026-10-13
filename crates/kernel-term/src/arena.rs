@@ -539,6 +539,9 @@ pub struct TermArena
     value_types: Vec<ValueType>,
     /// The computation-type nodes.
     comp_types: Vec<CompType>,
+    /// The empty endpoint dialogues every reflexivity minted without a
+    /// dialogue shares, so minting one allocates no evidence.
+    unrelated: alloc::sync::Arc<crate::EndpointDialogues>,
 }
 
 impl TermArena
@@ -829,7 +832,7 @@ impl TermArena
             Value::Record(ref fields) => fields.values().all(|field| self.value(*field).is_some()),
             Value::ListCons(first, second) | Value::StaticApplication(first, second) | Value::PathProduct(first, second) => self.value(first).is_some() && self.value(second).is_some(),
             Value::Tuple(ref components) => components.iter().all(|component| self.value(*component).is_some()),
-            Value::Injection(_, body) | Value::Lift { body, .. } | Value::PathRefl(body) | Value::Here(body) => self.value(body).is_some(),
+            Value::Injection(_, body) | Value::Lift { body, .. } | Value::PathRefl(body) | Value::Here { point: body, .. } => self.value(body).is_some(),
             Value::Higher { ref evidence, .. } => evidence.iter().all(|item| self.value(*item).is_some()),
             Value::HigherEvaluation { ref components, .. } => components.iter().all(|component| self.value(component.left).is_some() && self.value(component.right).is_some() && self.value(component.evidence).is_some()),
             Value::PathEquiv { path_type, forward, backward, .. } => self.value_type(path_type).is_some() && self.value(forward).is_some() && self.value(backward).is_some(),
@@ -2450,17 +2453,47 @@ impl TermArena
         })
     }
 
-    /// Mint the diagonal `here(a)` without claiming that it checks.
+    /// Mint the diagonal `here(a)` with no endpoint dialogue, without claiming
+    /// that it checks.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: appends a `here` over `point` whose two dialogues are empty,
+    ///   sharing the arena's one empty payload.
+    /// - provides: the reflexivity the kernel mints itself, and any whose point
+    ///   is its endpoints as written.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a minted diagonal holds its point and no dialogue,
+    ///   and decoding a `here` whose dialogues are empty mints it, where one
+    ///   carrying a decision keeps that decision on its side.
+    /// - witness: `decode::tests::identity_nodes_round_trip_and_refuse_their_malformed_sites`
+    #[spec(ensures: |ret| matches!(self.value(ret), Some(Value::Here { point: held, dialogues })
+        if *held == point && dialogues.left.is_empty() && dialogues.right.is_empty()))]
     #[inline]
     pub fn value_here(
         &mut self,
         point: ValueId,
     ) -> ValueId
     {
-        self.alloc_value(Value::Here(point))
+        let dialogues = alloc::sync::Arc::clone(&self.unrelated);
+        self.alloc_value(Value::Here { point, dialogues })
+    }
+
+    /// Mint the diagonal `here(a)` with the dialogues relating its point to
+    /// each endpoint, without claiming that it checks.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_here_relating(
+        &mut self,
+        point: ValueId,
+        dialogues: alloc::sync::Arc<crate::EndpointDialogues>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Here { point, dialogues })
     }
 
     /// Mint a returned endpoint over an already-allocated computation, without
@@ -2627,7 +2660,7 @@ Value::Tuple(ref components) => ret.iter().copied().eq(components.iter().copied(
 Value::PathEquiv { path_type, forward, backward, .. } =>
                 ret.as_slice() == [AnyNode::ValueType(path_type), AnyNode::Value(forward), AnyNode::Value(backward)],
 Value::SessionPath { path_type, payload_paths, .. } => ret.as_slice() == [AnyNode::ValueType(path_type), AnyNode::Value(payload_paths)],
-Value::PathRefl(code) | Value::Here(code) => ret.as_slice() == [AnyNode::Value(code)],
+Value::PathRefl(code) | Value::Here { point: code, .. } => ret.as_slice() == [AnyNode::Value(code)],
 Value::Higher { ref evidence, .. } => ret.iter().copied().eq(evidence.iter().copied().map(AnyNode::Value)),
 Value::HigherEvaluation { ref components, .. } => ret.iter().copied().eq(components.iter().flat_map(|component| [AnyNode::Value(component.left), AnyNode::Value(component.right), AnyNode::Value(component.evidence)])),
 Value::ListCons(first, second) | Value::PathProduct(first, second) | Value::StaticApplication(first, second) =>
@@ -2728,7 +2761,7 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                     children.push(AnyNode::ValueType(path_type));
                     children.push(AnyNode::Value(payload_paths));
                 },
-                | Some(&Value::PathRefl(code) | &Value::Here(code)) => {
+                | Some(&Value::PathRefl(code) | &Value::Here { point: code, .. }) => {
                     children.push(AnyNode::Value(code));
                 },
                 | Some(&Value::Higher { ref evidence, .. }) => {

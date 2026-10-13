@@ -311,6 +311,13 @@
 //! native operation over a variable, `0 + x` against `x` — is a mismatch too:
 //! the rule admits what it shows and refutes nothing it cannot.
 //!
+//! The conversion runs with a compound endpoint held at the definition it
+//! calls, so the machine unfolds it as a recorded decision rather than inside
+//! evaluation, and the trace from the point to each endpoint is kept at the
+//! `here` ([`crate::code::Reflexivity`]). The bridge carries both dialogues on
+//! the kernel's `here`, and the kernel replays them: every δ-step an endpoint
+//! needs, under a binder or not, is one the dialogue names.
+//!
 //! A compound endpoint is a computation standing where an endpoint is read,
 //! taken as the value it returns. It synthesises the result of the pure
 //! returner its computation synthesises, and is
@@ -5779,18 +5786,22 @@ impl<'context, 'arena> Machine<'context, 'arena>
     }
 
     /// Meet reflexivity's point with both endpoints of the path type it is
-    /// checked against.
+    /// checked against, recording the dialogue relating it to each.
     ///
     /// # Specification
     /// - requires: `point` checked against the path type's carrier, and the
     ///   three values stand under the judgement's binders.
     /// - ensures: success exactly when the point converts to the left endpoint
     ///   and to the right one: the same node or the same syntax at once, a hole
-    ///   or a mark consistently with anything, and otherwise by the
-    ///   normaliser's conversion with every definition admitted so far
-    ///   unfolding. A side the normaliser cannot run — a native primitive,
-    ///   which only the runtime computes — converts by syntax alone.
-    /// - provides: the endpoint condition of reflexivity's rule.
+    ///   or a mark consistently with anything, each with the empty dialogue,
+    ///   and otherwise by the normaliser's conversion with every definition
+    ///   admitted so far unfolding and returned endpoints held
+    ///   ([`crate::code::CodeDefinitions::relate_terms`]), with the trace it
+    ///   recorded. On success the context records the two dialogues at `at`. A
+    ///   side the normaliser cannot run — a native primitive, which only the
+    ///   runtime computes — converts by syntax alone.
+    /// - provides: the endpoint condition of reflexivity's rule, and the
+    ///   dialogues the kernel replays for it.
     /// - fails: [`CheckRefusal::EndpointMismatch`] naming `at` and both
     ///   endpoints when either conversion is refuted, declined or undecided; a
     ///   dangling node or a machine invariant as the conversion raises it.
@@ -5803,41 +5814,52 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - hypothesis: L3 — reflexivity at equal literals, at a definition
     ///   applied to a variable against what it unfolds to, and at an arithmetic
     ///   redex over a variable against the variable separate the syntactic, the
-    ///   normalising and the refuting outcomes.
+    ///   normalising and the refuting outcomes; the recorded dialogues cross to
+    ///   the kernel and replay there.
     /// - witness: `judgement::tests::reflexivity_checks_by_endpoint_conversion`
+    /// - witness: `bridge::tests::a_reflexivity_crosses_with_the_dialogues_relating_its_endpoints`
     #[spec(ensures: |ret| match ret {
         | Err(CheckRefusal::EndpointMismatch { at: site, left: named_left, right: named_right }) => site == at && named_left == left && named_right == right,
-        | Ok(()) | Err(_) => true,
+        | Ok(()) => self.context.reflexivities().contains_key(&at),
+        | Err(_) => true,
     })]
     fn reaches(
-        &self,
+        &mut self,
         at: ValueId,
         point: ValueId,
         left: ValueId,
         right: ValueId,
     ) -> Result<(), CheckRefusal>
     {
-        for endpoint in [left, right] {
+        let mut dialogues = [Vec::new(), Vec::new()];
+        for (endpoint, dialogue) in [left, right].into_iter().zip(&mut dialogues) {
             let arena = self.context.arena();
-            let consistent = point == endpoint
+            let syntactic = point == endpoint
                 || gandr_core_term::equal_certificate_syntax(arena, point, endpoint)
                     == gandr_core_term::CertificateEquality::Equal
                 || [point, endpoint].into_iter().any(|side| {
                     matches!(arena.value(side), Some(Value::Hole(_) | Value::Mark { .. }))
-                })
-                || match self
-                    .context
-                    .definitions()
-                    .convert_terms(arena, point, endpoint)
-                {
-                    | Ok(verdict) => verdict == gandr_core_nbe::MachineVerdict::Convertible,
-                    | Err(CheckRefusal::Undecided { .. }) => false,
-                    | Err(fault) => return Err(fault),
-                };
-            if !consistent {
-                return Err(CheckRefusal::EndpointMismatch { at, left, right });
+                });
+            if syntactic {
+                continue;
+            }
+            match self
+                .context
+                .definitions()
+                .relate_terms(arena, point, endpoint)
+            {
+                | Ok(Maybe::Present(decisions)) => *dialogue = decisions,
+                | Ok(Maybe::Absent(_)) | Err(CheckRefusal::Undecided { .. }) => {
+                    return Err(CheckRefusal::EndpointMismatch { at, left, right });
+                },
+                | Err(fault) => return Err(fault),
             }
         }
+        let [left_dialogue, right_dialogue] = dialogues;
+        self.context.record_reflexivity(
+            at,
+            crate::code::Reflexivity::new(left_dialogue, right_dialogue),
+        );
         Ok(())
     }
 

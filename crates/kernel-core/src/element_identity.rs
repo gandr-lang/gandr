@@ -75,22 +75,37 @@
 //! representable: the producer refuses it before it would reach the kernel.
 //! Two returned endpoints convert by their computations, a stuck one
 //! structurally. Where the conversion leaves a returned endpoint against
-//! another value — reflexivity at `Path(M, mul(neutral, x), x)`, a mode
-//! switch whose types hold one — the kernel reads it: normalizes it by its own
-//! evaluator and converts the normal form by the one conversion
+//! another value at a mode switch, the kernel reads it: normalizes it by its
+//! own evaluator and converts the normal form by the one conversion
 //! ([`mod@crate::replay`] § The returned endpoint). A reading that reaches a
-//! different value, or none, keeps the refusal it would have had, with one
-//! exception: at reflexivity, a reading that stops at a thunk over a definition
-//! is declined as [`IdentityError::EndpointsUnreplayed`], since only a δ-step
-//! under the thunk could relate it.
+//! different value, or none, keeps the refusal it would have had.
 //!
 //! - alternatives: an effect row on the kernel returner, which nothing in the
 //!   kernel would read; endpoints restricted to value formers, which strands
 //!   every law whose sides are calls; δ-normalizing under binders in the
 //!   kernel, a second equality beside the replayed one.
 //! - reversal: an effectful kernel computation type would need its own refusal
-//!   beside the non-returner one; replaying the engine's conversion trace at a
-//!   `here` endpoint retires the decline.
+//!   beside the non-returner one.
+//!
+//! **Reflexivity replays the engine's conversion.** `here(c)` checks at
+//! `Path(A, a, b)` when `c` converts with each endpoint. The forced conversion
+//! is tried first; an endpoint it leaves apart is related by the dialogue the
+//! `here` carries for that side, replayed with the admitted definitions
+//! unfoldable ([`reflexive_endpoints`]). The engine's conversion holds a
+//! returned endpoint at the definition it calls, so every δ-step the endpoint
+//! needs, under a thunk or not, is a decision of the dialogue: the replay
+//! unfolds only the constant it names, at the side it names. A dialogue naming
+//! another constant or side, or fewer unfoldings than the endpoint needs, is
+//! refused as [`IdentityError::EndpointsDiffer`], naming the side and the
+//! replay's verdict.
+//!
+//! - alternatives: the kernel's own reading at reflexivity too, which stops at
+//!   the first thunk because evaluation does not reduce under binders; a δ rule
+//!   in the forced loop, which makes the trusted conversion a search over
+//!   unfoldings.
+//! - reversal: a judgement other than reflexivity that needs a δ-step under a
+//!   binder carries its own dialogue the same way; the forced loop stays
+//!   δ-free.
 //!
 //! **The checking machine never re-enters itself.** Every value the fold would
 //! check, a guard's evidence or a higher evaluation's returned values and
@@ -199,6 +214,7 @@ use gandr_kernel_term::CompType;
 use gandr_kernel_term::CompTypeId;
 use gandr_kernel_term::ComputationId;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::EndpointDialogues;
 use gandr_kernel_term::EvaluationComponent;
 use gandr_kernel_term::EvaluationDialogues;
 use gandr_kernel_term::HigherLayer;
@@ -241,8 +257,10 @@ use crate::identity_recursion::interpret;
 use crate::path_universe::Dialogue;
 use crate::path_universe::Reduction;
 use crate::path_universe::anchor;
+use crate::replay::EngineClaim;
 use crate::replay::KernelVerdict;
 use crate::replay::ReplayBudget;
+use crate::replay::ReplaySides;
 use crate::replay::Unfoldings;
 use crate::rewrite::BinderDepth;
 use crate::rewrite::RewriteOutcome;
@@ -259,32 +277,35 @@ use crate::witness::value_type_witness;
 #[cfg(test)]
 mod tests;
 
+/// The endpoint of an identity a reflexivity refusal names.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EndpointSide
+{
+    /// The source endpoint, `a` in `Path(A, a, b)`.
+    Left,
+    /// The target endpoint, `b` in `Path(A, a, b)`.
+    Right,
+}
+
 /// A refusal of the element-identity rules.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum IdentityError
 {
     /// The domain is closed but has no clause in the identity fold.
     OutsideFold(ValueTypeWitness),
-    /// A reflexivity's point does not convert with both endpoints.
+    /// A reflexivity's point does not reach an endpoint: the forced
+    /// conversion leaves them apart, and the dialogue the reflexivity carries
+    /// for that endpoint does not replay as their convertibility.
     EndpointsDiffer
     {
         /// The source endpoint's content digest.
         left: ContentDigest,
         /// The target endpoint's content digest.
         right: ContentDigest,
-    },
-    /// A reflexivity's point reaches an endpoint only by unfolding a
-    /// definition the endpoint's reading leaves under a thunk: a δ-step the
-    /// trace-free conversion does not take and the reading does not reach.
-    /// The kernel declines rather than refutes; the decline retires when the
-    /// kernel replays the engine's conversion trace at the endpoint
-    /// (<https://github.com/gandr-lang/gandr/issues/249>).
-    EndpointsUnreplayed
-    {
-        /// The source endpoint's content digest.
-        left: ContentDigest,
-        /// The target endpoint's content digest.
-        right: ContentDigest,
+        /// The endpoint the point did not reach.
+        side: EndpointSide,
+        /// That endpoint's dialogue's replay verdict.
+        verdict: KernelVerdict,
     },
     /// The fibre is neutral: the domain is open, or the endpoints are not
     /// canonical, so no introduction but `here` inhabits it.
@@ -357,9 +378,6 @@ impl fmt::Display for IdentityError
             | Self::OutsideFold(_) => f.write_str("identity at a type outside the identity fold"),
             | Self::EndpointsDiffer { .. } => {
                 f.write_str("reflexivity between differing endpoints")
-            },
-            | Self::EndpointsUnreplayed { .. } => {
-                f.write_str("reflexivity whose endpoints relate only by unfolding under a thunk")
             },
             | Self::NeutralFibre => f.write_str("an identity fibre is neutral"),
             | Self::EmptyFibre => f.write_str("an identity fibre is empty"),
@@ -443,39 +461,78 @@ fn require_folded(
     Ok(())
 }
 
-/// The refusal for a reflexivity whose point does not reach both endpoints.
+/// Relate a reflexivity's point to both endpoints of the identity it is
+/// checked at: by the forced conversion, or else by replaying the dialogue the
+/// reflexivity carries for that endpoint.
 ///
 /// # Specification
-/// trivial.
-#[must_use]
-pub(crate) fn endpoints_differ(
-    arena: &TermArena,
-    left: ValueId,
-    right: ValueId,
-) -> KernelError
-{
-    KernelError::Identity(IdentityError::EndpointsDiffer {
-        left: content_digest(arena, AnyNode::Value(left)),
-        right: content_digest(arena, AnyNode::Value(right)),
-    })
-}
-
-/// The decline for a reflexivity whose endpoint relates to its point only by
-/// unfolding a definition its reading leaves under a thunk.
+/// - requires: `point`, both endpoints and every body in `unfoldings` live in
+///   `arena`, the endpoints in the point's context.
+/// - ensures: `Ok(())` exactly when, for each endpoint, the forced conversion
+///   [`crate::conv::convert_values`] relates the point to it, or that side's
+///   dialogue in `dialogues` replays, under `unfoldings` and within
+///   [`ReplayBudget::DEFAULT`], as a derivation of their convertibility.
+///   `arena` holds what it held on entry.
+/// - provides: the `here` rule's endpoint check. A constant unfolds only where
+///   the dialogue names it, at the head and side it names, so a δ-step under a
+///   binder is a recorded step and never the kernel's own search.
+/// - fails: [`IdentityError::EndpointsDiffer`] at the first endpoint neither
+///   relates, naming that side and its replay's verdict.
+/// - panics: none.
 ///
-/// # Specification
-/// trivial.
-#[must_use]
-pub(crate) fn endpoints_unreplayed(
-    arena: &TermArena,
-    left: ValueId,
-    right: ValueId,
-) -> KernelError
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — endpoints related by the laws of bind need no dialogue;
+///   an endpoint unfolding a definition under a thunk is admitted by the
+///   dialogue that names the unfolding, and refused by name when the dialogue
+///   names the wrong constant, the wrong side, or fewer unfoldings than the
+///   endpoint needs.
+/// - witness: `element_identity::tests::reflexivity_converts_its_endpoints_by_the_laws_of_bind`
+/// - witness: `element_identity::tests::an_endpoint_unfolding_under_a_thunk_replays_its_dialogue`
+/// - witness: `element_identity::tests::a_dialogue_naming_the_wrong_unfolding_is_refused_by_name`
+#[spec(
+    captures: before = arena.watermark(),
+    ensures: |ret| arena.watermark() == before && ret.as_ref().err().is_none_or(|error| matches!(
+        error,
+        &KernelError::Identity(IdentityError::EndpointsDiffer { verdict, .. })
+            if verdict != KernelVerdict::Convertible
+    )),
+)]
+pub(crate) fn reflexive_endpoints(
+    arena: &mut TermArena,
+    unfoldings: &Unfoldings,
+    point: ValueId,
+    (left, right): (ValueId, ValueId),
+    dialogues: &EndpointDialogues,
+) -> Result<(), KernelError>
 {
-    KernelError::Identity(IdentityError::EndpointsUnreplayed {
-        left: content_digest(arena, AnyNode::Value(left)),
-        right: content_digest(arena, AnyNode::Value(right)),
-    })
+    for (side, endpoint, dialogue) in [
+        (EndpointSide::Left, left, &dialogues.left),
+        (EndpointSide::Right, right, &dialogues.right),
+    ] {
+        if crate::conv::convert_values(arena, point, endpoint) == Convertibility::Convertible {
+            continue;
+        }
+        let verdict = crate::replay::replay(
+            arena,
+            unfoldings,
+            ReplaySides::Values(point, endpoint),
+            EngineClaim::Convertible,
+            dialogue.iter().copied().map(anchor),
+            ReplayBudget::DEFAULT,
+        );
+        if verdict != KernelVerdict::Convertible {
+            return Err(KernelError::Identity(IdentityError::EndpointsDiffer {
+                left: content_digest(arena, AnyNode::Value(left)),
+                right: content_digest(arena, AnyNode::Value(right)),
+                side,
+                verdict,
+            }));
+        }
+    }
+    Ok(())
 }
 
 /// The native type an identity's non-diagonal evidence inhabits.
@@ -621,7 +678,7 @@ fn diagonal_endpoint(
 ) -> Result<ValueId, KernelError>
 {
     match arena.value(endpoint) {
-        | Some(&Value::Here(_)) => fibers
+        | Some(&Value::Here { .. }) => fibers
             .diagonal(arena)
             .map(|diagonal| diagonal.value)
             .map_err(|error| relation_refusal(arena, error)),
@@ -860,7 +917,7 @@ pub(crate) fn goal_reading(
         && !matches!(
             arena.value(value),
             None | Some(
-                &(Value::Here(_)
+                &(Value::Here { .. }
                     | Value::Higher { .. }
                     | Value::HigherEvaluation { .. }
                     | Value::Variable(_)
@@ -1051,7 +1108,9 @@ where
         value,
     } = term;
     match arena.value(path) {
-        | Some(&Value::Here(_)) => return Ok(Reduction::Reduced(arena.computation_return(value))),
+        | Some(&Value::Here { .. }) => {
+            return Ok(Reduction::Reduced(arena.computation_return(value)));
+        },
         | Some(_) => {},
         | None => return Err(KernelError::ArenaFault),
     }
@@ -1111,7 +1170,7 @@ where
             right,
         } => {
             let singleton = matches!(arena.value(right), Some(&Value::Variable(index)) if index == DeBruijnIndex::from(0_u32))
-                && matches!(arena.value(value), Some(&Value::Here(_)))
+                && matches!(arena.value(value), Some(&Value::Here { .. }))
                 && binder_use(arena, table, memo, Family::Type(domain)) == BinderUse::Ignored
                 && binder_use(arena, table, memo, Family::Value(left)) == BinderUse::Ignored;
             Ok(if singleton {
@@ -1318,12 +1377,12 @@ where
         | Maybe::Absent(telescope_motive::Absent::Shape) => return Ok(Reduction::Stuck),
     };
     let point = match arena.value(path) {
-        | Some(&Value::Here(point)) => point,
+        | Some(&Value::Here { point, .. }) => point,
         | Some(_) => return Ok(Reduction::Stuck),
         | None => return Err(KernelError::ArenaFault),
     };
     match arena.value(over) {
-        | Some(&Value::Here(_)) => Ok(Reduction::Reduced(arena.computation_return(value))),
+        | Some(&Value::Here { .. }) => Ok(Reduction::Reduced(arena.computation_return(value))),
         | Some(_) => {
             let fibre = substitute_outer_value_type(arena, table, memo, body, point);
             Ok(Reduction::Reduced(
@@ -1551,7 +1610,9 @@ where
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let function = match arena.value(term.path) {
-        | Some(&Value::Here(function)) => function,
+        | Some(&Value::Here {
+            point: function, ..
+        }) => function,
         | Some(_) => return Ok(Reduction::Stuck),
         | None => return Err(KernelError::ArenaFault),
     };

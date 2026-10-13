@@ -55,7 +55,7 @@
 //! | `0x2E` | Transport, path and input children | Admitted |
 //! | `0x2F` | Unassigned | Refused |
 //! | `0x30` | Element `Path`, value-type child and two endpoint value children | Admitted |
-//! | `0x31` | `here`, one point value child | Admitted |
+//! | `0x31` | `here`, inline endpoint dialogues, one point value child | Admitted |
 //! | `0x32` | Dependent transport, motive (value type under one binder), path and input children | Admitted |
 //! | `0x33` | Guarded higher field, inline depth and layers, one evidence child per guard | Admitted |
 //! | `0x34` | Returned endpoint, one computation child | Admitted |
@@ -149,7 +149,7 @@
 //! | byte | node | family | children, in order | inline payload |
 //! | ---- | ---- | ------ | ------------------ | -------------- |
 //! | `0x30` | [`NODE_VT_PATH`] | value type | the value type `A`; endpoint values `a`, `b` | none |
-//! | `0x31` | [`NODE_V_HERE`] | value | the point `a` | none |
+//! | `0x31` | [`NODE_V_HERE`] | value | the point `a` | the left, then the right endpoint dialogue |
 //! | `0x32` | [`NODE_C_PATH_TRANSPORT`] | computation | the motive, a value type under one value binder; the path; the input value | none |
 //! | `0x33` | [`NODE_V_HIGHER`] | value | one evidence value per guard layer, in layer order | depth, root, layer count, layers |
 //! | `0x34` | [`NODE_V_RETURNED`] | value | the pure computation whose returned value the node stands for | none |
@@ -303,7 +303,10 @@ pub const MAGIC: [u8; 4] = *b"GKX1";
 /// gives the [`KIND_ABSTRACT_TYPE`] segment a second root, the representation
 /// the atom was sealed over, and after it the extent of the admission that
 /// minted the atom, so a replay re-checks the sealed members against the
-/// representation and closes the atom where the producer closed it.
+/// representation and closes the atom where the producer closed it. Version
+/// five gives [`NODE_V_HERE`] an inline payload before its point: the dialogue
+/// relating the point to each endpoint, which the kernel replays where the
+/// point and an endpoint differ.
 ///
 /// A refusal names the version it met rather than guessing at it, which is
 /// what makes an older reader meeting a newer artifact stop with an accurate
@@ -326,7 +329,7 @@ pub const MAGIC: [u8; 4] = *b"GKX1";
 /// - witness: `sharing_format::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
 /// - witness: `tags::tests::the_frozen_block_keeps_its_order_around_the_retired_tags`
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
-pub const FORMAT_VERSION: FormatVersion = FormatVersion(4);
+pub const FORMAT_VERSION: FormatVersion = FormatVersion(5);
 
 /// Admission mark: admitted through the checked choke point.
 pub const ADMISSION_CHECKED: WireTag = WireTag(0);
@@ -521,11 +524,16 @@ pub const NODE_C_TRANSPORT: WireTag = WireTag(0x2E);
 /// identity are both inhabitants of this former at a particular value type.
 pub const NODE_VT_PATH: WireTag = WireTag(0x30);
 
-/// Node tag: `here(a)`, the diagonal of element identity, over its point.
+/// Node tag: `here(a)`, the diagonal of element identity, over its point,
+/// with the dialogue relating the point to each endpoint.
 ///
 /// One child rather than three: it inhabits `Path(A, a, b)` exactly when
 /// both endpoints convert to its point, so storing them again would only
-/// admit a disagreeing copy.
+/// admit a disagreeing copy. The conversion itself travels as two dialogues,
+/// left then right, each a decision count and the decision words of
+/// [`NODE_V_PATH_EQUIV`]'s evidence: the kernel replays them, unfolding only
+/// what they name, so a δ-step under a binder of an endpoint is a recorded
+/// step rather than the kernel's own search.
 pub const NODE_V_HERE: WireTag = WireTag(0x31);
 
 /// Node tag: dependent transport along an element path, over the motive, the
@@ -1104,7 +1112,7 @@ mod tests
                         Some(&crate::Value::PathRefl(_)) => row.tag == super::NODE_V_PATH_REFL,
                         Some(&crate::Value::PathProduct(_, _)) => row.tag == super::NODE_V_PATH_PRODUCT,
                         Some(&crate::Value::PathEquiv { .. }) => row.tag == super::NODE_V_PATH_EQUIV,
-                        Some(&crate::Value::Here(_)) => row.tag == super::NODE_V_HERE,
+                        Some(&crate::Value::Here { .. }) => row.tag == super::NODE_V_HERE,
                         Some(&crate::Value::Returned(_)) => row.tag == super::NODE_V_RETURNED,
                         Some(&crate::Value::Higher { .. }) => row.tag == super::NODE_V_HIGHER,
                         Some(&crate::Value::HigherEvaluation { .. }) => row.tag == super::NODE_V_HIGHER_EVALUATION,

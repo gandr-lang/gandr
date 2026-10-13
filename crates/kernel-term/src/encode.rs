@@ -775,7 +775,7 @@ ensures: |ret| ret.0.as_image().as_ref().first().copied()
             Some(&Value::PathRefl(_)) => tags::NODE_V_PATH_REFL,
             Some(&Value::PathProduct(..)) => tags::NODE_V_PATH_PRODUCT,
             Some(&Value::PathEquiv { .. }) => tags::NODE_V_PATH_EQUIV,
-            Some(&Value::Here(_)) => tags::NODE_V_HERE,
+            Some(&Value::Here { .. }) => tags::NODE_V_HERE,
             Some(&Value::Returned(_)) => tags::NODE_V_RETURNED,
             Some(&Value::Higher { .. }) => tags::NODE_V_HIGHER,
             Some(&Value::HigherEvaluation { .. }) => tags::NODE_V_HIGHER_EVALUATION,
@@ -940,7 +940,12 @@ fn encode_entry(
                         out.put_uvarint(WireU64::from(word.0));
                     }
                 },
-                | Value::Here(_) => out.put_tag(tags::NODE_V_HERE),
+                | Value::Here { ref dialogues, .. } => {
+                    out.put_tag(tags::NODE_V_HERE);
+                    for word in crate::identity::endpoint_words(dialogues) {
+                        out.put_uvarint(WireU64::from(word.0));
+                    }
+                },
                 | Value::Returned(_) => out.put_tag(tags::NODE_V_RETURNED),
                 | Value::Higher { ref program, .. } => {
                     out.put_tag(tags::NODE_V_HIGHER);
@@ -1950,7 +1955,7 @@ mod tests
         // representation as entries, then its kind root, its representation
         // root and that extent.
         let expected = [
-            b'G', b'K', b'X', b'1', 4, 0, 1, 0, 3, 0, 2, 0, 0, 0, 2, 0x02, 0, 0, 0x00, 0x00, 0, 1,
+            b'G', b'K', b'X', b'1', 5, 0, 1, 0, 3, 0, 2, 0, 0, 0, 2, 0x02, 0, 0, 0x00, 0x00, 0, 1,
             2, 1, 0, 2, 1, b'a', 2, 0xc3, 0xa9, 0, 0, 2, 0x17, 0, 0x1c, 2, 0, 3, 0, 0, 0, 0, 0, 1,
             0, 0, 0, 0, 2,
         ];

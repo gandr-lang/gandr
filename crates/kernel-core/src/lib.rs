@@ -212,8 +212,8 @@
 //! laws, the two commuting conversions of `F`, a returned endpoint taken as its
 //! computation, and decomposition — unfolds no constant and certifies no
 //! refutation, so `EndpointsDiffer` is reported only after it fails to relate
-//! the endpoints. A judgement that needs another term equality, the compound
-//! endpoint's among them, enters at the same function.
+//! the endpoints and the endpoint's dialogue does not replay. A judgement that
+//! needs another term equality enters at the same function.
 //!
 //! **Choice.** One conversion, the replay's, so the kernel admits every
 //! reflexivity the engine's normalizer admits by those laws: the core admits
@@ -222,23 +222,25 @@
 //! it; a normalizing equality of the kernel's own, a second trusted conversion
 //! beside the replay's. **Reversal.** Endpoints related only through a
 //! constant's body take an engine trace through [`replay()`] rather than a δ
-//! rule in the forced loop. The witness is
+//! rule in the forced loop, as reflexivity's do. The witness is
 //! `element_identity::tests::reflexivity_converts_its_endpoints_by_the_laws_of_bind`.
 //!
-//! A returned endpoint is read, not compared. Where the conversion leaves one
-//! apart, at reflexivity or at a mode switch, the kernel normalizes it by its
-//! own evaluator — weak head reduction, and the δ-step a stuck head naming a
-//! definition admits — and the normal forms enter `conv::convert_values` like
-//! any endpoint. The forced loop stays δ-free and there is no second equality:
-//! one computation's reduction to its value chooses nothing, so the δ-step is
-//! evaluation, not a conversion rule. The witness is
-//! `element_identity::tests::a_certificate_with_a_returned_endpoint_decodes_checks_and_replays`.
+//! A reflexivity carries the engine's dialogue relating its point to each
+//! endpoint, and an endpoint the forced conversion leaves apart is related by
+//! replaying that dialogue with the admitted definitions unfoldable: the
+//! kernel unfolds only the constant the dialogue names, at the side it names,
+//! under a thunk as anywhere else. The forced loop stays δ-free and there is
+//! no second equality ([`mod@element_identity`] § Reflexivity replays the
+//! engine's conversion). The witness is
+//! `element_identity::tests::an_endpoint_unfolding_under_a_thunk_replays_its_dialogue`.
 //!
-//! A reflexivity whose endpoint reads to a thunk over a definition is declined
-//! by name, [`IdentityError::EndpointsUnreplayed`], not refuted: relating it
-//! would take a δ-step under the thunk, which only a replayed engine trace may
-//! take. The witness is
-//! `element_identity::tests::an_endpoint_owing_an_unfolding_under_a_thunk_is_declined_by_name`.
+//! A returned endpoint at a mode switch is read, not compared. Where the
+//! conversion leaves one apart, the kernel normalizes it by its own evaluator —
+//! weak head reduction, and the δ-step a stuck head naming a definition admits
+//! — and the normal forms enter `conv::convert_values` like any endpoint. One
+//! computation's reduction to its value chooses nothing, so the δ-step is
+//! evaluation, not a conversion rule. The witness is
+//! `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`.
 //!
 //! # Contract boundaries
 //!
@@ -354,6 +356,7 @@ pub use crate::conv::convert_comp_type;
 pub use crate::conv::convert_value_type;
 pub use crate::conv::convertible_comp_types;
 pub use crate::conv::convertible_value_types;
+pub use crate::element_identity::EndpointSide;
 pub use crate::element_identity::IdentityError;
 pub use crate::encoding::ContentEncoding;
 pub use crate::encoding::ContentId;

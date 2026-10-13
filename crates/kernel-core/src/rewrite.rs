@@ -1259,7 +1259,7 @@ fn carried_occurrence(
         | Value::PathProduct(..)
         | Value::SessionPath { .. }
         | Value::PathEquiv { .. }
-        | Value::Here(_)
+        | Value::Here { .. }
         | Value::Returned(_)
         | Value::Higher { .. }
         | Value::HigherEvaluation { .. }
@@ -1405,7 +1405,7 @@ fn push_rewrite_children(
                     rewrite,
                 ));
             },
-            | Some(&Value::PathRefl(code) | &Value::Here(code)) => {
+            | Some(&Value::PathRefl(code) | &Value::Here { point: code, .. }) => {
                 tasks.push(RewriteTask::Open(AnyNode::Value(code), depth, rewrite));
             },
             | Some(&Value::Higher { ref evidence, .. }) => tasks.extend(
@@ -1851,7 +1851,7 @@ Value::Tuple(ref components) => components.len(),
 Value::Higher { ref evidence, .. } => evidence.len(),
 Value::HigherEvaluation { ref components, .. } => components.len().saturating_mul(3),
 Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::SessionPath { .. } => 2,
-Value::Injection(..) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::PathRefl(_) | Value::Here(_) | Value::Returned(_) => 1,
+Value::Injection(..) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::PathRefl(_) | Value::Here { .. } | Value::Returned(_) => 1,
 _ => 0,
 })],
     ensures: |ret| results.len() == before.saturating_sub(arity) && match arena.value(id) {
@@ -1942,13 +1942,16 @@ fn close_value(
                 arena.value_path_refl(rewritten)
             }
         },
-        | Value::Here(point) => {
+        | Value::Here {
+            point,
+            ref dialogues,
+        } => {
             let rewritten = popped(results, AnyNode::Value(point)).value_or(point);
             if rewritten == point {
                 id
             }
             else {
-                arena.value_here(rewritten)
+                arena.value_here_relating(rewritten, alloc::sync::Arc::clone(dialogues))
             }
         },
         | Value::Returned(computation) => {

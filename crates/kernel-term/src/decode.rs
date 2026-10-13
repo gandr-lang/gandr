@@ -1960,11 +1960,19 @@ fn decode_entry(
             (DecodedNode::ValueType(id), Family::ValueType)
         },
         | tags::NODE_V_HERE => {
+            let left = decode_dialogue(reader)?;
+            let right = decode_dialogue(reader)?;
             let point = read_value(reader, table, this, &mut children)?;
-            (
-                DecodedNode::Value(table.arena.value_here(point)),
-                Family::Value,
-            )
+            let id = if left.is_empty() && right.is_empty() {
+                table.arena.value_here(point)
+            }
+            else {
+                table.arena.value_here_relating(
+                    point,
+                    alloc::sync::Arc::new(crate::EndpointDialogues { left, right }),
+                )
+            };
+            (DecodedNode::Value(id), Family::Value)
         },
         | tags::NODE_V_RETURNED => {
             let computation = read_computation(reader, table, this, &mut children)?;
@@ -3622,12 +3630,12 @@ mod tests
             })
         );
         assert_eq!(foreign.position.0, 4);
-        for version in [0_u16, 1, 2, 3, 4, 0x0400, u16::MAX] {
+        for version in [0_u16, 1, 2, 3, 4, 5, 0x0500, u16::MAX] {
             let mut image = magic.to_vec();
             image.extend_from_slice(&version.to_le_bytes());
             let mut reader = ByteReader::new(ArtifactImage::from(image.as_slice()));
             reader.expect_magic().expect("valid header");
-            let expected = if version == 4 {
+            let expected = if version == 5 {
                 Ok(())
             }
             else {
@@ -4310,7 +4318,7 @@ mod tests
     {
         let literal_artifact = |base: u8, literal: &[u8]| {
             let mut bytes = vec![
-                b'G', b'K', b'X', b'1', 4, 0, 0, 1, 0, 0, 0, 0, 0, 2, 0, base, 0x0c,
+                b'G', b'K', b'X', b'1', 5, 0, 0, 1, 0, 0, 0, 0, 0, 2, 0, base, 0x0c,
             ];
             bytes.extend_from_slice(literal);
             bytes.extend_from_slice(&[0, 1, 0, 0, 0, 0]);
@@ -4443,7 +4451,7 @@ mod tests
             })
         );
         let level_artifact = |level: &[u8]| {
-            let mut bytes = vec![b'G', b'K', b'X', b'1', 4, 0, 0, 1, 0, 1, 0, 3, 0, 1, 2];
+            let mut bytes = vec![b'G', b'K', b'X', b'1', 5, 0, 0, 1, 0, 1, 0, 3, 0, 1, 2];
             bytes.extend_from_slice(level);
             bytes.push(0);
             bytes
@@ -5182,6 +5190,7 @@ mod tests
     fn identity_nodes_round_trip_and_refuse_their_malformed_sites()
     {
         use crate::Computation;
+        use crate::EndpointDialogues;
         use crate::EvaluationComponent;
         use crate::EvaluationDialogues;
         use crate::HigherDepth;
@@ -5230,7 +5239,8 @@ mod tests
             (&[0x30, 4, 5, 1], super::DecodedNode::ValueType(vt1), &[
                 4, 5, 1,
             ]),
-            (&[0x31, 5], super::DecodedNode::Value(v1), &[5]),
+            (&[0x31, 0, 0, 5], super::DecodedNode::Value(v1), &[5]),
+            (&[0x31, 0, 1, 11, 5], super::DecodedNode::Value(v1), &[5]),
             (&[0x32, 4, 5, 1], super::DecodedNode::Computation(c1), &[
                 4, 5, 1,
             ]),
@@ -5262,7 +5272,17 @@ mod tests
             right: v0,
         }];
         let expected_values = [
-            Value::Here(v1),
+            Value::Here {
+                point: v1,
+                dialogues: alloc::sync::Arc::new(EndpointDialogues::default()),
+            },
+            Value::Here {
+                point: v1,
+                dialogues: alloc::sync::Arc::new(EndpointDialogues {
+                    left: vec![],
+                    right: vec![gandr_kernel_conversion_trace::ConversionDecision::Decompose],
+                }),
+            },
             Value::Higher {
                 program: alloc::sync::Arc::new(program),
                 evidence: [v1].into(),
@@ -5373,6 +5393,9 @@ mod tests
             (&[0x38, 1, 1, 0x11, 0, 5, 1, 5], DecodeError::Malformed {
                 site: MalformedSite::PathEvidence,
             }),
+            (&[0x31, 0, 1, 0x11, 5], DecodeError::Malformed {
+                site: MalformedSite::PathEvidence,
+            }),
             (&[0x34, 5], DecodeError::Malformed {
                 site: MalformedSite::Polarity,
             }),
@@ -5405,7 +5428,13 @@ mod tests
         let unit_type = arena.value_type_unit();
         let unit = arena.value_unit();
         let identity = arena.value_type_path(unit_type, unit, unit);
-        let here = arena.value_here(unit);
+        let here = arena.value_here_relating(
+            unit,
+            alloc::sync::Arc::new(EndpointDialogues {
+                left: vec![gandr_kernel_conversion_trace::ConversionDecision::Decompose],
+                right: vec![],
+            }),
+        );
         let field = arena.value_higher(
             alloc::sync::Arc::new(HigherProgram {
                 depth: HigherDepth(3),

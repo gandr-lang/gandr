@@ -287,6 +287,9 @@ pub struct CheckingContext<'arena>
     /// The universe equivalences the judgement decided, by node, with the
     /// evidence each round trip replays.
     equivalences: BTreeMap<ValueId, crate::equiv::Equivalence>,
+    /// The reflexivities the judgement checked, by node, with the dialogues
+    /// relating each point to its endpoints.
+    reflexivities: BTreeMap<ValueId, crate::code::Reflexivity>,
     /// The abstract types admitted, by position.
     sealed: BTreeMap<ConstantIndex, Sealed>,
     /// The sites that minted them, in minting order.
@@ -357,6 +360,7 @@ impl<'arena> CheckingContext<'arena>
             lifts: BTreeMap::new(),
             funexts: BTreeMap::new(),
             equivalences: BTreeMap::new(),
+            reflexivities: BTreeMap::new(),
             sealed: BTreeMap::new(),
             seals: SealTable::new(),
             budget,
@@ -1106,6 +1110,41 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     )
     {
         self.equivalences.insert(at, equivalence);
+    }
+
+    /// The reflexivities the judgement checked, by node.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn reflexivities(&self) -> &BTreeMap<ValueId, crate::code::Reflexivity>
+    {
+        &self.reflexivities
+    }
+
+    /// Record the dialogues the judgement related the reflexivity at `at` to
+    /// its endpoints by.
+    ///
+    /// # Specification
+    /// - requires: `reflexivity` is what the endpoint condition recorded at
+    ///   `at`.
+    /// - ensures: `at` has `reflexivity` as its record, replacing an earlier
+    ///   one.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a checked reflexivity crosses with exactly its
+    ///   recorded dialogues.
+    /// - witness: `bridge::tests::a_reflexivity_crosses_with_the_dialogues_relating_its_endpoints`
+    #[spec(ensures: self.reflexivities.contains_key(&at))]
+    pub(crate) fn record_reflexivity(
+        &mut self,
+        at: ValueId,
+        reflexivity: crate::code::Reflexivity,
+    )
+    {
+        self.reflexivities.insert(at, reflexivity);
     }
 
     /// Trace the conversion of two computations as
