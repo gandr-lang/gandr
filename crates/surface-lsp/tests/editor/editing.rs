@@ -55,6 +55,7 @@ use super::buffer::Text;
 use super::buffer::Typing;
 use super::client::Client;
 use super::client::Method;
+use super::client::Quiet;
 use super::client::Record;
 
 /// The requests over the whole document whose answers depend on its text
@@ -154,7 +155,13 @@ impl Session
         oracle: Oracle,
     ) -> Self
     {
-        Self::opening(Client::initialized(Record::Kept), uri, text, typing, oracle)
+        Self::opening(
+            Client::initialized(Record::Kept, Quiet::Unheld),
+            uri,
+            text,
+            typing,
+            oracle,
+        )
     }
 
     /// Open this shared session's document, at its current text, from a second
@@ -520,7 +527,7 @@ impl Session
         let ranges = self
             .client
             .request(Method("textDocument/selectionRange"), &selection);
-        let mut fresh = Client::initialized(Record::Dropped);
+        let mut fresh = Client::initialized(Record::Dropped, Quiet::Unheld);
         let opened = fresh.notify(
             Method("textDocument/didOpen"),
             &json!({ "textDocument": {

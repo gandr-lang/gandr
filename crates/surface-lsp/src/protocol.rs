@@ -9,6 +9,8 @@
 use alloc::collections::BTreeMap;
 use core::fmt;
 use core::mem;
+use core::time::Duration;
+use core::time::TryFromFloatSecsError;
 use std::path::PathBuf;
 
 use anodized::spec;
@@ -296,13 +298,54 @@ pub struct Settings
 
 /// The `gandr.diagnostics` settings.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
-#[repr(transparent)]
 pub struct DiagnosticSettings
 {
     /// `gandr.diagnostics.verbosity`: how much of each report a diagnostic
     /// carries.
     #[serde(default)]
     pub verbosity: Option<VerbositySetting>,
+    /// `gandr.diagnostics.quiet`: how long, in seconds, a document goes
+    /// without a change before a diagnostic held for the form under the caret
+    /// publishes; `0` holds nothing.
+    #[serde(default)]
+    pub quiet: Option<QuietSetting>,
+}
+
+/// A `gandr.diagnostics.quiet` value: a nonnegative, finite number of
+/// seconds.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(try_from = "f64")]
+#[repr(transparent)]
+pub struct QuietSetting(pub Duration);
+
+impl TryFrom<f64> for QuietSetting
+{
+    type Error = TryFromFloatSecsError;
+
+    /// The interval `seconds` names.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the duration of `seconds` seconds.
+    /// - fails: a negative, infinite or unrepresentable number of seconds.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`TryFromFloatSecsError`] for a number no duration spells.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a configuration naming `0.05` holds for fifty
+    ///   milliseconds and one naming `0` holds nothing.
+    /// - witness: `session::session::a_held_diagnostic_publishes_once_the_document_is_quiet`
+    #[spec(ensures: |ret| ret.is_err() || seconds >= 0.0_f64)]
+    #[inline]
+    fn try_from(seconds: f64) -> Result<Self, Self::Error>
+    {
+        Duration::try_from_secs_f64(seconds).map(Self)
+    }
 }
 
 /// A `gandr.diagnostics.verbosity` value, spelled as `gandr check
@@ -352,6 +395,19 @@ impl Settings
         self.diagnostics
             .and_then(|diagnostics| diagnostics.verbosity)
             .map(Verbosity::from)
+    }
+
+    /// The quiet interval these settings name, when they name one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn quiet(self) -> Option<Duration>
+    {
+        self.diagnostics
+            .and_then(|diagnostics| diagnostics.quiet)
+            .map(|QuietSetting(quiet)| quiet)
     }
 }
 
@@ -1008,6 +1064,9 @@ impl Severity
     pub const WARNING: Self = Self(2);
     /// Information: a goal the document leaves open.
     pub const INFORMATION: Self = Self(3);
+    /// A hint: a declaration a refusal elsewhere in the document leaves
+    /// unsettled, reported beside that refusal rather than as an error.
+    pub const HINT: Self = Self(4);
 }
 
 /// A locus that explains a diagnostic.

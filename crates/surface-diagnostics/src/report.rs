@@ -197,6 +197,19 @@ quenchant_shape::reason_enum! {
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a refusal is a declaration's own.
+    pub mod upstream {
+        /// The reason a refusal follows from no other.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The refusal names no declaration a refusal of its own left
+            /// unsettled.
+            Own,
+        }
+    }
+}
+
 /// What a diagnostic is about, and whose fact it records.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Class
@@ -317,6 +330,10 @@ pub enum Subject<'step>
         spellings: &'step Spellings,
         /// The failure the checking machine kept, when it refused the body.
         failure: Maybe<&'step Failure, kept::Absent>,
+        /// The unsettled declaration the refusal names, when it names one: the
+        /// refusal follows from that declaration's and is a note, not an
+        /// error of its own.
+        upstream: Maybe<&'step DeclarationReport<'step>, upstream::Absent>,
     },
     /// A declaration unsettled with no refusal produced.
     Unsettled
@@ -495,6 +512,10 @@ impl Report<'_>
                     Severity::Warning
                 },
                 | Subject::Ledger { .. } => Severity::Ledger,
+                | Subject::Refused {
+                    upstream: Maybe::Present(_),
+                    ..
+                } => Severity::Note,
                 | Subject::Refused { .. } | Subject::Unsettled { .. } | Subject::Source(_) => {
                     Severity::Error
                 },
@@ -532,6 +553,14 @@ impl Report<'_>
             contexts,
             hypotheses,
             note: match self.subject {
+                | Subject::Refused {
+                    declaration,
+                    upstream: Maybe::Present(upstream),
+                    ..
+                } => Maybe::Present(alloc::format!("{}", UpstreamNoteText {
+                    declaration,
+                    upstream,
+                })),
                 | Subject::Refused { declaration, .. } => {
                     Maybe::Present(alloc::format!("{}", NoteText(declaration)))
                 },
@@ -1096,6 +1125,65 @@ impl fmt::Display for NoteText<'_>
             write!(f, "; surviving obligations: {surviving}")?;
         }
         Ok(())
+    }
+}
+
+/// The note a declaration left unsettled by another's refusal closes with.
+#[derive(Clone, Copy, Debug)]
+struct UpstreamNoteText<'step>
+{
+    /// The declaration the note is about.
+    declaration: &'step DeclarationReport<'step>,
+    /// The unsettled declaration its refusal names.
+    upstream: &'step DeclarationReport<'step>,
+}
+
+impl fmt::Display for UpstreamNoteText<'_>
+{
+    /// Writes that the declaration is expected to do what [`NoteText`] says,
+    /// and that the refusal of the declaration it names leaves it unsettled.
+    ///
+    /// # Specification
+    /// - requires: the declaration's refusal names `upstream`.
+    /// - ensures: names both declarations; for one expected to check, says so
+    ///   and that `upstream`'s refusal leaves it unsettled; for any other
+    ///   expectation, the [`NoteText`] of the declaration followed by the name
+    ///   of the refused declaration it rests on.
+    /// - provides: the note of a declaration a refusal elsewhere leaves
+    ///   unsettled, which reads as the cause, not as a second error.
+    /// - fails: if the formatter rejects a write.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no output buffer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a declaration calling a refused one is noted as left
+    ///   unsettled by that refusal, naming both.
+    /// - witness: `diagnostics::diagnostics::a_declaration_naming_a_refused_one_is_a_note`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        let name = self.declaration.name();
+        let upstream = self.upstream.name();
+        match *self.declaration.stated() {
+            | Stated::Verdict(Outcome::Checks(owing))
+                if usize::from(owing) == 0_usize
+                    && self.declaration.surviving() == Surviving::default() =>
+            {
+                write!(
+                    f,
+                    "`{name}` is expected to check, and the refusal of `{upstream}` leaves it \
+                     unsettled"
+                )
+            },
+            | _ => write!(
+                f,
+                "{}; it rests on `{upstream}`, which is refused",
+                NoteText(self.declaration)
+            ),
+        }
     }
 }
 

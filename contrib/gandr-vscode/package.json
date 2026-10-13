@@ -55,6 +55,12 @@
           ],
           "default": "user",
           "markdownDescription": "How much of each report a diagnostic shows, as `gandr check --verbosity` chooses it."
+        },
+        "gandr.diagnostics.quiet": {
+          "type": "number",
+          "minimum": 0,
+          "default": 1.5,
+          "markdownDescription": "Seconds a file goes without a change before a diagnostic of the form being typed shows. A diagnostic elsewhere shows at once; `0` shows every diagnostic at once."
         }
       }
     },

@@ -2956,6 +2956,29 @@ mod modules
     }
 
     #[test]
+    fn a_malformed_member_named_by_the_signature_is_reported_once()
+    {
+        let source = "module Facts : #{ inner: #{ answer: Integer } } {\n  module inner : #{ \
+                      answer: Integer } {\n";
+        let lowered = repaired(source);
+        let refused: Vec<_> = rows(&lowered)
+            .into_iter()
+            .filter_map(|(name, _, amounts)| match amounts {
+                | Amounts::Refused(refusal) => Some((name, refusal)),
+                | _ => None,
+            })
+            .collect();
+        assert!(
+            matches!(refused.as_slice(), [(_, LoweringRefusal::MalformedForm {
+                fault: FormFault::Repaired(_),
+                ..
+            })]),
+            "the open nested module is refused at its parse error alone, the signature \
+             component naming it raising no unknown member: {refused:?}"
+        );
+    }
+
+    #[test]
     fn a_repaired_container_keeps_its_member()
     {
         let source = "module M { def bad = ( 1 ; def good = 2; }\ndef good = 7;\n";

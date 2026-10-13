@@ -878,7 +878,7 @@ fn main() -> ExitCode
 #[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(ABRUPT) || ret == ExitCode::from(FAULTED))]
 fn lsp() -> ExitCode
 {
-    let mut input = std::io::stdin().lock();
+    let mut input = std::io::BufReader::new(std::io::stdin());
     let mut output = std::io::stdout().lock();
     let mut log = std::io::stderr();
     ended(gandr_surface_lsp::serve(&mut input, &mut output, &mut log))
@@ -1628,11 +1628,11 @@ fn run(
                 for diagnostic in entries(&step, verb).linting(lints) {
                     let separator = match (diagnostic.severity, verbosity) {
                         | (
-                            Severity::Error | Severity::Warning | Severity::Goal,
+                            Severity::Error | Severity::Warning | Severity::Goal | Severity::Note,
                             Verbosity::User | Verbosity::Detailed | Verbosity::Debug,
                         ) => "\n",
                         | (
-                            Severity::Error | Severity::Warning | Severity::Goal,
+                            Severity::Error | Severity::Warning | Severity::Goal | Severity::Note,
                             Verbosity::Json,
                         )
                         | (Severity::Ledger, _) => "",
@@ -1743,7 +1743,7 @@ fn script(
                     Verbosity::User,
                 );
                 match diagnostic.severity {
-                    | Severity::Error | Severity::Warning | Severity::Goal => {
+                    | Severity::Error | Severity::Warning | Severity::Goal | Severity::Note => {
                         writeln!(stderr, "{rendered}\n")?;
                     },
                     | Severity::Ledger => writeln!(stderr, "{rendered}")?,

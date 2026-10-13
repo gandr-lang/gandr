@@ -1,0 +1,4 @@
+@[ refuses("MalformedForm") ]
+sign Magma {
+  sort M : type;
+}

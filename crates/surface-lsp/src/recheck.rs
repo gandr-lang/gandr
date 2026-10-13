@@ -127,6 +127,11 @@
 //! `ShadowedBuiltin`, the refusal the reject policy files for the same bytes.
 //! Witness: `recheck::tests::a_shadowed_builtin_is_published_as_a_warning`.
 //!
+//! A declaration a refusal elsewhere leaves unsettled — one calling a
+//! declaration the lowering refused — is published at hint severity: the
+//! refusal it rests on is the error, and the author has nothing to fix at the
+//! call. Information is the goal's severity and stays the goal's alone.
+//!
 //! The standing the renderer reads to choose what a pending source prints is
 //! the dispatcher's `Standing::of`, carried into the step by the session's
 //! submission: under the pending root, a source refused whole or carrying a
@@ -177,6 +182,8 @@ use crate::protocol::DocumentUri;
 use crate::protocol::Location;
 use crate::protocol::RelatedInformation;
 use crate::protocol::Severity;
+use crate::quiet::caret_form;
+use crate::quiet::formless;
 
 /// The session one open document's revisions are submitted to, or the fault
 /// that kept the grammar it parses under from building.
@@ -451,18 +458,23 @@ impl fmt::Display for Timing
     }
 }
 
-/// What one recheck produced: the diagnostics to publish, and its timing.
+/// What one recheck produced: the diagnostics to publish, the form under the
+/// caret it was asked about, and its timing.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Rechecked
 {
     /// The diagnostics, in the order `gandr check --goals` prints them.
     pub diagnostics: Vec<Diagnostic>,
+    /// The innermost form of the judged revision holding the caret, read
+    /// off the tree the judgement parsed.
+    pub form: Maybe<ByteSpan, formless::Absent>,
     /// What the recheck cost.
     pub timing: Timing,
 }
 
-/// Judge `text`, the document at `uri`, in its `session`, and read its
-/// diagnostics off the judgement at `verbosity`.
+/// Judge `text`, the document at `uri`, in its `session`, read its
+/// diagnostics off the judgement at `verbosity`, and find the form holding
+/// `caret` in the tree the judgement parsed.
 ///
 /// # Specification
 /// - requires: `session` was opened for `uri`; any text is admissible input.
@@ -474,12 +486,16 @@ pub struct Rechecked
 ///   contexts and note as its message, each context annotation and then each
 ///   located context, outermost first, as a related location carrying its
 ///   label, and the severity of a goal as information, of a warning as a
-///   warning and of every other diagnostic as an error; a diagnostic with no
-///   primary annotation, and a ledger line, at the document's origin. A fault
-///   that keeps the document from composing, and a grammar that did not build,
-///   is one error at the origin naming it. The timing carries the judgement's
-///   form census, the incremental checker's census, and the wall of the whole
-///   recheck; its admission is pending when the judgement left one.
+///   warning, of a note as a hint and of every other diagnostic as an error; a
+///   diagnostic with no primary annotation, and a ledger line, at the
+///   document's origin. A fault that keeps the document from composing, and a
+///   grammar that did not build, is one error at the origin naming it. The
+///   timing carries the judgement's form census, the incremental checker's
+///   census, and the wall of the whole recheck; its admission is pending when
+///   the judgement left one. The form is [`caret_form`] of the judged tree at
+///   `caret`, `caret`'s own reason when it is absent, and
+///   [`formless::Absent::Unparsed`] when the judgement faulted or the grammar
+///   did not build.
 /// - provides: the one recheck every synchronisation publishes.
 /// - fails: never; a fault is a diagnostic.
 /// - panics: none.
@@ -502,7 +518,7 @@ pub struct Rechecked
 /// - witness: `recheck::tests::a_fault_is_published_at_the_origin`
 #[spec(ensures: |ret| ret.diagnostics.iter().all(|diagnostic|
     diagnostic.source == "gandr" && diagnostic.range.start <= diagnostic.range.end
-        && matches!(diagnostic.severity, Severity::ERROR | Severity::WARNING | Severity::INFORMATION)
+        && matches!(diagnostic.severity, Severity::ERROR | Severity::WARNING | Severity::INFORMATION | Severity::HINT)
         && diagnostic.related_information.iter().all(|related|
             related.location.uri == *uri && related.location.range.start <= related.location.range.end)))]
 #[must_use]
@@ -511,11 +527,13 @@ pub fn recheck(
     session: &mut DocumentSession,
     text: SourceText<'_>,
     verbosity: Verbosity,
+    caret: Maybe<gandr_surface_syntax::ByteOffset, formless::Absent>,
 ) -> Rechecked
 {
     let started = Instant::now();
     let unchecked = |diagnostic: Diagnostic| Rechecked {
         diagnostics: vec![diagnostic],
+        form: Maybe::Absent(formless::Absent::Unparsed),
         timing: Timing {
             forms: FormCensus::default(),
             judged: Maybe::Absent(judged::Absent::Unchecked),
@@ -531,7 +549,14 @@ pub fn recheck(
             )));
         },
     };
-    let submission = match session.judge(text) {
+    let mut form = Maybe::Absent(formless::Absent::Unparsed);
+    let outcome = session.judge_reading(text, |tree| {
+        form = match caret {
+            | Maybe::Present(at) => caret_form(tree, at),
+            | Maybe::Absent(reason) => Maybe::Absent(reason),
+        };
+    });
+    let submission = match outcome {
         | Ok(submission) => submission,
         | Err(fault) => return unchecked(Diagnostic::at_origin(fault.to_string())),
     };
@@ -549,6 +574,7 @@ pub fn recheck(
     let diagnostics = diagnostics_of(submission, uri, text, verbosity);
     Rechecked {
         diagnostics,
+        form,
         timing: Timing {
             forms,
             judged,
@@ -757,7 +783,7 @@ fn diagnostics_of(
             | Seriousness::Ledger => {
                 Diagnostic::at_origin(format!("{}: {}", found.path.display(), found.message.text))
             },
-            | Seriousness::Error | Seriousness::Warning | Seriousness::Goal => {
+            | Seriousness::Error | Seriousness::Warning | Seriousness::Goal | Seriousness::Note => {
                 diagnostic(&found, &index, uri, verbosity)
             },
         })
@@ -799,7 +825,7 @@ fn diagnostics_of(
 /// - witness: `recheck::tests::a_shadowed_builtin_is_published_as_a_warning`
 /// - witness: `session::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
 #[spec(ensures: |ret| ret.source == "gandr"
-    && ret.severity == match found.severity { Seriousness::Goal => Severity::INFORMATION, Seriousness::Warning => Severity::WARNING, _ => Severity::ERROR }
+    && ret.severity == match found.severity { Seriousness::Goal => Severity::INFORMATION, Seriousness::Warning => Severity::WARNING, Seriousness::Note => Severity::HINT, _ => Severity::ERROR }
     && ret.code.is_some() == matches!(found.identifier, Maybe::Present(_))
     && (verbosity == Verbosity::Json || ret.message.starts_with(found.message.text.as_str()))
     && ret.related_information.len() == found.annotations.iter()
@@ -829,6 +855,7 @@ fn diagnostic(
     let severity = match found.severity {
         | Seriousness::Goal => Severity::INFORMATION,
         | Seriousness::Warning => Severity::WARNING,
+        | Seriousness::Note => Severity::HINT,
         | Seriousness::Error | Seriousness::Ledger => Severity::ERROR,
     };
     let message = if verbosity == Verbosity::Json {
@@ -912,9 +939,14 @@ mod tests
     use crate::protocol::DocumentUri;
     use crate::protocol::Location;
     use crate::protocol::Severity;
+    use crate::quiet::formless;
     use crate::reading::Reading;
     use crate::tokens::TokenStream;
     use crate::tokens::encode;
+
+    /// A recheck asked about no caret.
+    const UNCARETED: Maybe<gandr_surface_syntax::ByteOffset, formless::Absent> =
+        Maybe::Absent(formless::Absent::Uncareted);
 
     /// The diagnostics a document opened at `uri` with `text` publishes.
     ///
@@ -925,7 +957,7 @@ mod tests
         text: SourceText<'_>,
     ) -> Vec<Diagnostic>
     {
-        recheck(uri, &mut open(uri), text, Verbosity::User).diagnostics
+        recheck(uri, &mut open(uri), text, Verbosity::User, UNCARETED).diagnostics
     }
 
     /// A range from one line and character to another.
@@ -1219,7 +1251,8 @@ mod tests
             Verbosity::Json,
         ]
         .map(|verbosity| {
-            let diagnostics = recheck(&uri, &mut open(&uri), text, verbosity).diagnostics;
+            let diagnostics =
+                recheck(&uri, &mut open(&uri), text, verbosity, UNCARETED).diagnostics;
             let [ref diagnostic] = *diagnostics.as_slice()
             else {
                 panic!("one unresolved type head at {verbosity:?}");
@@ -1309,6 +1342,7 @@ mod tests
             &mut session,
             SourceText::from("def a : Integer ;\ndef a = 1 ;\n"),
             Verbosity::User,
+            UNCARETED,
         );
         assert_eq!(rechecked.diagnostics, Vec::new());
         assert_eq!(
@@ -1345,6 +1379,7 @@ mod tests
             &mut session,
             SourceText::from("pure 3\n"),
             Verbosity::User,
+            UNCARETED,
         );
         assert_eq!(
             refused.timing.admitted,
@@ -1365,8 +1400,14 @@ mod tests
             "def a = 1 ;\ndef f : Integer ;\ndef f = a ;\n",
         ];
         let mut session = open(&uri);
-        let before =
-            recheck(&uri, &mut session, SourceText::from(base), Verbosity::User).diagnostics;
+        let before = recheck(
+            &uri,
+            &mut session,
+            SourceText::from(base),
+            Verbosity::User,
+            UNCARETED,
+        )
+        .diagnostics;
         let tried = trial(&uri, &session, &candidates.map(SourceText::from));
         assert_eq!(
             tried
@@ -1390,7 +1431,14 @@ mod tests
         }
         assert!(tried[0_usize].diagnostics.is_empty());
         assert_eq!(
-            recheck(&uri, &mut session, SourceText::from(base), Verbosity::User).diagnostics,
+            recheck(
+                &uri,
+                &mut session,
+                SourceText::from(base),
+                Verbosity::User,
+                UNCARETED
+            )
+            .diagnostics,
             before,
             "the session judges its text as before the trial"
         );

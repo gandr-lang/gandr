@@ -341,6 +341,7 @@ use gandr_surface_parser::ObligationInstance;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeKey;
 use gandr_surface_syntax::SourceText;
+use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
 use crate::edit::EditScript;
@@ -1890,11 +1891,53 @@ impl<Store, Blocks> Session<Store, Blocks>
     where
         Store: CheckpointStore,
     {
+        self.judge_reading(revision, |_| ())
+    }
+
+    /// Judge `revision` as [`judge`](Self::judge) does, handing `read` the
+    /// revision's tree before the lowering consumes it.
+    ///
+    /// A face that reads the revision's structure beside its judgement — an
+    /// editor finding the form under its caret — reads the tree the judgement
+    /// parsed, form by form from the store, instead of parsing the whole
+    /// revision a second time on the path to its first publication.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: what [`judge`](Self::judge) ensures of `revision`; `read` is
+    ///   called once with the revision's tree, whose source is `revision`, when
+    ///   the parse commits, and never when it faults.
+    /// - provides: the tree of a judged revision to a face, at no second parse.
+    /// - fails: as [`judge`](Self::judge).
+    /// - panics: only by propagating a panic of `read`.
+    /// - executable: none — what `read` observes is the caller's to state; the
+    ///   judgement's clauses are [`judge`](Self::judge)'s, which judges through
+    ///   this.
+    ///
+    /// # Errors
+    /// As [`judge`](Self::judge).
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a judged revision is read once, as the tree of its
+    ///   own text, and reports what the plain judgement of it reports; a reader
+    ///   called on a stale or second parse, or not at all, fails it.
+    /// - witness: `tests::session::a_judged_revision_hands_its_tree_to_a_reader`
+    #[inline]
+    pub fn judge_reading<'text, Read>(
+        &mut self,
+        revision: SourceText<'text>,
+        read: Read,
+    ) -> Result<Submission<'text>, SessionFault<'text>>
+    where
+        Store: CheckpointStore,
+        Read: FnOnce(&SyntaxTree<'text>),
+    {
         self.admission = Maybe::Absent(admission::Absent::Idle);
         let (parsed, forms) = self
             .forms
             .parse(&self.grammar, revision, self.threads)
             .map_err(|fault| SessionFault::Compose(ComposeFault::Parse(fault)))?;
+        read(parsed.tree());
         let lowering = lower_parsed(&self.grammar, parsed, &mut self.lowerings)
             .map_err(SessionFault::Compose)?;
         let mut obligations = lowering.obligations().to_vec();

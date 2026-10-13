@@ -162,6 +162,7 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
             | FormFault::Repaired(Repair::Grout(GroutShape::Infix)) => {
                 "an operator is missing here"
             },
+            | FormFault::Repaired(Repair::Keyword(_)) => "a keyword where a term belongs",
             | FormFault::Repaired(Repair::GhostClose(ClosingClass::Paren)) => "missing `)`",
             | FormFault::Repaired(Repair::GhostClose(ClosingClass::Bracket)) => "missing `]`",
             | FormFault::Repaired(Repair::GhostClose(ClosingClass::Brace)) => "missing `}`",

@@ -373,7 +373,7 @@ pub fn encode_submission(
             | Severity::Warning => {
                 lines.push((OutKind::Diag, String::from(rendered.trim_end())));
             },
-            | Severity::Error => {
+            | Severity::Error | Severity::Note => {
                 refused = true;
                 lines.push((OutKind::Diag, String::from(rendered.trim_end())));
             },

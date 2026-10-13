@@ -195,13 +195,17 @@ pub enum Severity
     /// A declaration unsettled by its obligations alone, under
     /// `check --goals`.
     Goal,
+    /// A declaration a refusal elsewhere leaves unsettled: what it names was
+    /// refused, so its own refusal follows from that one and is reported
+    /// beside it rather than as an error of its own.
+    Note,
     /// A ledger line: a source's standing, printed as one line.
     Ledger,
 }
 
 impl fmt::Display for Severity
 {
-    /// Writes `error`, `warning`, `goal` or `line`.
+    /// Writes `error`, `warning`, `goal`, `note` or `line`.
     ///
     /// # Specification
     /// trivial.
@@ -215,6 +219,7 @@ impl fmt::Display for Severity
             | Self::Error => "error",
             | Self::Warning => "warning",
             | Self::Goal => "goal",
+            | Self::Note => "note",
             | Self::Ledger => "line",
         })
     }

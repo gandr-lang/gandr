@@ -18,6 +18,7 @@ use std::thread::JoinHandle;
 
 use anodized::spec;
 use gandr_surface_lsp::Body;
+use gandr_surface_lsp::DocumentUri;
 use gandr_surface_lsp::Peer;
 use gandr_surface_lsp::Served;
 use gandr_surface_lsp::Server;
@@ -43,6 +44,17 @@ pub enum Record
     Kept,
     /// Nothing is kept: the client answers one question and is dropped.
     Dropped,
+}
+
+/// The quiet interval a connection names at `initialize`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Quiet
+{
+    /// Zero: every diagnostic publishes with its synchronisation, as a fresh
+    /// connection's does.
+    Unheld,
+    /// None named: the server's own interval.
+    Default,
 }
 
 /// A workspace the connections over it share, and how many have joined it.
@@ -130,12 +142,13 @@ struct Joined
 impl Client
 {
     /// A connection served by `serve` itself, on a thread of its own over
-    /// in-memory framed streams, past `initialize` and `initialized`.
+    /// in-memory framed streams, past `initialize` and `initialized`, holding
+    /// nothing back: its oracle is a fresh connection, which has no caret.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the loop answered `initialize` without an error and waits for
-    ///   the next frame.
+    /// - ensures: the loop answered `initialize`, naming a quiet interval of
+    ///   zero, without an error and waits for the next frame.
     /// - provides: a single editor's connection, whose every answer is a frame
     ///   the transport wrote.
     /// - panics: the loop stops, or the initialization is refused.
@@ -172,11 +185,12 @@ impl Client
             }),
             requests: 0_i64,
         }
-        .initialize()
+        .initialize(Quiet::Unheld)
     }
 
     /// A connection past `initialize` and `initialized`, driven in process
-    /// over a workspace of its own that others may join.
+    /// over a workspace of its own that others may join, at the quiet
+    /// interval `quiet` names.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -193,9 +207,12 @@ impl Client
     #[spec(ensures: |ret| ret.requests == 1 && matches!(ret.connection,
         Connection::Joined(ref joined) if joined.record == record
             && (record == Record::Dropped || joined.sent.len() == 2)))]
-    pub fn initialized(record: Record) -> Self
+    pub fn initialized(
+        record: Record,
+        quiet: Quiet,
+    ) -> Self
     {
-        Self::joining(Rc::new(RefCell::new(Shared::default())), record)
+        Self::joining(Rc::new(RefCell::new(Shared::default())), record, quiet)
     }
 
     /// A second connection past `initialize` and `initialized`, over this
@@ -229,17 +246,18 @@ impl Client
         else {
             panic!("a served connection holds its workspace alone");
         };
-        Self::joining(Rc::clone(&this.shared), record)
+        Self::joining(Rc::clone(&this.shared), record, Quiet::Unheld)
     }
 
     /// A connection over `shared`, numbered by its turn, past `initialize`
-    /// and `initialized`.
+    /// and `initialized` at `quiet`.
     ///
     /// # Specification
     /// trivial.
     fn joining(
         shared: Rc<RefCell<Shared>>,
         record: Record,
+        quiet: Quiet,
     ) -> Self
     {
         let peer = {
@@ -257,18 +275,61 @@ impl Client
             }),
             requests: 0_i64,
         }
-        .initialize()
+        .initialize(quiet)
     }
 
-    /// Answer `initialize`, then say `initialized`.
+    /// Answer `initialize`, naming the quiet interval `quiet` names, then say
+    /// `initialized`.
     ///
     /// # Specification
     /// trivial.
-    fn initialize(mut self) -> Self
+    fn initialize(
+        mut self,
+        quiet: Quiet,
+    ) -> Self
     {
-        let _capabilities = self.request(Method("initialize"), &json!({ "capabilities": {} }));
+        let params = match quiet {
+            | Quiet::Unheld => json!({
+                "capabilities": {},
+                "initializationOptions": { "diagnostics": { "quiet": 0_i32 } },
+            }),
+            | Quiet::Default => json!({ "capabilities": {} }),
+        };
+        let _capabilities = self.request(Method("initialize"), &params);
         let _quiet = self.notify(Method("initialized"), &json!({}));
         self
+    }
+
+    /// Let the quiet interval of the document at `uri` pass, as the loop does
+    /// when no frame arrives before its deadline, and return what that
+    /// publishes.
+    ///
+    /// # Specification
+    /// - requires: the connection is joined.
+    /// - ensures: the messages [`Server::release`] writes for `uri`.
+    /// - panics: the connection is served: its loop keeps its own time.
+    /// - executable: none — the messages are the server's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the quiet scenario stops mid-form and reads the held
+    ///   diagnostics here; a release that dropped or reordered them fails it.
+    /// - witness: `editor::editor::scenarios::typing_a_declaration_holds_its_diagnostics_until_its_terminator`
+    pub fn lapse(
+        &mut self,
+        uri: &DocumentUri,
+    ) -> Vec<Value>
+    {
+        let Connection::Joined(ref mut joined) = self.connection
+        else {
+            panic!("a served connection keeps its own time");
+        };
+        let mut shared = joined.shared.borrow_mut();
+        joined
+            .server
+            .release(&mut shared.workspace, uri)
+            .iter()
+            .map(|written| serde_json::to_value(written).expect("a release encodes"))
+            .collect()
     }
 
     /// Send the notification `method` with `params`.

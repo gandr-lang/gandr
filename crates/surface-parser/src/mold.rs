@@ -1948,6 +1948,7 @@ impl<'pbg> Molder<'pbg>
             self.note_declared_menu(state);
         }
         self.gather_reserved_fallback(state, lexeme, text, open);
+        self.drop_stray_keyword(state, lexeme, text);
     }
 
     /// Mark the window being molded exposed when this token's declared menu
@@ -2059,6 +2060,96 @@ impl<'pbg> Molder<'pbg>
         self.candidates.extend_from_slice(&reserved);
         self.candidates.sort_unstable();
         self.candidates.dedup();
+    }
+
+    /// Empty a **reserved lowercase word**'s menu when it stands in a
+    /// declaration's empty classifier slot and every one of its molds would
+    /// open a declaration-position form there: the word is a keyword out of
+    /// place, and it stands in the slot as an unmolded token.
+    ///
+    /// `sort M : type;` in a `sign` block writes the keyword `type` where the
+    /// member's classifier belongs. `type` molds only as a module's type
+    /// component, a member form that no open frontier continues and the
+    /// classifier slot does not admit, so the full-menu fallback pushed it
+    /// anyway: the push ghost-closed the `sign` block before the member's
+    /// classifier and re-read the rest of the source as a stray form. With
+    /// the menu empty the molder takes the unmolded path instead: the keyword
+    /// becomes grout over its own bytes in the classifier slot, the member
+    /// stays the member, and its `;` and the block's `}` continue them as
+    /// written. The parse owes one obligation, at the keyword. This is the
+    /// stray mid's recovery one keyword later: a stray mid flags its missing
+    /// head in place rather than reading the source around it anew.
+    ///
+    /// The rule is held to that one shape, and each guard is measured: over
+    /// the drop harness, widening it to any open slot, to a slot after an
+    /// operand, to a non-declaration form's slot, to a declaration slot of
+    /// another sort or to a keyword opening an expression form each made some
+    /// variant owe more obligations than the record, because there the
+    /// keyword is usually written right and a delimiter before it is missing.
+    /// An item-position declaration head is admitted at every slot (the
+    /// [`MeldState::admits_at`] exemption that keeps top-level declarations
+    /// reachable), so `def` after an unfinished declaration still opens the
+    /// next one. _Reversal:_ a slot of another sort whose keyword recovery
+    /// the harness measures as better joins the rule.
+    ///
+    /// # Specification
+    /// - requires: the token's menu, `lexeme` spelled `text`, was gathered into
+    ///   `self.candidates`.
+    /// - ensures: empties `self.candidates` exactly when `text` is a reserved
+    ///   lowercase keyword, the live frontier is an open slot of [`Sort::Type`]
+    ///   holding no operand, its nearest open form is of item position, and
+    ///   every candidate is a declaration head that slot does not admit; leaves
+    ///   it unchanged otherwise.
+    /// - provides: the keyword-out-of-place half of the candidate menu.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the keyword `type` in a `sign` member's classifier
+    ///   slot owes exactly one obligation, at the keyword, and keeps the member
+    ///   and the block whole; `Type` there owes none. The drop harness's
+    ///   records, a differential measurement rather than a witness, hold every
+    ///   corpus variant to no more obligations than before.
+    /// - witness: `tests::acceptance::a_keyword_in_a_classifier_slot_stands_there_unmolded`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "bounded: walks the token's candidate menu, which the gather that calls it has just built and sorted"
+        )
+    )]
+    #[spec(ensures: |_| self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right))]
+    fn drop_stray_keyword(
+        &mut self,
+        state: &MeldState<'_>,
+        lexeme: Lexeme,
+        text: TokenText<'_>,
+    )
+    {
+        if !matches!(lexeme, Lexeme::LowerWord) || !KEYWORDS.contains(&<&str>::from(text)) {
+            return;
+        }
+        let frontier = state.admissibility_frontier();
+        if bool::from(frontier.boundary)
+            || bool::from(frontier.head_operand)
+            || self.candidates.is_empty()
+        {
+            return;
+        }
+        let pbg = self.pbg;
+        let classifier_slot = frontier.expected == Sort::Type
+            && frontier.open.is_some_and(|open| {
+                pbg.mold(open)
+                    .is_ok_and(|def| matches!(def.sort, Sort::Item | Sort::ModuleMember))
+            });
+        let stray = classifier_slot
+            && self.candidates.iter().all(|&mold| {
+                !bool::from(state.admits_at(mold, &frontier))
+                    && bool::from(declaration_head(pbg, mold))
+            });
+        if stray {
+            self.candidates.clear();
+        }
     }
 
     /// Gather the candidate molds for a token's `labels`, from the fresh-slot

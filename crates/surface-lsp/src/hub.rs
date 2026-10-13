@@ -3,7 +3,8 @@
 //!
 //! The hub accepts connections until none has been open for its linger, then
 //! removes its socket and returns. Each connection runs on a reader thread,
-//! which handles the frames it reads over the one [`Workspace`], and a writer
+//! which handles the frames it reads over the one [`Workspace`] and publishes
+//! what a quiet document held back, as the `quiet` module states, and a writer
 //! thread, which drains the connection's outbox of its answers and
 //! publications. A relay is the client's end: it carries frames between an
 //! editor's standard streams and the hub's socket.
@@ -74,6 +75,7 @@
 //! input with one of the hub's answers.
 
 use alloc::sync::Arc;
+use core::ops::ControlFlow;
 use core::sync::atomic::AtomicU64;
 use core::sync::atomic::Ordering;
 use core::time::Duration;
@@ -98,6 +100,8 @@ use std::time::Instant;
 use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
+use crate::quiet::Met;
+use crate::quiet::paced;
 use crate::rpc::Incoming;
 use crate::rpc::Outgoing;
 use crate::rpc::classify;
@@ -398,7 +402,18 @@ fn connection<Log>(
     });
     let mut server = Server::new(peer);
     if writer.is_ok() {
-        while let Ok(Maybe::Present(body)) = read_frame(&mut reading) {
+        let _ended = paced(&mut reading, |met, deadlines| {
+            let body = match met {
+                | Met::Closed => return Ok(ControlFlow::Break(())),
+                | Met::Quiet(uri) => {
+                    let mut held = lock(workspace);
+                    for message in server.release(&mut held, &uri) {
+                        drop(outbox.send(message));
+                    }
+                    return Ok(ControlFlow::Continue(()));
+                },
+                | Met::Frame(body) => body,
+            };
             let mut held = lock(workspace);
             let mut outcome = server.handle(&mut held, &body);
             for message in outcome.messages {
@@ -408,15 +423,17 @@ fn connection<Log>(
                 drop(outbox.send(message));
             }
             drop(held);
+            deadlines.note(&outcome.log, server.quiet(), Instant::now());
             let mut written = lock(log);
             for line in &outcome.log {
                 drop(writeln!(written, "{line}"));
             }
             drop(written);
-            if matches!(outcome.flow, Flow::Exit(_)) {
-                break;
-            }
-        }
+            Ok(match outcome.flow {
+                | Flow::Exit(_) => ControlFlow::Break(()),
+                | Flow::Continue => ControlFlow::Continue(()),
+            })
+        });
     }
     lock(workspace).depart(peer);
     drop(outbox);

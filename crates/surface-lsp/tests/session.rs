@@ -649,6 +649,156 @@ mod session
         );
     }
 
+    /// A client's stream that, once its frames are read, stays open for a
+    /// while before it closes, as an editor sits idle.
+    struct Lingering
+    {
+        /// The frames, back to back.
+        frames: Vec<u8>,
+        /// How many bytes were read.
+        read: usize,
+        /// How long the stream stays open after its last frame.
+        linger: core::time::Duration,
+    }
+
+    impl std::io::Read for Lingering
+    {
+        /// Copy what is left, as [`std::io::BufRead::fill_buf`] offers it.
+        ///
+        /// # Specification
+        /// trivial.
+        fn read(
+            &mut self,
+            buf: &mut [u8],
+        ) -> std::io::Result<usize>
+        {
+            let copied = {
+                let available = std::io::BufRead::fill_buf(self)?;
+                let copied = available.len().min(buf.len());
+                buf.get_mut(.. copied)
+                    .expect("a copy fits its destination")
+                    .copy_from_slice(available.get(.. copied).expect("a copy fits its source"));
+                copied
+            };
+            std::io::BufRead::consume(self, copied);
+            Ok(copied)
+        }
+    }
+
+    impl std::io::BufRead for Lingering
+    {
+        /// What is left of the frames; once none is, wait out the linger
+        /// once, then close.
+        ///
+        /// # Specification
+        /// trivial.
+        fn fill_buf(&mut self) -> std::io::Result<&[u8]>
+        {
+            if self.read == self.frames.len() && !self.linger.is_zero() {
+                std::thread::sleep(self.linger);
+                self.linger = core::time::Duration::ZERO;
+            }
+            Ok(self.frames.get(self.read ..).unwrap_or_default())
+        }
+
+        /// Mark `amount` bytes read.
+        ///
+        /// # Specification
+        /// trivial.
+        fn consume(
+            &mut self,
+            amount: usize,
+        )
+        {
+            self.read = self.read.saturating_add(amount).min(self.frames.len());
+        }
+    }
+
+    /// What a session writes when the client, its quiet interval the setting
+    /// `quiet`, opens a document, types an unfinished declaration into it and
+    /// then sits idle for a second: each message's `id`, and each
+    /// publication's version and codes.
+    ///
+    /// # Specification
+    /// trivial.
+    fn idled(quiet: &Value) -> Vec<Value>
+    {
+        let uri = "file:///strict/idle.gandr";
+        let messages = [
+            json!({"jsonrpc": "2.0", "id": 0_i32, "method": "initialize", "params": {
+                "capabilities": {}, "initializationOptions": {"diagnostics": {"quiet": quiet}},
+            }}),
+            json!({"jsonrpc": "2.0", "method": "initialized", "params": {}}),
+            json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {"textDocument": {
+                "uri": uri, "languageId": "gandr", "version": 1_i32, "text": "def a = 1 ;\n",
+            }}}),
+            json!({"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {
+                "textDocument": {"uri": uri, "version": 2_i32},
+                "contentChanges": [{
+                    "range": {
+                        "start": {"line": 1_i32, "character": 0_i32},
+                        "end": {"line": 1_i32, "character": 0_i32},
+                    },
+                    "text": "def b =",
+                }],
+            }}),
+        ];
+        let mut input = Lingering {
+            frames: frames(&messages).as_ref().to_vec(),
+            read: 0_usize,
+            linger: core::time::Duration::from_secs(1),
+        };
+        let mut output = Vec::new();
+        let served =
+            serve(&mut input, &mut output, &mut Vec::new()).expect("the streams carry the session");
+        assert_eq!(served, Served::Abrupt, "the stream closes without shutdown");
+        written(&Body::from(output))
+            .iter()
+            .map(|message| match message.get("method") {
+                | Some(method) => json!([
+                    method,
+                    message.pointer("/params/version"),
+                    message
+                        .pointer("/params/diagnostics")
+                        .and_then(Value::as_array)
+                        .map(|diagnostics| diagnostics
+                            .iter()
+                            .map(|diagnostic| diagnostic.get("code"))
+                            .collect::<Vec<_>>()),
+                ]),
+                | None => json!(message.get("id")),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_held_diagnostic_publishes_once_the_document_is_quiet()
+    {
+        let publication = |version: i32, codes: &[&str]| {
+            json!(["textDocument/publishDiagnostics", version, codes])
+        };
+        assert_eq!(
+            idled(&json!(0.05_f64)),
+            [
+                json!(0_i32),
+                publication(1_i32, &[]),
+                publication(2_i32, &[]),
+                publication(2_i32, &["MalformedForm"]),
+            ],
+            "the declaration under the caret is held at its change, and published once the \
+             document is quiet, with no frame arriving"
+        );
+        assert_eq!(
+            idled(&json!(0_i32)),
+            [
+                json!(0_i32),
+                publication(1_i32, &[]),
+                publication(2_i32, &["MalformedForm"]),
+            ],
+            "a zero interval publishes it with its change, and nothing after"
+        );
+    }
+
     #[test]
     fn a_refusal_is_published_where_the_model_locates_it()
     {
@@ -927,7 +1077,16 @@ mod session
         }
         let uri = "file:///tmp/large.gandr".to_owned();
         let edited = text.replacen("def v500 = 500 ;", "def v500 = \"text\" ;", 1);
+        // The edit writes a complete but wrong value inside the declaration
+        // under the caret, which the quiet publication holds; this session
+        // reads the recheck, so it holds nothing.
         let mut messages = opening();
+        if let Some(params) = messages
+            .first_mut()
+            .and_then(|initialize| initialize.get_mut("params"))
+        {
+            params["initializationOptions"] = json!({"diagnostics": {"quiet": 0_i32}});
+        }
         messages.push(open(&Source {
             uri: uri.clone(),
             text,

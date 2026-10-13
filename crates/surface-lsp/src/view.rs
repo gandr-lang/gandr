@@ -157,6 +157,7 @@ mod tests
             &mut open(&uri),
             SourceText::from(text),
             Verbosity::User,
+            quenchant_shape::shape::Maybe::Absent(crate::quiet::formless::Absent::Uncareted),
         )
         .diagnostics;
         // The pipeline publishes no goal for a hole yet; one is published as
