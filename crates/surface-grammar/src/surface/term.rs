@@ -107,7 +107,7 @@ use crate::model::Sym;
 /// - witness: `surface::term::tests::assembly_reports_the_first_missing_band`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.atom", "expression.pure", "expression.or", "expression.and", "expression.cmp", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 106 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=18 => Sort::Item, 19..=22 => Sort::ModuleMember, 23..=33 | 90..=96 => Sort::Pattern, 34..=39 => Sort::Instantiation, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "escape_sequence")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.atom", "expression.pure", "expression.or", "expression.and", "expression.cmp", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 107 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=18 => Sort::Item, 19..=22 => Sort::ModuleMember, 23..=33 | 91..=97 => Sort::Pattern, 34..=39 => Sort::Instantiation, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "escape_sequence")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let item = precs.prec(PrecName("item.singleton"))?;
@@ -1710,7 +1710,7 @@ fn instantiations(
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 50 && added.iter().zip(["pure_expression", "return_expression", "become_expression", "binary_expression.or", "binary_expression.and", "binary_expression.cmp.eq", "binary_expression.cmp.ne", "binary_expression.cmp.lt", "binary_expression.cmp.le", "binary_expression.cmp.gt", "binary_expression.cmp.ge", "binary_expression.then", "binary_expression.add.concat", "binary_expression.add.plus", "binary_expression.add.minus", "binary_expression.mul.times", "unary_expression", "force_expression", "run_expression", "hold_expression", "pack_expression", "call_expression", "instantiation_expression", "projection_expression", "hole", "parenthesized_expression", "list_expression", "block", "lambda_expression", "thunk_expression", "case_expression", "if_expression", "for_expression", "while_expression", "loop_expression", "break_expression", "continue_expression", "co_expression", "glob_expression", "telescope_expression", "labelled_sum_expression", "lazy_record_expression", "offer_expression", "migrate_expression", "send_expression", "close_expression", "select_expression", "dup_expression", "drop_expression", "shell_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == match name { "pure_expression" | "return_expression" | "become_expression" | "pack_expression" => p.pure, "binary_expression.or" => p.or, "binary_expression.and" => p.and, "binary_expression.cmp.eq" | "binary_expression.cmp.ne" | "binary_expression.cmp.lt" | "binary_expression.cmp.le" | "binary_expression.cmp.gt" | "binary_expression.cmp.ge" | "binary_expression.then" => p.cmp, "binary_expression.add.concat" | "binary_expression.add.plus" | "binary_expression.add.minus" => p.add, "binary_expression.mul.times" => p.mul, "unary_expression" | "force_expression" | "run_expression" | "hold_expression" => p.unary, "call_expression" | "instantiation_expression" | "projection_expression" => p.postfix, _ => p.atom } && rule.provenance().0 == if name.starts_with("binary_expression.") { "binary_expression" } else { name })))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 51 && added.iter().zip(["pure_expression", "return_expression", "become_expression", "binary_expression.or", "binary_expression.and", "binary_expression.cmp.eq", "binary_expression.cmp.ne", "binary_expression.cmp.lt", "binary_expression.cmp.le", "binary_expression.cmp.gt", "binary_expression.cmp.ge", "binary_expression.then", "binary_expression.add.concat", "binary_expression.add.plus", "binary_expression.add.minus", "binary_expression.mul.times", "unary_expression", "force_expression", "run_expression", "hold_expression", "pack_expression", "call_expression", "instantiation_expression", "projection_expression", "hole", "parenthesized_expression", "list_expression", "block", "lambda_expression", "thunk_expression", "case_expression", "handle_expression", "if_expression", "for_expression", "while_expression", "loop_expression", "break_expression", "continue_expression", "co_expression", "glob_expression", "telescope_expression", "labelled_sum_expression", "lazy_record_expression", "offer_expression", "migrate_expression", "send_expression", "close_expression", "select_expression", "dup_expression", "drop_expression", "shell_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == match name { "pure_expression" | "return_expression" | "become_expression" | "pack_expression" => p.pure, "binary_expression.or" => p.or, "binary_expression.and" => p.and, "binary_expression.cmp.eq" | "binary_expression.cmp.ne" | "binary_expression.cmp.lt" | "binary_expression.cmp.le" | "binary_expression.cmp.gt" | "binary_expression.cmp.ge" | "binary_expression.then" => p.cmp, "binary_expression.add.concat" | "binary_expression.add.plus" | "binary_expression.add.minus" => p.add, "binary_expression.mul.times" => p.mul, "unary_expression" | "force_expression" | "run_expression" | "hold_expression" => p.unary, "call_expression" | "instantiation_expression" | "projection_expression" => p.postfix, _ => p.atom } && rule.provenance().0 == if name.starts_with("binary_expression.") { "binary_expression" } else { name })))]
 fn expressions(
     out: &mut Vec<Rule>,
     p: ExprPrecs,
@@ -2850,6 +2850,52 @@ fn arm() -> Regex
     seq([h(Sort::Pattern), t(TileLabel("=>")), h(Sort::Expression)])
 }
 
+/// Build one clause of a capability scope: the return clause `pure(x) => e`,
+/// or an operation clause `oper op(p, k) => e` binding the payload and the
+/// resumption.
+///
+/// Both clauses open on a keyword: `pure`, the returner's, and `oper`, the
+/// one a signature declares an operation with. A clause opening on the
+/// operation's name gave every damaged call `f(a, b)` a stray clause to read,
+/// and its recovery worsened.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: two alternatives, `pure ( identifier ) => E` and `oper identifier
+///   ( identifier , identifier ) => E`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref branches) if branches.len() == 2 && branches.iter().all(|branch| matches!(branch.shape(), RegexShape::Seq(ref parts) if parts.last().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(Sort::Expression))))))))]
+fn handler_clause() -> Regex
+{
+    alt([
+        seq([
+            t(TileLabel("pure")),
+            t(TileLabel("(")),
+            t(TileLabel("identifier")),
+            t(TileLabel(")")),
+            t(TileLabel("=>")),
+            h(Sort::Expression),
+        ]),
+        seq([
+            t(TileLabel("oper")),
+            t(TileLabel("identifier")),
+            t(TileLabel("(")),
+            t(TileLabel("identifier")),
+            t(TileLabel(",")),
+            t(TileLabel("identifier")),
+            t(TileLabel(")")),
+            t(TileLabel("=>")),
+            h(Sort::Expression),
+        ]),
+    ])
+}
+
 /// Build a braced, comma-separated, nonempty arm list whose every arm may open
 /// with `|`.
 ///
@@ -3514,7 +3560,7 @@ fn h(sort: Sort) -> Regex
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 26 && added.iter().zip(["hole", "parenthesized_expression", "list_expression", "block", "lambda_expression", "thunk_expression", "case_expression", "if_expression", "for_expression", "while_expression", "loop_expression", "break_expression", "continue_expression", "co_expression", "glob_expression", "telescope_expression", "labelled_sum_expression", "lazy_record_expression", "offer_expression", "migrate_expression", "send_expression", "close_expression", "select_expression", "dup_expression", "drop_expression", "shell_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == p && rule.provenance().0 == name)))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 27 && added.iter().zip(["hole", "parenthesized_expression", "list_expression", "block", "lambda_expression", "thunk_expression", "case_expression", "handle_expression", "if_expression", "for_expression", "while_expression", "loop_expression", "break_expression", "continue_expression", "co_expression", "glob_expression", "telescope_expression", "labelled_sum_expression", "lazy_record_expression", "offer_expression", "migrate_expression", "send_expression", "close_expression", "select_expression", "dup_expression", "drop_expression", "shell_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == p && rule.provenance().0 == name)))]
 fn primary_expressions(
     out: &mut Vec<Rule>,
     p: Prec,
@@ -3695,6 +3741,35 @@ fn primary_expressions(
         AdaptationReason("folded into case_expression: the optional `-> T` answer type is an inline slot after the scrutinee and the reserved `with` view, not a standalone form; it is the constant motive `[_. T]`, and the later dependent motive replaces its contents rather than its position"),
     ));
     out.push(case);
+    // The capability scope `handle c : I { … } with { pure(x) => e, oper
+    // op(p, k) => e, … }`: a deep handler for the host interface `I` whose
+    // body is handed the capability `c` it introduces, the only form that
+    // brings a capability into a body's scope. The clauses follow the body:
+    // the return clause, spelled with the returner's own keyword `pure`,
+    // binds the body's result, and each operation clause, spelled with the
+    // keyword a signature declares an operation with, binds the operation's
+    // payload and its resumption. A clause is keyword-led after a `{` or `,`
+    // this rule owns, so no expression hole competes with it. The tree-sitter
+    // grammar has no handler, so the kind is in `PBG_ONLY_KINDS`.
+    out.push(r(
+        RuleName("handle_expression"),
+        Provenance("handle_expression"),
+        s,
+        p,
+        seq([
+            t(TileLabel("handle")),
+            t(TileLabel("identifier")),
+            t(TileLabel(":")),
+            t(TileLabel("type_identifier")),
+            block(),
+            t(TileLabel("with")),
+            t(TileLabel("{")),
+            handler_clause(),
+            repeat(seq([t(TileLabel(",")), handler_clause()])),
+            opt(t(TileLabel(","))),
+            t(TileLabel("}")),
+        ]),
+    ));
     let mut if_expression = r(
         RuleName("if_expression"),
         Provenance("if_expression"),

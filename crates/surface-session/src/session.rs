@@ -317,6 +317,7 @@ use gandr_surface_dispatcher::Admission;
 use gandr_surface_dispatcher::ComposeFault;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Evaluation;
+use gandr_surface_dispatcher::HostGrant;
 use gandr_surface_dispatcher::Lowered;
 use gandr_surface_dispatcher::LoweringCount;
 use gandr_surface_dispatcher::Program;
@@ -1922,7 +1923,13 @@ impl<Store, Blocks> Session<Store, Blocks>
         let imports = Imports::of(&module);
         let documentation = documentation_of(&module);
         let snapshot = Snapshot::of(&items, module.origins());
-        let (settled, admission) = judge(self.root.corpus_root(), module, arena).into_parts();
+        let (settled, admission) = judge(
+            self.root.corpus_root(),
+            module,
+            arena,
+            &HostGrant::UNBOUNDED,
+        )
+        .into_parts();
         let composed = match settled {
             | Ok(composed) => composed,
             // The readmission ran before the settle comparison once; a kernel
@@ -2440,7 +2447,8 @@ fn try_candidate<'text>(
             Maybe::Absent(admitted::Absent::RefusedWhole),
         ),
         | Lowered::Module { module, arena } => {
-            let (settled, admission) = judge(root.corpus_root(), module, arena).into_parts();
+            let (settled, admission) =
+                judge(root.corpus_root(), module, arena, &HostGrant::UNBOUNDED).into_parts();
             let composed = settled.map_err(|fault| {
                 SessionFault::Compose(match admission.admit() {
                     | Ok(_) => ComposeFault::Settle(fault),

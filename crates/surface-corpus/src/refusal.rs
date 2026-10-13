@@ -339,6 +339,19 @@ pub enum RefusalName
     /// A telescope transport's second identity that does not lie over its
     /// path.
     NotOver,
+    /// A term standing at a capability type that is no capability
+    /// hypothesis.
+    CapabilityForged,
+    /// A capability standing where one granting more is expected.
+    CapabilityAmplified,
+    /// An operation exercised through a capability that does not grant it.
+    CapabilityOutsideAuthority,
+    /// A scoped capability that would outlive its region.
+    CapabilityEscaped,
+    /// A capability of the consumable grade.
+    CapabilityConsumable,
+    /// A held capability claiming authority the host did not grant.
+    CapabilityUngranted,
     /// Univalence at a degree no shape of the catalogue reaches.
     UncertifiedDegree,
     /// Univalence over a catalogue whose site fails the corolla or the Segal
@@ -505,7 +518,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 105_usize] = [
+    pub const VOCABULARY: [Self; 111_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -546,6 +559,12 @@ impl RefusalName
         Self::NotNatural,
         Self::TranslatorStuck,
         Self::UnenclosedRun,
+        Self::CapabilityForged,
+        Self::CapabilityAmplified,
+        Self::CapabilityOutsideAuthority,
+        Self::CapabilityEscaped,
+        Self::CapabilityConsumable,
+        Self::CapabilityUngranted,
         Self::UnresolvedName,
         Self::UnresolvedDocLink,
         Self::UnresolvedTypeHead,
@@ -723,6 +742,12 @@ impl RefusalName
         | (Self::ArmsDisagree, b"ArmsDisagree")
         | (Self::UnrestrictedEndpoint, b"UnrestrictedEndpoint")
         | (Self::UnboundEndpoint, b"UnboundEndpoint")
+        | (Self::CapabilityForged, b"CapabilityForged")
+        | (Self::CapabilityAmplified, b"CapabilityAmplified")
+        | (Self::CapabilityOutsideAuthority, b"CapabilityOutsideAuthority")
+        | (Self::CapabilityEscaped, b"CapabilityEscaped")
+        | (Self::CapabilityConsumable, b"CapabilityConsumable")
+        | (Self::CapabilityUngranted, b"CapabilityUngranted")
     )
 },
     )]
@@ -794,6 +819,12 @@ impl RefusalName
             | Self::ArmsDisagree => "ArmsDisagree",
             | Self::UnrestrictedEndpoint => "UnrestrictedEndpoint",
             | Self::UnboundEndpoint => "UnboundEndpoint",
+            | Self::CapabilityForged => "CapabilityForged",
+            | Self::CapabilityAmplified => "CapabilityAmplified",
+            | Self::CapabilityOutsideAuthority => "CapabilityOutsideAuthority",
+            | Self::CapabilityEscaped => "CapabilityEscaped",
+            | Self::CapabilityConsumable => "CapabilityConsumable",
+            | Self::CapabilityUngranted => "CapabilityUngranted",
             | Self::ShadowedBuiltin => "ShadowedBuiltin",
             | Self::OutOfFragment => "OutOfFragment",
             | Self::GradedBridge => "GradedBridge",
@@ -1074,6 +1105,12 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::UnenclosedRun { .. }), RefusalName::UnenclosedRun)
         | (Self::Checking(CheckRefusal::SessionMismatch { .. }), RefusalName::SessionMismatch | RefusalName::UnofferedLabel | RefusalName::OfferArms)
         | (Self::Checking(CheckRefusal::Linearity { .. }), RefusalName::LinearResidue | RefusalName::UsedAfterClose | RefusalName::EndpointUsedTwice | RefusalName::CapturedEndpoint | RefusalName::Delegation | RefusalName::EndpointAsValue | RefusalName::ArmsDisagree | RefusalName::UnrestrictedEndpoint | RefusalName::UnboundEndpoint)
+        | (Self::Checking(CheckRefusal::CapabilityForged { .. }), RefusalName::CapabilityForged)
+        | (Self::Checking(CheckRefusal::CapabilityAmplified(_)), RefusalName::CapabilityAmplified)
+        | (Self::Checking(CheckRefusal::CapabilityOutsideAuthority { .. }), RefusalName::CapabilityOutsideAuthority)
+        | (Self::Checking(CheckRefusal::CapabilityEscaped { .. }), RefusalName::CapabilityEscaped)
+        | (Self::Checking(CheckRefusal::CapabilityConsumable(_)), RefusalName::CapabilityConsumable)
+        | (Self::Checking(CheckRefusal::CapabilityUngranted { .. }), RefusalName::CapabilityUngranted)
     )
 },
     )]
@@ -1310,6 +1347,12 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::Linearity { defect: LinearityDefect::ArmsDisagree { .. }, .. }, RefusalName::ArmsDisagree)
         | (CheckRefusal::Linearity { defect: LinearityDefect::Unrestricted, .. }, RefusalName::UnrestrictedEndpoint)
         | (CheckRefusal::Linearity { defect: LinearityDefect::Unbound { .. }, .. }, RefusalName::UnboundEndpoint)
+        | (CheckRefusal::CapabilityForged { .. }, RefusalName::CapabilityForged)
+        | (CheckRefusal::CapabilityAmplified(_), RefusalName::CapabilityAmplified)
+        | (CheckRefusal::CapabilityOutsideAuthority { .. }, RefusalName::CapabilityOutsideAuthority)
+        | (CheckRefusal::CapabilityEscaped { .. }, RefusalName::CapabilityEscaped)
+        | (CheckRefusal::CapabilityConsumable(_), RefusalName::CapabilityConsumable)
+        | (CheckRefusal::CapabilityUngranted { .. }, RefusalName::CapabilityUngranted)
     )
 },
 )]
@@ -1364,6 +1407,11 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
             | ProtocolDefect::Label => RefusalName::UnofferedLabel,
             | ProtocolDefect::Arms => RefusalName::OfferArms,
         },
+        | CheckRefusal::CapabilityForged { .. } => RefusalName::CapabilityForged,
+        | CheckRefusal::CapabilityAmplified(_) => RefusalName::CapabilityAmplified,
+        | CheckRefusal::CapabilityOutsideAuthority { .. } => {
+            RefusalName::CapabilityOutsideAuthority
+        },
         | CheckRefusal::Linearity { defect, .. } => match defect {
             | LinearityDefect::Residue { .. } => RefusalName::LinearResidue,
             | LinearityDefect::Closed { .. } => RefusalName::UsedAfterClose,
@@ -1375,6 +1423,9 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
             | LinearityDefect::Unrestricted => RefusalName::UnrestrictedEndpoint,
             | LinearityDefect::Unbound { .. } => RefusalName::UnboundEndpoint,
         },
+        | CheckRefusal::CapabilityEscaped { .. } => RefusalName::CapabilityEscaped,
+        | CheckRefusal::CapabilityConsumable(_) => RefusalName::CapabilityConsumable,
+        | CheckRefusal::CapabilityUngranted { .. } => RefusalName::CapabilityUngranted,
         | CheckRefusal::TypeMismatch(_) => RefusalName::TypeMismatch,
         | CheckRefusal::ShapeMismatch { .. } => RefusalName::ShapeMismatch,
         | CheckRefusal::NotSynthesisable { .. } => RefusalName::NotSynthesisable,

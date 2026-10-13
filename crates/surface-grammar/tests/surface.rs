@@ -22,6 +22,7 @@ use gandr_surface_grammar::built_in_prec_table;
 use gandr_surface_grammar::named_kind_parity;
 use gandr_surface_grammar::named_kind_realization;
 use gandr_surface_parser::parse;
+use gandr_surface_syntax::ClosingClass;
 use gandr_surface_syntax::GroutSort;
 use gandr_surface_syntax::MoldId;
 use gandr_surface_syntax::NodeLabel;
@@ -240,12 +241,12 @@ fn assert_has_checked_form(
     );
 }
 
-/// The one type-sort mold of `label` that opens a form.
+/// The type-sort molds of `label` that open a form, in candidate order.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: returns that mold.
-/// - panics: when there is not exactly one.
+/// - ensures: returns those molds.
+/// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: For the built-in bands and forms, L2 exact edge, associativity
@@ -253,26 +254,20 @@ fn assert_has_checked_form(
 ///   extra candidates. The predicate observes the claimed relation on normal
 ///   return; deliberately failing assertion inputs are not exhausted.
 /// - witness: `tests::surface::prefix_formers_keep_required_type_tails_unclosed`
-#[spec(ensures: |ret| pbg.candidates(label).iter().copied().filter(|&id| pbg.mold(id).is_ok_and(|mold| mold.sort == Sort::Type) && bool::from(pbg.mold_is_form_first(id))).eq([ret]))]
-fn only_type_opener(
+#[spec(ensures: |ret| pbg.candidates(label).iter().copied().filter(|&id| pbg.mold(id).is_ok_and(|mold| mold.sort == Sort::Type) && bool::from(pbg.mold_is_form_first(id))).eq(ret.iter().copied()))]
+fn type_openers(
     pbg: &Pbg,
     label: TileLabel,
-) -> MoldId
+) -> Vec<MoldId>
 {
-    let openers: Vec<MoldId> = pbg
-        .candidates(label)
+    pbg.candidates(label)
         .iter()
         .copied()
         .filter(|&mold| {
             pbg.mold(mold).is_ok_and(|def| def.sort == Sort::Type)
                 && bool::from(pbg.mold_is_form_first(mold))
         })
-        .collect();
-    let &[mold] = openers.as_slice()
-    else {
-        panic!("{label} has exactly one type-form opener: {openers:?}");
-    };
-    mold
+        .collect()
 }
 
 #[test]
@@ -539,22 +534,38 @@ fn built_in_adaptations_name_their_rules() -> Result<(), Box<dyn Error>>
 }
 
 /// The prefix type formers `-F` and `+U` end their form only once their operand
-/// is filled, and open no delimiter, so they name no closing class.
+/// is filled. `+U` and the bare returner open no delimiter, so they name no
+/// closing class and their operand follows them; the returner's row form,
+/// `-F [Fs] A`, closes its bracket, and its operand follows the bracket.
 #[test]
 fn prefix_formers_keep_required_type_tails_unclosed() -> Result<(), Box<dyn Error>>
 {
     let pbg = built_in()?;
-    for label in ["-F", "+U"] {
-        let mold = only_type_opener(&pbg, TileLabel(label));
-        assert!(
-            !bool::from(pbg.mold_is_form_last(mold)),
-            "{label} cannot close before its operand"
+    for (label, shapes) in [
+        (
+            "-F",
+            [(Some(ClosingClass::Bracket), false), (None, true)].as_slice(),
+        ),
+        ("+U", [(None, true)].as_slice()),
+    ] {
+        let openers: Vec<(Option<ClosingClass>, bool)> = type_openers(&pbg, TileLabel(label))
+            .into_iter()
+            .map(|mold| {
+                assert!(
+                    !bool::from(pbg.mold_is_form_last(mold)),
+                    "{label} cannot close before its operand"
+                );
+                (
+                    pbg.closing_class(mold),
+                    bool::from(pbg.mold_has_required_tail(mold)),
+                )
+            })
+            .collect();
+        assert_eq!(
+            shapes,
+            openers.as_slice(),
+            "{label}'s openers: what each closes, and whether its operand follows it"
         );
-        assert!(
-            bool::from(pbg.mold_has_required_tail(mold)),
-            "{label} carries a required type tail"
-        );
-        assert_eq!(None, pbg.closing_class(mold), "{label} opens no delimiter");
     }
     Ok(())
 }

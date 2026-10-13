@@ -3835,6 +3835,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | Computation::Resume(..) => return Err(unadmitted(UnadmittedFormer::Resume)),
             | Computation::Reset(_) => return Err(unadmitted(UnadmittedFormer::Reset)),
             | Computation::Shift(_) => return Err(unadmitted(UnadmittedFormer::Shift)),
+            | Computation::Exercise { .. } => return Err(unadmitted(UnadmittedFormer::Exercise)),
+            | Computation::Scope { .. } => return Err(unadmitted(UnadmittedFormer::Scope)),
             | Computation::With(first, second) => (
                 Frame::WithFirst { at, second },
                 TermNode::Computation(first),
@@ -3987,6 +3989,12 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 return Err(Refusal::OutOfFragment {
                     at: CoreNode::Type(TypeNode::Value(at)),
                     former: UnadmittedFormer::Stack,
+                });
+            },
+            | ValueTypeView::Capability { .. } => {
+                return Err(Refusal::OutOfFragment {
+                    at: CoreNode::Type(TypeNode::Value(at)),
+                    former: UnadmittedFormer::Capability,
                 });
             },
             | ValueTypeView::List(element) => (

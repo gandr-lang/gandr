@@ -593,6 +593,8 @@ use crate::resolve::type_former;
 
 mod arity;
 
+mod capability;
+
 mod description;
 
 mod exits;
@@ -1225,6 +1227,8 @@ fn ending(former: Former) -> Ending
         | Former::StaticAbstraction
         | Former::ParenthesizedType
         | Former::PathType
+        | Former::CapabilityType
+        | Former::Scope
         | Former::Declaration
         | Former::AttributeBlock
         | Former::Import
@@ -1278,7 +1282,8 @@ fn ending(former: Former) -> Ending
                     | Former::Telescope
                     | Former::Injection
                     | Former::LazyRecord
-                    | Former::Instantiation,
+                    | Former::Instantiation
+                    | Former::Scope,
                 Family::Term
             ) | (
                 Former::TypeHead
@@ -1296,7 +1301,8 @@ fn ending(former: Former) -> Ending
                     | Former::ValueFunctionType
                     | Former::StaticAbstraction
                     | Former::ParenthesizedType
-                    | Former::PathType,
+                    | Former::PathType
+                    | Former::CapabilityType,
                 Family::Type
             ) | (
                 Former::Declaration
@@ -1336,7 +1342,8 @@ const fn family_of(former: Former) -> Family
         | Former::Telescope
         | Former::Injection
         | Former::LazyRecord
-        | Former::Instantiation => Family::Term,
+        | Former::Instantiation
+        | Former::Scope => Family::Term,
         | Former::TypeHead
         | Former::TypePath
         | Former::Universe
@@ -1352,7 +1359,8 @@ const fn family_of(former: Former) -> Family
         | Former::ValueFunctionType
         | Former::StaticAbstraction
         | Former::ParenthesizedType
-        | Former::PathType => Family::Type,
+        | Former::PathType
+        | Former::CapabilityType => Family::Type,
         | Former::Declaration
         | Former::AttributeBlock
         | Former::Import
@@ -1970,6 +1978,21 @@ enum Plan
     Derived(identity::Derived),
     /// The dependent transport over its telescope motive.
     TelescopeTransport(identity::Transported),
+    /// A capability type over its authority at its grade.
+    Capability(
+        capability::Authority,
+        gandr_core_term::effect::capability::CapabilityGrade,
+    ),
+    /// The returner of the value type at the node, its row holding these
+    /// interfaces whole.
+    Effectful(BTreeSet<gandr_core_term::effect::EffectName>, NodeIndex),
+    /// An operation exercised through a capability.
+    Exercise(capability::Exercised),
+    /// A capability scope over its subject and clauses.
+    Scope(capability::Scoped),
+    /// The continuation at the node resumed with the reply the values in the
+    /// lowerer's operand store make.
+    Resume(NodeIndex, Stretch),
 }
 
 /// A node's lowered core node, at the sort its own form produced.
@@ -2417,6 +2440,8 @@ struct Lowerer<'run, 'source>
     descents: BTreeMap<NodeIndex, native::Descent>,
     /// Each callable operation's minted type and body, by slot.
     operated: BTreeMap<SlotIndex, (ValueTypeId, ValueId)>,
+    /// The frame of every capability a capability scope binds.
+    capabilities: BTreeSet<ScopeId>,
     /// Each application's renaming, in source order, or the refusal of the
     /// argument type it could not read: built during the mint sweep, before
     /// the first type written after the application mints.
@@ -2427,6 +2452,8 @@ struct Lowerer<'run, 'source>
     /// Each slot of an application — a witness or an image of its functor's
     /// body — with the declaration it amounts to.
     instantiated: BTreeMap<SlotIndex, DeclarationOutcome<'source>>,
+    /// The frame of every continuation an operation clause binds.
+    resumptions: BTreeSet<ScopeId>,
 }
 
 /// Where the mint sweep writes: the arena and the origin table, with the
@@ -2463,6 +2490,8 @@ struct Sink<'run>
     /// Every bind whose rest is distributed to its computation's local ends,
     /// and each copy a match leaf made of one, with its statement's origin.
     distributed: BTreeMap<ComputationId, Origin>,
+    /// The host's interfaces, once a capability form has minted them.
+    host: capability::Host,
 }
 
 /// Lower one module into `arena`, declaring its names over `outermost`.
@@ -2689,6 +2718,7 @@ pub fn lower_module<'source>(
         origins: &mut origins,
         exits: BTreeSet::new(),
         distributed: BTreeMap::new(),
+        host: capability::Host::Unminted,
     };
     lowerer.mint(&mut sink)?;
     lowerer.mint_abstracts(&mut sink);
@@ -2871,6 +2901,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             renamings: Vec::new(),
             instance_types: BTreeMap::new(),
             instantiated: BTreeMap::new(),
+            capabilities: BTreeSet::new(),
+            resumptions: BTreeSet::new(),
         }
     }
 
@@ -3940,6 +3972,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Former::StaticAbstraction => self.static_abstraction(site, cursor),
             | Former::ParenthesizedType => self.parenthesized_type(site, cursor),
             | Former::PathType => self.path_type(site, cursor),
+            | Former::CapabilityType => self.capability_type(site, cursor),
+            | Former::Scope => self.capability_scope(site, pieces),
             | Former::Instantiation => self.instantiation(site, cursor),
             | Former::Declaration | Former::Module => self.function(site, cursor),
             | Former::AttributeBlock | Former::Import | Former::Data | Former::Unadmitted => {
@@ -5636,13 +5670,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   strictly earlier is that constructor applied to the arguments as its
     ///   fields; a call whose head is `here`, `back` or `cong`, a name no
     ///   binder and no earlier declaration carries, is that identity operation
-    ///   over the arguments; any other call standing as a computation reads its
-    ///   head at the head position and each argument as a value, all in its own
-    ///   frame, and is planned as the head applied to the arguments left to
-    ///   right; a call whose head is an instantiation, a recursive call,
-    ///   records every argument for the head's claim to check and reads and
-    ///   applies its last alone, the one its fixpoint takes; a call of no
-    ///   arguments is its head.
+    ///   over the arguments; a call whose head selects an operation off a
+    ///   capability is that exercise, and one whose head is an operation
+    ///   clause's continuation resumes it, as [`Self::exercise`] and
+    ///   [`Self::resumption`] read them; any other call standing as a
+    ///   computation reads its head at the head position and each argument as a
+    ///   value, all in its own frame, and is planned as the head applied to the
+    ///   arguments left to right; a call whose head is an instantiation, a
+    ///   recursive call, records every argument for the head's claim to check
+    ///   and reads and applies its last alone, the one its fixpoint takes; a
+    ///   call of no arguments is its head.
     /// - provides: the elimination of a lambda, curried over any argument
     ///   count.
     /// - fails: yields the wrong-sort refusal outside computation position, and
@@ -5663,6 +5700,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_last_parameter`
     /// - witness: `lower::identity::tests::a_path_type_and_reflexivity_lower_to_their_formers`
     /// - witness: `lower::identity::tests::a_bound_name_shadows_an_identity_operation`
+    /// - witness: `lower::capability::tests::an_exercise_is_checked_against_the_authority_it_was_attenuated_to`
+    /// - witness: `lower::capability::tests::a_scope_handles_its_capability_and_resumes`
     #[spec(
         captures: start = self.operands.len(),
         ensures: |ret| {
@@ -5687,7 +5726,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         constructed.fields.start == start
                             && constructed.fields.end == self.operands.len()
                     },
-                    | Some(&(Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::Ua { .. } | Plan::ListCons(..) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Derived(_))) => true,
+                    | Some(&(Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::Ua { .. } | Plan::ListCons(..) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Derived(_) | Plan::Exercise(_) | Plan::Resume(..))) => true,
                     | _ => false,
                 }
         },
@@ -5721,6 +5760,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
         {
             let _head = cursor.operands();
             return self.ua_call(site, stratum, cursor);
+        }
+        if self.exercise(site, &cursor)? == arity::Planned(true) {
+            return Ok(());
+        }
+        if self.resumption(site, &cursor)? == arity::Planned(true) {
+            return Ok(());
         }
         let frame = self.require(site, Produced::Computation)?;
         let head = site.one(cursor.operands())?;
@@ -7038,15 +7083,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: `site` is a thunk type or a returner type in type position.
     /// - ensures: the keyword resolves against the unary table, a thunk type's
-    ///   grade `[ω]` reads as no grade written, the form stands at the sort its
-    ///   former produces, reads its one operand at the sort the former takes,
-    ///   and is planned over it.
+    ///   grade `[ω]` reads as no grade written, a returner's bracket reads as
+    ///   its effect row, the form stands at the sort its former produces, reads
+    ///   its one operand at the sort the former takes, and is planned over it.
     /// - provides: the keyword spelling of the two type formers.
     /// - fails: yields the unresolved-head refusal for a keyword no former
     ///   answers, [`LoweringRefusal::GradedBridge`] for a thunk type graded
-    ///   other than `ω`, the unadmitted refusal for a grade on a returner type,
-    ///   the wrong-sort refusal for a former whose sort does not suit the
-    ///   position, and the hole's own refusal.
+    ///   other than `ω`, the row's refusal for a returner's, the unadmitted
+    ///   refusal for a bracket on a list type, the wrong-sort refusal for a
+    ///   former whose sort does not suit the position, and the hole's own
+    ///   refusal.
     /// - panics: none.
     ///
     /// # Errors
@@ -7058,12 +7104,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   refusal.
     /// - witness: `lower::tests::the_thunk_and_returner_heads_lower_to_their_formers`
     /// - witness: `lower::tests::a_graded_bridge_is_refused_by_name`
+    /// - witness: `lower::capability::tests::a_returner_row_names_whole_interfaces`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.plans.get(usize::from(site.at.node)),
-                    Some(&Plan::Former(_, _))
+                    Some(&(Plan::Former(_, _) | Plan::Effectful(..)))
                 )
         },
     )]
@@ -7088,10 +7135,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
             });
         };
         if let Maybe::Present(_) = cursor.tile(TileName::BRACKET_OPEN) {
-            if former != TypeFormer::Thunk {
-                return Err(site.folded(FormName::GRADE, FragmentBoundary::Unadmitted));
+            match former {
+                | TypeFormer::Thunk => self.grade(site, &mut cursor)?,
+                | TypeFormer::Returner => {
+                    let row = self.returner_row(site, &mut cursor)?;
+                    let argument = site.one(cursor.operands())?;
+                    exhausted(site, &cursor)?;
+                    return self.effectful(site, row, argument.node);
+                },
+                | TypeFormer::List => {
+                    return Err(site.folded(FormName::GRADE, FragmentBoundary::Unadmitted));
+                },
             }
-            self.grade(site, &mut cursor)?;
         }
         let argument = site.one(cursor.operands())?;
         exhausted(site, &cursor)?;
@@ -8159,7 +8214,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::ListCons(..)
                 | Plan::Run(_)
                 | Plan::Constructor(_) => Some(Produced::Value),
-                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(_) | Plan::Block(_) | Plan::Application(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) => {
+                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(_) | Plan::Block(_) | Plan::Application(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Scope(_) | Plan::Resume(..) => {
                     Some(Produced::Computation)
                 },
                 | Plan::Atom(_)
@@ -8175,8 +8230,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Former(TypeFormer::Thunk | TypeFormer::List, _)
                 | Plan::Path(..)
                 | Plan::Data(..)
-                | Plan::Expansion(..) => Some(Produced::ValueType),
-                | Plan::Arrow(..) | Plan::DependentArrow(..) | Plan::With(_) | Plan::Former(TypeFormer::Returner, _) => {
+                | Plan::Expansion(..)
+                | Plan::Capability(..) => Some(Produced::ValueType),
+                | Plan::Arrow(..) | Plan::DependentArrow(..) | Plan::With(_) | Plan::Former(TypeFormer::Returner, _) | Plan::Effectful(..) => {
                     Some(Produced::CompType)
                 },
                 | Plan::Decode(_, _, universe) => Some(match universe.sort {
@@ -8375,6 +8431,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Derived(derived) => self.mint_derived(derived, sink, origin),
             | Plan::TelescopeTransport(transported) => {
                 self.mint_telescope_transport(transported, sink, origin)
+            },
+            | Plan::Capability(ref authority, grade) => {
+                Self::mint_capability(authority, grade, sink, origin)
+            },
+            | Plan::Effectful(ref row, argument) => {
+                self.mint_effectful(row, argument, sink, origin)
+            },
+            | Plan::Exercise(exercised) => self.mint_exercise(exercised, sink, origin),
+            | Plan::Scope(scoped) => self.mint_scope(scoped, sink, origin),
+            | Plan::Resume(continuation, reply) => {
+                self.mint_resume(continuation, reply, sink, origin)
             },
             | Plan::Arrow(..)
             | Plan::StaticPi(..)
@@ -9035,7 +9102,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Observe(..)
             | Plan::Block(_)
             | Plan::Derived(_)
-            | Plan::TelescopeTransport(_) => Maybe::Absent(lowered::Absent::Unminted),
+            | Plan::TelescopeTransport(_)
+            | Plan::Capability(..)
+            | Plan::Effectful(..)
+            | Plan::Exercise(_)
+            | Plan::Scope(_)
+            | Plan::Resume(..) => Maybe::Absent(lowered::Absent::Unminted),
         }
     }
 
@@ -11791,6 +11863,8 @@ pub fn parse_literal(
         | Former::StaticAbstraction
         | Former::ParenthesizedType
         | Former::PathType
+        | Former::CapabilityType
+        | Former::Scope
         | Former::Declaration
         | Former::AttributeBlock
         | Former::Import

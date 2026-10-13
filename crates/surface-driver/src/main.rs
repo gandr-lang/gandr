@@ -22,6 +22,7 @@
 //! | ---------- | ------ | -------- |
 //! | `gandr check <paths>` | each unsettled declaration, each source refused as a whole | any unsettled declaration |
 //! | `gandr check --goals <paths>` | as `check`, a declaration unsettled by its obligations alone marked `goal:` | any unsettled declaration but those |
+//! | `gandr check --grant <operations> <paths>` | as `check`, every capability a declaration holds bounded by the host operations named, comma-separated and repeatable (`--grant read,write`): one claiming another is refused by name; without the flag every held capability is owed | as `check`, and an operation no host interface offers |
 //! | `gandr check --jobs <threads> <paths>` | as `check`, its sources parsed and lowered on that many threads | as `check` |
 //! | `gandr check --lint explicit-exits <paths>` | as `check`, plus a warning for every exit the lowering inferred where a body ends, each with the fix that writes its keyword; without the flag only the declarations and modules marked `@[ explicit_exits ]` are linted | as `check`: a finding settles nothing |
 //! | `gandr check --lint explicit-runs <paths>` | as `check`, plus a warning for every run the checker inferred where a computation stands in a position that reads a value, each with the fix that writes `run`; `--lint explicit-runs=effects` reports only the runs that perform an effect; without a flag only the declarations and modules marked `@[ explicit_runs ]` or `@[ explicit_runs("effects") ]` are linted | as `check`: a finding settles nothing |
@@ -249,12 +250,15 @@ use anodized::spec;
 use gandr_surface_diagnostics::Lint;
 use gandr_surface_diagnostics::Severity;
 use gandr_surface_diagnostics::Verbosity;
+use gandr_surface_dispatcher::AuthorityError;
 use gandr_surface_dispatcher::Evaluation;
 use gandr_surface_dispatcher::FormatStep;
 use gandr_surface_dispatcher::Formatting;
 use gandr_surface_dispatcher::Goals;
+use gandr_surface_dispatcher::HostGrant;
 use gandr_surface_dispatcher::Invocation;
 use gandr_surface_dispatcher::Lints;
+use gandr_surface_dispatcher::OperationName;
 use gandr_surface_dispatcher::Outcome;
 use gandr_surface_dispatcher::ProgramSpec;
 use gandr_surface_dispatcher::Ran;
@@ -342,6 +346,11 @@ enum Command
         /// an attribute enables it on; repeatable.
         #[arg(long, value_enum)]
         lint: Vec<LintName>,
+        /// Bound every capability a declaration holds by these host
+        /// operations, comma-separated; repeatable. A held capability claiming
+        /// any other is refused. Without it, every held capability is owed.
+        #[arg(long, value_delimiter = ',', value_name = "OPERATIONS")]
+        grant: Option<Vec<OperationName>>,
         /// How much of each report to print.
         #[arg(long, value_enum, default_value_t = Level::User)]
         verbosity: Level,
@@ -712,18 +721,29 @@ fn main() -> ExitCode
         | Some(Command::Check {
             goals,
             lint,
+            grant,
             verbosity,
             jobs,
             paths,
-        }) => (
-            Invocation::Check {
-                goals: if goals { Goals::Reported } else { Goals::Gated },
-                lints: enabled(&lint),
-                paths,
-                width: Width::from(jobs),
-            },
-            Verbosity::from(verbosity),
-        ),
+        }) => {
+            let grant = match grant {
+                | None => HostGrant::UNBOUNDED,
+                | Some(operations) => match HostGrant::within(&operations) {
+                    | Ok(grant) => grant,
+                    | Err(refused) => return ungranted(&refused),
+                },
+            };
+            (
+                Invocation::Check {
+                    goals: if goals { Goals::Reported } else { Goals::Gated },
+                    lints: enabled(&lint),
+                    grant,
+                    paths,
+                    width: Width::from(jobs),
+                },
+                Verbosity::from(verbosity),
+            )
+        },
         | Some(Command::Test {
             verbosity,
             jobs,
@@ -1326,6 +1346,39 @@ fn usage(error: &clap::Error) -> ExitCode
         | (Ok(()), false) => ExitCode::SUCCESS,
         | (Ok(()), true) | (Err(_), _) => ExitCode::from(FAULTED),
     }
+}
+
+/// Refuse a `--grant` naming an operation the host does not declare.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one line on standard error, `gandr: --grant: no host interface
+///   offers` and the operation in backticks, or the host table's own conflict;
+///   exits `2`, a malformed invocation, whether or not the line could be
+///   written.
+/// - provides: the exit of a grant the host cannot give.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an undeclared operation exits two naming it, before any
+///   source is read.
+/// - witness: `cli::cli::a_grant_bounds_held_capabilities_and_refuses_an_unknown_operation`
+#[spec(ensures: |ret| ret == ExitCode::from(FAULTED))]
+fn ungranted(refused: &AuthorityError) -> ExitCode
+{
+    let mut stderr = std::io::stderr().lock();
+    let _written = match *refused {
+        | AuthorityError::Undeclared(ref operation) => writeln!(
+            stderr,
+            "gandr: --grant: no host interface offers `{}`",
+            operation.as_ref()
+        ),
+        | AuthorityError::Restriction(_) | AuthorityError::Conflict(_) => {
+            writeln!(stderr, "gandr: --grant: the host's interfaces conflict")
+        },
+    };
+    ExitCode::from(FAULTED)
 }
 
 /// Render `outcome` and choose the exit code.

@@ -2437,6 +2437,9 @@ enum Agreement
                 ContentNode::Perform { signature: ref left, operation: ref first, .. } => matches!(*new, ContentNode::Perform { signature: ref right, operation: ref second, .. } if first == second && left.name() == right.name() && left.operations().map(|op| &op.name).eq(right.operations().map(|op| &op.name))),
                 ContentNode::Handle { signature: ref left, clauses: ref first, .. } => matches!(*new, ContentNode::Handle { signature: ref right, clauses: ref second, .. } if first.iter().map(|clause| &clause.operation).eq(second.iter().map(|clause| &clause.operation)) && left.name() == right.name() && left.operations().map(|op| &op.name).eq(right.operations().map(|op| &op.name))),
                 ContentNode::Returner { effects: ref left, .. } => matches!(*new, ContentNode::Returner { effects: ref right, .. } if left.signatures().len() == right.signatures().len() && left.signatures().zip(right.signatures()).all(|(left, right)| left.name() == right.name() && left.operations().len() == right.operations().len() && left.operations().zip(right.operations()).all(|(left, right)| left.name == right.name))),
+                ContentNode::Exercise { signature: ref left, operation: ref first, .. } => matches!(*new, ContentNode::Exercise { signature: ref right, operation: ref second, .. } if first == second && left.name() == right.name() && left.operations().map(|op| &op.name).eq(right.operations().map(|op| &op.name))),
+                ContentNode::Scope { signature: ref left, clauses: ref first, .. } => matches!(*new, ContentNode::Scope { signature: ref right, clauses: ref second, .. } if first.iter().map(|clause| &clause.operation).eq(second.iter().map(|clause| &clause.operation)) && left.name() == right.name() && left.operations().map(|op| &op.name).eq(right.operations().map(|op| &op.name))),
+                ContentNode::Capability { authority: ref left, grade, region } => matches!(*new, ContentNode::Capability { authority: ref right, grade: other_grade, region: other_region } if grade == other_grade && region == other_region && left.signatures().len() == right.signatures().len() && left.signatures().zip(right.signatures()).all(|(left, right)| left.name() == right.name() && left.operations().len() == right.operations().len() && left.operations().zip(right.operations()).all(|(left, right)| left.name == right.name))),
                 ContentNode::PathEquiv { evidence: ref left, .. } => {
                     matches!(
                         * new, ContentNode::PathEquiv { evidence : ref right, .. } if
@@ -2553,6 +2556,74 @@ fn agreement(
             },
         ) => {
             left.signatures().len() == right.signatures().len()
+                && left
+                    .signatures()
+                    .zip(right.signatures())
+                    .all(|(left, right)| {
+                        left.name() == right.name()
+                            && left.operations().len() == right.operations().len()
+                            && left
+                                .operations()
+                                .zip(right.operations())
+                                .all(|(left, right)| left.name == right.name)
+                    })
+        },
+        | (
+            &ContentNode::Exercise {
+                signature: ref left,
+                operation: ref first,
+                ..
+            },
+            &ContentNode::Exercise {
+                signature: ref right,
+                operation: ref second,
+                ..
+            },
+        ) => {
+            first == second
+                && left.name() == right.name()
+                && left
+                    .operations()
+                    .map(|op| &op.name)
+                    .eq(right.operations().map(|op| &op.name))
+        },
+        | (
+            &ContentNode::Scope {
+                signature: ref left,
+                clauses: ref first,
+                ..
+            },
+            &ContentNode::Scope {
+                signature: ref right,
+                clauses: ref second,
+                ..
+            },
+        ) => {
+            first
+                .iter()
+                .map(|clause| &clause.operation)
+                .eq(second.iter().map(|clause| &clause.operation))
+                && left.name() == right.name()
+                && left
+                    .operations()
+                    .map(|op| &op.name)
+                    .eq(right.operations().map(|op| &op.name))
+        },
+        | (
+            &ContentNode::Capability {
+                authority: ref left,
+                grade: first_grade,
+                region: first_region,
+            },
+            &ContentNode::Capability {
+                authority: ref right,
+                grade: second_grade,
+                region: second_region,
+            },
+        ) => {
+            first_grade == second_grade
+                && first_region == second_region
+                && left.signatures().len() == right.signatures().len()
                 && left
                     .signatures()
                     .zip(right.signatures())
@@ -3070,6 +3141,8 @@ where
                 Computation::TupleProjection(_,component) => matches!(ret,ContentNode::TupleProjection(_,other) if component == other),
                 Computation::Perform { ref operation, ref signature, .. } => matches!(ret, ContentNode::Perform { operation: ref actual, signature: ref mapped, .. } if operation == actual && signature.name() == mapped.name()),
                 Computation::Handle { ref signature, .. } => matches!(ret, ContentNode::Handle { signature: ref mapped, .. } if signature.name() == mapped.name()),
+                Computation::Scope { ref signature, .. } => matches!(ret, ContentNode::Scope { signature: ref mapped, .. } if signature.name() == mapped.name()),
+                Computation::Exercise { ref operation, ref signature, .. } => matches!(ret, ContentNode::Exercise { operation: ref actual, signature: ref mapped, .. } if operation == actual && signature.name() == mapped.name()),
                 Computation::Resume(..) => matches!(ret, ContentNode::Resume(..)),
                 Computation::Split { arity, .. } => matches!(ret, ContentNode::Split(_, actual, _) if actual == arity),
                 Computation::Reset(_) => matches!(ret, ContentNode::Reset(_)),
@@ -3143,12 +3216,20 @@ where
                 payload,
             }
         },
-        | Some(&Computation::Handle {
-            ref signature,
-            subject,
-            on_return,
-            ref clauses,
-        }) => {
+        | Some(
+            computation @ &(Computation::Handle {
+                ref signature,
+                subject,
+                on_return,
+                ref clauses,
+            }
+            | Computation::Scope {
+                ref signature,
+                subject,
+                on_return,
+                ref clauses,
+            }),
+        ) => {
             let subject = child(Root::Computation(subject));
             let on_return = child(Root::Computation(on_return));
             let signature = signature
@@ -3161,11 +3242,39 @@ where
                     body: child(Root::Computation(clause.body)),
                 })
                 .collect();
-            ContentNode::Handle {
+            if matches!(*computation, Computation::Scope { .. }) {
+                ContentNode::Scope {
+                    signature,
+                    subject,
+                    on_return,
+                    clauses,
+                }
+            }
+            else {
+                ContentNode::Handle {
+                    signature,
+                    subject,
+                    on_return,
+                    clauses,
+                }
+            }
+        },
+        | Some(&Computation::Exercise {
+            capability,
+            ref signature,
+            ref operation,
+            payload,
+        }) => {
+            let capability = child(Root::Value(capability));
+            let payload = child(Root::Value(payload));
+            let signature = signature
+                .try_relocate(|ty| Ok::<_, core::convert::Infallible>(child(Root::ValueType(ty))))
+                .unwrap_or_else(|never| match never {});
+            ContentNode::Exercise {
+                capability,
                 signature,
-                subject,
-                on_return,
-                clauses,
+                operation: operation.clone(),
+                payload,
             }
         },
         | Some(&Computation::Resume(stack, body)) => {
@@ -3331,6 +3440,7 @@ where
                 ValueType::Data {declaration,ref arguments} => matches!(ret,ContentNode::Data {declaration:ref found,arguments:ref other} if *found == program.resolve(declaration) && arguments.len() == other.len()),
                 ValueType::Record(ref fields) => matches!(ret,ContentNode::RecordType(ref other) if fields.keys().eq(other.keys())),
                 ValueType::Stack { .. } => matches!(ret, ContentNode::Stack { .. }),
+                ValueType::Capability { grade, region, .. } => matches!(ret, ContentNode::Capability { grade: found_grade, region: found_region, .. } if found_grade == grade && found_region == region),
                 ValueType::PathUniverse(..) => {
                     matches!(ret, ContentNode::PathUniverse(..))
                 }
@@ -3406,6 +3516,17 @@ where
         | Some(&ValueType::Stack { input, output }) => ContentNode::Stack {
             input: child(Root::CompType(input)),
             output: child(Root::CompType(output)),
+        },
+        | Some(&ValueType::Capability {
+            ref authority,
+            grade,
+            region,
+        }) => ContentNode::Capability {
+            authority: authority
+                .try_relocate(|ty| Ok::<_, core::convert::Infallible>(child(Root::ValueType(ty))))
+                .unwrap_or_else(|never| match never {}),
+            grade,
+            region,
         },
         | Some(&ValueType::PathUniverse(source, target)) => {
             let source = child(Root::Value(source));

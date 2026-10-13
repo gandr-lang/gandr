@@ -39,6 +39,38 @@ use gandr_kernel_term::BaseType;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Literal;
 
+/// The grant atoms of a capability's authority, as the printer spells them.
+pub trait Authority: core::fmt::Debug
+{
+    /// Each granted operation's name, interface by interface, each
+    /// interface's in name order.
+    ///
+    /// # Specification
+    /// trivial.
+    fn granted(&self) -> alloc::vec::Vec<Name<'_>>;
+}
+
+impl<Id> Authority for gandr_core_term::effect::EffectRow<Id>
+where
+    Id: Copy + Eq + core::fmt::Debug + 'static,
+{
+    /// The operations of every restricted interface, in row order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn granted(&self) -> alloc::vec::Vec<Name<'_>>
+    {
+        self.signatures()
+            .flat_map(|signature| {
+                signature
+                    .operations()
+                    .map(|operation| Name::from(operation.name.as_ref()))
+            })
+            .collect()
+    }
+}
+
 /// A name a node carries, as its source spells it: an abstract type's or a
 /// constant's.
 #[repr(transparent)]
@@ -246,6 +278,17 @@ pub enum Former<'source, Node>
         domain: Node,
         /// The classifier of the result.
         codomain: Node,
+    },
+    /// The capability `Cap {op, …}`, `Cap[1] {op, …}` at the consumable
+    /// grade; a scoped region has no spelling.
+    Capability
+    {
+        /// The authority it carries.
+        authority: &'source dyn Authority,
+        /// How often it may be exercised.
+        grade: gandr_core_term::effect::capability::CapabilityGrade,
+        /// How long it lives.
+        region: gandr_core_term::effect::capability::Region,
     },
     /// A session type: the protocol it reads, the state it stands at, and how
     /// many payload types its sends and receives read, which the source

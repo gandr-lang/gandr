@@ -422,6 +422,13 @@ fn worst(
                             .map(|&payload| (AnyNode::ValueType(payload), Reach::Domain)),
                     );
                 },
+                | Some(&ValueType::Capability { ref authority, .. }) => {
+                    pending.extend(
+                        authority
+                            .types()
+                            .map(|operation| (AnyNode::ValueType(operation), nest(reach))),
+                    );
+                },
                 | Some(&(ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Unknown))
                 | None => {},
             },
@@ -630,12 +637,34 @@ fn worst(
                             .map(|operation| (AnyNode::ValueType(operation), reach)),
                     );
                 },
-                | Some(&Computation::Handle {
+                | Some(&Computation::Exercise {
+                    capability,
                     ref signature,
-                    subject,
-                    on_return,
-                    ref clauses,
+                    payload,
+                    ..
                 }) => {
+                    pending.push((AnyNode::Value(capability), reach));
+                    pending.push((AnyNode::Value(payload), reach));
+                    pending.extend(
+                        signature
+                            .types()
+                            .map(|operation| (AnyNode::ValueType(operation), reach)),
+                    );
+                },
+                | Some(
+                    &(Computation::Handle {
+                        ref signature,
+                        subject,
+                        on_return,
+                        ref clauses,
+                    }
+                    | Computation::Scope {
+                        ref signature,
+                        subject,
+                        on_return,
+                        ref clauses,
+                    }),
+                ) => {
                     pending.push((AnyNode::Computation(subject), reach));
                     pending.push((AnyNode::Computation(on_return), reach));
                     pending.extend(

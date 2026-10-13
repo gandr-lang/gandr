@@ -65,6 +65,10 @@ pub enum ControlFormer
     With,
     /// Observation of a lazy computation pair.
     Project,
+    /// An operation exercised through a capability.
+    Exercise,
+    /// A deep handler introducing the capability its body exercises.
+    Scope,
 }
 
 impl CoreArena
@@ -161,6 +165,69 @@ impl CoreArena
     ) -> ComputationId
     {
         self.alloc_computation(Computation::Handle {
+            signature,
+            subject,
+            on_return,
+            clauses,
+        })
+    }
+
+    /// Mint an operation exercised through a capability.
+    ///
+    /// # Specification
+    /// - requires: the capability, the payload and every signature type resolve
+    ///   in this arena.
+    /// - ensures: records the interface inline and keeps the capability and
+    ///   payload in their distinct roles; whether the capability's authority
+    ///   grants the operation is a typing premise.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — substituting through an exercise under a scope's
+    ///   binder rewrites its capability and payload at their own depth, and a
+    ///   swapped pair reads back different.
+    /// - witness: `control::tests::a_capability_scope_binds_its_subject_once`
+    #[spec(requires: self.value(capability).is_some() && self.value(payload).is_some() && signature.types().all(|ty| self.value_type(ty).is_some()), ensures: |ret| matches!(self.computation(ret), Some(Computation::Exercise { .. })))]
+    #[inline]
+    pub fn computation_exercise(
+        &mut self,
+        capability: ValueId,
+        signature: EffectSig,
+        operation: OperationName,
+        payload: ValueId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Exercise {
+            capability,
+            signature,
+            operation,
+            payload,
+        })
+    }
+
+    /// Mint a deep handler whose subject receives the capability it
+    /// introduces.
+    ///
+    /// # Specification
+    /// - requires: all computation children and interface types resolve.
+    /// - ensures: the subject stands under one binder, the capability; the
+    ///   return and clause scopes are a handler's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — substituting through a scope sees the replacement one
+    ///   binder deeper in the subject and the return clause and two deeper in
+    ///   an operation clause, each asserted at its exact index.
+    /// - witness: `control::tests::a_capability_scope_binds_its_subject_once`
+    #[spec(requires: self.computation(subject).is_some() && self.computation(on_return).is_some() && clauses.iter().all(|clause| self.computation(clause.body).is_some()) && signature.types().all(|ty| self.value_type(ty).is_some()), ensures: |ret| matches!(self.computation(ret), Some(Computation::Scope { .. })))]
+    #[inline]
+    pub fn computation_scope(
+        &mut self,
+        signature: EffectSig,
+        subject: ComputationId,
+        on_return: ComputationId,
+        clauses: Arc<[EffectClause]>,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Scope {
             signature,
             subject,
             on_return,
@@ -540,6 +607,158 @@ mod tests
             panic!("clause")
         };
         assert_eq!(arena.value(pair), Some(&Value::Tuple([free, quote].into())));
+    }
+
+    #[test]
+    fn a_capability_scope_binds_its_subject_once()
+    {
+        use crate::effect::capability::CapabilityGrade;
+        use crate::effect::capability::Region;
+        use crate::effect::capability::RegionDepth;
+
+        let mut arena = CoreArena::new();
+        let variable = |arena: &mut CoreArena, index| {
+            arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+        };
+        let free = variable(&mut arena, 0_u32);
+        let under_one = variable(&mut arena, 1_u32);
+        let under_two = variable(&mut arena, 2_u32);
+        let element = arena.value_type_element(free, Level::zero());
+        let unit = arena.value_type_unit();
+        let signature = EffectSig::new(EffectName::from("Probe"), [EffectOp {
+            name: "ask".into(),
+            payload: element,
+            reply: unit,
+        }])
+        .unwrap();
+        let exercised =
+            arena.computation_exercise(free, signature.clone(), "ask".into(), under_one);
+        let returned = arena.computation_return(under_one);
+        let pair = arena.value_tuple(&[free, under_two]);
+        let clause = arena.computation_return(pair);
+        let scoped = arena.computation_scope(
+            signature,
+            exercised,
+            returned,
+            Arc::from([EffectClause {
+                operation: "ask".into(),
+                body: clause,
+            }]),
+        );
+        let thunk = arena.value_thunk(scoped);
+        let string = arena.value_type_base(BaseType::String);
+        let quote = arena.value_quote(string);
+        let rewritten = instantiate_value(&mut arena, thunk, quote);
+        let Value::Thunk(body) = *arena.value(rewritten).unwrap()
+        else {
+            panic!("thunk")
+        };
+        let Computation::Scope {
+            ref signature,
+            subject,
+            on_return,
+            ref clauses,
+        } = *arena.computation(body).unwrap()
+        else {
+            panic!("capability scope")
+        };
+        assert_eq!(signature.operations().next().unwrap().payload, string);
+        let Computation::Exercise {
+            capability,
+            payload,
+            ..
+        } = *arena.computation(subject).unwrap()
+        else {
+            panic!("exercise")
+        };
+        assert_eq!(capability, free, "the scope's own capability is bound");
+        assert_eq!(
+            payload, quote,
+            "the subject sees the replacement one deeper"
+        );
+        assert_eq!(
+            arena.computation(on_return),
+            Some(&Computation::Return(quote))
+        );
+        let Computation::Return(pair) = *arena.computation(clauses[0].body).unwrap()
+        else {
+            panic!("clause")
+        };
+        assert_eq!(arena.value(pair), Some(&Value::Tuple([free, quote].into())));
+        let swapped = arena.computation_exercise(under_one, signature.clone(), "ask".into(), free);
+        let original = arena.value_thunk(exercised);
+        let swapped = arena.value_thunk(swapped);
+        assert_eq!(
+            equal_certificate_syntax(&arena, original, swapped),
+            CertificateEquality::Different
+        );
+
+        let scoped_region = Region::Scoped(RegionDepth::from(1_u32));
+        let authority = EffectRow::singleton(
+            EffectSig::new(EffectName::from("Probe"), [EffectOp {
+                name: "ask".into(),
+                payload: element,
+                reply: unit,
+            }])
+            .unwrap(),
+        );
+        let capability =
+            arena.value_type_capability(authority, CapabilityGrade::Durable, scoped_region);
+        let rewritten = crate::instantiate_value_type(&mut arena, capability, quote);
+        let Some(&ValueType::Capability {
+            ref authority,
+            grade,
+            region,
+        }) = arena.value_type(rewritten)
+        else {
+            panic!("a capability type stays a capability type")
+        };
+        assert_eq!((grade, region), (CapabilityGrade::Durable, scoped_region));
+        let granted = authority
+            .signatures()
+            .next()
+            .unwrap()
+            .operations()
+            .next()
+            .unwrap();
+        assert_eq!(granted.payload, string);
+        let build = |arena: &mut CoreArena| {
+            let unit = arena.value_type_unit();
+            let strings = arena.value_type_base(BaseType::String);
+            let authority = EffectRow::singleton(
+                EffectSig::new(EffectName::from("Probe"), [EffectOp {
+                    name: "ask".into(),
+                    payload: strings,
+                    reply: unit,
+                }])
+                .unwrap(),
+            );
+            arena.value_type_capability(authority, CapabilityGrade::Consumable, Region::Held)
+        };
+        let mut source = CoreArena::new();
+        let root = build(&mut source);
+        let mut target = CoreArena::new();
+        let _occupied = target.value_type_unit();
+        let imported = TypeImporter::new(&source, &mut target)
+            .value_type(root)
+            .unwrap();
+        let expected = build(&mut target);
+        let held = target.value_type_capability(
+            EffectRow::EMPTY,
+            CapabilityGrade::Consumable,
+            Region::Held,
+        );
+        let [imported, expected, held] =
+            [imported, expected, held].map(|ty| target.value_quote(ty));
+        assert_eq!(
+            equal_certificate_syntax(&target, imported, expected),
+            CertificateEquality::Equal
+        );
+        assert_eq!(
+            equal_certificate_syntax(&target, imported, held),
+            CertificateEquality::Different,
+            "authority participates in syntax equality"
+        );
     }
 
     #[test]

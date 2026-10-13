@@ -681,6 +681,8 @@ pub const fn payload_form(former: Former) -> PayloadForm
         | Former::StaticAbstraction
         | Former::ParenthesizedType
         | Former::PathType
+        | Former::CapabilityType
+        | Former::Scope
         | Former::Declaration
         | Former::AttributeBlock
         | Former::Import

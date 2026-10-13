@@ -3499,6 +3499,12 @@ fn step_comp(
             gandr_core_term::control::ControlFormer::Project,
         )),
         | Computation::Session(_) => Err(EvalFault::SessionAction),
+        | Computation::Exercise { .. } => Err(EvalFault::RuntimeControl(
+            gandr_core_term::control::ControlFormer::Exercise,
+        )),
+        | Computation::Scope { .. } => Err(EvalFault::RuntimeControl(
+            gandr_core_term::control::ControlFormer::Scope,
+        )),
         | Computation::ListFold {
             element,
             result,

@@ -1,0 +1,570 @@
+use alloc::vec::Vec;
+
+use anodized::spec;
+use gandr_core_checker::CheckBudget;
+use gandr_core_checker::CheckRefusal;
+use gandr_core_checker::CheckingContext;
+use gandr_core_checker::Declaration;
+use gandr_core_checker::ModuleReport;
+use gandr_core_checker::OriginToken;
+use gandr_core_checker::Verdict;
+use gandr_core_checker::body;
+use gandr_core_checker::check_module;
+use gandr_core_checker::signature;
+use gandr_core_term::CompType;
+use gandr_core_term::Computation;
+use gandr_core_term::ComputationId;
+use gandr_core_term::CoreArena;
+use gandr_core_term::Value;
+use gandr_core_term::ValueType;
+use gandr_core_term::ValueTypeId;
+use gandr_core_term::Zone;
+use gandr_core_term::effect::EffectRow;
+use gandr_core_term::effect::capability::CapabilityGrade;
+use gandr_core_term::effect::capability::Region;
+use gandr_kernel_term::DeBruijnIndex;
+use gandr_surface_syntax::SourceText;
+use quenchant_shape::shape::Maybe;
+
+use crate::error::LoweringRefusal;
+use crate::fixture::grammar;
+use crate::fixture::parsed;
+use crate::lower::LoweringBudget;
+use crate::lower::lower_module;
+use crate::module::DeclarationOutcome;
+use crate::module::LoweredModule;
+use crate::namespace::Recognition;
+use crate::resolve::HeadArity;
+use crate::resolve::SurfaceName;
+
+/// The module the parser and the lowering make of `source`.
+///
+/// # Specification
+/// - requires: the source parses cleanly within the default allowance.
+/// - ensures: one declaration per declared name.
+/// - fails: never on accepted fixtures.
+/// - panics: if the lowering refuses the module.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every witness below reads its module through here.
+/// - witness: `lower::capability::tests::a_capability_type_lowers_to_its_authority`
+#[spec(ensures: |ret| !ret.declarations().is_empty())]
+fn lowered<'source>(
+    source: SourceText<'source>,
+    arena: &mut CoreArena,
+) -> LoweredModule<'source>
+{
+    let pbg = grammar();
+    let tree = parsed(&pbg, source);
+
+    lower_module(
+        &pbg,
+        &tree,
+        arena,
+        LoweringBudget::DEFAULT,
+        Recognition::default(),
+    )
+    .unwrap()
+}
+
+/// The checker's verdicts over every declaration of `module` the lowering did
+/// not refuse, in admission order.
+///
+/// # Specification
+/// - requires: `module` was lowered over `arena` and declares no data and no
+///   abstract type.
+/// - ensures: one verdict per unrefused declaration.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the capability rules judge what the lowering made.
+/// - witness: `lower::capability::tests::an_exercise_is_checked_against_the_authority_it_was_attenuated_to`
+#[spec(ensures: |ret| ret.judged().len() <= module.declarations().len())]
+fn judged(
+    module: &LoweredModule<'_>,
+    arena: &mut CoreArena,
+) -> ModuleReport
+{
+    let declarations: Vec<Declaration> = module
+        .declarations()
+        .iter()
+        .filter_map(|declaration| {
+            let origin = OriginToken::from(usize::from(declaration.origin()));
+            let (declared, defined) = match declaration.outcome() {
+                | DeclarationOutcome::Completed {
+                    declared_type,
+                    body,
+                } => (Maybe::Present(declared_type), Maybe::Present(body)),
+                | DeclarationOutcome::Uncompleted { declared_type } => (
+                    Maybe::Present(declared_type),
+                    Maybe::Absent(body::Absent::Hole),
+                ),
+                | DeclarationOutcome::Bodied { body } => (
+                    Maybe::Absent(signature::Absent::Unsigned),
+                    Maybe::Present(body),
+                ),
+                | DeclarationOutcome::Data(_)
+                | DeclarationOutcome::Abstract(_)
+                | DeclarationOutcome::Refused(_) => return None,
+            };
+            Some(Declaration::new(
+                declaration.constant(),
+                declared,
+                defined,
+                origin,
+            ))
+        })
+        .collect();
+
+    check_module(
+        &mut CheckingContext::new(arena, CheckBudget::DEFAULT),
+        &declarations,
+    )
+}
+
+/// The outcome of the declaration `name` in `module`.
+///
+/// # Specification
+/// - requires: `module` declares `name`.
+/// - ensures: that declaration's outcome.
+/// - fails: never.
+/// - panics: if the declaration is missing.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the witnesses read each outcome here.
+/// - witness: `lower::capability::tests::a_capability_type_lowers_to_its_authority`
+#[spec(ensures: |ret| module.declarations().iter().any(|declaration| declaration.outcome() == ret))]
+fn outcome_of<'source>(
+    module: &LoweredModule<'source>,
+    name: SurfaceName<'_>,
+) -> DeclarationOutcome<'source>
+{
+    let Some(declaration) = module
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.name() == name)
+    else {
+        panic!("`{name:?}` is declared");
+    };
+
+    declaration.outcome()
+}
+
+/// The verdict the checker gave the declaration `name` of `module`.
+///
+/// # Specification
+/// - requires: `report` judged `module`, and `name` was not refused by the
+///   lowering.
+/// - ensures: that declaration's verdict.
+/// - fails: never.
+/// - panics: if the declaration was not judged.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the witnesses read each verdict here.
+/// - witness: `lower::capability::tests::an_exercise_is_checked_against_the_authority_it_was_attenuated_to`
+#[spec(ensures: |ret| report.judged().iter().any(|judged| judged.verdict() == ret))]
+fn verdict_of(
+    module: &LoweredModule<'_>,
+    report: &ModuleReport,
+    name: SurfaceName<'_>,
+) -> Verdict
+{
+    let Some(declaration) = module
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.name() == name)
+    else {
+        panic!("`{name:?}` is declared");
+    };
+    let Some(judged) = report
+        .judged()
+        .iter()
+        .find(|judged| judged.constant() == declaration.constant())
+    else {
+        panic!("`{name:?}` is judged");
+    };
+
+    judged.verdict()
+}
+
+/// The computation a function body runs under its parameters.
+///
+/// # Specification
+/// - requires: `name` lowers to a function's thunked lambda chain.
+/// - ensures: the computation under the thunk and every lambda.
+/// - fails: never.
+/// - panics: if `name` lowers no body or its body is no thunk.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the witnesses read each exercise and scope here.
+/// - witness: `lower::capability::tests::a_scope_handles_its_capability_and_resumes`
+#[spec(ensures: |ret| !matches!(arena.computation(ret), Some(&Computation::Lambda(_))))]
+fn tail_of(
+    module: &LoweredModule<'_>,
+    arena: &CoreArena,
+    name: SurfaceName<'_>,
+) -> ComputationId
+{
+    let body = match outcome_of(module, name) {
+        | DeclarationOutcome::Completed { body, .. } | DeclarationOutcome::Bodied { body } => body,
+        | other => panic!("`{name:?}` lowers a body: {other:?}"),
+    };
+    let Some(&Value::Thunk(mut computation)) = arena.value(body)
+    else {
+        panic!("a function body is a thunk");
+    };
+    while let Some(&Computation::Lambda(under)) = arena.computation(computation) {
+        computation = under;
+    }
+
+    computation
+}
+
+/// The capability type declared at `declared`.
+///
+/// # Specification
+/// trivial.
+fn capability(
+    arena: &CoreArena,
+    declared: ValueTypeId,
+) -> (&EffectRow, CapabilityGrade, Region)
+{
+    let Some(&ValueType::Capability {
+        ref authority,
+        grade,
+        region,
+    }) = arena.value_type(declared)
+    else {
+        panic!("a capability type");
+    };
+    (authority, grade, region)
+}
+
+/// The intuitionistic variable at `index`.
+///
+/// # Specification
+/// trivial.
+const fn variable(index: DeBruijnIndex) -> Value
+{
+    Value::Variable {
+        zone: Zone::Intuitionistic,
+        index,
+    }
+}
+
+#[test]
+fn a_capability_type_lowers_to_its_authority()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "def fs : Cap {write, read, exit} ;\ndef once : Cap[1] {write} ;\ndef every : Cap[ω] {read} ;\ndef none : Cap[0] {read} ;\n",
+        ),
+        &mut arena,
+    );
+    let DeclarationOutcome::Uncompleted { declared_type } = outcome_of(&module, "fs".into())
+    else {
+        panic!("a held capability lowers its type");
+    };
+    let (authority, grade, region) = capability(&arena, declared_type);
+    let granted: Vec<(&str, Vec<&str>)> = authority
+        .signatures()
+        .map(|signature| {
+            (
+                signature.name().as_ref(),
+                signature
+                    .operations()
+                    .map(|operation| operation.name.as_ref())
+                    .collect(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        granted,
+        [
+            ("Fs", alloc::vec!["read", "write"]),
+            ("Proc", alloc::vec!["exit"])
+        ],
+        "each operation is granted under the interface offering it, and only it"
+    );
+    assert_eq!((grade, region), (CapabilityGrade::Durable, Region::Held));
+    for (name, expected) in [
+        ("once", CapabilityGrade::Consumable),
+        ("every", CapabilityGrade::Durable),
+    ] {
+        let DeclarationOutcome::Uncompleted { declared_type } = outcome_of(&module, name.into())
+        else {
+            panic!("`{name}` lowers its type");
+        };
+        assert_eq!(capability(&arena, declared_type).1, expected, "{name}");
+    }
+    assert!(
+        matches!(
+            outcome_of(&module, "none".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::GradedBridge { grade, .. })
+                if grade == SurfaceName::from("0")
+        ),
+        "a type-only grade is refused by name"
+    );
+}
+
+#[test]
+fn a_returner_row_names_whole_interfaces()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "def peek(c : Cap {read}) -> -F [Proc, Fs] String { c.read(\"notes\") }\n",
+        ),
+        &mut arena,
+    );
+    let DeclarationOutcome::Completed { declared_type, .. } = outcome_of(&module, "peek".into())
+    else {
+        panic!("the function lowers");
+    };
+    let Some(&ValueType::Thunk(arrow)) = arena.value_type(declared_type)
+    else {
+        panic!("a function's type is a thunk");
+    };
+    let Some(&CompType::Arrow { codomain, .. }) = arena.comp_type(arrow)
+    else {
+        panic!("one parameter's arrow");
+    };
+    let Some(&CompType::Returner {
+        ref effects,
+        result,
+    }) = arena.comp_type(codomain)
+    else {
+        panic!("the result is a returner");
+    };
+    assert_eq!(
+        arena.value_type(result),
+        Some(&ValueType::Base(gandr_kernel_term::BaseType::String)),
+        "the row qualifies the returner, not its result"
+    );
+    let names: Vec<(&str, usize)> = effects
+        .signatures()
+        .map(|signature| (signature.name().as_ref(), signature.operations().len()))
+        .collect();
+    assert_eq!(
+        names,
+        [("Fs", 8_usize), ("Proc", 1_usize)],
+        "each interface the row names is held whole"
+    );
+    let report = judged(&module, &mut arena);
+    assert!(
+        matches!(
+            verdict_of(&module, &report, "peek".into()),
+            Verdict::Checked { .. }
+        ),
+        "a row wider than the body's requests checks"
+    );
+}
+
+#[test]
+fn an_unknown_operation_or_interface_is_refused_by_name()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "def held : Cap {delete} ;\n",
+            "def row(c : Cap {read}) -> -F [Net] String { c.read(\"x\") }\n",
+            "def sent(c : Cap {read}) -> -F [Fs] String { c.delete(\"x\") }\n",
+            "def scoped() -> -F Unit { handle c : Net { pure unit } with { pure(x) => pure x } }\n",
+            "def twice() -> -F Unit { handle c : Proc { pure unit } with { pure(x) => pure x, pure(y) => pure y, oper exit(code, k) => k(unit) } }\n",
+        )),
+        &mut arena,
+    );
+    for name in ["held", "sent"] {
+        assert!(
+            matches!(
+                outcome_of(&module, name.into()),
+                DeclarationOutcome::Refused(LoweringRefusal::UnresolvedName { name: refused, .. })
+                    if refused == SurfaceName::from("delete")
+            ),
+            "{name}: an operation no host interface offers"
+        );
+    }
+    for name in ["row", "scoped"] {
+        assert!(
+            matches!(
+                outcome_of(&module, name.into()),
+                DeclarationOutcome::Refused(LoweringRefusal::UnresolvedTypeHead {
+                    name: refused,
+                    arity: HeadArity::Nullary,
+                    ..
+                }) if refused == SurfaceName::from("Net")
+            ),
+            "{name}: an interface the host does not declare"
+        );
+    }
+    assert!(
+        matches!(
+            outcome_of(&module, "twice".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::DuplicateDefinition { name, .. })
+                if name == SurfaceName::from("pure")
+        ),
+        "a scope answers its return once"
+    );
+}
+
+#[test]
+fn an_exercise_is_checked_against_the_authority_it_was_attenuated_to()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "def fs : Cap {read, write} ;\n",
+            "def peek(c : Cap {read}) -> -F [Fs] String { c.read(\"notes\") }\n",
+            "def main() -> -F [Fs] String { peek(fs) }\n",
+            "def save(c : Cap {read, write}) -> -F [Fs] Unit { c.write(\"notes\", \"x\") }\n",
+            "def denied(c : Cap {read}) -> -F [Fs] Unit { c.write(\"notes\", \"x\") }\n",
+            "def direct() -> -F [Fs] String { fs.read(\"notes\") }\n",
+        )),
+        &mut arena,
+    );
+    let peek = tail_of(&module, &arena, "peek".into());
+    let Some(&Computation::Exercise {
+        capability,
+        ref signature,
+        ref operation,
+        payload,
+    }) = arena.computation(peek)
+    else {
+        panic!("`c.read(…)` is an exercise");
+    };
+    assert_eq!(
+        arena.value(capability),
+        Some(&variable(DeBruijnIndex::from(0_u32))),
+        "through the parameter"
+    );
+    assert_eq!(
+        (signature.name().as_ref(), operation.as_ref()),
+        ("Fs", "read")
+    );
+    assert!(
+        matches!(arena.value(payload), Some(&Value::Literal(_))),
+        "one argument is the payload itself"
+    );
+    let save = tail_of(&module, &arena, "save".into());
+    let Some(&Computation::Exercise { payload, .. }) = arena.computation(save)
+    else {
+        panic!("`c.write(…)` is an exercise");
+    };
+    assert!(
+        arena
+            .value(payload)
+            .is_some_and(|value| matches!(*value, Value::Tuple(ref members) if members.len() == 2)),
+        "two arguments are their pair"
+    );
+
+    let report = judged(&module, &mut arena);
+    for name in ["peek", "main", "save", "direct"] {
+        assert!(
+            matches!(
+                verdict_of(&module, &report, name.into()),
+                Verdict::Checked { .. } | Verdict::Synthesised { .. }
+            ),
+            "{name}: {:?}",
+            verdict_of(&module, &report, name.into())
+        );
+    }
+    assert!(
+        matches!(verdict_of(&module, &report, "fs".into()), Verdict::Owed(_)),
+        "a held capability is a hypothesis the ledger owes"
+    );
+    assert!(
+        matches!(
+            verdict_of(&module, &report, "denied".into()),
+            Verdict::Refused(CheckRefusal::CapabilityOutsideAuthority { .. })
+        ),
+        "the write a read capability withholds is refused at check time"
+    );
+}
+
+#[test]
+fn a_scope_handles_its_capability_and_resumes()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "def quit() -> -F Unit { handle c : Proc { c.exit(1) } with { pure(x) => pure x, oper exit(code, k) => k(unit) } }\n",
+        ),
+        &mut arena,
+    );
+    let quit = tail_of(&module, &arena, "quit".into());
+    let Some(&Computation::Scope {
+        ref signature,
+        subject,
+        on_return,
+        ref clauses,
+    }) = arena.computation(quit)
+    else {
+        panic!("`handle` is a capability scope");
+    };
+    assert_eq!(signature.name().as_ref(), "Proc");
+    let Some(&Computation::Exercise { capability, .. }) = arena.computation(subject)
+    else {
+        panic!("the subject exercises its capability");
+    };
+    let bound = variable(DeBruijnIndex::from(0_u32));
+    assert_eq!(
+        arena.value(capability),
+        Some(&bound),
+        "the scope's own binder"
+    );
+    let Some(&Computation::Return(result)) = arena.computation(on_return)
+    else {
+        panic!("the return clause returns");
+    };
+    assert_eq!(arena.value(result), Some(&bound), "its result's binder");
+    let (1, Some(clause)) = (clauses.len(), clauses.first())
+    else {
+        panic!("one operation clause");
+    };
+    assert_eq!(clause.operation.as_ref(), "exit");
+    let Some(&Computation::Resume(continuation, reply)) = arena.computation(clause.body)
+    else {
+        panic!("`k(unit)` resumes");
+    };
+    assert_eq!(
+        arena.value(continuation),
+        Some(&bound),
+        "the continuation, bound after the payload"
+    );
+    assert!(
+        matches!(arena.computation(reply), Some(&Computation::Return(unit)) if arena.value(unit).is_some_and(|value| matches!(*value, Value::Tuple(ref members) if members.is_empty()))),
+        "with the reply returned"
+    );
+    let report = judged(&module, &mut arena);
+    assert!(
+        matches!(
+            verdict_of(&module, &report, "quit".into()),
+            Verdict::Checked { .. }
+        ),
+        "{:?}",
+        verdict_of(&module, &report, "quit".into())
+    );
+}
+
+#[test]
+fn a_scoped_capability_cannot_escape()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "def leak() -> -F Cap {exit} { handle c : Proc { pure c } with { pure(x) => pure x, oper exit(code, k) => k(unit) } }\n",
+        ),
+        &mut arena,
+    );
+    let report = judged(&module, &mut arena);
+    assert!(
+        matches!(
+            verdict_of(&module, &report, "leak".into()),
+            Verdict::Refused(CheckRefusal::CapabilityEscaped { .. })
+        ),
+        "{:?}",
+        verdict_of(&module, &report, "leak".into())
+    );
+}

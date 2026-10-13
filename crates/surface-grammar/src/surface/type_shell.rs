@@ -70,7 +70,7 @@ use crate::model::Sym;
 /// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.arrow", "item.singleton", "expression.atom", "expression.postfix", "expression.and", "expression.or"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 51 && rules.iter().take(30).all(|rule| rule.sort() == Sort::Type) && rules.iter().skip(30).take(3).all(|rule| rule.sort() == Sort::Item) && rules.iter().skip(33).all(|rule| rule.sort() == Sort::Expression) && rules.first().is_some_and(|rule| rule.name().0 == "forall_type") && rules.last().is_some_and(|rule| rule.name().0 == "redirection_operator")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.arrow", "item.singleton", "expression.atom", "expression.postfix", "expression.and", "expression.or"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 53 && rules.iter().take(32).all(|rule| rule.sort() == Sort::Type) && rules.iter().skip(32).take(3).all(|rule| rule.sort() == Sort::Item) && rules.iter().skip(35).all(|rule| rule.sort() == Sort::Expression) && rules.first().is_some_and(|rule| rule.name().0 == "forall_type") && rules.last().is_some_and(|rule| rule.name().0 == "redirection_operator")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let mut rules = Vec::new();
@@ -100,7 +100,7 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 /// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |&()| rules.get(before..).is_some_and(|added| added.len() == 30 && added.iter().all(|rule| rule.sort() == Sort::Type && ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.arrow"].into_iter().any(|group| precs.get(PrecName(group)) == Some(rule.prec()))) && added.first().is_some_and(|rule| rule.name().0 == "forall_type") && added.last().is_some_and(|rule| rule.name().0 == "number.type"))))]
+#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |&()| rules.get(before..).is_some_and(|added| added.len() == 32 && added.iter().all(|rule| rule.sort() == Sort::Type && ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.arrow"].into_iter().any(|group| precs.get(PrecName(group)) == Some(rule.prec()))) && added.first().is_some_and(|rule| rule.name().0 == "forall_type") && added.last().is_some_and(|rule| rule.name().0 == "number.type"))))]
 fn add_type_rules(
     rules: &mut Vec<Rule>,
     precs: &PrecTable,
@@ -221,6 +221,33 @@ fn add_type_rules(
     // the sum's `+` and the difference's `-` keep their own tiles. The rule
     // names keep the kinds `f_type` and `u_type` the tree-sitter grammar
     // names, so a consumer dispatching on kinds reads the bridges as before.
+    //
+    // The returner takes an optional effect row, `-F [Fs, Proc] A`: the
+    // interfaces its computation may request, each a host interface's name.
+    // The bracket follows the compound tile as the thunk's grade does. The
+    // row form is a rule of its own, `f_type.row`, realising the kind
+    // `f_type`, rather than an optional bracket in `f_type`: an optional
+    // bracket leaves the bare returner's only mold awaiting a `[`, so a
+    // returner missing its operand recovers as the thunk does, with three
+    // obligations where it had one. The two rules give `-F` two molds, and the
+    // molder settles their tie at the next token: a `[` continues only the
+    // row form, and anything else only the bare one. The row form is pushed
+    // first so its mold numbers first, which is what keeps `-F [Fs] A` a row:
+    // a `[` may also open an expression list in the operand's hole, a reading
+    // the bare form keeps open, and an exact tie keeps the smaller mold.
+    rules.push(Rule::with_provenance(
+        RuleName("f_type.row"),
+        Provenance("f_type"),
+        ty,
+        type_application,
+        Regex::seq([
+            tile(TileLabel("-F")),
+            tile(TileLabel("[")),
+            comma1(tile(TileLabel("type_identifier"))),
+            tile(TileLabel("]")),
+            Regex::sort(ty),
+        ]),
+    ));
     rules.push(rule(
         RuleName("f_type"),
         ty,
@@ -544,6 +571,34 @@ fn add_type_rules(
         ty,
         type_atom,
         tile(TileLabel("type_variable")),
+    ));
+    // The capability `Cap {read, write}`: the authority to exercise the named
+    // operations, each a host interface's operation. `Cap` is reserved as
+    // `Type` and `Path` are, and the optional bracket after it is the grade
+    // the thunk's bracket spells: `Cap[1] {write}` is a consumable
+    // capability, which the checker names and refuses. The operation list is
+    // a brace list of names, the notation the record fixes; no type opens on
+    // `{`, so the list is decided at its first tile. The rule follows the
+    // type atoms so its molds number after theirs: where a damaged type leaves
+    // a stray name, brace or comma that two molds read equally well, the
+    // molder keeps the smaller mold, and the tie falls to the reading the type
+    // had before capabilities. The tree-sitter grammar has no capability, so
+    // the kind is in `PBG_ONLY_KINDS`.
+    rules.push(rule(
+        RuleName("capability_type"),
+        ty,
+        type_atom,
+        Regex::seq([
+            tile(TileLabel("Cap")),
+            Regex::optional(Regex::seq([
+                tile(TileLabel("[")),
+                grade_shape(),
+                tile(TileLabel("]")),
+            ])),
+            tile(TileLabel("{")),
+            comma1(tile(TileLabel("identifier"))),
+            tile(TileLabel("}")),
+        ]),
     ));
     // Identity endpoints: a number literal is a Type-sort atom, so
     // `Path(Integer, 4, 4)` molds with literal endpoints. The Expression- and

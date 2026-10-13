@@ -1082,7 +1082,8 @@ Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | 
 }),
         | Node::Computation(id) => self.arena.computation(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
 Computation::Perform { ref signature, .. } => 1_usize.saturating_add(signature.types().count()),
-Computation::Handle { ref signature, ref clauses, .. } => 2_usize.saturating_add(signature.types().count()).saturating_add(clauses.len()),
+Computation::Exercise { ref signature, .. } => 2_usize.saturating_add(signature.types().count()),
+Computation::Handle { ref signature, ref clauses, .. } | Computation::Scope { ref signature, ref clauses, .. } => 2_usize.saturating_add(signature.types().count()).saturating_add(clauses.len()),
 Computation::ListFold { .. } | Computation::TelescopeTransport { .. } => 5,
 Computation::PathTransport { .. } => 3,
 Computation::Primitive { ref arguments, .. } => arguments.len(),
@@ -1099,6 +1100,7 @@ ValueType::Record(ref fields) => fields.len(),
 ValueType::Product(ref components) | ValueType::Sum(ref components) => components.len(),
 ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => 0_usize,
 ValueType::Session(ref session) => session.payloads().len(),
+ValueType::Capability { ref authority, .. } => authority.types().count(),
 ValueType::Stack { .. } | ValueType::StaticPi { .. } | ValueType::PathUniverse(..) => 2,
 ValueType::Path { .. } => 3,
 ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
@@ -1230,6 +1232,41 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                     ..
                 }) => {
                     self.tasks.push(open(Node::Value(payload), depth));
+                    self.tasks.extend(
+                        signature
+                            .types()
+                            .rev()
+                            .map(|ty| open(Node::ValueType(ty), depth)),
+                    );
+                },
+                | Some(&Computation::Exercise {
+                    capability,
+                    ref signature,
+                    payload,
+                    ..
+                }) => {
+                    self.tasks.push(open(Node::Value(payload), depth));
+                    self.tasks.push(open(Node::Value(capability), depth));
+                    self.tasks.extend(
+                        signature
+                            .types()
+                            .rev()
+                            .map(|ty| open(Node::ValueType(ty), depth)),
+                    );
+                },
+                | Some(&Computation::Scope {
+                    ref signature,
+                    subject,
+                    on_return,
+                    ref clauses,
+                }) => {
+                    self.tasks.extend(clauses.iter().rev().map(|clause| {
+                        open(Node::Computation(clause.body), depth.deeper().deeper())
+                    }));
+                    self.tasks
+                        .push(open(Node::Computation(on_return), depth.deeper()));
+                    self.tasks
+                        .push(open(Node::Computation(subject), depth.deeper()));
                     self.tasks.extend(
                         signature
                             .types()
@@ -1436,6 +1473,12 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                     | ValueType::Universe { .. }
                     | ValueType::Abstract(_)
                     | ValueType::Unknown => {},
+                    | ValueType::Capability { ref authority, .. } => self.tasks.extend(
+                        authority
+                            .types()
+                            .rev()
+                            .map(|ty| open(Node::ValueType(ty), depth)),
+                    ),
                     | ValueType::StaticPi {
                         domain: first,
                         codomain: second,
@@ -2075,7 +2118,8 @@ Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | 
     #[spec(
         captures: [ready = self.results.len(), children = self.arena.computation(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
 Computation::Perform { ref signature, .. } => 1_usize.saturating_add(signature.types().count()),
-Computation::Handle { ref signature, ref clauses, .. } => 2_usize.saturating_add(signature.types().count()).saturating_add(clauses.len()),
+Computation::Exercise { ref signature, .. } => 2_usize.saturating_add(signature.types().count()),
+Computation::Handle { ref signature, ref clauses, .. } | Computation::Scope { ref signature, ref clauses, .. } => 2_usize.saturating_add(signature.types().count()).saturating_add(clauses.len()),
 Computation::ListFold { .. } | Computation::TelescopeTransport { .. } => 5,
 Computation::PathTransport { .. } => 3,
 Computation::Primitive { ref arguments, .. } => arguments.len(),
@@ -2115,6 +2159,65 @@ Computation::Session(ref action) => action.values().count().saturating_add(actio
                         rewritten_signature,
                         operation.clone(),
                         rewritten,
+                    )
+                }
+            },
+            | Computation::Exercise {
+                capability,
+                ref signature,
+                ref operation,
+                payload,
+            } => {
+                let rewritten_payload = Self::value(&mut self.results, payload);
+                let rewritten_capability = Self::value(&mut self.results, capability);
+                let rewritten_signature = Self::signature(&mut self.results, signature);
+                if rewritten_capability == capability
+                    && rewritten_payload == payload
+                    && rewritten_signature == *signature
+                {
+                    id
+                }
+                else {
+                    self.arena.computation_exercise(
+                        rewritten_capability,
+                        rewritten_signature,
+                        operation.clone(),
+                        rewritten_payload,
+                    )
+                }
+            },
+            | Computation::Scope {
+                ref signature,
+                subject,
+                on_return,
+                ref clauses,
+            } => {
+                let mut rewritten_clauses = None;
+                for (index, clause) in clauses.iter().enumerate().rev() {
+                    let rewritten = Self::computation(&mut self.results, clause.body);
+                    if rewritten != clause.body {
+                        let changed = rewritten_clauses
+                            .get_or_insert_with(|| alloc::sync::Arc::clone(clauses));
+                        if let Some(slot) = alloc::sync::Arc::make_mut(changed).get_mut(index) {
+                            slot.body = rewritten;
+                        }
+                    }
+                }
+                let rewritten_return = Self::computation(&mut self.results, on_return);
+                let rewritten_subject = Self::computation(&mut self.results, subject);
+                let rewritten_signature = Self::signature(&mut self.results, signature);
+                if rewritten_clauses.is_none()
+                    && (rewritten_return, rewritten_subject) == (on_return, subject)
+                    && rewritten_signature == *signature
+                {
+                    id
+                }
+                else {
+                    self.arena.computation_scope(
+                        rewritten_signature,
+                        rewritten_subject,
+                        rewritten_return,
+                        rewritten_clauses.unwrap_or_else(|| alloc::sync::Arc::clone(clauses)),
                     )
                 }
             },
@@ -2506,6 +2609,7 @@ ValueType::Record(ref fields) => fields.len(),
 ValueType::Product(ref components) | ValueType::Sum(ref components) => components.len(),
 ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => 0_usize,
 ValueType::Session(ref session) => session.payloads().len(),
+ValueType::Capability { ref authority, .. } => authority.types().count(),
 ValueType::Stack { .. } | ValueType::StaticPi { .. } | ValueType::PathUniverse(..) => 2,
 ValueType::Path { .. } => 3,
 ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
@@ -2610,6 +2714,25 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
             | ValueType::Universe { .. }
             | ValueType::Abstract(_)
             | ValueType::Unknown => id,
+            | ValueType::Capability {
+                ref authority,
+                grade,
+                region,
+            } => {
+                let rewritten =
+                    match authority.try_map_types(crate::effect::TypeOrder::Reverse, |ty| {
+                        Ok::<_, core::convert::Infallible>(Self::value_type(&mut self.results, ty))
+                    }) {
+                        | Ok(row) => row,
+                        | Err(never) => match never {},
+                    };
+                if rewritten == *authority {
+                    id
+                }
+                else {
+                    self.arena.value_type_capability(rewritten, grade, region)
+                }
+            },
             | ValueType::Product(ref components) | ValueType::Sum(ref components) => {
                 let product = matches!(*node, ValueType::Product(_));
                 let mut changed: Option<Vec<ValueTypeId>> = None;
@@ -3498,6 +3621,14 @@ fn survey_computation(
         | Computation::RecordProjection(value, _)
         | Computation::TupleProjection(value, _)
         | Computation::Perform { payload: value, .. } => next.push(Position::Value(value, region)),
+        | Computation::Exercise {
+            capability,
+            payload,
+            ..
+        } => next.extend([
+            Position::Value(capability, region),
+            Position::Value(payload, region),
+        ]),
         | Computation::Lambda(body)
         | Computation::Fixpoint { body, .. }
         | Computation::Reset(body)
@@ -3550,6 +3681,12 @@ fn survey_computation(
             Position::Computation(on_cons, own),
         ]),
         | Computation::Handle {
+            subject,
+            on_return,
+            ref clauses,
+            ..
+        }
+        | Computation::Scope {
             subject,
             on_return,
             ref clauses,
@@ -4343,7 +4480,7 @@ mod tests
             Some(&ValueType::Stack { .. } | &ValueType::List(_) | &ValueType::Data { .. } | &ValueType::Record(_) |
 &ValueType::Sum(..) | &ValueType::PathUniverse(..) | &ValueType::Path { .. } | &ValueType::Universe { ..
 } | &ValueType::Lift { .. } | &ValueType::Abstract(_) | &ValueType::StaticPi {
-.. } | &ValueType::Unknown | &ValueType::Session(_)) | None => Token::Other,
+.. } | &ValueType::Capability { .. } | &ValueType::Unknown | &ValueType::Session(_)) | None => Token::Other,
             },
         | Visit::Value(id) => match arena.value(id) {
             | Some(&Value::Variable { index, .. }) => Token::Variable(u32::from(index)),

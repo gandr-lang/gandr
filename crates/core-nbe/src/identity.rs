@@ -256,6 +256,7 @@ pub fn clause(
             | ValueType::PathUniverse(..)
             | ValueType::Path { .. }
             | ValueType::Stack { .. }
+            | ValueType::Capability { .. }
             | ValueType::Lift { .. }
             | ValueType::StaticPi { .. }
             | ValueType::Session(_) => Clause::Unclassified,

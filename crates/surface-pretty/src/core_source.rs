@@ -419,6 +419,8 @@ Former::Unreadable) |
             actual_domain == CoreNode::ValueType(domain) && actual_codomain == CoreNode::ValueType(codomain),
         | (Some(&ValueType::Session(ref session)), Former::Session { protocol, state, payloads }) =>
             core::ptr::eq(core::ptr::from_ref(protocol), core::ptr::from_ref(session.protocol())) && state == session.state() && usize::from(payloads) == session.payloads().len(),
+        | (Some(&ValueType::Capability { grade, region, .. }), Former::Capability { grade: actual_grade, region: actual_region, .. }) =>
+            grade == actual_grade && region == actual_region,
         | _ => false,
     })]
     fn value_type(
@@ -462,6 +464,15 @@ Former::Unreadable) |
                 protocol: session.protocol(),
                 state: session.state(),
                 payloads: Arity::from(session.payloads().len()),
+            },
+            | ValueType::Capability {
+                ref authority,
+                grade,
+                region,
+            } => Former::Capability {
+                authority,
+                grade,
+                region,
             },
         }
     }
@@ -598,7 +609,7 @@ impl Source for CoreSource<'_>
         | CoreNode::ValueType(_) => matches!(ret, Former::BaseType(_) | Former::Product(_) | Former::RecordType(_)
             | Former::Stack(..) | Former::List(_)
             | Former::Sum(_) | Former::ThunkType(_) | Former::Universe { .. } | Former::TypeLift
-            | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::PathUniverse(..) | Former::Session { .. } | Former::Unreadable),
+            | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::Capability { .. } | Former::PathUniverse(..) | Former::Session { .. } | Former::Unreadable),
         | CoreNode::CompType(_) => matches!(ret, Former::Returner(_) | Former::EffectfulReturner { .. } | Former::Arrow { .. } | Former::Pi { .. }
             | Former::With(..) | Former::ComputationElement(_) | Former::Unreadable),
     })]
@@ -630,6 +641,8 @@ impl Source for CoreSource<'_>
                     | Computation::TupleProjection(..)
                     | Computation::Perform { .. }
                     | Computation::Handle { .. }
+                    | Computation::Exercise { .. }
+                    | Computation::Scope { .. }
                     | Computation::Resume(..)
                     | Computation::Split { .. }
                     | Computation::Reset(_)

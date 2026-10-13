@@ -139,6 +139,9 @@
 //! | `0x78` | Shift |
 //! | `0x79` | With computation |
 //! | `0x7A` | Project |
+//! | `0x7B` | Exercise |
+//! | `0x7C` | Capability scope |
+//! | `0x7D` | Capability classifier |
 //!
 //! A handler retains source clause order and branch-local de Bruijn indices.
 //! Stack frames retain execution order and projection side. Fixed children
@@ -148,6 +151,13 @@
 //! payloads. Closed Stack/With type tables can be reminted into another arena;
 //! runtime term graphs are not invented by the type-only reminting path.
 //!
+//! A capability scope persists as a handler does, under its own tag, so a
+//! scope and a handler over one interface never share an address. An exercise
+//! keeps its capability and payload before its interface's type edges. A
+//! capability classifier keeps its authority's restricted interfaces as a row,
+//! then its grade and its region, a scoped region by its depth; it seats like
+//! any closed type. The capability refusals keep their sites and type payloads.
+//!
 //! **Choice.** Preserve typed interfaces and control syntax as content, not
 //! runtime heap addresses or captured delimiter stacks. Omitting annotations
 //! permits stale adoption; persisting a runtime continuation would require a
@@ -156,6 +166,7 @@
 //!
 //! Witnesses:
 //! `content::tests::control_graphs_preserve_scopes_and_signature_edges`,
+//! `content::tests::capability_graphs_keep_authority_region_and_scope`,
 //! `codec::tests::control_nodes_persist_names_frames_and_branch_order` and
 //! `edit::tests::control_edits_preserve_names_scopes_and_frame_order` in
 //! `gandr-surface-session`.
@@ -373,6 +384,44 @@ pub enum ContentNode
         on_return: NodeIndex,
         /// Each operation branch binds payload then resumption.
         clauses: alloc::sync::Arc<[gandr_core_term::control::EffectClause<NodeIndex>]>,
+    },
+    /// An operation exercised through a capability, with the interface the
+    /// operation belongs to.
+    Exercise
+    {
+        /// The capability.
+        capability: NodeIndex,
+        /// Arena-independent interface type edges.
+        signature: gandr_core_term::effect::EffectSig<NodeIndex>,
+        /// The operation's local name.
+        operation: gandr_core_term::effect::OperationName,
+        /// Request payload.
+        payload: NodeIndex,
+    },
+    /// A capability scope: a deep handler whose subject binds the capability
+    /// it introduces.
+    Scope
+    {
+        /// The handled interface.
+        signature: gandr_core_term::effect::EffectSig<NodeIndex>,
+        /// Handled computation, beneath the capability's binder.
+        subject: NodeIndex,
+        /// Return branch, beneath one value binder.
+        on_return: NodeIndex,
+        /// Each operation branch binds payload then resumption.
+        clauses: alloc::sync::Arc<[gandr_core_term::control::EffectClause<NodeIndex>]>,
+    },
+    /// A capability classifier: its authority's type edges, grade and
+    /// region.
+    Capability
+    {
+        /// The grant atoms, each interface restricted to its granted
+        /// operations.
+        authority: gandr_core_term::effect::EffectRow<NodeIndex>,
+        /// How often it may be exercised.
+        grade: gandr_core_term::effect::capability::CapabilityGrade,
+        /// How long it lives.
+        region: gandr_core_term::effect::capability::Region,
     },
     /// Feed a computation to a first-class stack.
     Resume(NodeIndex, NodeIndex),
@@ -892,6 +941,8 @@ impl ContentNode
         | Self::TupleProjection(..)
         | Self::Perform { .. }
         | Self::Handle { .. }
+        | Self::Exercise { .. }
+        | Self::Scope { .. }
         | Self::Resume(..)
         | Self::Split(..)
         | Self::Reset(_)
@@ -916,6 +967,7 @@ impl ContentNode
         | Self::Data { .. }
         | Self::RecordType(_)
         | Self::Stack { .. }
+        | Self::Capability { .. }
         | Self::PathUniverse(..)
         | Self::PathType { .. }
         | Self::Base(_)
@@ -981,6 +1033,8 @@ impl ContentNode
             | Self::TupleProjection(..)
             | Self::Perform { .. }
             | Self::Handle { .. }
+            | Self::Exercise { .. }
+            | Self::Scope { .. }
             | Self::Resume(..)
             | Self::Split(..)
             | Self::Reset(_)
@@ -1005,6 +1059,7 @@ impl ContentNode
             | Self::Data { .. }
             | Self::RecordType(_)
             | Self::Stack { .. }
+            | Self::Capability { .. }
             | Self::PathUniverse(..)
             | Self::PathType { .. }
             | Self::Base(_)
@@ -1050,7 +1105,7 @@ impl ContentNode
         use Sort::Value as V;
         use Sort::ValueType as A;
         let actual = ret.slots.get(.. ret.count);
-        (matches!(*self, Self::Returner { .. }) || ret.effects.is_none()) && match *self {
+        (matches!(*self, Self::Returner { .. } | Self::Capability { .. }) || ret.effects.is_none()) && match *self {
             Self::Data { ref arguments,.. } => ret.iter().eq(arguments.iter().map(|&argument| (argument,V))),
             Self::RecordType(ref fields) => ret.iter().eq(fields.values().map(|&field| (field,A))),
             Self::Constructor { datatype,ref fields,.. } => ret.iter().eq(core::iter::once((datatype,A)).chain(fields.iter().map(|&field| (field,V)))),
@@ -1065,7 +1120,9 @@ impl ContentNode
             | Self::Stack { input, output } => actual == Some(&[(input, C), (output, C)][..]),
             | Self::WithType(first, second) => actual == Some(&[(first, C), (second, C)][..]),
             | Self::Perform { payload, ref signature, .. } => ret.iter().eq(core::iter::once((payload, V)).chain(signature.types().map(|ty| (ty, A)))),
-            | Self::Handle { subject, on_return, ref signature, ref clauses } => ret.iter().eq([(subject, M), (on_return, M)].into_iter().chain(signature.types().map(|ty| (ty, A))).chain(clauses.iter().map(|clause| (clause.body, M)))),
+            | Self::Handle { subject, on_return, ref signature, ref clauses } | Self::Scope { subject, on_return, ref signature, ref clauses } => ret.iter().eq([(subject, M), (on_return, M)].into_iter().chain(signature.types().map(|ty| (ty, A))).chain(clauses.iter().map(|clause| (clause.body, M)))),
+            | Self::Exercise { capability, payload, ref signature, .. } => ret.iter().eq([(capability, V), (payload, V)].into_iter().chain(signature.types().map(|ty| (ty, A)))),
+            | Self::Capability { ref authority, .. } => ret.iter().eq(authority.types().map(|ty| (ty, A))),
             | Self::Resume(stack, body) | Self::Split(stack, _, body) => actual == Some(&[(stack, V), (body, M)][..]),
             | Self::Reset(body) | Self::Shift(body) | Self::Project(_, body) => actual == Some(&[(body, M)][..]),
             | Self::With(first, second) => actual == Some(&[(first, M), (second, M)][..]),
@@ -1175,10 +1232,29 @@ impl ContentNode
                 on_return,
                 ref signature,
                 ref clauses,
+            }
+            | Self::Scope {
+                subject,
+                on_return,
+                ref signature,
+                ref clauses,
             } => Children {
                 signature: Some(signature),
                 clauses,
                 ..Children::of(&[(subject, M), (on_return, M)])
+            },
+            | Self::Exercise {
+                capability,
+                payload,
+                ref signature,
+                ..
+            } => Children {
+                signature: Some(signature),
+                ..Children::of(&[(capability, V), (payload, V)])
+            },
+            | Self::Capability { ref authority, .. } => Children {
+                effects: Some(authority),
+                ..Children::default()
             },
             | Self::Resume(stack, body) | Self::Split(stack, _, body) => {
                 Children::of(&[(stack, V), (body, M)])
@@ -1361,6 +1437,9 @@ impl ContentNode
             | Self::WithType(..)
             | Self::Perform { .. }
             | Self::Handle { .. }
+            | Self::Exercise { .. }
+            | Self::Scope { .. }
+            | Self::Capability { .. }
             | Self::Resume(..)
             | Self::Split(..)
             | Self::Reset(_)
@@ -2536,6 +2615,12 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 subject,
                 on_return,
                 ref clauses,
+            }
+            | Computation::Scope {
+                ref signature,
+                subject,
+                on_return,
+                ref clauses,
             } => {
                 let subject = self.discover(ArenaNode::Computation(subject));
                 let on_return = self.discover(ArenaNode::Computation(on_return));
@@ -2551,11 +2636,41 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                         body: self.discover(ArenaNode::Computation(clause.body)),
                     })
                     .collect();
-                ContentNode::Handle {
+                if matches!(*computation, Computation::Scope { .. }) {
+                    ContentNode::Scope {
+                        signature,
+                        subject,
+                        on_return,
+                        clauses,
+                    }
+                }
+                else {
+                    ContentNode::Handle {
+                        signature,
+                        subject,
+                        on_return,
+                        clauses,
+                    }
+                }
+            },
+            | Computation::Exercise {
+                capability,
+                ref signature,
+                ref operation,
+                payload,
+            } => {
+                let capability = self.discover(ArenaNode::Value(capability));
+                let payload = self.discover(ArenaNode::Value(payload));
+                let signature = signature
+                    .try_relocate(|ty| {
+                        Ok::<_, core::convert::Infallible>(self.discover(ArenaNode::ValueType(ty)))
+                    })
+                    .unwrap_or_else(|never| match never {});
+                ContentNode::Exercise {
+                    capability,
                     signature,
-                    subject,
-                    on_return,
-                    clauses,
+                    operation: operation.clone(),
+                    payload,
                 }
             },
             | Computation::Resume(stack, body) => ContentNode::Resume(
@@ -2732,6 +2847,19 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
             | ValueType::Stack { input, output } => ContentNode::Stack {
                 input: self.discover(ArenaNode::CompType(input)),
                 output: self.discover(ArenaNode::CompType(output)),
+            },
+            | ValueType::Capability {
+                ref authority,
+                grade,
+                region,
+            } => ContentNode::Capability {
+                authority: authority
+                    .try_relocate(|ty| {
+                        Ok::<_, core::convert::Infallible>(self.discover(ArenaNode::ValueType(ty)))
+                    })
+                    .unwrap_or_else(|never| match never {}),
+                grade,
+                region,
             },
             | ValueType::PathUniverse(source, target) => {
                 let source = self.discover(ArenaNode::Value(source));
@@ -3047,6 +3175,12 @@ where
             subject,
             on_return,
             ref clauses,
+        }
+        | ContentNode::Scope {
+            ref signature,
+            subject,
+            on_return,
+            ref clauses,
         } => {
             let subject = image(subject);
             let on_return = image(on_return);
@@ -3064,11 +3198,41 @@ where
                     slot.body = body;
                 }
             }
-            ContentNode::Handle {
+            if matches!(*node, ContentNode::Scope { .. }) {
+                ContentNode::Scope {
+                    signature,
+                    subject,
+                    on_return,
+                    clauses: mapped,
+                }
+            }
+            else {
+                ContentNode::Handle {
+                    signature,
+                    subject,
+                    on_return,
+                    clauses: mapped,
+                }
+            }
+        },
+        | ContentNode::Exercise {
+            capability,
+            ref signature,
+            ref operation,
+            payload,
+        } => {
+            let capability = image(capability);
+            let payload = image(payload);
+            let signature = signature
+                .try_map_types(gandr_core_term::effect::TypeOrder::Forward, |ty| {
+                    Ok::<_, core::convert::Infallible>(image(ty))
+                })
+                .unwrap_or_else(|never| match never {});
+            ContentNode::Exercise {
+                capability,
                 signature,
-                subject,
-                on_return,
-                clauses: mapped,
+                operation: operation.clone(),
+                payload,
             }
         },
         | ContentNode::Resume(stack, body) => ContentNode::Resume(image(stack), image(body)),
@@ -3253,6 +3417,19 @@ where
                 })
                 .unwrap_or_else(|never| match never {});
             ContentNode::Returner { result, effects }
+        },
+        | ContentNode::Capability {
+            ref authority,
+            grade,
+            region,
+        } => ContentNode::Capability {
+            authority: authority
+                .try_map_types(gandr_core_term::effect::TypeOrder::Forward, |ty| {
+                    Ok::<_, core::convert::Infallible>(image(ty))
+                })
+                .unwrap_or_else(|never| match never {}),
+            grade,
+            region,
         },
         | ContentNode::Arrow { domain, codomain } => {
             let domain = image(domain);
@@ -3675,6 +3852,22 @@ fn mint_node(
                 | Err(reason) => Maybe::Absent(reason),
             }
         },
+        | ContentNode::Capability {
+            ref authority,
+            grade,
+            region,
+        } => {
+            let authority = authority.try_relocate(|ty| match minted_value_type(states, ty) {
+                | Maybe::Present(ty) => Ok(ty),
+                | Maybe::Absent(reason) => Err(reason),
+            });
+            match authority {
+                | Ok(authority) => Maybe::Present(Minted::ValueType(
+                    arena.value_type_capability(authority, grade, region),
+                )),
+                | Err(reason) => Maybe::Absent(reason),
+            }
+        },
         | ContentNode::Arrow { domain, codomain } => {
             match (
                 minted_value_type(states, domain),
@@ -3719,6 +3912,8 @@ fn mint_node(
         | ContentNode::Perform { .. }
         | ContentNode::Session(_)
         | ContentNode::Handle { .. }
+        | ContentNode::Exercise { .. }
+        | ContentNode::Scope { .. }
         | ContentNode::Resume(..)
         | ContentNode::Split(..)
         | ContentNode::Reset(_)
@@ -3981,6 +4176,146 @@ mod tests
             panic!("closed Stack/With codes seat");
         };
         assert_eq!(TypeContent::of_value_type(&target, minted), content);
+    }
+
+    #[test]
+    fn capability_graphs_keep_authority_region_and_scope()
+    {
+        use gandr_core_term::Zone;
+        use gandr_core_term::control::EffectClause;
+        use gandr_core_term::effect::EffectOp;
+        use gandr_core_term::effect::EffectRow;
+        use gandr_core_term::effect::EffectSig;
+        use gandr_core_term::effect::capability::CapabilityGrade;
+        use gandr_core_term::effect::capability::Region;
+        use gandr_core_term::effect::capability::RegionDepth;
+        /// The one variation each build makes.
+        #[derive(Clone, Copy)]
+        enum Variation
+        {
+            /// The graph as written.
+            Base,
+            /// The capability scoped rather than held.
+            Scoped,
+            /// The capability consumable rather than durable.
+            Consumable,
+            /// The authority granting the other operation.
+            Authority,
+            /// A deep handler in place of the scope.
+            Handler,
+        }
+        let build = |noise: usize, variation: Variation| {
+            let mut arena = CoreArena::new();
+            for _ in 0 .. noise {
+                let _ = arena.value_unit();
+                let _ = arena.value_type_unit();
+            }
+            let unit = arena.value_unit();
+            let variable = arena.value_variable(Zone::Intuitionistic, 0_u32.into());
+            let unit_type = arena.value_type_unit();
+            let reply = arena.value_type_base(BaseType::Integer);
+            let signature = EffectSig::new("State".into(), [
+                EffectOp {
+                    name: "get".into(),
+                    payload: unit_type,
+                    reply,
+                },
+                EffectOp {
+                    name: "put".into(),
+                    payload: reply,
+                    reply: unit_type,
+                },
+            ])
+            .expect("two operations");
+            let granted = if matches!(variation, Variation::Authority) {
+                "put"
+            }
+            else {
+                "get"
+            };
+            let authority =
+                EffectRow::authority(&[signature.restrict([&granted.into()]).expect("granted")])
+                    .expect("one restriction");
+            let region = if matches!(variation, Variation::Scoped) {
+                Region::Scoped(RegionDepth::from(1_u32))
+            }
+            else {
+                Region::Held
+            };
+            let grade = if matches!(variation, Variation::Consumable) {
+                CapabilityGrade::Consumable
+            }
+            else {
+                CapabilityGrade::Durable
+            };
+            let capability = arena.value_type_capability(authority, grade, region);
+            let answer = arena
+                .comp_type_returner_with_effects(reply, EffectRow::singleton(signature.clone()));
+            let arrow = arena.comp_type_arrow(capability, answer);
+            let ty = arena.value_type_thunk(arrow);
+            let exercised =
+                arena.computation_exercise(variable, signature.clone(), "get".into(), unit);
+            let returned = arena.computation_return(variable);
+            let clauses = alloc::sync::Arc::from([
+                EffectClause {
+                    operation: "get".into(),
+                    body: returned,
+                },
+                EffectClause {
+                    operation: "put".into(),
+                    body: returned,
+                },
+            ]);
+            let scoped = if matches!(variation, Variation::Handler) {
+                arena.computation_handle(signature, exercised, returned, clauses)
+            }
+            else {
+                arena.computation_scope(signature, exercised, returned, clauses)
+            };
+            let body = arena.computation_bind(exercised, scoped);
+            let lambda = arena.computation_lambda(body);
+            let thunk = arena.value_thunk(lambda);
+            (single(arena, Maybe::Present(ty), Maybe::Present(thunk)), ty)
+        };
+        let content = |program: &Program| {
+            encode_item(
+                program.arena(),
+                program.layout(),
+                ItemOrdinal::from(0_usize),
+            )
+            .content
+        };
+        let (source, ty) = build(0, Variation::Base);
+        let original = content(&source);
+        assert_eq!(
+            original,
+            content(&build(5, Variation::Base).0),
+            "identity reads content, never ids"
+        );
+        for variation in [
+            Variation::Scoped,
+            Variation::Consumable,
+            Variation::Authority,
+            Variation::Handler,
+        ] {
+            assert_ne!(
+                original,
+                content(&build(0, variation).0),
+                "region, grade, authority and the scope each contribute to identity"
+            );
+        }
+        let table = TypeContent::of_value_type(&source, ty);
+        let mut target = single(
+            CoreArena::new(),
+            Maybe::Absent(signature::Absent::Unsigned),
+            Maybe::Absent(body::Absent::Hole),
+        );
+        let (arena, layout) = target.parts_mut();
+        let Maybe::Present(minted) = table.mint(arena, layout)
+        else {
+            panic!("a capability type seats");
+        };
+        assert_eq!(TypeContent::of_value_type(&target, minted), table);
     }
 
     /// The integer literal zero.

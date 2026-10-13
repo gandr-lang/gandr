@@ -429,6 +429,10 @@ impl TileName
     pub const PAREN_OPEN: Self = Self("(");
     /// The element path type's head `Path`.
     pub const PATH: Self = Self("Path");
+    /// The capability type's head `Cap`.
+    pub const CAP: Self = Self("Cap");
+    /// The capability scope's lead `handle`.
+    pub const HANDLE: Self = Self("handle");
     /// The sort literal `+` of a universe: the value types.
     pub const PLUS: Self = Self("+");
     /// A double quote opening or closing a string written among a form's own
@@ -488,7 +492,8 @@ impl TileName
     pub const GENERATOR: Self = Self("-->");
     /// The reserved operation-member keyword `op` of a data block.
     pub const OP: Self = Self("op");
-    /// The reserved operation-member keyword `oper` of a data block.
+    /// The reserved operation-member keyword `oper` of a data block, which
+    /// also leads a capability scope's operation clause.
     pub const OPER: Self = Self("oper");
     /// The reserved 2-cell member keyword `rule` of a data block.
     pub const RULE: Self = Self("rule");
@@ -649,6 +654,13 @@ pub enum Former
     /// The element path type `Path(A, a, b)`: a value type over a carrier
     /// and two endpoint terms.
     PathType,
+    /// The capability type `Cap[r]? {op, …}`: the authority to exercise the
+    /// named host operations.
+    CapabilityType,
+    /// The capability scope `handle c : I { … } with { … }`: a deep handler
+    /// for the host interface `I` whose body holds the capability it
+    /// introduces.
+    Scope,
     /// The declaration family `def name …`.
     Declaration,
     /// An attribute block standing on its own, decorating nothing.
@@ -686,7 +698,7 @@ impl Former
     ///   of successful table outcomes plus the miss outcome. The evidence is
     ///   bounded to the current closed enum and table.
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 46_usize] = [
+    pub const ALL: [Self; 48_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Hole,
@@ -726,6 +738,8 @@ impl Former
         Self::StaticAbstraction,
         Self::ParenthesizedType,
         Self::PathType,
+        Self::CapabilityType,
+        Self::Scope,
         Self::Declaration,
         Self::AttributeBlock,
         Self::Import,
@@ -755,7 +769,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 47_usize] = [
+pub const FORMERS: [(&str, Former); 49_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -797,6 +811,8 @@ pub const FORMERS: [(&str, Former); 47_usize] = [
     ("static_abstraction", Former::StaticAbstraction),
     ("parenthesized_type", Former::ParenthesizedType),
     ("path_type", Former::PathType),
+    ("capability_type", Former::CapabilityType),
+    ("handle_expression", Former::Scope),
     ("def_value", Former::Declaration),
     ("attribute_block", Former::AttributeBlock),
     ("import_declaration", Former::Import),

@@ -561,7 +561,8 @@ fn checking_row(
                 | ExpectedShape::StaticPi
                 | ExpectedShape::Path
                 | ExpectedShape::Telescope
-                | ExpectedShape::Session,
+                | ExpectedShape::Session
+                | ExpectedShape::Capability,
             ..
         }
         | CheckRefusal::NotSynthesisable {
@@ -580,7 +581,8 @@ fn checking_row(
                 | CheckingForm::StaticLambda(_)
                 | CheckingForm::Fixpoint(_)
                 | CheckingForm::Nested(_)
-                | CheckingForm::Offer(_),
+                | CheckingForm::Offer(_)
+                | CheckingForm::Scope(_),
         }
         | CheckRefusal::PathCode(_)
         | CheckRefusal::EndpointMismatch { .. }
@@ -622,7 +624,13 @@ fn checking_row(
         | CheckRefusal::CrossBlockReference { .. }
         | CheckRefusal::DescentNotReplayed { .. }
         | CheckRefusal::SessionMismatch { .. }
-        | CheckRefusal::Linearity { .. } => {},
+        | CheckRefusal::Linearity { .. }
+        | CheckRefusal::CapabilityForged { .. }
+        | CheckRefusal::CapabilityAmplified(_)
+        | CheckRefusal::CapabilityOutsideAuthority { .. }
+        | CheckRefusal::CapabilityEscaped { .. }
+        | CheckRefusal::CapabilityConsumable(_)
+        | CheckRefusal::CapabilityUngranted { .. } => {},
     }
 }
 
@@ -873,15 +881,28 @@ fn formers(
                 | Some(&Computation::Perform { payload, .. }) => {
                     worklist.push(Node::Value(payload));
                 },
-                | Some(&Computation::Handle {
-                    subject,
-                    on_return,
-                    ref clauses,
-                    ..
-                }) => {
+                | Some(
+                    &(Computation::Handle {
+                        subject,
+                        on_return,
+                        ref clauses,
+                        ..
+                    }
+                    | Computation::Scope {
+                        subject,
+                        on_return,
+                        ref clauses,
+                        ..
+                    }),
+                ) => {
                     worklist.extend([Node::Computation(subject), Node::Computation(on_return)]);
                     worklist.extend(clauses.iter().map(|clause| Node::Computation(clause.body)));
                 },
+                | Some(&Computation::Exercise {
+                    capability,
+                    payload,
+                    ..
+                }) => worklist.extend([Node::Value(capability), Node::Value(payload)]),
                 | Some(
                     &(Computation::Resume(value, body)
                     | Computation::Split {

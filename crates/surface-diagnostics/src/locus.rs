@@ -661,7 +661,7 @@ impl Annotations
             | CheckRefusal::IndexOccurrence(_) | CheckRefusal::NonUniformOccurrence(_)
             | CheckRefusal::CrossBlockReference { .. }
             | CheckRefusal::BudgetExceeded { .. } | CheckRefusal::AdmissionOrder { .. }
-            | CheckRefusal::MachineInvariant => ret.primary == Maybe::Present(Annotation {
+            | CheckRefusal::MachineInvariant | CheckRefusal::CapabilityUngranted { .. } => ret.primary == Maybe::Present(Annotation {
                 span: declaration, label,
             }) && ret.context == UNNAMED,
         _ => ret.context == UNNAMED,
@@ -677,7 +677,8 @@ fn checked(
     let (primary, context) = match refusal {
         | CheckRefusal::DataKindNotUniverse(at)
         | CheckRefusal::DataArgumentArity(at)
-        | CheckRefusal::AbstractKindNotUniverse(at) => (spanned(origins.value_type(at)), UNNAMED),
+        | CheckRefusal::AbstractKindNotUniverse(at)
+        | CheckRefusal::CapabilityConsumable(at) => (spanned(origins.value_type(at)), UNNAMED),
         | CheckRefusal::DataFieldLevel { field: at, kind }
         | CheckRefusal::RepresentationAboveKind {
             representation: at,
@@ -689,7 +690,8 @@ fn checked(
         | CheckRefusal::UnknownConstructor { at, .. } | CheckRefusal::ConstructorArity(at) => {
             (spanned(origins.value(at)), UNNAMED)
         },
-        | CheckRefusal::MissingRecordField { at, expected } => (spanned(origins.value(at)), [
+        | CheckRefusal::MissingRecordField { at, expected }
+        | CheckRefusal::CapabilityForged { at, expected } => (spanned(origins.value(at)), [
             annotated(spanned(origins.value_type(expected)), Label::Expected),
             Maybe::Absent(report_context::Absent::Unnamed),
         ]),
@@ -719,6 +721,11 @@ fn checked(
             synthesised,
             expected,
         })
+        | CheckRefusal::CapabilityAmplified(Mismatch::Value {
+            at,
+            synthesised,
+            expected,
+        })
         | CheckRefusal::SortMismatch {
             at,
             synthesised,
@@ -744,6 +751,11 @@ fn checked(
             annotated(spanned(origins.value_type(synthesised)), Label::Synthesised),
         ]),
         | CheckRefusal::TypeMismatch(Mismatch::Computation {
+            at,
+            synthesised,
+            expected,
+        })
+        | CheckRefusal::CapabilityAmplified(Mismatch::Computation {
             at,
             synthesised,
             expected,
@@ -784,6 +796,10 @@ fn checked(
         | CheckRefusal::StaticClassifierExpected { found, .. } => {
             (spanned(origins.value_type(found)), UNNAMED)
         },
+        | CheckRefusal::CapabilityEscaped { at, found } => (node(origins, CoreNode::Term(at)), [
+            annotated(node(origins, CoreNode::Type(found)), Label::Synthesised),
+            Maybe::Absent(report_context::Absent::Unnamed),
+        ]),
         | CheckRefusal::UnknownOperation { at }
         | CheckRefusal::HandlerCoverage { at }
         | CheckRefusal::ShiftWithoutReset { at }
@@ -798,8 +814,10 @@ fn checked(
                 | CheckingForm::Lambda(at)
                 | CheckingForm::Return(at)
                 | CheckingForm::Fixpoint(at)
-                | CheckingForm::Offer(at),
+                | CheckingForm::Offer(at)
+                | CheckingForm::Scope(at),
         }
+        | CheckRefusal::CapabilityOutsideAuthority { at, .. }
         | CheckRefusal::DescentNotReplayed { at, .. }
         | CheckRefusal::NonExhaustiveDataCase(at)
         | CheckRefusal::AbsentRecordField(at)
@@ -819,7 +837,8 @@ fn checked(
         }
         | CheckRefusal::BudgetExceeded { .. }
         | CheckRefusal::AdmissionOrder { .. }
-        | CheckRefusal::MachineInvariant => return Annotations::at(declaration, label),
+        | CheckRefusal::MachineInvariant
+        | CheckRefusal::CapabilityUngranted { .. } => return Annotations::at(declaration, label),
         | CheckRefusal::SessionMismatch { at, endpoint, .. } => {
             (spanned(origins.computation(at)), [
                 annotated(spanned(origins.computation(endpoint.fork)), Label::Forked),
@@ -1128,6 +1147,7 @@ impl fmt::Display for Checked
                     | CheckingForm::Fixpoint(_) => "a fixpoint",
                     | CheckingForm::Nested(_) => "a computation read as a value",
                     | CheckingForm::Offer(_) => "an offer",
+                    | CheckingForm::Scope(_) => "a capability scope",
                 }
             ),
             | CheckRefusal::UnknownConstant { constant, .. } => write!(
@@ -1265,6 +1285,27 @@ impl fmt::Display for Checked
                     u32::from(index)
                 ),
             },
+            | CheckRefusal::CapabilityForged { .. } => f.write_str(
+                "a capability type is inhabited only by a capability hypothesis, and this term \
+                 is none",
+            ),
+            | CheckRefusal::CapabilityAmplified(_) => f.write_str(
+                "this capability grants less than the capability it is checked against",
+            ),
+            | CheckRefusal::CapabilityOutsideAuthority { .. } => f.write_str(
+                "the capability this operation is exercised through does not grant it",
+            ),
+            | CheckRefusal::CapabilityEscaped { .. } => f.write_str(
+                "a capability a scope introduces would outlive the scope here",
+            ),
+            | CheckRefusal::CapabilityConsumable(_) => f.write_str(
+                "a consumable capability belongs in the linear zone, which admits no binder",
+            ),
+            | CheckRefusal::CapabilityUngranted { constant, .. } => write!(
+                f,
+                "declaration {} holds a capability beyond the authority the host grants",
+                usize::from(constant)
+            ),
         }
     }
 }
@@ -1315,6 +1356,7 @@ impl fmt::Display for Shape
             | ExpectedShape::Session => {
                 "a session type `!A. S`, `?A. S`, `+{l : S}`, `&{l : S}` or `end`"
             },
+            | ExpectedShape::Capability => "a capability `Cap {op, …}`",
         })
     }
 }
@@ -1445,6 +1487,9 @@ impl fmt::Display for Former
             | UnadmittedFormer::TopUniverse => "a universe at the greatest representable level",
             | UnadmittedFormer::StaticLambda => "a type operator",
             | UnadmittedFormer::EffectRow => "a nonempty effect row at the pure kernel boundary",
+            | UnadmittedFormer::Capability => "a capability type at the pure kernel boundary",
+            | UnadmittedFormer::Exercise => "an exercised capability at the pure kernel boundary",
+            | UnadmittedFormer::Scope => "a capability scope at the pure kernel boundary",
         })
     }
 }

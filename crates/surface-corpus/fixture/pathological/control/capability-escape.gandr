@@ -1,0 +1,9 @@
+@[ refuses("CapabilityEscaped") ]
+def leak() -> -F Cap {exit} {
+  handle c : Proc {
+    return c
+  } with {
+    pure(x) => return x,
+    oper exit(code, k) => become k(unit)
+  }
+}

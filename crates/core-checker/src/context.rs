@@ -312,6 +312,8 @@ pub struct CheckingContext<'arena>
         ),
         forming::Absent,
     >,
+    /// The authority the host grants the module's held capabilities.
+    grants: crate::capability::Grants,
 }
 
 impl<'arena> CheckingContext<'arena>
@@ -322,7 +324,8 @@ impl<'arena> CheckingContext<'arena>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the context holds no binder, no signature, no definition and
-    ///   no lift, has admitted nothing, sealed nothing and forms no block.
+    ///   no lift, has admitted nothing, sealed nothing, forms no block and
+    ///   bounds no held capability by a grant.
     /// - provides: the context every face and the declaration check run in.
     /// - panics: none.
     /// - intension: mints three value-type nodes into `arena` — the unit type,
@@ -341,6 +344,7 @@ impl<'arena> CheckingContext<'arena>
         && ret.signatures.is_empty() && ret.definitions.definitions().next().is_none()
         && ret.lifts.is_empty() && matches!(ret.admitted, Maybe::Absent(admission::Absent::Fresh))
         && matches!(ret.support, SupportLog::Off)
+        && ret.grants == crate::capability::Grants::Unbounded
         && ret.depth(Zone::Intuitionistic) == BinderDepth::default()
         && ret.depth(Zone::Linear) == BinderDepth::default())]
     #[inline]
@@ -374,8 +378,43 @@ impl<'arena> CheckingContext<'arena>
             budget,
             support: SupportLog::Off,
             forming: Maybe::Absent(forming::Absent::Idle),
+            grants: crate::capability::Grants::Unbounded,
         }
     }
+
+    /// Bound the module's held capabilities by `grants`: the authority the
+    /// host grants at the checker's entry.
+    ///
+    /// # Specification
+    /// - ensures: every later declaration of a held capability is judged
+    ///   against `grants`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a held capability within the grant is owed, one
+    ///   beyond it is refused by name, and with no grant both are owed.
+    /// - witness: `capability::tests::a_held_capability_enters_only_within_the_grant`
+    #[spec(captures: expected = grants.clone(), ensures: self.grants == expected)]
+    #[inline]
+    pub fn grant(
+        &mut self,
+        grants: crate::capability::Grants,
+    )
+    {
+        self.grants = grants;
+    }
+
+    /// The authority the host grants the module's held capabilities.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub const fn grants(&self) -> &crate::capability::Grants
+    {
+        &self.grants
+    }
+
     /// Native signatures already admitted in this context.
     ///
     /// # Specification
@@ -1390,6 +1429,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 | ValueTypeView::Data { .. }
                 | ValueTypeView::Record(_)
                 | ValueTypeView::Stack { .. }
+                | ValueTypeView::Capability { .. }
                 | ValueTypeView::PathUniverse(..)
                 | ValueTypeView::Path { .. }
                 | ValueTypeView::Sum(_)
@@ -1603,6 +1643,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                     | ValueTypeView::Sum(..)
                     | ValueTypeView::List(_)
                     | ValueTypeView::Stack { .. }
+                    | ValueTypeView::Capability { .. }
                     | ValueTypeView::Integer
                     | ValueTypeView::String
                     | ValueTypeView::Unit

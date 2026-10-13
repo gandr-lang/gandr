@@ -525,6 +525,37 @@ fn walk(
                             .map(|operation| (AnyNode::ValueType(operation), depth, results)),
                     );
                 },
+                | Some(&Computation::Exercise {
+                    capability,
+                    ref signature,
+                    payload,
+                    ..
+                }) => {
+                    pending.push((AnyNode::Value(capability), depth, results));
+                    pending.push((AnyNode::Value(payload), depth, results));
+                    pending.extend(
+                        signature
+                            .types()
+                            .map(|operation| (AnyNode::ValueType(operation), depth, results)),
+                    );
+                },
+                | Some(&Computation::Scope {
+                    ref signature,
+                    subject,
+                    on_return,
+                    ref clauses,
+                }) => {
+                    pending.push((AnyNode::Computation(subject), deeper, results));
+                    pending.push((AnyNode::Computation(on_return), deeper, results));
+                    pending.extend(clauses.iter().map(|clause| {
+                        (AnyNode::Computation(clause.body), deeper.deeper(), results)
+                    }));
+                    pending.extend(
+                        signature
+                            .types()
+                            .map(|operation| (AnyNode::ValueType(operation), depth, results)),
+                    );
+                },
                 | Some(&Computation::Handle {
                     ref signature,
                     subject,
@@ -682,6 +713,13 @@ fn walk(
                 },
                 | Some(&ValueType::Element { code, .. }) => {
                     pending.push((AnyNode::Value(code), depth, results));
+                },
+                | Some(&ValueType::Capability { ref authority, .. }) => {
+                    pending.extend(
+                        authority
+                            .types()
+                            .map(|operation| (AnyNode::ValueType(operation), depth, results)),
+                    );
                 },
                 | Some(
                     &(ValueType::Base(_)

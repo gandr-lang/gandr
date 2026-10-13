@@ -689,6 +689,36 @@ pub enum Computation
         /// Operation clauses beneath payload then resumption binders.
         clauses: alloc::sync::Arc<[crate::control::EffectClause]>,
     },
+    /// Exercise an operation through a capability, `c.op v`: the operation's
+    /// interface rides inline, as a request's does, and the capability names
+    /// the authority the request is made under.
+    Exercise
+    {
+        /// The capability the operation is exercised through.
+        capability: ValueId,
+        /// The full interface the operation belongs to.
+        signature: crate::effect::EffectSig,
+        /// The selected operation.
+        operation: crate::effect::OperationName,
+        /// Its value payload.
+        payload: ValueId,
+    },
+    /// Handle one interface deeply over a body that receives the capability
+    /// the handler introduces, `handle (c. t) with h`: the subject stands
+    /// under one intuitionistic binder, the capability, and the clauses run
+    /// outside it.
+    Scope
+    {
+        /// The interface whose operations are handled, and the authority of
+        /// the capability the subject receives.
+        signature: crate::effect::EffectSig,
+        /// The computation being handled, beneath the capability's binder.
+        subject: ComputationId,
+        /// Return clause beneath one intuitionistic result binder.
+        on_return: ComputationId,
+        /// Operation clauses beneath payload then resumption binders.
+        clauses: alloc::sync::Arc<[crate::control::EffectClause]>,
+    },
     /// Feed a computation to a first-class stack.
     Resume(ValueId, ComputationId),
     /// Delimit a continuation capture.
@@ -811,6 +841,19 @@ pub enum ValueType
     /// The type of a linear endpoint: a protocol, its payload types and the
     /// state the endpoint stands at.
     Session(crate::session::SessionType),
+    /// The capability `Cap E`: the type of a context hypothesis carrying the
+    /// authority `E`. No term introduces it; a hypothesis the host holds or a
+    /// capability scope's binder is the only inhabitant.
+    Capability
+    {
+        /// The grant atoms: each interface restricted to the operations it
+        /// grants.
+        authority: crate::effect::EffectRow,
+        /// How often the capability may be exercised.
+        grade: crate::effect::capability::CapabilityGrade,
+        /// How long it lives.
+        region: crate::effect::capability::Region,
+    },
 }
 
 impl ValueType
@@ -1335,6 +1378,58 @@ fn equal_syntax(
                             pending.push(C(left.body, right.body));
                         }
                     },
+                    | (
+                        &Computation::Scope {
+                            signature: ref left,
+                            subject: left_subject,
+                            on_return: left_return,
+                            clauses: ref left_clauses,
+                        },
+                        &Computation::Scope {
+                            signature: ref right,
+                            subject: right_subject,
+                            on_return: right_return,
+                            clauses: ref right_clauses,
+                        },
+                    ) if left_clauses.len() == right_clauses.len() => {
+                        if signature_children(&mut pending, left, right)
+                            == CertificateEquality::Different
+                        {
+                            return CertificateEquality::Different;
+                        }
+                        pending
+                            .extend([C(left_subject, right_subject), C(left_return, right_return)]);
+                        for (left, right) in left_clauses.iter().zip(right_clauses.iter()) {
+                            if left.operation != right.operation {
+                                return CertificateEquality::Different;
+                            }
+                            pending.push(C(left.body, right.body));
+                        }
+                    },
+                    | (
+                        &Computation::Exercise {
+                            capability: left_capability,
+                            signature: ref left,
+                            operation: ref left_op,
+                            payload: left_payload,
+                        },
+                        &Computation::Exercise {
+                            capability: right_capability,
+                            signature: ref right,
+                            operation: ref right_op,
+                            payload: right_payload,
+                        },
+                    ) if left_op == right_op => {
+                        if signature_children(&mut pending, left, right)
+                            == CertificateEquality::Different
+                        {
+                            return CertificateEquality::Different;
+                        }
+                        pending.extend([
+                            V(left_capability, right_capability),
+                            V(left_payload, right_payload),
+                        ]);
+                    },
                     | (&Computation::Resume(a, b), &Computation::Resume(c, d)) => {
                         pending.extend([V(a, c), C(b, d)]);
                     },
@@ -1632,6 +1727,28 @@ fn equal_syntax(
                                 .zip(b.payloads())
                                 .map(|(a, b)| VT(*a, *b)),
                         );
+                    }
+                    else if let ValueType::Capability {
+                        authority: ref first,
+                        grade: left_grade,
+                        region: left_region,
+                    } = *matched_left_value
+                        && let ValueType::Capability {
+                            authority: ref second,
+                            grade: right_grade,
+                            region: right_region,
+                        } = *matched_right_value
+                        && left_grade == right_grade
+                        && left_region == right_region
+                        && first.signatures().len() == second.signatures().len()
+                    {
+                        for (left, right) in first.signatures().zip(second.signatures()) {
+                            if signature_children(&mut pending, left, right)
+                                == CertificateEquality::Different
+                            {
+                                return CertificateEquality::Different;
+                            }
+                        }
                     }
                     else if (matches!(
                         *matched_left_value,

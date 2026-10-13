@@ -852,12 +852,16 @@ fn source_slice(src: SourceText<'_>) -> SourceFragment<'_>
 /// even if wanted: `list.sort` is a live projection in the corpus. Contextual
 /// is not the same as inadmissible-elsewhere, and the circuit grammar module
 /// records the one slot where `sort`'s mold does collide with a type variable.
+///
+/// The capability scope reserves its lead `handle`: it opens an expression,
+/// where an unreserved lead would tie its own tile against `identifier` at
+/// every expression slot.
 const KEYWORDS: &[&str] = &[
     "def", "val", "run", "leta", "as", "extern", "from", "type", "fn", "pure", "return", "become",
     "thunk", "force", "case", "if", "else", "co", "hold", "dup", "drop", "send", "recv", "close",
     "select", "offer", "fork", "acquire", "release", "migrate", "at", "true", "false", "unit",
     "forall", "mu", "end", "data", "codata", "rec", "op", "rule", "for", "in", "while", "loop",
-    "break", "continue", "with", "import", "module", "sign", "oper",
+    "break", "continue", "with", "import", "module", "sign", "oper", "handle",
 ];
 
 /// Return the grammar tile labels to enumerate for a labeled token.
@@ -975,10 +979,11 @@ pub fn candidate_labels<'text>(
 /// [`Molder::gather_reserved_fallback`] re-admits the generic labels so the
 /// word can still name the declaration (`sign Unknown`). `U` and `F` are not
 /// reserved: the bridges are the compound tiles `+U` and `-F`, and the bare
-/// letters are names like any other.
+/// letters are names like any other. `Cap` is reserved as `Path` is: the
+/// capability former's own tile.
 const UPPER_KEYWORDS: &[&str] = &[
     "Any", "Unknown", "Never", "Boolean", "Integer", "Char", "String", "Symbol", "Unit", "Void",
-    "Path", "Type",
+    "Path", "Type", "Cap",
 ];
 
 /// The generic labels a reserved uppercase word falls back to where its own

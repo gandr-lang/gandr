@@ -5,13 +5,25 @@
 //! returns `(stdout, (stderr, exit_code))`; `Fs.write` takes `(path, contents)`
 //! and `Fs.stat` returns `(kind, size)`. List fields use the native List
 //! former.
+//!
+//! No two interfaces share an operation name, so an operation names its
+//! interface: [`HostSignatures::offering`] finds it, and
+//! [`HostSignatures::authority`] builds the capability authority granting a
+//! set of bare operation names, each under the interface that offers it.
+
+use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_kernel_term::BaseType;
+use quenchant_shape::shape::Maybe;
 
 use super::EffectConflict;
+use super::EffectName;
 use super::EffectOp;
+use super::EffectRow;
 use super::EffectSig;
+use super::OperationName;
+use super::capability::RestrictionError;
 use crate::CoreArena;
 
 /// The process execution interface.
@@ -35,6 +47,31 @@ pub struct HostSignatures
     pub proc: EffectSig,
     /// Read environment variables and the executable search path.
     pub env: EffectSig,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why the host declares nothing for a name.
+    pub mod declared {
+        /// The host has no interface by the name, or none offering the
+        /// operation.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// Nothing the host declares answers the name.
+            Undeclared,
+        }
+    }
+}
+
+/// Why an authority over host operations could not be formed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AuthorityError
+{
+    /// No host interface offers this operation.
+    Undeclared(OperationName),
+    /// An interface's restriction refused an operation: one named twice.
+    Restriction(RestrictionError),
+    /// The restrictions conflict as one authority.
+    Conflict(EffectConflict),
 }
 
 impl HostSignatures
@@ -146,21 +183,204 @@ impl HostSignatures
             env,
         })
     }
+
+    /// The four interfaces, in the order the host declares them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn interfaces(&self) -> [&EffectSig; 4]
+    {
+        [&self.exec, &self.fs, &self.proc, &self.env]
+    }
+
+    /// The interface named `name`.
+    ///
+    /// # Specification
+    /// - ensures: the interface whose name is `name`; the undeclared absence
+    ///   for any other name.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each interface's own name and an undeclared one.
+    /// - witness: `effect::host::tests::an_operation_names_the_interface_offering_it`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(found) => found.name() == name,
+        | Maybe::Absent(_) => self.interfaces().iter().all(|each| each.name() != name),
+    })]
+    #[inline]
+    pub fn named(
+        &self,
+        name: &EffectName,
+    ) -> Maybe<&EffectSig, declared::Absent>
+    {
+        match self
+            .interfaces()
+            .into_iter()
+            .find(|interface| interface.name() == name)
+        {
+            | Some(found) => Maybe::Present(found),
+            | None => Maybe::Absent(declared::Absent::Undeclared),
+        }
+    }
+
+    /// The interface offering `operation`.
+    ///
+    /// # Specification
+    /// - ensures: the one interface declaring `operation`; the undeclared
+    ///   absence when none does.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — operations of two interfaces each find their own, and
+    ///   an operation of none is undeclared.
+    /// - witness: `effect::host::tests::an_operation_names_the_interface_offering_it`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(found) => matches!(found.operation(operation), Maybe::Present(_)),
+        | Maybe::Absent(_) => self.interfaces().iter().all(|each| matches!(each.operation(operation), Maybe::Absent(_))),
+    })]
+    #[inline]
+    pub fn offering(
+        &self,
+        operation: &OperationName,
+    ) -> Maybe<&EffectSig, declared::Absent>
+    {
+        match self
+            .interfaces()
+            .into_iter()
+            .find(|interface| matches!(interface.operation(operation), Maybe::Present(_)))
+        {
+            | Some(found) => Maybe::Present(found),
+            | None => Maybe::Absent(declared::Absent::Undeclared),
+        }
+    }
+
+    /// The authority granting exactly `operations`, each under the interface
+    /// offering it.
+    ///
+    /// # Specification
+    /// - ensures: one restriction per interface any operation belongs to, in
+    ///   host order, granting the named operations of it with their types.
+    /// - fails: an operation no interface offers, or one named twice.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`AuthorityError::Undeclared`]: the first operation no interface
+    ///   offers.
+    /// - [`AuthorityError::Restriction`]: an operation named twice.
+    /// - [`AuthorityError::Conflict`]: never for this table, whose restrictions
+    ///   are one per interface.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — operations of two interfaces in mixed order, an
+    ///   undeclared one and a repeated one, each asserted as the exact
+    ///   authority or error.
+    /// - witness: `effect::host::tests::an_operation_names_the_interface_offering_it`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |authority| authority.signatures().all(|restricted| matches!(self.named(restricted.name()), Maybe::Present(_)))))]
+    #[inline]
+    pub fn authority<'name, Operations>(
+        &self,
+        operations: Operations,
+    ) -> Result<EffectRow, AuthorityError>
+    where
+        Operations: IntoIterator<Item = &'name OperationName>,
+    {
+        let mut offered: Vec<(&EffectName, &OperationName)> = Vec::new();
+        for operation in operations {
+            let Maybe::Present(interface) = self.offering(operation)
+            else {
+                return Err(AuthorityError::Undeclared(operation.clone()));
+            };
+            offered.push((interface.name(), operation));
+        }
+        let mut restrictions = Vec::new();
+        for interface in self.interfaces() {
+            let mut granted = offered
+                .iter()
+                .filter(|&&(held, _)| held == interface.name())
+                .map(|&(_, operation)| operation)
+                .peekable();
+            if granted.peek().is_some() {
+                restrictions.push(
+                    interface
+                        .restrict(granted)
+                        .map_err(AuthorityError::Restriction)?,
+                );
+            }
+        }
+
+        EffectRow::authority(&restrictions).map_err(AuthorityError::Conflict)
+    }
 }
 
 #[cfg(test)]
 mod tests
 {
     use gandr_kernel_term::BaseType;
+    use quenchant_shape::shape::Maybe;
 
+    use super::AuthorityError;
     use super::ENV;
     use super::EXEC;
     use super::FS;
     use super::HostSignatures;
     use super::PROC;
+    use super::declared;
     use crate::CertificateEquality;
     use crate::CoreArena;
+    use crate::effect::EffectName;
+    use crate::effect::EffectRow;
+    use crate::effect::OperationName;
+    use crate::effect::capability::RestrictionError;
     use crate::syntax::equal_type_syntax;
+
+    #[test]
+    fn an_operation_names_the_interface_offering_it()
+    {
+        let mut arena = CoreArena::new();
+        let host = HostSignatures::new(&mut arena).expect("host interfaces");
+        for (operation, interface) in [("read", FS), ("exit", PROC), ("get", ENV), ("exec", EXEC)] {
+            let Maybe::Present(found) = host.offering(&OperationName::from(operation))
+            else {
+                panic!("{operation} is offered");
+            };
+            assert_eq!(found.name().as_ref(), interface, "{operation}");
+            assert_eq!(
+                host.named(&EffectName::from(interface)),
+                Maybe::Present(found),
+                "{interface}"
+            );
+        }
+        assert_eq!(
+            host.offering(&OperationName::from("send")),
+            Maybe::Absent(declared::Absent::Undeclared)
+        );
+        assert_eq!(
+            host.named(&EffectName::from("Net")),
+            Maybe::Absent(declared::Absent::Undeclared)
+        );
+
+        let [read, exit, write] = ["read", "exit", "write"].map(OperationName::from);
+        let expected = EffectRow::authority(&[
+            host.fs.restrict([&read, &write]).expect("fs restricts"),
+            host.proc.restrict([&exit]).expect("proc restricts"),
+        ])
+        .expect("one restriction per interface");
+        assert_eq!(host.authority([&write, &exit, &read]), Ok(expected));
+        let send = OperationName::from("send");
+        assert_eq!(
+            host.authority([&read, &send]),
+            Err(AuthorityError::Undeclared(send))
+        );
+        assert_eq!(
+            host.authority([&read, &read]),
+            Err(AuthorityError::Restriction(RestrictionError::Repeated(
+                read.clone()
+            )))
+        );
+        assert_eq!(host.authority([]), Ok(EffectRow::EMPTY));
+    }
 
     #[test]
     fn host_interfaces_pin_names_payloads_and_replies()

@@ -131,6 +131,9 @@ pub enum ExpectedShape
     /// A telescope transport's motive `Π (y : A). Π (z : B). F C`: what the
     /// motive of a transport along a path and an identity over it must be.
     Telescope,
+    /// A capability `Cap E`: what an exercised operation's capability must
+    /// synthesise.
+    Capability,
     /// A session type: what a fork's protocol annotation must denote.
     Session,
 }
@@ -177,6 +180,8 @@ pub enum CheckingForm
     Nested(ValueId),
     /// An offer is checked against the type its arms share.
     Offer(ComputationId),
+    /// A capability scope needs its answer type.
+    Scope(ComputationId),
 }
 
 /// A former of the core vocabulary the judgement has no rule for.
@@ -223,6 +228,12 @@ pub enum UnadmittedFormer
     Reset,
     /// Capture of a delimited continuation.
     Shift,
+    /// A capability classifier: authority has no kernel reading.
+    Capability,
+    /// An operation exercised through a capability.
+    Exercise,
+    /// A capability scope.
+    Scope,
 }
 
 /// A count of static arguments: how many a static application passes, or how
@@ -739,6 +750,51 @@ pub enum CheckRefusal
         /// The nested computation or written run.
         at: ValueId,
     },
+    /// A term stands at a capability type without being a capability
+    /// hypothesis: only a capability the host holds or the binder a
+    /// capability scope introduces carries authority, so no term forms one.
+    CapabilityForged
+    {
+        /// The term at the capability type.
+        at: ValueId,
+        /// The capability type it stands at.
+        expected: ValueTypeId,
+    },
+    /// A capability stands where one granting an operation its own authority
+    /// does not grant is expected: authority only narrows.
+    CapabilityAmplified(Mismatch),
+    /// An operation is exercised through a capability whose authority does
+    /// not grant it.
+    CapabilityOutsideAuthority
+    {
+        /// The exercise.
+        at: ComputationId,
+        /// The capability's type.
+        capability: ValueTypeId,
+    },
+    /// A capability would outlive the scope that introduced it: it stands
+    /// where one of a longer region is expected, or a scope's answer type
+    /// mentions the scope's own region.
+    CapabilityEscaped
+    {
+        /// The term the capability escapes through.
+        at: TermNode,
+        /// The type that carries the scoped capability out.
+        found: TypeNode,
+    },
+    /// A consumable capability, which belongs in the linear zone that no
+    /// former binds into: it could be neither spent nor kept from being
+    /// dropped.
+    CapabilityConsumable(ValueTypeId),
+    /// A held capability claims authority the host did not grant at the
+    /// checker's entry.
+    CapabilityUngranted
+    {
+        /// The held capability's declaration.
+        constant: ConstantIndex,
+        /// Its declared capability type.
+        declared: ValueTypeId,
+    },
 }
 
 impl CheckRefusal
@@ -761,12 +817,13 @@ impl CheckRefusal
     ///   universe, a representation above it, an atom naming no abstract type,
     ///   translators that are no equivalence of species, a run with no
     ///   computation enclosing it, a session action its endpoint's state
-    ///   refuses and a break of an endpoint's linear use are malformed source;
-    ///   a former outside the fragment and a stratum the checker does not
-    ///   certify are unrepresentable; an unbound index, an exhausted allowance,
-    ///   a dangling id, an admission out of order, a repeated sealing site, a
-    ///   machine invariant and an undecided unfolding are engine faults;
-    ///   nothing is a user absence.
+    ///   refuses, a break of an endpoint's linear use, and a forged, amplified,
+    ///   escaping, consumable or ungranted capability or one exercised outside
+    ///   its authority are malformed source; a former outside the fragment and
+    ///   a stratum the checker does not certify are unrepresentable; an unbound
+    ///   index, an exhausted allowance, a dangling id, an admission out of
+    ///   order, a repeated sealing site, a machine invariant and an undecided
+    ///   unfolding are engine faults; nothing is a user absence.
     /// - provides: the fact a report groups by and an exit code reads.
     /// - fails: never.
     /// - panics: none.
@@ -802,7 +859,8 @@ impl CheckRefusal
         | Self::StaticLambdaArgument { .. }
         | Self::StaticClassifierExpected { .. }
         | Self::NegativeOccurrence(_) | Self::NestedOccurrence(_) | Self::IndexOccurrence(_) | Self::NonUniformOccurrence(_) | Self::CrossBlockReference { .. } | Self::DescentNotReplayed { .. } | Self::UnenclosedRun { .. }
-        | Self::SessionMismatch { .. } | Self::Linearity { .. } => matches!(ret, FailureClass::MalformedSource),
+        | Self::SessionMismatch { .. } | Self::Linearity { .. }
+        | Self::CapabilityForged { .. } | Self::CapabilityAmplified(_) | Self::CapabilityOutsideAuthority { .. } | Self::CapabilityEscaped { .. } | Self::CapabilityConsumable(_) | Self::CapabilityUngranted { .. } => matches!(ret, FailureClass::MalformedSource),
     })]
     #[inline]
     #[must_use]
@@ -853,7 +911,13 @@ impl CheckRefusal
             | Self::DescentNotReplayed { .. }
             | Self::UnenclosedRun { .. }
             | Self::SessionMismatch { .. }
-            | Self::Linearity { .. } => FailureClass::MalformedSource,
+            | Self::Linearity { .. }
+            | Self::CapabilityForged { .. }
+            | Self::CapabilityAmplified(_)
+            | Self::CapabilityOutsideAuthority { .. }
+            | Self::CapabilityEscaped { .. }
+            | Self::CapabilityConsumable(_)
+            | Self::CapabilityUngranted { .. } => FailureClass::MalformedSource,
             | Self::OutOfFragment { .. }
             | Self::FunextUnsupported { .. }
             | Self::EquivUnsupported { .. }
@@ -873,14 +937,16 @@ impl CheckRefusal
     ///
     /// # Specification
     /// - requires: nothing; the function is total over the vocabulary.
-    /// - ensures: a type, sort, level or family-argument mismatch expects the
-    ///   type it was checked at and found the type it synthesised; a shape
-    ///   mismatch found the type it met, a dependent bind or stack and a
-    ///   compound endpoint the type its body synthesised, a static Pi over no
-    ///   classifier of codes the child it stands over, and a session action and
-    ///   a leftover endpoint the endpoint's session type, each expecting a
-    ///   former the refusal names rather than a type; every other refusal
-    ///   compares no types.
+    /// - ensures: a type, sort, level or family-argument mismatch and an
+    ///   amplified capability expect the type it was checked at and found the
+    ///   type it synthesised; a shape mismatch found the type it met, a
+    ///   dependent bind or stack and a compound endpoint the type its body
+    ///   synthesised, a static Pi over no classifier of codes the child it
+    ///   stands over, a session action and a leftover endpoint the endpoint's
+    ///   session type, and a capability refusal the capability type it met,
+    ///   each expecting a former the refusal names rather than a type; a forged
+    ///   capability expects the capability type it stood at and found nothing;
+    ///   every other refusal compares no types.
     /// - provides: the type nodes a face spells beside the refusal's locus.
     /// - fails: never; a side the refusal sets no type on is the
     ///   [`compared::Absent::Unnamed`] absence.
@@ -893,17 +959,21 @@ impl CheckRefusal
     /// - witness: `refusal::tests::a_refusal_compares_the_types_it_names`
     #[spec(ensures: |ret| match *self {
         | Self::TypeMismatch(Mismatch::Value { synthesised, expected, .. })
+        | Self::CapabilityAmplified(Mismatch::Value { synthesised, expected, .. })
         | Self::SortMismatch { synthesised, expected, .. }
         | Self::LevelMismatch { synthesised, expected, .. }
         | Self::FamilyArgumentClassifier { synthesised, expected, .. }
         | Self::NotOver { synthesised, expected, .. } =>
             ret == Compared { expected: Maybe::Present(TypeNode::Value(expected)), found: Maybe::Present(TypeNode::Value(synthesised)) },
-        | Self::TypeMismatch(Mismatch::Computation { synthesised, expected, .. }) =>
+        | Self::TypeMismatch(Mismatch::Computation { synthesised, expected, .. })
+        | Self::CapabilityAmplified(Mismatch::Computation { synthesised, expected, .. }) =>
             ret == Compared { expected: Maybe::Present(TypeNode::Computation(expected)), found: Maybe::Present(TypeNode::Computation(synthesised)) },
-        | Self::ShapeMismatch { found, .. } => ret.found == Maybe::Present(found) && ret.expected == UNNAMED,
+        | Self::ShapeMismatch { found, .. } | Self::CapabilityEscaped { found, .. } => ret.found == Maybe::Present(found) && ret.expected == UNNAMED,
+        | Self::CapabilityForged { expected, .. } => ret.expected == Maybe::Present(TypeNode::Value(expected)) && ret.found == UNNAMED,
         | Self::DependentBind { synthesised, .. } | Self::DependentStack { synthesised, .. } | Self::CompoundEndpoint { synthesised, .. } =>
             ret.found == Maybe::Present(TypeNode::Computation(synthesised)) && ret.expected == UNNAMED,
         | Self::StaticClassifierExpected { found, .. } | Self::FunextUnsupported { classifier: found, .. }
+        | Self::CapabilityOutsideAuthority { capability: found, .. } | Self::CapabilityConsumable(found) | Self::CapabilityUngranted { declared: found, .. }
         | Self::EquivUnsupported { classifier: found, .. } | Self::UncertifiedStratum { code: found, .. }
         | Self::SessionMismatch { state: found, .. }
         | Self::Linearity { defect: crate::session::LinearityDefect::Residue { state: found, .. }, .. } =>
@@ -916,6 +986,11 @@ impl CheckRefusal
     {
         let (expected, found) = match *self {
             | Self::TypeMismatch(Mismatch::Value {
+                synthesised,
+                expected,
+                ..
+            })
+            | Self::CapabilityAmplified(Mismatch::Value {
                 synthesised,
                 expected,
                 ..
@@ -947,17 +1022,34 @@ impl CheckRefusal
                 synthesised,
                 expected,
                 ..
+            })
+            | Self::CapabilityAmplified(Mismatch::Computation {
+                synthesised,
+                expected,
+                ..
             }) => (
                 Maybe::Present(TypeNode::Computation(expected)),
                 Maybe::Present(TypeNode::Computation(synthesised)),
             ),
-            | Self::ShapeMismatch { found, .. } => (UNNAMED, Maybe::Present(found)),
+            | Self::ShapeMismatch { found, .. } | Self::CapabilityEscaped { found, .. } => {
+                (UNNAMED, Maybe::Present(found))
+            },
+            | Self::CapabilityForged { expected, .. } => {
+                (Maybe::Present(TypeNode::Value(expected)), UNNAMED)
+            },
             | Self::DependentBind { synthesised, .. }
             | Self::DependentStack { synthesised, .. }
             | Self::CompoundEndpoint { synthesised, .. } => {
                 (UNNAMED, Maybe::Present(TypeNode::Computation(synthesised)))
             },
             | Self::StaticClassifierExpected { found, .. }
+            | Self::CapabilityOutsideAuthority {
+                capability: found, ..
+            }
+            | Self::CapabilityConsumable(found)
+            | Self::CapabilityUngranted {
+                declared: found, ..
+            }
             | Self::FunextUnsupported {
                 classifier: found, ..
             }

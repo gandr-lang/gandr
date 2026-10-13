@@ -126,6 +126,8 @@ pub enum Form
     Nested(Site),
     /// An offer.
     Offer(Site),
+    /// A capability scope.
+    Scope(Site),
 }
 
 /// An endpoint, by the site of the fork that bound it and its side.
@@ -604,6 +606,45 @@ pub enum Refusal
         /// How it escaped.
         defect: Linearity,
     },
+    /// A term stood at a capability type that is no capability hypothesis.
+    CapabilityForged
+    {
+        /// The term.
+        at: Site,
+        /// The capability type it was checked at.
+        expected: TypeContent,
+    },
+    /// A capability stood where one granting more was expected.
+    CapabilityAmplified
+    {
+        /// The term checked.
+        at: Site,
+        /// The capability type it synthesised.
+        synthesised: TypeContent,
+        /// The wider capability type expected.
+        expected: TypeContent,
+    },
+    /// An operation was exercised through a capability that does not grant
+    /// it.
+    CapabilityOutsideAuthority
+    {
+        /// The exercise.
+        at: Site,
+        /// The capability's type.
+        capability: TypeContent,
+    },
+    /// A scoped capability would outlive its region.
+    CapabilityEscaped
+    {
+        /// The term or scope it would escape through.
+        at: Site,
+        /// The type that carries it out.
+        found: TypeContent,
+    },
+    /// A capability of the consumable grade.
+    CapabilityConsumable(Site),
+    /// A held capability claims authority the host did not grant.
+    CapabilityUngranted(Site),
 }
 
 /// An item's typing: its verdict, projected.
@@ -970,7 +1011,8 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
             | (CheckingForm::Lambda(id), Form::Lambda(at))
             | (CheckingForm::Return(id), Form::Return(at))
             | (CheckingForm::Fixpoint(id), Form::Fixpoint(at))
-            | (CheckingForm::Offer(id), Form::Offer(at)) => {
+            | (CheckingForm::Offer(id), Form::Offer(at))
+            | (CheckingForm::Scope(id), Form::Scope(at)) => {
                 at == self.site(ArenaNode::Computation(id))
             },
             | (CheckingForm::Hole(_), Form::Hole) => true,
@@ -1045,6 +1087,13 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
  else if let CheckRefusal::UnenclosedRun { at } = matched_left_value && let Refusal::UnenclosedRun { at: projected } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::SessionMismatch { at, endpoint, state, defect } = matched_left_value && let Refusal::SessionMismatch { at: projected, endpoint: returned, state: ref stored, defect: kept } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) && returned == self.endpoint(endpoint) && *stored == self.value_type(state) && kept == defect }
  else if let CheckRefusal::Linearity { at, defect } = matched_left_value && let Refusal::Linearity { at: projected, defect: ref stored } = *matched_right_value { projected == self.core_site(at) && *stored == self.linearity(defect) }
+ else if let CheckRefusal::CapabilityForged { at, expected } = matched_left_value && let Refusal::CapabilityForged { at: projected, expected: ref stored } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && *stored == self.value_type(expected) }
+ else if let CheckRefusal::CapabilityAmplified(Mismatch::Value { at, .. }) = matched_left_value && let Refusal::CapabilityAmplified { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
+ else if let CheckRefusal::CapabilityAmplified(Mismatch::Computation { at, .. }) = matched_left_value && let Refusal::CapabilityAmplified { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
+ else if let CheckRefusal::CapabilityOutsideAuthority { at, capability } = matched_left_value && let Refusal::CapabilityOutsideAuthority { at: projected, capability: ref stored } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) && *stored == self.value_type(capability) }
+ else if let CheckRefusal::CapabilityEscaped { at, found } = matched_left_value && let Refusal::CapabilityEscaped { at: projected, found: ref stored } = *matched_right_value { projected == self.term_site(at) && *stored == self.type_node(found) }
+ else if let (CheckRefusal::CapabilityConsumable(at), &Refusal::CapabilityConsumable(projected)) = (matched_left_value, matched_right_value) { projected == self.site(ArenaNode::ValueType(at)) }
+ else if let CheckRefusal::CapabilityUngranted { declared, .. } = matched_left_value && let Refusal::CapabilityUngranted(projected) = *matched_right_value { projected == self.site(ArenaNode::ValueType(declared)) }
  else { false }
 })]
     fn refusal(
@@ -1219,6 +1268,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                     },
                     | CheckingForm::Nested(id) => Form::Nested(self.site(ArenaNode::Value(id))),
                     | CheckingForm::Offer(id) => Form::Offer(self.site(ArenaNode::Computation(id))),
+                    | CheckingForm::Scope(id) => Form::Scope(self.site(ArenaNode::Computation(id))),
                 },
             },
             | CheckRefusal::UnknownConstant { at, constant } => Refusal::UnknownConstant {
@@ -1329,6 +1379,44 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
             | CheckRefusal::Linearity { at, defect } => Refusal::Linearity {
                 at: self.core_site(at),
                 defect: self.linearity(defect),
+            },
+            | CheckRefusal::CapabilityForged { at, expected } => Refusal::CapabilityForged {
+                at: self.site(ArenaNode::Value(at)),
+                expected: self.value_type(expected),
+            },
+            | CheckRefusal::CapabilityAmplified(Mismatch::Value {
+                at,
+                synthesised,
+                expected,
+            }) => Refusal::CapabilityAmplified {
+                at: self.site(ArenaNode::Value(at)),
+                synthesised: self.value_type(synthesised),
+                expected: self.value_type(expected),
+            },
+            | CheckRefusal::CapabilityAmplified(Mismatch::Computation {
+                at,
+                synthesised,
+                expected,
+            }) => Refusal::CapabilityAmplified {
+                at: self.site(ArenaNode::Computation(at)),
+                synthesised: self.type_node(TypeNode::Computation(synthesised)),
+                expected: self.type_node(TypeNode::Computation(expected)),
+            },
+            | CheckRefusal::CapabilityOutsideAuthority { at, capability } => {
+                Refusal::CapabilityOutsideAuthority {
+                    at: self.site(ArenaNode::Computation(at)),
+                    capability: self.value_type(capability),
+                }
+            },
+            | CheckRefusal::CapabilityEscaped { at, found } => Refusal::CapabilityEscaped {
+                at: self.term_site(at),
+                found: self.type_node(found),
+            },
+            | CheckRefusal::CapabilityConsumable(at) => {
+                Refusal::CapabilityConsumable(self.site(ArenaNode::ValueType(at)))
+            },
+            | CheckRefusal::CapabilityUngranted { declared, .. } => {
+                Refusal::CapabilityUngranted(self.site(ArenaNode::ValueType(declared)))
             },
         }
     }
