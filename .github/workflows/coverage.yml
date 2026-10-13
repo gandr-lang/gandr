@@ -100,7 +100,7 @@ jobs:
           cache_save: false
       - &measure-coverage
         name: measure enforcing coverage
-        run: mise run check:coverage
+        run: mise run ci:coverage
       - &upload-coverage
         name: upload coverage
         uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
