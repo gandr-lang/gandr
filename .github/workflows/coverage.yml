@@ -34,9 +34,13 @@ env:
   CI_IMAGE_NAME: ghcr.io/gandr-lang/gandr-ci
 
 jobs:
-  # Definitions only: aliases run in each consuming job's context.
+  # Definitions only: aliases run in each consuming job's context. The
+  # `needs` is what lets the aliases below name `needs.ci-image-ref`: a
+  # job that declares no needs has no `needs` context, and the workflow
+  # fails validation before any job starts.
   template:
     if: false
+    needs: ci-image-ref
     runs-on: &linux ubuntu-latest
     permissions: &image-read-permissions
       contents: read
