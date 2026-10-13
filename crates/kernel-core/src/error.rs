@@ -996,7 +996,6 @@ mod tests
                 above: OutstandingCount::from(usize::MAX),
             },
             KernelError::StaticClassifierExpected { actual: unit },
-            KernelError::Identity(IdentityError::OpenType(unit)),
             KernelError::Identity(IdentityError::OutsideFold(unit)),
             KernelError::Identity(IdentityError::EndpointsDiffer {
                 left: ContentDigest::default(),

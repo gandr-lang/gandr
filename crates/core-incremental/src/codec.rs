@@ -3720,11 +3720,6 @@ where
             write_site(writer, left)?;
             write_site(writer, right)?;
         },
-        | Refusal::IdentityAtOpenType { at, ref carrier } => {
-            writer.tag(Tag(41));
-            write_site(writer, at)?;
-            write_type(writer, carrier)?;
-        },
         | Refusal::CompoundEndpoint {
             at,
             ref synthesised,
@@ -4054,7 +4049,6 @@ where
                     | Refusal::DependentStack { .. } => 38,
                     | Refusal::AbsentTupleComponent(_) => 39,
                     | Refusal::EndpointMismatch { .. } => 40,
-                    | Refusal::IdentityAtOpenType { .. } => 41,
                     | Refusal::CompoundEndpoint { .. } => 42,
                 })
         },
@@ -4243,10 +4237,6 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
             at: read_site(reader)?,
             left: read_site(reader)?,
             right: read_site(reader)?,
-        },
-        | 41 => Refusal::IdentityAtOpenType {
-            at: read_site(reader)?,
-            carrier: read_type(reader)?,
         },
         | 42 => Refusal::CompoundEndpoint {
             at: read_site(reader)?,

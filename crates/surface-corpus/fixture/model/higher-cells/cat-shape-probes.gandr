@@ -1,4 +1,4 @@
-@[ refuses("IdentityAtOpenType") ]
+@[ checks ]
 def path_var(a : Type, x : a) -> -F Path(a, x, x) {
   return here(x)
 }

@@ -576,7 +576,6 @@ fn checking_row(
         }
         | CheckRefusal::PathCode(_)
         | CheckRefusal::EndpointMismatch { .. }
-        | CheckRefusal::IdentityAtOpenType { .. }
         | CheckRefusal::CompoundEndpoint { .. }
         | CheckRefusal::EffectSignatureConflict { .. }
         | CheckRefusal::UnknownOperation { .. }

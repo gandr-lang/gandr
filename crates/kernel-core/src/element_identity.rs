@@ -37,15 +37,27 @@
 //!   functions) needs a fold clause first; the evidence tags `0x3A` and `0x3B`
 //!   are reserved by name for its quantified and dependent evaluations.
 //!
-//! **Identity at an open type is refused at formation.** A domain that
-//! mentions a bound variable or reaches a sealed atom has no fold reading: its
-//! fibre would depend on a neutral or on a hidden representation. The refusal
-//! is [`IdentityError::OpenType`], "identity at an open type", and the same
-//! refusal guards `here` at a synthesized type.
+//! **Identity at an open type is a neutral fibre.** A domain that mentions a
+//! bound variable or reaches a sealed atom has no fold clause: its fibre would
+//! depend on a neutral or on a hidden representation, so the identity stays
+//! the type `Path(A, a, b)` itself, as a higher observational type theory
+//! leaves the identity of a neutral type. It forms wherever its domain and
+//! endpoints do; `here(c)` synthesizes and checks at it by the same endpoint
+//! conversion as at a closed domain; transport along it is stuck except on
+//! `here`, where the first row of the table below reduces it; two such
+//! identities convert structurally, childwise. An introduction that needs the
+//! fold, native evidence, a higher field or a higher evaluation, refuses there
+//! as [`IdentityError::NeutralFibre`], the refusal a neutral fibre at a closed
+//! domain already gives. No wire node is needed: the neutral fibre is the
+//! persisted `Path` node over an open domain, so `0x3A` stays reserved for the
+//! quantified evaluation alone.
 //!
-//! - alternatives: a neutral fibre carried through checking, which no
-//!   inhabitant could ever check against.
-//! - reversal: a fold clause for type variables (parametricity) admits them.
+//! - alternatives: refusing identity at formation and at `here`'s synthesis,
+//!   which left every law over an abstract carrier unstatable; refusing it at
+//!   the bridge, which let a `here` inside a body reach the kernel and fault.
+//! - reversal: a fold clause for type variables (parametricity), or the
+//!   interface a sealed atom declares, computes the fibre where this leaves it
+//!   neutral; neither removes a rule stated here.
 //!
 //! **The checking machine never re-enters itself.** Every value the fold would
 //! check, a guard's evidence or a higher evaluation's returned values and
@@ -179,8 +191,6 @@ mod tests;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum IdentityError
 {
-    /// The domain mentions a bound variable or reaches a sealed atom.
-    OpenType(ValueTypeWitness),
     /// The domain is closed but has no clause in the identity fold.
     OutsideFold(ValueTypeWitness),
     /// A reflexivity's point does not convert with both endpoints.
@@ -191,7 +201,8 @@ pub enum IdentityError
         /// The target endpoint's content digest.
         right: ContentDigest,
     },
-    /// The fibre depends on endpoints that are not canonical.
+    /// The fibre is neutral: the domain is open, or the endpoints are not
+    /// canonical, so no introduction but `here` inhabits it.
     NeutralFibre,
     /// The fibre is empty, so it has no diagonal evidence.
     EmptyFibre,
@@ -246,7 +257,6 @@ impl fmt::Display for IdentityError
     ) -> fmt::Result
     {
         match *self {
-            | Self::OpenType(_) => f.write_str("identity at an open type"),
             | Self::OutsideFold(_) => f.write_str("identity at a type outside the identity fold"),
             | Self::EndpointsDiffer { .. } => {
                 f.write_str("reflexivity between differing endpoints")
@@ -289,40 +299,42 @@ impl core::error::Error for IdentityError
 {
 }
 
-/// Refuse identity at a domain that has no fold reading because it is open.
+/// Require a domain the identity fold reads: closed and reaching no sealed
+/// atom.
 ///
 /// # Specification
-/// - requires: `domain` lives in `arena`.
+/// - requires: nothing.
 /// - ensures: success exactly when the domain mentions no bound variable and
 ///   reaches no sealed atom.
-/// - provides: the formation-time guard `Path`, `here` and the higher forms
-///   share; an unreadable domain is open.
-/// - fails: [`IdentityError::OpenType`] naming the domain.
+/// - provides: the guard every reading of the fold shares; at an open domain
+///   the identity is its own neutral fibre, which no fold introduction
+///   inhabits.
+/// - fails: [`IdentityError::NeutralFibre`] at an open domain; `ArenaFault` for
+///   a domain the arena does not hold.
 /// - panics: none.
 ///
 /// # Errors
 /// As `fails`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a variable code and a sealed atom refuse by name while a
-///   closed Bool admits.
-/// - witness: `element_identity::tests::identity_at_an_open_type_is_refused_by_name`
+/// - hypothesis: L3 — native evidence at the decode of a variable code and at a
+///   sealed atom refuses as a neutral fibre, while the same evidence at a
+///   closed Bool checks.
+/// - witness: `element_identity::tests::identity_at_an_open_type_is_a_neutral_fibre`
 #[spec(ensures: |ret| ret.as_ref().map_or_else(
-    |error| matches!(error, &KernelError::Identity(IdentityError::OpenType(_))),
+    |error| matches!(error, &(KernelError::Identity(IdentityError::NeutralFibre) | KernelError::ArenaFault)),
     |&()| arena.value_type(domain).is_some()))]
-pub(crate) fn require_closed(
+fn require_folded(
     arena: &TermArena,
     domain: ValueTypeId,
 ) -> Result<(), KernelError>
 {
+    if arena.value_type(domain).is_none() {
+        return Err(KernelError::ArenaFault);
+    }
     let reach = u32::from(LooseDepths::new().value_type_reach(arena, domain));
-    if arena.value_type(domain).is_none()
-        || reach != 0
-        || !crate::env::projected_atoms(arena, domain).is_empty()
-    {
-        return Err(KernelError::Identity(IdentityError::OpenType(
-            value_type_witness(arena, domain),
-        )));
+    if reach != 0 || !crate::env::projected_atoms(arena, domain).is_empty() {
+        return Err(KernelError::Identity(IdentityError::NeutralFibre));
     }
     Ok(())
 }
@@ -347,14 +359,15 @@ pub(crate) fn endpoints_differ(
 /// The native type an identity's non-diagonal evidence inhabits.
 ///
 /// # Specification
-/// - requires: the domain is closed and both endpoints inhabit it; the checking
-///   machine discharges those goals itself.
+/// - requires: both endpoints inhabit the domain; the checking machine
+///   discharges those goals itself.
 /// - ensures: the fold's native fibre at the domain and endpoints. A domain
 ///   that is itself an identity reads its own fibre first, innermost out, and a
 ///   `here` endpoint stands for that fibre's diagonal evidence.
 /// - provides: the type the checking machine redirects native evidence to.
-/// - fails: an identity refusal for a domain outside the fold, a neutral or
-///   empty fibre, or a fibre that needs a higher form.
+/// - fails: an identity refusal for a domain outside the fold, a neutral fibre
+///   (an open innermost domain, or endpoints that are not canonical), an empty
+///   fibre, or a fibre that needs a higher form.
 /// - panics: none.
 ///
 /// # Errors
@@ -368,9 +381,10 @@ pub(crate) fn endpoints_differ(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a product of Bool and Unit pairs its fibres, a universe
-///   identity is a native path classifier, and an iterated identity at a
-///   diagonal is the unit fibre's identity.
+///   identity is a native path classifier, an iterated identity at a diagonal
+///   is the unit fibre's identity, and an open domain is a neutral fibre.
 /// - witness: `element_identity::tests::native_evidence_checks_against_the_fold_fibre`
+/// - witness: `element_identity::tests::identity_at_an_open_type_is_a_neutral_fibre`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&fibre| arena.value_type(fibre).is_some()))]
 pub(crate) fn fibre(
     arena: &mut TermArena,
@@ -420,6 +434,7 @@ fn native_fibre(
         enclosing.push((base.1, base.2));
         base = (domain, left, right);
     }
+    require_folded(arena, base.0)?;
     let (mut fibre, mut fibers) = fold_fibre(arena, base)?;
     while let Some((left, right)) = enclosing.pop() {
         let left = diagonal_endpoint(arena, &fibers, left)?;
@@ -617,8 +632,9 @@ fn higher_id(position: LayerPosition) -> Result<HigherId, KernelError>
 ///   component's two dialogues replayed positively.
 /// - provides: the checking machine's reading of a higher evaluation, with no
 ///   nested check.
-/// - fails: a shape mismatch when `expected` is not an identity; open
-///   functions, coverage and replay refusals by name.
+/// - fails: a shape mismatch when `expected` is not an identity; a neutral
+///   fibre at an open domain; open functions, coverage and replay refusals by
+///   name.
 /// - panics: none.
 ///
 /// # Errors
@@ -637,6 +653,7 @@ pub(crate) fn evaluation_obligations(
 ) -> Result<Vec<ComponentObligation>, KernelError>
 {
     let (domain, left, right) = path_parts(arena, expected)?;
+    require_folded(arena, domain)?;
     let mut reach = LooseDepths::new();
     if u32::from(reach.value_reach(arena, left)) != 0
         || u32::from(reach.value_reach(arena, right)) != 0
@@ -774,9 +791,9 @@ pub(crate) fn path_parts(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the open and outside-fold witnesses reach their names
-///   through this translation.
-/// - witness: `element_identity::tests::identity_at_an_open_type_is_refused_by_name`
+/// - hypothesis: L3 — a closed Bool between two variables reaches the neutral
+///   fibre's name through this translation.
+/// - witness: `element_identity::tests::identity_at_an_open_type_is_a_neutral_fibre`
 #[spec(captures: unsupported = matches!(error, RelationError::UnsupportedType(_)),
     ensures: |ret| !unsupported || matches!(ret, KernelError::Identity(IdentityError::OutsideFold(_))))]
 fn relation_refusal(
@@ -788,12 +805,14 @@ fn relation_refusal(
         | RelationError::UnsupportedType(ty) => {
             IdentityError::OutsideFold(value_type_witness(arena, ty))
         },
-        | RelationError::AbstractInterface(ty) => {
-            IdentityError::OpenType(value_type_witness(arena, ty))
+        // The fold refuses a sealed atom for want of its interface; every
+        // reading here meets that domain as open first, where the identity is
+        // its own neutral fibre.
+        | RelationError::AbstractInterface(_) | RelationError::NeutralFiber => {
+            IdentityError::NeutralFibre
         },
         | RelationError::Typing(error) | RelationError::Pointwise(_, error) => return *error,
         | RelationError::Path(error) => return KernelError::Path(*error),
-        | RelationError::NeutralFiber => IdentityError::NeutralFibre,
         | RelationError::Evidence => IdentityError::EmptyFibre,
         | RelationError::HigherFieldRequired => IdentityError::HigherFieldRequired,
         | RelationError::HigherEvaluationRequired => IdentityError::HigherEvaluationRequired,

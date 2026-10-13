@@ -310,9 +310,6 @@ pub enum RefusalName
     /// Reflexivity met a path type whose endpoints its point does not both
     /// convert to.
     EndpointMismatch,
-    /// Identity at an open type: a path type or reflexivity at a carrier that
-    /// mentions an outside binder, or a transport at one with no structure.
-    IdentityAtOpenType,
     /// A compound endpoint whose computation returns no pure value.
     CompoundEndpoint,
     /// A term name no binder or earlier declaration answers.
@@ -426,7 +423,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 70_usize] = [
+    pub const VOCABULARY: [Self; 69_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -445,7 +442,6 @@ impl RefusalName
         Self::DescentNotReplayed,
         Self::PathCode,
         Self::EndpointMismatch,
-        Self::IdentityAtOpenType,
         Self::CompoundEndpoint,
         Self::UnresolvedName,
         Self::UnresolvedDocLink,
@@ -571,7 +567,6 @@ impl RefusalName
         | (Self::UnknownOperation, b"UnknownOperation") | (Self::HandlerCoverage, b"HandlerCoverage")
         | (Self::ShiftWithoutReset, b"ShiftWithoutReset") | (Self::DependentStack, b"DependentStack")
         | (Self::EndpointMismatch, b"EndpointMismatch")
-        | (Self::IdentityAtOpenType, b"IdentityAtOpenType")
         | (Self::CompoundEndpoint, b"CompoundEndpoint")
     )
 },
@@ -610,7 +605,6 @@ impl RefusalName
             | Self::DuplicateImportAlias => "DuplicateImportAlias",
             | Self::PathCode => "PathCode",
             | Self::EndpointMismatch => "EndpointMismatch",
-            | Self::IdentityAtOpenType => "IdentityAtOpenType",
             | Self::CompoundEndpoint => "CompoundEndpoint",
             | Self::ShadowedBuiltin => "ShadowedBuiltin",
             | Self::OutOfFragment => "OutOfFragment",
@@ -867,7 +861,6 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::ShiftWithoutReset { .. }), RefusalName::ShiftWithoutReset)
         | (Self::Checking(CheckRefusal::DependentStack { .. }), RefusalName::DependentStack)
         | (Self::Checking(CheckRefusal::EndpointMismatch { .. }), RefusalName::EndpointMismatch)
-        | (Self::Checking(CheckRefusal::IdentityAtOpenType { .. }), RefusalName::IdentityAtOpenType)
         | (Self::Checking(CheckRefusal::CompoundEndpoint { .. }), RefusalName::CompoundEndpoint)
     )
 },
@@ -1063,7 +1056,6 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::ShiftWithoutReset { .. }, RefusalName::ShiftWithoutReset)
         | (CheckRefusal::DependentStack { .. }, RefusalName::DependentStack)
         | (CheckRefusal::EndpointMismatch { .. }, RefusalName::EndpointMismatch)
-        | (CheckRefusal::IdentityAtOpenType { .. }, RefusalName::IdentityAtOpenType)
         | (CheckRefusal::CompoundEndpoint { .. }, RefusalName::CompoundEndpoint)
     )
 },
@@ -1088,7 +1080,6 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
         | CheckRefusal::EffectSignatureConflict { .. } => RefusalName::EffectSignatureConflict,
         | CheckRefusal::PathCode(_) => RefusalName::PathCode,
         | CheckRefusal::EndpointMismatch { .. } => RefusalName::EndpointMismatch,
-        | CheckRefusal::IdentityAtOpenType { .. } => RefusalName::IdentityAtOpenType,
         | CheckRefusal::CompoundEndpoint { .. } => RefusalName::CompoundEndpoint,
         | CheckRefusal::TypeMismatch(_) => RefusalName::TypeMismatch,
         | CheckRefusal::ShapeMismatch { .. } => RefusalName::ShapeMismatch,
