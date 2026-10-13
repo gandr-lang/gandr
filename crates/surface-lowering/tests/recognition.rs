@@ -365,11 +365,13 @@ mod recognition
         for kind in [
             Recognized::BuiltinNamespace(position),
             Recognized::ModuleNamespace,
+            Recognized::Functor,
         ] {
             assert_eq!(
                 kind.declines_unknown_member(),
                 Declines(true),
-                "a namespace governs its members and declines an unknown one"
+                "a namespace governs its members and declines an unknown one, and a functor \
+                 has none to read"
             );
         }
         for kind in [
@@ -679,6 +681,61 @@ mod recognition
             ),
             "and the builtin keeps its name"
         );
+    }
+
+    #[test]
+    fn a_module_or_functor_shadowing_a_builtin_is_rejected_under_policy()
+    {
+        let builtins = || {
+            SeedTable::from(Vec::from([SeedEntry {
+                path: path("Prim"),
+                kind: SeedKind::Namespace,
+            }]))
+        };
+        for (written, at) in [
+            ("module Prim { def x = 1 ; }", site(7_usize, 11_usize)),
+            (
+                "module Prim(S : #{ x : Integer }) :> #{ y : Integer } { def y = S.x ; }",
+                site(7_usize, 11_usize),
+            ),
+        ] {
+            let source = SourceText::from(written);
+            let allowed = lowered(
+                source,
+                Recognition::new(&[builtins()], ShadowPolicy::WarnAndAllow),
+            );
+            assert_eq!(
+                allowed.recognition().shadowed(),
+                [ShadowedBuiltin {
+                    path: path("Prim"),
+                    span: at,
+                }]
+                .as_slice(),
+                "`{written}` warns once, at its name"
+            );
+
+            let refused = lowered(
+                source,
+                Recognition::new(&[builtins()], ShadowPolicy::Reject),
+            );
+            assert!(
+                outcomes(&refused).contains(&DeclarationOutcome::Refused(
+                    LoweringRefusal::ShadowedBuiltin {
+                        span: at,
+                        name: SurfaceName::from("Prim"),
+                    }
+                )),
+                "`{written}` is refused at its name under the reject policy: {:?}",
+                outcomes(&refused)
+            );
+            assert!(
+                matches!(
+                    refused.recognition().resolve(&path("Prim")),
+                    Maybe::Present(&Recognized::BuiltinNamespace(_))
+                ),
+                "and the builtin keeps its name"
+            );
+        }
     }
 
     #[test]

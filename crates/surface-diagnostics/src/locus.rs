@@ -522,6 +522,8 @@ impl Annotations
             | LoweringRefusal::NonValuePayload { .. }
             | LoweringRefusal::IllTypedPayload { .. }
             | LoweringRefusal::UnknownMember { .. }
+            | LoweringRefusal::NotAFunctor { .. }
+            | LoweringRefusal::ProjectionFromApplication { .. }
             | LoweringRefusal::UnreadAscription { .. }
             | LoweringRefusal::UnstatedComponent { .. }
             | LoweringRefusal::FamilyTelescope { .. }

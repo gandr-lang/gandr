@@ -726,6 +726,8 @@ fn lowering_row(
         | LoweringRefusal::IllTypedPayload { .. }
         | LoweringRefusal::ForwardMemberReference { .. }
         | LoweringRefusal::UnknownMember { .. }
+        | LoweringRefusal::NotAFunctor { .. }
+        | LoweringRefusal::ProjectionFromApplication { .. }
         | LoweringRefusal::UnreadAscription { .. }
         | LoweringRefusal::UnstatedComponent { .. }
         | LoweringRefusal::FamilyTelescope { .. }

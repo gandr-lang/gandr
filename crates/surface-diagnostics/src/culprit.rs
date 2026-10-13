@@ -175,6 +175,10 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         | LoweringRefusal::IllTypedPayload { .. } => "a payload of another schema",
         | LoweringRefusal::ForwardMemberReference { .. } => "named before it is declared",
         | LoweringRefusal::UnknownMember { .. } => "no member of this name",
+        | LoweringRefusal::NotAFunctor { .. } => "not a functor",
+        | LoweringRefusal::ProjectionFromApplication { .. } => {
+            "an application read before it is bound"
+        },
         | LoweringRefusal::UnreadAscription { .. } => "not read by the fragment yet",
         | LoweringRefusal::UnstatedComponent { .. } => "the signature this model derives",
         | LoweringRefusal::FamilyTelescope { .. } => "parameters its kind does not state",

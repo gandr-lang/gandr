@@ -23,6 +23,17 @@
 //! over the current corpus; repeating the same pipeline is not an independent
 //! semantic oracle.
 //!
+//! `kernel_export::kernel_generative_distinctness::the_generative_distinctness_golden`
+//! pins what generativity leaves in an artifact: the classic functor pair
+//! (`fixture/model/modules/functor-pair.gandr`) exports the argument's atom
+//! and one atom per application, the header's minted-atom table names the
+//! three apart, and each application's members are typed at its own atom by a
+//! node the other's do not share.
+//! `kernel_export::kernel_generative_distinctness::an_artifact_whose_applications_share_an_atom_is_refused`
+//! rewrites that table so the second application claims the first's atom, and
+//! the kernel's decoder refuses it at the table by name: two instances sharing
+//! an atom is a refusal at admission, not a convention of the producer.
+//!
 //! The suite derives its expectations from admission and storage semantics
 //! rather than checked-in sizes, identities, class thresholds or corpus
 //! cardinalities. Exact kernel format goldens belong to `gandr-kernel-term`;
@@ -788,5 +799,151 @@ mod kernel_corpus_partition
                  declarations that crossed, in admission order, under their names"
             );
         }
+    }
+}
+
+/// Generativity at the kernel boundary: the classic functor pair's two
+/// applications export an atom each, the header's minted-atom table names both
+/// beside the argument's, and an artifact whose table has the two applications
+/// share one atom is refused by the decoder.
+mod kernel_generative_distinctness
+{
+    use alloc::format;
+    use alloc::vec::Vec;
+    use std::path::PathBuf;
+
+    use gandr_kernel_term::ArtifactImage;
+    use gandr_kernel_term::ConstantIndex;
+    use gandr_kernel_term::DeclarationContent;
+    use gandr_kernel_term::DecodeError;
+    use gandr_kernel_term::NameSegment;
+    use gandr_kernel_term::ReservedSlot;
+    use gandr_kernel_term::StructuredName;
+    use gandr_kernel_term::ValueType;
+    use gandr_kernel_term::decode;
+    use gandr_surface_grammar::built_in;
+
+    use super::Exported;
+    use super::Root;
+    use super::Swept;
+    use super::export;
+
+    /// The offset of the header's minted-atom count: past the four-byte magic
+    /// and the two-byte version.
+    const MINTED_ATOM_TABLE_COUNT_OFFSET: usize = 6;
+    /// The offset of the table's entry for the first application's atom, past
+    /// the count and the argument's entry, each one byte in the functor pair.
+    const FIRST_APPLICATION_ENTRY_OFFSET: usize = 8;
+    /// The offset of the table's entry for the second application's atom.
+    const SECOND_APPLICATION_ENTRY_OFFSET: usize = 9;
+
+    /// The classic functor pair exported: `Seed` sealed, then `MkCounter`
+    /// applied to it twice, as `A` and as `B`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn functor_pair() -> Exported
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/fixture/model/modules/functor-pair.gandr"
+        ));
+        match export(&pbg, path, Root::Fixture) {
+            | Swept::Exported(exported) => exported,
+            | Swept::RefusedWhole => panic!("the functor pair lowers"),
+        }
+    }
+
+    #[test]
+    fn the_generative_distinctness_golden()
+    {
+        let named = |dotted: &str| {
+            StructuredName::from(
+                dotted
+                    .split('.')
+                    .filter_map(|segment| NameSegment::from_text(segment.into()))
+                    .collect::<Vec<_>>(),
+            )
+        };
+        let exported = functor_pair();
+        let decoded =
+            decode(exported.artifact.as_image()).expect("the functor pair's export decodes");
+        let atoms: Vec<(usize, &StructuredName)> = decoded
+            .declarations()
+            .iter()
+            .enumerate()
+            .filter(|&(_, marked)| {
+                matches!(
+                    *marked.declaration().content(),
+                    DeclarationContent::AbstractType { .. }
+                )
+            })
+            .map(|(position, marked)| (position, marked.declaration().name()))
+            .collect();
+        assert_eq!(
+            atoms
+                .iter()
+                .map(|&(_, name)| name.clone())
+                .collect::<Vec<_>>(),
+            ["Seed.T", "A.T", "B.T"].map(named),
+            "the argument's atom, then one atom per application, in admission order"
+        );
+        let &[(seed, _), (first, _), (second, _)] = atoms.as_slice()
+        else {
+            panic!("three atoms");
+        };
+        let entry = |position: usize| u8::try_from(position).expect("a one-byte position");
+        let image = Vec::from(exported.artifact);
+        assert_eq!(
+            image.get(MINTED_ATOM_TABLE_COUNT_OFFSET ..= SECOND_APPLICATION_ENTRY_OFFSET),
+            Some([3_u8, entry(seed), entry(first), entry(second)].as_slice()),
+            "the header's table carries each atom once, at its own position"
+        );
+        let mut seeds = Vec::new();
+        for (instance, own, other) in [("A", first, second), ("B", second, first)] {
+            let member = named(&format!("{instance}.seed"));
+            let typed: Vec<_> = decoded
+                .declarations()
+                .iter()
+                .filter(|marked| *marked.declaration().name() == member)
+                .map(|marked| marked.declaration().declared_id())
+                .collect();
+            let at = |atom: usize| {
+                typed.iter().copied().find(|&id| {
+                    decoded.arena().value_type(id)
+                        == Some(&ValueType::Abstract(ConstantIndex::from(atom)))
+                })
+            };
+            let Some(own) = at(own)
+            else {
+                panic!("{instance}.seed is typed at its own application's atom");
+            };
+            assert_eq!(at(other), None, "and never at the other application's");
+            seeds.push(own);
+        }
+        assert!(
+            matches!(seeds.as_slice(), [first, second] if first != second),
+            "no shared subterm merges the two instances' types: {seeds:?}"
+        );
+    }
+
+    #[test]
+    fn an_artifact_whose_applications_share_an_atom_is_refused()
+    {
+        let mut image = Vec::from(functor_pair().artifact);
+        let first = *image
+            .get(FIRST_APPLICATION_ENTRY_OFFSET)
+            .expect("the first application's entry");
+        *image
+            .get_mut(SECOND_APPLICATION_ENTRY_OFFSET)
+            .expect("the second application's entry") = first;
+        assert_eq!(
+            decode(ArtifactImage::from(image.as_slice())).map(|_decoded| ()),
+            Err(DecodeError::ReservedSlotOccupied {
+                slot: ReservedSlot::MintedAtomTable,
+            }),
+            "a table on which the second application claims the first's atom is refused by name"
+        );
     }
 }

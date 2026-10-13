@@ -73,6 +73,7 @@ use crate::module::Operand;
 use crate::module::SlotIndex;
 use crate::module::StructureIndex;
 use crate::module::TypeMeaning;
+use crate::module::spine_domains;
 use crate::origin::Origin;
 use crate::resolve::Frame;
 use crate::resolve::OperandCount;
@@ -688,6 +689,11 @@ impl<'source> Lowerer<'_, 'source>
                 sink.origins.record_value_type(id, minting.origin);
                 Ok(id)
             },
+            | (TypeMeaning::Instantiated { defined, instance }, true) => self
+                .instance_types
+                .get(&(instance, defined.node))
+                .copied()
+                .ok_or(Missing::Unlowered),
             | (TypeMeaning::Family(family), false) => {
                 let mut arguments = Vec::with_capacity(sort.indices.len());
                 for index in &sort.indices {
@@ -698,7 +704,10 @@ impl<'source> Lowerer<'_, 'source>
                     | Maybe::Absent(_) => Err(Missing::Unlowered),
                 }
             },
-            | (TypeMeaning::Manifest(_) | TypeMeaning::Sealed, false)
+            | (
+                TypeMeaning::Manifest(_) | TypeMeaning::Sealed | TypeMeaning::Instantiated { .. },
+                false,
+            )
             | (TypeMeaning::Family(_), true) => Err(Missing::Unlowered),
         }
     }
@@ -953,8 +962,9 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: the mint sweep has run.
     /// - ensures: one type per entry of the kind's domain — each entry of a
-    ///   parenthesised list, or the domain itself when written bare — each
-    ///   carried into the context binding every entry before it.
+    ///   parenthesised list, the domain itself when written bare, or each
+    ///   domain along a static arrow's spine — each carried into the context
+    ///   binding every entry before it.
     /// - fails: [`Missing::Refused`] with the reader's refusal for a domain
     ///   whose pieces or entries do not read, and [`Missing::Unlowered`] for an
     ///   empty kind, a list without its opener, or an entry that did not lower.
@@ -965,9 +975,11 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `(a : Ob, b : Ob) => Type` states `Ob` twice, the
-    ///   second carried under the first.
+    ///   second carried under the first, and `Type -> Type -> Type` states
+    ///   `Type` twice.
     /// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
     /// - witness: `modules::modules::models::a_written_family_of_the_wrong_telescope_is_refused`
+    /// - witness: `modules::modules::a_kinded_type_component_spine_declares_its_arity`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |types| types.iter().all(|&id| sink.arena.value_type(id).is_some())))]
     fn written_indices(
         &self,
@@ -976,6 +988,19 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Result<Vec<ValueTypeId>, Missing<'source>>
     {
+        if let Ok(Some((_, Former::ArrowType))) = self.form_at(kind) {
+            let domains = spine_domains(self.pbg, self.tree, kind).map_err(Missing::Refused)?;
+            let mut indices = Vec::with_capacity(domains.len());
+            for domain in domains {
+                let Maybe::Present(id) = self.value_type_at(domain.node)
+                else {
+                    return Err(Missing::Unlowered);
+                };
+                let frame = self.reading(domain.node).frame();
+                indices.push(self.relocate_value_type(id, frame, sink, origin));
+            }
+            return Ok(indices);
+        }
         let mut pieces = Pieces::new();
         read_pieces(self.pbg, self.tree, kind.node, &mut pieces).map_err(Missing::Refused)?;
         let Some(domain) = pieces.pieces.iter().find_map(|piece| match *piece {
@@ -1091,18 +1116,26 @@ impl<'source> Lowerer<'_, 'source>
     /// The check of the family whose type is at `defined`, over `arity`
     /// parameters, at the written kind `kind`.
     ///
+    /// A telescope kind classifies a value function, so the family checks as
+    /// the thunk of its lambdas; a static arrow classifies a type operator, so
+    /// it checks as the static abstraction of its code, which the checker
+    /// forms at the arrow's classifiers first.
+    ///
     /// # Specification
     /// - requires: the mint sweep has run.
-    /// - ensures: the kind's type and `thunk (λ … λ. return ⌜τ⌝)`, one lambda
-    ///   per parameter, every node carrying `origin`; nothing when the kind or
-    ///   the family's type did not lower.
+    /// - ensures: the kind's type and, for a static arrow, `λ … λ. ⌜τ⌝`, one
+    ///   static abstraction per parameter; otherwise `thunk (λ … λ. return
+    ///   ⌜τ⌝)`, one lambda per parameter; every node carrying `origin`; nothing
+    ///   when the kind or the family's type did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the written `CatShape` family checks its member at
-    ///   its kind.
+    ///   its kind, and a family read against a static arrow checks as an
+    ///   operator.
     /// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `modules::modules::a_kinded_type_component_forms_at_its_classifier`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present((kind_id, body)) if sink.arena.value_type(kind_id).is_some() && sink.arena.value(body).is_some()))]
     fn family_witness(
         &self,
@@ -1122,6 +1155,14 @@ impl<'source> Lowerer<'_, 'source>
         };
         let code = sink.arena.value_quote(family);
         sink.origins.record_value(code, origin);
+        if let Ok(Some((_, Former::ArrowType))) = self.form_at(kind) {
+            let mut operator = code;
+            for _parameter in 0 .. usize::from(arity) {
+                operator = sink.arena.value_static_lambda(operator);
+                sink.origins.record_value(operator, origin);
+            }
+            return Maybe::Present((stated, operator));
+        }
         let mut body = sink.arena.computation_return(code);
         sink.origins.record_computation(body, origin);
         for _parameter in 0 .. usize::from(arity) {

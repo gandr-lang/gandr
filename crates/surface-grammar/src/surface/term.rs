@@ -363,6 +363,15 @@ fn declarations(
     // type member, or a nested module of either name case with its own
     // optional ascription, whose body is the same repetition, so nesting depth
     // is unbounded.
+    //
+    // After the name, a functor declares its parameter in parentheses,
+    // `module MkSet(Elt : #{ … }) :> #{ … } { … }` (`functor_parameter`), and a
+    // functor application binds its instance, `module IntSet = MkSet(IntOrd) ;`
+    // (`functor_application_tail`). The application's tail opens at `=`, the
+    // parameter at `(`, the ascription at `:` or `:>` and the body at `{`, so
+    // the choice stays one token deep. The application is a module binding and
+    // nothing else: no rule projects from it, so `MkSet(IntOrd).T` has no
+    // reading but the one the lowering refuses by name.
     let mut module = r(
         RuleName("module_declaration"),
         Provenance("module_declaration"),
@@ -371,10 +380,16 @@ fn declarations(
         seq([
             t(TileLabel("module")),
             alt([t(TileLabel("type_identifier")), t(TileLabel("identifier"))]),
-            opt(module_ascription_tail()),
-            t(TileLabel("{")),
-            repeat(h(Sort::ModuleMember)),
-            t(TileLabel("}")),
+            alt([
+                functor_application_tail(),
+                seq([
+                    opt(functor_parameter()),
+                    opt(module_ascription_tail()),
+                    t(TileLabel("{")),
+                    repeat(h(Sort::ModuleMember)),
+                    t(TileLabel("}")),
+                ]),
+            ]),
         ]),
     );
     module.adaptations.push(Adaptation::new(
@@ -525,6 +540,79 @@ fn module_ascription_tail() -> Regex
             t(TileLabel(":>")),
             alt([module_signature(), signature_former()]),
         ]),
+    ])
+}
+
+/// Build a functor's parameter, `(Elt : #{ … })`: the parameter's module name
+/// and the inline signature it is matched against, in parentheses.
+///
+/// Matching an argument against the parameter is transparent ascription, so
+/// the signature is spelled as an ascription spells an inline one. One
+/// parameter: a functor of several is spelled as a functor whose body applies
+/// another. The signature is written inline only: a parameter whose
+/// components a former derives, `(C : Model(S))`, adds the former as a second
+/// alternative here when a functor over models is written.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: an opening parenthesis, one type name, a colon, the inline
+///   signature and the closer.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 5 && parts.iter().zip(["(", "type_identifier", ":"]).all(|(part, label)| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label)) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref signature) if signature.first().is_some_and(|lead| matches!(lead.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "#{")))) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ")"))))]
+fn functor_parameter() -> Regex
+{
+    seq([
+        t(TileLabel("(")),
+        t(TileLabel("type_identifier")),
+        t(TileLabel(":")),
+        module_signature(),
+        t(TileLabel(")")),
+    ])
+}
+
+/// Build a functor application's binding tail, `= MkSet(IntOrd) ;`: the
+/// functor's name and the module path it is applied to, in parentheses.
+///
+/// The argument is a path, `IntOrd` or `Outer.Inner`, never a structure
+/// literal: an application names modules that exist, and an inline structure
+/// is a module binding written first.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: an equals sign, the functor's type name, an opening parenthesis,
+///   a type name followed by any number of dotted segments of either name case,
+///   the closer and a semicolon.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 7 && ["=", "type_identifier", "(", "type_identifier"].iter().zip(parts.iter()).chain([")", ";"].iter().zip(parts.iter().skip(5))).all(|(label, part)| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == *label)) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(_)))))]
+fn functor_application_tail() -> Regex
+{
+    seq([
+        t(TileLabel("=")),
+        t(TileLabel("type_identifier")),
+        t(TileLabel("(")),
+        t(TileLabel("type_identifier")),
+        repeat(seq([
+            t(TileLabel(".")),
+            alt([t(TileLabel("type_identifier")), t(TileLabel("identifier"))]),
+        ])),
+        t(TileLabel(")")),
+        t(TileLabel(";")),
     ])
 }
 
@@ -3139,8 +3227,9 @@ fn member_sep() -> Regex
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: appends plain and attributed definitions, a type member and a
-///   nested module, all at the module-member sort with module provenance.
+/// - ensures: appends plain definitions, attributed definitions and type
+///   members, a plain type member and a nested module, all at the module-member
+///   sort with module provenance.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -3151,20 +3240,21 @@ fn member_sep() -> Regex
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 4 && added.iter().zip(["module_definition_member", "attributed_module_definition_member", "module_type_member", "nested_module_member"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::ModuleMember && rule.prec() == p && rule.provenance().0 == "module_declaration")))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 4 && added.iter().zip(["module_definition_member", "attributed_module_member", "module_type_member", "nested_module_member"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::ModuleMember && rule.prec() == p && rule.provenance().0 == "module_declaration")))]
 fn module_members(
     out: &mut Vec<Rule>,
     p: Prec,
 )
 {
     let s = Sort::ModuleMember;
-    // The plain and attributed definition members are **two rules, not one
-    // with an optional prefix**. A form whose first symbol is a repetition has
-    // no definite lead tile, and at a sort-hole position the melder then starts
-    // the member at `def` and leaves the preceding `@[ … ]` block outside it —
-    // an attribute silently detached from the definition it decorates. Splitting
-    // on the one token that distinguishes them gives each form a definite lead
-    // and puts the block back inside the member.
+    // The plain and attributed members are **two rules, not one with an
+    // optional prefix**. A form whose first symbol is a repetition has no
+    // definite lead tile, and at a sort-hole position the melder then starts
+    // the member at `def` or `type` and leaves the preceding `@[ … ]` block
+    // outside it — an attribute silently detached from the member it
+    // decorates. Splitting on the one token that distinguishes them gives each
+    // form a definite lead and puts the block back inside the member; the
+    // attributed form is one rule for both tails, so `@[` opens one reading.
     out.push(r(
         RuleName("module_definition_member"),
         Provenance("module_declaration"),
@@ -3173,25 +3263,18 @@ fn module_members(
         seq([t(TileLabel("def")), regular_def_tail()]),
     ));
     out.push(r(
-        RuleName("attributed_module_definition_member"),
+        RuleName("attributed_module_member"),
         Provenance("module_declaration"),
         s,
         p,
-        module_definition_member(),
+        attributed_module_member(),
     ));
     out.push(r(
         RuleName("module_type_member"),
         Provenance("module_declaration"),
         s,
         p,
-        seq([
-            t(TileLabel("type")),
-            t(TileLabel("type_identifier")),
-            opt(head_params()),
-            t(TileLabel("=")),
-            h(Sort::Type),
-            t(TileLabel(";")),
-        ]),
+        type_member_tail(),
     ));
     out.push(r(
         RuleName("nested_module_member"),
@@ -3202,13 +3285,17 @@ fn module_members(
     ));
 }
 
-/// Build one **attributed** definition/signature module member: at least one
-/// `@[ … ]` block, then the ordinary definition tail.
+/// Build one **attributed** module member: at least one `@[ … ]` block, then
+/// either the ordinary definition tail or a type member.
+///
+/// An attributed type member states the expectation of the check a
+/// signature's component reads the member through; the lowering files the
+/// block under the member's form.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: one mandatory attribute block and any following attribute blocks
-///   before a def and its regular tail.
+///   before either a def and its regular tail or a type member.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -3218,14 +3305,44 @@ fn module_members(
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 4 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(_))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "def")) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(_)))))]
-fn module_definition_member() -> Regex
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(_))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(ref tails) if tails.len() == 2))))]
+fn attributed_module_member() -> Regex
 {
     seq([
         attr_block_inline(),
         repeat(attr_block_inline()),
-        t(TileLabel("def")),
-        regular_def_tail(),
+        alt([
+            seq([t(TileLabel("def")), regular_def_tail()]),
+            type_member_tail(),
+        ]),
+    ])
+}
+
+/// Build a module type member, `type T = τ ;` or `type T(a : A, …) = τ ;`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `type`, a type name, an optional parameter list, `=`, a type hole
+///   and `;`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 6 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "type")) && parts.get(5).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ";"))))]
+fn type_member_tail() -> Regex
+{
+    seq([
+        t(TileLabel("type")),
+        t(TileLabel("type_identifier")),
+        opt(head_params()),
+        t(TileLabel("=")),
+        h(Sort::Type),
+        t(TileLabel(";")),
     ])
 }
 

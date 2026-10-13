@@ -101,6 +101,8 @@ impl LoweringRefusal<'_>
             | Self::IllTypedPayload { .. }
             | Self::ForwardMemberReference { .. }
             | Self::UnknownMember { .. }
+            | Self::NotAFunctor { .. }
+            | Self::ProjectionFromApplication { .. }
             | Self::FamilyTelescope { .. }
             | Self::LowercaseModuleName { .. }
             | Self::NonExhaustiveMatch { .. }
@@ -131,6 +133,8 @@ impl LoweringRefusal<'_>
             | Self::IllTypedPayload { .. }
             | Self::ForwardMemberReference { .. }
             | Self::UnknownMember { .. }
+            | Self::NotAFunctor { .. }
+            | Self::ProjectionFromApplication { .. }
             | Self::FamilyTelescope { .. }
             | Self::LowercaseModuleName { .. }
             | Self::NonExhaustiveMatch { .. }
@@ -179,9 +183,8 @@ mod tests
     ///
     /// # Specification
     /// - requires: the built-in attribute registry contains `owes`.
-    /// - ensures: the 29 current refusal variants have distinct
-    ///   representatives; payloads are fixtures rather than evidence of a real
-    ///   lowering failure.
+    /// - ensures: the 30 listed refusal variants have distinct representatives;
+    ///   payloads are fixtures rather than evidence of a real lowering failure.
     /// - provides: the domain of the finite classification checks.
     /// - fails: never.
     /// - panics: if the named built-in attribute is absent.
@@ -202,7 +205,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 28_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 30_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -331,6 +334,14 @@ mod tests
                 name: SurfaceName::from("Hom"),
                 fault: crate::error::TelescopeFault::Index(OperandCount::from(1_usize)),
             },
+            LoweringRefusal::NotAFunctor {
+                span: empty,
+                name: SurfaceName::from("MkTally"),
+            },
+            LoweringRefusal::ProjectionFromApplication {
+                span: empty,
+                functor: SurfaceName::from("MkCounter"),
+            },
         ]
     }
 
@@ -365,6 +376,8 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::Unrepresentable,
             FailureClass::Unrepresentable,
+            FailureClass::MalformedSource,
+            FailureClass::MalformedSource,
             FailureClass::MalformedSource,
         ];
 

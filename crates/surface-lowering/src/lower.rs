@@ -473,6 +473,7 @@ use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::DataSignature;
+use gandr_core_term::Renaming;
 use gandr_core_term::Sort;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
@@ -542,17 +543,20 @@ use crate::module::DeclarationSlot;
 use crate::module::DecoratedModule;
 use crate::module::FamilyIndex;
 use crate::module::Half;
+use crate::module::InstanceIndex;
 use crate::module::LoweredDeclaration;
 use crate::module::LoweredModule;
 use crate::module::LoweredStructure;
 use crate::module::ManifestComponent;
 use crate::module::Member;
 use crate::module::Operand;
+use crate::module::ParameterForm;
 use crate::module::Payload;
 use crate::module::Role;
 use crate::module::SealedComponent;
 use crate::module::Sealing;
 use crate::module::SlotIndex;
+use crate::module::Stratum;
 use crate::module::StructureIndex;
 use crate::module::TypeComponent;
 use crate::module::TypeMeaning;
@@ -597,6 +601,8 @@ pub use exits::Exit;
 pub use exits::Explicitness;
 pub use exits::InferredExit;
 
+mod functor;
+
 mod runs;
 
 pub use runs::AskedRuns;
@@ -628,6 +634,9 @@ quenchant_shape::reason_enum! {
             /// The function tail states no type: a parameter or the result is
             /// untyped.
             Unstated,
+            /// The slot belongs to a functor's template, which each
+            /// application renames into declarations of its own.
+            Templated,
         }
     }
 }
@@ -1842,6 +1851,9 @@ enum Plan
     Atom(TypeAtom),
     /// The atom the abstract type at this admission position declares.
     Sealed(ConstantIndex),
+    /// The manifest type an application's instance exports: the type the
+    /// functor's body wrote at the node, renamed by the application.
+    Instantiated(InstanceIndex, NodeIndex),
     /// A universe.
     Universe(Universe),
     /// The type a code denotes, in the universe it was declared at: the code
@@ -2405,6 +2417,16 @@ struct Lowerer<'run, 'source>
     descents: BTreeMap<NodeIndex, native::Descent>,
     /// Each callable operation's minted type and body, by slot.
     operated: BTreeMap<SlotIndex, (ValueTypeId, ValueId)>,
+    /// Each application's renaming, in source order, or the refusal of the
+    /// argument type it could not read: built during the mint sweep, before
+    /// the first type written after the application mints.
+    renamings: Vec<Result<Renaming, LoweringRefusal<'source>>>,
+    /// Each manifest type an instance exports, by its application and the
+    /// template's type: that type, renamed by the application.
+    instance_types: BTreeMap<(InstanceIndex, NodeIndex), ValueTypeId>,
+    /// Each slot of an application — a witness or an image of its functor's
+    /// body — with the declaration it amounts to.
+    instantiated: BTreeMap<SlotIndex, DeclarationOutcome<'source>>,
 }
 
 /// Where the mint sweep writes: the arena and the origin table, with the
@@ -2675,6 +2697,7 @@ pub fn lower_module<'source>(
     lowerer.mint_data(&mut sink);
     lowerer.mint_descriptions(&mut sink)?;
     lowerer.mint_operations(&mut sink);
+    lowerer.mint_instances(&mut sink);
     let mut attributes = AttributeTable::new();
     lowerer.attribute(&mut attributes)?;
     let documentation = lowerer.document()?;
@@ -2845,6 +2868,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             recursions: BTreeMap::new(),
             descents: BTreeMap::new(),
             operated: BTreeMap::new(),
+            renamings: Vec::new(),
+            instance_types: BTreeMap::new(),
+            instantiated: BTreeMap::new(),
         }
     }
 
@@ -2937,14 +2963,39 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 });
             }
         }
-        let tops: Vec<StructureIndex> = self
-            .collected
-            .structures
-            .iter()
-            .enumerate()
-            .filter(|&(_position, structure)| structure.container == Container::TopLevel)
-            .map(|(position, _structure)| StructureIndex::from(position))
-            .collect();
+        let mut tops: Vec<StructureIndex> = Vec::new();
+        let mut shadowing: Vec<StructureIndex> = Vec::new();
+        for (position, structure) in self.collected.structures.iter().enumerate() {
+            if structure.container != Container::TopLevel {
+                continue;
+            }
+            match structure.stratum {
+                | Stratum::Module | Stratum::Instance(_) => {
+                    tops.push(StructureIndex::from(position));
+                },
+                | Stratum::Functor(_) => {
+                    let mut subtree = Trie::empty();
+                    let _fresh = subtree.insert(
+                        &NamePath::root(),
+                        Binding::new(
+                            Recognized::Functor,
+                            RecognitionSite::Source(structure.named.span),
+                        ),
+                    );
+                    if let Err(_refused) = self.recognition.declare(
+                        Segment::from(structure.name.as_ref()),
+                        subtree,
+                        structure.named.span,
+                    ) {
+                        shadowing.push(StructureIndex::from(position));
+                    }
+                },
+                | Stratum::Parameter(_) => {},
+            }
+        }
+        for functor in shadowing {
+            self.refuse_shadowing(functor);
+        }
         for top in tops {
             self.declare_module(top);
         }
@@ -2996,7 +3047,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         else {
             return;
         };
-        let (name, named, declared_by) = (module.name, module.named, module.declared_by);
+        let (name, named) = (module.name, module.named);
         let root = NamePath::from(Vec::from([Segment::from(name.as_ref())]));
         let mut subtree = Trie::empty();
         let _root = subtree.insert(
@@ -3067,26 +3118,61 @@ impl<'run, 'source> Lowerer<'run, 'source>
             .recognition
             .declare(Segment::from(name.as_ref()), subtree, named.span);
         if let Err(_refused) = declared {
-            let held = SlotIndex::from(self.collected.slots.len());
-            let mut slot = DeclarationSlot {
-                name,
-                container: Container::TopLevel,
-                role: Role::Held,
-                constant: ConstantIndex::from(usize::from(held)),
-                introduced_by: declared_by,
-                named,
-                signature: Maybe::Absent(declaration_half::Absent::Unwritten),
-                definition: Maybe::Absent(declaration_half::Absent::Unwritten),
-                attributes: Vec::new(),
-                docs: Vec::new(),
-                refusal: Maybe::Absent(slot_refusal::Absent::Unrefused),
-            };
-            slot.refuse(declared_by.node, LoweringRefusal::ShadowedBuiltin {
-                span: named.span,
-                name,
-            });
-            self.collected.slots.push(slot);
+            self.refuse_shadowing(top);
         }
+    }
+
+    /// Refuse the top-level module or functor at `top`, whose name shadows a
+    /// builtin the active policy protects, on a held slot of its own.
+    ///
+    /// # Specification
+    /// - requires: `top` names a top-level module of the collection.
+    /// - ensures: one held slot at the top level, at the next admission
+    ///   position, carries [`LoweringRefusal::ShadowedBuiltin`] at the module's
+    ///   name; a `top` the collection does not hold appends nothing.
+    /// - provides: the shadowing refusal [`Self::declare`] and
+    ///   [`Self::declare_module`] share.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a module and a functor named as a builtin under the
+    ///   reject policy are each refused at their name.
+    /// - witness: `recognition::recognition::a_module_or_functor_shadowing_a_builtin_is_rejected_under_policy`
+    #[spec(
+        captures: before = self.collected.slots.len(),
+        ensures: self.collected.slots.len() <= before.saturating_add(1)
+            && self.collected.slots.get(before).is_none_or(|slot| slot.role == Role::Held && matches!(slot.refusal, Maybe::Present((_, LoweringRefusal::ShadowedBuiltin { .. })))),
+    )]
+    fn refuse_shadowing(
+        &mut self,
+        top: StructureIndex,
+    )
+    {
+        let Some(module) = self.collected.structures.get(usize::from(top))
+        else {
+            return;
+        };
+        let (name, named, declared_by) = (module.name, module.named, module.declared_by);
+        let held = SlotIndex::from(self.collected.slots.len());
+        let mut slot = DeclarationSlot {
+            name,
+            container: Container::TopLevel,
+            role: Role::Held,
+            constant: ConstantIndex::from(usize::from(held)),
+            introduced_by: declared_by,
+            named,
+            signature: Maybe::Absent(declaration_half::Absent::Unwritten),
+            definition: Maybe::Absent(declaration_half::Absent::Unwritten),
+            attributes: Vec::new(),
+            docs: Vec::new(),
+            refusal: Maybe::Absent(slot_refusal::Absent::Unrefused),
+        };
+        slot.refuse(declared_by.node, LoweringRefusal::ShadowedBuiltin {
+            span: named.span,
+            name,
+        });
+        self.collected.slots.push(slot);
     }
 
     /// Report the binder `binder`, spelling `name`, against the outermost
@@ -3214,6 +3300,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         for recorded in self.collected.abstracts.values() {
             if let Maybe::Present(kind) = recorded.kind {
+                seeds.push((kind.node, Reading::ValueType(Frame::Outermost)));
+            }
+        }
+        for component in self
+            .collected
+            .functors
+            .iter()
+            .flat_map(|functor| functor.components.iter())
+        {
+            if let ParameterForm::Abstract(Maybe::Present(kind)) = component.form {
                 seeds.push((kind.node, Reading::ValueType(Frame::Outermost)));
             }
         }
@@ -5740,16 +5836,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - ensures: a selection read as a computation off a name whose written
     ///   type is a thunked lazy record over labels observes the entry its label
     ///   names. A chain of selections whose head is a capitalised name is a
-    ///   path, resolved through the outermost scope at the depth that binds it:
-    ///   a path ending at an exported value component stands as that member's
-    ///   constant when the member is declared strictly before the declaration
-    ///   the path is written in. The chain is walked by an explicit loop, and
-    ///   its links are left unread.
+    ///   path: inside a functor whose parameter the head names, a one-link path
+    ///   is that parameter's value component, as [`Self::parameter_value`]
+    ///   reads it; otherwise it is resolved through the outermost scope at the
+    ///   depth that binds it: a path ending at an exported value component
+    ///   stands as that member's constant when the member is declared strictly
+    ///   before the declaration the path is written in. The chain is walked by
+    ///   an explicit loop, and its links are left unread.
     /// - provides: the governed reading of a module path.
     /// - fails: yields [`LoweringRefusal::UnknownMember`], naming the module as
     ///   the path spells it and the member, for a selection a governing module
-    ///   does not export; the forward-member refusal for a member declared at
-    ///   or after the referring declaration; the wrong-sort refusal for a path
+    ///   or a parameter does not export; the forward-member refusal for a
+    ///   member declared at or after the referring declaration;
+    ///   [`LoweringRefusal::ProjectionFromApplication`] for a chain whose head
+    ///   is an application of a functor; the wrong-sort refusal for a path
     ///   ending at a module, which is not a value; the wrong-sort refusal
     ///   outside value position; and the unadmitted refusal for a selection no
     ///   module governs, a record projection the fragment does not admit.
@@ -5815,11 +5915,24 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     former: Former::Constructor | Former::Name,
                     ..
                 } => break target,
+                | Shape::Form {
+                    former: Former::Call,
+                    ..
+                } => {
+                    self.refuse_applied(target, &mut chain)?;
+                    return Err(site.out(FragmentBoundary::Unadmitted));
+                },
                 | Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => {
                     return Err(site.out(FragmentBoundary::Unadmitted));
                 },
             }
         };
+        if let Some(&(_, first)) = links.last()
+            && self.parameter_value(site, head, first, functor::Deeper(links.len() > 1_usize))?
+                == functor::Read::Planned
+        {
+            return Ok(());
+        }
         let mut segments = Vec::with_capacity(links.len().saturating_add(1_usize));
         segments.push(Segment::from(self.text_at(head).as_ref()));
         for &(_prefix, selected) in links.iter().rev() {
@@ -6035,6 +6148,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         Some(
                             &(Plan::Transparent(_)
                                 | Plan::Sealed(_)
+                                | Plan::Instantiated(..)
                                 | Plan::Atom(_)
                                 | Plan::Decode(_, _, _)
                                 | Plan::StaticApplication(_, _)
@@ -6081,15 +6195,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: `stated` is a type component or a type member the head
     ///   names.
     /// - ensures: the head is planned as the type a manifest meaning names,
-    ///   adopted as it lowered, or as the atom a sealed component's abstract
-    ///   slot declares; either way the reference is recorded against the slot
+    ///   adopted as it lowered, as the atom a sealed component's abstract slot
+    ///   declares, or as an instance's manifest type, its template's renamed by
+    ///   the application; either way the reference is recorded against the slot
     ///   carrying the stated type's refusal, so a refusal there reaches the
     ///   declaration the head belongs to.
     /// - provides: the one reading of a stated type, whether named bare or by a
     ///   path.
     /// - fails: yields the wrong-sort refusal where the position reads no value
-    ///   type, and [`LoweringRefusal::ForwardMemberReference`] for an atom the
-    ///   referring declaration does not follow.
+    ///   type, and [`LoweringRefusal::ForwardMemberReference`] for an atom or
+    ///   an instance's type the referring declaration does not follow.
     /// - panics: none.
     ///
     /// # Errors
@@ -6111,6 +6226,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     && match stated.meaning {
                         | TypeMeaning::Manifest(defined) => matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Transparent(node)) if node == defined.node),
                         | TypeMeaning::Sealed => matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Sealed(atom)) if usize::from(atom) == usize::from(stated.held)),
+                        | TypeMeaning::Instantiated { defined, instance } => matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Instantiated(read, node)) if read == instance && node == defined.node),
                         | TypeMeaning::Family(_) => false,
                     })
         },
@@ -6124,7 +6240,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let _frame = self.require(site, Produced::ValueType)?;
         let plan = match stated.meaning {
             | TypeMeaning::Manifest(defined) => Plan::Transparent(defined.node),
-            | TypeMeaning::Sealed => {
+            | TypeMeaning::Sealed | TypeMeaning::Instantiated { .. } => {
                 let Some(atom) = self.collected.slots.get(usize::from(stated.held))
                 else {
                     return Err(site.out(FragmentBoundary::Unadmitted));
@@ -6138,7 +6254,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         declared: atom.named.span,
                     });
                 }
-                Plan::Sealed(atom.constant)
+                match stated.meaning {
+                    | TypeMeaning::Instantiated { defined, instance } => {
+                        Plan::Instantiated(instance, defined.node)
+                    },
+                    | TypeMeaning::Sealed | TypeMeaning::Manifest(_) | TypeMeaning::Family(_) => {
+                        Plan::Sealed(atom.constant)
+                    },
+                }
             },
             | TypeMeaning::Family(_) => {
                 return Err(site.out(FragmentBoundary::Arity(OperandCount::from(0_usize))));
@@ -6275,21 +6398,26 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: `site` is a type path; `pieces` is its reading.
     /// - ensures: a chain of type paths whose head is a bare type name is one
-    ///   path, resolved through the outermost scope at the depth that binds it:
-    ///   a path ending at an exported type component stands for what the
-    ///   component reads — the type a manifest component or a type member
-    ///   names, the type member a transparently ascribed abstract component
-    ///   reads, or the atom an opaquely ascribed one's abstract type declares.
-    ///   The chain is walked by an explicit loop, and its links are left
-    ///   unread.
+    ///   path: inside a functor whose parameter the head names, a one-link path
+    ///   is that parameter's type component, as [`Self::parameter_type`] reads
+    ///   it; otherwise it is resolved through the outermost scope at the depth
+    ///   that binds it: a path ending at an exported type component stands for
+    ///   what the component reads — the type a manifest component or a type
+    ///   member names, the type member a transparently ascribed abstract
+    ///   component reads, the atom an opaquely ascribed one's abstract type
+    ///   declares, or an instance's manifest type. The chain is walked by an
+    ///   explicit loop, and its links are left unread.
     /// - provides: the governed reading of a type path.
     /// - fails: yields [`LoweringRefusal::UnknownMember`], naming the module as
-    ///   the path spells it and the member, for a type a governing module does
-    ///   not export; [`LoweringRefusal::UnresolvedTypeHead`] naming the head
-    ///   for a path no module governs; the wrong-sort refusal for a path ending
-    ///   at a value component or a module, and outside value-type position; the
-    ///   forward-member refusal for a type component declared at or after the
-    ///   referring declaration, so a type always lowers before its readers.
+    ///   the path spells it and the member, for a type a governing module or a
+    ///   parameter does not export; [`LoweringRefusal::UnresolvedTypeHead`]
+    ///   naming the head for a path no module governs;
+    ///   [`LoweringRefusal::ProjectionFromApplication`] for a chain whose head
+    ///   is an application of a functor; the wrong-sort refusal for a path
+    ///   ending at a value component or a module, and outside value-type
+    ///   position; the forward-member refusal for a type component declared at
+    ///   or after the referring declaration, so a type always lowers before its
+    ///   readers.
     /// - panics: none.
     ///
     /// # Errors
@@ -6308,7 +6436,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(usize::from(site.at.node)),
-                    Some(&(Plan::Transparent(_) | Plan::Sealed(_)))
+                    Some(&(Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..)))
                 )
         },
     )]
@@ -6345,11 +6473,24 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     former: Former::TypeHead,
                     ..
                 } => break target,
+                | Shape::Form {
+                    former: Former::TypeApplication,
+                    ..
+                } => {
+                    self.refuse_applied(target, &mut chain)?;
+                    return Err(site.out(FragmentBoundary::Unadmitted));
+                },
                 | Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => {
                     return Err(site.out(FragmentBoundary::Unadmitted));
                 },
             }
         };
+        if let Some(&(_, first)) = links.last()
+            && self.parameter_type(site, head, first, functor::Deeper(links.len() > 1_usize))?
+                == functor::Read::Planned
+        {
+            return Ok(());
+        }
         let mut segments = Vec::with_capacity(links.len().saturating_add(1_usize));
         segments.push(Segment::from(self.text_at(head).as_ref()));
         for &(_prefix, selected) in links.iter().rev() {
@@ -7719,22 +7860,24 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - ensures: every type a manifest type component or a type member names
     ///   is minted first, one at a time in source order, each subtree
     ///   descending, so a type head that stands for one adopts a type already
-    ///   minted wherever it sits; every answer type a match reads its motive
-    ///   from is minted next, the same way, so a match deeper than its
-    ///   function's result finds that result minted. Every other planned node
-    ///   is then minted, with its children already minted because the
-    ///   level-order layout puts them at strictly higher positions; every
-    ///   minted node gets an origin naming the syntax node that produced it,
-    ///   terms and types alike, while an adopted child keeps its own. A node
-    ///   whose position bridges its sort has the bridge minted over its own
-    ///   core node, with the same syntax node's origin marked as inserted. A
-    ///   node under a declaration that refused is not minted, and neither is
-    ///   any node above it, unless it lies inside an attribute payload: the
-    ///   side table files a payload whatever its declaration's outcome, so an
-    ///   expectation about a refused declaration stays readable. Last, the body
-    ///   of every witness of a member whose member and own type are unrefused
-    ///   is minted as that member's constant, its origin the form that stated
-    ///   the second type.
+    ///   minted wherever it sits; every functor application is renamed before
+    ///   the first of those types written after it, so an instance's manifest
+    ///   type is minted before a type naming it; every answer type a match
+    ///   reads its motive from is minted next, the same way, so a match deeper
+    ///   than its function's result finds that result minted, and every
+    ///   application not yet renamed is renamed. Every other planned node is
+    ///   then minted, with its children already minted because the level-order
+    ///   layout puts them at strictly higher positions; every minted node gets
+    ///   an origin naming the syntax node that produced it, terms and types
+    ///   alike, while an adopted child keeps its own. A node whose position
+    ///   bridges its sort has the bridge minted over its own core node, with
+    ///   the same syntax node's origin marked as inserted. A node under a
+    ///   declaration that refused is not minted, and neither is any node above
+    ///   it, unless it lies inside an attribute payload: the side table files a
+    ///   payload whatever its declaration's outcome, so an expectation about a
+    ///   refused declaration stays readable. Last, the body of every witness of
+    ///   a member whose member and own type are unrefused is minted as that
+    ///   member's constant, its origin the form that stated the second type.
     /// - provides: the whole allocation half of the lowering.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] when the sweep outruns the
     ///   allowance; nothing else, because every decision was made ascending.
@@ -7779,7 +7922,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             .flat_map(|structure| structure.types.iter().chain(&structure.type_members))
             .filter_map(|component| match component.meaning {
                 | TypeMeaning::Manifest(defined) => Some(defined),
-                | TypeMeaning::Sealed | TypeMeaning::Family(_) => None,
+                | TypeMeaning::Sealed
+                | TypeMeaning::Family(_)
+                | TypeMeaning::Instantiated { .. } => None,
             })
             .chain(self.collected.families.iter().flat_map(|family| {
                 family
@@ -7797,6 +7942,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let mut subtree: Vec<NodeIndex> = Vec::new();
         let mut work: Vec<NodeIndex> = Vec::new();
         while let Some(root) = manifests.pop() {
+            if let Some(node) = self.tree.node(root) {
+                self.rename_instances_before(Maybe::Present(node.span().start()), sink);
+            }
             subtree.clear();
             work.push(root);
             while let Some(position) = work.pop() {
@@ -7809,6 +7957,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.mint_at(position, sink);
             }
         }
+        self.rename_instances_before(
+            Maybe::Absent(functor::renamed_through::Absent::Everything),
+            sink,
+        );
         let mut remaining = usize::from(self.tree.node_count());
         while let Some(next) = remaining.checked_sub(1_usize) {
             remaining = next;
@@ -8012,6 +8164,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 },
                 | Plan::Atom(_)
                 | Plan::Sealed(_)
+                | Plan::Instantiated(..)
                 | Plan::Universe(_)
                 | Plan::ValueFunction(..)
                 | Plan::Telescope(..)
@@ -8154,6 +8307,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 Maybe::Present(sink.value(id, origin))
             },
             | Plan::Atom(atom) => Maybe::Present(sink.atom(atom, origin)),
+            | Plan::Instantiated(instance, defined) => self
+                .instance_types
+                .get(&(instance, defined))
+                .copied()
+                .map_or(Maybe::Absent(lowered::Absent::Unminted), |id| {
+                    Maybe::Present(Lowered::ValueType(id))
+                }),
             | Plan::Sealed(atom) => {
                 let id = sink.arena.value_type_abstract(atom);
                 sink.origins.record_value_type(id, origin);
@@ -8848,6 +9008,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Literal(_)
             | Plan::Atom(_)
             | Plan::Sealed(_)
+            | Plan::Instantiated(..)
             | Plan::Universe(_)
             | Plan::Decode(..)
             | Plan::StaticApplication(..)
@@ -10239,7 +10400,64 @@ impl<'run, 'source> Lowerer<'run, 'source>
         declarations
     }
 
-    /// What the slot at `position` amounts to.
+    /// What the slot at `position` amounts to in the lowered module.
+    ///
+    /// # Specification
+    /// - requires: the slot and its member coordinates are interpreted in this
+    ///   lowering run, and the applications are minted.
+    /// - ensures: a slot of a functor's template is its own refusal when
+    ///   [`Self::own_outcome`] refuses it, so a refusal inside a functor is
+    ///   reported once, where it was written, and templated otherwise; a slot
+    ///   of an application is the declaration its renaming minted, unminted
+    ///   when its template refused or its argument's type did not lower; any
+    ///   other slot is [`Self::own_outcome`].
+    /// - provides: the per-slot row [`Self::assemble`] files.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a functor's body yields no declaration and each of
+    ///   two applications yields its own.
+    /// - witness: `modules::modules::functors::a_functor_body_never_reaches_the_kernel`
+    /// - witness: `modules::modules::functors::two_applications_mint_distinct_atoms`
+    #[spec(
+        ensures: |ret| match self.collected.stratum_of(slot.container) {
+            | Stratum::Module => ret == self.own_outcome(position, slot),
+            | Stratum::Functor(_) | Stratum::Parameter(_) => match self.own_outcome(position, slot) {
+                | Maybe::Present(DeclarationOutcome::Refused(refusal)) => ret == Maybe::Present(DeclarationOutcome::Refused(refusal)),
+                | _ => ret == Maybe::Absent(lowered::Absent::Templated),
+            },
+            | Stratum::Instance(_) => ret == self.instantiated.get(&position).copied().map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
+        },
+    )]
+    fn outcome(
+        &self,
+        position: SlotIndex,
+        slot: &DeclarationSlot<'source>,
+    ) -> Maybe<DeclarationOutcome<'source>, lowered::Absent>
+    {
+        match self.collected.stratum_of(slot.container) {
+            | Stratum::Module => self.own_outcome(position, slot),
+            | Stratum::Functor(_) | Stratum::Parameter(_) => {
+                match self.own_outcome(position, slot) {
+                    | Maybe::Present(DeclarationOutcome::Refused(refusal)) => {
+                        Maybe::Present(DeclarationOutcome::Refused(refusal))
+                    },
+                    | Maybe::Present(_) | Maybe::Absent(_) => {
+                        Maybe::Absent(lowered::Absent::Templated)
+                    },
+                }
+            },
+            | Stratum::Instance(_) => self
+                .instantiated
+                .get(&position)
+                .copied()
+                .map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
+        }
+    }
+
+    /// What the slot at `position` amounts to by its own halves, whatever
+    /// module it belongs to.
     ///
     /// # Specification
     /// - requires: the slot and its member coordinates are interpreted in this
@@ -10341,7 +10559,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
         },
     )]
-    fn outcome(
+    fn own_outcome(
         &self,
         position: SlotIndex,
         slot: &DeclarationSlot<'source>,
@@ -10593,9 +10811,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
                                 lowered.name == component.name
                                     && usize::from(lowered.atom) == usize::from(component.held)
                             }),
+                            | TypeMeaning::Instantiated { defined, instance } => types.next().is_some_and(|lowered| {
+                                lowered.name == component.name
+                                    && lowered.defined
+                                        == self.instance_types.get(&(instance, defined.node)).copied().map_or(Maybe::Absent(manifest_type::Absent::Unlowered), Maybe::Present)
+                            }),
                             | TypeMeaning::Family(_) => true,
                         });
                         stated
+                            && lowered.stratum() == structure.stratum
                             && values.next().is_none()
                             && modules.next().is_none()
                             && types.next().is_none()
@@ -10648,6 +10872,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             });
                         }
                     },
+                    | TypeMeaning::Instantiated { defined, instance } => {
+                        types.push(ManifestComponent {
+                            name: component.name,
+                            defined: self
+                                .instance_types
+                                .get(&(instance, defined.node))
+                                .copied()
+                                .map_or(
+                                    Maybe::Absent(manifest_type::Absent::Unlowered),
+                                    Maybe::Present,
+                                ),
+                        });
+                    },
                     | TypeMeaning::Family(_) => {},
                 }
             }
@@ -10660,6 +10897,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 types,
                 sealed,
                 structure.coerced,
+                structure.stratum,
             ));
         }
 

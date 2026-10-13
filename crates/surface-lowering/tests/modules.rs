@@ -12,6 +12,7 @@ extern crate alloc;
 #[cfg(test)]
 mod modules
 {
+    mod functors;
     mod models;
 
     use alloc::sync::Arc;
@@ -60,9 +61,11 @@ mod modules
     use gandr_surface_lowering::LoweredStructure;
     use gandr_surface_lowering::LoweringBudget;
     use gandr_surface_lowering::LoweringRefusal;
+    use gandr_surface_lowering::OperandCount;
     use gandr_surface_lowering::Repair;
     use gandr_surface_lowering::Role;
     use gandr_surface_lowering::SurfaceName;
+    use gandr_surface_lowering::TelescopeFault;
     use gandr_surface_lowering::lower_module;
     use gandr_surface_lowering::namespace::DottedName;
     use gandr_surface_lowering::namespace::NamePath;
@@ -1712,21 +1715,83 @@ mod modules
     }
 
     #[test]
-    fn a_kinded_type_component_is_declined_by_name_and_a_manifest_one_is_not()
+    fn a_kinded_type_component_forms_at_its_classifier()
     {
-        let kinded = "module M : #{ type Hom : Integer -> Integer } { }";
+        let operator = "module M : #{ type Pair : Type -> Type, both : Pair(Integer) } { type \
+                        Pair(a : Type) = a * a; def both = (1, 2); }";
+        let mut lowered = lower(operator);
         assert_eq!(
-            rows(&lower(kinded)),
+            rows(&lowered),
+            [
+                row("M.both", Role::Declared, Amounts::Completed),
+                row("M.Pair", Role::Witness, Amounts::Completed),
+            ],
+            "the family member reads the component, whose one declaration checks it at its kind"
+        );
+        let witness = declaration(&lowered, "M.Pair", Role::Witness);
+        let DeclarationOutcome::Completed {
+            declared_type,
+            body,
+        } = witness.outcome()
+        else {
+            panic!("the witness is a checked definition");
+        };
+        assert!(
+            matches!(
+                lowered.arena.value_type(declared_type),
+                Some(&ValueType::StaticPi { .. })
+            ),
+            "the kind is the static arrow over its classifiers"
+        );
+        assert!(
+            matches!(lowered.arena.value(body), Some(&Value::StaticLambda(code))
+                if matches!(lowered.arena.value(code), Some(&Value::Quote(_)))),
+            "and the member checks at it as the operator over its code"
+        );
+        assert_eq!(
+            verdicts(&mut lowered),
+            [
+                judged(1_usize, Judgement::Checked),
+                judged(2_usize, Judgement::Checked)
+            ],
+            "both the member, at the family applied, and the operator check"
+        );
+
+        let indexed = "module Indexed : #{ type Hom : Integer -> Integer } { type Hom(n : Integer) \
+                       = Integer; }";
+        let mut lowered = lower(indexed);
+        assert_eq!(
+            rows(&lowered),
+            [row("Indexed.Hom", Role::Witness, Amounts::Completed)],
+            "a kind over a type that classifies no codes still lowers"
+        );
+        let report = report(&mut lowered);
+        assert!(
+            matches!(
+                report.judged(),
+                [judged] if matches!(
+                    judged.verdict(),
+                    Verdict::Refused(CheckRefusal::StaticClassifierExpected { found, .. })
+                        if lowered.arena.value_type(found) == Some(&ValueType::Base(BaseType::Integer))
+                )
+            ),
+            "and the checker refuses it, naming the type that is no classifier: {:?}",
+            report.judged()
+        );
+
+        let sealed = "module M :> #{ type Pair : Type -> Type } { type Pair(a : Type) = a * a; }";
+        assert_eq!(
+            rows(&lower(sealed)),
             [row(
-                "M.Hom",
-                Role::Held,
+                "M.Pair",
+                Role::Abstract,
                 Amounts::Refused(LoweringRefusal::UnreadAscription {
-                    span: span_of(kinded, "Hom", 0_usize),
-                    name: name("Hom"),
+                    span: span_of(sealed, "Pair", 0_usize),
+                    name: name("Pair"),
                     form: AscriptionForm::Kinded,
                 })
             )],
-            "the kinded component is declined by its name"
+            "an opaque operator would be an atom at a kind no universe is, and is refused by name"
         );
 
         let manifest = "module M : #{ type Hom = Integer } { }";
@@ -1739,6 +1804,217 @@ mod modules
                     && matches!(component.defined, Maybe::Present(_))
             ),
             "and recorded with the type it names"
+        );
+    }
+
+    #[test]
+    fn a_component_check_carries_its_members_expectation()
+    {
+        let indexed = "module Indexed : #{ type Hom : Integer -> Integer } { @[ \
+                       refuses(\"StaticClassifierExpected\") ] type Hom(n : Integer) = Integer; }";
+        let lowered = lower(indexed);
+        assert_eq!(
+            rows(&lowered),
+            [row("Indexed.Hom", Role::Witness, Amounts::Completed)],
+            "the attributed member is read as the plain one is"
+        );
+        let witness = declaration(&lowered, "Indexed.Hom", Role::Witness);
+        let Maybe::Present(key) = witness.signature()
+        else {
+            panic!("the family's witness carries its member's form as its expectation half");
+        };
+        assert!(
+            matches!(lowered.module.attributes().entries(key), [entry]
+                if entry.name().as_ref() == "refuses"
+                    && entry.span() == span_of(indexed, "refuses(\"StaticClassifierExpected\")", 0_usize)),
+            "and the member's attribute is filed under it"
+        );
+
+        let transparent = "module M : #{ type T : Type } { @[ checks ] type T = Integer; }";
+        let lowered = lower(transparent);
+        let witness = declaration(&lowered, "M.T", Role::Witness);
+        assert!(
+            matches!(witness.signature(), Maybe::Present(key)
+                if matches!(lowered.module.attributes().entries(key), [entry]
+                    if entry.name().as_ref() == "checks")),
+            "a transparent component's witness reads its member's expectation too"
+        );
+
+        let unread = "module M { @[ checks ] type T = Integer; def x = 1; }";
+        let found = rows(&lower(unread));
+        assert!(
+            found.contains(&row(
+                "M",
+                Role::Held,
+                Amounts::Refused(LoweringRefusal::MalformedForm {
+                    span: span_of(unread, "checks", 0_usize),
+                    form: FormName::MODULE,
+                    fault: FormFault::MisplacedTile,
+                })
+            )),
+            "an expectation no component's check reads states nothing, and is refused where it \
+             is written, got {found:?}"
+        );
+    }
+
+    #[test]
+    fn a_kinded_type_component_declares_an_abstract_member()
+    {
+        let source = "module M :> #{ type Ob : Type, probe : Ob } { type Ob = Integer; def probe \
+                      = 1; }";
+        let mut lowered = lower(source);
+        assert_eq!(
+            rows(&lowered),
+            [
+                row("M.Ob", Role::Abstract, Amounts::Abstract),
+                row("M.probe", Role::Declared, Amounts::Completed),
+            ],
+            "the kinded component declares one abstract member"
+        );
+        assert_eq!(
+            lowered
+                .arena
+                .value_type(declared_type_of(&lowered, "M.probe", Role::Declared)),
+            Some(&ValueType::Abstract(ConstantIndex::from(0_usize))),
+            "the value component is typed at the abstract member, not at what its body infers"
+        );
+        assert_eq!(
+            verdicts(&mut lowered),
+            [
+                judged(0_usize, Judgement::Declared),
+                judged(2_usize, Judgement::Checked)
+            ],
+            "and the body checks at it inside the seal"
+        );
+    }
+
+    #[test]
+    fn a_kinded_type_component_spine_declares_its_arity()
+    {
+        let source = "module M : #{ type Hom : Type -> Type -> Type, probe : Integer } { type \
+                      Hom(a : Type, b : Type) = a * b; def probe = 1; }";
+        let mut lowered = lower(source);
+        assert_eq!(
+            rows(&lowered),
+            [
+                row("M.probe", Role::Declared, Amounts::Completed),
+                row("M.Hom", Role::Witness, Amounts::Completed),
+            ],
+            "the module carrying an arity-two kinded component lowers"
+        );
+        let DeclarationOutcome::Completed { body, .. } =
+            declaration(&lowered, "M.Hom", Role::Witness).outcome()
+        else {
+            panic!("the witness is a checked definition");
+        };
+        assert!(
+            matches!(lowered.arena.value(body), Some(&Value::StaticLambda(inner))
+                if matches!(lowered.arena.value(inner), Some(&Value::StaticLambda(code))
+                    if matches!(lowered.arena.value(code), Some(&Value::Quote(_))))),
+            "the spine's two arrows are the operator's two parameters"
+        );
+        assert_eq!(
+            verdicts(&mut lowered),
+            [
+                judged(1_usize, Judgement::Checked),
+                judged(2_usize, Judgement::Checked)
+            ],
+            "and the operator checks at the spine"
+        );
+
+        let short = "module M : #{ type Hom : Type -> Type -> Type, probe : Integer } { type \
+                     Hom(a : Type) = a; def probe = 1; }";
+        assert_eq!(
+            rows(&lower(short)),
+            [
+                row("M.probe", Role::Declared, Amounts::Completed),
+                row(
+                    "M.Hom",
+                    Role::Held,
+                    Amounts::Refused(LoweringRefusal::FamilyTelescope {
+                        span: span_of(short, "Hom", 1_usize),
+                        name: name("Hom"),
+                        fault: TelescopeFault::Arity {
+                            stated: OperandCount::from(2_usize),
+                            written: OperandCount::from(1_usize),
+                        },
+                    })
+                ),
+            ],
+            "a member of another arity is refused naming both counts, never truncated"
+        );
+    }
+
+    #[test]
+    fn a_manifest_family_component_binds_two_parameters()
+    {
+        let source = "module M : #{ type Hom(a : Type, b : Type) = +U[ω] (a -> -F b), d : \
+                      Integer } { def d = 1; }";
+        let mut lowered = lower(source);
+        assert_eq!(
+            rows(&lowered),
+            [row("M.d", Role::Declared, Amounts::Completed)],
+            "the value component survives beside the parameterized type component"
+        );
+        assert_eq!(
+            verdicts(&mut lowered),
+            [judged(0_usize, Judgement::Checked)],
+            "and checks"
+        );
+
+        let applied = "module M : #{ type Pair(a : Type, b : Type) = a * b, p : Pair(Integer, \
+                       String) } { def p = (1, \"x\"); }";
+        let mut lowered = lower(applied);
+        assert_eq!(
+            lowered
+                .arena
+                .value_type(declared_type_of(&lowered, "M.p", Role::Declared))
+                .map(
+                    |stated| matches!(stated, ValueType::Product(parts) if parts.len() == 2_usize)
+                ),
+            Some(true),
+            "a later component applying the family reads its type over both arguments"
+        );
+        assert_eq!(
+            verdicts(&mut lowered),
+            [judged(0_usize, Judgement::Checked)],
+            "which the member inhabits"
+        );
+    }
+
+    #[test]
+    fn a_type_component_arity_mismatch_is_refused_by_name()
+    {
+        let under = "module N : #{ type Hom(a : Type, b : Type) = +U[ω] (a -> -F b), bad : Hom } \
+                     { def bad = 1; }";
+        assert_eq!(
+            rows(&lower(under)),
+            [row(
+                "N.bad",
+                Role::Declared,
+                Amounts::Refused(LoweringRefusal::OutOfFragment {
+                    span: span_of(under, "Hom", 1_usize),
+                    form: FormName::from(NamedKind("type_identifier")),
+                    sort: FragmentSort::ValueType,
+                    boundary: FragmentBoundary::Arity(OperandCount::from(0_usize)),
+                })
+            )],
+            "a family named with no arguments is refused, never read as an ambient atom"
+        );
+
+        let over = "module N : #{ type T = Integer, bad : T(Integer) } { def bad = 1; }";
+        assert_eq!(
+            rows(&lower(over)),
+            [row(
+                "N.bad",
+                Role::Declared,
+                Amounts::Refused(LoweringRefusal::UnresolvedTypeHead {
+                    span: span_of(over, "T", 1_usize),
+                    name: name("T"),
+                    arity: gandr_surface_lowering::HeadArity::Unary,
+                })
+            )],
+            "a nullary component given an argument is refused by its name and arity"
         );
     }
 

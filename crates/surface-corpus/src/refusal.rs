@@ -399,6 +399,10 @@ pub enum RefusalName
     ForwardMemberReference,
     /// A selection or a signature component a module does not supply.
     UnknownMember,
+    /// A module binding applying a name that is not a functor.
+    NotAFunctor,
+    /// A path read off a functor application rather than off its binding.
+    ProjectionFromApplication,
     /// A module ascription form the fragment does not read yet.
     UnreadAscription,
     /// A model signature component the derivation cannot state.
@@ -501,7 +505,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 103_usize] = [
+    pub const VOCABULARY: [Self; 105_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -560,6 +564,8 @@ impl RefusalName
         Self::IllTypedPayload,
         Self::ForwardMemberReference,
         Self::UnknownMember,
+        Self::NotAFunctor,
+        Self::ProjectionFromApplication,
         Self::UnreadAscription,
         Self::UnstatedComponent,
         Self::FamilyTelescope,
@@ -639,7 +645,9 @@ impl RefusalName
         b"DuplicateAttribute") | (Self::MissingPayload, b"MissingPayload") |
         (Self::NonValuePayload, b"NonValuePayload") | (Self::IllTypedPayload,
         b"IllTypedPayload") | (Self::ForwardMemberReference, b"ForwardMemberReference") |
-        (Self::UnknownMember, b"UnknownMember") | (Self::UnreadAscription,
+        (Self::UnknownMember, b"UnknownMember") | (Self::NotAFunctor, b"NotAFunctor")
+        | (Self::ProjectionFromApplication, b"ProjectionFromApplication")
+        | (Self::UnreadAscription,
         b"UnreadAscription") | (Self::UnstatedComponent, b"UnstatedComponent") |
         (Self::FamilyTelescope, b"FamilyTelescope") | (Self::LowercaseModuleName,
         b"LowercaseModuleName") |
@@ -798,6 +806,8 @@ impl RefusalName
             | Self::IllTypedPayload => "IllTypedPayload",
             | Self::ForwardMemberReference => "ForwardMemberReference",
             | Self::UnknownMember => "UnknownMember",
+            | Self::NotAFunctor => "NotAFunctor",
+            | Self::ProjectionFromApplication => "ProjectionFromApplication",
             | Self::UnreadAscription => "UnreadAscription",
             | Self::UnstatedComponent => "UnstatedComponent",
             | Self::FamilyTelescope => "FamilyTelescope",
@@ -978,7 +988,11 @@ impl Refusal<'_>
         (Self::Lowering(LoweringRefusal::ForwardMemberReference { .. }),
         RefusalName::ForwardMemberReference) |
         (Self::Lowering(LoweringRefusal::UnknownMember { .. }),
-        RefusalName::UnknownMember) | (Self::Lowering(LoweringRefusal::UnreadAscription {
+        RefusalName::UnknownMember) | (Self::Lowering(LoweringRefusal::NotAFunctor { .. }),
+        RefusalName::NotAFunctor) |
+        (Self::Lowering(LoweringRefusal::ProjectionFromApplication { .. }),
+        RefusalName::ProjectionFromApplication) |
+        (Self::Lowering(LoweringRefusal::UnreadAscription {
         .. }), RefusalName::UnreadAscription) |
         (Self::Lowering(LoweringRefusal::UnstatedComponent { .. }),
         RefusalName::UnstatedComponent) |
@@ -1150,7 +1164,9 @@ impl Refusal<'_>
         RefusalName::NonValuePayload) | (LoweringRefusal::IllTypedPayload { .. },
         RefusalName::IllTypedPayload) | (LoweringRefusal::ForwardMemberReference { .. },
         RefusalName::ForwardMemberReference) | (LoweringRefusal::UnknownMember { .. },
-        RefusalName::UnknownMember) | (LoweringRefusal::UnreadAscription { .. },
+        RefusalName::UnknownMember) | (LoweringRefusal::NotAFunctor { .. },
+        RefusalName::NotAFunctor) | (LoweringRefusal::ProjectionFromApplication { .. },
+        RefusalName::ProjectionFromApplication) | (LoweringRefusal::UnreadAscription { .. },
         RefusalName::UnreadAscription) | (LoweringRefusal::UnstatedComponent { .. },
         RefusalName::UnstatedComponent) | (LoweringRefusal::FamilyTelescope { .. },
         RefusalName::FamilyTelescope) | (LoweringRefusal::LowercaseModuleName { .. },
@@ -1186,6 +1202,10 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | LoweringRefusal::IllTypedPayload { .. } => RefusalName::IllTypedPayload,
         | LoweringRefusal::ForwardMemberReference { .. } => RefusalName::ForwardMemberReference,
         | LoweringRefusal::UnknownMember { .. } => RefusalName::UnknownMember,
+        | LoweringRefusal::NotAFunctor { .. } => RefusalName::NotAFunctor,
+        | LoweringRefusal::ProjectionFromApplication { .. } => {
+            RefusalName::ProjectionFromApplication
+        },
         | LoweringRefusal::UnreadAscription { .. } => RefusalName::UnreadAscription,
         | LoweringRefusal::UnstatedComponent { .. } => RefusalName::UnstatedComponent,
         | LoweringRefusal::FamilyTelescope { .. } => RefusalName::FamilyTelescope,
