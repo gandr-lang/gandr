@@ -1,0 +1,6 @@
+/// Past the first-order boundary: `f` is a variable, so its inputs are free
+/// variables no coverage reaches, and the rule decides closed functions only.
+@[ refuses("FunextUnsupported") ]
+def open(f : +U[ω] (+{Unit, Unit} -> -F +{Unit, Unit})) -> -F Path(+U[ω] (+{Unit, Unit} -> -F +{Unit, Unit}), f, f) {
+  return funext(f, f)
+}
