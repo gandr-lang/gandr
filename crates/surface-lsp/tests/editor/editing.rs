@@ -1,9 +1,12 @@
 //! A document open in an editor, synchronised one keystroke at a time and
 //! held to what a fresh connection answers for the same text.
 //!
-//! The server answers each change before it reads the next message, so the
-//! session runs in lockstep: every keystroke is followed by its publication,
-//! and every assertion is made at the keystroke that broke it. The oracle is
+//! A single editor's session runs over `serve` itself, through framed
+//! streams; the shared-workspace sessions run in process, as the hub's
+//! connections do, and replay over streams at their end. The server answers
+//! each change before it reads the next message, so the session runs in
+//! lockstep: every keystroke is followed by its publication, and every
+//! assertion is made at the keystroke that broke it. The oracle is
 //! external to the incremental path: a fresh connection opening the same text
 //! whole. Whatever the server derives from the text alone — the diagnostics,
 //! the semantic tokens, the outline, the folding, the selection ranges and the
@@ -18,11 +21,11 @@
 //! which parses the whole document again — run at every keystroke under
 //! [`Oracle::Keystroke`], and under [`Oracle::Line`] at every keystroke that
 //! adds or removes a line, at the opening and at the end of a typing. The
-//! corpus replay takes the line cadence: with specifications enforced, a
+//! corpus typing takes the line cadence: with specifications enforced, a
 //! whole parse per keystroke across fifty thousand keystrokes costs minutes,
 //! while the incremental path the line cadence still drives at every
-//! keystroke is what the replay is for; the scripted and random sessions, on
-//! short texts, keep the keystroke cadence.
+//! keystroke is what the typing is for; the erasure and the scripted and
+//! random sessions keep the keystroke cadence.
 //!
 //! Every keystroke's text is also molded by a molder that decides each token
 //! both by its tables and by the dry runs they replace, form run by form run
@@ -99,19 +102,20 @@ pub struct Session
 impl Session
 {
     /// Open `text` at `uri` under `typing`, the cursor at its end, consulting
-    /// the oracle at the cadence `oracle` names.
+    /// the oracle at the cadence `oracle` names, on a connection `serve`
+    /// itself serves over framed streams.
     ///
     /// # Specification
     /// - requires: `uri` is a `file` URI.
     /// - ensures: the document is open at version 1 and its publication was
     ///   held to the fresh connection's.
-    /// - provides: a session ready for keystrokes.
+    /// - provides: a single editor's session, ready for keystrokes.
     /// - panics: the opening publication is missing, or disagrees with a fresh
     ///   connection's.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — every scenario opens here; the opening publication is
-    ///   compared exactly as a keystroke's is.
+    /// - hypothesis: L2 — every single-editor scenario opens here; the opening
+    ///   publication is compared exactly as a keystroke's is.
     /// - witness: `editor::editor::scenarios::typing_each_corpus_source_keeps_every_answer_faithful`
     #[spec(requires: uri.starts_with("file://"),
         ensures: |ret| ret.version == 1_i32 && ret.buffer.text() == text && ret.uri.starts_with("file://"))]
@@ -122,19 +126,47 @@ impl Session
         oracle: Oracle,
     ) -> Self
     {
+        Self::opening(Client::served(), uri, text, typing, oracle)
+    }
+
+    /// Open `text` at `uri` as [`open`](Self::open) does, on a connection
+    /// driven in process over a workspace a second editor may join, its
+    /// exchange kept for a replay over streams.
+    ///
+    /// # Specification
+    /// - requires: `uri` is a `file` URI.
+    /// - ensures: the document is open at version 1 and its publication was
+    ///   held to the fresh connection's.
+    /// - provides: the first editor of the shared-workspace scenarios.
+    /// - panics: the opening publication is missing, or disagrees with a fresh
+    ///   connection's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — both two-editor scenarios open their first editor
+    ///   here; the opening publication is compared exactly as a keystroke's is.
+    /// - witness: `editor::editor::scenarios::two_editors_on_one_buffer_each_keep_their_answers`
+    #[spec(requires: uri.starts_with("file://"),
+        ensures: |ret| ret.version == 1_i32 && ret.buffer.text() == text && ret.uri.starts_with("file://"))]
+    pub fn open_shared(
+        uri: String,
+        text: Text<'_>,
+        typing: Typing,
+        oracle: Oracle,
+    ) -> Self
+    {
         Self::opening(Client::initialized(Record::Kept), uri, text, typing, oracle)
     }
 
-    /// Open this session's document, at its current text, from a second
+    /// Open this shared session's document, at its current text, from a second
     /// connection over the same workspace, as a second editor does.
     ///
     /// # Specification
-    /// - requires: nothing.
+    /// - requires: this session was opened shared.
     /// - ensures: the second session holds this one's URI and text at version
     ///   1, and its publication was held to a fresh connection's.
     /// - provides: the second editor of the shared-workspace scenarios.
-    /// - panics: the opening publication is missing, or disagrees with a fresh
-    ///   connection's.
+    /// - panics: this session is served, or the opening publication is missing
+    ///   or disagrees with a fresh connection's.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — both two-editor scenarios open their second editor
@@ -321,13 +353,22 @@ impl Session
         self.keystroke(&[]);
     }
 
-    /// Replay the session's whole exchange over framed streams.
+    /// Replay a shared session's whole exchange over framed streams.
     ///
     /// # Specification
     /// trivial.
     pub fn replays_over_streams(&self)
     {
         self.client.replays_over_streams();
+    }
+
+    /// End a served session as an editor does, over its streams.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn closes_over_streams(self)
+    {
+        self.client.closes_over_streams();
     }
 
     /// Send `changes` as one synchronisation, then check the keystroke.

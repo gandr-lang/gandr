@@ -202,6 +202,24 @@ description = "Every corpus source cut short and with each token dropped, agains
 env.GANDR_RECOVERY_WHOLE = "1"
 run = "cargo nextest run --locked --package gandr-surface-parser --test tests --profile {{ env.NEXTEST_PROFILE | default(value='default') }} -E 'test(=acceptance::dropped_tokens_recover_no_worse_than_the_record)'"
 
+# The language server's corpus sweeps whole: every corpus source typed,
+# erased and read for ghost texts, and every random edit script, plain and
+# then with specifications enforced, where `check` visits the samples
+# crates/surface-lsp/src/lib.rs describes. The enforcing half builds into the
+# enforcing gate's target directory and reuses its state.
+["ci:sweeps"]
+description = "The language server's corpus sweeps over every source, plain and specifications enforced"
+env.GANDR_SWEEPS_WHOLE = "1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+profile="{{ env.NEXTEST_PROFILE | default(value='default') }}"
+sweeps='test(editor::scenarios::) or test(=inline::tests::every_corpus_cursor_has_a_ghost_text)'
+cargo nextest run --locked --package gandr-surface-lsp --profile "$profile" -E "$sweeps"
+RUSTFLAGS="--cfg anodized_panic" CARGO_TARGET_DIR="{{ config_root }}/target/enforcing" \
+  cargo nextest run --locked --package gandr-surface-lsp --profile "$profile" -E "$sweeps"
+'''
+
 # The enforcing suite, instrumented into target/coverage so it never shares
 # the cached enforcing state, under the `coverage` nextest profile (the
 # enforcing limits, the editor's corpus sweeps left out — .config/nextest.toml

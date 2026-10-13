@@ -1888,11 +1888,31 @@ mod tests
     #[test]
     fn every_corpus_cursor_has_a_ghost_text()
     {
+        /// The gate reads every fourth corpus source by index after the length
+        /// sort, the longest in; `GANDR_SWEEPS_WHOLE=1` (`mise run ci:sweeps`,
+        /// the daily lane) reads every source. On four cores with
+        /// specifications enforced the sample reads in 7 s against the whole
+        /// corpus's 31 s.
+        const SAMPLE_STRIDE: usize = 4;
+
         let tools = tools();
+        let mut sources = corpus_sources();
+        assert!(
+            sources.len() > 100,
+            "the corpus is walked whole: {}",
+            sources.len()
+        );
+        sources.sort_by_key(|source| core::cmp::Reverse(source.1.len()));
+        let sampled = if std::env::var_os("GANDR_SWEEPS_WHOLE").is_some() {
+            1
+        }
+        else {
+            SAMPLE_STRIDE
+        };
         // The enforcing build checks every contract on every call; it reads
         // every sixth cursor.
         let stride = if cfg!(anodized_panic) { 6 } else { 1 };
-        for (path, text) in corpus_sources() {
+        for (path, text) in sources.into_iter().step_by(sampled) {
             let cursors = text.char_indices().map(|(at, _)| at).chain([text.len()]);
             for at in cursors.step_by(stride) {
                 let prefix = text.get(.. at).expect("a cursor is a character boundary");

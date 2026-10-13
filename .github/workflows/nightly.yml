@@ -1,0 +1,207 @@
+# <critical>
+# MUST preserve anchor-first CI: maximal sharing, no copied orchestration.
+# New functionality MUST reuse template anchors or add anchors for likely reuse.
+# MUST parameterize differences; performance exceptions require measured evidence.
+# Share exceptional logic through actions; preserve parallelism, caches, and gates.
+# </critical>
+name: Nightly
+
+# The whole runs the merge queue samples: the language server's corpus
+# sweeps over every source in both modes (`mise run ci:sweeps`) and the
+# one-token-drop recovery matrix over every token (`mise run ci:recovery`).
+# Daily on main when main moved since the last successful run; a failure is
+# a red run on main, never a blocked queue. A dispatch always runs.
+on:
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+# One run at a time; a dispatch during the scheduled run replaces it.
+concurrency:
+  group: nightly-main
+  cancel-in-progress: true
+
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_TERM_COLOR: always
+  CARGO_UNSTABLE_CHECKSUM_FRESHNESS: "true"
+  MISE_CARGO_BINSTALL_QUICKINSTALL: "true"
+  MISE_CARGO_BINSTALL_NATIVE: "true"
+  # Must match ci.yml and the image. The image checks the list at build time.
+  MISE_DISABLE_TOOLS: "github:orhun/git-cliff,github:max-sixty/worktrunk,github:j178/prek,github:nektos/act"
+  # Empty selects the bare runner. A set value selects the pin-file tag,
+  # and only a published tag is used: this workflow does not publish.
+  GANDR_CI_IMAGE: ${{ vars.GANDR_CI_IMAGE }}
+  CI_IMAGE_NAME: ghcr.io/gandr-lang/gandr-ci
+
+jobs:
+  # Definitions only: aliases run in each consuming job's context. The
+  # `needs` is what lets the aliases below name `needs.ci-image-ref`: a
+  # job that declares no needs has no `needs` context, and the workflow
+  # fails validation before any job starts.
+  template:
+    if: false
+    needs: ci-image-ref
+    runs-on: &linux ubuntu-latest
+    permissions: &image-read-permissions
+      contents: read
+      packages: read
+    steps:
+      - &git-checkout
+        name: git checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - &trust-workspace
+        name: trust the workspace for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - &pin-tag
+        id: pin_tag
+        name: compute the pin-file image tag
+        if: ${{ env.GANDR_CI_IMAGE != '' }}
+        shell: bash
+        run: .github/docker/image-tag.sh >> "$GITHUB_OUTPUT"
+      - &registry-login
+        name: log in to GHCR
+        if: ${{ steps.pin_tag.outputs.tag != '' }}
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # The ci.yml lookup, parameterized by CI_IMAGE_NAME. A missing tag
+      # selects the bare runner; this workflow does not build the image.
+      - &lookup-image
+        id: lookup
+        name: look up the published image
+        if: ${{ steps.pin_tag.outputs.tag != '' }}
+        shell: bash
+        env:
+          IMAGE_TAG: ${{ steps.pin_tag.outputs.tag }}
+        run: |
+          if error=$(docker manifest inspect "${CI_IMAGE_NAME}:${IMAGE_TAG}" 2>&1 > /dev/null); then
+            echo found=true >> "$GITHUB_OUTPUT"
+          elif [[ $error == *"manifest unknown"* ]]; then
+            echo found=false >> "$GITHUB_OUTPUT"
+          else
+            printf '%s\n' "$error" >&2
+            exit 1
+          fi
+      - &install-policy-tools
+        name: install mise-managed policy tools
+        if: ${{ needs.ci-image-ref.outputs.ref == '' }}
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: 2026.10.3
+          cache: true
+          cache_key: mise-ci-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock', 'rust-toolchain.toml') }}
+          cache_save: false
+      - &setup-rust
+        name: setup rust
+        uses: ./.github/actions/setup-rust # zizmor: ignore[self-repository]
+        with:
+          install-toolchain: ${{ needs.ci-image-ref.outputs.ref == '' }}
+          cache-save: false
+      # The ci.yml test-state restore: main's newest complete test state of
+      # this toolchain generation, which Cargo's fingerprints bring up to
+      # date. Only main's ci.yml promotions write it; this workflow reads.
+      - &identify-build-state
+        name: identify build-state inputs
+        env:
+          CI_STATE_INPUTS: ${{ hashFiles('**/Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
+          CI_STATE_GENERATION: ${{ hashFiles('rust-toolchain.toml') }}
+        run: printf 'CI_BUILD_FINGERPRINT=%s\nCI_BUILD_GENERATION=%s\n' "$CI_STATE_INPUTS" "$CI_STATE_GENERATION" >> "$GITHUB_ENV"
+      - &restore-test-state
+        name: restore complete test state
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build-state-${{ env.CI_BUILD_STATE }}.tar.zst
+          key: gandr-v3-test-state-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_BUILD_STATE }}-${{ env.CI_BUILD_GENERATION }}-${{ env.CI_BUILD_FINGERPRINT }}-${{ github.sha }}
+          restore-keys: gandr-v3-test-state-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_BUILD_STATE }}-${{ env.CI_BUILD_GENERATION }}-
+      - &unpack-build-state
+        name: unpack build state
+        if: &state-found ${{ hashFiles('build-state-*.tar.zst') != '' }}
+        shell: bash
+        run: zstd -dc "build-state-$CI_BUILD_STATE.tar.zst" | tar -xf -
+      # The dependency cache also holds Cargo's registry; this fills it.
+      - &fetch-dependencies
+        name: fetch locked dependencies
+        if: *state-found
+        run: cargo fetch --locked
+
+  ci-image-ref:
+    name: resolve the CI image reference
+    runs-on: *linux
+    permissions: *image-read-permissions
+    outputs:
+      ref: ${{ steps.lookup.outputs.found == 'true' && format('ghcr.io/gandr-lang/gandr-ci:{0}', steps.pin_tag.outputs.tag) || '' }}
+    steps:
+      - *git-checkout
+      - *pin-tag
+      - *registry-login
+      - *lookup-image
+
+  # The scheduled run measures only when main moved since the last successful
+  # run; a dispatch always runs. A run that skipped the lanes succeeds at the
+  # commit the last full run covered, so the comparison stays exact across
+  # skips, and a failed lane runs again the next day.
+  freshness:
+    name: decide whether main moved since the last successful run
+    runs-on: *linux
+    permissions:
+      actions: read
+    outputs:
+      stale: ${{ steps.compare.outputs.stale }}
+    steps:
+      - id: compare
+        name: compare main against the last successful run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh run list --workflow nightly.yml --branch main --status success --limit 1 --json headSha --jq '"stale=" + ((.[0].headSha // "") != env.GITHUB_SHA | tostring)' >> "$GITHUB_OUTPUT"
+
+  # Each lane restores the ci.yml test state its task builds on and runs the
+  # task; the job sets which. The sweeps' enforcing half reuses main's
+  # enforcing state and the plain half builds the language server's plain
+  # test graph; the recovery matrix reuses the plain-only lane's state.
+  sweeps:
+    name: sweep the corpus through the language server
+    needs: &nightly-needs [ci-image-ref, freshness]
+    if: &nightly-lane ${{ !cancelled() && !failure() && (github.event_name == 'workflow_dispatch' || needs.freshness.outputs.stale == 'true') }}
+    runs-on: *linux
+    permissions: *image-read-permissions
+    container: &ci-image ${{ needs.ci-image-ref.outputs.ref }} # zizmor: ignore[unpinned-images]
+    timeout-minutes: 60
+    env:
+      CI_BUILD_STATE: cargo-test-enforcing
+      NIGHTLY_TASK: ci:sweeps
+      NEXTEST_PROFILE: ci-enforcing
+    steps: &nightly-steps
+      - *git-checkout
+      - *trust-workspace
+      - *install-policy-tools
+      - *setup-rust
+      - *identify-build-state
+      - *restore-test-state
+      - *unpack-build-state
+      - *fetch-dependencies
+      - name: run the whole lane
+        run: mise run "$NIGHTLY_TASK"
+
+  recovery:
+    name: drop every token of the corpus
+    needs: *nightly-needs
+    if: *nightly-lane
+    runs-on: *linux
+    permissions: *image-read-permissions
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 60
+    env:
+      CI_BUILD_STATE: cargo-test-plain-only
+      NIGHTLY_TASK: ci:recovery
+      NEXTEST_PROFILE: ci
+    steps: *nightly-steps
