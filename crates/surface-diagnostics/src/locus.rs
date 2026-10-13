@@ -756,7 +756,7 @@ impl Annotations
         CheckRefusal::TypeMismatch(_) | CheckRefusal::SortMismatch { .. }
             | CheckRefusal::LevelMismatch { .. } | CheckRefusal::FamilyArgumentClassifier { .. } =>
             role(&ret.context[0_usize], Label::Expected) && role(&ret.context[1_usize], Label::Synthesised),
-        CheckRefusal::DependentBind { .. } | CheckRefusal::CompoundEndpoint { .. } => role(&ret.context[0_usize], Label::Synthesised)
+        CheckRefusal::DependentBind { .. } | CheckRefusal::CompoundEndpoint { .. } | CheckRefusal::FunextUnsupported { .. } => role(&ret.context[0_usize], Label::Synthesised)
             && ret.context[1_usize] == Maybe::Absent(report_context::Absent::Unnamed),
         CheckRefusal::ShapeMismatch { wanted, .. } => role(&ret.context[0_usize], Label::Met(wanted))
             && ret.context[1_usize] == Maybe::Absent(report_context::Absent::Unnamed),
@@ -804,6 +804,10 @@ fn checked(
         | CheckRefusal::EndpointMismatch { at, left, right } => (spanned(origins.value(at)), [
             annotated(spanned(origins.value(left)), Label::Endpoint),
             annotated(spanned(origins.value(right)), Label::Endpoint),
+        ]),
+        | CheckRefusal::FunextUnsupported { at, classifier } => (spanned(origins.value(at)), [
+            annotated(spanned(origins.value_type(classifier)), Label::Synthesised),
+            Maybe::Absent(report_context::Absent::Unnamed),
         ]),
         | CheckRefusal::EffectSignatureConflict { at, .. } => {
             (spanned(origins.computation(at)), UNNAMED)
@@ -863,7 +867,8 @@ fn checked(
         | CheckRefusal::UnboundIndex { at, .. }
         | CheckRefusal::Undecided { at }
         | CheckRefusal::FamilyArity { at, .. }
-        | CheckRefusal::StaticLambdaArgument { at } => (spanned(origins.value(at)), UNNAMED),
+        | CheckRefusal::StaticLambdaArgument { at }
+        | CheckRefusal::PointwiseDistinct { at } => (spanned(origins.value(at)), UNNAMED),
         | CheckRefusal::StaticClassifierExpected { found, .. } => {
             (spanned(origins.value_type(found)), UNNAMED)
         },
@@ -1088,6 +1093,8 @@ impl fmt::Display for Checked
             | CheckRefusal::PathCode(_) => f.write_str("a universe path requires a quoted closed first-order code"),
             | CheckRefusal::EndpointMismatch { .. } => f.write_str("reflexivity requires its point to convert to both endpoints of the path type"),
             | CheckRefusal::CompoundEndpoint { .. } => f.write_str("a compound endpoint must return a value without effects"),
+            | CheckRefusal::FunextUnsupported { .. } => f.write_str("function extensionality is decided for closed pure functions between first-order types"),
+            | CheckRefusal::PointwiseDistinct { .. } => f.write_str("function extensionality requires both functions to return one value at every input"),
             | CheckRefusal::TypeMismatch(_) => f.write_str(
                 "the type this term synthesises does not convert to the type it is checked against",
             ),

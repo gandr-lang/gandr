@@ -296,6 +296,8 @@ use crate::error::KernelError;
 use crate::error::NonInferableForm;
 use crate::error::RegisterFault;
 use crate::levels::LevelContext;
+use crate::replay::Unfoldable;
+use crate::replay::Unfoldings;
 use crate::rewrite::BinderDepth;
 use crate::rewrite::shift_comp_type;
 use crate::rewrite::shift_value_type;
@@ -1826,6 +1828,47 @@ fn resolve_constant(
     }
 }
 
+/// The δ-rules the admission log offers a replay: each definition's body at
+/// its admission position, every other declaration opaque.
+///
+/// # Specification
+/// - requires: `entries` is the environment's admission log, in admission
+///   order, every body minted into the arena the replay runs in.
+/// - ensures: [`Unfoldable::Body`] at each definition's position and
+///   [`Unfoldable::Opaque`] at every data declaration, axiom and abstract type,
+///   one entry per admitted declaration.
+/// - provides: the unfoldings a persisted higher evaluation replays under, so a
+///   function the evaluation relates may name what was admitted before it.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a composition of two admitted definitions replays its
+///   anchor-free δ-steps against their bodies.
+/// - witness: `element_identity::tests::a_higher_evaluation_unfolds_what_the_environment_admitted`
+#[spec(ensures: |ret| entries.iter().enumerate().all(|(position, entry)| {
+    ret.unfolding(ConstantIndex::from(position)) == match *entry.content() {
+        | DeclarationContent::Def { body, .. } => Unfoldable::Body(body),
+        | DeclarationContent::Data { .. }
+        | DeclarationContent::Axiom { .. }
+        | DeclarationContent::AbstractType { .. } => Unfoldable::Opaque,
+    }
+}))]
+fn admitted_unfoldings(entries: &[AdmittedDeclaration]) -> Unfoldings
+{
+    Unfoldings::new(
+        entries
+            .iter()
+            .map(|entry| match *entry.content() {
+                | DeclarationContent::Def { body, .. } => Unfoldable::Body(body),
+                | DeclarationContent::Data { .. }
+                | DeclarationContent::Axiom { .. }
+                | DeclarationContent::AbstractType { .. } => Unfoldable::Opaque,
+            })
+            .collect(),
+    )
+}
+
 /// Run the checker machine from an initial goal and context to a verdict,
 /// minting synthesized types into `arena`.
 ///
@@ -2350,8 +2393,9 @@ where
                         Produced::Checked
                     },
                     // A higher evaluation replays every component's dialogues
-                    // here and owes each component's checks in that
-                    // component's pattern telescope.
+                    // here, unfolding what the environment admitted, and owes
+                    // each component's checks in that component's pattern
+                    // telescope.
                     | Value::HigherEvaluation {
                         ref dialogues,
                         ref components,
@@ -2360,6 +2404,7 @@ where
                         let components = components.clone();
                         let mut remaining = crate::element_identity::evaluation_obligations(
                             arena,
+                            &admitted_unfoldings(judgement.entries),
                             expected,
                             &dialogues,
                             &components,

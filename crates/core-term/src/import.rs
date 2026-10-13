@@ -211,6 +211,7 @@ impl Image
             }) => [Some(V(body)), None, None, None, None],
             | Self::Value(
                 Value::PathProduct(ref mut first, ref mut second)
+                | Value::Funext(ref mut first, ref mut second)
                 | Value::ListCons(ref mut first, ref mut second)
                 | Value::StaticApplication(ref mut first, ref mut second),
             )

@@ -323,6 +323,12 @@ pub enum Value
     /// `Path(A, a, a)`, checked against a path type whose two endpoints convert
     /// to `a`.
     Here(ValueId),
+    /// Function extensionality `funext(f, g)`: an element of `Path(U (A → F
+    /// B), f, g)` for two closed functions that return the same value at
+    /// every input the domain's coverage reaches. The checker decides it by
+    /// computation, and the kernel replays it as a higher evaluation; it is
+    /// inert, as a native path certificate is.
+    Funext(ValueId, ValueId),
     /// The value a pure computation returns, standing where a value is read:
     /// a compound path endpoint such as `n + 1` or `f(x)`. It types as the
     /// computation's result when the computation is a returner with no
@@ -1053,6 +1059,11 @@ fn equal_syntax(
                         {
                             pending.extend([V(a, c), V(b, d)]);
                         }
+                    }
+                    else if let Value::Funext(a, b) = *matched_left_value
+                        && let Value::Funext(c, d) = *matched_right_value
+                    {
+                        pending.extend([V(a, c), V(b, d)]);
                     }
                     else if let Value::Tuple(ref a) = *matched_left_value
                         && let Value::Tuple(ref b) = *matched_right_value

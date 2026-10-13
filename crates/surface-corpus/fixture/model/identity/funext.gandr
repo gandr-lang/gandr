@@ -1,0 +1,26 @@
+@[ checks ]
+def not(b : +{Unit, Unit}) -> -F +{Unit, Unit} {
+  case b {
+    +{.0 = u} => return +{.1 = u},
+    +{.1 = u} => return +{.0 = u}
+  }
+}
+
+@[ checks ]
+def not_not(b : +{Unit, Unit}) -> -F +{Unit, Unit} {
+  run c <- not(b);
+  become not(c)
+}
+
+@[ checks ]
+def same(b : +{Unit, Unit}) -> -F +{Unit, Unit} {
+  return b
+}
+
+@[ checks ]
+def twice : Path(+U[ω] (+{Unit, Unit} -> -F +{Unit, Unit}), not_not, same) ;
+def twice = funext(not_not, same) ;
+
+@[ refuses("PointwiseDistinct") ]
+def once : Path(+U[ω] (+{Unit, Unit} -> -F +{Unit, Unit}), not, same) ;
+def once = funext(not, same) ;

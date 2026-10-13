@@ -388,6 +388,24 @@ pub enum CheckRefusal
         /// The type its computation synthesised.
         synthesised: CompTypeId,
     },
+    /// A function extensionality the rule does not decide: its functions are
+    /// open, its classifier is no thunk of a pure non-dependent arrow, or its
+    /// domain or result is outside the unit type, the base atoms and binary
+    /// sums and products the coverage reaches.
+    FunextUnsupported
+    {
+        /// The `funext`.
+        at: ValueId,
+        /// The type its first function synthesised.
+        classifier: ValueTypeId,
+    },
+    /// A function extensionality whose two functions do not both return one
+    /// value at some input the coverage reaches.
+    PointwiseDistinct
+    {
+        /// The `funext`.
+        at: ValueId,
+    },
     /// A synthesising term in checking position synthesised a type the expected
     /// type does not convert to.
     TypeMismatch(Mismatch),
@@ -623,14 +641,14 @@ impl CheckRefusal
     ///   than turning the rejection into an obligation.
     /// - witness: `judgement::tests::a_mismatched_literal_is_refused_with_both_types`
     #[spec(ensures: |ret| match *self {
-        | Self::OutOfFragment { .. } => matches!(ret, FailureClass::Unrepresentable),
+        | Self::OutOfFragment { .. } | Self::FunextUnsupported { .. } => matches!(ret, FailureClass::Unrepresentable),
         | Self::UnboundIndex { .. }
         | Self::BudgetExceeded { .. }
         | Self::DanglingNode { .. }
         | Self::AdmissionOrder { .. }
         | Self::MachineInvariant
         | Self::Undecided { .. } => matches!(ret, FailureClass::EngineFault),
-        | Self::PathCode(_) | Self::EndpointMismatch { .. } | Self::CompoundEndpoint { .. }
+        | Self::PathCode(_) | Self::EndpointMismatch { .. } | Self::CompoundEndpoint { .. } | Self::PointwiseDistinct { .. }
         | Self::NotADataType(_) | Self::DataKindNotUniverse(_) | Self::DataFieldLevel { .. } | Self::DataArgumentArity(_) | Self::UnknownConstructor { .. } | Self::ConstructorArity(_) | Self::NonExhaustiveDataCase(_) | Self::AbsentRecordField(_) | Self::AbsentTupleComponent(_) | Self::MissingRecordField { .. }
         | Self::TypeMismatch(_)
         | Self::EffectSignatureConflict { .. }
@@ -656,6 +674,7 @@ impl CheckRefusal
             | Self::PathCode(_)
             | Self::EndpointMismatch { .. }
             | Self::CompoundEndpoint { .. }
+            | Self::PointwiseDistinct { .. }
             | Self::NotADataType(_)
             | Self::DataKindNotUniverse(_)
             | Self::DataFieldLevel { .. }
@@ -688,7 +707,9 @@ impl CheckRefusal
             | Self::NonUniformOccurrence(_)
             | Self::CrossBlockReference { .. }
             | Self::DescentNotReplayed { .. } => FailureClass::MalformedSource,
-            | Self::OutOfFragment { .. } => FailureClass::Unrepresentable,
+            | Self::OutOfFragment { .. } | Self::FunextUnsupported { .. } => {
+                FailureClass::Unrepresentable
+            },
             | Self::UnboundIndex { .. }
             | Self::BudgetExceeded { .. }
             | Self::DanglingNode { .. }
@@ -730,7 +751,7 @@ impl CheckRefusal
         | Self::ShapeMismatch { found, .. } => ret.found == Maybe::Present(found) && ret.expected == UNNAMED,
         | Self::DependentBind { synthesised, .. } | Self::DependentStack { synthesised, .. } | Self::CompoundEndpoint { synthesised, .. } =>
             ret.found == Maybe::Present(TypeNode::Computation(synthesised)) && ret.expected == UNNAMED,
-        | Self::StaticClassifierExpected { found, .. } =>
+        | Self::StaticClassifierExpected { found, .. } | Self::FunextUnsupported { classifier: found, .. } =>
             ret.found == Maybe::Present(TypeNode::Value(found)) && ret.expected == UNNAMED,
         | _ => ret == Compared { expected: UNNAMED, found: UNNAMED },
     })]
@@ -776,9 +797,10 @@ impl CheckRefusal
             | Self::CompoundEndpoint { synthesised, .. } => {
                 (UNNAMED, Maybe::Present(TypeNode::Computation(synthesised)))
             },
-            | Self::StaticClassifierExpected { found, .. } => {
-                (UNNAMED, Maybe::Present(TypeNode::Value(found)))
-            },
+            | Self::StaticClassifierExpected { found, .. }
+            | Self::FunextUnsupported {
+                classifier: found, ..
+            } => (UNNAMED, Maybe::Present(TypeNode::Value(found))),
             | Self::NotADataType(_)
             | Self::DataKindNotUniverse(_)
             | Self::DataFieldLevel { .. }
@@ -794,6 +816,7 @@ impl CheckRefusal
             | Self::ShiftWithoutReset { .. }
             | Self::PathCode(_)
             | Self::EndpointMismatch { .. }
+            | Self::PointwiseDistinct { .. }
             | Self::EffectSignatureConflict { .. }
             | Self::NotSynthesisable { .. }
             | Self::UnknownConstant { .. }

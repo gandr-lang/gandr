@@ -144,10 +144,12 @@
 //! id` at both constructors and reject `not = id` with the failing component.
 //! The higher-order witnesses replay ap of a λ duplicating its argument, relate
 //! two λs pairing it with `not ∘ not` and with `id` by the premise and a nested
-//! higher evaluation, and refuse the pair with `not`. Double negation uses the
-//! annotation-free, case-inlined term with its return/bind seam: an inlined
-//! λ's injections do not synthesize, and the replay unfolds no constant, so
-//! the composition cannot name `not`. The independent engine checks the direct
+//! higher evaluation, and refuse the pair with `not`. Double negation in those
+//! witnesses is the annotation-free, case-inlined term with its return/bind
+//! seam, since an inlined λ's injections do not synthesize. A persisted higher
+//! evaluation names `not` instead: admission replays it with every admitted
+//! definition unfoldable, and an anchor-free `Unfold` resolves its constant
+//! from the head it unfolds. The independent engine checks the direct
 //! composition too.
 //!
 //! **Higher-evaluation cost.** Each Boolean introduction has two components

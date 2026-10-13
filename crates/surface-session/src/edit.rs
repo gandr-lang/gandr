@@ -2811,6 +2811,7 @@ fn read(
                 Value::Here(_) => matches!(ret, ContentNode::Here(_)),
                 Value::Returned(_) => matches!(ret, ContentNode::Returned(_)),
                 Value::PathProduct(..) => matches!(ret, ContentNode::PathProduct(..)),
+                Value::Funext(..) => matches!(ret, ContentNode::Funext(..)),
                 Value::PathEquiv { ref evidence, .. } => {
                     matches!(
                         ret, ContentNode::PathEquiv { evidence : ref found, .. } if found
@@ -2918,6 +2919,10 @@ where
         | Some(&Value::PathProduct(first, second)) => {
             let first = child(Root::Value(first));
             ContentNode::PathProduct(first, child(Root::Value(second)))
+        },
+        | Some(&Value::Funext(left, right)) => {
+            let left = child(Root::Value(left));
+            ContentNode::Funext(left, child(Root::Value(right)))
         },
         | Some(&Value::PathEquiv {
             path_type,

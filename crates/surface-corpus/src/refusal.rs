@@ -312,6 +312,10 @@ pub enum RefusalName
     EndpointMismatch,
     /// A compound endpoint whose computation returns no pure value.
     CompoundEndpoint,
+    /// A function extensionality the rule does not decide.
+    FunextUnsupported,
+    /// A function extensionality whose functions differ at some input.
+    PointwiseDistinct,
     /// A term name no binder or earlier declaration answers.
     UnresolvedName,
     /// A documentation link to a name nothing declares.
@@ -423,7 +427,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 69_usize] = [
+    pub const VOCABULARY: [Self; 71_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -443,6 +447,8 @@ impl RefusalName
         Self::PathCode,
         Self::EndpointMismatch,
         Self::CompoundEndpoint,
+        Self::FunextUnsupported,
+        Self::PointwiseDistinct,
         Self::UnresolvedName,
         Self::UnresolvedDocLink,
         Self::UnresolvedTypeHead,
@@ -568,6 +574,8 @@ impl RefusalName
         | (Self::ShiftWithoutReset, b"ShiftWithoutReset") | (Self::DependentStack, b"DependentStack")
         | (Self::EndpointMismatch, b"EndpointMismatch")
         | (Self::CompoundEndpoint, b"CompoundEndpoint")
+        | (Self::FunextUnsupported, b"FunextUnsupported")
+        | (Self::PointwiseDistinct, b"PointwiseDistinct")
     )
 },
     )]
@@ -606,6 +614,8 @@ impl RefusalName
             | Self::PathCode => "PathCode",
             | Self::EndpointMismatch => "EndpointMismatch",
             | Self::CompoundEndpoint => "CompoundEndpoint",
+            | Self::FunextUnsupported => "FunextUnsupported",
+            | Self::PointwiseDistinct => "PointwiseDistinct",
             | Self::ShadowedBuiltin => "ShadowedBuiltin",
             | Self::OutOfFragment => "OutOfFragment",
             | Self::GradedBridge => "GradedBridge",
@@ -862,6 +872,8 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::DependentStack { .. }), RefusalName::DependentStack)
         | (Self::Checking(CheckRefusal::EndpointMismatch { .. }), RefusalName::EndpointMismatch)
         | (Self::Checking(CheckRefusal::CompoundEndpoint { .. }), RefusalName::CompoundEndpoint)
+        | (Self::Checking(CheckRefusal::FunextUnsupported { .. }), RefusalName::FunextUnsupported)
+        | (Self::Checking(CheckRefusal::PointwiseDistinct { .. }), RefusalName::PointwiseDistinct)
     )
 },
     )]
@@ -1057,6 +1069,8 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::DependentStack { .. }, RefusalName::DependentStack)
         | (CheckRefusal::EndpointMismatch { .. }, RefusalName::EndpointMismatch)
         | (CheckRefusal::CompoundEndpoint { .. }, RefusalName::CompoundEndpoint)
+        | (CheckRefusal::FunextUnsupported { .. }, RefusalName::FunextUnsupported)
+        | (CheckRefusal::PointwiseDistinct { .. }, RefusalName::PointwiseDistinct)
     )
 },
 )]
@@ -1081,6 +1095,8 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
         | CheckRefusal::PathCode(_) => RefusalName::PathCode,
         | CheckRefusal::EndpointMismatch { .. } => RefusalName::EndpointMismatch,
         | CheckRefusal::CompoundEndpoint { .. } => RefusalName::CompoundEndpoint,
+        | CheckRefusal::FunextUnsupported { .. } => RefusalName::FunextUnsupported,
+        | CheckRefusal::PointwiseDistinct { .. } => RefusalName::PointwiseDistinct,
         | CheckRefusal::TypeMismatch(_) => RefusalName::TypeMismatch,
         | CheckRefusal::ShapeMismatch { .. } => RefusalName::ShapeMismatch,
         | CheckRefusal::NotSynthesisable { .. } => RefusalName::NotSynthesisable,

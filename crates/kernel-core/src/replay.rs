@@ -57,6 +57,18 @@
 //! A rigid term is built only of formers, variables and constants without a
 //! body: nothing in it can reduce, so two α-distinct rigid terms never convert.
 //!
+//! A decision anchored at [`ReplayNode::Other`] names no constant, which is
+//! how persisted evidence carries its dialogues: the wire keeps a decision's
+//! kind and side but no identifier. An anchor-free `Unfold`, with the
+//! reduction naming its side anchor-free too, unfolds the defined constant the
+//! side's head holds; a side headed by anything else refuses it. The step is
+//! the one an anchored decision would name, since a side has one head, so the
+//! trace still chooses only whether and where δ fires. `Postpone`, `Freeze`
+//! and `ConstShortcut` stay anchored: each names a constant the opposite side
+//! or a later decision must meet. The alternative, persisting the constant's
+//! position in every decision, widens the evidence wire for a name the term
+//! already holds.
+//!
 //! # The lazy product's η
 //!
 //! A lazy pairing against a neutral computation is the η law of `C & D`
@@ -1555,23 +1567,31 @@ where
             return Err(self.refuse(next));
         };
         match decision {
-            | ConversionDecision::Unfold {
-                constant: ReplayNode::Constant(name),
-            } => {
+            | ConversionDecision::Unfold { constant } => {
                 self.take();
                 let reduction = self.peek();
                 let side = match reduction {
                     | Next::Decision(ConversionDecision::ReduceLeft { redex })
-                        if redex == ReplayNode::Constant(name) =>
+                        if redex == constant =>
                     {
                         ConversionSide::Left
                     },
                     | Next::Decision(ConversionDecision::ReduceRight { redex })
-                        if redex == ReplayNode::Constant(name) =>
+                        if redex == constant =>
                     {
                         ConversionSide::Right
                     },
                     | Next::Decision(_) | Next::End => return Err(self.refuse(reduction)),
+                };
+                // An anchor-free decision, as persisted evidence carries it,
+                // names no constant: it unfolds the one the side's head holds.
+                let name = match (constant, shape_of(side)) {
+                    | (ReplayNode::Constant(name), _)
+                    | (
+                        ReplayNode::Other,
+                        &Shape::Neutral(Head::Constant(name, Status::Defined), _),
+                    ) => name,
+                    | (ReplayNode::Other, _) => return Err(self.refuse(reduction)),
                 };
                 let unfolds = matches!(shape_of(side), &Shape::Neutral(Head::Constant(head, Status::Defined), _) if head == name);
                 let waits = match *postponed {
@@ -1655,7 +1675,6 @@ where
             | ConversionDecision::ReduceLeft { .. }
             | ConversionDecision::ReduceRight { .. }
             | ConversionDecision::ConstShortcut { .. }
-            | ConversionDecision::Unfold { .. }
             | ConversionDecision::Postpone { .. }
             | ConversionDecision::Freeze { .. }
             | ConversionDecision::EtaExpand { .. }

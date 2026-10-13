@@ -3046,7 +3046,9 @@ fn step_value(
             machine.tasks.push(Task::Value { term: first, env });
             Ok(())
         },
-        | Value::PathRefl(_) | Value::PathEquiv { .. } => {
+        // A closed native path and a closed funext are inert certificates:
+        // nothing reduces them, and transport reads their syntax.
+        | Value::PathRefl(_) | Value::PathEquiv { .. } | Value::Funext(..) => {
             machine
                 .values
                 .push(domain.value_path_certificate(term, TermFace::Source(term)));

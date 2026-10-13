@@ -204,6 +204,8 @@ const fn checked(refusal: CheckRefusal) -> Culprit
         | CheckRefusal::PathCode(_) => "not a quoted closed first-order code",
         | CheckRefusal::EndpointMismatch { .. } => "not both endpoints of the path",
         | CheckRefusal::CompoundEndpoint { .. } => "an endpoint that returns no pure value",
+        | CheckRefusal::FunextUnsupported { .. } => "functions outside the rule's fragment",
+        | CheckRefusal::PointwiseDistinct { .. } => "functions that differ at some input",
         | CheckRefusal::TypeMismatch(Mismatch::Value { .. } | Mismatch::Computation { .. }) => {
             "its type does not convert"
         },

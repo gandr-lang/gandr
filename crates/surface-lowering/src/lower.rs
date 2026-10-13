@@ -1838,6 +1838,8 @@ enum Plan
     Path(NodeIndex, NodeIndex, NodeIndex),
     /// Reflexivity at its point.
     Here(NodeIndex),
+    /// Function extensionality between its two functions.
+    Funext(NodeIndex, NodeIndex),
     /// `back`, `then` or `cong`, unfolded to the transport it derives
     /// against the path type its position answers.
     Derived(identity::Derived),
@@ -5260,7 +5262,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         constructed.fields.start == start
                             && constructed.fields.end == self.operands.len()
                     },
-                    | Some(&(Plan::Here(_) | Plan::Derived(_))) => true,
+                    | Some(&(Plan::Here(_) | Plan::Funext(..) | Plan::Derived(_))) => true,
                     | _ => false,
                 }
         },
@@ -7236,6 +7238,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::StaticLambda(_)
                 | Plan::Thunk(_)
                 | Plan::Here(_)
+                | Plan::Funext(..)
                 | Plan::Constructor(_) => Some(Produced::Value),
                 | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(_) | Plan::Block(_) | Plan::Application(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Derived(_) => {
                     Some(Produced::Computation)
@@ -7433,6 +7436,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::StaticLambda(_)
             | Plan::Thunk(_)
             | Plan::Here(_)
+            | Plan::Funext(..)
             | Plan::Return(_)
             | Plan::Force(_)
             | Plan::Lambda(_) => self.mint_over(&plan, sink, origin),
@@ -7912,7 +7916,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| match ret {
             | Maybe::Absent(_) => true,
             | Maybe::Present(Lowered::Value(id)) => {
-                matches!(*plan, Plan::StaticLambda(_) | Plan::Thunk(_) | Plan::Here(_))
+                matches!(*plan, Plan::StaticLambda(_) | Plan::Thunk(_) | Plan::Here(_) | Plan::Funext(..))
                     && sink.origins.value(id) == Maybe::Present(origin)
             },
             | Maybe::Present(Lowered::Computation(id)) => {
@@ -7964,6 +7968,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Here(point) => self.value_at(point).map(|at| {
                 let id = sink.arena.value_here(at);
                 sink.value(id, origin)
+            }),
+            | Plan::Funext(left, right) => self.value_at(left).and_then(|first| {
+                self.value_at(right).map(|second| {
+                    let id = sink.arena.value_funext(first, second);
+                    sink.value(id, origin)
+                })
             }),
             | Plan::StaticLambda(body) => self.value_at(body).map(|under| {
                 let id = sink.arena.value_static_lambda(under);

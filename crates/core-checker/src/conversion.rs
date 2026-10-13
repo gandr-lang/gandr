@@ -1024,6 +1024,7 @@ fn convert(
                                     match *matched_left_value {
                                         | Value::PathRefl(_)
                                         | Value::Here(_)
+                                        | Value::Funext(..)
                                         | Value::Returned(_)
                                         | Value::Constructor { .. }
                                         | Value::Record(_)

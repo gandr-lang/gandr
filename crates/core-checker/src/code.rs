@@ -65,6 +65,7 @@ use gandr_core_nbe::MachineSettings;
 use gandr_core_nbe::MachineVerdict;
 use gandr_core_nbe::NeutralHead;
 use gandr_core_nbe::Problem;
+use gandr_core_nbe::ReadbackMode;
 use gandr_core_nbe::ResharingMemo;
 use gandr_core_nbe::TermFace;
 use gandr_core_nbe::TraceNode;
@@ -72,6 +73,7 @@ use gandr_core_nbe::Unfolding;
 use gandr_core_nbe::decide;
 use gandr_core_nbe::eval_value_within;
 use gandr_core_term::BinderDepth;
+use gandr_core_term::CertificateEquality;
 use gandr_core_term::CompType;
 use gandr_core_term::Computation;
 use gandr_core_term::CoreArena;
@@ -81,6 +83,7 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::Zone;
+use gandr_core_term::equal_certificate_syntax;
 use gandr_core_term::instantiate_value;
 use gandr_kernel_conversion_trace::ConversionDecision;
 use gandr_kernel_conversion_trace::NullSink;
@@ -109,8 +112,26 @@ quenchant_shape::reason_enum! {
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why an evaluation claim returned no value.
+    pub mod evaluated {
+        /// The reason the claim's body reads back to no returner.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The body's normal form under its binders is not `return v`: it
+            /// is stuck on a variable, an opaque constant or an effect.
+            Stuck,
+        }
+    }
+}
+
 /// The evaluation budget each side of a certified unfolding runs under.
 const CODE_FUEL: u32 = 4_096_u32;
+
+/// How many rounds of evaluation and unfolding readback a claim may take
+/// before it is undecided: each round unfolds one layer of the definitions
+/// the previous round's normal form calls.
+const CLAIM_ROUNDS: u32 = 64_u32;
 
 /// The definitions a code may unfold, in admission order.
 #[derive(Clone, Debug, Default)]
@@ -377,6 +398,59 @@ impl Certificate
     }
 }
 
+/// The normaliser's reading of one closed evaluation claim.
+///
+/// For the claim `thunk (λⁿ. M)`: the normal form it reads back to,
+/// `thunk (λⁿ. return v)`, the value `v` its body returns under its `n`
+/// binders, and the trace that the claim converts to that normal form.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Evaluation
+{
+    /// The claim's normal form.
+    normal: ValueId,
+    /// The value the body returns, under the claim's binders.
+    returned: ValueId,
+    /// The derivation the machine recorded that the claim converts to its
+    /// normal form, in order.
+    decisions: Vec<ConversionDecision<TraceNode>>,
+}
+
+impl Evaluation
+{
+    /// The claim's normal form, `thunk (λⁿ. return v)`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn normal(&self) -> ValueId
+    {
+        self.normal
+    }
+
+    /// The value the body returns, under the claim's binders.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn returned(&self) -> ValueId
+    {
+        self.returned
+    }
+
+    /// The derivation that the claim converts to its normal form.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn decisions(&self) -> &[ConversionDecision<TraceNode>]
+    {
+        &self.decisions
+    }
+}
+
 impl CodeDefinitions
 {
     /// No definition: every constant is rigid.
@@ -547,6 +621,7 @@ impl CodeDefinitions
             },
             | Value::PathRefl(_)
             | Value::Here(_)
+            | Value::Funext(..)
             | Value::Returned(_)
             | Value::Constructor { .. }
             | Value::Record(_)
@@ -781,6 +856,116 @@ impl CodeDefinitions
         .map(|report| report.verdict())
         .map_err(|_fault| undecided)
     }
+
+    /// Evaluate the closed claim `claim`, `thunk (λⁿ. M)`, to the value its
+    /// body returns, every definition this table holds unfolding, and record
+    /// the trace that the claim converts to its normal form.
+    ///
+    /// # Specification
+    /// - requires: every body this table holds, and `claim`, live in `core`;
+    ///   `claim` is closed.
+    /// - ensures: the claim's normal form, read back with every unfolding
+    ///   spent; when it is `thunk (λⁿ. return v)` for some `n`, the evaluation
+    ///   of `v` with the machine's convertible trace from the claim to that
+    ///   normal form, and [`evaluated::Absent::Stuck`] for any other normal
+    ///   form.
+    /// - provides: the computation a function extensionality decides at each
+    ///   covering input, and the dialogue the kernel replays for it.
+    /// - fails: [`CheckRefusal::Undecided`] at `claim` when evaluation or
+    ///   readback faults or runs out of fuel, or the machine does not convert
+    ///   the claim to its normal form.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal::Undecided`] — as above.
+    ///
+    /// # Termination
+    /// - reason: the `while let` loop peels one lambda of the finite normal
+    ///   form per turn, not recursion; evaluation, readback and the machine run
+    ///   under their own fuel.
+    /// - measure: the lambdas left above the body.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a definition applied to a constructor returns the
+    ///   branch it selects, an application stuck on a variable is stuck, and
+    ///   the trace replays in the kernel against the admitted definition.
+    /// - witness: `funext::tests::pointwise_equal_functions_relate_by_computation`
+    /// - witness: `bridge::tests::a_funext_crosses_as_a_higher_evaluation`
+    #[spec(ensures: |ret| match ret {
+        | Ok(Maybe::Present(ref evaluation)) => core.value(evaluation.returned()).is_some(),
+        | Ok(Maybe::Absent(_)) => true,
+        | Err(refusal) => refusal == CheckRefusal::Undecided { at: claim },
+    })]
+    #[inline]
+    pub fn evaluate_claim(
+        &self,
+        core: &mut CoreArena,
+        claim: ValueId,
+    ) -> Result<Maybe<Evaluation, evaluated::Absent>, CheckRefusal>
+    {
+        let undecided = CheckRefusal::Undecided { at: claim };
+        let definitions =
+            Definitions::new(&self.lowered, &self.environment, self.environment.root());
+        let fuel = Fuel::from(CODE_FUEL);
+        let mut current = claim;
+        let mut rounds = 0_u32;
+        let (normal, returned) = loop {
+            let mut domain = DomainArena::new();
+            let evaluated =
+                gandr_core_nbe::eval_value(core, &mut domain, definitions, fuel, current)
+                    .map_err(|_fault| undecided)?;
+            let read = gandr_core_nbe::readback_value(
+                core,
+                &mut domain,
+                definitions,
+                ReadbackMode::Unfolding,
+                fuel,
+                evaluated,
+            )
+            .map_err(|_fault| undecided)?;
+            let Some(&Value::Thunk(mut body)) = core.value(read)
+            else {
+                return Ok(Maybe::Absent(evaluated::Absent::Stuck));
+            };
+            while let Some(&Computation::Lambda(inner)) = core.computation(body) {
+                body = inner;
+            }
+            if let Some(&Computation::Return(returned)) = core.computation(body) {
+                break (read, returned);
+            }
+            if equal_certificate_syntax(core, read, current) == CertificateEquality::Equal {
+                return Ok(Maybe::Absent(evaluated::Absent::Stuck));
+            }
+            rounds = rounds.checked_add(1).ok_or(undecided)?;
+            if rounds >= CLAIM_ROUNDS {
+                return Err(undecided);
+            }
+            current = read;
+        };
+        let mut domain = DomainArena::new();
+        let left = gandr_core_nbe::eval_value(core, &mut domain, definitions, fuel, claim)
+            .map_err(|_fault| undecided)?;
+        let right = gandr_core_nbe::eval_value(core, &mut domain, definitions, fuel, normal)
+            .map_err(|_fault| undecided)?;
+        let mut log = TraceLog::new();
+        let report = decide::<TraceLog<TraceNode>, ResharingMemo>(
+            core,
+            &mut domain,
+            definitions,
+            MachineSettings::default(),
+            Problem::values(left, right),
+            &mut log,
+        )
+        .map_err(|_fault| undecided)?;
+        if report.verdict() != MachineVerdict::Convertible {
+            return Err(undecided);
+        }
+        Ok(Maybe::Present(Evaluation {
+            normal,
+            returned,
+            decisions: log.decisions().copied().collect(),
+        }))
+    }
 }
 
 /// How many binders outside `root` its free intuitionistic variables reach:
@@ -905,6 +1090,7 @@ pub fn loose_reach(
                             .map(|&component| (CoreNode::Term(TermNode::Value(component)), depth)),
                     ),
                     | Value::PathProduct(first, second)
+                    | Value::Funext(first, second)
                     | Value::ListCons(first, second)
                     | Value::StaticApplication(first, second) => {
                         work.push((CoreNode::Term(TermNode::Value(first)), depth));

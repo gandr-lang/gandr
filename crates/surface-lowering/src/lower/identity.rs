@@ -1,6 +1,6 @@
 //! Element identity in the lowering: the path type `Path(A, a, b)`, its
-//! reflexivity `here(a)`, and `back`, `then` and `cong`, each unfolded to the
-//! transport it derives.
+//! reflexivity `here(a)`, function extensionality `funext(f, g)`, and
+//! `back`, `then` and `cong`, each unfolded to the transport it derives.
 //!
 //! # Endpoints are values, and a computation is the value it returns
 //!
@@ -22,15 +22,19 @@
 //! dependent, as a parameter a later type decodes does. The point of `here`
 //! is a term of the body and reads its parameters there.
 //!
-//! # `here`, `back` and `cong` are names nothing else binds
+//! # `here`, `funext`, `back` and `cong` are names nothing else binds
 //!
-//! The three are spelled as ordinary calls and resolved after every binder
+//! The four are spelled as ordinary calls and resolved after every binder
 //! and every earlier declaration, so a parameter or a definition of the same
 //! name shadows them, as it shadows a prelude primitive; `then` is the
 //! grammar's own infix tile. Reserving the names outright was the
 //! alternative; it would break every program that already binds one.
 //! Reversal: a namespace for the identity vocabulary, `Path.here`, once the
 //! namespaces carry formers rather than primitives.
+//!
+//! `funext(f, g)` stands as a value, as `here` does, and reads both functions
+//! as values; the checker synthesises its path type from the first and
+//! decides it by computation (`gandr_core_checker`'s funext rule).
 //!
 //! # A derived operation reads its motive off the path type it answers
 //!
@@ -114,8 +118,8 @@ quenchant_shape::reason_enum! {
 /// An identity operation a call's head spells.
 ///
 /// # Specification
-/// - requires: nothing to construct this data.
-/// - ensures: reflexivity, and the two derived operations spelled as calls.
+/// - ensures: reflexivity, function extensionality, and the two derived
+///   operations spelled as calls.
 /// - executable: none — a tag holds no head to check its spelling against.
 ///
 /// # Adequacy
@@ -126,6 +130,8 @@ pub(super) enum Operation
 {
     /// `here(a)`.
     Here,
+    /// `funext(f, g)`.
+    Funext,
     /// `back(p)`.
     Back,
     /// `cong(f, p)`.
@@ -146,8 +152,9 @@ pub(super) enum Operation
 /// # Adequacy
 /// - hypothesis: L3 — every row is spelled by a witness.
 /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
-const SPELLED: [(&str, Operation); 3] = [
+const SPELLED: [(&str, Operation); 4] = [
     (HERE, Operation::Here),
+    ("funext", Operation::Funext),
     ("back", Operation::Back),
     ("cong", Operation::Cong),
 ];
@@ -342,12 +349,13 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `operation` is what the call's head spells.
     /// - ensures: `here(a)` stands as a value reading its point as a value at
-    ///   an endpoint; `back(p)` and `cong(f, p)` stand as computations derived
-    ///   as [`Self::derive`] does. Every operand is read under the site's
-    ///   frame.
+    ///   an endpoint; `funext(f, g)` stands as a value reading both functions
+    ///   as values; `back(p)` and `cong(f, p)` stand as computations derived as
+    ///   [`Self::derive`] does. Every operand is read under the site's frame.
     /// - fails: the wrong-sort refusal where the operation's sort is not read;
     ///   the arity refusal for other than one argument to `here` or `back` and
-    ///   two to `cong`; [`Self::derive`]'s refusal; the argument list's fault.
+    ///   two to `funext` or `cong`; [`Self::derive`]'s refusal; the argument
+    ///   list's fault.
     /// - panics: none.
     ///
     /// # Errors
@@ -357,6 +365,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — each operation at its own arity, and `here` at two,
     ///   each asserted as the planned former or the exact refusal.
     /// - witness: `lower::identity::tests::a_path_type_and_reflexivity_lower_to_their_formers`
+    /// - witness: `lower::identity::tests::funext_lowers_to_its_former`
     /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
     #[spec(
         captures: start = self.operands.len(),
@@ -365,6 +374,7 @@ impl<'source> Lowerer<'_, 'source>
                 && (ret.is_err()
                     || match (operation, self.plans.get(usize::from(site.at.node))) {
                         | (Operation::Here, Some(&Plan::Here(point))) => self.at_endpoint.contains(&point),
+                        | (Operation::Funext, Some(&Plan::Funext(..)))
                         | (Operation::Back | Operation::Cong, Some(&Plan::Derived(_))) => true,
                         | _ => false,
                     })
@@ -378,7 +388,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let produced = match operation {
-            | Operation::Here => Produced::Value,
+            | Operation::Here | Operation::Funext => Produced::Value,
             | Operation::Back | Operation::Cong => Produced::Computation,
         };
         let frame = self.require(site, produced)?;
@@ -394,6 +404,12 @@ impl<'source> Lowerer<'_, 'source>
                 self.read(point, Reading::Value(frame));
                 let _marked = self.at_endpoint.insert(point);
                 self.plan(site, Plan::Here(point));
+                Ok(())
+            },
+            | (Operation::Funext, 2_usize, Some(left), Some(right)) => {
+                self.read(left, Reading::Value(frame));
+                self.read(right, Reading::Value(frame));
+                self.plan(site, Plan::Funext(left, right));
                 Ok(())
             },
             | (Operation::Back, 1_usize, Some(path), _) => {

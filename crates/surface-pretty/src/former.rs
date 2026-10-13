@@ -313,6 +313,8 @@ pub enum Former<'source, Node>
     StaticApplication(Node, Node),
     /// Element identity `here(a)`, the reflexivity the surface writes.
     Here(Node),
+    /// Function extensionality `funext(f, g)` over its two functions.
+    Funext(Node, Node),
     /// A computation term, which no position the printer fills admits.
     Computation,
     /// A handle that names no node, or a node whose name the source cannot

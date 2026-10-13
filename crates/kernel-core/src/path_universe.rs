@@ -574,33 +574,5 @@ fn replay_checked(
 })]
 pub(crate) fn anchor(decision: ConversionDecision<()>) -> ConversionDecision<ReplayNode>
 {
-    let node = ReplayNode::Other;
-    match decision {
-        | ConversionDecision::ReduceLeft { .. } => ConversionDecision::ReduceLeft { redex: node },
-        | ConversionDecision::ReduceRight { .. } => ConversionDecision::ReduceRight { redex: node },
-        | ConversionDecision::ConstShortcut { .. } => {
-            ConversionDecision::ConstShortcut { constant: node }
-        },
-        | ConversionDecision::Unfold { .. } => ConversionDecision::Unfold { constant: node },
-        | ConversionDecision::Postpone { .. } => ConversionDecision::Postpone { constant: node },
-        | ConversionDecision::Freeze { side, .. } => ConversionDecision::Freeze {
-            constant: node,
-            side,
-        },
-        | ConversionDecision::EtaExpand { side, .. } => ConversionDecision::EtaExpand {
-            variable: node,
-            side,
-        },
-        | ConversionDecision::ReturnEta { side } => ConversionDecision::ReturnEta { side },
-        | ConversionDecision::Reassociate { side } => ConversionDecision::Reassociate { side },
-        | ConversionDecision::Force { .. } => ConversionDecision::Force { thunk: node },
-        | ConversionDecision::ComparedShared { .. } => ConversionDecision::ComparedShared {
-            left: node,
-            right: node,
-        },
-        | ConversionDecision::Decompose => ConversionDecision::Decompose,
-        | ConversionDecision::NegativeSubgoal { position } => {
-            ConversionDecision::NegativeSubgoal { position }
-        },
-    }
+    decision.map(|()| ReplayNode::Other)
 }

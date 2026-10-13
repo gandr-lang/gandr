@@ -1761,6 +1761,8 @@ mod tests
             | Typing::Refused(Refusal::PathCode(_)) => "path-code",
             | Typing::Refused(Refusal::EndpointMismatch { .. }) => "endpoint-mismatch",
             | Typing::Refused(Refusal::CompoundEndpoint { .. }) => "compound-endpoint",
+            | Typing::Refused(Refusal::FunextUnsupported { .. }) => "funext-unsupported",
+            | Typing::Refused(Refusal::PointwiseDistinct(_)) => "pointwise-distinct",
             | Typing::Refused(Refusal::EffectSignatureConflict { .. }) => {
                 "effect-signature-conflict"
             },

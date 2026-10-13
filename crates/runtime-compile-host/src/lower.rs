@@ -82,6 +82,8 @@ pub enum Form
     PathEquiv,
     /// Element reflexivity.
     Here,
+    /// Function extensionality.
+    Funext,
     /// A compound endpoint.
     Returned,
     /// Element-path transport.
@@ -148,6 +150,7 @@ impl core::fmt::Display for Form
             | Self::PathProduct => "a product path",
             | Self::PathEquiv => "an equivalence path",
             | Self::Here => "element reflexivity",
+            | Self::Funext => "function extensionality",
             | Self::Returned => "a compound endpoint",
             | Self::ElementTransport => "element-path transport",
             | Self::Hole => "a term hole",
@@ -508,6 +511,7 @@ pub fn lower_computation(
                         return Err(LowerError::OutsideSlice(Form::PathEquiv));
                     },
                     | Value::Here(_) => return Err(LowerError::OutsideSlice(Form::Here)),
+                    | Value::Funext(..) => return Err(LowerError::OutsideSlice(Form::Funext)),
                     | Value::Returned(_) => {
                         return Err(LowerError::OutsideSlice(Form::Returned));
                     },

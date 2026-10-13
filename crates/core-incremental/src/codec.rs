@@ -1424,6 +1424,11 @@ where
             write_index(writer, first)?;
             write_index(writer, second)?;
         },
+        | ContentNode::Funext(left, right) => {
+            writer.tag(Tag(0x49));
+            write_index(writer, left)?;
+            write_index(writer, right)?;
+        },
         | ContentNode::Transport(path, value) => {
             writer.tag(Tag(0x44));
             write_index(writer, path)?;
@@ -2095,6 +2100,7 @@ fn read_effect_row(
                     | ContentNode::Here(_) => tag == 0x46,
                     | ContentNode::ElementTransport { .. } => tag == 0x47,
                     | ContentNode::Returned(_) => tag == 0x48,
+                    | ContentNode::Funext(..) => tag == 0x49,
                     | ContentNode::Variable { .. } => tag == 0x01,
                     | ContentNode::Constant(_) => tag == 0x02,
                     | ContentNode::Literal(_) => tag == 0x04,
@@ -2519,6 +2525,7 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             value: read_index(reader)?,
         },
         | 0x48 => ContentNode::Returned(read_index(reader)?),
+        | 0x49 => ContentNode::Funext(read_index(reader)?, read_index(reader)?),
         | _ => return Err(CodecError::Corrupt),
     };
     Ok(node)
@@ -3728,6 +3735,15 @@ where
             write_site(writer, at)?;
             write_type(writer, synthesised)?;
         },
+        | Refusal::FunextUnsupported { at, ref classifier } => {
+            writer.tag(Tag(43));
+            write_site(writer, at)?;
+            write_type(writer, classifier)?;
+        },
+        | Refusal::PointwiseDistinct(site) => {
+            writer.tag(Tag(44));
+            write_site(writer, site)?;
+        },
         | Refusal::TypeMismatch {
             at,
             ref synthesised,
@@ -4050,6 +4066,8 @@ where
                     | Refusal::AbsentTupleComponent(_) => 39,
                     | Refusal::EndpointMismatch { .. } => 40,
                     | Refusal::CompoundEndpoint { .. } => 42,
+                    | Refusal::FunextUnsupported { .. } => 43,
+                    | Refusal::PointwiseDistinct(_) => 44,
                 })
         },
         | Err(CodecError::LevelOffsetTooLarge { offset }) => {
@@ -4242,6 +4260,11 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
             at: read_site(reader)?,
             synthesised: read_type(reader)?,
         },
+        | 43 => Refusal::FunextUnsupported {
+            at: read_site(reader)?,
+            classifier: read_type(reader)?,
+        },
+        | 44 => Refusal::PointwiseDistinct(read_site(reader)?),
         | 28 => Refusal::NegativeOccurrence(read_occurrence_site(reader)?),
         | 29 => Refusal::NestedOccurrence(read_occurrence_site(reader)?),
         | 30 => Refusal::IndexOccurrence(read_occurrence_site(reader)?),

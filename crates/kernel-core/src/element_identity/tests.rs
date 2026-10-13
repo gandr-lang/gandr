@@ -107,32 +107,7 @@ fn universe(arena: &mut TermArena) -> ValueTypeId
 /// trivial.
 fn erase(decision: ConversionDecision<ReplayNode>) -> ConversionDecision<()>
 {
-    match decision {
-        | ConversionDecision::ReduceLeft { .. } => ConversionDecision::ReduceLeft { redex: () },
-        | ConversionDecision::ReduceRight { .. } => ConversionDecision::ReduceRight { redex: () },
-        | ConversionDecision::ConstShortcut { .. } => {
-            ConversionDecision::ConstShortcut { constant: () }
-        },
-        | ConversionDecision::Unfold { .. } => ConversionDecision::Unfold { constant: () },
-        | ConversionDecision::Postpone { .. } => ConversionDecision::Postpone { constant: () },
-        | ConversionDecision::Freeze { side, .. } => {
-            ConversionDecision::Freeze { constant: (), side }
-        },
-        | ConversionDecision::EtaExpand { side, .. } => {
-            ConversionDecision::EtaExpand { side, variable: () }
-        },
-        | ConversionDecision::ReturnEta { side } => ConversionDecision::ReturnEta { side },
-        | ConversionDecision::Reassociate { side } => ConversionDecision::Reassociate { side },
-        | ConversionDecision::Force { .. } => ConversionDecision::Force { thunk: () },
-        | ConversionDecision::ComparedShared { .. } => ConversionDecision::ComparedShared {
-            left: (),
-            right: (),
-        },
-        | ConversionDecision::Decompose => ConversionDecision::Decompose,
-        | ConversionDecision::NegativeSubgoal { position } => {
-            ConversionDecision::NegativeSubgoal { position }
-        },
-    }
+    decision.map(|_| ())
 }
 
 /// Persist an in-memory higher evaluation as the kernel node's two payloads.
@@ -745,7 +720,13 @@ fn a_higher_evaluation_proves_function_extensionality()
     };
     let (dialogues, components) = (Arc::clone(dialogues), components.clone());
     assert!(matches!(
-        evaluation_obligations(&mut arena, open, &dialogues, &components),
+        evaluation_obligations(
+            &mut arena,
+            &Unfoldings::default(),
+            open,
+            &dialogues,
+            &components
+        ),
         Err(KernelError::Identity(IdentityError::OpenFunctions))
     ));
 
@@ -817,6 +798,110 @@ fn a_higher_evaluation_proves_function_extensionality()
         computes(&mut arena, neutral, truth),
         KernelVerdict::Convertible
     );
+}
+
+/// Splice one anchor-free δ-step on the left side after a dialogue's opening
+/// pair of forces, the two thunks every evaluation claim compares.
+///
+/// # Specification
+/// trivial.
+fn unfolding_left(dialogue: &[ConversionDecision<()>]) -> Vec<ConversionDecision<()>>
+{
+    let (forces, rest) = dialogue.split_at(2);
+    assert!(
+        forces
+            .iter()
+            .all(|decision| matches!(decision, ConversionDecision::Force { .. }))
+    );
+    let mut spliced = forces.to_vec();
+    spliced.push(ConversionDecision::Unfold { constant: () });
+    spliced.push(ConversionDecision::ReduceLeft { redex: () });
+    spliced.extend_from_slice(rest);
+    spliced
+}
+
+#[test]
+fn a_higher_evaluation_unfolds_what_the_environment_admitted()
+{
+    // Negation is admitted as a definition, then related to its own inlined
+    // body. The left evaluation forces the constant, so each of its dialogues
+    // owes one δ-step, which a persisted dialogue names by its side alone.
+    let mut environment = Environment::new();
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let defined = boolean(arena);
+    let declaration = staging.def(LevelSignature::monomorphic(), defined.function, defined.not);
+    let negation = environment
+        .add_decl(declaration)
+        .expect("negation")
+        .position();
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let axiom = boolean(arena);
+    let declaration = staging.axiom(LevelSignature::monomorphic(), axiom.function);
+    let postulated = environment
+        .add_decl(declaration)
+        .expect("a postulated function")
+        .position();
+
+    let offer = |environment: &mut Environment, head, splice: bool| {
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let boolean = boolean(arena);
+        let constant = arena.value_constant(head);
+        let evidence = higher(arena, &boolean, (boolean.not, boolean.not), [
+            (boolean.falsity, boolean.falsity),
+            (boolean.truth, boolean.truth),
+        ]);
+        let mut dialogues = Vec::new();
+        let mut components = Vec::new();
+        for pointwise in &evidence.0 {
+            let &Pointwise::Return {
+                ref left,
+                ref right,
+                proof,
+            } = pointwise
+            else {
+                panic!("the fixture returns at every component");
+            };
+            let erased = left
+                .dialogue
+                .0
+                .iter()
+                .copied()
+                .map(erase)
+                .collect::<Vec<_>>();
+            dialogues.push(EvaluationDialogues {
+                left: if splice {
+                    unfolding_left(&erased)
+                }
+                else {
+                    erased
+                },
+                right: right.dialogue.0.iter().copied().map(erase).collect(),
+            });
+            components.push(EvaluationComponent {
+                left: left.value,
+                right: right.value,
+                evidence: proof,
+            });
+        }
+        let funext = arena.value_higher_evaluation(Arc::from(dialogues), Box::from(components));
+        let extensional = arena.value_type_path(boolean.function, constant, boolean.not);
+        let declaration = staging.def(LevelSignature::monomorphic(), extensional, funext);
+        environment.add_decl(declaration).map(|_admitted| ())
+    };
+    offer(&mut environment, negation, true).expect("the constant unfolds to its body");
+    for (head, splice) in [(negation, false), (postulated, true)] {
+        assert!(matches!(
+            offer(&mut environment, head, splice),
+            Err(KernelError::Identity(IdentityError::Evaluation {
+                component: Component(0),
+                side: EvaluationSide::Left,
+                ..
+            }))
+        ));
+    }
 }
 
 /// `λh. return (h, second)`, pairing a function argument with a closed one.

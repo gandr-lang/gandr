@@ -37,12 +37,16 @@
 //!
 //! The content table preserves universe sorts and levels, quotes, static
 //! operators and native universe paths. Native path tags occupy `0x40–0x44` in
-//! this cache codec; they are not kernel artifact tags. Candidate evidence is
-//! exact content, including ordered direction and dialogue boundaries, and
-//! never a cached admission receipt. Type-only signature content refuses
-//! term-bearing path classifiers just as it refuses quotes and decodes.
+//! this cache codec, and element identity `0x45–0x49`: the path type, `here`,
+//! element transport, a compound endpoint, and `funext` over its two
+//! functions. None is a kernel artifact tag. Candidate evidence is exact
+//! content, including ordered direction and dialogue boundaries, and never a
+//! cached admission receipt; a `funext` is content by its functions alone, and
+//! the evaluations it was decided by are recomputed by the judgement that
+//! reads it. Type-only signature content refuses term-bearing path
+//! classifiers just as it refuses quotes and decodes.
 //!
-//! Checkpoint sets use `GCKPT\0\0\x07`; programs use `GPROG\0\0\x05`. Their
+//! Checkpoint sets use `GCKPT\0\0\x09`; programs use `GPROG\0\0\x07`. Their
 //! identities bind the checker, native declaration categories, effect and
 //! control content, support queries and refusal vocabulary. Identities of
 //! another version are rejected rather than reusing answers from a different
@@ -52,10 +56,9 @@
 //! **Choice.** Preserve native classifiers, maps and candidate evidence as
 //! content instead of caching a certificate verdict. Structural path conversion
 //! may erase evidence, but checkpoint identity must not. **Reversal.**
-//! Persisting `Flow_U`, element identity, the bridge mode, higher fields,
-//! funext or guarded List inhabitants requires its own versioned content
-//! vocabulary and validated dependency support; none is inferred from a native
-//! path entry.
+//! Persisting `Flow_U`, the bridge mode, higher fields or guarded List
+//! inhabitants requires its own versioned content vocabulary and validated
+//! dependency support; none is inferred from a native path entry.
 //!
 //! # Native declaration content and support
 //!
@@ -385,6 +388,8 @@ pub enum ContentNode
     PathRefl(NodeIndex),
     /// A product certificate.
     PathProduct(NodeIndex, NodeIndex),
+    /// A function extensionality over its two functions.
+    Funext(NodeIndex, NodeIndex),
     /// An equivalence, retaining its evidence in the cache identity.
     PathEquiv
     {
@@ -810,6 +815,7 @@ impl ContentNode
         | Self::Returned(_)
         | Self::PrimitiveValue(_)
         | Self::PathProduct(..)
+        | Self::Funext(..)
         | Self::PathEquiv { .. }
         | Self::Variable { .. }
         | Self::Constant(_)
@@ -891,6 +897,7 @@ impl ContentNode
             | Self::Returned(_)
             | Self::PrimitiveValue(_)
             | Self::PathProduct(..)
+            | Self::Funext(..)
             | Self::PathEquiv { .. }
             | Self::Variable { .. }
             | Self::Constant(_)
@@ -1012,7 +1019,7 @@ impl ContentNode
             | Self::UnknownComputationType => ret.count == 0,
             | Self::Tuple(ref components) => ret.iter().eq(components.iter().map(|&component| (component, V))),
             | Self::ListFold { element, result, list, on_nil, on_cons } => actual == Some(&[(element, A), (result, A), (list, V), (on_nil, M), (on_cons, M)][..]),
-            | Self::ListCons(a, b) | Self::StaticApplication(a, b) | Self::PathUniverse(a, b) | Self::PathProduct(a, b) | Self::Transport(a, b) => {
+            | Self::ListCons(a, b) | Self::StaticApplication(a, b) | Self::PathUniverse(a, b) | Self::PathProduct(a, b) | Self::Funext(a, b) | Self::Transport(a, b) => {
                 actual == Some(&[(a, V), (b, V)][..])
             },
             | Self::PathEquiv { path_type, forward, backward, .. } => actual == Some(&[(path_type, A), (forward, V), (backward, V)][..]),
@@ -1152,6 +1159,7 @@ impl ContentNode
             | Self::Tuple(ref components) => Children::default().followed_by(components, V),
             | Self::PathUniverse(first, second)
             | Self::PathProduct(first, second)
+            | Self::Funext(first, second)
             | Self::Transport(first, second)
             | Self::ListCons(first, second)
             | Self::StaticApplication(first, second) => Children::of(&[(first, V), (second, V)]),
@@ -1269,6 +1277,7 @@ impl ContentNode
             | Self::PathType { .. }
             | Self::ElementTransport { .. }
             | Self::PathProduct(..)
+            | Self::Funext(..)
             | Self::PathEquiv { .. }
             | Self::Transport(..)
             | Self::Variable { .. }
@@ -2228,6 +2237,10 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 let first = self.discover(ArenaNode::Value(first));
                 ContentNode::PathProduct(first, self.discover(ArenaNode::Value(second)))
             },
+            | Value::Funext(left, right) => {
+                let left = self.discover(ArenaNode::Value(left));
+                ContentNode::Funext(left, self.discover(ArenaNode::Value(right)))
+            },
             | Value::PathEquiv {
                 path_type,
                 forward,
@@ -2888,6 +2901,10 @@ where
             let first = image(first);
             ContentNode::PathProduct(first, image(second))
         },
+        | ContentNode::Funext(left, right) => {
+            let left = image(left);
+            ContentNode::Funext(left, image(right))
+        },
         | ContentNode::PathEquiv {
             path_type,
             forward,
@@ -3450,6 +3467,7 @@ fn mint_node(
         | ContentNode::Primitive(..)
         | ContentNode::PathRefl(_)
         | ContentNode::PathProduct(..)
+        | ContentNode::Funext(..)
         | ContentNode::PathEquiv { .. }
         | ContentNode::Transport(..)
         | ContentNode::Element { .. }

@@ -1342,53 +1342,13 @@ mod recursive_data
         decision: ConversionDecision<TraceNode>,
     ) -> ConversionDecision<ReplayNode>
     {
-        let node = |node: TraceNode| match node {
+        decision.map(|node: TraceNode| match node {
             | TraceNode::Constant(constant) => match positions.get(&constant) {
                 | Some(&position) => ReplayNode::Constant(position),
                 | None => ReplayNode::Other,
             },
             | TraceNode::Value(_) | TraceNode::Computation(_) => ReplayNode::Other,
-        };
-        match decision {
-            | ConversionDecision::ReduceLeft { redex } => {
-                ConversionDecision::ReduceLeft { redex: node(redex) }
-            },
-            | ConversionDecision::ReduceRight { redex } => {
-                ConversionDecision::ReduceRight { redex: node(redex) }
-            },
-            | ConversionDecision::ConstShortcut { constant } => ConversionDecision::ConstShortcut {
-                constant: node(constant),
-            },
-            | ConversionDecision::Unfold { constant } => ConversionDecision::Unfold {
-                constant: node(constant),
-            },
-            | ConversionDecision::Postpone { constant } => ConversionDecision::Postpone {
-                constant: node(constant),
-            },
-            | ConversionDecision::Freeze { constant, side } => ConversionDecision::Freeze {
-                constant: node(constant),
-                side,
-            },
-            | ConversionDecision::EtaExpand { side, variable } => ConversionDecision::EtaExpand {
-                side,
-                variable: node(variable),
-            },
-            | ConversionDecision::ReturnEta { side } => ConversionDecision::ReturnEta { side },
-            | ConversionDecision::Reassociate { side } => ConversionDecision::Reassociate { side },
-            | ConversionDecision::Force { thunk } => {
-                ConversionDecision::Force { thunk: node(thunk) }
-            },
-            | ConversionDecision::ComparedShared { left, right } => {
-                ConversionDecision::ComparedShared {
-                    left: node(left),
-                    right: node(right),
-                }
-            },
-            | ConversionDecision::Decompose => ConversionDecision::Decompose,
-            | ConversionDecision::NegativeSubgoal { position } => {
-                ConversionDecision::NegativeSubgoal { position }
-            },
-        }
+        })
     }
 
     #[test]

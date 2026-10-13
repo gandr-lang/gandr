@@ -4946,7 +4946,7 @@ mod tests
          CoreTerm::Value(id) => core.value(id).is_some_and(|value| match *value {
           Value::Constructor {ref fields,..} => ret.iter().copied().eq(fields.iter().copied().map(CoreTerm::Value)),
           Value::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(CoreTerm::Value)),
-          Value::Reify(_) | Value::Here(_) | Value::Returned(_) => false,
+          Value::Reify(_) | Value::Here(_) | Value::Funext(..) | Value::Returned(_) => false,
           Value::PathRefl(code) => ret.as_slice() == [CoreTerm::Value(code)],
           Value::PathProduct(first, second) => ret.as_slice() == [CoreTerm::Value(first), CoreTerm::Value(second)],
           Value::PathEquiv { forward, backward, .. } => ret.as_slice() == [CoreTerm::Value(forward), CoreTerm::Value(backward)],
@@ -4985,7 +4985,7 @@ mod tests
                 | Value::Record(ref fields) => {
                     fields.values().copied().map(CoreTerm::Value).collect()
                 },
-                | Value::Here(_) | Value::Returned(_) | Value::Reify(_) => {
+                | Value::Here(_) | Value::Funext(..) | Value::Returned(_) | Value::Reify(_) => {
                     panic!("the pure fixture language has no reified stacks")
                 },
                 | Value::Primitive { .. }
@@ -5169,7 +5169,10 @@ mod tests
                                         }
                                         Value::Record(fields)
                                     },
-                                    | Value::Here(_) | Value::Returned(_) | Value::Reify(_) => {
+                                    | Value::Here(_)
+                                    | Value::Funext(..)
+                                    | Value::Returned(_)
+                                    | Value::Reify(_) => {
                                         panic!("the pure fixture language has no reified stacks")
                                     },
                                     | value @ Value::Primitive { .. } => value,
@@ -5363,7 +5366,7 @@ mod tests
          CoreTerm::Value(id) => core.value(id).is_some_and(|value| match *value {
           Value::Constructor {ref fields,..} => ret.iter().copied().eq(fields.iter().map(|field| canon[&CoreTerm::Value(*field)])),
           Value::Record(ref fields) => ret.iter().copied().eq(fields.values().map(|field| canon[&CoreTerm::Value(*field)])),
-          Value::Reify(_) | Value::Here(_) | Value::Returned(_) => false,
+          Value::Reify(_) | Value::Here(_) | Value::Funext(..) | Value::Returned(_) => false,
           Value::PathRefl(code) => ret.as_slice() == [canon[&CoreTerm::Value(code)]],
           Value::PathProduct(first, second) => ret.as_slice() == [canon[&CoreTerm::Value(first)], canon[&CoreTerm::Value(second)]],
           Value::PathEquiv { forward, backward, .. } => ret.as_slice() == [canon[&CoreTerm::Value(forward)], canon[&CoreTerm::Value(backward)]],
@@ -5603,7 +5606,10 @@ mod tests
                     let made = match node {
                         | CoreTerm::Value(id) => {
                             let graft = match *core.value(id).expect("a reached value resolves") {
-                                | Value::Here(_) | Value::Returned(_) | Value::Reify(_) => {
+                                | Value::Here(_)
+                                | Value::Funext(..)
+                                | Value::Returned(_)
+                                | Value::Reify(_) => {
                                     panic!("the pure fixture language has no reified stacks")
                                 },
                                 | Value::Primitive { .. } => {
@@ -5963,7 +5969,7 @@ mod tests
              Node::Value(id) => core.value(id).is_some_and(|value| match *value {
               Value::Constructor {datatype,ref fields,..} => ret.iter().copied().eq(core::iter::once(Node::ValueType(datatype)).chain(fields.iter().copied().map(Node::Value))),
               Value::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(Node::Value)),
-          Value::Reify(_) | Value::Here(_) | Value::Returned(_) => false,
+          Value::Reify(_) | Value::Here(_) | Value::Funext(..) | Value::Returned(_) => false,
               Value::PathRefl(code) => ret.as_slice() == [Node::Value(code)],
               Value::PathProduct(first, second) => ret.as_slice() == [Node::Value(first), Node::Value(second)],
               Value::PathEquiv { path_type, forward, backward, .. } => ret.as_slice() == [Node::ValueType(path_type), Node::Value(forward), Node::Value(backward)],
@@ -6032,7 +6038,10 @@ mod tests
                         | Value::Record(ref fields) => {
                             fields.values().copied().map(Node::Value).collect()
                         },
-                        | Value::Here(_) | Value::Returned(_) | Value::Reify(_) => {
+                        | Value::Here(_)
+                        | Value::Funext(..)
+                        | Value::Returned(_)
+                        | Value::Reify(_) => {
                             panic!("the pure fixture language has no reified stacks")
                         },
                         | Value::PathRefl(code) => Vec::from([Node::Value(code)]),
@@ -6267,7 +6276,10 @@ mod tests
                                 .collect();
                             self.arena.value_record(fields)
                         },
-                        | Value::Here(_) | Value::Returned(_) | Value::Reify(_) => {
+                        | Value::Here(_)
+                        | Value::Funext(..)
+                        | Value::Returned(_)
+                        | Value::Reify(_) => {
                             panic!("the pure fixture language has no reified stacks")
                         },
                         | Value::Primitive { .. } => panic!("the kernel has no native operation"),
@@ -6627,50 +6639,10 @@ mod tests
     )]
     fn kernel_decision(decision: ConversionDecision<TraceNode>) -> ConversionDecision<ReplayNode>
     {
-        let node = |node: TraceNode| match node {
+        decision.map(|node: TraceNode| match node {
             | TraceNode::Constant(constant) => ReplayNode::Constant(constant),
             | TraceNode::Value(_) | TraceNode::Computation(_) => ReplayNode::Other,
-        };
-        match decision {
-            | ConversionDecision::ReduceLeft { redex } => {
-                ConversionDecision::ReduceLeft { redex: node(redex) }
-            },
-            | ConversionDecision::ReduceRight { redex } => {
-                ConversionDecision::ReduceRight { redex: node(redex) }
-            },
-            | ConversionDecision::ConstShortcut { constant } => ConversionDecision::ConstShortcut {
-                constant: node(constant),
-            },
-            | ConversionDecision::Unfold { constant } => ConversionDecision::Unfold {
-                constant: node(constant),
-            },
-            | ConversionDecision::Postpone { constant } => ConversionDecision::Postpone {
-                constant: node(constant),
-            },
-            | ConversionDecision::Freeze { constant, side } => ConversionDecision::Freeze {
-                constant: node(constant),
-                side,
-            },
-            | ConversionDecision::EtaExpand { side, variable } => ConversionDecision::EtaExpand {
-                side,
-                variable: node(variable),
-            },
-            | ConversionDecision::ReturnEta { side } => ConversionDecision::ReturnEta { side },
-            | ConversionDecision::Reassociate { side } => ConversionDecision::Reassociate { side },
-            | ConversionDecision::Force { thunk } => {
-                ConversionDecision::Force { thunk: node(thunk) }
-            },
-            | ConversionDecision::ComparedShared { left, right } => {
-                ConversionDecision::ComparedShared {
-                    left: node(left),
-                    right: node(right),
-                }
-            },
-            | ConversionDecision::NegativeSubgoal { position } => {
-                ConversionDecision::NegativeSubgoal { position }
-            },
-            | ConversionDecision::Decompose => ConversionDecision::Decompose,
-        }
+        })
     }
 
     /// The certified kernel verdict a machine verdict corresponds to.

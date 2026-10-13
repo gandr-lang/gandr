@@ -40,8 +40,9 @@
 //! A declaration whose body was accepted defines its constant: a later decode
 //! of a code naming it unfolds to that body. A refused or owed declaration
 //! leaves its constant rigid. The report carries the lifts the run's value
-//! bridges recorded beside the verdicts, so the kernel bridge writes each one
-//! where it stands.
+//! bridges recorded beside the verdicts, and the components of each function
+//! extensionality the run decided, so the kernel bridge writes each one where
+//! it stands.
 //!
 //! The definition is elaborated: when the declared type is a value universe
 //! above the body's own level, the definition is the body lifted to the
@@ -102,6 +103,7 @@ use crate::declaration::body;
 use crate::declaration::signature;
 use crate::formation::FormedValueType;
 use crate::formation::form_value_type;
+use crate::funext::Funext;
 use crate::judgement::Checked;
 use crate::judgement::Direction;
 use crate::judgement::Pending;
@@ -208,6 +210,8 @@ pub struct ModuleReport
     ledger: ObligationLedger,
     /// The codes the run checked at a universe above their own, by node.
     lifts: BTreeMap<ValueId, Lift>,
+    /// The function extensionalities the run decided, by node.
+    funexts: BTreeMap<ValueId, Funext>,
     /// The body each accepted declaration defines its constant as, elaborated
     /// to the universe it was declared at, by position.
     definitions: BTreeMap<ConstantIndex, ValueId>,
@@ -263,6 +267,18 @@ impl ModuleReport
     pub const fn lifts(&self) -> &BTreeMap<ValueId, Lift>
     {
         &self.lifts
+    }
+
+    /// The function extensionalities the run decided, by node, with the
+    /// evaluations each component replays.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn funexts(&self) -> &BTreeMap<ValueId, Funext>
+    {
+        &self.funexts
     }
 
     /// The body each accepted declaration defines its constant as: its body,
@@ -511,10 +527,11 @@ pub fn check_declaration_supported(
 /// - ensures: one [`Judged`] per declaration, in the order given, each carrying
 ///   the verdict [`check_declaration`] gives at that point of the run; the
 ///   ledger holds exactly the owed verdicts' entries, in order; the lifts are
-///   every lift the context's value bridges recorded by the run's end, and the
-///   definitions every body the context defines a constant as; each refused
-///   body judged has its trail, as [`trace_value`] gives it at that point of
-///   the run, under its position, and no other declaration has one.
+///   every lift the context's value bridges recorded by the run's end, the
+///   function extensionalities every one it decided, and the definitions every
+///   body the context defines a constant as; each refused body judged has its
+///   trail, as [`trace_value`] gives it at that point of the run, under its
+///   position, and no other declaration has one.
 /// - provides: total marking — a refused declaration does not stop the run.
 /// - fails: never.
 /// - panics: none.
@@ -543,6 +560,7 @@ pub fn check_declaration_supported(
         | Verdict::Data | Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Refused(_) => None,
     }))
     && &ret.lifts == context.lifts()
+    && &ret.funexts == context.funexts()
     && ret.definitions.iter().map(|(&constant, &body)| (constant, body))
         .eq(context.definitions().definitions())
     && ret.pending.iter().all(|(constant, trail)| !trail.is_empty()
@@ -576,6 +594,7 @@ pub fn check_module(
         judged,
         ledger,
         lifts: context.lifts().clone(),
+        funexts: context.funexts().clone(),
         definitions: context.definitions().definitions().collect(),
         data_signatures: context.data_signatures().clone(),
         pending,
