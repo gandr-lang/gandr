@@ -16,8 +16,11 @@
 //!   typed run marks a refusal where it stands and goes on, so the terms past a
 //!   refusal are typed as well.
 //! - **A binder** is spelled at the type of the uses that resolve to it, read
-//!   through the origin table's use-to-binder record; a binder no use resolves
-//!   to takes no entry, and a reader there is answered by the node around it.
+//!   through the origin table's use-to-binder record. A binder no use resolves
+//!   to, and any other label — a record or sum type's field, a lazy record's
+//!   observation, a record's field — is spelled at what it labels, read through
+//!   the origin table's labels: a type's entry at that type under the binders
+//!   it is read under, a record's field at its value's type.
 //! - **A written type** is spelled at its universe: the level the typed run
 //!   formed it at, under the binders it was formed under, and the level it
 //!   reads closed where no formation reached it. A type the lowering inserted
@@ -87,11 +90,11 @@ use gandr_surface_diagnostics::Families;
 use gandr_surface_diagnostics::constant_names;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::DeclarationOutcome;
+use gandr_surface_lowering::Labelled;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::Origin;
 use gandr_surface_lowering::Provenance;
 use gandr_surface_lowering::Role;
-use gandr_surface_lowering::described::ContextIndex;
 use gandr_surface_lowering::described::DescribedRole;
 use gandr_surface_pretty::BinderIndex;
 use gandr_surface_pretty::CoreNode;
@@ -286,10 +289,18 @@ enum Standing
     /// Those around a node a declaration's run typed, named by walking the
     /// declaration's scopes.
     Judged(Within),
-    /// Those of a described member's context, named as the description
-    /// route records them.
-    Described(ContextIndex),
+    /// Those of a context the lowering names: a described member's, as the
+    /// description route records it, or a written label's.
+    Named(NamedContext),
 }
+
+/// A context the lowering names, by its place in [`TypeTable::contexts`].
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct NamedContext(usize);
 
 /// One intuitionistic binder a typed node stands under: the binder around
 /// it and the name the source writes for it.
@@ -780,6 +791,58 @@ impl TypeTable
                 });
             }
         }
+        let mut contexts: Vec<Vec<String>> = described
+            .contexts
+            .iter()
+            .map(|names| {
+                names
+                    .iter()
+                    .map(|name| String::from(name.as_ref()))
+                    .collect()
+            })
+            .collect();
+        // A label answers at what it names: a field's or a binder's type,
+        // read under the binders its entry is, or a record field's term at
+        // its type. A binder some use already answers is not answered twice.
+        for label in origins.labels() {
+            if binders.contains(&label.span) {
+                continue;
+            }
+            let (ty, standing) = match label.labelled {
+                | Labelled::ValueType { ty, ref context } => {
+                    let named = NamedContext(contexts.len());
+                    contexts.push(context.clone());
+                    (TypeNode::Value(ty), Standing::Named(named))
+                },
+                | Labelled::CompType { ty, ref context } => {
+                    let named = NamedContext(contexts.len());
+                    contexts.push(context.clone());
+                    (TypeNode::Computation(ty), Standing::Named(named))
+                },
+                | Labelled::Value(value) => {
+                    let Some((first, constant)) = first_of(TermNode::Value(value))
+                    else {
+                        continue;
+                    };
+                    (
+                        first,
+                        Standing::Judged(Within {
+                            constant,
+                            node: CoreNode::Value(value),
+                        }),
+                    )
+                },
+            };
+            let _first = binders.insert(label.span);
+            entries.push(Entry {
+                span: label.span,
+                subject: Subject::Binder,
+                provenance: Provenance::Written,
+                ty,
+                last: ty,
+                standing,
+            });
+        }
         for (origin, universe) in universes {
             entries.push(Entry {
                 span: origin.span(),
@@ -824,7 +887,7 @@ impl TypeTable
                 provenance: Provenance::Written,
                 ty,
                 last: ty,
-                standing: Standing::Described(entry.context),
+                standing: Standing::Named(NamedContext(usize::from(entry.context))),
             });
         }
         let mut declared = BTreeMap::new();
@@ -865,16 +928,7 @@ impl TypeTable
             names,
             naming: Naming::of(&module, source),
             families: Families::of(&module),
-            contexts: described
-                .contexts
-                .iter()
-                .map(|names| {
-                    names
-                        .iter()
-                        .map(|name| String::from(name.as_ref()))
-                        .collect()
-                })
-                .collect(),
+            contexts,
         })
     }
 
@@ -1202,10 +1256,10 @@ impl TypeTable
     {
         let Within { constant, node } = match standing {
             | Standing::Closed => return Vec::new(),
-            | Standing::Described(context) => {
+            | Standing::Named(context) => {
                 return self
                     .contexts
-                    .get(usize::from(context))
+                    .get(context.0)
                     .map(|names| names.iter().cloned().map(Some).collect())
                     .unwrap_or_default();
             },
@@ -1493,5 +1547,47 @@ mod tests
             agreed(Subject::Binder, SourceText::from("+U (N -> -F N)")),
             "a constructor at its declared type"
         );
+    }
+
+    #[test]
+    fn each_label_answers_at_what_it_names()
+    {
+        let source = SourceText::from(
+            "def point : #{n : Integer, s : String} ;\ndef point = #{n = 3, s = \"x\"} ;\ndef \
+             tag : +{ok : Integer, err : String} ;\ndef dependent : (a : Type, x : a) => a ;\ndef \
+             lazy() -> &{get : -F Integer, put : -F String} { &{.put => return \"s\", .get => \
+             return 1} }\n",
+        );
+        let table = table(source);
+        let rows = [
+            (
+                "n : Integer",
+                "Integer",
+                "a record type's field at its type",
+            ),
+            (
+                "s = \"x\"",
+                "String",
+                "a record's field at its value's type",
+            ),
+            ("err : String", "String", "a sum's summand at its type"),
+            (
+                "x : a",
+                "a",
+                "a telescope's binder under the binders before it",
+            ),
+            (
+                "get : -F",
+                "-F Integer",
+                "a lazy record's observation at its type",
+            ),
+        ];
+        for (needle, ty, reason) in rows {
+            assert_eq!(
+                answer(&table, source, SourceText::from(needle)),
+                agreed(Subject::Binder, SourceText::from(ty)),
+                "{reason}"
+            );
+        }
     }
 }

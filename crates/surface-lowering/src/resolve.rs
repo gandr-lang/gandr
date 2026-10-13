@@ -1297,6 +1297,51 @@ impl<'source> Scope<'source>
             | None => Some(true),
         })
     }
+
+    /// The names of the frames of the chain rooted at `from` that bind in a
+    /// telescope, outermost first: the context a type read under `from` is
+    /// spelled in.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::telescope_binders`].
+    /// - ensures: one name per frame [`Self::telescope_binders`] answers true
+    ///   for, in the reverse of its order, so the last names index zero.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a mentioned typed frame and an untyped one are named,
+    ///   an unmentioned typed one is not.
+    /// - witness: `resolve::tests::a_chain_reports_which_frames_bind_in_a_telescope`
+    #[spec(ensures: |ret| ret.len() == self.telescope_binders(from).filter(|&binds| binds).count())]
+    #[inline]
+    #[must_use]
+    pub fn telescope_names(
+        &self,
+        from: Frame,
+    ) -> Vec<SurfaceName<'source>>
+    {
+        let first = match from {
+            | Frame::Inner(id) => Some(id),
+            | Frame::Outermost => None,
+        };
+        let mut names: Vec<SurfaceName<'source>> =
+            core::iter::successors(first, |id| match self.frames.get(id.0)?.parent {
+                | Frame::Inner(parent) => Some(parent),
+                | Frame::Outermost => None,
+            })
+            .filter_map(|id| {
+                let entry = self.frames.get(id.0)?;
+                let binds = match entry.declared {
+                    | Maybe::Present(_) => entry.mentioned.0,
+                    | Maybe::Absent(_) => true,
+                };
+                (entry.zone != Zone::Linear && binds).then_some(entry.name)
+            })
+            .collect();
+        names.reverse();
+        names
+    }
 }
 
 #[cfg(test)]
@@ -1751,6 +1796,11 @@ mod tests
             scope.telescope_binders(Frame::Inner(y)).collect::<Vec<_>>(),
             Vec::from([true, false, true]),
             "innermost first: the untyped frame, the unmentioned typed one, the mentioned one"
+        );
+        assert_eq!(
+            scope.telescope_names(Frame::Inner(y)),
+            Vec::from([SurfaceName::from("a"), SurfaceName::from("y")]),
+            "outermost first, the unmentioned typed frame unnamed"
         );
         assert_eq!(
             scope.telescope_binders(Frame::Outermost).count(),

@@ -129,6 +129,7 @@ use quenchant_shape::shape::Maybe;
 
 use super::Block;
 use super::Frame;
+use super::LabelRead;
 use super::Lowered;
 use super::Lowerer;
 use super::Parameter;
@@ -1037,11 +1038,13 @@ impl<'source> Lowerer<'_, 'source>
         }
     }
 
-    /// The fields of labelled entries, by label, each read as `reading`.
+    /// The fields of labelled entries, by label, each read as `reading` and
+    /// its label kept against it.
     ///
     /// # Specification
     /// - requires: every entry is labelled by name.
-    /// - ensures: one field per entry.
+    /// - ensures: one field per entry, each label kept by
+    ///   [`Self::label_entry`].
     /// - fails: never.
     /// - panics: none.
     ///
@@ -1061,11 +1064,51 @@ impl<'source> Lowerer<'_, 'source>
             if let Key::Label(name, _) = entry.key {
                 let at = entry.held.at().node;
                 self.read(at, reading);
+                self.label_entry(entry, reading);
                 let _first = fields.insert(FieldLabel::from(String::from(name.as_ref())), at);
             }
         }
 
         fields
+    }
+
+    /// Keep the label of `entry`, whose held node is read as `reading`, so
+    /// the label answers what its entry lowers to.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a label written apart from what it holds is kept, read as a
+    ///   type under its frame where `reading` reads a type and as a term
+    ///   otherwise; a punned field, whose label is its term, and an unlabelled
+    ///   entry keep nothing.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Lowerer::record_labels`].
+    /// - witness: `lower::arity::tests::each_label_names_what_it_labels`
+    #[spec(captures: before = self.labels.len(), ensures: self.labels.len() <= before.saturating_add(1))]
+    pub(super) fn label_entry(
+        &mut self,
+        entry: &Entry<'source>,
+        reading: Reading,
+    )
+    {
+        let Key::Label(_, written) = entry.key
+        else {
+            return;
+        };
+        let held = entry.held.at();
+        if held.node == written.node {
+            return;
+        }
+        let read = match reading {
+            | Reading::ValueType(frame) => LabelRead::ValueType(frame),
+            | Reading::CompType(frame) | Reading::Result(frame) => LabelRead::CompType(frame),
+            | Reading::Value(_) | Reading::Computation(_) | Reading::Head(_) => LabelRead::Term,
+            | Reading::Unread | Reading::Function => return,
+        };
+        self.labelled(written.span, held.node, read);
     }
 
     /// Classify a telescope type, `#{A, …}` or `#{l : A, …}`.
@@ -1154,6 +1197,7 @@ impl<'source> Lowerer<'_, 'source>
         let summands = self.stored(&entries);
         for entry in &entries {
             self.read(entry.held.at().node, Reading::ValueType(frame));
+            self.label_entry(entry, Reading::ValueType(frame));
         }
         self.plan(site, Plan::Sum(summands));
 
@@ -1205,6 +1249,7 @@ impl<'source> Lowerer<'_, 'source>
         let components = self.stored(&entries);
         for entry in &entries {
             self.read(entry.held.at().node, Reading::CompType(frame));
+            self.label_entry(entry, Reading::CompType(frame));
         }
         self.plan(site, Plan::With(components));
 
@@ -1759,6 +1804,7 @@ impl<'source> Lowerer<'_, 'source>
         for entry in &entries {
             let declared = entry.held.at();
             self.read(declared.node, Reading::ValueType(inner));
+            self.label_entry(entry, Reading::ValueType(inner));
             let (binder, bound, written) = match entry.key {
                 | Key::Label(bound, key) => {
                     if let Some(&earlier) = seen.get(&bound) {
@@ -1868,6 +1914,7 @@ impl<'source> Lowerer<'_, 'source>
         };
         let declared = held.at();
         self.read(declared.node, Reading::ValueType(frame));
+        self.labelled(key.span, declared.node, LabelRead::ValueType(frame));
         self.note_binder(key, bound)?;
         let extended =
             self.scope

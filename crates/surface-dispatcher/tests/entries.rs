@@ -98,7 +98,7 @@ mod entries
         ("Expression fn", Standing::Owed(0)),
         ("Expression force", Standing::Owed(0)),
         ("Expression handle", Standing::Owed(0)),
-        ("Expression identifier", Standing::Owed(100)),
+        ("Expression identifier", Standing::Owed(96)),
         ("Expression loop", Standing::Owed(0)),
         ("Expression number", Standing::Owed(1)),
         ("Expression offer", Standing::Owed(0)),
@@ -154,7 +154,7 @@ mod entries
         ("Type mu", Standing::Owed(12)),
         ("Type number", Standing::Owed(0)),
         ("Type type_identifier", Standing::Owed(44)),
-        ("Type type_variable", Standing::Owed(118)),
+        ("Type type_variable", Standing::Owed(82)),
     ];
 
     /// The names of the primitive formers a call can head: the call is one

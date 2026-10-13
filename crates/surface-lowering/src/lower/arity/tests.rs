@@ -33,6 +33,8 @@ use crate::module::DeclarationOutcome;
 use crate::module::LoweredDeclaration;
 use crate::module::LoweredModule;
 use crate::namespace::Recognition;
+use crate::origin::Label;
+use crate::origin::Labelled;
 use crate::resolve::HeadArity;
 use crate::resolve::OperandCount;
 use crate::resolve::SurfaceName;
@@ -924,5 +926,60 @@ fn a_dependent_arrow_is_the_telescope_the_alias_abbreviates()
         declared(&arena, &module, "ignored"),
         declared(&arena, &module, "tail"),
         "the type the function tail writing the same signature declares"
+    );
+}
+
+#[test]
+fn each_label_names_what_it_labels()
+{
+    let mut arena = CoreArena::new();
+    let source = "def point : #{n : Integer} ;\ndef pair = #{m = 3} ;\ndef pick : +U ((y : \
+                  Integer) -> -F Integer) ;\ndef dependent : (a : Type, x : a) => a ;";
+    let module = lowered(source, &mut arena);
+    let written = |label: &Label| {
+        source
+            .get(usize::from(label.span.start()) .. usize::from(label.span.end()))
+            .unwrap_or_default()
+    };
+    let types: Vec<(&str, Option<ValueType>, Vec<String>)> = module
+        .origins()
+        .labels()
+        .iter()
+        .filter_map(|label| match label.labelled {
+            | Labelled::ValueType { ty, ref context } => Some((
+                written(label),
+                arena.value_type(ty).cloned(),
+                context.clone(),
+            )),
+            | Labelled::CompType { .. } | Labelled::Value(_) => None,
+        })
+        .collect();
+    let terms: Vec<(&str, Option<Value>)> = module
+        .origins()
+        .labels()
+        .iter()
+        .filter_map(|label| match label.labelled {
+            | Labelled::Value(value) => Some((written(label), arena.value(value).cloned())),
+            | Labelled::ValueType { .. } | Labelled::CompType { .. } => None,
+        })
+        .collect();
+    let integer = Some(ValueType::Base(gandr_kernel_term::BaseType::Integer));
+    assert!(
+        types.contains(&("n", integer.clone(), Vec::new())),
+        "a record type's field at its closed type: {types:?}"
+    );
+    assert!(
+        matches!(*terms.as_slice(), [("m", Some(_))]),
+        "a record's field at its value: {terms:?}"
+    );
+    assert!(
+        types.contains(&("y", integer, Vec::new())),
+        "a dependent arrow's binder at its domain: {types:?}"
+    );
+    assert!(
+        types
+            .iter()
+            .any(|&(label, _, ref context)| label == "x" && *context == ["a"]),
+        "a telescope's binder under the binder before it: {types:?}"
     );
 }
