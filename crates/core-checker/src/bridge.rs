@@ -303,7 +303,6 @@
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
-use core::fmt;
 
 use anodized::spec;
 use gandr_core_nbe::TraceNode;
@@ -518,59 +517,6 @@ pub enum Refusal
         /// The endpoint.
         at: ValueId,
     },
-    /// A former the judgement has a rule for and the kernel's wire format has
-    /// no node for: the declaration is refused at the boundary by the gap's
-    /// name and offered nothing, so a declaration naming it is withheld.
-    Unwired
-    {
-        /// The node carrying the former.
-        at: CoreNode,
-        /// The node the wire format lacks.
-        gap: WireGap,
-    },
-}
-
-/// A former the judgement checks that the kernel's wire format has no node
-/// for, named so a declaration holding one is refused at the boundary rather
-/// than faulting it.
-///
-/// # Specification
-/// - requires: nothing to construct this data.
-/// - ensures: one gap per family of formers the kernel lacks; persisting one
-///   retires its variant without renumbering another.
-/// - executable: none — the name holds no node.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a lazy record type, its pairing and its projection are
-///   each refused by this name at the node that holds them.
-/// - witness: `bridge::tests::effectful_declarations_are_refused_by_name_at_the_pure_boundary`
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum WireGap
-{
-    /// The lazy record: the lazy product type `C & D`, its pairing and its
-    /// projections. The kernel's node for it is
-    /// [#203](https://github.com/gandr-lang/gandr/issues/203); a record of
-    /// thunks would cross with no new node and is rejected, since it loses
-    /// the lazy product's η and makes the codata matchable.
-    LazyRecord,
-}
-
-impl fmt::Display for WireGap
-{
-    /// Writes what the wire format lacks.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn fmt(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result
-    {
-        f.write_str(match *self {
-            | Self::LazyRecord => "the lazy record has no wire node",
-        })
-    }
 }
 
 impl Refusal
@@ -582,12 +528,12 @@ impl Refusal
     /// - ensures: the class is a function of the variant alone. A withheld
     ///   constant is malformed source, since the declaration it names was
     ///   turned away for a reason its own entry reports; a former outside the
-    ///   fragment, a compound endpoint, which the kernel has no node for, and a
-    ///   former the wire format has no node for are unrepresentable; a linear
-    ///   variable, a dangling id, a cyclic node, a declined certificate and a
-    ///   machine invariant are engine faults, because a judged term from the
-    ///   judged arena holds none of them and an unfolding holds by definition;
-    ///   a term hole and the unknown type are user absences.
+    ///   fragment and a compound endpoint, which the kernel has no node for,
+    ///   are unrepresentable; a linear variable, a dangling id, a cyclic node,
+    ///   a declined certificate and a machine invariant are engine faults,
+    ///   because a judged term from the judged arena holds none of them and an
+    ///   unfolding holds by definition; a term hole and the unknown type are
+    ///   user absences.
     /// - provides: the fact a report groups by, in the same four classes the
     ///   judgement's refusals answer to.
     /// - fails: never.
@@ -602,9 +548,7 @@ impl Refusal
     /// - witness: `bridge::tests::a_hole_is_refused_where_it_stands_and_its_filling_is_admitted`
     #[spec(ensures: |ret| match *self {
         | Self::Withheld { .. } | Self::WithheldData { .. } => matches!(ret, FailureClass::MalformedSource),
-        | Self::OutOfFragment { .. } | Self::CompoundEndpoint { .. } | Self::Unwired { .. } => {
-            matches!(ret, FailureClass::Unrepresentable)
-        },
+        | Self::OutOfFragment { .. } | Self::CompoundEndpoint { .. } => matches!(ret, FailureClass::Unrepresentable),
         | Self::LinearVariable { .. } | Self::DanglingNode { .. } | Self::Cyclic { .. }
             | Self::CertificateDeclined { .. } | Self::MachineInvariant => matches!(ret, FailureClass::EngineFault),
         | Self::Hole { .. } | Self::Unknown { .. } => matches!(ret, FailureClass::UserAbsence),
@@ -615,7 +559,7 @@ impl Refusal
     {
         match *self {
             | Self::Withheld { .. } | Self::WithheldData { .. } => FailureClass::MalformedSource,
-            | Self::OutOfFragment { .. } | Self::CompoundEndpoint { .. } | Self::Unwired { .. } => {
+            | Self::OutOfFragment { .. } | Self::CompoundEndpoint { .. } => {
                 FailureClass::Unrepresentable
             },
             | Self::LinearVariable { .. }
@@ -2087,6 +2031,30 @@ enum Frame
         /// The bound computation's image.
         bound: gandr_kernel_term::ComputationId,
     },
+    /// A lazy pairing, awaiting its first component.
+    WithFirst
+    {
+        /// The pairing.
+        at: ComputationId,
+        /// The second component, erased next.
+        second: ComputationId,
+    },
+    /// A lazy pairing, awaiting its second component.
+    WithSecond
+    {
+        /// The pairing.
+        at: ComputationId,
+        /// The first component's image.
+        first: gandr_kernel_term::ComputationId,
+    },
+    /// A projection of a lazy pairing, awaiting the projected computation.
+    Project
+    {
+        /// The projection.
+        at: ComputationId,
+        /// The side it observes.
+        side: gandr_kernel_term::Side,
+    },
     /// A thunk type, awaiting its computation type.
     ThunkType
     {
@@ -2133,6 +2101,22 @@ enum Frame
         at: CompTypeId,
         /// The domain's image.
         domain: gandr_kernel_term::ValueTypeId,
+    },
+    /// A lazy product, awaiting its first computation type.
+    WithTypeFirst
+    {
+        /// The lazy product.
+        at: CompTypeId,
+        /// The second computation type, erased next.
+        second: CompTypeId,
+    },
+    /// A lazy product, awaiting its second computation type.
+    WithTypeSecond
+    {
+        /// The lazy product.
+        at: CompTypeId,
+        /// The first computation type's image.
+        first: gandr_kernel_term::CompTypeId,
     },
     /// A dependent arrow, awaiting its domain's value type.
     PiDomain
@@ -3305,11 +3289,12 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | Computation::Resume(..) => return Err(unadmitted(UnadmittedFormer::Resume)),
             | Computation::Reset(_) => return Err(unadmitted(UnadmittedFormer::Reset)),
             | Computation::Shift(_) => return Err(unadmitted(UnadmittedFormer::Shift)),
-            | Computation::With(..) | Computation::Project(..) => {
-                return Err(Refusal::Unwired {
-                    at: node,
-                    gap: WireGap::LazyRecord,
-                });
+            | Computation::With(first, second) => (
+                Frame::WithFirst { at, second },
+                TermNode::Computation(first),
+            ),
+            | Computation::Project(side, pair) => {
+                (Frame::Project { at, side }, TermNode::Computation(pair))
             },
             | Computation::ListFold { element, .. } => {
                 self.memo().computations.insert(at, Image::Open);
@@ -3509,20 +3494,21 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: as [`Self::descend`]: a returner, an arrow and a dependent
-    ///   arrow open their frames; a decode opens its frame and decodes its
-    ///   code.
+    /// - ensures: as [`Self::descend`]: a returner, an arrow, a dependent arrow
+    ///   and a lazy product open their frames; a decode opens its frame and
+    ///   decodes its code.
     /// - fails: [`Refusal::Cyclic`] for an open computation type; whatever the
     ///   view or the decode refuses, converted.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — returners, arrows and decodes expose their exact
-    ///   kernel family; a computation-type back-edge is refused. Wrong family,
-    ///   missing memo publication and lost cycle detection change these
-    ///   results.
+    /// - hypothesis: L3 — returners, arrows, lazy products and decodes expose
+    ///   their exact kernel family; a computation-type back-edge is refused.
+    ///   Wrong family, missing memo publication and lost cycle detection change
+    ///   these results.
     /// - witness: `bridge::tests::returner_type_lowers`
     /// - witness: `bridge::tests::every_checked_function_definition_is_readmitted`
+    /// - witness: `bridge::tests::a_lazy_product_crosses_as_its_kernel_nodes`
     /// - witness: `bridge::tests::every_recursive_node_family_refuses_a_back_edge`
     #[spec(ensures: |ret| match ret {
         | Ok(Step::Ascend(AnyNode::CompType(_)) | Step::Descend(_)) => self.reached().comp_types.contains_key(&at),
@@ -3546,11 +3532,10 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | None => {},
         }
         let (frame, child) = match comp_type_view(self.arena, at)? {
-            | CompTypeView::With(..) => {
-                return Err(Refusal::Unwired {
-                    at: CoreNode::Type(TypeNode::Computation(at)),
-                    gap: WireGap::LazyRecord,
-                });
+            | CompTypeView::With(first, second) => {
+                self.memo().comp_types.insert(at, Image::Open);
+                self.frames.push(Frame::WithTypeFirst { at, second });
+                return Ok(Step::Descend(CoreNode::Type(TypeNode::Computation(first))));
             },
             | CompTypeView::Returner { result, effects } => {
                 if effects.purity() != gandr_core_term::effect::Purity::Pure {
@@ -3799,12 +3784,13 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - requires: `frame` was pushed by this machine.
     /// - ensures: a frame awaiting its last child mints its node over the
     ///   children's images, records the image and ascends it; an application, a
-    ///   bind, an arrow, a dependent arrow, a pair, an eager product, a static
-    ///   Pi or a rigid static application awaiting its first child descends to
-    ///   its second; a decode records the type its code denotes; a lift a
-    ///   crossing added wraps the decode beneath it; a static application
-    ///   erased as its reduct records the reduct's image as its own. A descent
-    ///   always leaves the frame awaiting it on the stack.
+    ///   bind, a lazy pairing, an arrow, a dependent arrow, a lazy product, a
+    ///   pair, an eager product, a static Pi or a rigid static application
+    ///   awaiting its first child descends to its second; a decode records the
+    ///   type its code denotes; a lift a crossing added wraps the decode
+    ///   beneath it; a static application erased as its reduct records the
+    ///   reduct's image as its own. A descent always leaves the frame awaiting
+    ///   it on the stack.
     /// - fails: [`Refusal::MachineInvariant`] when `image` is not of the family
     ///   the frame awaits.
     /// - panics: none.
@@ -3816,6 +3802,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - witness: `bridge::tests::every_former_outside_the_fragment_is_refused_by_name`
     /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
     /// - witness: `bridge::tests::a_rigid_static_instance_crosses_as_a_kernel_application`
+    /// - witness: `bridge::tests::a_lazy_product_crosses_as_its_kernel_nodes`
     #[spec(ensures: |ret| !matches!(ret, Ok(Step::Descend(_))) || !self.frames.is_empty())]
     fn resume(
         &mut self,
@@ -4052,6 +4039,16 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | (Frame::BindBody { at, bound }, AnyNode::Computation(body)) => {
                 Ok(self.erased_computation(at, target.computation_bind(bound, body)))
             },
+            | (Frame::WithFirst { at, second }, AnyNode::Computation(first)) => {
+                self.frames.push(Frame::WithSecond { at, first });
+                Ok(Step::Descend(CoreNode::Term(TermNode::Computation(second))))
+            },
+            | (Frame::WithSecond { at, first }, AnyNode::Computation(second)) => {
+                Ok(self.erased_computation(at, target.computation_with(first, second)))
+            },
+            | (Frame::Project { at, side }, AnyNode::Computation(pair)) => {
+                Ok(self.erased_computation(at, target.computation_project(side, pair)))
+            },
             | (Frame::ThunkType { at }, AnyNode::CompType(body)) => {
                 Ok(self.erased_value_type(at, target.value_type_thunk(body)))
             },
@@ -4089,6 +4086,13 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             },
             | (Frame::ArrowCodomain { at, domain }, AnyNode::CompType(codomain)) => {
                 Ok(self.erased_comp_type(at, target.comp_type_arrow(domain, codomain)))
+            },
+            | (Frame::WithTypeFirst { at, second }, AnyNode::CompType(first)) => {
+                self.frames.push(Frame::WithTypeSecond { at, first });
+                Ok(Step::Descend(CoreNode::Type(TypeNode::Computation(second))))
+            },
+            | (Frame::WithTypeSecond { at, first }, AnyNode::CompType(second)) => {
+                Ok(self.erased_comp_type(at, target.comp_type_with(first, second)))
             },
             | (Frame::PiDomain { at, codomain }, AnyNode::ValueType(domain)) => {
                 self.frames.push(Frame::PiCodomain { at, domain });
@@ -4135,6 +4139,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 | Frame::Fixpoint { .. }
                 | Frame::BindBound { .. }
                 | Frame::BindBody { .. }
+                | Frame::WithFirst { .. }
+                | Frame::WithSecond { .. }
+                | Frame::Project { .. }
                 | Frame::UnmarkedComputation { .. }
                 | Frame::SplitReduct { .. },
                 AnyNode::Value(_) | AnyNode::ValueType(_) | AnyNode::CompType(_),
@@ -4143,6 +4150,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 Frame::ThunkType { .. }
                 | Frame::QuoteComputation { .. }
                 | Frame::ArrowCodomain { .. }
+                | Frame::WithTypeFirst { .. }
+                | Frame::WithTypeSecond { .. }
                 | Frame::PiCodomain { .. }
                 | Frame::Decoded {
                     at: TypeNode::Computation(_),
@@ -4492,7 +4501,6 @@ mod tests
     use super::Refusal;
     use super::Replayed;
     use super::Source;
-    use super::WireGap;
     use super::fault;
     use super::readmit;
     use super::readmit_with;
@@ -5549,14 +5557,6 @@ mod tests
         let reset_body = arena.value_thunk(reset);
         let stack_type = arena.value_type_stack(pure, pure);
         let stack = arena.value_reify([].into());
-        let pair_type = arena.comp_type_with(pure, pure);
-        let suspended_pair = arena.value_type_thunk(pair_type);
-        let pair = arena.computation_with(returned, returned);
-        let pair_body = arena.value_thunk(pair);
-        let pair_constant = arena.value_constant(ConstantIndex::from(6_usize));
-        let forced = arena.computation_force(pair_constant);
-        let projected = arena.computation_project(Side::Right, forced);
-        let projected_body = arena.value_thunk(projected);
         let stack_constant = arena.value_constant(ConstantIndex::from(5_usize));
         let resumed = arena.computation_resume(stack_constant, returned);
         let resumed_body = arena.value_thunk(resumed);
@@ -5585,20 +5585,10 @@ mod tests
             declaration(At(5), Maybe::Present(stack_type), Maybe::Present(stack)),
             declaration(
                 At(6),
-                Maybe::Present(suspended_pair),
-                Maybe::Present(pair_body),
-            ),
-            declaration(
-                At(7),
-                Maybe::Present(pure_type),
-                Maybe::Present(projected_body),
-            ),
-            declaration(
-                At(8),
                 Maybe::Present(pure_type),
                 Maybe::Present(resumed_body),
             ),
-            declaration(At(9), Maybe::Present(quote_type), Maybe::Present(quoted)),
+            declaration(At(7), Maybe::Present(quote_type), Maybe::Present(quoted)),
         ]);
         for (position, entry) in readmission.readmitted().iter().take(2).enumerate() {
             assert_eq!(entry.constant(), ConstantIndex::from(position));
@@ -5631,12 +5621,12 @@ mod tests
                 UnadmittedFormer::Stack,
             ),
             (
-                8,
+                6,
                 CoreNode::Term(TermNode::Computation(resumed)),
                 UnadmittedFormer::Resume,
             ),
             (
-                9,
+                7,
                 CoreNode::Type(TypeNode::Computation(effectful)),
                 UnadmittedFormer::EffectRow,
             ),
@@ -5648,25 +5638,56 @@ mod tests
                 &Outcome::Refused(Refusal::OutOfFragment { at, former })
             );
         }
-        for (position, at) in [
-            (6_usize, CoreNode::Type(TypeNode::Computation(pair_type))),
-            (7, CoreNode::Term(TermNode::Computation(projected))),
-        ] {
-            let entry = &readmission.readmitted()[position];
-            assert_eq!(entry.constant(), ConstantIndex::from(position));
-            assert_eq!(
-                entry.outcome(),
-                &Outcome::Refused(Refusal::Unwired {
-                    at,
-                    gap: WireGap::LazyRecord,
-                }),
-                "the lazy record is refused by the node the wire format lacks"
-            );
-        }
         assert!(readmission.audit().axioms().is_empty());
         let artifact = readmission.export(BTreeMap::new());
         let decoded = decode(artifact.as_image()).expect("the remaining pure definition exports");
         assert_eq!(decoded.declarations().len(), 1);
+    }
+
+    #[test]
+    fn a_lazy_product_crosses_as_its_kernel_nodes()
+    {
+        let mut arena = CoreArena::new();
+        let unit_type = arena.value_type_unit();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let returns_unit = arena.comp_type_returner(unit_type);
+        let returns_integer = arena.comp_type_returner(integer);
+        let pair_type = arena.comp_type_with(returns_unit, returns_integer);
+        let suspended_pair = arena.value_type_thunk(pair_type);
+        let unit = arena.value_unit();
+        let zero = arena.value_literal(integer_literal());
+        let first = arena.computation_return(unit);
+        let second = arena.computation_return(zero);
+        let pair = arena.computation_with(first, second);
+        let pair_body = arena.value_thunk(pair);
+        let pair_constant = arena.value_constant(ConstantIndex::from(0_usize));
+        let forced = arena.computation_force(pair_constant);
+        let projected = arena.computation_project(Side::Right, forced);
+        let projected_body = arena.value_thunk(projected);
+        let projected_type = arena.value_type_thunk(returns_integer);
+        let (_, readmission) = judge_and_readmit(&mut arena, &[
+            declaration(
+                At(0),
+                Maybe::Present(suspended_pair),
+                Maybe::Present(pair_body),
+            ),
+            declaration(
+                At(1),
+                Maybe::Present(projected_type),
+                Maybe::Present(projected_body),
+            ),
+        ]);
+        for entry in readmission.readmitted() {
+            assert!(
+                matches!(*entry.outcome(), Outcome::Defined { .. }),
+                "the kernel re-derives the pairing at its unequal sides and the right \
+                 projection at the right side's type: {:?}",
+                entry.outcome()
+            );
+        }
+        let artifact = readmission.export(BTreeMap::new());
+        let decoded = decode(artifact.as_image()).expect("the lazy product exports");
+        assert_eq!(decoded.declarations().len(), 2);
     }
 
     #[test]

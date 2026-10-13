@@ -864,11 +864,10 @@ impl Server
     ///   last, its messages already written.
     /// - ensures: each line naming a document `workspace` holds at its held
     ///   version runs the admission that document's session holds, as [`admit`]
-    ///   states, and carries its wall; an admission that replaces the published
-    ///   diagnostics adds one diagnostic notification at the line's URI and
-    ///   version carrying the replacement, at this connection's verbosity, also
-    ///   sent to every other connection holding the document. Every other line
-    ///   is left as it was.
+    ///   states, and carries its wall; a kernel disagreement adds one
+    ///   diagnostic notification at the line's URI and version whose one
+    ///   diagnostic names it, also sent to every other connection holding the
+    ///   document. Every other line is left as it was.
     /// - provides: the second half of every synchronisation; [`serve`] writes
     ///   what it returns, then logs the lines.
     /// - fails: never; a disagreement is a diagnostic.
@@ -892,7 +891,7 @@ impl Server
         let mut lines = log.iter();
         ret.iter().all(|message| matches!(*message,
             Outgoing::Notification { method: "textDocument/publishDiagnostics", ref params, .. }
-                if lines.any(|logged|
+                if params.diagnostics.len() == 1 && lines.any(|logged|
                     logged.uri == params.uri && Some(logged.version) == params.version)))
     })]
     #[inline]
@@ -912,19 +911,13 @@ impl Server
             else {
                 continue;
             };
-            let admitted = admit(
-                &logged.uri,
-                &mut document.session,
-                SourceText::from(document.text.as_str()),
-                self.verbosity,
-                logged.timing,
-            );
+            let admitted = admit(&mut document.session, logged.timing);
             logged.timing = admitted.timing;
-            if let Maybe::Present(diagnostics) = admitted.replacement {
+            if let Maybe::Present(fault) = admitted.fault {
                 let correction = publish(PublishParams {
                     uri: logged.uri.clone(),
                     version: Some(logged.version),
-                    diagnostics,
+                    diagnostics: vec![fault],
                 });
                 workspace.published_by(self.peer, &correction);
                 corrections.push(correction);

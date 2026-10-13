@@ -444,7 +444,7 @@ fn carried(
         | Produced::Judged(Verdict::Owed(_)) => rows.mark(Row::AddressableObligation),
         | Produced::Judged(Verdict::Refused(refusal)) => checking_row(refusal, lowered, &mut rows),
         | Produced::Unlowered(refusal) => lowering_row(refusal, &mut rows),
-        | Produced::Judged(Verdict::Data) | Produced::Guarded(_) | Produced::Unwired { .. } => {},
+        | Produced::Judged(Verdict::Data) | Produced::Guarded(_) => {},
     }
     rows
 }
