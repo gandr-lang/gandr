@@ -10,3 +10,5 @@ mise.local.lock
 !/.cargo/
 # Compiler crash dumps carry absolute paths of the machine that built.
 rustc-ice-*.txt
+/coverage.lcov
+/coverage-plain.lcov
