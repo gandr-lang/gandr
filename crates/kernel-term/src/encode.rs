@@ -733,6 +733,7 @@ ensures: |ret| ret.0.as_image().as_ref().first().copied()
             Some(&CompType::Arrow { .. }) => tags::NODE_CT_ARROW,
             Some(&CompType::Pi { .. }) => tags::NODE_CT_PI,
             Some(&CompType::Element { .. }) => tags::NODE_CT_ELEMENT,
+            Some(&CompType::With(..)) => tags::NODE_CT_WITH,
         },
         AnyNode::Value(id) => match arena.value(id) {
             Some(&Value::Constructor { .. }) => tags::NODE_V_CONSTRUCTOR,
@@ -772,6 +773,8 @@ ensures: |ret| ret.0.as_image().as_ref().first().copied()
             Some(&Computation::Force(_)) => tags::NODE_C_FORCE,
             Some(&Computation::Case { .. }) => tags::NODE_C_CASE,
             Some(&Computation::ListFold { .. }) => tags::NODE_C_LIST_FOLD,
+            Some(&Computation::With(..)) => tags::NODE_C_WITH,
+            Some(&Computation::Project(..)) => tags::NODE_C_PROJECT,
         },
     })))]
 fn encode_entry(
@@ -860,6 +863,7 @@ fn encode_entry(
                 out.put_tag(tags::NODE_CT_ELEMENT);
                 encode_level(&mut out, target);
             },
+            | Some(&CompType::With(..)) => out.put_tag(tags::NODE_CT_WITH),
         },
         | AnyNode::Value(id) => match arena.value(id) {
             | None => {
@@ -972,6 +976,11 @@ fn encode_entry(
                 out.put_uvarint(WireU64::from(WireUsize::from(branches.len())));
             },
             | Some(&Computation::ListFold { .. }) => out.put_tag(tags::NODE_C_LIST_FOLD),
+            | Some(&Computation::With(..)) => out.put_tag(tags::NODE_C_WITH),
+            | Some(&Computation::Project(side, _)) => {
+                out.put_tag(tags::NODE_C_PROJECT);
+                out.put_tag(side_tag(side));
+            },
         },
     }
     for &child in child_globals {
@@ -1307,6 +1316,34 @@ fn evidence_tag(evidence: crate::FixpointEvidence) -> WireTag
     match evidence {
         | crate::FixpointEvidence::Partial => tags::FIXPOINT_PARTIAL,
         | crate::FixpointEvidence::StructuralDescent => tags::FIXPOINT_STRUCTURAL_DESCENT,
+    }
+}
+
+/// The wire tag of a lazy projection's side.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: maps each side to its frozen tag.
+/// - provides: the total side-to-tag map, so a side's byte is decided in one
+///   place rather than at each write site.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes the literal entry bytes of a projection on each
+///   side; a swapped or dropped side byte changes the golden.
+/// - witness: `encode::tests::entry_goldens_pin_every_former_and_child_position`
+#[spec(
+    ensures: |ret| ret == match side {
+        crate::Side::Left => tags::SIDE_LEFT,
+        crate::Side::Right => tags::SIDE_RIGHT,
+    },
+)]
+#[inline]
+fn side_tag(side: crate::Side) -> WireTag
+{
+    match side {
+        | crate::Side::Left => tags::SIDE_LEFT,
+        | crate::Side::Right => tags::SIDE_RIGHT,
     }
 }
 
@@ -1704,6 +1741,26 @@ mod tests
                 AnyNode::Value(arena.value_static_application(v0, v1)),
                 &[first, second],
                 &[0x1f, 3, 0x81, 1],
+            ),
+            (
+                AnyNode::CompType(arena.comp_type_with(k0, k1)),
+                &[first, second],
+                &[0x65, 3, 0x81, 1],
+            ),
+            (
+                AnyNode::Computation(arena.computation_with(c0, c1)),
+                &[first, second],
+                &[0x66, 3, 0x81, 1],
+            ),
+            (
+                AnyNode::Computation(arena.computation_project(crate::Side::Left, c0)),
+                &[second],
+                &[0x67, 0, 0x81, 1],
+            ),
+            (
+                AnyNode::Computation(arena.computation_project(crate::Side::Right, c0)),
+                &[second],
+                &[0x67, 1, 0x81, 1],
             ),
         ];
         for &(node, children, expected) in cases {

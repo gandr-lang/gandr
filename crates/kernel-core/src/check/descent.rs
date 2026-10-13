@@ -469,6 +469,13 @@ fn walk(
                 | Some(&(Computation::Lambda(body) | Computation::Fixpoint { body, .. })) => {
                     pending.push((AnyNode::Computation(body), deeper, results));
                 },
+                | Some(&Computation::With(left, right)) => {
+                    pending.push((AnyNode::Computation(left), depth, results));
+                    pending.push((AnyNode::Computation(right), depth, results));
+                },
+                | Some(&Computation::Project(_, pair)) => {
+                    pending.push((AnyNode::Computation(pair), depth, results));
+                },
                 | Some(
                     &(Computation::RecordProjection(value, _)
                     | Computation::TupleProjection(value, _)
@@ -599,6 +606,10 @@ fn walk(
                 | Some(&CompType::Element { code, .. }) => {
                     pending.push((AnyNode::Value(code), depth, results));
                 },
+                | Some(&CompType::With(left, right)) => {
+                    pending.push((AnyNode::CompType(left), depth, results));
+                    pending.push((AnyNode::CompType(right), depth, results));
+                },
                 | None => {},
             },
         }
@@ -644,7 +655,7 @@ pub(super) fn replay(
     let refuse = KernelError::DescentNotReplayed;
     let domain = match arena.comp_type(expected) {
         | Some(&(CompType::Arrow { domain, .. } | CompType::Pi { domain, .. })) => domain,
-        | Some(&(CompType::Returner(_) | CompType::Element { .. })) | None => {
+        | Some(&(CompType::Returner(_) | CompType::Element { .. } | CompType::With(..))) | None => {
             return Err(refuse(DescentRefusal::NotOverData));
         },
     };

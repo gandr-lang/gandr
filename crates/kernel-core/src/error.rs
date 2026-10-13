@@ -117,6 +117,8 @@ pub enum CompTypeHead
     Pi,
     /// A computation type read off a code.
     Element,
+    /// A lazy product.
+    With,
     /// The reference resolved to nothing.
     Unreadable,
 }
@@ -136,6 +138,7 @@ impl CompTypeHead
             | CompType::Arrow { .. } => Self::Arrow,
             | CompType::Pi { .. } => Self::Pi,
             | CompType::Element { .. } => Self::Element,
+            | CompType::With(..) => Self::With,
         }
     }
 }
@@ -275,6 +278,8 @@ pub enum ExpectedComputationShape
     Arrow,
     /// A returner, for a `return` or the bound half of a sequencing bind.
     Returner,
+    /// A lazy product, for a lazy pairing or a projection.
+    With,
 }
 
 /// A checking-only form that appeared where a type had to be synthesized.

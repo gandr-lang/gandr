@@ -731,10 +731,18 @@ fn converge(
                         stack.push(ConversionGoal::Value(one_code, other_code));
                     },
                     | (
+                        &CompType::With(one_left, one_right),
+                        &CompType::With(other_left, other_right),
+                    ) => {
+                        stack.push(ConversionGoal::CompType(one_left, other_left));
+                        stack.push(ConversionGoal::CompType(one_right, other_right));
+                    },
+                    | (
                         &CompType::Returner(_)
                         | &CompType::Arrow { .. }
                         | &CompType::Pi { .. }
-                        | &CompType::Element { .. },
+                        | &CompType::Element { .. }
+                        | &CompType::With(..),
                         _,
                     ) => {
                         return Convertibility::Distinct;
@@ -1042,9 +1050,22 @@ fn converge(
                     | (
                         &Computation::Bind(one_bound, one_body),
                         &Computation::Bind(other_bound, other_body),
+                    )
+                    | (
+                        &Computation::With(one_bound, one_body),
+                        &Computation::With(other_bound, other_body),
                     ) => {
                         stack.push(ConversionGoal::Computation(one_bound, other_bound));
                         stack.push(ConversionGoal::Computation(one_body, other_body));
+                    },
+                    | (
+                        &Computation::Project(one_side, one),
+                        &Computation::Project(other_side, other),
+                    ) => {
+                        if one_side != other_side {
+                            return Convertibility::Distinct;
+                        }
+                        stack.push(ConversionGoal::Computation(one, other));
                     },
                     | (
                         &Computation::Case {
@@ -1080,6 +1101,8 @@ fn converge(
                         | &Computation::Application(..)
                         | &Computation::Return(_)
                         | &Computation::Bind(..)
+                        | &Computation::With(..)
+                        | &Computation::Project(..)
                         | &Computation::Force(_)
                         | &Computation::Case { .. },
                         _,

@@ -925,7 +925,9 @@ impl LooseDepths
                                 ReachTask::OpenComp(body),
                             ]);
                         },
-                        | Computation::Lambda(body) | Computation::Fixpoint { body, .. } => {
+                        | Computation::Lambda(body)
+                        | Computation::Fixpoint { body, .. }
+                        | Computation::Project(_, body) => {
                             tasks.push(ReachTask::OpenComp(body));
                         },
                         | Computation::Application(head, argument) => {
@@ -935,7 +937,7 @@ impl LooseDepths
                         | Computation::Return(value) | Computation::Force(value) => {
                             tasks.push(ReachTask::OpenValue(value));
                         },
-                        | Computation::Bind(bound, body) => {
+                        | Computation::Bind(bound, body) | Computation::With(bound, body) => {
                             tasks.push(ReachTask::OpenComp(bound));
                             tasks.push(ReachTask::OpenComp(body));
                         },
@@ -1033,6 +1035,10 @@ impl LooseDepths
                         },
                         | CompType::Element { code, .. } => {
                             tasks.push(ReachTask::OpenValue(code));
+                        },
+                        | CompType::With(left, right) => {
+                            tasks.push(ReachTask::OpenCompType(left));
+                            tasks.push(ReachTask::OpenCompType(right));
                         },
                     }
                 },
@@ -1275,6 +1281,7 @@ ValueType::Element { code, .. } => self.cached_value(code),
         CompType::Arrow { domain, codomain } => self.cached_value_type(domain).join(self.cached_comp_type(codomain)),
         CompType::Pi { domain, codomain } => self.cached_value_type(domain).join(self.cached_comp_type(codomain).under_binder()),
         CompType::Element { code, .. } => self.cached_value(code),
+        CompType::With(left, right) => self.cached_comp_type(left).join(self.cached_comp_type(right)),
     }))]
     fn combine_comp_type(
         &self,
@@ -1295,6 +1302,9 @@ ValueType::Element { code, .. } => self.cached_value(code),
                 .cached_value_type(domain)
                 .join(self.cached_comp_type(codomain).under_binder()),
             | CompType::Element { code, .. } => self.cached_value(code),
+            | CompType::With(left, right) => self
+                .cached_comp_type(left)
+                .join(self.cached_comp_type(right)),
         }
     }
 
@@ -1455,7 +1465,9 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
         Some(&Computation::Lambda(body) | &Computation::Fixpoint { body, .. }) => self.cached_comp(body).under_binder(),
         Some(&Computation::Application(head, argument)) => self.cached_comp(head).join(self.cached_value(argument)),
         Some(&Computation::Return(value) | &Computation::Force(value)) => self.cached_value(value),
+        Some(&Computation::Project(_, pair)) => self.cached_comp(pair),
         Some(&Computation::Bind(bound, body)) => self.cached_comp(bound).join(self.cached_comp(body).under_binder()),
+        Some(&Computation::With(left, right)) => self.cached_comp(left).join(self.cached_comp(right)),
         Some(&Computation::Case { scrutinee, ref branches }) => branches.iter().fold(self.cached_value(scrutinee), |depth, id| depth.join(self.cached_comp(*id).under_binder())),
     })]
     fn combine_comp(
@@ -1528,9 +1540,13 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
                 self.cached_comp(head).join(self.cached_value(argument))
             },
             | Computation::Return(value) | Computation::Force(value) => self.cached_value(value),
+            | Computation::Project(_, pair) => self.cached_comp(pair),
             | Computation::Bind(bound, body) => self
                 .cached_comp(bound)
                 .join(self.cached_comp(body).under_binder()),
+            | Computation::With(left, right) => {
+                self.cached_comp(left).join(self.cached_comp(right))
+            },
             | Computation::Case {
                 scrutinee,
                 ref branches,

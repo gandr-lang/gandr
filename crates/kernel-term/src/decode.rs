@@ -2091,6 +2091,12 @@ fn decode_entry(
             let id = table.arena.comp_type_element(code, target);
             (DecodedNode::CompType(id), Family::CompType)
         },
+        | tags::NODE_CT_WITH => {
+            let left = read_comp_type(reader, table, this, &mut children)?;
+            let right = read_comp_type(reader, table, this, &mut children)?;
+            let id = table.arena.comp_type_with(left, right);
+            (DecodedNode::CompType(id), Family::CompType)
+        },
         | tags::NODE_V_VARIABLE => {
             let index = reader.read_u32()?;
             let id = table
@@ -2193,6 +2199,18 @@ fn decode_entry(
                 branches.push(read_computation(reader, table, this, &mut children)?);
             }
             let id = table.arena.computation_case(scrutinee, &branches);
+            (DecodedNode::Computation(id), Family::Computation)
+        },
+        | tags::NODE_C_WITH => {
+            let left = read_computation(reader, table, this, &mut children)?;
+            let right = read_computation(reader, table, this, &mut children)?;
+            let id = table.arena.computation_with(left, right);
+            (DecodedNode::Computation(id), Family::Computation)
+        },
+        | tags::NODE_C_PROJECT => {
+            let side = decode_side(reader)?;
+            let pair = read_computation(reader, table, this, &mut children)?;
+            let id = table.arena.computation_project(side, pair);
             (DecodedNode::Computation(id), Family::Computation)
         },
         | other => {
@@ -3247,6 +3265,41 @@ fn decode_evidence(reader: &mut ByteReader<'_>) -> Result<crate::FixpointEvidenc
     }
 }
 
+/// Decode a lazy projection's side.
+///
+/// # Specification
+/// - requires: the cursor is positioned at a projection's side byte.
+/// - ensures: on `Ok`, returns the side the tag named and advances past it.
+/// - provides: the side alphabet's one interpretation site.
+/// - fails: [`DecodeError::Truncated`] at the end of the image;
+///   [`DecodeError::UnknownTag`] at the projection-side site on any other byte.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 partitions every byte of each closed tag alphabet into its
+///   exact value or named refusal, with empty-input truncation and
+///   consumed-offset checks.
+/// - witness: `decode::tests::tag_alphabets_partition_every_byte`
+#[spec(
+    captures: start = reader.position,
+    ensures: |ret| { let byte = reader.image.byte_at(start).map(u8::from);
+        reader.position.0 == start.0.saturating_add(usize::from(byte.is_some()))
+            && match byte { Some(0) => ret.as_ref() == Ok(&crate::Side::Left), Some(1) => ret.as_ref() == Ok(&crate::Side::Right), Some(other) => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::ProjectionSide, tag: WireTag::from(other) }), None => ret.as_ref() == Err(&DecodeError::Truncated) } },
+)]
+#[inline]
+fn decode_side(reader: &mut ByteReader<'_>) -> Result<crate::Side, DecodeError>
+{
+    let tag = reader.next_tag()?;
+    match tag {
+        | tags::SIDE_LEFT => Ok(crate::Side::Left),
+        | tags::SIDE_RIGHT => Ok(crate::Side::Right),
+        | other => Err(DecodeError::UnknownTag {
+            site: TagSite::ProjectionSide,
+            tag: other,
+        }),
+    }
+}
+
 /// Decode a literal, rebuilt through the base-type smart constructors.
 ///
 /// # Specification
@@ -3652,6 +3705,14 @@ mod tests
             assert_eq!(super::decode_evidence(&mut reader), evidence);
             assert_eq!(reader.position.0, 1);
             let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
+            let side = match byte {
+                | 0 => Ok(crate::Side::Left),
+                | 1 => Ok(crate::Side::Right),
+                | _ => Err(unknown(super::TagSite::ProjectionSide)),
+            };
+            assert_eq!(super::decode_side(&mut reader), side);
+            assert_eq!(reader.position.0, 1);
+            let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
             let sign = match byte {
                 | 0 => Ok(super::Sign::NonNegative),
                 | 1 => Ok(super::Sign::Negative),
@@ -3700,6 +3761,10 @@ mod tests
         );
         assert_eq!(
             super::decode_evidence(&mut ByteReader::new(image)),
+            Err(DecodeError::Truncated)
+        );
+        assert_eq!(
+            super::decode_side(&mut ByteReader::new(image)),
             Err(DecodeError::Truncated)
         );
         assert_eq!(
@@ -4581,6 +4646,9 @@ mod tests
                 },
                 &[5],
             ),
+            (&[0x65, 6, 2], crate::types::CompType::With(ct1, ct0), &[
+                6, 2,
+            ]),
         ];
         for &(bytes, ref expected, children) in comp_types {
             let before = table.arena.watermark();
@@ -4773,6 +4841,19 @@ mod tests
                     branches: [c1, c0].into(),
                 },
                 &[5, 7, 3],
+            ),
+            (&[0x66, 7, 3], crate::term::Computation::With(c1, c0), &[
+                7, 3,
+            ]),
+            (
+                &[0x67, 0, 7],
+                crate::term::Computation::Project(crate::Side::Left, c1),
+                &[7],
+            ),
+            (
+                &[0x67, 1, 3],
+                crate::term::Computation::Project(crate::Side::Right, c0),
+                &[3],
             ),
         ];
         for &(bytes, ref expected, children) in computations {
@@ -5260,6 +5341,83 @@ mod tests
         )];
         let bytes = crate::encode(&arena, &declarations);
         let decoded = crate::decode(bytes.as_image()).expect("identity artifact decodes");
+        assert_eq!(
+            crate::encode(decoded.arena(), decoded.declarations()),
+            bytes
+        );
+    }
+
+    #[test]
+    fn lazy_product_nodes_round_trip_and_refuse_their_malformed_sites()
+    {
+        use crate::error::TagSite;
+
+        // A side outside the two-letter alphabet, and a child of the wrong
+        // family in every child slot, each refuse at its own site, minting
+        // nothing.
+        let mut table = four_family_table();
+        let refusals: &[(&[u8], DecodeError)] = &[
+            (&[0x67, 2, 7], DecodeError::UnknownTag {
+                site: TagSite::ProjectionSide,
+                tag: super::WireTag::from(2_u8),
+            }),
+            (&[0x65, 6, 3], DecodeError::Malformed {
+                site: MalformedSite::Polarity,
+            }),
+            (&[0x65, 2, 4], DecodeError::Malformed {
+                site: MalformedSite::Polarity,
+            }),
+            (&[0x66, 5, 3], DecodeError::Malformed {
+                site: MalformedSite::Polarity,
+            }),
+            (&[0x66, 7, 6], DecodeError::Malformed {
+                site: MalformedSite::Polarity,
+            }),
+            (&[0x67, 1, 5], DecodeError::Malformed {
+                site: MalformedSite::Polarity,
+            }),
+        ];
+        for &(bytes, ref expected) in refusals {
+            let before = table.arena.watermark();
+            let count = table.nodes.len();
+            let mut reader = ByteReader::new(ArtifactImage::from(bytes));
+            assert_eq!(
+                super::decode_entry(&mut reader, &mut table).as_ref(),
+                Err(expected),
+                "{bytes:?}"
+            );
+            assert_eq!(table.arena.watermark(), before);
+            assert_eq!(table.nodes.len(), count);
+        }
+
+        // A whole artifact holding the lazy product type, a pairing and both
+        // projections re-encodes byte for byte.
+        let mut arena = crate::TermArena::new();
+        let unit_type = arena.value_type_unit();
+        let integer = arena.value_type_base(super::BaseType::Integer);
+        let unit = arena.value_unit();
+        let returns_unit = arena.comp_type_returner(unit_type);
+        let returns_integer = arena.comp_type_returner(integer);
+        let lazy = arena.comp_type_with(returns_unit, returns_integer);
+        let left = arena.computation_return(unit);
+        let right = arena.computation_return(unit);
+        let pair = arena.computation_with(left, right);
+        let first = arena.computation_project(crate::Side::Left, pair);
+        let second = arena.computation_project(crate::Side::Right, pair);
+        let sequenced = arena.computation_bind(first, second);
+        let body = arena.value_thunk(sequenced);
+        let declared = arena.value_type_thunk(lazy);
+        let declaration = crate::DeclarationBuilder::new(&mut arena).def(
+            crate::LevelSignature::monomorphic(),
+            declared,
+            body,
+        );
+        let declarations = [crate::MarkedDeclaration::new(
+            crate::AdmissionMark::Checked,
+            declaration,
+        )];
+        let bytes = crate::encode(&arena, &declarations);
+        let decoded = crate::decode(bytes.as_image()).expect("lazy product artifact decodes");
         assert_eq!(
             crate::encode(decoded.arena(), decoded.declarations()),
             bytes

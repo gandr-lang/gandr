@@ -1074,8 +1074,9 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Computation::Application(head, argument) => self.placed.contains_key(&AnyNode::Computation(head))
                             && self.placed.contains_key(&AnyNode::Value(argument)),
             Computation::Return(value) | Computation::Force(value) => self.placed.contains_key(&AnyNode::Value(value)),
-            Computation::Bind(bound, body) => self.placed.contains_key(&AnyNode::Computation(bound))
+            Computation::Bind(bound, body) | Computation::With(bound, body) => self.placed.contains_key(&AnyNode::Computation(bound))
                             && self.placed.contains_key(&AnyNode::Computation(body)),
+            Computation::Project(_, pair) => self.placed.contains_key(&AnyNode::Computation(pair)),
             Computation::Case { scrutinee, ref branches } => self.placed.contains_key(&AnyNode::Value(scrutinee))
                             && branches.iter().all(|id| self.placed.contains_key(&AnyNode::Computation(*id))),
         },
@@ -1095,6 +1096,8 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Computation::Bind(..) => gandr_kernel_term::NODE_C_BIND,
             Computation::Force(..) => gandr_kernel_term::NODE_C_FORCE,
             Computation::Case { .. } => gandr_kernel_term::NODE_C_CASE,
+            Computation::With(..) => gandr_kernel_term::NODE_C_WITH,
+            Computation::Project(..) => gandr_kernel_term::NODE_C_PROJECT,
         }))
     )]
     fn put_computation(
@@ -1222,6 +1225,19 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 for branch in branches {
                     record.put_content(self.content_of(AnyNode::Computation(*branch)));
                 }
+            },
+            | Computation::With(left, right) => {
+                record.put_tag(gandr_kernel_term::NODE_C_WITH);
+                record.put_content(self.content_of(AnyNode::Computation(left)));
+                record.put_content(self.content_of(AnyNode::Computation(right)));
+            },
+            | Computation::Project(side, pair) => {
+                record.put_tag(gandr_kernel_term::NODE_C_PROJECT);
+                record.put_tag(match side {
+                    | gandr_kernel_term::Side::Left => gandr_kernel_term::SIDE_LEFT,
+                    | gandr_kernel_term::Side::Right => gandr_kernel_term::SIDE_RIGHT,
+                });
+                record.put_content(self.content_of(AnyNode::Computation(pair)));
             },
         }
     }
@@ -1412,6 +1428,8 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain } => self.placed.contains_key(&AnyNode::ValueType(domain))
                             && self.placed.contains_key(&AnyNode::CompType(codomain)),
             CompType::Element { code, .. } => self.placed.contains_key(&AnyNode::Value(code)),
+            CompType::With(left, right) => self.placed.contains_key(&AnyNode::CompType(left))
+                            && self.placed.contains_key(&AnyNode::CompType(right)),
         },
         captures: entry_len = record.0.len(),
         ensures: record.0.get(entry_len) == Some(&u8::from(match *comp_type {
@@ -1419,6 +1437,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             CompType::Arrow { .. } => gandr_kernel_term::NODE_CT_ARROW,
             CompType::Pi { .. } => gandr_kernel_term::NODE_CT_PI,
             CompType::Element { .. } => gandr_kernel_term::NODE_CT_ELEMENT,
+            CompType::With(..) => gandr_kernel_term::NODE_CT_WITH,
         }))
     )]
     fn put_comp_type(
@@ -1451,6 +1470,11 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 record.put_tag(gandr_kernel_term::NODE_CT_ELEMENT);
                 put_level(record, target);
                 record.put_content(self.content_of(AnyNode::Value(code)));
+            },
+            | CompType::With(left, right) => {
+                record.put_tag(gandr_kernel_term::NODE_CT_WITH);
+                record.put_content(self.content_of(AnyNode::CompType(left)));
+                record.put_content(self.content_of(AnyNode::CompType(right)));
             },
         }
     }
@@ -1508,7 +1532,8 @@ None => opened.eq((core::iter::empty()).map(Some)),
             Some(&Computation::Lambda(body) | &Computation::Fixpoint { body, .. }) => opened.eq((core::iter::once(AnyNode::Computation(body))).map(Some)),
             Some(&Computation::Application(head,argument)) => opened.eq(([AnyNode::Computation(head),AnyNode::Value(argument)].into_iter()).map(Some)),
             Some(&Computation::Return(value) | &Computation::Force(value)) => opened.eq((core::iter::once(AnyNode::Value(value))).map(Some)),
-            Some(&Computation::Bind(bound,body)) => opened.eq(([AnyNode::Computation(bound),AnyNode::Computation(body)].into_iter()).map(Some)),
+            Some(&(Computation::Bind(bound,body) | Computation::With(bound,body))) => opened.eq(([AnyNode::Computation(bound),AnyNode::Computation(body)].into_iter()).map(Some)),
+            Some(&Computation::Project(_,pair)) => opened.eq((core::iter::once(AnyNode::Computation(pair))).map(Some)),
             Some(&Computation::Case {scrutinee,ref branches}) => opened.eq((core::iter::once(AnyNode::Value(scrutinee)).chain(branches.iter().copied().map(AnyNode::Computation))).map(Some)),
         },
         AnyNode::ValueType(id) => match arena.value_type(id) { Some(matched_native_node) => match *matched_native_node {
@@ -1530,6 +1555,7 @@ None => opened.eq((core::iter::empty()).map(Some)),
             Some(&CompType::Returner(result)) => opened.eq((core::iter::once(AnyNode::ValueType(result))).map(Some)),
             Some(&CompType::Arrow{domain,codomain} | &CompType::Pi {domain,codomain}) => opened.eq(([AnyNode::ValueType(domain),AnyNode::CompType(codomain)].into_iter()).map(Some)),
             Some(&CompType::Element {code,..}) => opened.eq((core::iter::once(AnyNode::Value(code))).map(Some)),
+            Some(&CompType::With(left,right)) => opened.eq(([AnyNode::CompType(left),AnyNode::CompType(right)].into_iter()).map(Some)),
         },
     }
 }))]
@@ -1697,9 +1723,12 @@ fn push_children(
             | Some(&Computation::Return(value) | &Computation::Force(value)) => {
                 tasks.push(EncodeTask::Open(AnyNode::Value(value)));
             },
-            | Some(&Computation::Bind(bound, body)) => {
+            | Some(&(Computation::Bind(bound, body) | Computation::With(bound, body))) => {
                 tasks.push(EncodeTask::Open(AnyNode::Computation(bound)));
                 tasks.push(EncodeTask::Open(AnyNode::Computation(body)));
+            },
+            | Some(&Computation::Project(_, pair)) => {
+                tasks.push(EncodeTask::Open(AnyNode::Computation(pair)));
             },
             | Some(&Computation::Case {
                 scrutinee,
@@ -1780,6 +1809,10 @@ fn push_children(
             },
             | Some(&CompType::Element { code, .. }) => {
                 tasks.push(EncodeTask::Open(AnyNode::Value(code)));
+            },
+            | Some(&CompType::With(left, right)) => {
+                tasks.push(EncodeTask::Open(AnyNode::CompType(left)));
+                tasks.push(EncodeTask::Open(AnyNode::CompType(right)));
             },
         },
     }

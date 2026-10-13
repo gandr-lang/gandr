@@ -1,6 +1,6 @@
 //! The term language: [`Value`] on the positive side and [`Computation`] on the
 //! negative side, together with the reference forms [`DeBruijnIndex`] and
-//! [`ConstantIndex`] and the injection [`Side`].
+//! [`ConstantIndex`] and the binary [`Side`].
 //!
 //! Terms are nameless. A bound value variable is a [`DeBruijnIndex`] counting
 //! binders outward from its use site, so α-equivalence is syntactic identity
@@ -184,13 +184,16 @@ impl From<ConstantIndex> for usize
     }
 }
 
-/// The side of a sum injection.
+/// One side of a binary former: the injection into a summand of `A + B`, or
+/// the projection of a component of the lazy product `C & D`.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Side
 {
-    /// The left injection, into the left summand of `A + B`.
+    /// The left side: the left summand of `A + B`, the left component of
+    /// `C & D`.
     Left,
-    /// The right injection, into the right summand of `A + B`.
+    /// The right side: the right summand of `A + B`, the right component of
+    /// `C & D`.
     Right,
 }
 
@@ -476,6 +479,12 @@ pub enum Computation
         /// their identity, innermost last.
         body: ComputationId,
     },
+    /// A lazy pairing `⟨M, N⟩` of two computations, introducing the lazy
+    /// product `C & D` of their types. Neither component runs until a
+    /// projection observes it.
+    With(ComputationId, ComputationId),
+    /// The projection of one side of a lazy pairing, running that component.
+    Project(Side, ComputationId),
     /// A fixpoint `fix x. M`, checking at any computation type `B` with its
     /// body scoped under one value binder, the fixpoint's own thunk `U B`.
     /// It unfolds only at a constructor argument or under an observation of

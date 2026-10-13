@@ -90,7 +90,7 @@ _ => 0,
         AnyNode::Computation(id) => arena.computation(id).map_or(0, |matched_native_node| match *matched_native_node {
 Computation::DataCase {ref branches,..} => branches.len().saturating_add(2),
 Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
-Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) => 2,
+Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) | Computation::With(..) => 2,
 _ => 1,
 }),
         AnyNode::ValueType(id) => arena.value_type(id).map_or(0, |matched_native_node| match *matched_native_node {
@@ -102,7 +102,7 @@ ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | Value
 _ => 0,
 }),
         AnyNode::CompType(id) => match arena.comp_type(id) {
-            Some(&CompType::Arrow { .. } | &CompType::Pi { .. }) => 2,
+            Some(&CompType::Arrow { .. } | &CompType::Pi { .. } | &CompType::With(..)) => 2,
             Some(_) => 1, None => 0,
         },
     })]
@@ -170,10 +170,10 @@ fn children(
                 panic!("recursion is outside the path fixture fragment")
             },
             | Computation::Transport(a, b) => vec![V(a), V(b)],
-            | Computation::Lambda(a) => vec![M(a)],
+            | Computation::Lambda(a) | Computation::Project(_, a) => vec![M(a)],
             | Computation::Application(a, b) => vec![M(a), V(b)],
             | Computation::Return(a) | Computation::Force(a) => vec![V(a)],
-            | Computation::Bind(a, b) => vec![M(a), M(b)],
+            | Computation::Bind(a, b) | Computation::With(a, b) => vec![M(a), M(b)],
             | Computation::Case {
                 scrutinee,
                 ref branches,
@@ -213,6 +213,7 @@ fn children(
                 codomain: b,
             } => vec![A(a), C(b)],
             | &CompType::Element { code: a, .. } => vec![V(a)],
+            | &CompType::With(a, b) => vec![C(a), C(b)],
         },
     }
 }
@@ -523,6 +524,12 @@ fn translate(
                     | Computation::Bind(first, second) => {
                         core.computation_bind(computations[&first], computations[&second])
                     },
+                    | Computation::With(first, second) => {
+                        core.computation_with(computations[&first], computations[&second])
+                    },
+                    | Computation::Project(side, pair) => {
+                        core.computation_project(side, computations[&pair])
+                    },
                     | Computation::Case {
                         scrutinee,
                         ref branches,
@@ -591,6 +598,9 @@ fn translate(
                     },
                     | &CompType::Element { code, ref target } => {
                         core.comp_type_element(values[&code], target.clone())
+                    },
+                    | &CompType::With(first, second) => {
+                        core.comp_type_with(comp_types[&first], comp_types[&second])
                     },
                 };
                 comp_types.insert(id, ty);

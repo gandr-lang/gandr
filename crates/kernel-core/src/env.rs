@@ -1617,10 +1617,11 @@ fn collect_reachable(
                 | Some(&Computation::Return(value) | &Computation::Force(value)) => {
                     pending.push(AnyNode::Value(value));
                 },
-                | Some(&Computation::Bind(bound, body)) => {
+                | Some(&(Computation::Bind(bound, body) | Computation::With(bound, body))) => {
                     pending.push(AnyNode::Computation(bound));
                     pending.push(AnyNode::Computation(body));
                 },
+                | Some(&Computation::Project(_, pair)) => pending.push(AnyNode::Computation(pair)),
                 | Some(&Computation::Case {
                     scrutinee,
                     ref branches,
@@ -1704,6 +1705,10 @@ fn collect_reachable(
                     if follow {
                         pending.push(AnyNode::Value(code));
                     }
+                },
+                | Some(&CompType::With(left, right)) => {
+                    pending.push(AnyNode::CompType(left));
+                    pending.push(AnyNode::CompType(right));
                 },
                 | None => {},
             },

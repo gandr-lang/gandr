@@ -37,7 +37,7 @@
 //!
 //! Both sides are first put in weak head form by the reductions that need no
 //! choice — β, a forced thunk, a returner met by a bind, an injection met by a
-//! case, never a δ-step. Then:
+//! case, a lazy pairing met by a projection, never a δ-step. Then:
 //!
 //! | goal | what the replay reads |
 //! | --- | --- |
@@ -45,10 +45,29 @@
 //! | a defined constant at either head | `Unfold` and the reduction naming its side, with `Postpone` before it; `Freeze`; `ConstShortcut` |
 //! | a thunk against a thunk or a neutral value | two `Force`s |
 //! | a lambda against a neutral computation | `EtaExpand` on the neutral side |
+//! | a lazy pairing against a neutral computation | nothing for the η step: both projections of the neutral are compared with the components; under a refutation, `NegativeSubgoal` picks one |
 //! | anything else | a leaf decides it or a decomposition pushes its premises; under a refutation, `NegativeSubgoal` picks the one premise |
 //!
 //! A rigid term is built only of formers, variables and constants without a
 //! body: nothing in it can reduce, so two α-distinct rigid terms never convert.
+//!
+//! # The lazy product's η
+//!
+//! A lazy pairing against a neutral computation is the η law of `C & D`
+//! (Levy's computation product): the neutral is the pairing of its two
+//! projections, so the goal decomposes into each projection of the neutral
+//! against the matching component, left first. The two shapes force the rule
+//! and nothing in it is chosen, so no decision names it and the vocabulary is
+//! unchanged; a refutation names its premise by `NegativeSubgoal`, as any
+//! decomposition's does. `Decompose` is refused there, as at the arrow's η, so
+//! the step has one trace.
+//!
+//! **Alternatives.** Reading `EtaExpand` at the step would give that decision
+//! a second meaning: its payload names the fresh variable the arrow's η
+//! introduces, and the product's η introduces none. A decision of its own
+//! would widen the vocabulary the engine and the kernel share by a step with
+//! no choice in it. **Reversal.** A second rule the same two shapes admit
+//! would make the step a choice, and the choice would take a decision.
 //!
 //! # Three verdicts
 //!
@@ -148,6 +167,7 @@ use gandr_kernel_term::ComputationId;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FixpointEvidence;
+use gandr_kernel_term::Side;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
@@ -921,6 +941,8 @@ enum Elimination
     RecordProjection(ComputationId),
     /// Tuple projection; the arena node retains its component.
     TupleProjection(ComputationId),
+    /// Lazy product projection of this side.
+    Project(Side),
     /// Transport under a neutral path head, retaining its operand.
     Transport(ValueId),
     /// Product transport waiting for a neutral pair operand.
@@ -954,6 +976,8 @@ enum Shape
     Thunk(ComputationId),
     /// A lambda over this body.
     Lambda(ComputationId),
+    /// A lazy pairing of these two components.
+    With(ComputationId, ComputationId),
     /// A fixpoint over this body, standing at no gate.
     Fixpoint(ComputationId),
     /// A returner of this value.
@@ -973,6 +997,10 @@ enum Rule
     Force,
     /// A lambda meets a neutral computation on this side: it is η-expanded.
     Eta(ConversionSide),
+    /// A lazy pairing meets a neutral computation on this side: the neutral
+    /// is projected on both sides and each projection compared with the
+    /// pairing's component.
+    ProductEta(ConversionSide),
     /// Neither side admits a choice: a leaf or a decomposition.
     Structural,
 }
@@ -1072,6 +1100,8 @@ enum Frame
     Apply(ValueId),
     /// A bind into this continuation.
     Bind(ComputationId),
+    /// A projection of this side of a lazy pairing.
+    Project(Side),
 }
 
 /// What stands at a fixpoint's unfolding gate.
@@ -1082,7 +1112,8 @@ enum Gate
     Constructor,
     /// An application to another canonical value.
     Canonical,
-    /// A bind observing the fixpoint's result: the `>` direction.
+    /// A bind or a projection observing the fixpoint's result: the `>`
+    /// direction.
     Observed,
     /// No elimination, or an application to a neutral value.
     Shut,
@@ -1300,6 +1331,7 @@ where
                 },
                 | Rule::Force => self.force(&mut goal)?,
                 | Rule::Eta(side) => self.eta(&mut goal, side)?,
+                | Rule::ProductEta(side) => return self.product_eta(&goal, side, goals),
                 | Rule::Structural => {
                     return self.structural(&goal, &left_shape, &right_shape, goals);
                 },
@@ -1666,6 +1698,75 @@ where
         Ok(())
     }
 
+    /// Decompose a lazy pairing goal by projecting its neutral `side` on both
+    /// sides of the lazy product.
+    ///
+    /// # Specification
+    /// - requires: `side` is a neutral computation and the other side a lazy
+    ///   pairing.
+    /// - ensures: the premises are the neutral's left projection against the
+    ///   pairing's left component, then its right projection against the right
+    ///   component, each kept on the goal's own sides, scheduled as
+    ///   [`Self::schedule`] states. No decision names the η step: the two
+    ///   shapes force it and nothing about it is chosen.
+    /// - provides: the replay of the lazy product's η rule, `M = ⟨π₁ M, π₂ M⟩`.
+    /// - fails: [`ReplayRefusal::Unreadable`] when the sides are not a
+    ///   computation and a lazy pairing; a refusal when a refutation's next
+    ///   decision is not a `NegativeSubgoal` naming one of the two premises.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: the pairing of a variable's two projections converts
+    ///   with that variable on either side with an empty trace; a pairing whose
+    ///   right component differs refutes through `NegativeSubgoal` at position
+    ///   one and not at position zero; an `EtaExpand` there is never read and
+    ///   is left over, and a `Decompose` there is inapplicable.
+    /// - witness: `replay::tests::a_lazy_pairing_meets_a_neutral_by_its_projections`
+    #[spec(
+        captures: before = goals.len(),
+        ensures: |ret| match ret {
+            Ok(()) => goals.get(before..).is_some_and(|pending| {
+                pending.len() == match goal.expect { Expect::Convertible => 2_usize, Expect::NotConvertible => 1_usize }
+                    && pending.iter().all(|next| next.expect == goal.expect && matches!(next.side(side), Term::Computation(projected)
+                        if matches!(self.arena.computation(projected), Some(&Computation::Project(_, neutral)) if goal.side(side) == Term::Computation(neutral))))
+            }),
+            Err(_) => goals.len() == before,
+        },
+    )]
+    fn product_eta(
+        &mut self,
+        goal: &Goal,
+        side: ConversionSide,
+        goals: &mut Vec<Goal>,
+    ) -> Result<(), Stop>
+    {
+        let (Term::Computation(neutral), Term::Computation(pairing)) =
+            (goal.side(side), goal.side(opposite(side)))
+        else {
+            return Err(unreadable());
+        };
+        let Some(&Computation::With(first, second)) = self.arena.computation(pairing)
+        else {
+            return Err(unreadable());
+        };
+        let first_projection = self.arena.computation_project(Side::Left, neutral);
+        let second_projection = self.arena.computation_project(Side::Right, neutral);
+        let premises = match side {
+            | ConversionSide::Left => Vec::from([
+                Premise::computations(first_projection, first),
+                Premise::computations(second_projection, second),
+            ]),
+            | ConversionSide::Right => Vec::from([
+                Premise::computations(first, first_projection),
+                Premise::computations(second, second_projection),
+            ]),
+        };
+        self.schedule(goal.expect, premises, goals)
+    }
+
     /// Close or decompose a goal no decision is needed to rewrite.
     ///
     /// # Specification
@@ -1734,7 +1835,54 @@ where
             | Structure::Leaf(verdict) => return self.close(goal.expect, verdict),
             | Structure::Premises(premises) => premises,
         };
-        match goal.expect {
+        self.schedule(goal.expect, premises, goals)
+    }
+
+    /// Schedule a decomposition's premises at the verdict its goal owes.
+    ///
+    /// # Specification
+    /// - requires: `premises` is non-empty.
+    /// - ensures: owing convertibility, every premise is pushed, the first on
+    ///   top, and no decision is read; owing a refutation, the premise the next
+    ///   `NegativeSubgoal` names is pushed alone and that decision consumed.
+    ///   Every pushed goal owes `expect` with nothing frozen.
+    /// - provides: the premise half shared by structural decomposition and the
+    ///   lazy product's η.
+    /// - fails: a refusal when a refutation's next decision is not a
+    ///   `NegativeSubgoal` naming one of `premises`.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: a pair and a lazy pairing against a neutral
+    ///   distinguish selecting the refuting premise from accepting a positive
+    ///   sibling or an out-of-range position, and a missing `NegativeSubgoal`
+    ///   from a present one.
+    /// - witness: `replay::tests::a_refutation_follows_its_negative_subgoal`
+    /// - witness: `replay::tests::a_lazy_pairing_meets_a_neutral_by_its_projections`
+    #[spec(
+        captures: before = (goals.len(), self.position, premises.len()),
+        ensures: |ret| match ret {
+            Ok(()) => goals.get(before.0..).is_some_and(|pending| {
+                pending.iter().all(|next| next.expect == expect && next.frozen == Frozen::default())
+                    && match expect {
+                        Expect::Convertible => pending.len() == before.2 && self.position == before.1,
+                        Expect::NotConvertible => pending.len() == 1_usize && self.position == before.1.saturating_add(1),
+                    }
+            }),
+            Err(_) => goals.len() == before.0 && self.position == before.1,
+        },
+    )]
+    fn schedule(
+        &mut self,
+        expect: Expect,
+        premises: Vec<Premise>,
+        goals: &mut Vec<Goal>,
+    ) -> Result<(), Stop>
+    {
+        match expect {
             | Expect::Convertible => {
                 goals.extend(
                     premises
@@ -1769,8 +1917,9 @@ where
     /// - requires: nothing.
     /// - ensures: two formers of one kind decompose child by child, or close on
     ///   their payloads; two codes close on α-equality or rigid separation; two
-    ///   returners, two lambdas, and two neutrals with one head and agreeing
-    ///   spines decompose; every other pair is a refuting leaf.
+    ///   returners, two lambdas, two lazy pairings, and two neutrals with one
+    ///   head and agreeing spines decompose; every other pair is a refuting
+    ///   leaf.
     /// - provides: the leaf and decomposition rules.
     /// - fails: [`ReplayRefusal::Unreadable`] on a dangling former.
     /// - panics: none.
@@ -1779,17 +1928,20 @@ where
     /// [`Stop::Refused`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3: return, lambda, pair, and neutral-spine fixtures
-    ///   distinguish ordered same-polarity premises from rigidly distinct
-    ///   leaves. The observer is the replayed positive or selected negative
-    ///   derivation, not a general normalization proof.
+    /// - hypothesis: L3: return, lambda, lazy pairing, pair, and neutral-spine
+    ///   fixtures distinguish ordered same-polarity premises from rigidly
+    ///   distinct leaves. The observer is the replayed positive or selected
+    ///   negative derivation, not a general normalization proof.
     /// - witness: `replay::tests::the_replay_reduces_before_it_reads_a_decision`
     /// - witness: `replay::tests::eta_and_force_open_the_suspended_sides`
     /// - witness: `replay::tests::a_refutation_follows_its_negative_subgoal`
     /// - witness: `replay::tests::neutral_spines_keep_subgoal_order_and_reject_kind_mismatches`
+    /// - witness: `replay::tests::a_lazy_pairing_meets_a_neutral_by_its_projections`
     #[spec(ensures: |ret| match (left, right) {
         (&Shape::Return(one), &Shape::Return(other)) => matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::values(one, other)]),
         (&Shape::Lambda(one), &Shape::Lambda(other)) | (&Shape::Fixpoint(one), &Shape::Fixpoint(other)) => matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::computations(one, other)]),
+        (&Shape::With(one_first, one_second), &Shape::With(other_first, other_second)) => matches!(ret, Ok(Structure::Premises(ref premises))
+            if premises.as_slice() == [Premise::computations(one_first, other_first), Premise::computations(one_second, other_second)]),
         (&Shape::Former, &Shape::Former) => true,
         (&Shape::Neutral(one, _), &Shape::Neutral(other, _)) if one == other => match ret {
             Ok(Structure::Premises(ref premises)) => !premises.is_empty() && premises.iter().all(|premise|
@@ -1821,6 +1973,12 @@ where
             | (&Shape::Fixpoint(left_body), &Shape::Fixpoint(right_body)) => {
                 Structure::of(Vec::from([Premise::computations(left_body, right_body)]))
             },
+            | (&Shape::With(left_first, left_second), &Shape::With(right_first, right_second)) => {
+                Structure::of(Vec::from([
+                    Premise::computations(left_first, right_first),
+                    Premise::computations(left_second, right_second),
+                ]))
+            },
             | (
                 &Shape::Neutral(left_head, ref left_spine),
                 &Shape::Neutral(right_head, ref right_spine),
@@ -1829,6 +1987,7 @@ where
                 &(Shape::Former
                 | Shape::Thunk(_)
                 | Shape::Lambda(_)
+                | Shape::With(..)
                 | Shape::Fixpoint(_)
                 | Shape::Return(_)
                 | Shape::Neutral(..)),
@@ -2146,7 +2305,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             _ => true,
         },
         Term::Computation(computation) => match self.arena.computation(computation) {
-            Some(&(Computation::Transport(..) | Computation::PathTransport { .. } | Computation::RelatedApplication { .. } | Computation::Lambda(_) | Computation::Bind(..) | Computation::Case { .. })) | None => ret == Rigidity::Flexible,
+            Some(&(Computation::Transport(..) | Computation::PathTransport { .. } | Computation::RelatedApplication { .. } | Computation::Lambda(_) | Computation::Bind(..) | Computation::Case { .. } | Computation::With(..) | Computation::Project(..))) | None => ret == Rigidity::Flexible,
             _ => true,
         },
     })]
@@ -2225,7 +2384,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         | Computation::Fixpoint { .. }
                         | Computation::ListFold { .. }
                         | Computation::Bind(..)
-                        | Computation::Case { .. }),
+                        | Computation::Case { .. }
+                        | Computation::With(..)
+                        | Computation::Project(..)),
                     )
                     | None => {
                         return Rigidity::Flexible;
@@ -2285,6 +2446,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         work.extend([AnyNode::ValueType(domain), AnyNode::CompType(codomain)]);
                     },
                     | Some(&CompType::Element { code, .. }) => work.push(AnyNode::Value(code)),
+                    | Some(&CompType::With(left, right)) => {
+                        work.extend([AnyNode::CompType(left), AnyNode::CompType(right)]);
+                    },
                     | None => return Rigidity::Flexible,
                 },
             }
@@ -2298,8 +2462,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// # Specification
     /// - requires: `term` is in weak head form.
     /// - ensures: a value's former, thunk, or head under its static
-    ///   applications, innermost first; a computation's lambda, returner, or
-    ///   head under its spine, innermost first.
+    ///   applications, innermost first; a computation's lambda, lazy pairing,
+    ///   returner, or head under its spine, innermost first.
     /// - provides: what the rule table dispatches on.
     /// - fails: [`ReplayRefusal::Unreadable`] on a dangling id or a head no
     ///   rule reads.
@@ -2325,6 +2489,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - witness: `replay::tests::neutral_spines_keep_subgoal_order_and_reject_kind_mismatches`
     /// - witness: `replay::tests::an_operator_unfolds_by_instantiating_its_parameters_in_order`
     /// - witness: `path_universe::tests::refl_collapses`
+    /// - witness: `replay::tests::a_projection_runs_its_side_of_a_pairing`
     #[spec(ensures: |ret| match term {
         Term::Value(value) => match self.arena.value(value) {
             Some(&Value::Variable(index)) => matches!(ret, Ok(Shape::Neutral(Head::Variable(found), ref spine)) if found == index && spine.is_empty()),
@@ -2341,6 +2506,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         },
         Term::Computation(computation) => match self.arena.computation(computation) {
             Some(&Computation::Lambda(body)) => ret == Ok(Shape::Lambda(body)),
+            Some(&Computation::With(first, second)) => ret == Ok(Shape::With(first, second)),
             Some(&Computation::Fixpoint { body, .. }) => ret == Ok(Shape::Fixpoint(body)),
             Some(&Computation::Return(value)) => ret == Ok(Shape::Return(value)),
             Some(node) => match ret {
@@ -2356,6 +2522,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     Computation::DataCase { .. } => spine.as_slice() == [Elimination::DataCase(computation)],
                     Computation::RecordProjection(..) => spine.as_slice() == [Elimination::RecordProjection(computation)],
                     Computation::TupleProjection(..) => spine.as_slice() == [Elimination::TupleProjection(computation)],
+                    Computation::Project(side, _) => spine.last() == Some(&Elimination::Project(side)),
                     Computation::ListFold { on_nil, on_cons, .. } => spine.as_slice() == [Elimination::ListFold(on_nil, on_cons)],
                     _ => false,
                 },
@@ -2456,6 +2623,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 | Some(&Computation::Lambda(body)) if spine.is_empty() => {
                     return Ok(Shape::Lambda(body));
                 },
+                | Some(&Computation::With(first, second)) if spine.is_empty() => {
+                    return Ok(Shape::With(first, second));
+                },
                 | Some(&Computation::Fixpoint { body, .. }) if spine.is_empty() => {
                     return Ok(Shape::Fixpoint(body));
                 },
@@ -2481,6 +2651,10 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     spine.push(Elimination::Bind(body));
                     focus = bound;
                 },
+                | Some(&Computation::Project(side, pair)) => {
+                    spine.push(Elimination::Project(side));
+                    focus = pair;
+                },
                 | Some(&Computation::Force(value)) => {
                     spine.push(Elimination::Force);
                     let head = self.value_head(value, frozen, side)?;
@@ -2495,6 +2669,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 // trace alphabet of its own: the replay reads it as unreadable.
                 | Some(
                     &(Computation::Lambda(_)
+                    | Computation::With(..)
                     | Computation::Return(_)
                     | Computation::PathTransport { .. }
                     | Computation::RelatedApplication { .. }),
@@ -2712,6 +2887,10 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     frames.push(Frame::Bind(next));
                     focus = bound;
                 },
+                | Some(&Computation::Project(side, pair)) => {
+                    frames.push(Frame::Project(side));
+                    focus = pair;
+                },
                 | Some(&Computation::Force(_)) => break self.arena.computation_force(body),
                 | Some(&Computation::Case { ref branches, .. }) => {
                     let branches = branches.clone();
@@ -2728,6 +2907,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 },
                 | Some(
                     &(Computation::Lambda(_)
+                    | Computation::With(..)
                     | Computation::Return(_)
                     | Computation::PathTransport { .. }
                     | Computation::RelatedApplication { .. }),
@@ -2839,18 +3019,19 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// # Specification
     /// - requires: nothing.
     /// - ensures: a value unchanged; a computation reduced by β, a forced
-    ///   thunk, a returner met by a bind, an injection met by a case, a
-    ///   fixpoint carrying replayed structural-descent evidence applied to a
-    ///   constructor, and the element-identity transport and related
-    ///   application steps of [`crate::element_identity`], until none fires at
-    ///   its head, and the original id when none fired at all.
+    ///   thunk, a returner met by a bind, an injection met by a case, a lazy
+    ///   pairing met by a projection, a fixpoint carrying replayed
+    ///   structural-descent evidence applied to a constructor, and the
+    ///   element-identity transport and related application steps of
+    ///   [`crate::element_identity`], until none fires at its head, and the
+    ///   original id when none fired at all.
     /// - provides: the search-free reductions the trace never records.
     /// - fails: [`Stop::Budget`] on a term that reduces past the budget;
     ///   [`Stop::PartialFixpoint`] when a fixpoint without evidence stands at
-    ///   its gate — applied to a canonical argument or under a bind;
-    ///   [`ReplayRefusal::Unreadable`] on a dangling computation or a value
-    ///   inspected by its reduction; a value root itself is left for shape
-    ///   checking.
+    ///   its gate — applied to a canonical argument, under a bind or under a
+    ///   projection; [`ReplayRefusal::Unreadable`] on a dangling computation or
+    ///   a value inspected by its reduction; a value root itself is left for
+    ///   shape checking.
     /// - panics: none.
     ///
     /// # Errors
@@ -2875,6 +3056,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - witness: `path_universe::tests::transport_computes`
     /// - witness: `path_universe::tests::refl_collapses`
     /// - witness: `replay::tests::native_list_fold_reduces_without_capturing_outer_variables`
+    /// - witness: `replay::tests::a_projection_runs_its_side_of_a_pairing`
     #[spec(
         captures: before = self.spent,
         ensures: |ret| match term {
@@ -3058,6 +3240,23 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     frames.push(Frame::Bind(body));
                     focus = bound;
                 },
+                | Some(&Computation::Project(side, pair)) => {
+                    frames.push(Frame::Project(side));
+                    focus = pair;
+                },
+                // A projection of a lazy pairing runs the side it names; a
+                // pairing under no projection is in weak head form.
+                | Some(&Computation::With(first, second)) => match frames.last() {
+                    | Some(&Frame::Project(side)) => {
+                        frames.pop();
+                        focus = match side {
+                            | Side::Left => first,
+                            | Side::Right => second,
+                        };
+                        progress = Progress::Reduced;
+                    },
+                    | Some(&(Frame::Apply(_) | Frame::Bind(_))) | None => break,
+                },
                 | Some(&Computation::Force(value)) => match self.arena.value(value) {
                     | Some(&Value::Thunk(body)) => {
                         focus = body;
@@ -3089,13 +3288,13 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         focus = self.instantiate(body, argument);
                         progress = Progress::Reduced;
                     },
-                    | Some(&Frame::Bind(_)) | None => break,
+                    | Some(&(Frame::Bind(_) | Frame::Project(_))) | None => break,
                 },
                 // A fixpoint unfolds at its gate: applied to a canonical
-                // argument, the `<` direction, or under a bind observing its
-                // result, the `>` direction. Conversion unfolds only a
-                // fixpoint whose structural-descent evidence replayed, and
-                // only at a constructor; at a partial fixpoint's gate it
+                // argument, the `<` direction, or under a bind or a projection
+                // observing its result, the `>` direction. Conversion unfolds
+                // only a fixpoint whose structural-descent evidence replayed,
+                // and only at a constructor; at a partial fixpoint's gate it
                 // declines rather than refutes.
                 | Some(&Computation::Fixpoint { body, evidence }) => {
                     let gate = match frames.last() {
@@ -3109,7 +3308,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                             | Some(_) => Gate::Canonical,
                             | None => return Err(unreadable()),
                         },
-                        | Some(&Frame::Bind(_)) => Gate::Observed,
+                        | Some(&(Frame::Bind(_) | Frame::Project(_))) => Gate::Observed,
                         | None => Gate::Shut,
                     };
                     match (evidence, gate) {
@@ -3135,7 +3334,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         focus = self.instantiate(body, value);
                         progress = Progress::Reduced;
                     },
-                    | Some(&Frame::Apply(_)) | None => break,
+                    | Some(&(Frame::Apply(_) | Frame::Project(_))) | None => break,
                 },
                 | None => return Err(unreadable()),
             }
@@ -3167,19 +3366,22 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// # Specification
     /// - requires: the computation and the frame children live in the arena.
     /// - ensures: an application keeps the computation as its head and the
-    ///   frame argument; a bind keeps it as the bound term and the frame body.
+    ///   frame argument; a bind keeps it as the bound term and the frame body;
+    ///   a projection keeps it as the projected pairing and the frame side.
     /// - provides: reconstruction of the unreduced outer elimination path.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3: a beta-reduced head under either an application or a
-    ///   bind remains convertible to the explicitly retained frame; dropping or
-    ///   exchanging the frame changes that verdict.
+    /// - hypothesis: L3: a beta-reduced head under an application, a bind or a
+    ///   projection remains convertible to the explicitly retained frame;
+    ///   dropping or exchanging the frame changes that verdict.
     /// - witness: `replay::tests::reduced_heads_retain_application_and_bind_frames`
+    /// - witness: `replay::tests::a_projection_runs_its_side_of_a_pairing`
     #[spec(ensures: |ret| self.arena.computation(ret) == Some(&match frame {
         Frame::Apply(argument) => Computation::Application(computation, argument),
         Frame::Bind(body) => Computation::Bind(computation, body),
+        Frame::Project(side) => Computation::Project(side, computation),
     }))]
     fn wrap(
         &mut self,
@@ -3190,6 +3392,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         match frame {
             | Frame::Apply(argument) => self.arena.computation_application(computation, argument),
             | Frame::Bind(body) => self.arena.computation_bind(computation, body),
+            | Frame::Project(side) => self.arena.computation_project(side, computation),
         }
     }
 
@@ -3362,27 +3565,33 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
 /// - requires: nothing.
 /// - ensures: [`Rule::Constants`] when either head is a defined constant; else
 ///   [`Rule::Force`] for a thunk against a thunk or a neutral; [`Rule::Eta`]
-///   for a lambda against a neutral; else [`Rule::Structural`].
+///   for a lambda against a neutral; [`Rule::ProductEta`] for a lazy pairing
+///   against a neutral; else [`Rule::Structural`].
 /// - provides: the rule table's dispatch, in the engine's order.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3: the finite product of former, thunk, lambda, return, and
-///   variable or constant head statuses observes constant priority, force
-///   priority, eta side, and structural fallback independently of term depth.
+/// - hypothesis: L3: the finite product of former, thunk, lambda, lazy pairing,
+///   return, and variable or constant head statuses observes constant priority,
+///   force priority, both eta sides, and structural fallback independently of
+///   term depth.
 /// - witness: `replay::tests::rule_dispatch_respects_constant_priority_and_eta_side`
 #[spec(ensures: |ret| {
     let defined = [left, right].iter().any(|shape| matches!(shape, &&Shape::Neutral(Head::Constant(_, Status::Defined), _)));
     let force = matches!((left, right), (&Shape::Thunk(_), &(Shape::Thunk(_) | Shape::Neutral(..))) | (&Shape::Neutral(..), &Shape::Thunk(_)));
     let eta_left = matches!((left, right), (&Shape::Neutral(..), &Shape::Lambda(_)));
     let eta_right = matches!((left, right), (&Shape::Lambda(_), &Shape::Neutral(..)));
+    let pairing_left = matches!((left, right), (&Shape::Neutral(..), &Shape::With(..)));
+    let pairing_right = matches!((left, right), (&Shape::With(..), &Shape::Neutral(..)));
     match ret {
         Rule::Constants => defined,
         Rule::Force => !defined && force,
         Rule::Eta(ConversionSide::Left) => !defined && !force && eta_left,
         Rule::Eta(ConversionSide::Right) => !defined && !force && eta_right,
-        Rule::Structural => !defined && !force && !eta_left && !eta_right,
+        Rule::ProductEta(ConversionSide::Left) => !defined && pairing_left,
+        Rule::ProductEta(ConversionSide::Right) => !defined && pairing_right,
+        Rule::Structural => !defined && !force && !eta_left && !eta_right && !pairing_left && !pairing_right,
     }
 })]
 fn rule(
@@ -3404,10 +3613,13 @@ fn rule(
         | (&Shape::Neutral(..), &Shape::Thunk(_)) => Rule::Force,
         | (&Shape::Lambda(_), &Shape::Neutral(..)) => Rule::Eta(ConversionSide::Right),
         | (&Shape::Neutral(..), &Shape::Lambda(_)) => Rule::Eta(ConversionSide::Left),
+        | (&Shape::With(..), &Shape::Neutral(..)) => Rule::ProductEta(ConversionSide::Right),
+        | (&Shape::Neutral(..), &Shape::With(..)) => Rule::ProductEta(ConversionSide::Left),
         | (
             &(Shape::Former
             | Shape::Thunk(_)
             | Shape::Lambda(_)
+            | Shape::With(..)
             | Shape::Fixpoint(_)
             | Shape::Return(_)
             | Shape::Neutral(..)),
@@ -3424,8 +3636,8 @@ fn rule(
 ///   elimination's kind; else an application's or a static application's
 ///   arguments, a bind's continuations and a sum case's two branches, in spine
 ///   order. A native data case first compares its quoted motive, then its
-///   ordinary branch functions; a force or matching record projection
-///   contributes none.
+///   ordinary branch functions; a force, a matching record projection or a
+///   projection of one lazy-product side contributes none.
 /// - provides: the decomposition of two neutrals over one head.
 /// - fails: unreadable native metadata when a retained source is missing or
 ///   malformed.
@@ -3443,6 +3655,7 @@ fn rule(
 /// - witness: `replay::tests::neutral_spines_keep_subgoal_order_and_reject_kind_mismatches`
 /// - witness: `replay::tests::a_refutation_follows_its_negative_subgoal`
 /// - witness: `path_universe::tests::refl_collapses`
+/// - witness: `replay::tests::a_lazy_pairing_meets_a_neutral_by_its_projections`
 #[spec(ensures: |ret| {
     let compatible = left.len() == right.len() && left.iter().zip(right).all(|(one, other)| match (*one,*other) {
         (Elimination::RecordProjection(a),Elimination::RecordProjection(b)) => matches!((arena.computation(a),arena.computation(b)), (Some(Computation::RecordProjection(_,a)),Some(Computation::RecordProjection(_,b))) if a == b),
@@ -3452,17 +3665,18 @@ fn rule(
             let width = |case: ComputationId| match *arena.computation(case)? { Computation::Case { ref branches, .. } => Some(branches.len()), _ => None };
             width(a).is_some() && width(a) == width(b)
         },
+        (Elimination::Project(a), Elimination::Project(b)) => a == b,
         _ => core::mem::discriminant(one) == core::mem::discriminant(other),
     });
     match ret {
 Err(Stop::Refused(ReplayRefusal::Unreadable)) => true,
 Err(_) => false,
 Ok(Structure::Leaf(Expect::NotConvertible)) => !compatible,
-Ok(Structure::Leaf(Expect::Convertible)) => compatible && left.iter().all(|one| matches!(*one, Elimination::Force | Elimination::RecordProjection(_) | Elimination::TupleProjection(_)) || matches!(*one, Elimination::Case(case) if arena.computation(case).is_some_and(|node| matches!(*node, Computation::Case { ref branches, .. } if branches.is_empty())))),
+Ok(Structure::Leaf(Expect::Convertible)) => compatible && left.iter().all(|one| matches!(*one, Elimination::Force | Elimination::RecordProjection(_) | Elimination::TupleProjection(_) | Elimination::Project(_)) || matches!(*one, Elimination::Case(case) if arena.computation(case).is_some_and(|node| matches!(*node, Computation::Case { ref branches, .. } if branches.is_empty())))),
 Ok(Structure::Premises(ref premises)) => compatible && !premises.is_empty() && {
             let mut pending = premises.iter();
             let ordered = left.iter().zip(right).all(|(one, other)| match (*one, *other) {
-                (Elimination::Force, Elimination::Force) | (Elimination::RecordProjection(_),Elimination::RecordProjection(_)) | (Elimination::TupleProjection(_),Elimination::TupleProjection(_)) => true,
+                (Elimination::Force, Elimination::Force) | (Elimination::RecordProjection(_),Elimination::RecordProjection(_)) | (Elimination::TupleProjection(_),Elimination::TupleProjection(_)) | (Elimination::Project(_), Elimination::Project(_)) => true,
                 (Elimination::Case(a),Elimination::Case(b)) => {
 if let Some(left_node) = arena.computation(a) && let Computation::Case{branches:ref a,..} = *left_node && let Some(right_node) = arena.computation(b) && let Computation::Case{branches:ref b,..} = *right_node { a.iter().zip(b.iter()).all(|(a,b)| pending.next() == Some(&Premise::computations(*a,*b))) }
  else { false }
@@ -3616,10 +3830,18 @@ fn spines(
             | (Elimination::ListFold(a, b), Elimination::ListFold(c, d)) => {
                 premises.extend([Premise::computations(a, c), Premise::computations(b, d)]);
             },
+            // Two projections of one side add no premise; the two sides of
+            // the lazy product are apart.
+            | (Elimination::Project(a), Elimination::Project(b)) => {
+                if a != b {
+                    return Ok(Structure::Leaf(Expect::NotConvertible));
+                }
+            },
             | (
                 Elimination::DataCase(_)
                 | Elimination::RecordProjection(_)
                 | Elimination::TupleProjection(_)
+                | Elimination::Project(_)
                 | Elimination::Transport(_)
                 | Elimination::ProductTransport(_)
                 | Elimination::Force
@@ -3648,6 +3870,7 @@ mod tests
     use gandr_kernel_term::BaseType;
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::DeBruijnIndex;
+    use gandr_kernel_term::FixpointEvidence;
     use gandr_kernel_term::Side;
     use gandr_kernel_term::TermArena;
 
@@ -4540,6 +4763,7 @@ mod tests
                 super::Head::Constant(name, super::Status::Defined),
                 Vec::new(),
             ),
+            super::Shape::With(body, body),
         ];
         for (left_kind, left) in shapes.iter().enumerate() {
             for (right_kind, right) in shapes.iter().enumerate() {
@@ -4548,6 +4772,8 @@ mod tests
                     | (1, 1 | 4 ..= 6) | (4 ..= 6, 1) => super::Rule::Force,
                     | (2, 4 ..= 6) => super::Rule::Eta(ConversionSide::Right),
                     | (4 ..= 6, 2) => super::Rule::Eta(ConversionSide::Left),
+                    | (8, 4 ..= 6) => super::Rule::ProductEta(ConversionSide::Right),
+                    | (4 ..= 6, 8) => super::Rule::ProductEta(ConversionSide::Left),
                     | _ => super::Rule::Structural,
                 };
                 assert_eq!(
@@ -4556,6 +4782,185 @@ mod tests
                     "shape classes {left_kind}, {right_kind}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn a_projection_runs_its_side_of_a_pairing()
+    {
+        let mut arena = TermArena::new();
+        let none = Unfoldings::default();
+        let unit = arena.value_unit();
+        let free = arena.value_variable(DeBruijnIndex::from(0));
+        let left = arena.computation_return(unit);
+        let right = arena.computation_return(free);
+        let pairing = arena.computation_with(left, right);
+        let first = arena.computation_project(Side::Left, pairing);
+        let second = arena.computation_project(Side::Right, pairing);
+        let negative = ConversionDecision::NegativeSubgoal {
+            position: SubgoalPosition::from(0_u32),
+        };
+
+        // Each projection runs its own side and no decision is read.
+        assert_eq!(
+            run(
+                &mut arena,
+                &none,
+                ReplaySides::Computations(first, left),
+                EngineClaim::Convertible,
+                &[]
+            ),
+            KernelVerdict::Convertible
+        );
+        assert_eq!(
+            run(
+                &mut arena,
+                &none,
+                ReplaySides::Computations(second, right),
+                EngineClaim::Convertible,
+                &[]
+            ),
+            KernelVerdict::Convertible
+        );
+        assert_eq!(
+            run(
+                &mut arena,
+                &none,
+                ReplaySides::Computations(second, left),
+                EngineClaim::NotConvertible,
+                &[negative]
+            ),
+            KernelVerdict::NotConvertible
+        );
+
+        // A projection stuck on a neutral keeps its frame over the reduct of
+        // what it projects, and observes a fixpoint at its gate.
+        let neutral = arena.computation_force(free);
+        let suspended = arena.value_thunk(neutral);
+        let forced = arena.computation_force(suspended);
+        let reducible = arena.computation_project(Side::Left, forced);
+        let stuck = arena.computation_project(Side::Left, neutral);
+        let other_side = arena.computation_project(Side::Right, neutral);
+        assert_eq!(
+            run(
+                &mut arena,
+                &none,
+                ReplaySides::Computations(reducible, stuck),
+                EngineClaim::Convertible,
+                &[]
+            ),
+            KernelVerdict::Convertible
+        );
+        assert_eq!(
+            run(
+                &mut arena,
+                &none,
+                ReplaySides::Computations(reducible, other_side),
+                EngineClaim::NotConvertible,
+                &[]
+            ),
+            KernelVerdict::NotConvertible
+        );
+        let partial = arena.computation_fixpoint(pairing, FixpointEvidence::Partial);
+        let observed = arena.computation_project(Side::Left, partial);
+        assert_eq!(
+            run(
+                &mut arena,
+                &none,
+                ReplaySides::Computations(observed, left),
+                EngineClaim::Convertible,
+                &[]
+            ),
+            KernelVerdict::Declined(ReplayDecline::PartialFixpoint)
+        );
+    }
+
+    #[test]
+    fn a_lazy_pairing_meets_a_neutral_by_its_projections()
+    {
+        let mut arena = TermArena::new();
+        let none = Unfoldings::default();
+        let head = arena.value_variable(DeBruijnIndex::from(0));
+        let neutral = arena.computation_force(head);
+        let first = arena.computation_project(Side::Left, neutral);
+        let second = arena.computation_project(Side::Right, neutral);
+        let expanded = arena.computation_with(first, second);
+        let crossed = arena.computation_with(first, first);
+        let first_again = arena.computation_project(Side::Left, neutral);
+        let second_again = arena.computation_project(Side::Right, neutral);
+        let rebuilt = arena.computation_with(first_again, second_again);
+        let negative = |position| ConversionDecision::NegativeSubgoal {
+            position: SubgoalPosition::from(position),
+        };
+
+        // The pairing of a neutral's projections is that neutral, on either
+        // side, with no decision for the η step; two pairings compare
+        // componentwise.
+        for sides in [
+            ReplaySides::Computations(expanded, neutral),
+            ReplaySides::Computations(neutral, expanded),
+            ReplaySides::Computations(expanded, rebuilt),
+        ] {
+            assert_eq!(
+                run(&mut arena, &none, sides, EngineClaim::Convertible, &[]),
+                KernelVerdict::Convertible
+            );
+        }
+
+        // The arrow's decision is never read at the step, so it is left over;
+        // a structural marker there is refused where it stands.
+        let sides = ReplaySides::Computations(expanded, neutral);
+        assert_eq!(
+            run(&mut arena, &none, sides, EngineClaim::Convertible, &[
+                ConversionDecision::EtaExpand {
+                    side: ConversionSide::Right,
+                    variable: ReplayNode::Other,
+                }
+            ]),
+            refused(ReplayRefusal::Leftover {
+                at: TracePosition::from(0),
+            })
+        );
+        assert_eq!(
+            run(&mut arena, &none, sides, EngineClaim::Convertible, &[
+                ConversionDecision::Decompose
+            ]),
+            refused(ReplayRefusal::Inapplicable {
+                at: TracePosition::from(0),
+            })
+        );
+
+        // A pairing projecting the left side twice is refuted by its second
+        // premise only, and only through the decision naming it.
+        for sides in [
+            ReplaySides::Computations(crossed, neutral),
+            ReplaySides::Computations(neutral, crossed),
+            ReplaySides::Computations(rebuilt, crossed),
+        ] {
+            assert_eq!(
+                run(&mut arena, &none, sides, EngineClaim::NotConvertible, &[
+                    negative(1_u32)
+                ]),
+                KernelVerdict::NotConvertible
+            );
+            assert_eq!(
+                run(&mut arena, &none, sides, EngineClaim::NotConvertible, &[
+                    negative(0_u32)
+                ]),
+                refused(ReplayRefusal::Contradicted {
+                    at: TracePosition::from(1),
+                })
+            );
+            assert_eq!(
+                run(&mut arena, &none, sides, EngineClaim::NotConvertible, &[]),
+                refused(ReplayRefusal::Exhausted)
+            );
+            assert_eq!(
+                run(&mut arena, &none, sides, EngineClaim::Convertible, &[]),
+                refused(ReplayRefusal::Contradicted {
+                    at: TracePosition::from(0),
+                })
+            );
         }
     }
 
