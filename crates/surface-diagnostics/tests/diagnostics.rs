@@ -16,7 +16,9 @@ mod diagnostics
     use anodized::spec;
     use gandr_core_checker::CheckRefusal;
     use gandr_core_checker::FrameRole;
+    use gandr_core_checker::Mismatch;
     use gandr_core_checker::TermNode;
+    use gandr_core_checker::TypeNode;
     use gandr_core_term::FailureClass;
     use gandr_surface_corpus::Refusal;
     use gandr_surface_diagnostics::AnnotationKind;
@@ -497,6 +499,54 @@ mod diagnostics
             *failures,
             Failures::default(),
             "a module that refuses nothing keeps no failure"
+        );
+    }
+
+    #[test]
+    fn a_sealed_type_is_spelled_by_its_path()
+    {
+        let step = unsettled(
+            Path::new("sealed.gandr"),
+            SourceRoot::Strict,
+            SourceText::from(
+                "module Counter :> #{ type T, zero : T } { type T = Integer ; def zero = 0 ; }\ndef \
+                 leaked : Integer ;\ndef leaked = Counter.zero ;\n",
+            ),
+        );
+        let Step::Source {
+            composed:
+                Composed::Settled {
+                    ref report,
+                    ref spellings,
+                    ..
+                },
+            ..
+        } = step
+        else {
+            panic!("the module settles");
+        };
+        let Some(Maybe::Present(Refusal::Checking(CheckRefusal::TypeMismatch(Mismatch::Value {
+            synthesised,
+            expected,
+            ..
+        })))) = report
+            .declarations()
+            .last()
+            .map(|declaration| declaration.produced().refusal())
+        else {
+            panic!("the leak is a value mismatch");
+        };
+        let spelled = |node| match spellings.get(node) {
+            | Maybe::Present(presentation) => presentation.as_ref().to_owned(),
+            | Maybe::Absent(reason) => format!("{reason:?}"),
+        };
+        assert_eq!(
+            (
+                spelled(TypeNode::Value(expected)),
+                spelled(TypeNode::Value(synthesised))
+            ),
+            ("Integer".to_owned(), "Counter.T".to_owned()),
+            "the atom is named as a client writes it"
         );
     }
 

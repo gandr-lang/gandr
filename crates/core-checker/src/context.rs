@@ -7,9 +7,10 @@
 //! stack, and it stays that. What checking adds sits here beside it: the
 //! signature table from admission positions to the types declarations
 //! supplied, the highest admission position so far, the atoms the literal and
-//! unit rules hand out, the definitions a code may unfold to, the lifts the
-//! judgement decided, and the step allowance. A later synthesised context
-//! lands in this wrapper too, so no checking concern widens the core crate.
+//! unit rules hand out, the definitions a code may unfold to, the sealed
+//! abstract types with the sites that minted them, the lifts the judgement
+//! decided, and the step allowance. A later synthesised context lands in this
+//! wrapper too, so no checking concern widens the core crate.
 //!
 //! The binder stack is empty between judgements and restored to where it stood
 //! whenever a run is refused. The alternative was adding the signature table to
@@ -54,6 +55,24 @@
 //! — may admit the declaration with the type it supplied before, through
 //! [`CheckingContext::adopt`], instead of judging it again. Admission order
 //! binds an adopted declaration exactly as a judged one.
+//!
+//! # A sealed atom is manifest inside its seal
+//!
+//! An abstract type admitted at position `a` with extent `n` stands for its
+//! representation while the judgement reads a declaration at a position in
+//! `a + 1 ..= a + n` — the sealing module's own members and the witnesses that
+//! check them at the signature — and for itself everywhere else. The weak head
+//! reads it through, so a member checks at the representation inside the
+//! module and an export read from outside meets the atom, which relates to
+//! nothing but itself. The kernel decides manifestness by the same rule over
+//! the same positions, so the two sides agree on every reading.
+//!
+//! The alternatives were substituting the representation into the members'
+//! types before checking them, which leaves no single place that knows where
+//! the seal ends, and a scope pushed and popped around the module, which a
+//! checker judging one declaration at a time — the incremental one — cannot
+//! reconstruct. The choice reverses with nested sealing that reaches back over
+//! an enclosing seal, which needs a stack of extents rather than one per atom.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -78,12 +97,15 @@ use crate::code::CodeDefinitions;
 use crate::code::Lift;
 use crate::code::Unfolded;
 use crate::code::unfolding;
+use crate::declaration::AbstractType;
 use crate::formation::FormedValueType;
 use crate::formation::level_of;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CoreNode;
 use crate::refusal::TermNode;
 use crate::refusal::TypeNode;
+use crate::seal::SealId;
+use crate::seal::SealTable;
 use crate::support::Consulted;
 use crate::support::Support;
 use crate::support::SupportLog;
@@ -223,8 +245,20 @@ pub enum Atom
     String,
 }
 
+/// An abstract type the context admitted, with the level of the universe it
+/// inhabits.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct Sealed
+{
+    /// The declaration, as offered.
+    declared: AbstractType,
+    /// The level of its kind.
+    level: Level,
+}
+
 /// The core context wrapped with the signature table, the admission position,
-/// the atoms, the code definitions, the lifts and the step allowance.
+/// the atoms, the code definitions, the sealed abstract types, the lifts and
+/// the step allowance.
 ///
 /// The context derives nothing: it borrows the whole arena, and an equality
 /// or a debug rendering of it would read every node.
@@ -253,6 +287,10 @@ pub struct CheckingContext<'arena>
     /// The universe equivalences the judgement decided, by node, with the
     /// evidence each round trip replays.
     equivalences: BTreeMap<ValueId, crate::equiv::Equivalence>,
+    /// The abstract types admitted, by position.
+    sealed: BTreeMap<ConstantIndex, Sealed>,
+    /// The sites that minted them, in minting order.
+    seals: SealTable,
     /// The allowance each judgement starts with.
     budget: CheckBudget,
     /// The answers the running supported judgement consulted, when one runs.
@@ -275,7 +313,7 @@ impl<'arena> CheckingContext<'arena>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the context holds no binder, no signature, no definition and
-    ///   no lift, has admitted nothing and forms no block.
+    ///   no lift, has admitted nothing, sealed nothing and forms no block.
     /// - provides: the context every face and the declaration check run in.
     /// - panics: none.
     /// - intension: mints three value-type nodes into `arena` — the unit type,
@@ -319,6 +357,8 @@ impl<'arena> CheckingContext<'arena>
             lifts: BTreeMap::new(),
             funexts: BTreeMap::new(),
             equivalences: BTreeMap::new(),
+            sealed: BTreeMap::new(),
+            seals: SealTable::new(),
             budget,
             support: SupportLog::Off,
             forming: Maybe::Absent(forming::Absent::Idle),
@@ -479,6 +519,184 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
             data.push(crate::support::DataConsulted::new(constant, answer.clone()));
         }
         answer
+    }
+
+    /// Mint the atom for the abstract type at `constant`, formed at `level`,
+    /// and retain it.
+    ///
+    /// # Specification
+    /// - requires: the abstract type formed at `level`, as
+    ///   [`crate::former::form_abstract`] gives it.
+    /// - ensures: the atom [`SealTable::mint`] gives the declaration's site,
+    ///   and the context answers `level` for `constant`; on refusal the table
+    ///   and the retained abstract types are unchanged.
+    /// - fails: [`CheckRefusal::SealSiteRepeated`] naming the site when it was
+    ///   minted before.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`CheckRefusal::SealSiteRepeated`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two abstract types at one site, the second refused by
+    ///   name with nothing minted for it.
+    /// - witness: `module::tests::a_repeated_sealing_site_is_refused_and_mints_nothing`
+    #[spec(
+        captures: before = self.seals.sites().len(),
+        ensures: |ret| match ret {
+            | Ok(id) => id.site() == declared.site()
+                && self.seals.sites().len() == before.saturating_add(1)
+                && self.sealed.contains_key(&constant),
+            | Err(refusal) => refusal == CheckRefusal::SealSiteRepeated(declared.site())
+                && self.seals.sites().len() == before,
+        },
+    )]
+    pub(crate) fn seal_abstract(
+        &mut self,
+        constant: ConstantIndex,
+        declared: AbstractType,
+        level: Level,
+    ) -> Result<SealId, CheckRefusal>
+    {
+        let atom = self
+            .seals
+            .mint(declared.site())
+            .map_err(|_minted| CheckRefusal::SealSiteRepeated(declared.site()))?;
+        let _previous = self.sealed.insert(constant, Sealed { declared, level });
+        Ok(atom)
+    }
+
+    /// Re-form and adopt an abstract type a previous run admitted, minting its
+    /// atom again in this context.
+    ///
+    /// # Specification
+    /// - requires: identifiers are read in this context; no cached formation
+    ///   claim is trusted across arenas.
+    /// - ensures: the fresh position holds the abstract type, its site minted;
+    ///   on refusal no atom is minted and no abstract type retained, though a
+    ///   repeated site leaves the position admitted, as a judged refusal does.
+    /// - fails: the formation refusal, a repeated site, or admission out of
+    ///   source order.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns a formation refusal, [`CheckRefusal::SealSiteRepeated`] or the
+    /// ordinary admission-order refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — reusing a sealed module's checkpoint must mint the
+    ///   atom again, answering its level as a judgement would, and a second
+    ///   adoption at the same site is refused with nothing retained.
+    /// - witness: `context::tests::an_adopted_abstract_type_mints_its_site_again`
+    #[spec(ensures: |ret| ret.is_err() || self.sealed.contains_key(&constant))]
+    #[inline]
+    pub fn adopt_abstract(
+        &mut self,
+        constant: ConstantIndex,
+        declared: AbstractType,
+    ) -> Result<(), CheckRefusal>
+    {
+        let level = crate::former::form_abstract(self, declared)?;
+        self.admit(constant)?;
+        let _atom = self.seal_abstract(constant, declared, level)?;
+        Ok(())
+    }
+
+    /// The level of the universe the abstract type at `atom` inhabits.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the level of the admitted abstract type's kind.
+    /// - fails: [`CheckRefusal::NotAnAbstractType`] when no abstract type was
+    ///   admitted at `atom`.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`CheckRefusal::NotAnAbstractType`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an atom of an admitted abstract type and one naming a
+    ///   value declaration separate the answer.
+    /// - witness: `module::tests::an_atom_naming_no_abstract_type_is_refused`
+    #[spec(ensures: |ret| match self.sealed.get(&atom) {
+        | Some(sealed) => ret.as_ref() == Ok(&sealed.level),
+        | None => ret == Err(CheckRefusal::NotAnAbstractType(atom)),
+    })]
+    pub(crate) fn abstract_level(
+        &self,
+        atom: ConstantIndex,
+    ) -> Result<Level, CheckRefusal>
+    {
+        self.sealed
+            .get(&atom)
+            .map(|sealed| sealed.level.clone())
+            .ok_or(CheckRefusal::NotAnAbstractType(atom))
+    }
+
+    /// The abstract types admitted, ascending by position, as offered.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn abstract_types(&self) -> impl Iterator<Item = (ConstantIndex, AbstractType)> + '_
+    {
+        self.sealed
+            .iter()
+            .map(|(&constant, sealed)| (constant, sealed.declared))
+    }
+
+    /// The sites the context minted atoms for, in minting order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn seal_table(&self) -> &SealTable
+    {
+        &self.seals
+    }
+
+    /// The representation the atom at `atom` stands for while the declaration
+    /// admitted last is judged.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the representation exactly when an abstract type was admitted
+    ///   at `atom` and the position admitted last lies in `atom + 1 ..= atom +
+    ///   extent`; otherwise the atom is rigid.
+    /// - provides: the one decision of where a seal reaches.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a member inside the seal, the atom's own position and
+    ///   a declaration past the extent separate the reach.
+    /// - witness: `module::tests::a_sealed_member_checks_at_the_representation_inside`
+    #[spec(ensures: |ret| match (self.admitted, self.sealed.get(&atom)) {
+        | (Maybe::Present(reader), Some(sealed)) if reader > atom
+            && usize::from(reader).saturating_sub(usize::from(atom)) <= usize::from(sealed.declared.extent()) =>
+            ret == Maybe::Present(sealed.declared.representation()),
+        | _ => ret == Maybe::Absent(unfolding::Absent::Rigid),
+    })]
+    fn manifest(
+        &self,
+        atom: ConstantIndex,
+    ) -> Maybe<ValueTypeId, unfolding::Absent>
+    {
+        let Maybe::Present(reader) = self.admitted
+        else {
+            return Maybe::Absent(unfolding::Absent::Rigid);
+        };
+        match self.sealed.get(&atom) {
+            | Some(sealed)
+                if reader > atom
+                    && usize::from(reader).saturating_sub(usize::from(atom))
+                        <= usize::from(sealed.declared.extent()) =>
+            {
+                Maybe::Present(sealed.declared.representation())
+            },
+            | Some(_) | None => Maybe::Absent(unfolding::Absent::Rigid),
+        }
     }
 
     /// The allowance each judgement starts with.
@@ -956,17 +1174,18 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     }
 
     /// The value type `value_type` stands for at its head: a decode of a code
-    /// constant with a body read as the type the body denotes, until the head
-    /// is anything else.
+    /// constant with a body read as the type the body denotes, and a sealed
+    /// atom inside its seal read as its representation, until the head is
+    /// anything else.
     ///
     /// # Specification
     /// - requires: `value_type` is formed.
     /// - ensures: `value_type` itself unless its head is a decode of a constant
-    ///   with a body; otherwise the decode of that body at the decode's level,
-    ///   read again. A body is defined at the universe its constant was
-    ///   declared at, so the decode is at the body's own level. Each unfolding
-    ///   is certified by the normaliser's conversion and its constant logged as
-    ///   consulted.
+    ///   with a body or a manifest atom; otherwise the decode of that body at
+    ///   the decode's level, or the atom's representation, read again. A body
+    ///   is defined at the universe its constant was declared at, so the decode
+    ///   is at the body's own level. Each unfolding is certified by the
+    ///   normaliser's conversion and its constant logged as consulted.
     /// - provides: the weak head every rule that reads a type's former reads.
     /// - fails: [`CheckRefusal::Undecided`] at a code whose unfolding the
     ///   machine did not certify; [`CheckRefusal::DanglingNode`] for a node
@@ -977,15 +1196,23 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// - [`CheckRefusal::Undecided`] — an unfolding was not certified.
     /// - [`CheckRefusal::DanglingNode`] — a node does not resolve.
     ///
+    /// # Termination
+    /// - reason: the `loop` below takes one unfolding per turn, not recursion.
+    /// - measure: a representation names only atoms admitted before its own, so
+    ///   a chain of manifest atoms descends in position; a chain of code
+    ///   unfoldings is bounded as [`Self::whnf_code`]'s is.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — rigid formers and decodes through defined codes are
-    ///   observed by conversion, including a static instance; these separate
-    ///   changing a rigid id and stopping before a certified unfolding.
+    ///   observed by conversion, including a static instance; a sealed atom
+    ///   inside and outside its seal separates reading through from keeping it
+    ///   rigid.
     /// - witness: `conversion::tests::a_decode_of_a_defined_code_converts_with_its_body`
     /// - witness: `bridge::tests::family_argument_at_wrong_classifier_raises_the_exact_variant`
+    /// - witness: `module::tests::a_sealed_member_checks_at_the_representation_inside`
     #[spec(ensures: |ret| ret.is_err() || ret.is_ok_and(|head|
         value_type_view(self.arena, head).is_ok()
-            && (matches!(value_type_view(self.arena, value_type), Ok(ValueTypeView::Element { .. })) || head == value_type)))]
+            && (matches!(value_type_view(self.arena, value_type), Ok(ValueTypeView::Element { .. } | ValueTypeView::Abstract(_))) || head == value_type)))]
     pub(crate) fn whnf_value_type(
         &mut self,
         value_type: ValueTypeId,
@@ -993,11 +1220,32 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     {
         let mut head = value_type;
         loop {
-            let ValueTypeView::Element { code, target } = value_type_view(self.arena, head)?
-            else {
-                return Ok(head);
+            let (code, target) = match value_type_view(self.arena, head)? {
+                | ValueTypeView::Element { code, target } => (code, target.clone()),
+                | ValueTypeView::Abstract(atom) => match self.manifest(atom) {
+                    | Maybe::Present(representation) => {
+                        head = representation;
+                        continue;
+                    },
+                    | Maybe::Absent(_) => return Ok(head),
+                },
+                | ValueTypeView::Data { .. }
+                | ValueTypeView::Record(_)
+                | ValueTypeView::Stack { .. }
+                | ValueTypeView::PathUniverse(..)
+                | ValueTypeView::Path { .. }
+                | ValueTypeView::Sum(_)
+                | ValueTypeView::List(_)
+                | ValueTypeView::Integer
+                | ValueTypeView::String
+                | ValueTypeView::Unit
+                | ValueTypeView::Thunk(_)
+                | ValueTypeView::Universe { .. }
+                | ValueTypeView::Lift { .. }
+                | ValueTypeView::Product(_)
+                | ValueTypeView::StaticPi { .. }
+                | ValueTypeView::Unknown => return Ok(head),
             };
-            let target = target.clone();
             let Maybe::Present(body) = self.unfold(code)?
             else {
                 return Ok(head);
@@ -1204,6 +1452,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                     | ValueTypeView::Element { .. }
                     | ValueTypeView::Product(..)
                     | ValueTypeView::StaticPi { .. }
+                    | ValueTypeView::Abstract(_)
                     | ValueTypeView::Unknown => Ok(otherwise.clone()),
                 },
                 | Maybe::Absent(_) => Ok(otherwise.clone()),
@@ -1489,6 +1738,52 @@ mod tests
             Ok(quenchant_shape::shape::Maybe::Absent(
                 crate::unfolding::Absent::Rigid
             ))
+        );
+    }
+
+    #[test]
+    fn an_adopted_abstract_type_mints_its_site_again()
+    {
+        use crate::CheckRefusal;
+        use crate::declaration::AbstractType;
+        use crate::seal::ComponentOrdinal;
+        use crate::seal::SealSite;
+        use crate::seal::SealingSite;
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let site = SealSite::new(SealingSite::from(0_usize), ComponentOrdinal::from(0_usize));
+        let declared = AbstractType::new(
+            small,
+            integer,
+            gandr_kernel_term::SealExtent::from(1_usize),
+            site,
+        );
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        assert_eq!(
+            context.adopt_abstract(ConstantIndex::from(0_usize), declared),
+            Ok(()),
+            "a reused abstract type is formed and admitted again"
+        );
+        assert_eq!(
+            context.seal_table().sites(),
+            [site],
+            "adoption mints the atom's site as a judgement would"
+        );
+        assert_eq!(
+            context.abstract_level(ConstantIndex::from(0_usize)),
+            Ok(Level::zero()),
+            "the adopted atom answers the level of its kind"
+        );
+        assert_eq!(
+            context.adopt_abstract(ConstantIndex::from(1_usize), declared),
+            Err(CheckRefusal::SealSiteRepeated(site)),
+            "a second adoption at the same site is refused by name"
+        );
+        assert_eq!(
+            context.abstract_types().count(),
+            1,
+            "the refused adoption retains no abstract type"
         );
     }
 }

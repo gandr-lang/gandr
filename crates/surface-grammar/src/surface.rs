@@ -52,13 +52,13 @@
 //!
 //! # Built-in surface
 //!
-//! `built_in` is the gandr surface: 21 precedence groups and 19 tighter-than
+//! `built_in` is the gandr surface: 22 precedence groups and 20 tighter-than
 //! edges, then the term forms, the type-and-shell forms and the circuit forms.
 //! The groups form one expression chain, one pattern chain and one type chain
 //! whose union, intersection and lazy-product bands are mutually incomparable
 //! between the sum and arrow bands; the item group stands apart from all three.
-//! Its pinned shape is 2530 molds, 78 labels projected to more than one mold,
-//! and the fingerprint `0x0def_d4e9_fa69_917b`; a change to any form, group or
+//! Its pinned shape is 2537 molds, 78 labels projected to more than one mold,
+//! and the fingerprint `0x4012_7ae2_0573_af0c`; a change to any form, group or
 //! edge moves the fingerprint, and the test pinning it states the change.
 //!
 //! ### Lists close on an optional separator
@@ -217,6 +217,7 @@ const PREC_GROUPS: &[(&str, Assoc)] = &[
     ("pattern.as", Assoc::Left),
     ("pattern.or", Assoc::Left),
     ("type.atom", Assoc::Non),
+    ("type.path", Assoc::Left),
     ("type.application", Assoc::Non),
     ("type.product", Assoc::Right),
     ("type.sum", Assoc::Right),
@@ -238,7 +239,8 @@ const PREC_EDGES: &[(&str, &str)] = &[
     ("expression.or", "expression.pure"),
     ("pattern.atom", "pattern.as"),
     ("pattern.as", "pattern.or"),
-    ("type.atom", "type.application"),
+    ("type.atom", "type.path"),
+    ("type.path", "type.application"),
     ("type.application", "type.product"),
     ("type.product", "type.sum"),
     ("type.sum", "type.union"),
@@ -417,6 +419,7 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "telescope_expression",
     "telescope_pattern",
     "telescope_type",
+    "type_path",
     "unknown_type",
     "universe_type",
     "value_function_type",
@@ -436,6 +439,7 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "feed_statement",
     "grade_prefix",
     "if_answer_type",
+    "lowercase_module_name",
     "node_statement",
     "op_member",
     "parameterized_observation",

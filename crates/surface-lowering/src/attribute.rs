@@ -615,6 +615,7 @@ pub const fn payload_form(former: Former) -> PayloadForm
         | Former::Instantiation
         | Former::Projection
         | Former::TypeHead
+        | Former::TypePath
         | Former::Universe
         | Former::TypeApplication
         | Former::ThunkType

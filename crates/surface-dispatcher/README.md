@@ -48,7 +48,7 @@ Each nontrivial operation states an executable contract or a local exemption, pl
 | [Reports](src/report.rs) and [exercised rows](src/exercised.rs) | Saturating counts preserve unrelated fields; repeated row assignments retain the last value. |
 | [Filesystem walk](src/walk.rs) | Late filesystem changes retain pending sources; exhaustion is stable; explicit links retain their reported path and use their target for classification; a visit at three threads yields the serial walk's rows and report, and a stopped visit hands over nothing more. |
 | [Host width](src/width.rs) | A second hardware thread shares its core; a hybrid processor counts its performance cores alone; a missing, malformed or backwards CPU list reports no count rather than a guess. |
-| [Evaluation](src/evaluate.rs) | Construction accepts sparse admission indices; terminal classification preserves declaration identity; nested fields retain order and repeated references. |
+| [Evaluation](src/evaluate.rs) | Each declaration stands at its admission position, a skipped position holding none; terminal classification preserves declaration identity; nested fields retain order and repeated references. |
 | [Corpus registration](tests/corpus.rs) | A directory with a source extension is traversed rather than registered as a source. |
 
 ## Expected features

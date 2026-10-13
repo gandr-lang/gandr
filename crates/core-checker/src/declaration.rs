@@ -20,16 +20,30 @@
 //! type.
 //!
 //! A [`DeclarationContent`] distinguishes the optional value halves from a
-//! complete native `DataSignature`. Reading a lowering's outcome type directly
-//! would couple independent layers; the adapter is revisited only if a shared
-//! producer-neutral declaration vocabulary replaces it. Names enter only at
-//! export, through `bridge::Readmission::export`.
+//! complete native `DataSignature` and from a sealed [`AbstractType`]. Reading
+//! a lowering's outcome type directly would couple independent layers; the
+//! adapter is revisited only if a shared producer-neutral declaration
+//! vocabulary replaces it. Names enter only at export, through
+//! `bridge::Readmission::export`.
+//!
+//! # A sealed abstract type
+//!
+//! Opaque ascription declares each abstract component as an atom at its own
+//! admission position, before the members that implement it: its kind, its
+//! representation, how many positions after it stay inside the seal, and the
+//! site that minted it. The atom's identity is the position; the extent says
+//! where the representation stops being visible, so the module's own members
+//! check at the representation and every later declaration sees the atom
+//! alone.
 
 use anodized::spec;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::SealExtent;
 use quenchant_shape::shape::Maybe;
+
+use crate::seal::SealSite;
 
 quenchant_shape::reason_enum! {
     /// Why a declaration carries no declared type.
@@ -91,7 +105,93 @@ impl From<OriginToken> for usize
     }
 }
 
-/// The two disjoint declaration judgments.
+/// A sealed abstract type: an atom of a universe, the representation it
+/// stands for inside its seal, and the reach of that seal.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct AbstractType
+{
+    /// The universe the atom inhabits.
+    kind: ValueTypeId,
+    /// The type the atom stands for inside its seal.
+    representation: ValueTypeId,
+    /// How many admission positions after the atom's own stay inside the
+    /// seal.
+    extent: SealExtent,
+    /// The sealing site that mints the atom.
+    site: SealSite,
+}
+
+impl AbstractType
+{
+    /// The atom of `kind` standing for `representation` for the `extent`
+    /// positions after its own, minted at `site`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        kind: ValueTypeId,
+        representation: ValueTypeId,
+        extent: SealExtent,
+        site: SealSite,
+    ) -> Self
+    {
+        Self {
+            kind,
+            representation,
+            extent,
+            site,
+        }
+    }
+
+    /// The universe the atom inhabits.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn kind(&self) -> ValueTypeId
+    {
+        self.kind
+    }
+
+    /// The type the atom stands for inside its seal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn representation(&self) -> ValueTypeId
+    {
+        self.representation
+    }
+
+    /// How many admission positions after the atom's own stay inside the
+    /// seal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn extent(&self) -> SealExtent
+    {
+        self.extent
+    }
+
+    /// The sealing site that mints the atom.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn site(&self) -> SealSite
+    {
+        self.site
+    }
+}
+
+/// The three disjoint declaration judgments.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum DeclarationContent
 {
@@ -105,6 +205,8 @@ pub enum DeclarationContent
     },
     /// A native nominal signature; it is neither a value body nor a hole.
     Data(alloc::sync::Arc<gandr_core_term::DataSignature>),
+    /// A sealed abstract type; an atom, neither a value nor an assumption.
+    Abstract(AbstractType),
 }
 /// One declaration, as the judgement reads it.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -197,6 +299,25 @@ impl Declaration
             constant,
             origin,
             content: DeclarationContent::Data(signature),
+        }
+    }
+
+    /// A sealed abstract type at its own admission position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn abstract_type(
+        constant: ConstantIndex,
+        sealed: AbstractType,
+        origin: OriginToken,
+    ) -> Self
+    {
+        Self {
+            constant,
+            origin,
+            content: DeclarationContent::Abstract(sealed),
         }
     }
 

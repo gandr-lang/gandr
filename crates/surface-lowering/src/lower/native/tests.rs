@@ -88,7 +88,7 @@ pub(in crate::lower) fn lowered<'source>(
 /// did not refuse.
 ///
 /// # Specification
-/// - requires: `module` was lowered over `arena`.
+/// - requires: `module` was lowered over `arena` and declares no abstract type.
 /// - ensures: one verdict per unrefused declaration, in admission order.
 /// - fails: never.
 /// - panics: none.
@@ -131,7 +131,7 @@ pub(in crate::lower) fn judged(
                         | Maybe::Absent(_) => None,
                     };
                 },
-                | DeclarationOutcome::Refused(_) => return None,
+                | DeclarationOutcome::Abstract(_) | DeclarationOutcome::Refused(_) => return None,
             };
             Some(Declaration::new(
                 declaration.constant(),

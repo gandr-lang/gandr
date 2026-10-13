@@ -71,7 +71,8 @@ fn lowered<'source>(
 /// did not refuse.
 ///
 /// # Specification
-/// - requires: `module` was lowered over `arena` and declares no data.
+/// - requires: `module` was lowered over `arena` and declares no data and no
+///   abstract type.
 /// - ensures: one verdict per unrefused declaration, in admission order.
 /// - fails: never.
 /// - panics: none.
@@ -104,7 +105,9 @@ fn judged(
                     Maybe::Absent(signature::Absent::Unsigned),
                     Maybe::Present(body),
                 ),
-                | DeclarationOutcome::Data(_) | DeclarationOutcome::Refused(_) => return None,
+                | DeclarationOutcome::Data(_)
+                | DeclarationOutcome::Abstract(_)
+                | DeclarationOutcome::Refused(_) => return None,
             };
             Some(Declaration::new(
                 declaration.constant(),

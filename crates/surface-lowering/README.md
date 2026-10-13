@@ -13,7 +13,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 
 ## Synopsis
 
-**What.** `lower_module` reads a `gandr-surface-syntax` tree molded under a `gandr-surface-grammar` grammar and mints its declarations into a `gandr-core-term` arena. Each declared name becomes one `LoweredDeclaration` carrying its admission position, the cross-tree keys (`NodeKey`) of its signature and definition forms, an origin token, and a `DeclarationOutcome`: a completed signature and definition, an uncompleted signature, a bodiless definition, a shared native `DataSignature`, or the declaration's `LoweringRefusal`. The module's attributes are resolved against a closed `AttributeRegistry` into an `AttributeTable` keyed by each declaration's `NodeKey`, and every minted core node's syntax origin is recorded in an `OriginTable`. Imports are kept and their aliases bound by the `namespace` engine, and every declared name is declared over an outermost `Recognition` scope. `FailureClass` sorts every refusal into the class a consumer acts on.
+**What.** `lower_module` reads a `gandr-surface-syntax` tree molded under a `gandr-surface-grammar` grammar and mints its declarations into a `gandr-core-term` arena. Each declared name becomes one `LoweredDeclaration` carrying its admission position, the cross-tree keys (`NodeKey`) of its signature and definition forms, an origin token, and a `DeclarationOutcome`: a completed signature and definition, an uncompleted signature, a bodiless definition, a shared native `DataSignature`, a sealed abstract type, or the declaration's `LoweringRefusal`. The module's attributes are resolved against a closed `AttributeRegistry` into an `AttributeTable` keyed by each declaration's `NodeKey`, and every minted core node's syntax origin is recorded in an `OriginTable`. Imports are kept and their aliases bound by the `namespace` engine, and every declared name is declared over an outermost `Recognition` scope. `FailureClass` sorts every refusal into the class a consumer acts on.
 
 **Why.** A checker reads core terms, a diagnostic reads source spans, and an obligation ledger reads which declarations are still owed. The lowering is the one place all three are decided together: what the source means in the core fragment, where each core node came from, and whether a declaration that failed to lower failed because the author erred, because the fragment cannot represent it, or because the engine was misused — so no failure the engine refuses is mistaken for an obligation the author owes.
 
@@ -41,6 +41,8 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - `namespace`: `Trie`, `Modifier`, `Scope`, the events and their handlers, and `Recognition` with its ordered `SeedTable`s and `ShadowPolicy`.
 - `ImportDeclaration`, `ImportIndex`, `ImportUri` and `ModuleImports`: imports kept in source order with their aliases bound.
 - `LoweredStructure`, `ValueComponent`, `ManifestComponent`, `manifest_type`, `Coerced`, `Container`, `Role`, `StructureIndex`, `AscriptionForm`, `LoweredModule::structures`, `LoweredModule::path_of` and `LoweredModule::structured_names`: modules flattened to named members, their stratum items and their structured names.
+- Type members `type T = τ ;`, type paths `M.T`, abstract components `type T` and `type T : κ`, and `Recognized::ModuleType`: a module's types, named inside it and through its namespace.
+- `DeclarationOutcome::Abstract`, `Sealing` and `SealedComponent`: an opaque ascription `:>` declaring one abstract type per abstract component, keyed by its site, and the atoms a sealed module exports.
 
 ## Expected features
 
@@ -88,6 +90,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Repairs refused in place, the four boundaries out of the fragment | [`error`](src/error.rs) |
 | Name resolution through tables | [`resolve`](src/resolve.rs) |
 | Module collection, one refusal per declaration, module declarations | [`module`](src/module.rs) |
+| Type members, abstract components and opaque ascription | [`module::sealing`](src/module/sealing.rs), [`lower::sealing`](src/lower/sealing.rs) |
 | Descriptions, one producer for a data form, signature blocks, cells and circuit wiring | [`description`](src/description.rs), [`description::sign`](src/description/sign.rs), [`desc_cells`](src/desc_cells.rs) |
 | The namespace engine, its trie and the outermost scope | [`namespace`](src/namespace.rs), [`namespace::trie`](src/namespace/trie.rs), [`namespace::recognition`](src/namespace/recognition.rs) |
 | Imports | [`import`](src/import.rs) |

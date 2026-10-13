@@ -37,10 +37,14 @@
 //! # Example
 //!
 //! ```
+//! use gandr_core_checker::AbstractType;
 //! use gandr_core_checker::CheckBudget;
 //! use gandr_core_checker::CheckingContext;
+//! use gandr_core_checker::ComponentOrdinal;
 //! use gandr_core_checker::Declaration;
 //! use gandr_core_checker::OriginToken;
+//! use gandr_core_checker::SealSite;
+//! use gandr_core_checker::SealingSite;
 //! use gandr_core_checker::body;
 //! use gandr_core_checker::check_module;
 //! use gandr_core_checker::signature;
@@ -103,6 +107,22 @@
 //!                     )),
 //!                     | Maybe::Absent(_) => None,
 //!                 };
+//!             },
+//!             | DeclarationOutcome::Abstract(sealing) => {
+//!                 let site = SealSite::new(
+//!                     SealingSite::from(usize::from(sealing.sealing)),
+//!                     ComponentOrdinal::from(usize::from(sealing.component)),
+//!                 );
+//!                 return Some(Declaration::abstract_type(
+//!                     lowered.constant(),
+//!                     AbstractType::new(
+//!                         sealing.kind,
+//!                         sealing.representation,
+//!                         sealing.extent,
+//!                         site,
+//!                     ),
+//!                     OriginToken::from(usize::from(lowered.origin())),
+//!                 ));
 //!             },
 //!             | DeclarationOutcome::Refused(_) => return None,
 //!         };

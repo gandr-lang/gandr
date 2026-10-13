@@ -1,4 +1,5 @@
-//! Native nominal signature formation and capture-free telescope instantiation.
+//! Native nominal signature formation, sealed abstract-type formation and
+//! capture-free telescope instantiation.
 //!
 //! # Nominal data
 //!
@@ -38,6 +39,17 @@
 //! fixpoints. There is no parser notation, description decoder or graded thunk
 //! former for them. Native declarations export as data declarations, not
 //! axioms.
+//!
+//! # Sealed abstract types
+//!
+//! An abstract type forms when its kind is a value universe and its
+//! representation forms at or below that universe's level; then its site
+//! mints its atom and the context retains it. Like a data declaration it is
+//! nominal — `Verdict::Data` answers it, and no value type enters the
+//! signature table at its position — but its atom has no constructors and no
+//! eliminator: inside its seal the weak head reads it as its representation,
+//! and outside it relates to nothing but itself. The kernel admits the same
+//! declaration under the same two premises.
 
 use alloc::sync::Arc;
 
@@ -59,6 +71,7 @@ use quenchant_shape::shape::Maybe;
 use crate::CheckRefusal;
 use crate::CheckingContext;
 use crate::TypeNode;
+use crate::declaration::AbstractType;
 use crate::formation::form_value_type;
 use crate::formation::level_of;
 
@@ -160,6 +173,65 @@ pub fn form_signature(
             .map_err(|_cause| CheckRefusal::MachineInvariant)?;
     }
     outcome
+}
+
+/// Form an abstract type's kind and representation: the level of the universe
+/// its atom will inhabit.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: on success the kind is a value universe whose level is returned,
+///   the representation forms at or below that level, and the site has not
+///   minted an atom; the seal table is unchanged either way.
+/// - fails: the formation refusal of the kind or the representation;
+///   [`CheckRefusal::AbstractKindNotUniverse`] for a kind that is no value
+///   universe, or one at the greatest level;
+///   [`CheckRefusal::RepresentationAboveKind`] for a representation above it;
+///   [`CheckRefusal::SealSiteRepeated`] for a site minted before.
+/// - panics: none.
+///
+/// # Errors
+/// [`CheckRefusal`] identifies the failed premise.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a kind at a value universe, a kind that is no universe, a
+///   representation above its kind and a repeated site separate the premises.
+/// - witness: `module::tests::an_abstract_type_forms_at_a_value_universe_and_mints_its_site`
+/// - witness: `module::tests::a_repeated_sealing_site_is_refused_and_mints_nothing`
+#[spec(
+    captures: minted = context.seal_table().sites().len(),
+    ensures: |ret| context.seal_table().sites().len() == minted
+        && (ret.is_err() || matches!(context.seal_table().lookup(declared.site()), Maybe::Absent(_))),
+)]
+pub fn form_abstract(
+    context: &mut CheckingContext<'_>,
+    declared: AbstractType,
+) -> Result<Level, CheckRefusal>
+{
+    let kind = declared.kind();
+    let _formed = form_value_type(context, kind)?;
+    let level = match context.arena().value_type(kind) {
+        | Some(&ValueType::Universe {
+            sort: Sort::Ground(GroundSort::Value),
+            ref level,
+        }) => level.clone(),
+        | _ => return Err(CheckRefusal::AbstractKindNotUniverse(kind)),
+    };
+    let upper = level
+        .succ()
+        .map_err(|_cause| CheckRefusal::AbstractKindNotUniverse(kind))?;
+    let representation = declared.representation();
+    let _formed = form_value_type(context, representation)?;
+    if !bool::from(level_of(context, TypeNode::Value(representation))?.lt(&upper)) {
+        return Err(CheckRefusal::RepresentationAboveKind {
+            representation,
+            kind,
+        });
+    }
+    if let Maybe::Present(_) = context.seal_table().lookup(declared.site()) {
+        return Err(CheckRefusal::SealSiteRepeated(declared.site()));
+    }
+    Ok(level)
 }
 
 /// Resolve the signature and check a nominal application's parameter count.

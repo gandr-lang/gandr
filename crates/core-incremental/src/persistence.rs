@@ -1140,6 +1140,7 @@ gandr_core_checker::DeclarationContent::Value {ref signature,ref body} => {
         signature && body
     },
 gandr_core_checker::DeclarationContent::Data(ref signature) => signature.parameters().iter().chain(signature.constructors().iter().flatten()).chain(core::iter::once(&signature.kind())).all(|&id| program.arena().value_type(id).is_some()),
+gandr_core_checker::DeclarationContent::Abstract(sealed) => program.arena().value_type(sealed.kind()).is_some() && program.arena().value_type(sealed.representation()).is_some(),
 }
         }),
         | Err(error) => matches!(
@@ -1272,6 +1273,7 @@ gandr_core_checker::DeclarationContent::Value {ref signature,ref body} => {
         signature && body
     },
 gandr_core_checker::DeclarationContent::Data(ref signature) => signature.parameters().iter().chain(signature.constructors().iter().flatten()).chain(core::iter::once(&signature.kind())).all(|&id| program.arena().value_type(id).is_some()),
+gandr_core_checker::DeclarationContent::Abstract(sealed) => program.arena().value_type(sealed.kind()).is_some() && program.arena().value_type(sealed.representation()).is_some(),
 }
         }),
         | Err(_) => true,
@@ -1328,6 +1330,7 @@ gandr_core_checker::DeclarationContent::Value {ref signature,ref body} => {
         signature && body
     },
 gandr_core_checker::DeclarationContent::Data(ref signature) => signature.parameters().iter().chain(signature.constructors().iter().flatten()).chain(core::iter::once(&signature.kind())).all(|&id| program.arena().value_type(id).is_some()),
+gandr_core_checker::DeclarationContent::Abstract(sealed) => program.arena().value_type(sealed.kind()).is_some() && program.arena().value_type(sealed.representation()).is_some(),
 }
         }),
         | Err(_) => true,
@@ -1801,6 +1804,12 @@ mod tests
             | Typing::Refused(Refusal::NonUniformOccurrence(_)) => "non-uniform-occurrence",
             | Typing::Refused(Refusal::CrossBlockReference { .. }) => "cross-block-reference",
             | Typing::Refused(Refusal::DescentNotReplayed { .. }) => "descent-not-replayed",
+            | Typing::Refused(Refusal::AbstractKindNotUniverse(_)) => "abstract-kind-not-universe",
+            | Typing::Refused(Refusal::RepresentationAboveKind { .. }) => {
+                "representation-above-kind"
+            },
+            | Typing::Refused(Refusal::NotAnAbstractType(_)) => "not-an-abstract-type",
+            | Typing::Refused(Refusal::SealSiteRepeated(_)) => "seal-site-repeated",
         })
     }
 
@@ -1900,6 +1909,87 @@ mod tests
             decoded(&bytes),
             Ok(checkpoints),
             "and the bytes decode to the set"
+        );
+    }
+
+    #[test]
+    fn sealed_content_and_its_refusals_round_trip()
+    {
+        use gandr_core_checker::AbstractType;
+        use gandr_core_checker::ComponentOrdinal;
+        use gandr_core_checker::SealSite;
+        use gandr_core_checker::SealingSite;
+        use gandr_kernel_term::SealExtent;
+        let mut arena = CoreArena::new();
+        let small = arena.value_type_universe(
+            gandr_core_term::Sort::Ground(GroundSort::Value),
+            Level::zero(),
+        );
+        let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+        let atom = arena.value_type_abstract(ConstantIndex::from(0_usize));
+        let stray = arena.value_type_abstract(ConstantIndex::from(4_usize));
+        let sealed = |position: usize, kind, representation, component: usize| {
+            Item::new(
+                ItemKey::from(format!("abstract-{position}").as_str()),
+                gandr_core_checker::Declaration::abstract_type(
+                    ConstantIndex::from(position),
+                    AbstractType::new(
+                        kind,
+                        representation,
+                        SealExtent::from(1_usize),
+                        SealSite::new(
+                            SealingSite::from(0_usize),
+                            ComponentOrdinal::from(component),
+                        ),
+                    ),
+                    gandr_core_checker::OriginToken::from(position),
+                ),
+            )
+        };
+        let items = vec![
+            sealed(0, small, integer, 0),
+            Item::new(
+                ItemKey::from("member"),
+                declaration(
+                    Position(1),
+                    Maybe::Present(atom),
+                    Maybe::Absent(body::Absent::Hole),
+                ),
+            ),
+            sealed(2, integer, integer, 1),
+            sealed(3, small, small, 2),
+            sealed(4, small, integer, 0),
+            Item::new(
+                ItemKey::from("stray"),
+                declaration(
+                    Position(5),
+                    Maybe::Present(stray),
+                    Maybe::Absent(body::Absent::Hole),
+                ),
+            ),
+        ];
+        let checkpoints = checked(&mut Program::new(arena, items).expect("positions ascend"));
+        let kinds: Vec<&str> = checkpoints
+            .items()
+            .iter()
+            .map(|checkpoint| kind(checkpoint.typing()).0)
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                "data",
+                "owed",
+                "abstract-kind-not-universe",
+                "representation-above-kind",
+                "seal-site-repeated",
+                "not-an-abstract-type",
+            ],
+            "an atom, a member owed at it, and each refusal of sealing"
+        );
+        assert_eq!(
+            decoded(&bytes_of(&checkpoints)),
+            Ok(checkpoints),
+            "abstract roots, their extent and site, and every refusal round trip"
         );
     }
 

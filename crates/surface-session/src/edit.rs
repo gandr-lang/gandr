@@ -68,11 +68,13 @@
 //!
 //! # Native declaration snapshots
 //!
-//! `DeclarationTree::Value` and `DeclarationTree::Data` preserve distinct
-//! declaration categories. Data snapshots retain their kind, parameter
-//! telescope and every constructor field. A schema or category change replaces
-//! the item through delete/insert; native term children still receive localized
-//! edits. Record labels, constructor tags, nominal identities and all variadic
+//! `DeclarationTree::Value`, `DeclarationTree::Data` and
+//! `DeclarationTree::Abstract` preserve distinct declaration categories. Data
+//! snapshots retain their kind, parameter telescope and every constructor
+//! field; an abstract type its kind, its representation, the extent of its
+//! seal and its minting site. A schema or category change replaces the item
+//! through delete/insert; native term children still receive localized edits.
+//! Record labels, constructor tags, nominal identities and all variadic
 //! children participate in agreement. The child reader is an unbounded borrowed
 //! iterator, not a fixed three-child buffer.
 //!
@@ -498,6 +500,18 @@ pub enum DeclarationTree
         /// The declared universe.
         kind: Tree,
     },
+    /// A sealed abstract type; neither root is a value obligation.
+    Abstract
+    {
+        /// The declared universe.
+        kind: Tree,
+        /// The type the atom is sealed over.
+        representation: Tree,
+        /// How many declarations after it the seal reaches.
+        extent: gandr_kernel_term::SealExtent,
+        /// The site that mints the atom.
+        site: gandr_core_checker::SealSite,
+    },
 }
 
 /// One item of a revision: its identity, its signature and its body, each
@@ -570,7 +584,8 @@ impl ItemTree
                 signature: Maybe::Absent(_),
                 ..
             }
-            | DeclarationTree::Data { .. } => None,
+            | DeclarationTree::Data { .. }
+            | DeclarationTree::Abstract { .. } => None,
         }
     }
 
@@ -592,7 +607,8 @@ impl ItemTree
                 body: Maybe::Absent(_),
                 ..
             }
-            | DeclarationTree::Data { .. } => None,
+            | DeclarationTree::Data { .. }
+            | DeclarationTree::Abstract { .. } => None,
         }
     }
 }
@@ -706,6 +722,7 @@ if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right
                                     && parameters.iter().chain(constructors.iter().flatten()).chain(core::iter::once(kind)).all(ordered)
                                     && spans.is_empty()
                             } }
+ else if let DeclarationTree::Abstract {ref kind,ref representation,extent,site} = *matched_left_value && let gandr_core_checker::DeclarationContent::Abstract(sealed) = *matched_right_value { ordered(kind) && ordered(representation) && extent == sealed.extent() && site == sealed.site() && spans.is_empty() }
  else { false }
 }
                     }
@@ -788,6 +805,20 @@ if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right
                         Vec::new(),
                     )
                 },
+                | gandr_core_checker::DeclarationContent::Abstract(sealed) => (
+                    DeclarationTree::Abstract {
+                        kind: read(program, origins, Root::ValueType(sealed.kind())).0,
+                        representation: read(
+                            program,
+                            origins,
+                            Root::ValueType(sealed.representation()),
+                        )
+                        .0,
+                        extent: sealed.extent(),
+                        site: sealed.site(),
+                    },
+                    Vec::new(),
+                ),
             };
             if let Some(&Maybe::Present(span)) = located.first() {
                 bodies.push((span, ItemOrdinal::from(ordinal)));

@@ -174,35 +174,39 @@
 //! whole module against one record type, declined with the record carrier, and
 //! refusing a second stated type, which loses the agreement check. A witness
 //! becomes an annotation on the member's body when the core has an annotation
-//! former.
+//! former. An abstract component `type T` or `type T : κ`, and the opaque
+//! ascription `:>` that seals it, are `sealing`'s: a type member of the body
+//! gives the component its meaning, and `:>` declares one abstract type per
+//! component.
 //!
-//! A refusal that belongs to no member — a module ascribed opaquely with `:>`,
-//! a top-level module with a lowercase name, an unread module body, a missing
-//! component, and a type component that is abstract, kinded or binds parameters
-//! — is carried by a held declaration under the module's or the component's
-//! name. A held declaration owns nothing a checker reads, takes a position like
-//! any other, and yields a declaration only when it carries a refusal; one
-//! owning a manifest type's form yields none. Its refusal stands at a form with
-//! no half, so no expectation attribute reaches it. The opaque, abstract,
-//! kinded and parameterized forms are `UnreadAscription`, naming the form and
-//! what gives it meaning; the abstract component names `:>`. The alternatives
-//! were refusing the whole run, which loses every other module's members, and
-//! dropping the refusal, which reads the module as if it were whole. The choice
-//! reverses when a refusal at a declaration's own form can carry an
-//! expectation.
+//! A refusal that belongs to no member — a top-level module with a lowercase
+//! name, an unread module body, a missing component, an abstract component
+//! the body writes no type member for, and a type component that declares a
+//! family or binds parameters — is carried by a held declaration under the
+//! module's or the component's name. A held declaration owns nothing a
+//! checker reads, takes a position like any other, and yields a declaration
+//! only when it carries a refusal; one owning a type member's form yields
+//! none. Its refusal stands at a form with no half, so no expectation
+//! attribute reaches it. The family and parameterized forms are
+//! `UnreadAscription`, naming the form and what gives it meaning. The
+//! alternatives were refusing the whole run, which loses every other module's
+//! members, and dropping the refusal, which reads the module as if it were
+//! whole. The choice reverses when a refusal at a declaration's own form can
+//! carry an expectation.
 //!
 //! `LoweredModule::structures` holds one `LoweredStructure` per module, in
 //! pre-order: its path, its bytes, the value components with their positions
 //! and the nested modules it exports, in export order, its manifest type
-//! components with the types they lowered to, and whether matching coerced its
+//! components with the types they lowered to, the abstract components it
+//! sealed with the positions of their atoms, and whether matching coerced its
 //! body.
 //!
-//! `LoweredModule::structured_names` exports declared positions only: witness
-//! and held slots take no entry, and any path containing the segment separator
-//! is omitted. Construction accepts supplied metadata, so positions need not be
-//! unique: the last eligible declaration at a repeated position wins, while an
-//! invalid later path leaves the earlier name intact. These boundaries are
-//! witnessed by
+//! `LoweredModule::structured_names` exports declared and sealed abstract
+//! positions only: witness and held slots take no entry, and any path
+//! containing the segment separator is omitted. Construction accepts supplied
+//! metadata, so positions need not be unique: the last eligible declaration
+//! at a repeated position wins, while an invalid later path leaves the earlier
+//! name intact. These boundaries are witnessed by
 //! `module::tests::structured_export_omits_invalid_segments_and_keeps_the_last_declared_name`;
 //! arity and ownership routing are separated by
 //! `module::tests::signature_holes_distinguish_missing_single_and_extra_operands`
@@ -261,9 +265,16 @@ use crate::origin::OriginToken;
 use crate::resolve::SurfaceName;
 
 mod data;
+mod sealing;
 
 pub use self::data::Constructor;
 pub use self::data::DataForm;
+pub use self::sealing::AbstractSlot;
+pub use self::sealing::ComponentPlace;
+pub use self::sealing::Sealed;
+pub use self::sealing::SealedComponent;
+pub use self::sealing::Sealing;
+pub use self::sealing::TypeMeaning;
 
 quenchant_shape::reason_enum! {
     /// Why a declared name has no half of one kind.
@@ -321,6 +332,19 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// No `:` signature follows the module's name.
             Unascribed,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why an abstract type component states no kind.
+    pub mod component_kind {
+        /// The component is written without one.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No `: κ` follows the component's name, so it inhabits the
+            /// fuss-free universe `Type`.
+            Unkinded,
         }
     }
 }
@@ -502,8 +526,9 @@ pub enum Container
 /// - requires: nothing to construct this data; its producers and consumers
 ///   state coordinate preconditions separately.
 /// - ensures: Declared slots introduce names, witnesses check an extra type
-///   without declaring a name, and held slots own components or refusals
-///   without becoming exports.
+///   without declaring a name, held slots own components or refusals without
+///   becoming exports, and abstract slots declare the atom an opaque ascription
+///   mints without entering a name table.
 /// - fails: not applicable to the data item.
 /// - panics: not applicable to the data item.
 /// - executable: none — the enabled specification facade does not expose
@@ -512,10 +537,12 @@ pub enum Container
 ///
 /// # Adequacy
 /// - hypothesis: L3 — declared names export while signature witnesses and held
-///   refusals do not.
+///   refusals do not; an opaque ascription's abstract component is declared
+///   before the members.
 /// - witness: `modules::modules::member_signature_attaches_and_wins_over_derived_function_type`
 /// - witness: `modules::modules::signatures_attach_to_their_defs`
 /// - witness: `module::tests::structured_export_omits_invalid_segments_and_keeps_the_last_declared_name`
+/// - witness: `modules::modules::opaque_ascription_seals`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Role
 {
@@ -523,7 +550,8 @@ pub enum Role
     /// member.
     Declared,
     /// A second type stated for a member, checked by a declaration whose body
-    /// is that member.
+    /// is that member; or the kind a transparent ascription states for a type
+    /// member, checked by a declaration whose body is that member's code.
     Witness,
     /// A slot that declares nothing: it carries a refusal a module or a
     /// signature component raised, or owns a manifest type component's type,
@@ -532,6 +560,11 @@ pub enum Role
     /// An operation a `data` family declares and the module can call: entered
     /// in no namespace, its body compiled from its rules.
     Operation,
+    /// The abstract type an opaque ascription declares for one abstract
+    /// component of its signature: admitted before the module's members,
+    /// entered in no name table, and named through the namespace as the atom
+    /// it mints.
+    Abstract,
 }
 
 /// One member of a module's body, or one component it exports.
@@ -567,8 +600,9 @@ pub enum Member
 /// - requires: nothing to construct this data; its producers and consumers
 ///   state coordinate preconditions separately.
 /// - ensures: Value signatures and manifest definitions retain their operands;
-///   unread type components retain the specific ascription form rather than
-///   being treated as values.
+///   an abstract component retains its written kind, when it has one; unread
+///   type components retain the specific ascription form rather than being
+///   treated as values.
 /// - fails: not applicable to the data item.
 /// - panics: not applicable to the data item.
 /// - executable: none — the enabled specification facade does not expose
@@ -576,17 +610,22 @@ pub enum Member
 ///   consuming operations.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — manifest, kinded and abstract components have distinct
-///   outcomes.
+/// - hypothesis: L3 — manifest, abstract, universe-kinded and family-kinded
+///   components have distinct outcomes.
 /// - witness: `modules::modules::a_kinded_type_component_is_declined_by_name_and_a_manifest_one_is_not`
-/// - witness: `modules::modules::a_bare_type_component_declines_and_keeps_its_siblings`
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+/// - witness: `modules::modules::a_transparent_abstract_component_reads_its_type_member`
+/// - witness: `modules::modules::an_abstract_component_kinds_at_a_universe`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ComponentForm
 {
     /// A value component `x : T`, with its type.
     Value(Placed),
     /// A manifest type component `type T = τ`, with the type it names.
     Manifest(Placed),
+    /// An abstract type component `type T` or `type T : κ`, with the kind
+    /// written for it: its meaning is the body's type member of its name,
+    /// sealed by an opaque ascription and strengthened by a transparent one.
+    Abstract(Maybe<Placed, component_kind::Absent>),
     /// A type component the fragment does not read yet.
     Unread(AscriptionForm),
 }
@@ -597,8 +636,8 @@ pub enum ComponentForm
 /// - requires: nothing to construct this data; its producers and consumers
 ///   state coordinate preconditions separately.
 /// - ensures: A written component associates its source spelling and name tile
-///   with its value, manifest or unread form; the record does not authenticate
-///   those coordinates.
+///   with its value, manifest, abstract or unread form; the record does not
+///   authenticate those coordinates.
 /// - fails: not applicable to the data item.
 /// - panics: not applicable to the data item.
 /// - executable: none — the enabled specification facade does not expose
@@ -609,7 +648,7 @@ pub enum ComponentForm
 /// - hypothesis: L3 — a reordered signature retains component names while
 ///   selecting its export order.
 /// - witness: `modules::modules::a_reordered_signature_matches_and_canonicalizes`
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Component<'source>
 {
     /// The component's name.
@@ -620,14 +659,17 @@ pub struct Component<'source>
     pub form: ComponentForm,
 }
 
-/// A manifest type component, kept for the module's stratum item and for the
-/// components after it that name it.
+/// A type a module states by name — a manifest component, an abstract
+/// component, or a body type member — kept for the module's stratum item and
+/// for the types after it that name it.
 ///
 /// # Specification
 /// - requires: nothing to construct this data; its producers and consumers
 ///   state coordinate preconditions separately.
-/// - ensures: A manifest definition carries the held slot that owns its errors;
-///   its meaning requires the collection and source tree that produced it.
+/// - ensures: A stated type carries the slot that owns its errors — the held
+///   slot owning a written type, or the abstract slot an opaque ascription
+///   declared — and what a reference to it reads; its meaning requires the
+///   collection and source tree that produced it.
 /// - fails: not applicable to the data item.
 /// - panics: not applicable to the data item.
 /// - executable: none — the enabled specification facade does not expose
@@ -636,27 +678,29 @@ pub struct Component<'source>
 ///
 /// # Adequacy
 /// - hypothesis: L3 — earlier manifest components expand in later component
-///   types.
+///   types, and a sealed component reads as its atom.
 /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
+/// - witness: `modules::modules::opaque_ascription_seals`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct TypeComponent<'source>
 {
     /// The component's name.
     pub name: SurfaceName<'source>,
-    /// The type it is manifestly equal to.
-    pub defined: Placed,
-    /// The held slot owning that type, which carries its refusal.
+    /// What a reference to it reads.
+    pub meaning: TypeMeaning,
+    /// The slot carrying its refusal: the held slot owning its written type,
+    /// or the abstract slot declaring its atom.
     pub held: SlotIndex,
 }
 
-/// The manifest type components a signature type sees: those of `structure`
-/// written before the component the type belongs to.
+/// The type components a signature type sees: those of `structure` written
+/// before the component the type belongs to.
 ///
 /// # Specification
 /// - requires: nothing to construct this data; its producers and consumers
 ///   state coordinate preconditions separately.
-/// - ensures: The prefix length selects only preceding manifest components of
-///   the named structure; the fields alone do not certify a live structure or
+/// - ensures: The prefix length selects only preceding type components of the
+///   named structure; the fields alone do not certify a live structure or
 ///   bounded prefix.
 /// - fails: not applicable to the data item.
 /// - panics: not applicable to the data item.
@@ -665,7 +709,7 @@ pub struct TypeComponent<'source>
 ///   consuming operations.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — manifest component order controls which definitions later
+/// - hypothesis: L3 — type component order controls which definitions later
 ///   types can name.
 /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -673,7 +717,7 @@ pub struct ComponentScope
 {
     /// The module whose signature the type is written in.
     pub structure: StructureIndex,
-    /// How many of its manifest type components precede the type.
+    /// How many of its type components precede the type.
     pub before: usize,
 }
 
@@ -706,8 +750,9 @@ pub struct Coerced(pub bool);
 /// - requires: nothing to construct this data; its producers and consumers
 ///   state coordinate preconditions separately.
 /// - ensures: Collection records a module before its nested modules, keeps
-///   source members separately from selected exports, and records manifest
-///   components in signature order.
+///   source members separately from selected exports, records type components
+///   in signature order and type members in source order, and maps each member
+///   an opaque ascription restated to the witness a reference reads.
 /// - fails: not applicable to the data item.
 /// - panics: not applicable to the data item.
 /// - executable: none — the enabled specification facade does not expose
@@ -722,6 +767,7 @@ pub struct Coerced(pub bool);
 /// - witness: `modules::modules::a_readable_module_keeps_its_members_and_its_successor`
 /// - witness: `modules::modules::a_reordered_signature_matches_and_canonicalizes`
 /// - witness: `modules::modules::module_signature_matching_hides_extra_members`
+/// - witness: `modules::modules::opaque_ascription_seals`
 #[derive(Clone, Debug)]
 pub struct Structure<'source>
 {
@@ -734,14 +780,23 @@ pub struct Structure<'source>
     /// The module's name tile.
     pub named: Placed,
     /// The inline signature's components, in signature order, when the
-    /// module is ascribed transparently.
+    /// module is ascribed.
     pub ascription: Maybe<Vec<Component<'source>>, ascription::Absent>,
+    /// Whether the ascription is opaque, `:>`, and seals what it hides.
+    pub sealed: Sealed,
     /// The body's members, in source order.
     pub members: Vec<Member>,
     /// The components the module exports, in signature order once matched.
     pub exports: Vec<Member>,
-    /// The manifest type components, in signature order.
+    /// The type components, in signature order.
     pub types: Vec<TypeComponent<'source>>,
+    /// The body's type members, `type T = τ ;`, in source order.
+    pub type_members: Vec<TypeComponent<'source>>,
+    /// Each exported member of an opaquely ascribed module whose own written
+    /// type is not its component's, by the witness stating the component's
+    /// type: a reference through the namespace reads the witness, so the
+    /// member's own type does not leak past the seal.
+    pub exported_as: BTreeMap<SlotIndex, SlotIndex>,
     /// Whether matching coerced the body.
     pub coerced: Coerced,
 }
@@ -1076,6 +1131,10 @@ pub struct Collected<'source>
     /// Each callable operation's slot, by name: operations are declared at
     /// the top level only.
     pub operation_names: BTreeMap<SurfaceName<'source>, SlotIndex>,
+    /// Each abstract component's slot — the abstract type an opaque
+    /// ascription declares, or the witness checking the kind a transparent
+    /// one states — with what the slot is built from.
+    pub abstracts: BTreeMap<SlotIndex, AbstractSlot>,
 }
 
 impl<'source> Collected<'source>
@@ -1572,6 +1631,7 @@ pub fn collect<'source>(
             constructors: BTreeMap::new(),
             operations: BTreeMap::new(),
             operation_names: BTreeMap::new(),
+            abstracts: BTreeMap::new(),
         },
         pieces: Pieces::new(),
     };
@@ -2922,12 +2982,13 @@ const TELESCOPE_TYPE: &str = "telescope_type";
 ///   consuming operations.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — readable and empty bodies stay distinct from unread or
-///   sealed bodies.
+/// - hypothesis: L3 — readable and empty bodies stay distinct from unread
+///   bodies, and a sealed body from a transparently ascribed one.
 /// - witness: `modules::modules::modules_lower_to_named_member_declarations`
 /// - witness: `modules::modules::module_members_admit_in_source_order`
 /// - witness: `modules::modules::a_readable_module_keeps_its_members_and_its_successor`
 /// - witness: `modules::modules::an_empty_module_is_not_an_unread_one`
+/// - witness: `modules::modules::opaque_ascription_seals`
 #[derive(Clone, Debug)]
 struct Opened<'source>
 {
@@ -2935,8 +2996,10 @@ struct Opened<'source>
     name: SurfaceName<'source>,
     /// The name's tile.
     named: Placed,
-    /// The inline signature's components, when ascribed transparently.
+    /// The inline signature's components, when ascribed.
     ascription: Maybe<Vec<Component<'source>>, ascription::Absent>,
+    /// Whether the ascription is opaque.
+    sealed: Sealed,
     /// The body's member forms, in source order.
     members: Vec<Placed>,
 }
@@ -2955,12 +3018,12 @@ struct Opened<'source>
 ///   consuming operations.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — readable, sealed, lowercase and unread bodies take
-///   separate header outcomes.
+/// - hypothesis: L3 — readable, lowercase and unread bodies take separate
+///   header outcomes.
 /// - witness: `modules::modules::modules_lower_to_named_member_declarations`
 /// - witness: `modules::modules::module_members_admit_in_source_order`
 /// - witness: `modules::modules::a_readable_module_keeps_its_members_and_its_successor`
-/// - witness: `modules::modules::opaque_module_ascription_is_declined_not_read_as_transparent`
+/// - witness: `modules::modules::opaque_ascription_seals`
 /// - witness: `modules::modules::module_name_case_boundary_covers_single_and_multi_names`
 /// - witness: `modules::modules::an_unread_module_body_is_refused_not_emptied`
 #[derive(Clone, Debug)]
@@ -3090,28 +3153,6 @@ struct Field<'source>
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct Carried(bool);
 
-/// Whether an operand is a bare name.
-///
-/// # Specification
-/// - requires: nothing to construct this data; its producers and consumers
-///   state coordinate preconditions separately.
-/// - ensures: The flag distinguishes a classified name form from other syntax
-///   at a module-name position; spelling case is checked by the header reader.
-/// - fails: not applicable to the data item.
-/// - panics: not applicable to the data item.
-/// - executable: none — the enabled specification facade does not expose
-///   type-invariant expansion; executable predicates cover the producing and
-///   consuming operations.
-///
-/// # Adequacy
-/// - hypothesis: L3 — lowercase module names differ between top-level and
-///   nested contexts.
-/// - witness: `modules::modules::module_name_case_boundary_covers_single_and_multi_names`
-/// - witness: `modules::modules::a_nested_module_declares_under_either_case_spelling`
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct BareName(bool);
-
 /// Whether a `sign` block or a top-level `oper` holds a member refusal.
 ///
 /// # Specification
@@ -3170,16 +3211,16 @@ impl<'source> Collector<'_, 'source>
     /// [`LoweringRefusal::BudgetExceeded`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — nesting separated by depth one and depth eight, and
-    ///   the refusals of the module as a whole by an unread body, an empty
-    ///   body, a sealed module, a lowercase name and a malformed member, each
-    ///   asserted as the exact declaration list. The predicate reads only the
-    ///   structures this call appended.
+    /// - hypothesis: L3 — nesting separated by depth one and depth eight, a
+    ///   sealed module whose abstract type its clients read, and the refusals
+    ///   of the module as a whole by an unread body, an empty body, a lowercase
+    ///   name and a malformed member, each asserted as the exact declaration
+    ///   list. The predicate reads only the structures this call appended.
     /// - witness: `modules::modules::modules_lower_to_named_member_declarations`
     /// - witness: `modules::modules::deeply_nested_modules_lower_and_resolve_at_every_depth`
     /// - witness: `modules::modules::an_unread_module_body_is_refused_not_emptied`
     /// - witness: `modules::modules::an_empty_module_is_not_an_unread_one`
-    /// - witness: `modules::modules::opaque_module_ascription_is_declined_not_read_as_transparent`
+    /// - witness: `modules::modules::opaque_ascription_seals`
     /// - witness: `modules::modules::module_name_case_boundary_covers_single_and_multi_names`
     /// - witness: `modules::modules::an_unread_member_keeps_its_own_report`
     /// - witness: `modules::modules::a_readable_module_keeps_its_members_and_its_successor`
@@ -3252,12 +3293,12 @@ impl<'source> Collector<'_, 'source>
     /// # Specification
     /// - requires: `pieces` is the reading of the module form `form`, declared
     ///   in `container`.
-    /// - ensures: the opened module when its tiles read `module Name (: #{ …
-    ///   })? { members }`, a top-level name taking the uppercase spelling and a
-    ///   nested one either; a top-level module named in lowercase, a repair no
-    ///   operand carries, opaque ascription, or a signature or body out of
-    ///   shape refuses the module under its name; a form with no name is
-    ///   unnamed.
+    /// - ensures: the opened module when its tiles read `module Name ((: | :>)
+    ///   #{ … })? { members }`, a top-level name taking the uppercase spelling
+    ///   and a nested one either, sealed exactly when the ascription is `:>`; a
+    ///   top-level module named in lowercase, a repair no operand carries, or a
+    ///   signature or body out of shape refuses the module under its name; a
+    ///   form with no name is unnamed.
     /// - provides: the per-module reading of [`Self::module`] and
     ///   [`Self::member`].
     /// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold; every
@@ -3270,11 +3311,11 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — readable, empty, sealed, lowercase and repaired
     ///   modules separate a readable header from a named refusal or an unnamed
-    ///   form. The predicate asks for the name tile's own bytes, by address and
-    ///   length.
+    ///   form, and a sealed header from a transparent one. The predicate asks
+    ///   for the name tile's own bytes, by address and length.
     /// - witness: `modules::modules::modules_lower_to_named_member_declarations`
     /// - witness: `modules::modules::an_empty_module_is_not_an_unread_one`
-    /// - witness: `modules::modules::opaque_module_ascription_is_declined_not_read_as_transparent`
+    /// - witness: `modules::modules::opaque_ascription_seals`
     /// - witness: `modules::modules::module_name_case_boundary_covers_single_and_multi_names`
     /// - witness: `modules::modules::a_repaired_container_keeps_its_member`
     #[spec(
@@ -3318,24 +3359,21 @@ impl<'source> Collector<'_, 'source>
         }
         let named = match cursor.peek() {
             | Maybe::Present(Piece::Tile { label, at })
-                if label == TileName::TYPE_IDENTIFIER
-                    || (label == TileName::IDENTIFIER && container != Container::TopLevel) =>
+                if label == TileName::TYPE_IDENTIFIER || label == TileName::IDENTIFIER =>
             {
                 let _name = cursor.read();
-                at
-            },
-            | Maybe::Present(Piece::Operand(standing))
-                if container == Container::TopLevel && self.is_name(standing)?.0 =>
-            {
-                let name = self.name_of(standing);
-                return Ok(Header::Refused {
-                    name,
-                    named: standing,
-                    refusal: LoweringRefusal::LowercaseModuleName {
-                        span: form.span,
+                if label == TileName::IDENTIFIER && container == Container::TopLevel {
+                    let name = self.name_of(at);
+                    return Ok(Header::Refused {
                         name,
-                    },
-                });
+                        named: at,
+                        refusal: LoweringRefusal::LowercaseModuleName {
+                            span: form.span,
+                            name,
+                        },
+                    });
+                }
+                at
             },
             | Maybe::Present(_) | Maybe::Absent(_) => return Ok(unnamed(&cursor)),
         };
@@ -3352,14 +3390,8 @@ impl<'source> Collector<'_, 'source>
         {
             return refused(repaired.refusal(FormName::MODULE));
         }
-        let ascription = if let Maybe::Present(seal) = cursor.tile(TileName::SEAL) {
-            return refused(LoweringRefusal::UnreadAscription {
-                span: seal.span,
-                name,
-                form: AscriptionForm::Opaque,
-            });
-        }
-        else if let Maybe::Present(_) = cursor.tile(TileName::COLON) {
+        let sealed = Sealed(matches!(cursor.tile(TileName::SEAL), Maybe::Present(_)));
+        let ascription = if sealed.0 || matches!(cursor.tile(TileName::COLON), Maybe::Present(_)) {
             match self.signature(&mut cursor) {
                 | Ok(components) => Maybe::Present(components),
                 | Err(refusal) => return refused(refusal),
@@ -3385,54 +3417,9 @@ impl<'source> Collector<'_, 'source>
             name,
             named,
             ascription,
+            sealed,
             members,
         }))
-    }
-
-    /// Whether `standing` is a bare name: a top-level module's lowercase name,
-    /// which the grammar reads as an operand where the name tile belongs.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: only a known name form is a bare name; a missing node is not.
-    /// - fails: with an unknown mold when classification cannot read the node.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — single- and multi-character lowercase module names
-    ///   are rejected at top level, but admitted inside a module.
-    /// - witness: `modules::modules::module_name_case_boundary_covers_single_and_multi_names`
-    /// - witness: `modules::modules::a_nested_module_declares_under_either_case_spelling`
-    #[spec(
-        ensures: |ret| {
-            ret == self
-                .tree
-                .node(standing.node)
-                .map_or(Ok(BareName(false)), |node| {
-                    shape_of(self.pbg, node).map(|shape| {
-                        BareName(matches!(shape, Shape::Form {
-                            former: Former::Name,
-                            ..
-                        }))
-                    })
-                })
-        },
-    )]
-    fn is_name(
-        &self,
-        standing: Placed,
-    ) -> Result<BareName, LoweringRefusal<'source>>
-    {
-        let Some(node) = self.tree.node(standing.node)
-        else {
-            return Ok(BareName(false));
-        };
-        let shape = shape_of(self.pbg, node)?;
-
-        Ok(BareName(matches!(shape, Shape::Form {
-            former: Former::Name,
-            ..
-        })))
     }
 
     /// Whether an operand of a module form carries a repair of its own: the
@@ -3492,14 +3479,15 @@ impl<'source> Collector<'_, 'source>
         }))
     }
 
-    /// Read a module signature, `#{ components }`, after its `:`.
+    /// Read a module signature, `#{ components }`, after its `:` or `:>`.
     ///
     /// # Specification
-    /// - requires: `cursor` stands just past the ascription's `:`.
+    /// - requires: `cursor` stands just past the ascription's `:` or `:>`.
     /// - ensures: every component in signature order, the cursor past the
     ///   closing `}`: `x : T` a value component; `type T = τ` a manifest one;
-    ///   `type T`, `type T : κ` and a type component binding parameters, each
-    ///   kept as a form the fragment does not read.
+    ///   `type T` and `type T : κ` an abstract one, but for a kind written as
+    ///   an arrow, which declares a family; that and a type component binding
+    ///   parameters each kept as a form the fragment does not read.
     /// - provides: the signature half of [`Self::header`].
     /// - fails: yields a misplaced-tile refusal for a signature out of shape
     ///   and the hole's refusal for a type not written as one form.
@@ -3516,7 +3504,8 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `modules::modules::a_reordered_signature_matches_and_canonicalizes`
     /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
     /// - witness: `modules::modules::a_kinded_type_component_is_declined_by_name_and_a_manifest_one_is_not`
-    /// - witness: `modules::modules::a_bare_type_component_declines_and_keeps_its_siblings`
+    /// - witness: `modules::modules::a_transparent_abstract_component_reads_its_type_member`
+    /// - witness: `modules::modules::an_abstract_component_kinds_at_a_universe`
     #[spec(
         captures: starts_record = matches!(cursor.at(TileName::RECORD), Maybe::Present(_)),
         ensures: |ret| {
@@ -3559,10 +3548,16 @@ impl<'source> Collector<'_, 'source>
                 else {
                     return Err(misplaced_in(FormName::MODULE, cursor.here()));
                 };
+                let form = match type_component(cursor)? {
+                    | ComponentForm::Abstract(Maybe::Present(kind)) if self.family_kind(kind)?.0 => {
+                        ComponentForm::Unread(AscriptionForm::Kinded)
+                    },
+                    | form => form,
+                };
                 Component {
                     name: self.name_of(named),
                     named,
-                    form: type_component(cursor)?,
+                    form,
                 }
             }
             else {
@@ -3585,7 +3580,8 @@ impl<'source> Collector<'_, 'source>
     /// - ensures: a module name already declared in `container` files a held
     ///   slot carrying the duplicate refusal and leaves the body unread;
     ///   otherwise the module takes the next pre-order position, joins its
-    ///   enclosing module's members and its body is pushed.
+    ///   enclosing module's members, declares one abstract type per abstract
+    ///   component when it is sealed, and its body is pushed.
     /// - provides: the recording half of [`Self::module`].
     /// - fails: never.
     /// - panics: none.
@@ -3597,6 +3593,7 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `modules::modules::module_members_admit_in_source_order`
     /// - witness: `modules::modules::a_readable_module_keeps_its_members_and_its_successor`
     /// - witness: `modules::modules::duplicate_module_member_definition_is_rejected`
+    /// - witness: `modules::modules::opaque_ascription_seals`
     #[spec(
         captures: before = (
             self.collected.structures.len(),
@@ -3609,6 +3606,7 @@ impl<'source> Collector<'_, 'source>
                 .modules
                 .get(&(container, opened.name))
                 .copied(),
+            opened.sealed,
         ),
         ensures: |_| match before.6 {
             | Some(first) => {
@@ -3628,6 +3626,9 @@ impl<'source> Collector<'_, 'source>
                             && entry.members.is_empty()
                             && entry.exports.is_empty()
                             && entry.types.is_empty()
+                            && entry.type_members.is_empty()
+                            && entry.exported_as.is_empty()
+                            && entry.sealed == before.7
                             && !entry.coerced.0
                     })
                     && stack.len() == before.2.saturating_add(1)
@@ -3669,9 +3670,12 @@ impl<'source> Collector<'_, 'source>
             declared_by: form,
             named: opened.named,
             ascription: opened.ascription,
+            sealed: opened.sealed,
             members: Vec::new(),
             exports: Vec::new(),
             types: Vec::new(),
+            type_members: Vec::new(),
+            exported_as: BTreeMap::new(),
             coerced: Coerced(false),
         });
         self.collected.modules.insert(key, structure);
@@ -3680,6 +3684,7 @@ impl<'source> Collector<'_, 'source>
         {
             entry.members.push(Member::Module(structure));
         }
+        self.declare_abstracts(structure);
         stack.push(Open {
             structure,
             members: opened.members,
@@ -3693,10 +3698,11 @@ impl<'source> Collector<'_, 'source>
     /// - requires: `pieces` is the reading of `member`, a member form of the
     ///   module at `structure`.
     /// - ensures: a form holding a `def` tile is a definition member, read as a
-    ///   declaration in the module; a form opening on `module` is a nested
-    ///   module, opened onto `stack` or refused as a whole under its name;
-    ///   every other form is a malformed member, refused under the module's
-    ///   name at the member, and the module's other members are kept.
+    ///   declaration in the module; a form opening on `type` is a type member,
+    ///   filed among the module's type members; a form opening on `module` is a
+    ///   nested module, opened onto `stack` or refused as a whole under its
+    ///   name; every other form is a malformed member, refused under the
+    ///   module's name at the member, and the module's other members are kept.
     /// - provides: the per-member half of [`Self::module`].
     /// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold.
     /// - panics: none.
@@ -3713,6 +3719,7 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `modules::modules::modules_lower_to_named_member_declarations`
     /// - witness: `modules::modules::module_members_admit_in_source_order`
     /// - witness: `modules::modules::a_readable_module_keeps_its_members_and_its_successor`
+    /// - witness: `modules::modules::opaque_ascription_seals`
     #[spec(
         captures: before = (
             self.collected.slots.len(),
@@ -3728,6 +3735,7 @@ impl<'source> Collector<'_, 'source>
                 && self.collected.slots.get(before.0 ..).is_some_and(|appended| {
                     appended.iter().all(|slot| {
                         slot.container == Container::Module(structure)
+                            || slot.role == Role::Abstract
                             || (slot.role == Role::Held && Some(slot.container) == before.2)
                     })
                 })
@@ -3775,6 +3783,10 @@ impl<'source> Collector<'_, 'source>
             }
             return Ok(());
         }
+        if Self::opens_type_member(pieces).0 {
+            self.type_member(structure, member, pieces);
+            return Ok(());
+        }
         let cursor = Cursor::new(&pieces.pieces, member.span);
         if let Maybe::Absent(_) = cursor.at(TileName::MODULE) {
             self.fault_at(structure, member, misplaced_in(form, cursor.here()));
@@ -3808,10 +3820,10 @@ impl<'source> Collector<'_, 'source>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — unread and opaque modules, missing components and
+    /// - hypothesis: L3 — unread modules, type members, missing components and
     ///   manifest types use held slots without introducing referenceable names.
     /// - witness: `modules::modules::an_unread_module_body_is_refused_not_emptied`
-    /// - witness: `modules::modules::opaque_module_ascription_is_declined_not_read_as_transparent`
+    /// - witness: `modules::modules::opaque_ascription_seals`
     /// - witness: `modules::modules::a_missing_signature_component_is_rejected_at_the_signature`
     /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
     #[spec(
@@ -3869,10 +3881,11 @@ impl<'source> Collector<'_, 'source>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — unread and opaque modules, missing components and
-    ///   manifest types use held slots without introducing referenceable names.
+    /// - hypothesis: L3 — unread and lowercase-named modules, missing
+    ///   components and manifest types use held slots without introducing
+    ///   referenceable names.
     /// - witness: `modules::modules::an_unread_module_body_is_refused_not_emptied`
-    /// - witness: `modules::modules::opaque_module_ascription_is_declined_not_read_as_transparent`
+    /// - witness: `modules::modules::module_name_case_boundary_covers_single_and_multi_names`
     /// - witness: `modules::modules::a_missing_signature_component_is_rejected_at_the_signature`
     /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
     #[spec(
@@ -3964,7 +3977,8 @@ impl<'source> Collector<'_, 'source>
     /// - ensures: a member signature naming a nested module states that
     ///   module's signature; the module's own signature is matched; then every
     ///   signature the module states for a nested module is applied after that
-    ///   module's own, deepest last, by an explicit queue.
+    ///   module's own, deepest last, by an explicit queue; last, each seal the
+    ///   module declared reaches every slot taken so far.
     /// - provides: coercive matching.
     /// - fails: [`LoweringRefusal::UnknownMold`] and
     ///   [`LoweringRefusal::BudgetExceeded`].
@@ -3985,6 +3999,7 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `modules::modules::module_signature_matching_hides_extra_members`
     /// - witness: `modules::modules::a_missing_signature_component_is_rejected_at_the_signature`
     /// - witness: `modules::modules::nested_member_signature_constrains_the_parent_binding`
+    /// - witness: `modules::modules::opaque_ascription_seals`
     #[spec(
         captures: structures = self.collected.structures.len(),
         ensures: |ret| {
@@ -4020,6 +4035,7 @@ impl<'source> Collector<'_, 'source>
             self.fuel.spend()?;
             self.layer(layer, &mut layers)?;
         }
+        self.seal(structure);
 
         Ok(())
     }
@@ -4148,11 +4164,13 @@ impl<'source> Collector<'_, 'source>
     ///   component's type, as its signature when it has none or only a derived
     ///   one, and as a witness otherwise; a nested module takes a record-typed
     ///   component as a layer. A manifest type component is recorded with a
-    ///   held slot owning its type; every type sees the manifest components
-    ///   before it. A component no member supplies, a nested module stated a
-    ///   type other than a record, and a type component the fragment does not
-    ///   read each file a held slot carrying the refusal under the component's
-    ///   name; members the signature omits stay admitted and are not exported.
+    ///   held slot owning its type, and an abstract one with the body's type
+    ///   member of its name, read as its atom under a sealing and as the
+    ///   member's type otherwise; every type sees the type components before
+    ///   it. A component no member supplies, a nested module stated a type
+    ///   other than a record, and a type component the fragment does not read
+    ///   each file a refusal under the component's name; members the signature
+    ///   omits stay admitted and are not exported.
     /// - provides: the module's own coercive matching.
     /// - fails: [`LoweringRefusal::UnknownMold`] and
     ///   [`LoweringRefusal::BudgetExceeded`].
@@ -4166,15 +4184,17 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — the component forms separated by a value component
     ///   met by an untyped member, by a member with its own signature, by a
     ///   nested module and by nothing, a manifest component named by a later
-    ///   one, and each unread type component; hiding by a member the signature
-    ///   omits; order by a reordered signature, each asserted as the exact
-    ///   exports, declared types or refusal.
+    ///   one, an abstract one sealed and strengthened, and each unread type
+    ///   component; hiding by a member the signature omits; order by a
+    ///   reordered signature, each asserted as the exact exports, declared
+    ///   types or refusal.
     /// - witness: `modules::modules::a_reordered_signature_matches_and_canonicalizes`
     /// - witness: `modules::modules::module_signature_matching_hides_extra_members`
     /// - witness: `modules::modules::a_missing_signature_component_is_rejected_at_the_signature`
     /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
     /// - witness: `modules::modules::a_kinded_type_component_is_declined_by_name_and_a_manifest_one_is_not`
-    /// - witness: `modules::modules::a_bare_type_component_declines_and_keeps_its_siblings`
+    /// - witness: `modules::modules::a_transparent_abstract_component_reads_its_type_member`
+    /// - witness: `modules::modules::opaque_ascription_seals`
     /// - witness: `modules::modules::a_nonempty_ascription_checks_each_component_at_its_member`
     /// - witness: `modules::modules::a_dangling_member_signature_is_an_obligation`
     #[spec(
@@ -4207,19 +4227,23 @@ impl<'source> Collector<'_, 'source>
                                             .take(index)
                                             .all(|prior| prior != member)
                                 })
-                                && entry
-                                    .types
+                                && entry.types.len() <= components.len()
+                                && components
                                     .iter()
-                                    .map(|component| (component.name, component.defined))
-                                    .eq(components.iter().filter_map(|component| {
-                                        match component.form {
-                                            | ComponentForm::Manifest(defined) => {
-                                                Some((component.name, defined))
-                                            },
-                                            | ComponentForm::Value(_)
-                                            | ComponentForm::Unread(_) => None,
-                                        }
-                                    }))
+                                    .filter_map(|component| match component.form {
+                                        | ComponentForm::Manifest(defined) => {
+                                            Some((component.name, TypeMeaning::Manifest(defined)))
+                                        },
+                                        | ComponentForm::Value(_)
+                                        | ComponentForm::Abstract(_)
+                                        | ComponentForm::Unread(_) => None,
+                                    })
+                                    .all(|stated| {
+                                        entry
+                                            .types
+                                            .iter()
+                                            .any(|component| (component.name, component.meaning) == stated)
+                                    })
                         },
                     })
         },
@@ -4258,7 +4282,7 @@ impl<'source> Collector<'_, 'source>
         };
         let mut exports = Vec::new();
         let mut types = Vec::new();
-        for component in components {
+        for (ordinal, component) in components.into_iter().enumerate() {
             self.fuel.spend()?;
             let scope = ComponentScope {
                 structure,
@@ -4273,9 +4297,19 @@ impl<'source> Collector<'_, 'source>
                     self.collected.scopes.push((defined.node, scope));
                     types.push(TypeComponent {
                         name: component.name,
-                        defined,
+                        meaning: TypeMeaning::Manifest(defined),
                         held,
                     });
+                    continue;
+                },
+                | ComponentForm::Abstract(kind) => {
+                    self.abstract_component(
+                        structure,
+                        ComponentPlace(ordinal),
+                        component,
+                        kind,
+                        &mut types,
+                    );
                     continue;
                 },
                 | ComponentForm::Unread(form) => {
@@ -4463,8 +4497,9 @@ impl<'source> Collector<'_, 'source>
     /// - ensures: a member with no signature, or with only the one a function
     ///   tail derives, takes `stated` as its signature, the derived one filed
     ///   as a witness; a member with a written signature keeps it and `stated`
-    ///   is filed as a witness. The slot `stated` lands on owns it, and it sees
-    ///   `scope`'s manifest type components.
+    ///   is filed as a witness, which a sealing `scope` exports in the member's
+    ///   place. The slot `stated` lands on owns it, and it sees `scope`'s type
+    ///   components.
     /// - provides: the one way a signature types a member.
     /// - fails: never.
     /// - panics: none.
@@ -4475,6 +4510,7 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `modules::modules::member_signature_attaches_and_wins_over_derived_function_type`
     /// - witness: `modules::modules::signatures_attach_to_their_defs`
     /// - witness: `modules::modules::nested_member_signature_constrains_the_parent_binding`
+    /// - witness: `modules::modules::a_signed_member_of_a_sealed_module_exports_its_witness`
     #[spec(
         captures: before = (
             self.collected.slots.len(),
@@ -4548,6 +4584,7 @@ impl<'source> Collector<'_, 'source>
         else {
             return;
         };
+        let home = entry.container;
         let owner = match entry.signature {
             | Maybe::Absent(_) => {
                 entry.signature = Maybe::Present(half);
@@ -4568,6 +4605,18 @@ impl<'source> Collector<'_, 'source>
         self.collected.own(stated.node, owner);
         if let Maybe::Present(seen) = scope {
             self.collected.scopes.push((stated.node, seen));
+            let sealing = self
+                .collected
+                .structures
+                .get(seen.structure.0)
+                .is_some_and(|ascribing| ascribing.sealed.0);
+            if sealing
+                && owner != member
+                && let Container::Module(exporting) = home
+                && let Some(exporter) = self.collected.structures.get_mut(exporting.0)
+            {
+                let _restated = exporter.exported_as.insert(member, owner);
+            }
         }
     }
 
@@ -4883,9 +4932,10 @@ impl<'source> Collector<'_, 'source>
 ///
 /// # Specification
 /// - requires: `cursor` stands just past the component's name.
-/// - ensures: `= τ` a manifest component; `: κ` a kinded one; a parameter list,
-///   skipped to its closing `)`, a parameterized one whatever follows; nothing
-///   an abstract one. The cursor stands past the component.
+/// - ensures: `= τ` a manifest component; `: κ` an abstract one of kind `κ`; a
+///   parameter list, skipped to its closing `)`, a parameterized one whatever
+///   follows; nothing an abstract one of no written kind. The cursor stands
+///   past the component.
 /// - provides: the type-component half of a module signature.
 /// - fails: yields a misplaced-tile refusal for a parameter list that does not
 ///   close, and the hole's refusal for a type not written as one form.
@@ -4895,11 +4945,12 @@ impl<'source> Collector<'_, 'source>
 /// [`LoweringRefusal::MalformedForm`] naming the module form.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — manifest and kinded components are distinct, while a bare
-///   abstract component is declined without losing later siblings.
+/// - hypothesis: L3 — manifest, kinded and bare components are distinct, and a
+///   bare one keeps its later siblings.
 /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
 /// - witness: `modules::modules::a_kinded_type_component_is_declined_by_name_and_a_manifest_one_is_not`
-/// - witness: `modules::modules::a_bare_type_component_declines_and_keeps_its_siblings`
+/// - witness: `modules::modules::a_transparent_abstract_component_reads_its_type_member`
+/// - witness: `modules::modules::an_abstract_component_kinds_at_a_universe`
 #[spec(
     captures: first = cursor.peek(),
     ensures: |ret| {
@@ -4911,9 +4962,9 @@ impl<'source> Collector<'_, 'source>
                 matches!(*form, ComponentForm::Manifest(_))
             },
             | Maybe::Present(Piece::Tile { label, .. }) if label == TileName::COLON => {
-                *form == ComponentForm::Unread(AscriptionForm::Kinded)
+                matches!(*form, ComponentForm::Abstract(Maybe::Present(_)))
             },
-            | _ => *form == ComponentForm::Unread(AscriptionForm::Abstract),
+            | _ => matches!(*form, ComponentForm::Abstract(Maybe::Absent(_))),
         })
     },
 )]
@@ -4944,11 +4995,11 @@ fn type_component<'source>(
         ComponentForm::Manifest(defined)
     }
     else if let Maybe::Present(_) = cursor.tile(TileName::COLON) {
-        let _kind = one_in(FormName::MODULE, cursor.operands())?;
-        ComponentForm::Unread(AscriptionForm::Kinded)
+        let kind = one_in(FormName::MODULE, cursor.operands())?;
+        ComponentForm::Abstract(Maybe::Present(kind))
     }
     else {
-        ComponentForm::Unread(AscriptionForm::Abstract)
+        ComponentForm::Abstract(Maybe::Absent(component_kind::Absent::Unkinded))
     };
 
     Ok(match parameterized {
@@ -5246,10 +5297,10 @@ const fn unadmitted<'source>(
 /// # Specification
 /// - requires: nothing to construct this data; its producers and consumers
 ///   state coordinate preconditions separately.
-/// - ensures: Completed, type-only, body-only, nominal and refused declarations
-///   remain distinct; identifiers refer to the producing core arena, not to an
-///   authenticated arena identity, and a nominal outcome's index to the
-///   producing module's signature list.
+/// - ensures: Completed, type-only, body-only, nominal, abstract and refused
+///   declarations remain distinct; identifiers refer to the producing core
+///   arena, not to an authenticated arena identity, and a nominal outcome's
+///   index to the producing module's signature list.
 /// - fails: not applicable to the data item.
 /// - panics: not applicable to the data item.
 /// - executable: none — the enabled specification facade does not expose
@@ -5265,6 +5316,7 @@ const fn unadmitted<'source>(
 /// - witness: `module::tests::a_second_definition_is_refused`
 /// - witness: `modules::modules::a_dangling_member_signature_is_an_obligation`
 /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
+/// - witness: `modules::modules::opaque_ascription_seals`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum DeclarationOutcome<'source>
 {
@@ -5291,6 +5343,10 @@ pub enum DeclarationOutcome<'source>
     /// A data declaration: a nominal family whose signature the module holds
     /// at this index.
     Data(DataIndex),
+    /// An abstract type an opaque ascription declares: the atom one of its
+    /// abstract components mints, with its kind, its representation, the
+    /// reach of its seal and its site.
+    Abstract(Sealing),
     /// The declaration's first refusal.
     Refused(LoweringRefusal<'source>),
 }
@@ -5598,8 +5654,8 @@ pub struct ManifestComponent<'source>
 /// - requires: nothing to construct this data; its producers and consumers
 ///   state coordinate preconditions separately.
 /// - ensures: The lowered metadata keeps the full module path, source span,
-///   selected value and nested-module exports, manifest types and coercion flag
-///   as separate fields.
+///   selected value and nested-module exports, manifest types, sealed types and
+///   coercion flag as separate fields.
 /// - fails: not applicable to the data item.
 /// - panics: not applicable to the data item.
 /// - executable: none — the enabled specification facade does not expose
@@ -5612,6 +5668,7 @@ pub struct ManifestComponent<'source>
 /// - witness: `modules::modules::a_reordered_signature_matches_and_canonicalizes`
 /// - witness: `modules::modules::module_signature_matching_hides_extra_members`
 /// - witness: `modules::modules::nested_modules_lower_as_parent_members_and_project`
+/// - witness: `modules::modules::opaque_ascription_seals`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LoweredStructure<'source>
 {
@@ -5624,8 +5681,12 @@ pub struct LoweredStructure<'source>
     values: Vec<ValueComponent<'source>>,
     /// The nested modules it exports, by name, in the same order.
     modules: Vec<SurfaceName<'source>>,
-    /// The manifest type components, in signature order.
+    /// The manifest type components it exports, in signature order once
+    /// matched and in source order otherwise.
     types: Vec<ManifestComponent<'source>>,
+    /// The abstract type components an opaque ascription sealed, in
+    /// signature order.
+    sealed: Vec<SealedComponent<'source>>,
     /// Whether matching against a signature coerced the body.
     coerced: Coerced,
 }
@@ -5644,6 +5705,7 @@ impl<'source> LoweredStructure<'source>
         values: Vec<ValueComponent<'source>>,
         modules: Vec<SurfaceName<'source>>,
         types: Vec<ManifestComponent<'source>>,
+        sealed: Vec<SealedComponent<'source>>,
         coerced: Coerced,
     ) -> Self
     {
@@ -5653,6 +5715,7 @@ impl<'source> LoweredStructure<'source>
             values,
             modules,
             types,
+            sealed,
             coerced,
         }
     }
@@ -5701,7 +5764,7 @@ impl<'source> LoweredStructure<'source>
         &self.modules
     }
 
-    /// The manifest type components, in signature order.
+    /// The manifest type components it exports.
     ///
     /// # Specification
     /// trivial.
@@ -5710,6 +5773,18 @@ impl<'source> LoweredStructure<'source>
     pub fn types(&self) -> &[ManifestComponent<'source>]
     {
         &self.types
+    }
+
+    /// The abstract type components an opaque ascription sealed, each with
+    /// its atom.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn sealed(&self) -> &[SealedComponent<'source>]
+    {
+        &self.sealed
     }
 
     /// Whether matching against a signature coerced the body.
@@ -5961,10 +6036,11 @@ impl<'source> LoweredModule<'source>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: each declared position with separator-free path segments has
-    ///   its structured name. Witnesses, held slots and invalid paths are
-    ///   omitted. If admitted metadata repeats a position, the last eligible
-    ///   declaration wins; an invalid later path does not erase an earlier one.
+    /// - ensures: each declared or sealed abstract position with separator-free
+    ///   path segments has its structured name. Witnesses, held slots and
+    ///   invalid paths are omitted. If admitted metadata repeats a position,
+    ///   the last eligible declaration wins; an invalid later path does not
+    ///   erase an earlier one.
     /// - provides: the name each flattened member is exported under, while
     ///   every reference still reads the admission position.
     /// - fails: never; a path containing the segment separator is omitted.
@@ -5978,6 +6054,7 @@ impl<'source> LoweredModule<'source>
     ///   met at a position is the one that wins, and compares the count of
     ///   positions met with the names returned.
     /// - witness: `modules::modules::modules_lower_to_named_member_declarations`
+    /// - witness: `modules::modules::opaque_ascription_seals`
     /// - witness: `module::tests::structured_export_omits_invalid_segments_and_keeps_the_last_declared_name`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -5996,7 +6073,7 @@ impl<'source> LoweredModule<'source>
                     .map_or(&[][..], |module| module.path.as_slice()),
             };
             let eligible = |declaration: &LoweredDeclaration<'source>| {
-                declaration.role() == Role::Declared
+                matches!(declaration.role(), Role::Declared | Role::Abstract)
                     && !declaration.name().as_ref().contains(NameSegment::SEPARATOR)
                     && prefix(declaration)
                         .iter()
@@ -6028,7 +6105,7 @@ impl<'source> LoweredModule<'source>
     {
         let mut names = BTreeMap::new();
         for declaration in &self.declarations {
-            if declaration.role() != Role::Declared {
+            if !matches!(declaration.role(), Role::Declared | Role::Abstract) {
                 continue;
             }
             let segments: Option<Vec<NameSegment>> = self

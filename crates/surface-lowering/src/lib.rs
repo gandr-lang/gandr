@@ -19,7 +19,7 @@
 //! where the source wrote no term, a closing delimiter the source never wrote —
 //! is reported where it stands rather than lowered around.
 //!
-//! # Seven decisions that interlock
+//! # Eight decisions that interlock
 //!
 //! **Names resolve through tables with no fallthrough.** `Unit`, `Integer`,
 //! `String`, `+U` and `-F` answer from a type-head table indexed by arity, and
@@ -40,6 +40,14 @@
 //! own; a path is governed by the module that binds it, and an inline
 //! signature reorders the exports and hides what it omits, checking each
 //! component at its member.
+//!
+//! **An opaque ascription mints one atom per abstract component.** `module M
+//! :> #{ type T, … } { type T = τ ; … }` checks its body against `τ`, declares
+//! one abstract type per abstract component when the module opens — keyed by
+//! its site, the module and the component's place in the signature, never a
+//! name — and exports every type naming `T` at that atom, which past the
+//! module relates to nothing but itself; `:` keeps `τ` visible (the decisions
+//! are in `module::sealing`).
 //!
 //! **A signature no definition completes is what an artifact owes.** That case
 //! is its own outcome, because it is the producer an obligation ledger reads —
@@ -140,7 +148,7 @@
 //! # Ok::<(), Box<dyn core::error::Error>>(())
 //! ```
 //!
-//! Each of the seven decisions, with the alternative it was chosen over and
+//! Each of the eight decisions, with the alternative it was chosen over and
 //! what would reverse it, is in the module that owns it.
 //!
 //! # References
@@ -249,6 +257,7 @@ pub use crate::lower::Fuel;
 pub use crate::lower::LoweringBudget;
 pub use crate::lower::lower_module;
 pub use crate::module::Coerced;
+pub use crate::module::ComponentPlace;
 pub use crate::module::Container;
 pub use crate::module::DataIndex;
 pub use crate::module::DeclarationCount;
@@ -258,6 +267,8 @@ pub use crate::module::LoweredModule;
 pub use crate::module::LoweredStructure;
 pub use crate::module::ManifestComponent;
 pub use crate::module::Role;
+pub use crate::module::SealedComponent;
+pub use crate::module::Sealing;
 pub use crate::module::StructureIndex;
 pub use crate::module::ValueComponent;
 pub use crate::module::manifest_type;

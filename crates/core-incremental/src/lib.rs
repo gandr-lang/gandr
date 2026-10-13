@@ -180,6 +180,7 @@ pub use crate::checkpoint::resume;
 pub use crate::checkpoint::resume_from;
 pub use crate::codec::CheckpointBytes;
 pub use crate::codec::UnsupportedPersistence;
+pub use crate::content::AbstractRoots;
 pub use crate::content::ContentNode;
 pub use crate::content::DataContent;
 pub use crate::content::DataRoots;

@@ -1734,6 +1734,7 @@ where
                             |signature| crate::content::DataContent::of(arena, layout, signature),
                         ))
                     },
+                    | gandr_core_checker::DeclarationContent::Abstract(_) => Answer::Untyped,
                 };
                 (
                     Outcome {
@@ -1955,6 +1956,38 @@ fn adopt(
                 checkpoint.support.clone(),
                 checkpoint.typing.clone(),
                 answer,
+            ));
+        },
+        | gandr_core_checker::DeclarationContent::Abstract(sealed) => {
+            match checkpoint.typing {
+                | Typing::Data => {
+                    if context
+                        .adopt_abstract(input.declaration.constant(), sealed)
+                        .is_err()
+                    {
+                        return Maybe::Absent(recall::Absent::Unseated);
+                    }
+                },
+                | Typing::Refused(_) => {
+                    if context
+                        .adopt(
+                            input.declaration.constant(),
+                            Maybe::Absent(signature_table::Absent::Untyped),
+                            Maybe::Absent(unfolding::Absent::Rigid),
+                        )
+                        .is_err()
+                    {
+                        return Maybe::Absent(recall::Absent::Unseated);
+                    }
+                },
+                | Typing::Checked { .. } | Typing::Synthesised { .. } | Typing::Owed => {
+                    return Maybe::Absent(recall::Absent::Unseated);
+                },
+            }
+            return Maybe::Present((
+                checkpoint.support.clone(),
+                checkpoint.typing.clone(),
+                Answer::Untyped,
             ));
         },
     };

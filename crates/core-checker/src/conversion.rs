@@ -15,12 +15,14 @@
 //! code constant with a body is read as the type its body denotes. The walk
 //! reads each side at its weak head — [`CheckingContext`] unfolds such a
 //! decode through the normaliser's conversion machine, which certifies each
-//! unfolding — and then compares former by former: a universe and a lift by
-//! their sort and level exactly, a decode left rigid by its code, a variable
-//! or a constant without a body, compared as a leaf. Two equal ids are one
-//! node, so the pair is accepted without reading it; and a pair met once is
-//! not compared again, so shared subtrees cost their distinct pairs, not their
-//! expansion.
+//! unfolding, and reads a sealed atom as its representation inside its seal —
+//! and then compares former by former: a universe and a lift by their sort and
+//! level exactly, a decode left rigid by its code, a variable or a constant
+//! without a body, compared as a leaf, and a sealed atom outside its seal by
+//! its admission position alone, so it relates to no representation and to no
+//! other atom however it was implemented. Two equal ids are one node, so the
+//! pair is accepted without reading it; and a pair met once is not compared
+//! again, so shared subtrees cost their distinct pairs, not their expansion.
 //!
 //! # The unknown type is consistent with every type
 //!
@@ -483,6 +485,7 @@ pub fn decode_bridge(
         | ValueTypeView::Lift { .. }
         | ValueTypeView::Element { .. }
         | ValueTypeView::Product(..)
+        | ValueTypeView::Abstract(_)
         | ValueTypeView::StaticPi { .. } => Err(CheckRefusal::TypeMismatch(Mismatch::Value {
             at: code,
             synthesised: found,
@@ -691,6 +694,9 @@ fn convert(
                     | (ValueTypeView::Integer, ValueTypeView::Integer)
                     | (ValueTypeView::String, ValueTypeView::String)
                     | (ValueTypeView::Unit, ValueTypeView::Unit) => true,
+                    | (ValueTypeView::Abstract(left), ValueTypeView::Abstract(right)) => {
+                        left == right
+                    },
                     | (ValueTypeView::Thunk(left), ValueTypeView::Thunk(right)) => {
                         pending.push(comps(left, right));
                         true
@@ -774,6 +780,7 @@ fn convert(
                         | ValueTypeView::Lift { .. }
                         | ValueTypeView::Element { .. }
                         | ValueTypeView::Product(..)
+                        | ValueTypeView::Abstract(_)
                         | ValueTypeView::StaticPi { .. },
                         _,
                     ) => false,
@@ -1104,6 +1111,7 @@ fn root_knowledge(
 #[cfg(test)]
 mod tests
 {
+    use anodized::spec;
     use gandr_core_term::CompTypeId;
     use gandr_core_term::CoreArena;
     use gandr_core_term::Sort;
@@ -1726,5 +1734,107 @@ mod tests
                 "the trees convert exactly when their shapes agree"
             );
         }
+    }
+
+    /// Two abstract types, both represented by `Integer`, admitted at
+    /// positions zero and one with seals that reach nothing past them, then a
+    /// value declaration at two the comparisons are read from.
+    ///
+    /// # Specification
+    /// - requires: `context` has admitted nothing.
+    /// - ensures: the two atoms, the representation and the unit type, the
+    ///   context having admitted all three declarations.
+    /// - panics: a declaration of the fixture is refused.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a reader past both seals separates identity from
+    ///   representation.
+    /// - witness: `conversion::tests::a_sealed_atom_relates_to_no_representation`
+    /// - witness: `conversion::tests::sealed_atoms_relate_by_identity_alone`
+    #[spec(ensures: |ret| matches!(ret, [first, second, integer, unit]
+        if first != second && integer != unit))]
+    fn sealed_pair(context: &mut CheckingContext<'_>) -> [gandr_core_term::ValueTypeId; 4]
+    {
+        use crate::declaration::AbstractType;
+        use crate::declaration::Declaration;
+        use crate::declaration::OriginToken;
+        use crate::seal::ComponentOrdinal;
+        use crate::seal::SealSite;
+        use crate::seal::SealingSite;
+        let arena = context.arena_mut();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let unit = arena.value_type_unit();
+        let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let first = arena.value_type_abstract(ConstantIndex::from(0_usize));
+        let second = arena.value_type_abstract(ConstantIndex::from(1_usize));
+        let value = arena.value_unit();
+        let atom = |position: usize| {
+            Declaration::abstract_type(
+                ConstantIndex::from(position),
+                AbstractType::new(
+                    small,
+                    integer,
+                    gandr_kernel_term::SealExtent::from(0_usize),
+                    SealSite::new(SealingSite::from(0_usize), ComponentOrdinal::from(position)),
+                ),
+                OriginToken::from(position),
+            )
+        };
+        let module = [
+            atom(0),
+            atom(1),
+            Declaration::new(
+                ConstantIndex::from(2_usize),
+                quenchant_shape::shape::Maybe::Present(unit),
+                quenchant_shape::shape::Maybe::Present(value),
+                OriginToken::from(2_usize),
+            ),
+        ];
+        let report = crate::module::check_module(context, &module);
+        assert_eq!(report.abstract_types().len(), 2, "both atoms are admitted");
+        [first, second, integer, unit]
+    }
+
+    #[test]
+    fn a_sealed_atom_relates_to_no_representation()
+    {
+        let mut arena = CoreArena::new();
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let [atom, _, integer, unit] = sealed_pair(&mut context);
+        for other in [integer, unit] {
+            for pairing in [
+                Pairing::Values(atom, other),
+                Pairing::Values(other, atom),
+                Pairing::SubValues(atom, other),
+                Pairing::SubValues(other, atom),
+            ] {
+                assert_eq!(
+                    convert(&mut context, pairing),
+                    Ok(Agreement::Apart),
+                    "past its seal an atom relates to no type in either direction, its own representation included"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn sealed_atoms_relate_by_identity_alone()
+    {
+        let mut arena = CoreArena::new();
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let [first, second, ..] = sealed_pair(&mut context);
+        let again = context
+            .arena_mut()
+            .value_type_abstract(ConstantIndex::from(0_usize));
+        assert_eq!(
+            convert(&mut context, Pairing::Values(first, again)),
+            Ok(Agreement::Convertible),
+            "one atom converts with itself at a fresh id"
+        );
+        assert_eq!(
+            convert(&mut context, Pairing::Values(first, second)),
+            Ok(Agreement::Apart),
+            "two atoms with one representation stay apart"
+        );
     }
 }

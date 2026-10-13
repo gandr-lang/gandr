@@ -46,6 +46,7 @@ const EXPECTED_PRECEDENCE_GROUPS: &[(&str, Assoc)] = &[
     ("pattern.as", Assoc::Left),
     ("pattern.or", Assoc::Left),
     ("type.atom", Assoc::Non),
+    ("type.path", Assoc::Left),
     ("type.application", Assoc::Non),
     ("type.product", Assoc::Right),
     ("type.sum", Assoc::Right),
@@ -67,7 +68,8 @@ const EXPECTED_PRECEDENCE_EDGES: &[(&str, &str)] = &[
     ("expression.or", "expression.pure"),
     ("pattern.atom", "pattern.as"),
     ("pattern.as", "pattern.or"),
-    ("type.atom", "type.application"),
+    ("type.atom", "type.path"),
+    ("type.path", "type.application"),
     ("type.application", "type.product"),
     ("type.product", "type.sum"),
     ("type.sum", "type.union"),
@@ -323,6 +325,7 @@ fn built_in_precedence_bands_are_exact() -> Result<(), Box<dyn Error>>
     ]);
     assert_chain(dag, &[
         PrecName("type.atom"),
+        PrecName("type.path"),
         PrecName("type.application"),
         PrecName("type.product"),
         PrecName("type.sum"),

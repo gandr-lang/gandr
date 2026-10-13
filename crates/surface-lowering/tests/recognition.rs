@@ -375,6 +375,7 @@ mod recognition
         for kind in [
             Recognized::BuiltinMember(position),
             Recognized::ModuleComponent,
+            Recognized::ModuleType,
             Recognized::Definition,
         ] {
             assert_eq!(

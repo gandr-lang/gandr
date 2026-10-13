@@ -346,8 +346,8 @@ impl fmt::Display for FormFault
 ///
 /// # Specification
 /// - requires: a producer selects the ascription form actually written.
-/// - ensures: opaque ascription, abstract type, kinded type and parameterized
-///   type reports do not become a transparent manifest-type interpretation.
+/// - ensures: kinded-family and parameterized type reports do not become an
+///   abstract or manifest interpretation.
 /// - provides: which unread ascription obligation prevented admission.
 /// - fails: not applicable to the report itself.
 /// - panics: none.
@@ -355,21 +355,15 @@ impl fmt::Display for FormFault
 ///   components, so it cannot validate the producer's classification.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — opaque, abstract and kinded components are asserted as
-///   typed refusals; a manifest component is admitted instead of conflated with
-///   a kinded one. These fixtures do not establish every parameterized form.
-/// - witness: `modules::modules::opaque_module_ascription_is_declined_not_read_as_transparent`
-/// - witness: `modules::modules::a_bare_type_component_declines_and_keeps_its_siblings`
+/// - hypothesis: L3 — a family-kinded component is asserted as a typed refusal;
+///   a manifest component is admitted instead of conflated with it. These
+///   fixtures do not establish every parameterized form.
 /// - witness: `modules::modules::a_kinded_type_component_is_declined_by_name_and_a_manifest_one_is_not`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum AscriptionForm
 {
-    /// Opaque ascription `:>`, which seals what it hides.
-    Opaque,
-    /// A bare type component `type T` under transparent ascription: an
-    /// abstract type, whose meaning is sealing's.
-    Abstract,
-    /// A kinded type component `type T : κ`, declaring a type family.
+    /// A type component whose kind is an arrow, `type T : κ -> κ'`,
+    /// declaring a type family.
     Kinded,
     /// A type component binding parameters, `type T(a : A) …`.
     Parameterized,
@@ -388,10 +382,6 @@ impl fmt::Display for AscriptionForm
     ) -> fmt::Result
     {
         match *self {
-            | Self::Opaque => f.write_str("is ascribed opaquely with `:>`"),
-            | Self::Abstract => f.write_str(
-                "is an abstract type component, given its meaning only by opaque ascription `:>`",
-            ),
             | Self::Kinded => f.write_str("is a kinded type component, a type family"),
             | Self::Parameterized => f.write_str("is a type component that binds parameters"),
         }
@@ -631,16 +621,17 @@ pub enum LoweringRefusal<'source>
     /// A module ascription form the fragment does not read yet.
     UnreadAscription
     {
-        /// The bytes of the ascription's tile or the component's name.
+        /// The bytes of the component's name.
         span: ByteSpan,
-        /// The module or the type component the form ascribes.
+        /// The type component the form ascribes.
         name: SurfaceName<'source>,
         /// The form.
         form: AscriptionForm,
     },
 
     /// A top-level module named with a lowercase initial, a spelling the
-    /// grammar reserves for nested modules.
+    /// grammar admits so it is declined here by name, and reserves for nested
+    /// modules.
     LowercaseModuleName
     {
         /// The bytes the declaration covers.
@@ -1078,7 +1069,7 @@ mod tests
             LoweringRefusal::UnreadAscription {
                 span: s(36_usize, 37_usize),
                 name: SurfaceName::from("T"),
-                form: AscriptionForm::Abstract,
+                form: AscriptionForm::Kinded,
             },
             LoweringRefusal::LowercaseModuleName {
                 span: s(38_usize, 39_usize),

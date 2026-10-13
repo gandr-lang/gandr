@@ -14,7 +14,7 @@
 //! halves each present or absent for a stated reason, and an opaque origin
 //! token the verdict echoes back.
 //!
-//! # Eight decisions that interlock
+//! # Nine decisions that interlock
 //!
 //! **The former decides the mode.** Leaves and eliminations synthesise,
 //! introductions check, and a dispatch on the direction names both cases, so a
@@ -56,6 +56,14 @@
 //! the normaliser's certificate for every unfolding before it admits the
 //! declaration. The artifact's audit is empty exactly when the ledger is, and
 //! gates nothing.
+//!
+//! **Sealing mints an atom.** An abstract type is a nominal declaration: its
+//! kind is a value universe, its representation forms within it, and its
+//! site — the ascription and the component, never a name — mints one atom in
+//! the run's seal table. The atom reads as its representation for the
+//! declarations its seal reaches and as itself past them, where it relates to
+//! nothing but itself; the kernel admits the same declaration and seals it at
+//! the same place.
 //!
 //! # Example
 //!
@@ -256,6 +264,7 @@ mod ledger;
 mod module;
 mod occurrence;
 mod refusal;
+mod seal;
 pub mod stage;
 pub mod staging;
 mod support;
@@ -280,6 +289,7 @@ pub use crate::coverage::CoverageFault;
 pub use crate::coverage::Exhaustiveness;
 pub use crate::coverage::Redundancy;
 pub use crate::coverage::cover;
+pub use crate::declaration::AbstractType;
 pub use crate::declaration::Declaration;
 pub use crate::declaration::DeclarationContent;
 pub use crate::declaration::OriginToken;
@@ -339,6 +349,14 @@ pub use crate::refusal::TermNode;
 pub use crate::refusal::TypeNode;
 pub use crate::refusal::UnadmittedFormer;
 pub use crate::refusal::compared;
+pub use crate::seal::ComponentOrdinal;
+pub use crate::seal::SealError;
+pub use crate::seal::SealId;
+pub use crate::seal::SealSerial;
+pub use crate::seal::SealSite;
+pub use crate::seal::SealTable;
+pub use crate::seal::SealingSite;
+pub use crate::seal::minted_site;
 pub use crate::support::Consulted;
 pub use crate::support::DataConsulted;
 pub use crate::support::Support;

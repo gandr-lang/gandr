@@ -255,7 +255,8 @@ enum Held
 /// - ensures: the entries are in the order the typed run finished them, binders
 ///   and types after the terms; each declaration is keyed by each of its forms;
 ///   every type node lives in the table's arena, and the names are the source's
-///   constants by admission position.
+///   constants by admission position, each spelled by its path from the top
+///   level.
 /// - panics: none.
 /// - executable: none — this data type has no call boundary; [`TypeTable::of`]
 ///   and [`TypeTable::at`] carry the predicates.
@@ -301,9 +302,9 @@ impl TypeTable
     ///   the binder's span, at that use's type; each written value or
     ///   computation type whose level the checker reads is an entry at its
     ///   universe; each declaration is keyed by each form key it carries, at
-    ///   its declared type, its body's synthesised type, or its data universe,
-    ///   or holding the lowering's refusal of it as text. A source the lowering
-    ///   refuses whole types nothing.
+    ///   its declared type, its body's synthesised type, its data universe, or
+    ///   a sealed abstract type's kind, or holding the lowering's refusal of it
+    ///   as text. A source the lowering refuses whole types nothing.
     /// - provides: what a face answers a reader pointing into the source with.
     /// - fails: [`ComposeFault::Parse`] when the parser cannot commit its tree;
     ///   [`ComposeFault::Lowering`] for a lowering engine fault.
@@ -433,6 +434,9 @@ impl TypeTable
                     | Maybe::Present(signature) => Held::Typed(TypeNode::Value(signature.kind())),
                     | Maybe::Absent(_) => continue,
                 },
+                | DeclarationOutcome::Abstract(sealing) => {
+                    Held::Typed(TypeNode::Value(sealing.kind))
+                },
                 | DeclarationOutcome::Refused(refusal) => Held::Refused(refusal.to_string()),
             };
             for key in [declaration.signature(), declaration.definition()] {
@@ -441,10 +445,7 @@ impl TypeTable
                 }
             }
         }
-        let names = constant_names(&module)
-            .into_iter()
-            .map(|name| String::from(name.as_ref()))
-            .collect();
+        let names = constant_names(&module);
         Ok(Self {
             entries,
             declared,
@@ -761,6 +762,39 @@ mod tests
             keyed,
             ["Integer", "Integer", "Integer"],
             "the signature, the definition and the synthesised declaration are each keyed"
+        );
+    }
+
+    #[test]
+    fn a_sealed_export_is_typed_at_its_atom_by_path()
+    {
+        let source = SourceText::from(
+            "module Counter :> #{ type T, zero : T } { type T = Integer ; def zero = 0 ; }\ndef z = \
+             Counter.zero ;",
+        );
+        let grammar = built_in().expect("the built-in grammar builds");
+        let tree = gandr_surface_parser::parse(&grammar, source)
+            .expect("the source parses")
+            .into_tree();
+        let table = table(source);
+        assert_eq!(
+            answer(&table, source, SourceText::from("Counter.zero ;")),
+            agreed(Subject::Term, SourceText::from("Counter.T")),
+            "a client reads the export at the atom, spelled as it writes it"
+        );
+        let keyed: Vec<String> = tree
+            .positions()
+            .filter_map(|position| tree.key(position))
+            .filter_map(|key| match table.declared(key, PageWidth::from(80_u32)) {
+                | Maybe::Present(Declared::Typed(spelled)) => Some(String::from(spelled.as_ref())),
+                | Maybe::Present(Declared::Refused(_)) | Maybe::Absent(_) => None,
+            })
+            .collect();
+        assert_eq!(
+            keyed,
+            ["Counter.T", "Counter.T", "Counter.T"],
+            "every declaration keyed in the source reads the atom by its path, never the \
+             representation; the abstract type itself carries no form key"
         );
     }
 }

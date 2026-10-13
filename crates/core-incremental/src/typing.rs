@@ -435,6 +435,20 @@ pub enum Refusal
         /// The conflicting returner type.
         second: TypeContent,
     },
+    /// An abstract type's kind is not a value universe.
+    AbstractKindNotUniverse(Site),
+    /// A sealed representation forms above its abstract type's universe.
+    RepresentationAboveKind
+    {
+        /// The representation.
+        representation: Site,
+        /// The declared universe.
+        kind: TypeContent,
+    },
+    /// A sealed atom names a position no abstract type was admitted at.
+    NotAnAbstractType(Reference),
+    /// A sealing site minted a second atom.
+    SealSiteRepeated(gandr_core_checker::SealSite),
 }
 
 /// An item's typing: its verdict, projected.
@@ -673,6 +687,10 @@ impl Projection<'_, '_, '_>
     #[spec(ensures: |ret| { let (matched_left_value, matched_right_value) = (refusal, &ret);
 if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal::NotADataType(ref projected) = *matched_right_value { *projected == self.layout.resolve(constant) }
  else if let CheckRefusal::DataKindNotUniverse(at) = matched_left_value && let Refusal::DataKindNotUniverse(projected) = *matched_right_value { projected == self.site(ArenaNode::ValueType(at)) }
+ else if let CheckRefusal::AbstractKindNotUniverse(at) = matched_left_value && let Refusal::AbstractKindNotUniverse(projected) = *matched_right_value { projected == self.site(ArenaNode::ValueType(at)) }
+ else if let CheckRefusal::RepresentationAboveKind {representation,kind} = matched_left_value && let Refusal::RepresentationAboveKind {representation:projected,kind:ref stored} = *matched_right_value { projected == self.site(ArenaNode::ValueType(representation)) && *stored == self.value_type(kind) }
+ else if let CheckRefusal::NotAnAbstractType(constant) = matched_left_value && let Refusal::NotAnAbstractType(ref projected) = *matched_right_value { *projected == self.layout.resolve(constant) }
+ else if let CheckRefusal::SealSiteRepeated(site) = matched_left_value && let Refusal::SealSiteRepeated(projected) = *matched_right_value { site == projected }
  else if let CheckRefusal::DataArgumentArity(at) = matched_left_value && let Refusal::DataArgumentArity(projected) = *matched_right_value { projected == self.site(ArenaNode::ValueType(at)) }
  else if let CheckRefusal::DataFieldLevel {field,kind} = matched_left_value && let Refusal::DataFieldLevel {field:projected,kind:ref stored} = *matched_right_value { projected == self.site(ArenaNode::ValueType(field)) && *stored == self.value_type(kind) }
  else if let CheckRefusal::UnknownConstructor {at,tag} = matched_left_value && let Refusal::UnknownConstructor {at:projected,tag:stored} = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && stored == tag }
@@ -812,6 +830,20 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                 field: self.site(ArenaNode::ValueType(field)),
                 kind: self.value_type(kind),
             },
+            | CheckRefusal::AbstractKindNotUniverse(at) => {
+                Refusal::AbstractKindNotUniverse(self.site(ArenaNode::ValueType(at)))
+            },
+            | CheckRefusal::RepresentationAboveKind {
+                representation,
+                kind,
+            } => Refusal::RepresentationAboveKind {
+                representation: self.site(ArenaNode::ValueType(representation)),
+                kind: self.value_type(kind),
+            },
+            | CheckRefusal::NotAnAbstractType(constant) => {
+                Refusal::NotAnAbstractType(self.layout.resolve(constant))
+            },
+            | CheckRefusal::SealSiteRepeated(site) => Refusal::SealSiteRepeated(site),
             | CheckRefusal::DataArgumentArity(at) => {
                 Refusal::DataArgumentArity(self.site(ArenaNode::ValueType(at)))
             },

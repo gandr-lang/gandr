@@ -92,6 +92,8 @@
 //! path image only with corresponding focusing, evaluation and readback rules;
 //! no parser syntax or coercion from `Flow_U` is implied here.
 
+use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use core::fmt;
 
 use anodized::spec;
@@ -180,8 +182,9 @@ pub struct Program<'source>
     arena: CommandArena,
     /// What each constant unfolds to, by admission position.
     definitions: Definitions,
-    /// Each declaration's name and standing, by admission position.
-    declarations: Vec<Declared<'source>>,
+    /// Each declaration's name and standing, by admission position; a
+    /// position no declaration holds is absent.
+    declarations: BTreeMap<ConstantIndex, Declared<'source>>,
 }
 
 /// One declaration of a program: its name and how it stands for a run.
@@ -423,13 +426,16 @@ impl<'source> Program<'source>
     ///
     /// # Specification
     /// - requires: `verdicts` are the checker's report for `module`, judged
-    ///   over `core`; their admission indices may be sparse.
-    /// - ensures: one entry per declaration of `module`, packed in module
-    ///   order. A declaration checked or synthesised has its elaborated body
-    ///   focused and is defined as it; one owed its body is carried as itself;
-    ///   one refused by the lowering or the checker, or whose body does not
-    ///   focus, is carried as itself and never run. Input admission indices
-    ///   select verdicts; program positions index the packed entries.
+    ///   over `core`; the module's admission positions ascend and may skip a
+    ///   position no declaration holds.
+    /// - ensures: one entry per declaration of `module`, at its own admission
+    ///   position, so a reference a body holds reads the declaration it names.
+    ///   A declaration checked or synthesised has its elaborated body focused
+    ///   and is defined as it; one owed its body is carried as itself; one
+    ///   refused by the lowering or the checker, or whose body does not focus,
+    ///   is carried as itself and never run. A skipped position holds no
+    ///   declaration and an opaque definition; a position met again keeps its
+    ///   first declaration.
     /// - provides: the program every run of the module's declarations shares.
     /// - fails: never; a body that does not focus is the declaration's
     ///   standing, not a failure of the program.
@@ -439,23 +445,27 @@ impl<'source> Program<'source>
     /// # Adequacy
     /// - hypothesis: L3 — sources holding an accepted, an owed, a refused and
     ///   an unfocusable declaration are built and each run asserted at its
-    ///   exact outcome. A sparse literal declaration retains its name and value
-    ///   at its packed program position. Sparse cross-declaration references
-    ///   are outside these fixtures.
+    ///   exact outcome. A module whose positions skip one keeps every
+    ///   declaration at its admission position, a later body's reference to an
+    ///   earlier one runs, and the skipped position is undeclared.
     /// - witness: `evaluate::tests::a_value_runs_to_its_spelling`
     /// - witness: `evaluate::tests::a_run_reaching_a_goal_blames_it`
     /// - witness: `evaluate::tests::a_reference_the_machine_cannot_carry_is_never_run`
-    /// - witness: `evaluate::tests::sparse_admission_positions_keep_program_order`
+    /// - witness: `evaluate::tests::a_skipped_admission_position_holds_no_declaration`
     #[spec(
-        ensures: |ref ret| ret.declarations.len() == module.declarations().len()
-            && usize::from(ret.definitions.len()) == ret.declarations.len()
-            && ret.declarations.iter().zip(module.declarations()).enumerate()
-                .all(|(position, (declared, lowered))| declared.name == lowered.name()
-                    && match (ret.definitions.get(ConstantIndex::from(position)), &declared.slot) {
-                        (Some(Definition::Transparent(producer)), &Slot::Defined(_)) => ret.arena.producer(producer).is_some(),
-                        (Some(Definition::Opaque), &Slot::Opaque(_)) => true,
-                        _ => false,
-                    })
+        ensures: |ref ret| usize::from(ret.definitions.len())
+                == module.declarations().iter().map(|lowered| usize::from(lowered.constant()).saturating_add(1)).max().unwrap_or(0)
+            && ret.declarations.keys().all(|constant| module.declarations().iter().any(|lowered| lowered.constant() == *constant))
+            && module.declarations().iter().all(|lowered| ret.declarations.get(&lowered.constant()).is_some_and(|declared|
+                module.declarations().iter().find(|first| first.constant() == lowered.constant()).is_some_and(|first| declared.name == first.name())))
+            && (0..usize::from(ret.definitions.len())).all(|position| {
+                let constant = ConstantIndex::from(position);
+                match (ret.definitions.get(constant), ret.declarations.get(&constant).map(|declared| &declared.slot)) {
+                    (Some(Definition::Transparent(producer)), Some(&Slot::Defined(_))) => ret.arena.producer(producer).is_some(),
+                    (Some(Definition::Opaque), Some(&Slot::Opaque(_)) | None) => true,
+                    _ => false,
+                }
+            })
     )]
     #[must_use]
     pub(crate) fn new(
@@ -467,13 +477,16 @@ impl<'source> Program<'source>
         let mut arena = CommandArena::default();
         let mut provenance = Provenance::new();
         let mut definitions = Definitions::new();
-        let mut declarations = Vec::with_capacity(module.declarations().len());
+        let mut declarations = BTreeMap::new();
         let mut judged = verdicts.judged().iter().peekable();
         for lowered in module.declarations() {
             let constant = lowered.constant();
             let verdict = judged
                 .next_if(|answer| answer.constant() == constant)
                 .map(Judged::verdict);
+            if usize::from(constant) < usize::from(definitions.len()) {
+                continue;
+            }
             let body = verdicts.definitions().get(&constant).copied();
             let (definition, slot) = match (verdict, body) {
                 | (Some(Verdict::Data), _) => (Definition::Opaque, Slot::Opaque(Opacity::Data)),
@@ -498,8 +511,11 @@ impl<'source> Program<'source>
                     _,
                 ) => (Definition::Opaque, Slot::Opaque(Opacity::Refused)),
             };
+            while usize::from(definitions.len()) < usize::from(constant) {
+                let _skipped = definitions.push(Definition::Opaque);
+            }
             let _position = definitions.push(definition);
-            declarations.push(Declared {
+            let _fresh = declarations.insert(constant, Declared {
                 name: lowered.name(),
                 slot,
             });
@@ -527,14 +543,14 @@ impl<'source> Program<'source>
     ///   earlier name among them, and a source of none.
     /// - witness: `evaluate::tests::the_run_target_is_the_last_name_declared`
     #[spec(ensures: |ret| match ret {
-        Maybe::Present(last) => usize::from(last).checked_add(1_usize) == Some(self.declarations.len()),
+        Maybe::Present(last) => self.declarations.keys().next_back() == Some(&last),
         Maybe::Absent(run_target::Absent::NoDeclaration) => self.declarations.is_empty(),
     })]
     #[inline]
     pub fn target(&self) -> Maybe<ConstantIndex, run_target::Absent>
     {
-        match self.declarations.len().checked_sub(1_usize) {
-            | Some(last) => Maybe::Present(ConstantIndex::from(last)),
+        match self.declarations.keys().next_back() {
+            | Some(&last) => Maybe::Present(last),
             | None => Maybe::Absent(run_target::Absent::NoDeclaration),
         }
     }
@@ -544,8 +560,7 @@ impl<'source> Program<'source>
     /// # Specification
     /// - requires: nothing; any admission position may be queried.
     /// - ensures: the name stored at the exact position, or `Undeclared` when
-    ///   the position is outside the declarations, without truncating the
-    ///   index.
+    ///   no declaration holds the position, without truncating the index.
     /// - fails: an absent name is the typed absence, never a substitute name.
     /// - panics: none.
     ///
@@ -554,7 +569,7 @@ impl<'source> Program<'source>
     ///   definition of an earlier name; empty and maximal-index queries are
     ///   absent.
     /// - witness: `evaluate::tests::the_run_target_is_the_last_name_declared`
-    #[spec(ensures: |ret| match (self.declarations.get(usize::from(constant)), ret) {
+    #[spec(ensures: |ret| match (self.declarations.get(&constant), ret) {
         (Some(declared), Maybe::Present(name)) => declared.name == name,
         (None, Maybe::Absent(declaration_name::Absent::Undeclared)) => true,
         _ => false,
@@ -565,7 +580,7 @@ impl<'source> Program<'source>
         constant: ConstantIndex,
     ) -> Maybe<SurfaceName<'source>, declaration_name::Absent>
     {
-        match self.declarations.get(usize::from(constant)) {
+        match self.declarations.get(&constant) {
             | Some(declared) => Maybe::Present(declared.name),
             | None => Maybe::Absent(declaration_name::Absent::Undeclared),
         }
@@ -595,7 +610,7 @@ impl<'source> Program<'source>
     -> impl Iterator<Item = (SurfaceName<'source>, FocusRefusal)> + '_
     {
         self.declarations
-            .iter()
+            .values()
             .filter_map(|declared| match declared.slot {
                 | Slot::Opaque(Opacity::Unfocused(refusal)) => Some((declared.name, refusal)),
                 | Slot::Defined(_)
@@ -654,7 +669,7 @@ impl<'source> Program<'source>
     )]
     #[spec(
         captures: [declarations = self.declarations.len(), definitions = self.definitions.len(),
-            watermark = self.arena.watermark(), blocked = match self.declarations.get(usize::from(constant)) {
+            watermark = self.arena.watermark(), blocked = match self.declarations.get(&constant) {
                 None => Some(Unrunnable::Undeclared(constant)),
                 Some(&Declared {name,slot:Slot::Opaque(Opacity::Data)}) => Some(Unrunnable::Data(name)),
                 Some(&Declared { name, slot: Slot::Opaque(Opacity::Refused) }) => Some(Unrunnable::Refused(name)),
@@ -666,15 +681,15 @@ impl<'source> Program<'source>
             && blocked.is_none_or(|reason| matches!(*ret, Evaluation::Unrunnable(actual) if actual == reason)
                 && self.arena.watermark() == watermark)
             && match *ret {
-                Evaluation::Unrunnable(Unrunnable::Data(name)) => self.declarations.iter().any(|declared| declared.name == name && matches!(declared.slot,Slot::Opaque(Opacity::Data))),
-                Evaluation::Blamed(name) => self.declarations.iter().any(|declared|
+                Evaluation::Unrunnable(Unrunnable::Data(name)) => self.declarations.values().any(|declared| declared.name == name && matches!(declared.slot,Slot::Opaque(Opacity::Data))),
+                Evaluation::Blamed(name) => self.declarations.values().any(|declared|
                     declared.name == name && matches!(declared.slot, Slot::Opaque(Opacity::Owed))),
-                Evaluation::Unrunnable(Unrunnable::Undeclared(index)) => usize::from(index) >= declarations,
-                Evaluation::Unrunnable(Unrunnable::Refused(name)) => self.declarations.iter().any(|declared|
+                Evaluation::Unrunnable(Unrunnable::Undeclared(index)) => !self.declarations.contains_key(&index),
+                Evaluation::Unrunnable(Unrunnable::Refused(name)) => self.declarations.values().any(|declared|
                     declared.name == name && matches!(declared.slot, Slot::Opaque(Opacity::Refused))),
                 Evaluation::Unrunnable(Unrunnable::Unfocused { declaration, .. }) =>
-                    self.declarations.iter().any(|declared| declared.name == declaration),
-                Evaluation::Unfinished(Unfinished::Inconsistent(index)) => self.declarations.get(usize::from(index))
+                    self.declarations.values().any(|declared| declared.name == declaration),
+                Evaluation::Unfinished(Unfinished::Inconsistent(index)) => self.declarations.get(&index)
                     .is_some_and(|declared| matches!(declared.slot, Slot::Defined(_))),
                 Evaluation::Value(_) | Evaluation::Stuck(_)
                     | Evaluation::Unfinished(Unfinished::Fault(_) | Unfinished::Readback(_)) => true,
@@ -764,11 +779,11 @@ impl<'source> Program<'source>
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body allocates a mark per declaration for its walk; the check scans the declarations once for the reported name"
+            reason = "parity: the body marks each declaration its walk reaches; the check scans the declarations once for the reported name"
         )
     )]
     #[spec(ensures: |ret| {
-        let root = match self.declarations.get(usize::from(constant)) {
+        let root = match self.declarations.get(&constant) {
             None => ret == Maybe::Present(Unrunnable::Undeclared(constant)),
             Some(&Declared {name,slot:Slot::Opaque(Opacity::Data)}) => ret == Maybe::Present(Unrunnable::Data(name)),
             Some(&Declared { name, slot: Slot::Opaque(Opacity::Refused) }) => ret == Maybe::Present(Unrunnable::Refused(name)),
@@ -778,11 +793,11 @@ impl<'source> Program<'source>
             Some(&Declared { slot: Slot::Defined(_), .. }) => true,
         };
         root && match ret {
-            Maybe::Present(Unrunnable::Data(name)) => self.declarations.iter().any(|declared| declared.name == name && matches!(declared.slot,Slot::Opaque(Opacity::Data))),
-            Maybe::Present(Unrunnable::Undeclared(index)) => self.declarations.get(usize::from(index)).is_none(),
-            Maybe::Present(Unrunnable::Refused(name)) => self.declarations.iter().any(|declared|
+            Maybe::Present(Unrunnable::Data(name)) => self.declarations.values().any(|declared| declared.name == name && matches!(declared.slot,Slot::Opaque(Opacity::Data))),
+            Maybe::Present(Unrunnable::Undeclared(index)) => !self.declarations.contains_key(&index),
+            Maybe::Present(Unrunnable::Refused(name)) => self.declarations.values().any(|declared|
                 declared.name == name && matches!(declared.slot, Slot::Opaque(Opacity::Refused))),
-            Maybe::Present(Unrunnable::Unfocused { declaration, refusal }) => self.declarations.iter().any(|declared|
+            Maybe::Present(Unrunnable::Unfocused { declaration, refusal }) => self.declarations.values().any(|declared|
                 declared.name == declaration && matches!(declared.slot, Slot::Opaque(Opacity::Unfocused(actual)) if actual == refusal)),
             Maybe::Absent(carried::Absent::Carried) => true,
         }
@@ -792,17 +807,15 @@ impl<'source> Program<'source>
         constant: ConstantIndex,
     ) -> Maybe<Unrunnable<'source>, carried::Absent>
     {
-        let mut seen = vec![false; self.declarations.len()];
+        let mut seen = BTreeSet::new();
         let mut pending = Vec::from([constant]);
         while let Some(reached) = pending.pop() {
-            let position = usize::from(reached);
-            let Some(declared) = self.declarations.get(position)
+            let Some(declared) = self.declarations.get(&reached)
             else {
                 return Maybe::Present(Unrunnable::Undeclared(reached));
             };
-            match seen.get_mut(position) {
-                | Some(visited) if !*visited => *visited = true,
-                | Some(_) | None => continue,
+            if !seen.insert(reached) {
+                continue;
             }
             match declared.slot {
                 | Slot::Opaque(Opacity::Data) => {
@@ -1006,7 +1019,7 @@ impl<'source> Program<'source>
     /// - hypothesis: L3 — real composed declarations exercise every standing,
     ///   including the inconsistent defined and out-of-range boundaries.
     /// - witness: `evaluate::tests::terminal_classification_preserves_declaration_identity`
-    #[spec(ensures: |ref ret| match self.declarations.get(usize::from(constant)) {
+    #[spec(ensures: |ref ret| match self.declarations.get(&constant) {
         Some(&Declared {name,slot:Slot::Opaque(Opacity::Data)}) => matches!(*ret,Evaluation::Unrunnable(Unrunnable::Data(actual)) if actual == name),
         Some(&Declared { name, slot: Slot::Opaque(Opacity::Owed) }) => matches!(*ret, Evaluation::Blamed(actual) if actual == name),
         Some(&Declared { name, slot: Slot::Opaque(Opacity::Refused) }) => matches!(*ret, Evaluation::Unrunnable(Unrunnable::Refused(actual)) if actual == name),
@@ -1020,7 +1033,7 @@ impl<'source> Program<'source>
         constant: ConstantIndex,
     ) -> Evaluation<'source>
     {
-        match self.declarations.get(usize::from(constant)) {
+        match self.declarations.get(&constant) {
             | Some(&Declared {
                 name,
                 slot: Slot::Opaque(Opacity::Data),
@@ -1536,7 +1549,6 @@ mod tests
     use gandr_surface_corpus::CorpusRoot;
     use gandr_surface_grammar::built_in;
     use gandr_surface_lowering::SurfaceName;
-    use gandr_surface_lowering::namespace::Recognition;
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
 
@@ -1555,7 +1567,8 @@ mod tests
     /// # Specification
     /// - requires: a flat source fixture that composes without an engine fault
     ///   or whole-module refusal under the fixture root.
-    /// - ensures: definitions and declared names occupy the same dense table.
+    /// - ensures: every declared name stands at a position the definitions
+    ///   cover.
     /// - panics: if the grammar or composition premise fails.
     ///
     /// # Adequacy
@@ -1564,7 +1577,7 @@ mod tests
     ///   or targets.
     /// - witness: `evaluate::tests::a_value_runs_to_its_spelling`
     /// - witness: `evaluate::tests::the_run_target_is_the_last_name_declared`
-    #[spec(ensures: |ref ret| usize::from(ret.definitions.len()) == ret.declarations.len())]
+    #[spec(ensures: |ref ret| ret.declarations.keys().all(|&constant| ret.definitions.get(constant).is_some()))]
     fn program<'source>(source: impl Into<SourceText<'source>>) -> Program<'source>
     {
         let grammar = built_in().expect("the built-in grammar builds");
@@ -1599,10 +1612,10 @@ mod tests
         )
     )]
     #[spec(
-        requires: program.declarations.iter().any(|declared| declared.name == name),
+        requires: program.declarations.values().any(|declared| declared.name == name),
         captures: [declarations = program.declarations.len()],
         ensures: |ref ret| program.declarations.len() == declarations
-            && match *ret { Evaluation::Unrunnable(Unrunnable::Undeclared(index)) => usize::from(index) >= declarations, _ => true }
+            && match *ret { Evaluation::Unrunnable(Unrunnable::Undeclared(index)) => !program.declarations.contains_key(&index), _ => true }
     )]
     fn run<'source>(
         program: &mut Program<'source>,
@@ -1612,9 +1625,10 @@ mod tests
         let position = program
             .declarations
             .iter()
-            .position(|declared| declared.name == name)
+            .find(|&(_, declared)| declared.name == name)
+            .map(|(&constant, _)| constant)
             .expect("the program declares the name");
-        program.evaluate(ConstantIndex::from(position))
+        program.evaluate(position)
     }
 
     #[test]
@@ -1933,56 +1947,37 @@ def bad : Integer ; def bad = "text" ; def small : Type ; def small = Integer ;"
     }
 
     #[test]
-    fn sparse_admission_positions_keep_program_order()
+    fn a_skipped_admission_position_holds_no_declaration()
     {
-        let grammar = built_in().expect("the built-in grammar builds");
-        let tree = gandr_surface_parser::parse(
-            &grammar,
-            SourceText::from("def omitted : Integer ; def answer = 42 ;"),
-        )
-        .expect("the fixture parses")
-        .into_tree();
-        let mut core = gandr_core_term::CoreArena::new();
-        let lowered = gandr_surface_lowering::lower_module(
-            &grammar,
-            &tree,
-            &mut core,
-            gandr_surface_lowering::LoweringBudget::DEFAULT,
-            Recognition::default(),
-        )
-        .expect("the fixture lowers");
-        let answer = *lowered
-            .declarations()
-            .last()
-            .expect("the answer follows the omitted name");
-        assert_eq!(answer.constant(), ConstantIndex::from(1_usize));
-        let sparse = gandr_surface_lowering::LoweredModule::new(
-            Vec::from([answer]),
-            Vec::new(),
-            Vec::new(),
-            lowered.attributes().clone(),
-            lowered.origins().clone(),
-            gandr_surface_lowering::ModuleImports::default(),
-            lowered.recognition().clone(),
+        let mut program = program(
+            "module M { type T = Integer ; def seed : T ; def seed = 41 ; }\ndef copy : Integer \
+             ;\ndef copy = M.seed ;",
         );
-        let verdicts = gandr_core_checker::check_module(
-            &mut gandr_core_checker::CheckingContext::new(
-                &mut core,
-                gandr_core_checker::CheckBudget::DEFAULT,
-            ),
-            &crate::compose::adapt(&sparse),
-        );
-        let mut program = Program::new(&core, &sparse, &verdicts);
         assert_eq!(
-            program.target(),
-            Maybe::Present(ConstantIndex::from(0_usize))
+            program
+                .declarations
+                .keys()
+                .map(|&constant| usize::from(constant))
+                .collect::<Vec<_>>(),
+            [1_usize, 2_usize],
+            "the type member takes the first position and declares nothing there"
         );
         assert_eq!(
             program.name(ConstantIndex::from(0_usize)),
-            Maybe::Present(SurfaceName::from("answer"))
+            Maybe::Absent(super::declaration_name::Absent::Undeclared)
+        );
+        assert_eq!(
+            program.evaluate(ConstantIndex::from(0_usize)),
+            Evaluation::Unrunnable(Unrunnable::Undeclared(ConstantIndex::from(0_usize))),
+            "the skipped position holds nothing to run"
+        );
+        assert_eq!(
+            program.target(),
+            Maybe::Present(ConstantIndex::from(2_usize))
         );
         assert!(
-            matches!(run(&mut program, SurfaceName::from("answer")), Evaluation::Value(ref value) if value.as_ref() == "42")
+            matches!(run(&mut program, SurfaceName::from("copy")), Evaluation::Value(ref value) if value.as_ref() == "41"),
+            "a reference past the skipped position reads the declaration it names"
         );
     }
 
@@ -2000,11 +1995,10 @@ def bad : Integer ; def bad = "text" ; def small : Type ; def small = Integer ;"
         let position = program
             .declarations
             .iter()
-            .position(|declared| declared.name == name)
+            .find(|&(_, declared)| declared.name == name)
+            .map(|(&constant, _)| constant)
             .expect("the program declares the name");
-        let (returned, forced) = program
-            .entries(ConstantIndex::from(position))
-            .expect("the declaration focuses");
+        let (returned, forced) = program.entries(position).expect("the declaration focuses");
         let budget = super::StepCount::from(super::RUN_BUDGET);
         let mut machine = super::Machine::new(&program.arena, &program.definitions);
         let commands: [_; 2] = (returned, forced).into();
@@ -2130,10 +2124,11 @@ def bad : Integer ; def bad = "text" ; def small : Type ; def small = Integer ;"
         let position = program
             .declarations
             .iter()
-            .position(|declared| declared.name == name)
+            .find(|&(_, declared)| declared.name == name)
+            .map(|(&constant, _)| constant)
             .expect("the program declares the name");
         let Some(gandr_core_sequent::Definition::Transparent(root)) =
-            program.definitions.get(ConstantIndex::from(position))
+            program.definitions.get(position)
         else {
             panic!("`{name}` focuses to a value");
         };

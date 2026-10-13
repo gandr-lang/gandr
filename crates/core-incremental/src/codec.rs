@@ -2869,6 +2869,14 @@ where
             writer.tag(Tag(1));
             write_data_roots(writer, roots)?;
         },
+        | crate::content::DeclarationRoots::Abstract(roots) => {
+            writer.tag(Tag(2));
+            write_index(writer, roots.kind)?;
+            write_index(writer, roots.representation)?;
+            writer.count(Count(usize::from(roots.extent)))?;
+            writer.count(Count(usize::from(roots.site.sealing())))?;
+            writer.count(Count(usize::from(roots.site.component())))?;
+        },
     }
     write_nodes(writer, content.nodes())
 }
@@ -2961,6 +2969,19 @@ fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
             crate::content::DeclarationRoots::Value { signature, body }
         },
         | 1 => crate::content::DeclarationRoots::Data(read_data_roots(reader)?),
+        | 2 => {
+            let kind = read_index(reader)?;
+            let representation = read_index(reader)?;
+            let extent = gandr_kernel_term::SealExtent::from(reader.count()?.0);
+            let sealing = gandr_core_checker::SealingSite::from(reader.count()?.0);
+            let component = gandr_core_checker::ComponentOrdinal::from(reader.count()?.0);
+            crate::content::DeclarationRoots::Abstract(crate::content::AbstractRoots {
+                kind,
+                representation,
+                extent,
+                site: gandr_core_checker::SealSite::new(sealing, component),
+            })
+        },
         | _ => return Err(CodecError::Corrupt),
     };
     let nodes = read_nodes(reader)?;
@@ -3620,7 +3641,7 @@ where
                 ref expected,
                 ..
             } => [synthesised.nodes(), expected.nodes()],
-            Refusal::DataFieldLevel {kind:ref found,..} | Refusal::MissingRecordField {expected:ref found,..} | Refusal::ShapeMismatch { ref found, .. }
+            Refusal::DataFieldLevel {kind:ref found,..} | Refusal::RepresentationAboveKind {kind:ref found,..} | Refusal::MissingRecordField {expected:ref found,..} | Refusal::ShapeMismatch { ref found, .. }
             | Refusal::StaticClassifierExpected { ref found, .. } => [found.nodes(), &[]],
             | Refusal::DependentBind {
                 ref synthesised, ..
@@ -3663,6 +3684,27 @@ where
             writer.tag(Tag(21));
             write_site(writer, field)?;
             write_type(writer, kind)?;
+        },
+        | Refusal::AbstractKindNotUniverse(at) => {
+            writer.tag(Tag(48));
+            write_site(writer, at)?;
+        },
+        | Refusal::RepresentationAboveKind {
+            representation,
+            ref kind,
+        } => {
+            writer.tag(Tag(49));
+            write_site(writer, representation)?;
+            write_type(writer, kind)?;
+        },
+        | Refusal::NotAnAbstractType(ref reference) => {
+            writer.tag(Tag(50));
+            write_reference(writer, reference)?;
+        },
+        | Refusal::SealSiteRepeated(site) => {
+            writer.tag(Tag(51));
+            writer.count(Count(usize::from(site.sealing())))?;
+            writer.count(Count(usize::from(site.component())))?;
         },
         | Refusal::DataArgumentArity(at) => {
             writer.tag(Tag(22));
@@ -4092,6 +4134,10 @@ where
                     | Refusal::EquivUnsupported { .. } => 45,
                     | Refusal::UncertifiedStratum { .. } => 46,
                     | Refusal::RoundTripDistinct(_) => 47,
+                    | Refusal::AbstractKindNotUniverse(_) => 48,
+                    | Refusal::RepresentationAboveKind { .. } => 49,
+                    | Refusal::NotAnAbstractType(_) => 50,
+                    | Refusal::SealSiteRepeated(_) => 51,
                 })
         },
         | Err(CodecError::LevelOffsetTooLarge { offset }) => {
@@ -4123,6 +4169,17 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
         | 27 => Refusal::MissingRecordField {
             at: read_site(reader)?,
             expected: read_type(reader)?,
+        },
+        | 48 => Refusal::AbstractKindNotUniverse(read_site(reader)?),
+        | 49 => Refusal::RepresentationAboveKind {
+            representation: read_site(reader)?,
+            kind: read_type(reader)?,
+        },
+        | 50 => Refusal::NotAnAbstractType(read_reference(reader)?),
+        | 51 => {
+            let sealing = gandr_core_checker::SealingSite::from(reader.count()?.0);
+            let component = gandr_core_checker::ComponentOrdinal::from(reader.count()?.0);
+            Refusal::SealSiteRepeated(gandr_core_checker::SealSite::new(sealing, component))
         },
         | 0 => {
             let at = read_site(reader)?;
@@ -4360,7 +4417,7 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
             let tables: [&[ContentNode]; 2] = match *typing {
                 | Typing::Synthesised { ref produced, .. } => [produced.nodes(), &[]],
                 | Typing::Refused(ref refusal) => match *refusal {
-            Refusal::DataFieldLevel {kind:ref found,..} | Refusal::MissingRecordField {expected:ref found,..} => [found.nodes(),&[]],
+            Refusal::DataFieldLevel {kind:ref found,..} | Refusal::RepresentationAboveKind {kind:ref found,..} | Refusal::MissingRecordField {expected:ref found,..} => [found.nodes(),&[]],
                     | Refusal::TypeMismatch {
                         ref synthesised,
                         ref expected,
@@ -4632,7 +4689,7 @@ fn read_answer(reader: &mut Reader<'_>) -> Result<Answer, CodecError>
                     ref expected,
                     ..
                 } => [synthesised.nodes(), expected.nodes()],
-                Refusal::DataFieldLevel {kind:ref found,..} | Refusal::MissingRecordField {expected:ref found,..} | Refusal::ShapeMismatch { ref found, .. }
+                Refusal::DataFieldLevel {kind:ref found,..} | Refusal::RepresentationAboveKind {kind:ref found,..} | Refusal::MissingRecordField {expected:ref found,..} | Refusal::ShapeMismatch { ref found, .. }
                 | Refusal::StaticClassifierExpected { ref found, .. } => [found.nodes(), &[]],
                 | Refusal::DependentBind {
                     ref synthesised, ..
@@ -4816,6 +4873,9 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
                 ..
             } => [Some(synthesised), Some(expected)],
             | Refusal::DataFieldLevel {
+                kind: ref found, ..
+            }
+            | Refusal::RepresentationAboveKind {
                 kind: ref found, ..
             }
             | Refusal::MissingRecordField {

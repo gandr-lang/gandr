@@ -617,7 +617,8 @@ impl Annotations
         CheckRefusal::EndpointMismatch { .. } => role(&ret.context[0_usize], Label::Endpoint)
             && role(&ret.context[1_usize], Label::Endpoint),
         CheckRefusal::NotSynthesisable { form: CheckingForm::Hole(_) }
-            | CheckRefusal::NotADataType(_)
+            | CheckRefusal::NotADataType(_) | CheckRefusal::NotAnAbstractType(_)
+            | CheckRefusal::SealSiteRepeated(_)
             | CheckRefusal::NegativeOccurrence(_) | CheckRefusal::NestedOccurrence(_)
             | CheckRefusal::IndexOccurrence(_) | CheckRefusal::NonUniformOccurrence(_)
             | CheckRefusal::CrossBlockReference { .. }
@@ -636,10 +637,14 @@ fn checked(
 {
     let label = Label::Culprit(Culprit::of(Refusal::Checking(refusal)));
     let (primary, context) = match refusal {
-        | CheckRefusal::DataKindNotUniverse(at) | CheckRefusal::DataArgumentArity(at) => {
-            (spanned(origins.value_type(at)), UNNAMED)
-        },
-        | CheckRefusal::DataFieldLevel { field, kind } => (spanned(origins.value_type(field)), [
+        | CheckRefusal::DataKindNotUniverse(at)
+        | CheckRefusal::DataArgumentArity(at)
+        | CheckRefusal::AbstractKindNotUniverse(at) => (spanned(origins.value_type(at)), UNNAMED),
+        | CheckRefusal::DataFieldLevel { field: at, kind }
+        | CheckRefusal::RepresentationAboveKind {
+            representation: at,
+            kind,
+        } => (spanned(origins.value_type(at)), [
             annotated(spanned(origins.value_type(kind)), Label::Expected),
             Maybe::Absent(report_context::Absent::Unnamed),
         ]),
@@ -754,6 +759,8 @@ fn checked(
         | CheckRefusal::OutOfFragment { at: core, .. }
         | CheckRefusal::DanglingNode { node: core } => (node(origins, core), UNNAMED),
         | CheckRefusal::NotADataType(_)
+        | CheckRefusal::NotAnAbstractType(_)
+        | CheckRefusal::SealSiteRepeated(_)
         | CheckRefusal::NegativeOccurrence(_)
         | CheckRefusal::NestedOccurrence(_)
         | CheckRefusal::IndexOccurrence(_)
@@ -938,6 +945,10 @@ impl fmt::Display for Checked
             CheckRefusal::NotADataType(constant) => write!(f,"declaration {} is not an admitted datatype",usize::from(constant)),
             CheckRefusal::DataKindNotUniverse(_) => f.write_str("a datatype kind must be a value universe"),
             CheckRefusal::DataFieldLevel {..} => f.write_str("a constructor field exceeds the declared universe"),
+            CheckRefusal::AbstractKindNotUniverse(_) => f.write_str("an abstract type's kind must be a value universe"),
+            CheckRefusal::RepresentationAboveKind {..} => f.write_str("a sealed representation exceeds its abstract type's universe"),
+            CheckRefusal::NotAnAbstractType(constant) => write!(f,"declaration {} is not an abstract type",usize::from(constant)),
+            CheckRefusal::SealSiteRepeated(site) => write!(f,"{site} was sealed twice"),
             CheckRefusal::DataArgumentArity(_) => f.write_str("the datatype application has the wrong parameter count"),
             CheckRefusal::UnknownConstructor {tag,..} => write!(f,"constructor tag {} is absent from the datatype",usize::from(tag)),
             CheckRefusal::ConstructorArity(_) => f.write_str("the constructor has the wrong field count"),

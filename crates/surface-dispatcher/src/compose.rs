@@ -102,11 +102,15 @@ use alloc::sync::Arc;
 use core::fmt;
 
 use anodized::spec;
+use gandr_core_checker::AbstractType;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckingContext;
+use gandr_core_checker::ComponentOrdinal;
 use gandr_core_checker::Declaration;
 use gandr_core_checker::ModuleReport;
 use gandr_core_checker::OriginToken;
+use gandr_core_checker::SealSite;
+use gandr_core_checker::SealingSite;
 use gandr_core_checker::body;
 use gandr_core_checker::bridge;
 use gandr_core_checker::check_module;
@@ -127,6 +131,7 @@ use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::OriginTable;
+use gandr_surface_lowering::Sealing;
 use gandr_surface_lowering::namespace::ShadowedBuiltin;
 use gandr_surface_parser::MeldError;
 use gandr_surface_parser::ObligationInstance;
@@ -1097,7 +1102,8 @@ fn unstatable<'source>(module: &LoweredModule<'source>) -> Vec<LoweringRefusal<'
                     DeclarationOutcome::Completed { .. }
                     | DeclarationOutcome::Uncompleted { .. }
                     | DeclarationOutcome::Bodied { .. }
-                    | DeclarationOutcome::Data(_),
+                    | DeclarationOutcome::Data(_)
+                    | DeclarationOutcome::Abstract(_),
                     ..,
                 ) => None,
             }
@@ -1114,8 +1120,9 @@ fn unstatable<'source>(module: &LoweredModule<'source>) -> Vec<LoweringRefusal<'
 ///   order, at the same position and with the lowering's origin as its token: a
 ///   completed declaration carries its declared type and its body, an
 ///   uncompleted one its declared type and a hole, a bodiless definition its
-///   body and no signature, and a data declaration its native signature, shared
-///   with the lowered module. A refused declaration is not offered.
+///   body and no signature, a data declaration its native signature, shared
+///   with the lowered module, and a sealed abstract type its kind,
+///   representation, extent and site. A refused declaration is not offered.
 /// - provides: the one place that names both the lowering's module and the
 ///   checker's declaration input.
 /// - fails: never.
@@ -1126,6 +1133,7 @@ fn unstatable<'source>(module: &LoweredModule<'source>) -> Vec<LoweringRefusal<'
 ///   source order across accepted and refused declarations. This observes the
 ///   composed judgement rather than a copy of the adapter match.
 /// - witness: `compose::tests::a_module_settles_every_declaration_once`
+/// - witness: `compose::tests::a_sealed_module_settles_its_abstract_type`
 #[inline]
 #[must_use]
 #[spec(ensures: |ref ret| {
@@ -1143,6 +1151,8 @@ fn unstatable<'source>(module: &LoweredModule<'source>) -> Vec<LoweringRefusal<'
                     actual.content() == &gandr_core_checker::DeclarationContent::Value {signature:Maybe::Absent(signature::Absent::Unsigned),body:Maybe::Present(body)},
                 DeclarationOutcome::Data(index) =>
                     matches!(*actual.content(), gandr_core_checker::DeclarationContent::Data(ref held) if module.data(index) == Maybe::Present(held)),
+                DeclarationOutcome::Abstract(sealing) =>
+                    *actual.content() == gandr_core_checker::DeclarationContent::Abstract(abstract_type(sealing)),
                 DeclarationOutcome::Refused(_) => false,
             }
     })) && expected.next().is_none()
@@ -1174,6 +1184,14 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
                 }
                 continue;
             },
+            | DeclarationOutcome::Abstract(sealing) => {
+                declarations.push(Declaration::abstract_type(
+                    lowered.constant(),
+                    abstract_type(sealing),
+                    OriginToken::from(usize::from(lowered.origin())),
+                ));
+                continue;
+            },
             | DeclarationOutcome::Refused(_) => continue,
         };
         declarations.push(Declaration::new(
@@ -1184,6 +1202,25 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
         ));
     }
     declarations
+}
+
+/// The checker's abstract type for the sealing the lowering recorded: its
+/// kind, representation and extent, at the site its sealing module and
+/// component number.
+///
+/// # Specification
+/// trivial.
+fn abstract_type(sealing: Sealing) -> AbstractType
+{
+    AbstractType::new(
+        sealing.kind,
+        sealing.representation,
+        sealing.extent,
+        SealSite::new(
+            SealingSite::from(usize::from(sealing.sealing)),
+            ComponentOrdinal::from(usize::from(sealing.component)),
+        ),
+    )
 }
 
 /// Have the kernel re-derive every declaration in `verdicts` the checker
@@ -1825,6 +1862,96 @@ def h = 1 ;"#,
             names,
             "the definition and the owed axiom cross under their names; the refused declaration \
              and the one withheld for naming it do not"
+        );
+    }
+
+    #[test]
+    fn a_sealed_module_settles_its_abstract_type()
+    {
+        let grammar = grammar();
+        let mut lowerings = LoweringCount::default();
+        let Ok(Composed::Settled {
+            report,
+            kernel: Maybe::Present(kernel),
+            ..
+        }) = compose(
+            &grammar,
+            CorpusRoot::Fixture,
+            SourceText::from(
+                "module Counter :> #{ type T, seed : T } { type T = Integer ; def seed = 7 ; }\n\
+                 def held : Counter.T ;\n\
+                 def held = Counter.seed ;\n\
+                 def leak : Integer ;\n\
+                 def leak = Counter.seed ;",
+            ),
+            &mut lowerings,
+        )
+        else {
+            panic!("the sealed module settles and crosses");
+        };
+        let rows: Vec<(String, Settlement, Outcome)> = report
+            .declarations()
+            .iter()
+            .map(|declaration| {
+                (
+                    declaration.name().to_string(),
+                    declaration.settlement(),
+                    declaration.outcome(),
+                )
+            })
+            .collect();
+        let checks = || Outcome::Checks(gandr_core_checker::ObligationCount::from(0_usize));
+        assert_eq!(
+            rows,
+            vec![
+                ("T".to_owned(), Settlement::Settled, checks()),
+                ("seed".to_owned(), Settlement::Settled, checks()),
+                ("held".to_owned(), Settlement::Settled, checks()),
+                (
+                    "leak".to_owned(),
+                    Settlement::Unsettled,
+                    Outcome::Refuses(RefusalName::TypeMismatch)
+                ),
+            ],
+            "the abstract type is admitted first, the member checks at its representation, a \
+             client at the atom, and the atom is not its representation outside"
+        );
+        assert!(
+            matches!(
+                report.declarations()[0].produced(),
+                Produced::Judged(Verdict::Data)
+            ),
+            "the abstract type is judged as a type former, with no axiom behind it"
+        );
+        let decoded = decode(kernel.as_image()).expect("the kernel's own export decodes");
+        let crossed: Vec<(Vec<&str>, bool)> = decoded
+            .declarations()
+            .iter()
+            .map(|marked| {
+                (
+                    marked
+                        .declaration()
+                        .name()
+                        .segments()
+                        .iter()
+                        .map(AsRef::as_ref)
+                        .collect(),
+                    matches!(
+                        *marked.declaration().content(),
+                        gandr_kernel_term::DeclarationContent::AbstractType { .. }
+                    ),
+                )
+            })
+            .collect();
+        assert_eq!(
+            crossed,
+            vec![
+                (vec!["Counter", "T"], true),
+                (vec!["Counter", "seed"], false),
+                (vec!["held"], false),
+            ],
+            "the atom crosses as the kernel's abstract type, ahead of the definitions that read \
+             it; the leak does not cross"
         );
     }
 

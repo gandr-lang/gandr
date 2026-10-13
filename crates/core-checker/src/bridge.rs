@@ -23,8 +23,8 @@
 //! with. The alternative was a second checker over the core vocabulary, which
 //! doubles what must be trusted instead of reducing it to the kernel. The
 //! choice reverses only in scope: a former whose erasure needs machinery the
-//! bridge lacks — the binding of a sealed atom, a level parameter — lands as
-//! its own change with its own witnesses, and the oracle stays.
+//! bridge lacks — a level parameter — lands as its own change with its own
+//! witnesses, and the oracle stays.
 //!
 //! # Erasure is an id remapping
 //!
@@ -69,6 +69,23 @@
 //! audit that the ledger never owed. The choice reverses when declarations are
 //! admitted into an environment shared across modules, where the environment
 //! assigns positions and the map becomes its own.
+//!
+//! # A sealed atom binds to its kernel admission
+//!
+//! An abstract type crosses as the kernel's abstract-type declaration, staged
+//! with its seal open, and answers [`Outcome::Data`]: it is nominal, and no
+//! axiom stands at its position. Its atom then erases to the kernel atom at
+//! the position the declaration took, through the same position map as a
+//! constant. Once the module position its extent reaches has been processed,
+//! the bridge closes the seal in the kernel, so the kernel reads the atom
+//! through to its representation for exactly the declarations the judgement
+//! did, and the export records the extent the kernel drew. An atom whose
+//! abstract type did not cross has no kernel position and is refused by name,
+//! never minted at a guessed one. The alternatives were an axiom per atom,
+//! which puts an assumption in the audit for every sealed component, and a
+//! sealed outcome of its own, which every consumer of the outcome would have
+//! to learn while carrying the same receipt and audit; the choice reverses if
+//! an atom ever needs a receipt a data declaration does not have.
 //!
 //! # A lift the judgement recorded is written where it stands
 //!
@@ -359,6 +376,7 @@ use gandr_kernel_term::EvaluationDialogues;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::LevelSignature;
 use gandr_kernel_term::MarkedDeclaration;
+use gandr_kernel_term::SealScope;
 use gandr_kernel_term::StructuredName;
 use gandr_kernel_term::Summand;
 use gandr_kernel_term::TermArena;
@@ -371,6 +389,7 @@ use crate::code::Lift;
 use crate::code::Unfolded;
 use crate::code::loose_reach;
 use crate::code::unfolding;
+use crate::declaration::AbstractType;
 use crate::declaration::OriginToken;
 use crate::funext::Funext;
 use crate::module::ModuleReport;
@@ -610,12 +629,15 @@ impl From<FragmentRefusal> for Refusal
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Outcome
 {
-    /// The kernel admitted a native nominal declaration, not an axiom.
+    /// The kernel admitted a nominal declaration, not an axiom: a native data
+    /// declaration, or a sealed abstract type — its atom — at the kernel
+    /// position every later reference to the atom erases to.
     Data
     {
         /// The declaration's kernel identity.
         admitted: CheckedId,
-        /// Dependencies of its parameter and constructor signatures.
+        /// Dependencies of its parameter and constructor signatures, or of its
+        /// kind and representation.
         audit: AxiomReport,
     },
     /// The kernel admitted the declaration as a definition.
@@ -1123,17 +1145,32 @@ where
         // on the checker's side; a type the view refuses is not one, and its
         // own erasure refuses it.
         let (outcome, certificates) = match (definition, judged.verdict()) {
-            | (None, Verdict::Data) => match report.data_signatures().get(&constant) {
-                | Some(signature) => cross(
+            | (None, Verdict::Data) => {
+                let offer = match (
+                    report.data_signatures().get(&constant),
+                    report.abstract_types().get(&constant),
+                ) {
+                    | (Some(signature), _) => Offer::Data(signature),
+                    | (None, Some(&declared)) => Offer::Abstract(declared),
+                    | (None, None) => {
+                        readmitted.push(Readmitted {
+                            constant,
+                            origin: judged.origin(),
+                            outcome: Outcome::Refused(Refusal::MachineInvariant),
+                            certificates: Vec::new(),
+                        });
+                        continue;
+                    },
+                };
+                cross(
                     &mut environment,
                     arena,
                     source,
                     &mut positions,
                     constant,
-                    Offer::Data(signature),
+                    offer,
                     &vouch,
-                ),
-                | None => (Outcome::Refused(Refusal::MachineInvariant), Vec::new()),
+                )
             },
             | (Some((declared, body)), _)
                 if matches!(
@@ -1170,19 +1207,96 @@ where
                 (Outcome::Refused(Refusal::MachineInvariant), Vec::new())
             },
         };
+        if let (&Outcome::Data { admitted, .. }, Some(declared)) =
+            (&outcome, report.abstract_types().get(&constant))
+        {
+            positions.open.push(OpenSeal {
+                end: ConstantIndex::from(
+                    usize::from(constant).saturating_add(usize::from(declared.extent())),
+                ),
+                atom: admitted,
+                readmitted: readmitted.len(),
+            });
+        }
         readmitted.push(Readmitted {
             constant,
             origin: judged.origin(),
             outcome,
             certificates,
         });
+        close_seals(&mut environment, &mut positions, &mut readmitted, constant);
     }
+    close_seals(
+        &mut environment,
+        &mut positions,
+        &mut readmitted,
+        ConstantIndex::from(usize::MAX),
+    );
     let audit = ArtifactAudit::of(&readmitted);
     Readmission {
         environment,
         readmitted,
         audit,
         admitted: positions.exports,
+    }
+}
+
+/// An atom the kernel admitted with its seal open, and where the seal ends.
+#[derive(Clone, Copy, Debug)]
+struct OpenSeal
+{
+    /// The last module position the seal reaches.
+    end: ConstantIndex,
+    /// The atom's kernel admission.
+    atom: CheckedId,
+    /// Its index among the readmitted declarations.
+    readmitted: usize,
+}
+
+/// Close, in minting order, every open seal that ends at or before the module
+/// position `reached`.
+///
+/// # Specification
+/// - requires: every open seal names an atom the kernel admitted
+///   [`SealScope::Open`] and has not closed, with its readmitted index; the
+///   exports are indexed by kernel position.
+/// - ensures: no open seal ends at or before `reached`; each one closed is
+///   closed in the kernel, so later admissions read its atom as rigid, and its
+///   export carries the extent the kernel drew, so a replay of the artifact
+///   seals it at the same place. A seal the kernel refuses to close turns its
+///   atom's outcome into the rejection.
+/// - fails: never; a refusal is recorded, as above.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a sealed module's export replays with the atom closed
+///   over its members, and a client past the seal reads the atom rigid.
+/// - witness: `bridge::tests::a_bound_sealed_atom_lowers_to_the_kernel_atom`
+#[spec(ensures: positions.open.iter().all(|seal| seal.end > reached))]
+fn close_seals(
+    environment: &mut Environment,
+    positions: &mut Positions,
+    readmitted: &mut [Readmitted],
+    reached: ConstantIndex,
+)
+{
+    let (closing, open): (Vec<OpenSeal>, Vec<OpenSeal>) = core::mem::take(&mut positions.open)
+        .into_iter()
+        .partition(|seal| seal.end <= reached);
+    positions.open = open;
+    for seal in closing {
+        match environment.seal(seal.atom) {
+            | Ok(extent) => {
+                if let Some(export) = positions.exports.get_mut(usize::from(seal.atom.position())) {
+                    *export = export.clone().closed(extent);
+                }
+            },
+            | Err(error) => {
+                if let Some(entry) = readmitted.get_mut(seal.readmitted) {
+                    entry.outcome = Outcome::Rejected(error);
+                }
+            },
+        }
     }
 }
 
@@ -1209,6 +1323,8 @@ enum Offer<'signature>
 {
     /// A native nominal declaration's checked signature.
     Data(&'signature gandr_core_term::DataSignature),
+    /// A sealed abstract type: its kind and its representation.
+    Abstract(AbstractType),
     /// A definition: a body at the type it was judged at.
     Definition
     {
@@ -1253,6 +1369,14 @@ enum Erased
         /// The declared type's image.
         declared: gandr_kernel_term::ValueTypeId,
     },
+    /// A sealed abstract type's kind and representation.
+    Abstract
+    {
+        /// The kind's image.
+        kind: gandr_kernel_term::ValueTypeId,
+        /// The representation's image.
+        representation: gandr_kernel_term::ValueTypeId,
+    },
 }
 
 /// Erase `offer`, the declaration at `constant`, into a staging session of
@@ -1268,13 +1392,14 @@ enum Erased
 ///   the erasure collected, passed through `vouch`, replayed by the kernel in
 ///   that session against its static operators, numbered from past the
 ///   environment's last position; and, when each replays to convertible, the
-///   offer admitted: [`Outcome::Defined`] for a definition and
-///   [`Outcome::Assumed`] for an axiom, each with the kernel's receipt and
-///   audit, when the kernel admits it, recorded in `positions` with its staged
-///   declaration appended to the exports. A refused erasure or a declined
-///   certificate discards the session and a rejection is truncated by the
-///   kernel, so the environment is as it was on every outcome but an admission.
-///   The replayed verdicts are returned beside the outcome.
+///   offer admitted: [`Outcome::Defined`] for a definition,
+///   [`Outcome::Assumed`] for an axiom and [`Outcome::Data`] for a nominal
+///   declaration — an abstract type staged with its seal open — each with the
+///   kernel's receipt and audit, when the kernel admits it, recorded in
+///   `positions` with its staged declaration appended to the exports. A refused
+///   erasure or a declined certificate discards the session and a rejection is
+///   truncated by the kernel, so the environment is as it was on every outcome
+///   but an admission. The replayed verdicts are returned beside the outcome.
 /// - fails: never; a refusal is [`Outcome::Refused`], a rejection
 ///   [`Outcome::Rejected`] and the kernel's reflexivity decline
 ///   [`Outcome::Declined`].
@@ -1296,7 +1421,7 @@ enum Erased
             && positions.exports.len().checked_sub(exports) == Some(1)
             && positions.admitted.len().checked_sub(crossed) == Some(1)
             && positions.admitted.get(&constant) == Some(&admitted.position())
-            && matches!((offer, &ret.0), (Offer::Definition { .. }, &Outcome::Defined { .. }) | (Offer::Data(_), &Outcome::Data { .. }) | (Offer::Axiom { .. }, &Outcome::Assumed { .. }))
+            && matches!((offer, &ret.0), (Offer::Definition { .. }, &Outcome::Defined { .. }) | (Offer::Data(_) | Offer::Abstract(_), &Outcome::Data { .. }) | (Offer::Axiom { .. }, &Outcome::Assumed { .. }))
             && ret.1.iter().all(|replay| replay.verdict() == KernelVerdict::Convertible),
         | Outcome::Refused(_) | Outcome::Rejected(_)
         | Outcome::Declined(KernelError::Identity(IdentityError::EndpointsUnreplayed { .. })) =>
@@ -1343,7 +1468,7 @@ where
     };
     let defined_image = match erased {
         | Erased::Definition { ref body, .. } => Some(*body),
-        | Erased::Data { .. } | Erased::Axiom { .. } => None,
+        | Erased::Data { .. } | Erased::Axiom { .. } | Erased::Abstract { .. } => None,
     };
     let staged = match erased {
         | Erased::Data {
@@ -1360,6 +1485,15 @@ where
             staging.def(LevelSignature::monomorphic(), declared, body)
         },
         | Erased::Axiom { declared } => staging.axiom(LevelSignature::monomorphic(), declared),
+        | Erased::Abstract {
+            kind,
+            representation,
+        } => staging.abstract_type(
+            LevelSignature::monomorphic(),
+            kind,
+            representation,
+            SealScope::Open,
+        ),
     };
     let staged_as = staged.declaration().clone();
     let admitted = match environment.add_decl(staged) {
@@ -1377,7 +1511,7 @@ where
             positions.define(constant, admitted, defined, image);
             (Outcome::Defined { admitted, audit }, replayed)
         },
-        | (Offer::Data(_), _) => {
+        | (Offer::Data(_) | Offer::Abstract(_), _) => {
             positions.declare(constant, admitted);
             (Outcome::Data { admitted, audit }, replayed)
         },
@@ -1404,9 +1538,12 @@ struct Positions
     /// The crossed definitions' kernel bodies, by kernel position: what the
     /// kernel's replay may unfold.
     unfoldings: BTreeMap<ConstantIndex, gandr_kernel_term::ValueId>,
-    /// The declarations the kernel admitted, as they were staged, in kernel
-    /// admission order.
+    /// The declarations the kernel admitted, as they were staged — an
+    /// abstract type's scope closed once its seal ends — in kernel admission
+    /// order.
     exports: Vec<KernelDeclaration>,
+    /// The atoms admitted whose seals have not ended, in minting order.
+    open: Vec<OpenSeal>,
 }
 
 impl Positions
@@ -2334,12 +2471,13 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     }
 
     /// Erase `offer` into `target`: its declared type, then a definition's
-    /// body.
+    /// body; or an abstract type's kind, then its representation.
     ///
     /// # Specification
     /// - requires: no earlier erasure of this machine was refused.
     /// - ensures: the images of the offer's declared type and, for a
-    ///   definition, of its body, as [`Self::erase`] gives them.
+    ///   definition, of its body, or of an abstract type's kind and
+    ///   representation, as [`Self::erase`] gives them.
     /// - fails: the first refusal either erasure gives; the body is not erased
     ///   once the type is refused.
     /// - panics: none.
@@ -2353,12 +2491,14 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     ///   prevents the body from publishing. Wrong family or skipped erasure
     ///   changes this.
     /// - witness: `bridge::tests::a_lowered_value_definition_admits`
+    /// - witness: `bridge::tests::a_bound_sealed_atom_lowers_to_the_kernel_atom`
     /// - witness: `bridge::tests::each_owed_hole_is_an_axiom_of_the_artifact`
     /// - witness: `bridge::tests::a_refused_declaration_leaves_the_environment_unchanged`
     #[spec(ensures: |ret| { let (matched_left_value, matched_right_value) = (offer, &ret);
 if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref parameters,ref constructors,ref kind }) = *matched_right_value { parameters.len() == signature.parameters().len() && constructors.iter().map(Vec::len).eq(signature.constructors().iter().map(Vec::len)) && target.value_type(*kind).is_some() && parameters.iter().chain(constructors.iter().flatten()).all(|&field| target.value_type(field).is_some()) }
  else if matches!(matched_left_value, Offer::Definition { .. }) && let Ok(Erased::Definition { ref declared, ref body }) = *matched_right_value { target.value_type(*declared).is_some() && target.value(*body).is_some() }
  else if matches!(matched_left_value, Offer::Axiom { .. }) && let Ok(Erased::Axiom { ref declared }) = *matched_right_value { target.value_type(*declared).is_some() }
+ else if matches!(matched_left_value, Offer::Abstract(_)) && let Ok(Erased::Abstract { ref kind, ref representation }) = *matched_right_value { target.value_type(*kind).is_some() && target.value_type(*representation).is_some() }
  else { (*matched_right_value).is_err() }
 })]
     fn offer(
@@ -2399,6 +2539,14 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | Offer::Axiom { declared } => {
                 let declared = self.value_type(target, declared)?;
                 Ok(Erased::Axiom { declared })
+            },
+            | Offer::Abstract(declared) => {
+                let kind = self.value_type(target, declared.kind())?;
+                let representation = self.value_type(target, declared.representation())?;
+                Ok(Erased::Abstract {
+                    kind,
+                    representation,
+                })
             },
         }
     }
@@ -3591,20 +3739,27 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// # Specification
     /// - requires: nothing.
     /// - ensures: as [`Self::descend`]: the integer and string atoms, the unit
-    ///   type and a universe are minted; a thunk type, a lift, an eager product
-    ///   and a static Pi open their frames; a decode opens its frame and
-    ///   decodes its code.
-    /// - fails: [`Refusal::Cyclic`] for an open value type; whatever the view
-    ///   or the decode refuses, converted.
+    ///   type and a universe are minted; a sealed atom is minted at the kernel
+    ///   position its abstract type was admitted at; a thunk type, a lift, an
+    ///   eager product and a static Pi open their frames; a decode opens its
+    ///   frame and decodes its code.
+    /// - fails: [`Refusal::Cyclic`] for an open value type;
+    ///   [`Refusal::OutOfFragment`] naming [`UnadmittedFormer::Abstract`] for a
+    ///   sealed atom whose abstract type did not cross, so nothing is minted at
+    ///   a guessed position; whatever the view or the decode refuses,
+    ///   converted.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — atom, compound, universe and decode types expose
-    ///   their exact kernel images; a value-type back-edge is refused. Wrong
-    ///   family, absent memo publication or dropped cycle detection differs.
+    ///   their exact kernel images; a sealed atom bound and unbound separates
+    ///   the position map; a value-type back-edge is refused. Wrong family,
+    ///   absent memo publication or dropped cycle detection differs.
     /// - witness: `bridge::tests::a_sorted_universe_readmits_at_its_level`
     /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
     /// - witness: `bridge::tests::every_recursive_node_family_refuses_a_back_edge`
+    /// - witness: `bridge::tests::a_bound_sealed_atom_lowers_to_the_kernel_atom`
+    /// - witness: `bridge::tests::an_unbound_sealed_atom_is_refused`
     #[spec(ensures: |ret| match ret {
         | Ok(Step::Ascend(AnyNode::ValueType(_)) | Step::Descend(_)) => self.reached().value_types.contains_key(&at),
         | Ok(Step::Ascend(_)) => false,
@@ -3667,6 +3822,16 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | ValueTypeView::Universe { sort, level } => {
                 let erased = target.value_type_universe(sort, level.clone());
                 return Ok(self.erased_value_type(at, erased));
+            },
+            | ValueTypeView::Abstract(atom) => {
+                let Some(&position) = self.positions.admitted.get(&atom)
+                else {
+                    return Err(Refusal::OutOfFragment {
+                        at: CoreNode::Type(TypeNode::Value(at)),
+                        former: UnadmittedFormer::Abstract,
+                    });
+                };
+                return Ok(self.erased_value_type(at, target.value_type_abstract(position)));
             },
             | ValueTypeView::Thunk(body) => (
                 Frame::ThunkType { at },
@@ -5592,6 +5757,105 @@ mod tests
             target.watermark(),
             TermArena::new().watermark(),
             "nothing is minted at a guessed position"
+        );
+    }
+
+    #[test]
+    fn a_bound_sealed_atom_lowers_to_the_kernel_atom()
+    {
+        // module Counter :> #{ type T, seed : T } { type T = Integer ;
+        //                                           def seed = 7 ; }
+        // def client : Counter.T = Counter.seed ;
+        //
+        // The atom crosses first, at kernel position 0; the member checks at
+        // the representation and the witness exports it at the atom, both
+        // inside the seal; the client reads the atom past it.
+        use gandr_kernel_core::Environment;
+        use gandr_kernel_term::SealExtent;
+        use gandr_kernel_term::SealScope;
+
+        use crate::declaration::AbstractType;
+        use crate::seal::ComponentOrdinal;
+        use crate::seal::SealSite;
+        use crate::seal::SealingSite;
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let seven = arena.value_literal(integer_literal());
+        let atom = arena.value_type_abstract(ConstantIndex::from(0_usize));
+        let seed = arena.value_constant(ConstantIndex::from(1_usize));
+        let exported = arena.value_constant(ConstantIndex::from(2_usize));
+        let (_, readmission) = judge_and_readmit(&mut arena, &[
+            Declaration::abstract_type(
+                ConstantIndex::from(0_usize),
+                AbstractType::new(
+                    small,
+                    integer,
+                    SealExtent::from(2_usize),
+                    SealSite::new(SealingSite::from(0_usize), ComponentOrdinal::from(0_usize)),
+                ),
+                origin(At(0)),
+            ),
+            declaration(At(1), Maybe::Present(integer), Maybe::Present(seven)),
+            declaration(At(2), Maybe::Present(atom), Maybe::Present(seed)),
+            declaration(At(3), Maybe::Present(atom), Maybe::Present(exported)),
+        ]);
+        let positions: Vec<_> = readmission
+            .readmitted()
+            .iter()
+            .map(|entry| match *entry.outcome() {
+                | Outcome::Data { admitted, .. } => Ok(("data", usize::from(admitted.position()))),
+                | Outcome::Defined { admitted, .. } => {
+                    Ok(("defined", usize::from(admitted.position())))
+                },
+                | ref other => Err(other.clone()),
+            })
+            .collect();
+        assert_eq!(
+            positions,
+            [
+                Ok(("data", 0)),
+                Ok(("defined", 1)),
+                Ok(("defined", 2)),
+                Ok(("defined", 3))
+            ],
+            "the atom crosses as a nominal declaration and every member and client is admitted"
+        );
+        let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+        let contents: Vec<_> = artifact
+            .declarations()
+            .iter()
+            .map(|marked| marked.declaration().content().clone())
+            .collect();
+        let DeclarationContent::AbstractType { kind, scope, .. } = contents[0]
+        else {
+            panic!("the atom exports as an abstract type");
+        };
+        assert_eq!(
+            (artifact.arena().value_type(kind), scope),
+            (
+                Some(&KernelValueType::Universe {
+                    sort: GroundSort::Value,
+                    level: Level::zero(),
+                }),
+                SealScope::Closed(SealExtent::from(2_usize))
+            ),
+            "at its kind, its seal closed over the member and the witness and not the client"
+        );
+        for declared in contents.iter().skip(2) {
+            let &DeclarationContent::Def { declared, .. } = declared
+            else {
+                panic!("the witness and the client export as definitions");
+            };
+            assert_eq!(
+                artifact.arena().value_type(declared),
+                Some(&KernelValueType::Abstract(ConstantIndex::from(0_usize))),
+                "each reads the kernel atom at the position its abstract type took"
+            );
+        }
+        assert!(
+            Environment::replay(artifact.arena().clone(), artifact.declarations()).is_ok(),
+            "the export replays, the seal where the producer drew it"
         );
     }
 

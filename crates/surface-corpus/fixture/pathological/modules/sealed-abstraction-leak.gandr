@@ -1,0 +1,13 @@
+module Counter :> #{ type T, zero : T } {
+  type T = Integer;
+  @[ runs("0") ]
+  def zero = 0;
+}
+
+@[ refuses("TypeMismatch") ]
+def leaked : Integer ;
+def leaked = Counter.zero ;
+
+@[ refuses("TypeMismatch") ]
+def forged : Counter.T ;
+def forged = 7 ;

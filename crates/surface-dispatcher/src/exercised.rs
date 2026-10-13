@@ -533,6 +533,10 @@ fn checking_row(
         | CheckRefusal::NotADataType(_)
         | CheckRefusal::DataKindNotUniverse(_)
         | CheckRefusal::DataFieldLevel { .. }
+        | CheckRefusal::AbstractKindNotUniverse(_)
+        | CheckRefusal::RepresentationAboveKind { .. }
+        | CheckRefusal::NotAnAbstractType(_)
+        | CheckRefusal::SealSiteRepeated(_)
         | CheckRefusal::DataArgumentArity(_)
         | CheckRefusal::UnknownConstructor { .. }
         | CheckRefusal::ConstructorArity(_)
@@ -638,6 +642,7 @@ fn is_whole_unsigned_body(
         | DeclarationOutcome::Completed { .. }
         | DeclarationOutcome::Uncompleted { .. }
         | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Abstract(_)
         | DeclarationOutcome::Refused(_) => WholeBody::Inner,
     }
 }

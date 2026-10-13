@@ -70,7 +70,8 @@ fn lowered<'source>(
     .unwrap()
 }
 
-/// The checker's verdicts over every declaration `module` did not refuse.
+/// The checker's verdicts over every declaration `module` did not refuse; the
+/// module declares no abstract type.
 ///
 /// # Specification
 /// trivial.
@@ -107,7 +108,7 @@ fn judged(
                         | Maybe::Absent(_) => None,
                     };
                 },
-                | DeclarationOutcome::Refused(_) => return None,
+                | DeclarationOutcome::Abstract(_) | DeclarationOutcome::Refused(_) => return None,
             };
             Some(Declaration::new(
                 declaration.constant(),
