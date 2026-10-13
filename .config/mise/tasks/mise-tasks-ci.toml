@@ -331,6 +331,18 @@ run = [
   "target/debug/build-state prune --profile-dir target/debug target/debug/units-tests.jsonl target/debug/units-corpus.jsonl target/debug/units-doc.jsonl target/debug/units-tool.jsonl",
 ]
 
+# The Clippy lane's two passes, with the arguments ci.yml gives them, and the
+# pruning binary itself.
+["ci:prune-clippy"]
+description = "Prune the Clippy state to the units this run's passes used"
+run = [
+  "cargo clippy --workspace --all-targets --locked --message-format json -- --deny warnings > target/debug/units-clippy.jsonl",
+  "RUSTFLAGS='--cfg anodized_panic' CARGO_TARGET_DIR=target/enforcing cargo clippy --workspace --all-targets --locked --profile test --message-format json -- --deny warnings > target/enforcing/debug/units-clippy.jsonl",
+  "cargo build --locked --profile test --package gandr-workflow-build-state --message-format json > target/debug/units-tool.jsonl",
+  "target/debug/build-state prune --profile-dir target/debug target/debug/units-clippy.jsonl target/debug/units-tool.jsonl",
+  "target/debug/build-state prune --profile-dir target/enforcing/debug target/enforcing/debug/units-clippy.jsonl",
+]
+
 # Head checks and merge-group checks are separate runs. Watch the queue entry
 # as well as the pull request; green head checks alone do not prove landing.
 ["pr:land"]

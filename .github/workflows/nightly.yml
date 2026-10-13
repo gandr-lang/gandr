@@ -215,8 +215,8 @@ jobs:
   # one issue while any lane is over (`mise run ci:lane-budget`). Alerting,
   # never a gate: nothing waits on this job. A budget changes with its lane's
   # shape, in the same commit; the name is the job's display name. Each budget
-  # is about 1.5 times the lane's median once build state was pruned and the
-  # toolchain installed once (Clippy, which builds cold, about 1.3 times).
+  # is about 1.5 times the lane's median once build state was pruned, the
+  # toolchain installed once and Clippy given its own state.
   lane-budget:
     name: hold each CI lane to its budget
     needs: ci-image-ref
@@ -244,6 +244,6 @@ jobs:
           --budget "test enforcing targets (macos-arm64)=420"
           --budget "test plain-only targets (linux)=150"
           --budget "check quenchant compiler policy=180"
-          --budget "check Clippy wall=330"
+          --budget "check Clippy wall=150"
           --budget "re-verify obligated specifications (linux)=180"
           >> "$GITHUB_STEP_SUMMARY"
