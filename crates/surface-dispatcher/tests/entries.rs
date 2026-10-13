@@ -125,9 +125,9 @@ mod entries
         ("Pattern number", Standing::Design(MATCHED)),
         ("Pattern true", Standing::Design(MATCHED)),
         ("Pattern |", Standing::Design(MATCHED)),
-        ("Type !", Standing::Owed(30)),
+        ("Type !", Standing::Owed(0)),
         ("Type #{", Standing::Owed(0)),
-        ("Type &", Standing::Owed(13)),
+        ("Type &", Standing::Owed(0)),
         (
             "Type ( group",
             Standing::Design(
@@ -135,7 +135,7 @@ mod entries
             ),
         ),
         ("Type *", Standing::Owed(3)),
-        ("Type +", Standing::Owed(13)),
+        ("Type +", Standing::Owed(0)),
         ("Type +U", Standing::Owed(0)),
         ("Type ->", Standing::Owed(0)),
         ("Type -F", Standing::Owed(0)),
@@ -150,11 +150,11 @@ mod entries
         ("Type Unit", Standing::Owed(0)),
         ("Type Void", Standing::Owed(0)),
         ("Type \\", Standing::Owed(0)),
-        ("Type end", Standing::Owed(25)),
-        ("Type mu", Standing::Owed(12)),
+        ("Type end", Standing::Owed(0)),
+        ("Type mu", Standing::Owed(0)),
         ("Type number", Standing::Owed(0)),
         ("Type type_identifier", Standing::Owed(44)),
-        ("Type type_variable", Standing::Owed(71)),
+        ("Type type_variable", Standing::Owed(0)),
     ];
 
     /// The names of the primitive formers a call can head: the call is one
