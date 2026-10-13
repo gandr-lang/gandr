@@ -376,6 +376,7 @@ use gandr_kernel_term::EvaluationDialogues;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::LevelSignature;
 use gandr_kernel_term::MarkedDeclaration;
+use gandr_kernel_term::QuantifiedStep;
 use gandr_kernel_term::SealScope;
 use gandr_kernel_term::StructuredName;
 use gandr_kernel_term::Summand;
@@ -393,6 +394,7 @@ use crate::code::unfolding;
 use crate::declaration::AbstractType;
 use crate::declaration::OriginToken;
 use crate::funext::Funext;
+use crate::funext::Step as FunextStep;
 use crate::module::ModuleReport;
 use crate::module::Verdict;
 use crate::refusal::CheckRefusal;
@@ -3380,41 +3382,50 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     }
 
     /// Erase the function extensionality `at` into the kernel's higher
-    /// evaluation: per component the value each function returns at the
-    /// input, the diagonal evidence that the two agree, and the machine's two
-    /// traces with their anchors forgotten.
+    /// evaluation when every step returns, and into its quantified evaluation
+    /// otherwise: per return the value each function returns, the diagonal
+    /// evidence that the two agree and the machine's two traces; per
+    /// application each function's closed normal form and the machine's two
+    /// traces; every trace with its anchors forgotten.
     ///
     /// # Specification
     /// - requires: the judgement accepted `at` as a function extensionality.
-    /// - ensures: one kernel component per recorded component, in order, each
-    ///   carrying the images of the two returned values and the diagonal of the
-    ///   first — the unit value at the unit type, a base atom and a sum's
-    ///   absent payload, a pair at a pair, an injection's payload's diagonal at
-    ///   an injection — and one dialogue pair per component, the machine's
-    ///   decisions with every anchor erased. The two functions are not erased:
-    ///   the kernel reads them from the identity type it checks the evaluation
-    ///   at.
-    /// - provides: the evidence the kernel's higher evaluation replays, the
-    ///   core's decision recomputed rather than trusted.
+    /// - ensures: when every recorded step returns, one kernel component per
+    ///   step, in order, each carrying the images of the two returned values
+    ///   and the diagonal of the first — the unit value at the unit type, a
+    ///   base atom and a sum's absent payload, a pair at a pair, an injection's
+    ///   payload's diagonal at an injection — and one dialogue pair per
+    ///   component, the machine's decisions with every anchor erased. Otherwise
+    ///   one kernel step per recorded step, in order: a return as a component
+    ///   is, its three children in that order; an application with its fibre
+    ///   and the images of its two normal forms, erased as any closed value is.
+    ///   The two functions are not erased: the kernel reads them from the
+    ///   identity type it checks the evaluation at.
+    /// - provides: the evidence the kernel's higher or quantified evaluation
+    ///   replays, the core's decision recomputed rather than trusted.
     /// - fails: [`Refusal::MachineInvariant`] when the judgement recorded no
-    ///   components at `at` or a returned value is not first order;
+    ///   steps at `at` or a returned value is not first order;
     ///   [`Refusal::Hole`] at a hole a returned value holds; a constant's own
-    ///   refusal.
+    ///   refusal; any refusal erasing a normal form gives.
     /// - panics: none.
     ///
     /// # Errors
     /// - [`Refusal`] — as above.
     ///
     /// # Termination
-    /// - reason: a `for` loop over the recorded components and, per value, a
-    ///   `while let` worklist over its finite tree, not recursion.
-    /// - measure: the components left, then the nodes left to visit.
+    /// - reason: a `for` loop over the recorded steps and, per value, a `while
+    ///   let` worklist over its finite tree, not recursion; a normal form is
+    ///   erased by the machine's own worklist.
+    /// - measure: the steps left, then the nodes left to visit.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `funext(not ∘ not, id)` over a binary sum of units
-    ///   crosses and the kernel replays it; a dropped component or a swapped
-    ///   trace is refused by the kernel.
+    ///   crosses as a higher evaluation and the kernel replays it; a dropped
+    ///   component or a swapped trace is refused by the kernel; `λf. f(true)`
+    ///   related to its bind form crosses as a quantified evaluation the kernel
+    ///   replays.
     /// - witness: `bridge::tests::a_funext_crosses_as_a_higher_evaluation`
+    /// - witness: `bridge::tests::a_quantified_funext_crosses_as_a_quantified_evaluation`
     #[spec(ensures: |ret| ret.is_err() || self.reached().values.contains_key(&at))]
     fn funext(
         &mut self,
@@ -3427,36 +3438,119 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         else {
             return Err(Refusal::MachineInvariant);
         };
-        let mut dialogues = Vec::with_capacity(record.components().len());
-        let mut components = Vec::with_capacity(record.components().len());
-        for component in record.components() {
-            let (left, evidence) = self.returned(target, component.left().returned())?;
-            let (right, _) = self.returned(target, component.right().returned())?;
-            dialogues.push(EvaluationDialogues {
-                left: component
-                    .left()
-                    .decisions()
-                    .iter()
-                    .map(|decision| decision.map(|_| ()))
-                    .collect(),
-                right: component
-                    .right()
-                    .decisions()
-                    .iter()
-                    .map(|decision| decision.map(|_| ()))
-                    .collect(),
-            });
-            components.push(EvaluationComponent {
-                left,
-                right,
-                evidence,
-            });
+        let forget = |decisions: &[ConversionDecision<TraceNode>]| {
+            decisions
+                .iter()
+                .map(|decision| decision.map(|_| ()))
+                .collect::<Vec<_>>()
+        };
+        let quantified = record
+            .steps()
+            .iter()
+            .any(|step| matches!(step, FunextStep::Apply { .. }));
+        let image = if quantified {
+            let mut steps = Vec::with_capacity(record.steps().len());
+            let mut children = Vec::new();
+            for step in record.steps() {
+                match *step {
+                    | FunextStep::Return {
+                        ref left,
+                        ref right,
+                    } => {
+                        let (left_image, evidence) = self.returned(target, left.returned())?;
+                        let (right_image, _) = self.returned(target, right.returned())?;
+                        steps.push(QuantifiedStep::Return(EvaluationDialogues {
+                            left: forget(left.decisions()),
+                            right: forget(right.decisions()),
+                        }));
+                        children.extend([left_image, right_image, evidence]);
+                    },
+                    | FunextStep::Apply {
+                        fibre,
+                        ref left,
+                        ref right,
+                    } => {
+                        let left_image = self.nested_value(target, left.normal())?;
+                        let right_image = self.nested_value(target, right.normal())?;
+                        steps.push(QuantifiedStep::Apply {
+                            fibre,
+                            dialogues: EvaluationDialogues {
+                                left: forget(left.decisions()),
+                                right: forget(right.decisions()),
+                            },
+                        });
+                        children.extend([left_image, right_image]);
+                    },
+                }
+            }
+            target.value_quantified_evaluation(
+                alloc::sync::Arc::from(steps),
+                children.into_boxed_slice(),
+            )
         }
-        let image = target.value_higher_evaluation(
-            alloc::sync::Arc::from(dialogues),
-            components.into_boxed_slice(),
-        );
+        else {
+            let mut dialogues = Vec::with_capacity(record.steps().len());
+            let mut components = Vec::with_capacity(record.steps().len());
+            for step in record.steps() {
+                let FunextStep::Return {
+                    ref left,
+                    ref right,
+                } = *step
+                else {
+                    return Err(Refusal::MachineInvariant);
+                };
+                let (left_image, evidence) = self.returned(target, left.returned())?;
+                let (right_image, _) = self.returned(target, right.returned())?;
+                dialogues.push(EvaluationDialogues {
+                    left: forget(left.decisions()),
+                    right: forget(right.decisions()),
+                });
+                components.push(EvaluationComponent {
+                    left: left_image,
+                    right: right_image,
+                    evidence,
+                });
+            }
+            target.value_higher_evaluation(
+                alloc::sync::Arc::from(dialogues),
+                components.into_boxed_slice(),
+            )
+        };
         Ok(self.erased_value(at, image))
+    }
+
+    /// Erase the value `root` into `target` from within another node's
+    /// erasure, leaving that erasure's open frames as they stand.
+    ///
+    /// # Specification
+    /// - requires: no earlier erasure of this machine was refused; `root` does
+    ///   not reach a node whose erasure is open.
+    /// - ensures: as [`Self::value`]; the frames open before the call are open
+    ///   after it, in order.
+    /// - provides: the erasure of a closed value a step records, a function
+    ///   extensionality's normal form, run to completion on its own frame stack
+    ///   so the enclosing erasure resumes where it stood.
+    /// - fails: as [`Self::value`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - any [`Refusal`] [`Self::value`] gives.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the quantified witness erases two normal forms inside
+    ///   its funext's erasure, and the enclosing declaration still crosses.
+    /// - witness: `bridge::tests::a_quantified_funext_crosses_as_a_quantified_evaluation`
+    #[spec(captures: before = self.frames.len(), ensures: self.frames.len() == before)]
+    fn nested_value(
+        &mut self,
+        target: &mut TermArena,
+        root: ValueId,
+    ) -> Result<gandr_kernel_term::ValueId, Refusal>
+    {
+        let open = core::mem::take(&mut self.frames);
+        let image = self.value(target, root);
+        self.frames = open;
+        image
     }
 
     /// The kernel image of `value`, a first-order value a function returned,
@@ -6709,6 +6803,135 @@ mod tests
                     )
             }),
             "each input returns itself on both sides, with the unit as its identity"
+        );
+    }
+
+    #[test]
+    fn a_quantified_funext_crosses_as_a_quantified_evaluation()
+    {
+        // def at_truth : U ((Bool -> F Bool) -> F Bool) = λh. h(true) ;
+        // def bound = λh. x ← h(true); return x ;
+        // def twice = λh. x ← h(true); h(x) ;
+        // def twice_bound = λh. x ← h(true); y ← h(x); return y ;
+        // def eta : Path(U (…), at_truth, bound) = funext(at_truth, bound) ;
+        // def nested : Path(U (…), twice, twice_bound) = funext(twice, twice_bound) ;
+        /// How one extensionality crossed.
+        #[derive(Debug, Eq, PartialEq)]
+        enum Crossed
+        {
+            /// A higher evaluation with this many components.
+            Higher(usize),
+            /// A quantified evaluation: its children, and per step whether it
+            /// applies the premise at index zero.
+            Quantified(usize, Vec<bool>),
+        }
+        let mut arena = CoreArena::new();
+        let functions = crate::fixture::booleans(&mut arena);
+        let returns = arena.comp_type_returner(functions.ty);
+        let arrow = arena.comp_type_arrow(functions.function, returns);
+        let higher = arena.value_type_thunk(arrow);
+        let unit = arena.value_unit();
+        let truth = arena.value_injection(0_usize.into(), unit);
+        // Beneath `λh`, `h` is index zero; beneath `λh. x ← …`, `x` is zero and
+        // `h` one.
+        let [innermost, outer] = [0_u32, 1_u32]
+            .map(|index| arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index)));
+        let forced = arena.computation_force(innermost);
+        let tail = arena.computation_application(forced, truth);
+        let lambda = arena.computation_lambda(tail);
+        let at_truth = arena.value_thunk(lambda);
+        let returned = arena.computation_return(innermost);
+        let forced_again = arena.computation_force(outer);
+        let again = arena.computation_application(forced_again, innermost);
+        let again_bound = arena.computation_bind(again, returned);
+        let [bound, twice, twice_bound] = [returned, again, again_bound].map(|rest| {
+            let first = arena.computation_bind(tail, rest);
+            let lambda = arena.computation_lambda(first);
+            arena.value_thunk(lambda)
+        });
+        let constant_body = arena.computation_return(truth);
+        let constant_lambda = arena.computation_lambda(constant_body);
+        let constant = arena.value_thunk(constant_lambda);
+        let [
+            at_truth_constant,
+            bound_constant,
+            twice_constant,
+            twice_bound_constant,
+            constant_constant,
+        ] = [3_usize, 4, 5, 6, 7].map(|at| arena.value_constant(ConstantIndex::from(at)));
+        let eta_path = arena.value_type_path(higher, at_truth_constant, bound_constant);
+        let eta = arena.value_funext(at_truth_constant, bound_constant);
+        let nested_path = arena.value_type_path(higher, twice_constant, twice_bound_constant);
+        let nested = arena.value_funext(twice_constant, twice_bound_constant);
+        let unapplied_path = arena.value_type_path(higher, constant_constant, constant_constant);
+        let unapplied = arena.value_funext(constant_constant, constant_constant);
+        let declared = Maybe::Present(functions.function);
+        let applying = Maybe::Present(higher);
+        let (_, readmission) = judge_and_readmit(&mut arena, &[
+            declaration(At(0), declared, Maybe::Present(functions.not)),
+            declaration(At(1), declared, Maybe::Present(functions.not_not)),
+            declaration(At(2), declared, Maybe::Present(functions.same)),
+            declaration(At(3), applying, Maybe::Present(at_truth)),
+            declaration(At(4), applying, Maybe::Present(bound)),
+            declaration(At(5), applying, Maybe::Present(twice)),
+            declaration(At(6), applying, Maybe::Present(twice_bound)),
+            declaration(At(7), applying, Maybe::Present(constant)),
+            declaration(At(8), Maybe::Present(eta_path), Maybe::Present(eta)),
+            declaration(At(9), Maybe::Present(nested_path), Maybe::Present(nested)),
+            declaration(
+                At(10),
+                Maybe::Present(unapplied_path),
+                Maybe::Present(unapplied),
+            ),
+        ]);
+        assert!(
+            readmission
+                .readmitted()
+                .iter()
+                .all(|entry| matches!(entry.outcome(), Outcome::Defined { .. })),
+            "the kernel replays every step under the quantifier: {:?}",
+            readmission.readmitted()
+        );
+        let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+        let crossed: Vec<Crossed> = artifact
+            .declarations()
+            .iter()
+            .skip(8)
+            .map(|marked| {
+                let DeclarationContent::Def { body, .. } = *marked.declaration().content()
+                else {
+                    panic!("every extensionality is a definition");
+                };
+                match artifact.arena().value(body).cloned() {
+                    | Some(KernelValue::HigherEvaluation { components, .. }) => {
+                        Crossed::Higher(components.len())
+                    },
+                    | Some(KernelValue::QuantifiedEvaluation { steps, children }) => {
+                        Crossed::Quantified(
+                            children.len(),
+                            steps
+                                .iter()
+                                .map(|step| matches!(step, gandr_kernel_term::QuantifiedStep::Apply { fibre, .. } if u32::from(*fibre) == 0))
+                                .collect(),
+                        )
+                    },
+                    | other => panic!("a funext crosses as an evaluation: {other:?}"),
+                }
+            })
+            .collect();
+        assert_eq!(
+            crossed,
+            Vec::from([
+                Crossed::Quantified(8, Vec::from([true, false, false])),
+                Crossed::Quantified(
+                    18,
+                    Vec::from([true, true, false, false, true, false, false])
+                ),
+                Crossed::Higher(1),
+            ]),
+            "pre-order steps, two children per application and three per return; a \
+             body that never applies its argument crosses as a higher evaluation over \
+             the single generic input"
         );
     }
 

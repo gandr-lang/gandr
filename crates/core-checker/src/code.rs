@@ -1082,9 +1082,9 @@ impl CodeDefinitions
     ///   spent; when it is `thunk (λⁿ. return v)` for some `n`, the evaluation
     ///   of `v` with the machine's convertible trace from the claim to that
     ///   normal form, and [`evaluated::Absent::Stuck`] for any other normal
-    ///   form.
-    /// - provides: the computation a function extensionality decides at each
-    ///   covering input, and the dialogue the kernel replays for it.
+    ///   form, with no trace recorded.
+    /// - provides: the computation a universe equivalence's translator decides,
+    ///   and the dialogue the kernel replays for it.
     /// - fails: [`CheckRefusal::Undecided`] at `claim` when evaluation or
     ///   readback faults or runs out of fuel, or the machine does not convert
     ///   the claim to its normal form.
@@ -1092,12 +1092,6 @@ impl CodeDefinitions
     ///
     /// # Errors
     /// - [`CheckRefusal::Undecided`] — as above.
-    ///
-    /// # Termination
-    /// - reason: the `while let` loop peels one lambda of the finite normal
-    ///   form per turn, not recursion; evaluation, readback and the machine run
-    ///   under their own fuel.
-    /// - measure: the lambdas left above the body.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a definition applied to a constructor returns the
@@ -1117,13 +1111,112 @@ impl CodeDefinitions
         claim: ValueId,
     ) -> Result<Maybe<Evaluation, evaluated::Absent>, CheckRefusal>
     {
+        let Readback::Returned { normal, returned } = self.read_back(core, claim)?
+        else {
+            return Ok(Maybe::Absent(evaluated::Absent::Stuck));
+        };
+        let decisions = self.claim_trace(core, claim, normal)?;
+        Ok(Maybe::Present(Evaluation {
+            normal,
+            returned,
+            decisions,
+        }))
+    }
+
+    /// Read the closed claim `claim`, `thunk (λⁿ. M)`, to its normal form,
+    /// returning or stuck, every definition this table holds unfolding, and
+    /// record the trace that the claim converts to it.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::evaluate_claim`].
+    /// - ensures: [`Reading::Returned`] with the evaluation
+    ///   [`Self::evaluate_claim`] gives when the normal form returns; otherwise
+    ///   [`Reading::Stuck`] with the normal form the rounds of evaluation and
+    ///   readback settle at and the machine's convertible trace from the claim
+    ///   to it.
+    /// - provides: each step a function extensionality decides under the
+    ///   quantifier: a stuck normal form is where the body applies its
+    ///   higher-order argument.
+    /// - fails: as [`Self::evaluate_claim`], and [`CheckRefusal::Undecided`] at
+    ///   `claim` when the claim reads back to no thunk.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal::Undecided`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `λf. f(true)` at the generic higher-order pattern
+    ///   reads to its stuck application with a trace the kernel replays.
+    /// - witness: `funext::tests::a_higher_order_argument_is_decided_under_the_quantifier`
+    /// - witness: `bridge::tests::a_quantified_funext_crosses_as_a_quantified_evaluation`
+    #[spec(ensures: |ret| match ret {
+        | Ok(Reading::Returned(ref evaluation)) => core.value(evaluation.returned()).is_some(),
+        | Ok(Reading::Stuck(ref reduction)) => core.value(reduction.normal()).is_some(),
+        | Err(refusal) => refusal == CheckRefusal::Undecided { at: claim },
+    })]
+    #[inline]
+    pub fn read_claim(
+        &self,
+        core: &mut CoreArena,
+        claim: ValueId,
+    ) -> Result<Reading, CheckRefusal>
+    {
+        match self.read_back(core, claim)? {
+            | Readback::Returned { normal, returned } => {
+                let decisions = self.claim_trace(core, claim, normal)?;
+                Ok(Reading::Returned(Evaluation {
+                    normal,
+                    returned,
+                    decisions,
+                }))
+            },
+            | Readback::Stuck(normal) => {
+                let decisions = self.claim_trace(core, claim, normal)?;
+                Ok(Reading::Stuck(Stalled { normal, decisions }))
+            },
+            | Readback::Unsuspended => Err(CheckRefusal::Undecided { at: claim }),
+        }
+    }
+
+    /// Read the closed claim `claim` back, round by round, until its body
+    /// returns or a round changes nothing.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::evaluate_claim`].
+    /// - ensures: [`Readback::Returned`] at the first round whose readback is
+    ///   `thunk (λⁿ. return v)`; [`Readback::Stuck`] at a round that reads back
+    ///   what it read; [`Readback::Unsuspended`] for a readback that is no
+    ///   thunk.
+    /// - fails: [`CheckRefusal::Undecided`] at `claim` when evaluation or
+    ///   readback faults or runs out of fuel, or the rounds run out.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal::Undecided`] — as above.
+    ///
+    /// # Termination
+    /// - reason: the outer `loop` runs at most [`CLAIM_ROUNDS`] rounds and the
+    ///   inner `while let` peels one lambda of the finite normal form per turn,
+    ///   not recursion; evaluation and readback run under their own fuel.
+    /// - measure: the rounds left, then the lambdas left above the body.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::evaluate_claim`] and [`Self::read_claim`].
+    /// - witness: `funext::tests::pointwise_equal_functions_relate_by_computation`
+    /// - witness: `funext::tests::a_higher_order_argument_is_decided_under_the_quantifier`
+    fn read_back(
+        &self,
+        core: &mut CoreArena,
+        claim: ValueId,
+    ) -> Result<Readback, CheckRefusal>
+    {
         let undecided = CheckRefusal::Undecided { at: claim };
         let definitions =
             Definitions::new(&self.lowered, &self.environment, self.environment.root());
         let fuel = Fuel::from(CODE_FUEL);
         let mut current = claim;
         let mut rounds = 0_u32;
-        let (normal, returned) = loop {
+        loop {
             let mut domain = DomainArena::new();
             let evaluated =
                 gandr_core_nbe::eval_value(core, &mut domain, definitions, fuel, current)
@@ -1139,23 +1232,58 @@ impl CodeDefinitions
             .map_err(|_fault| undecided)?;
             let Some(&Value::Thunk(mut body)) = core.value(read)
             else {
-                return Ok(Maybe::Absent(evaluated::Absent::Stuck));
+                return Ok(Readback::Unsuspended);
             };
             while let Some(&Computation::Lambda(inner)) = core.computation(body) {
                 body = inner;
             }
             if let Some(&Computation::Return(returned)) = core.computation(body) {
-                break (read, returned);
+                return Ok(Readback::Returned {
+                    normal: read,
+                    returned,
+                });
             }
             if equal_certificate_syntax(core, read, current) == CertificateEquality::Equal {
-                return Ok(Maybe::Absent(evaluated::Absent::Stuck));
+                return Ok(Readback::Stuck(read));
             }
             rounds = rounds.checked_add(1).ok_or(undecided)?;
             if rounds >= CLAIM_ROUNDS {
                 return Err(undecided);
             }
             current = read;
-        };
+        }
+    }
+
+    /// The machine's convertible trace from the closed claim `claim` to its
+    /// normal form `normal`.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::evaluate_claim`]; `normal` is the claim's
+    ///   readback.
+    /// - ensures: the decisions the machine recorded converting the two, in
+    ///   order.
+    /// - fails: [`CheckRefusal::Undecided`] at `claim` when either side does
+    ///   not evaluate or the machine does not convert them.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal::Undecided`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::evaluate_claim`] and [`Self::read_claim`].
+    /// - witness: `bridge::tests::a_funext_crosses_as_a_higher_evaluation`
+    /// - witness: `bridge::tests::a_quantified_funext_crosses_as_a_quantified_evaluation`
+    fn claim_trace(
+        &self,
+        core: &CoreArena,
+        claim: ValueId,
+        normal: ValueId,
+    ) -> Result<Vec<ConversionDecision<TraceNode>>, CheckRefusal>
+    {
+        let undecided = CheckRefusal::Undecided { at: claim };
+        let definitions =
+            Definitions::new(&self.lowered, &self.environment, self.environment.root());
+        let fuel = Fuel::from(CODE_FUEL);
         let mut domain = DomainArena::new();
         let left = gandr_core_nbe::eval_value(core, &mut domain, definitions, fuel, claim)
             .map_err(|_fault| undecided)?;
@@ -1174,11 +1302,73 @@ impl CodeDefinitions
         if report.verdict() != MachineVerdict::Convertible {
             return Err(undecided);
         }
-        Ok(Maybe::Present(Evaluation {
-            normal,
-            returned,
-            decisions: log.decisions().copied().collect(),
-        }))
+        Ok(log.decisions().copied().collect())
+    }
+}
+
+/// How a claim read back, round by round.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Readback
+{
+    /// The body returns: the normal form and the value it returns.
+    Returned
+    {
+        /// The normal form, `thunk (λⁿ. return v)`.
+        normal: ValueId,
+        /// The value returned, under the claim's binders.
+        returned: ValueId,
+    },
+    /// A round read back what it read: the normal form, which does not return.
+    Stuck(ValueId),
+    /// The readback is no thunk.
+    Unsuspended,
+}
+
+/// The normaliser's reading of one closed claim, returning or stuck.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum Reading
+{
+    /// The body returns a value.
+    Returned(Evaluation),
+    /// The body's normal form does not return.
+    Stuck(Stalled),
+}
+
+/// The normaliser's reading of one closed claim whose normal form does not
+/// return: the normal form, `thunk (λⁿ. M)` with `M` stuck, and the trace that
+/// the claim converts to it.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Stalled
+{
+    /// The claim's normal form.
+    normal: ValueId,
+    /// The derivation the machine recorded that the claim converts to its
+    /// normal form, in order.
+    decisions: Vec<ConversionDecision<TraceNode>>,
+}
+
+impl Stalled
+{
+    /// The claim's normal form.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn normal(&self) -> ValueId
+    {
+        self.normal
+    }
+
+    /// The derivation that the claim converts to its normal form.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn decisions(&self) -> &[ConversionDecision<TraceNode>]
+    {
+        &self.decisions
     }
 }
 
