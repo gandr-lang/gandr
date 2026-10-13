@@ -12,6 +12,9 @@ use gandr_surface_grammar::Comparison;
 use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::MAX_WALK_CHAIN_LEN;
 use gandr_surface_grammar::MoldCount;
+use gandr_surface_grammar::MoldWord;
+use gandr_surface_grammar::MoldWordIndex;
+use gandr_surface_grammar::Observation;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::PbgError;
 use gandr_surface_grammar::PrecName;
@@ -21,7 +24,9 @@ use gandr_surface_grammar::Rule;
 use gandr_surface_grammar::RuleName;
 use gandr_surface_grammar::Sort;
 use gandr_surface_grammar::StepSym;
+use gandr_surface_grammar::TileKind;
 use gandr_surface_grammar::TileLabel;
+use gandr_surface_grammar::TileSet;
 use gandr_surface_grammar::built_in;
 use gandr_surface_grammar::comparison_table;
 use gandr_surface_grammar::reachable_molds;
@@ -731,6 +736,140 @@ fn interchangeable_molds_differ_only_in_label() -> Result<(), Box<dyn Error>>
     }
     assert!(merged > 0);
     assert!(parameter_names);
+    Ok(())
+}
+
+/// Every mold's tile kind, observation class and tile-set memberships read
+/// back from the neighbour, tail, membership, step and bound queries: the
+/// kind follows the neighbour flags and holes, two molds share a class
+/// exactly when their readings agree, classes are numbered by their least
+/// mold, and each set holds exactly the molds its kind and sort put there.
+/// The first id past the table has no kind and no class, and its word is
+/// empty.
+#[test]
+fn tile_kinds_observations_and_sets_agree_with_the_table() -> Result<(), Box<dyn Error>>
+{
+    let pbg = built_in()?;
+    let sorts = [
+        Sort::Item,
+        Sort::Pattern,
+        Sort::Expression,
+        Sort::Type,
+        Sort::Instantiation,
+        Sort::ModuleMember,
+    ];
+    let shape = |bound: Bound<Prec>| match bound {
+        | Bound::Bottom => 0_u8,
+        | Bound::Value(_) => 1,
+        | Bound::Root => 2,
+    };
+    let mut readings: BTreeMap<_, Observation> = BTreeMap::new();
+    let mut classes: BTreeMap<Observation, MoldId> = BTreeMap::new();
+    let mut merged_rules = false;
+    for (mold, def) in pbg.iter_molds() {
+        let (left, right) = pbg.bounds(mold)?;
+        let has_pred = bool::from(pbg.mold_has_predecessor(mold));
+        let has_succ = bool::from(pbg.mold_has_successor(mold));
+        let tail = bool::from(pbg.mold_has_required_tail(mold));
+        let left_hole = matches!(left, Bound::Value(_));
+        let right_hole = matches!(right, Bound::Value(_));
+        let kind = match (has_pred, has_succ) {
+            | (false, true) if left_hole => TileKind::AbsorbingStart,
+            | (false, true) => TileKind::Start,
+            | (true, true) => TileKind::Mid,
+            | (true, false) if tail => TileKind::Mid,
+            | (true, false) => TileKind::End,
+            | (false, false) => match (left_hole, right_hole) {
+                | (false, false) => TileKind::Operand,
+                | (false, true) => TileKind::Prefix,
+                | (true, false) => TileKind::Postfix,
+                | (true, true) => TileKind::Infix,
+            },
+        };
+        assert_eq!(kind, pbg.tile_kind(mold)?, "mold {mold:?}'s kind");
+        let first = bool::from(pbg.mold_is_form_first(mold));
+        let hole = pbg
+            .step(def.rctx, Dir::Right)?
+            .iter()
+            .find_map(|step| match step.crossed {
+                | StepSym::Sort(sort) => Some(sort),
+                | StepSym::Tile(_) => None,
+            });
+        let reading = (
+            kind,
+            def.sort,
+            def.prec,
+            (has_pred, has_succ),
+            (first, bool::from(pbg.mold_is_form_last(mold)), tail),
+            hole,
+            (shape(left), shape(right)),
+        );
+        let class = pbg.observation(mold)?;
+        let next = classes.len();
+        match readings.get(&reading) {
+            | Some(&held) => assert_eq!(held, class, "mold {mold:?} reads as its class"),
+            | None => {
+                assert_eq!(
+                    usize::try_from(u32::from(class))?,
+                    next,
+                    "a new reading takes the next class number"
+                );
+                readings.insert(reading, class);
+            },
+        }
+        match classes.get(&class) {
+            | Some(&least) => {
+                merged_rules |= pbg.rule_of(least)?.name() != pbg.rule_of(mold)?.name();
+            },
+            | None => {
+                classes.insert(class, mold);
+            },
+        }
+        let word = MoldWordIndex::of(mold);
+        let mut held = Vec::new();
+        for sort in sorts {
+            for set in [TileSet::Fills(sort), TileSet::Absorbs(sort)] {
+                let view = pbg.tile_set(set);
+                assert_eq!(view.contains(mold), view.word(word).contains(mold));
+                if bool::from(view.contains(mold)) {
+                    held.push(set);
+                }
+            }
+        }
+        for set in [
+            TileSet::Prefixes,
+            TileSet::LeftOperators,
+            TileSet::FirstMids,
+            TileSet::Continuations,
+        ] {
+            if bool::from(pbg.tile_set(set).contains(mold)) {
+                held.push(set);
+            }
+        }
+        let expected = match kind {
+            | TileKind::Operand | TileKind::Start => vec![TileSet::Fills(def.sort)],
+            | TileKind::AbsorbingStart => vec![TileSet::Absorbs(def.sort)],
+            | TileKind::Prefix => vec![TileSet::Prefixes],
+            | TileKind::Infix | TileKind::Postfix => vec![TileSet::LeftOperators],
+            | TileKind::Mid if first => vec![TileSet::FirstMids, TileSet::Continuations],
+            | TileKind::Mid | TileKind::End => vec![TileSet::Continuations],
+        };
+        assert_eq!(expected, held, "mold {mold:?}'s sets");
+    }
+    assert_eq!(readings.len(), classes.len());
+    assert!(merged_rules, "a class spans molds of different rules");
+    let past = MoldId::try_from(pbg.mold_count().0)?;
+    assert!(matches!(pbg.tile_kind(past), Err(PbgError::UnknownMold { id }) if id == past));
+    assert!(matches!(pbg.observation(past), Err(PbgError::UnknownMold { id }) if id == past));
+    let beyond = MoldId::try_from(pbg.mold_count().0.saturating_add(64))?;
+    assert_eq!(
+        MoldWord::default(),
+        pbg.tile_set(TileSet::Continuations)
+            .word(MoldWordIndex::of(beyond))
+    );
+    assert!(!bool::from(
+        pbg.tile_set(TileSet::Continuations).contains(past)
+    ));
     Ok(())
 }
 

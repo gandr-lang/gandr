@@ -90,6 +90,12 @@ use gandr_theory_graphs::PrecDagError;
 use gandr_theory_graphs::PrecSpecError;
 use gandr_theory_graphs::WalkBuildError;
 
+use crate::automaton::MoldSet;
+use crate::automaton::Observation;
+use crate::automaton::TileAutomaton;
+use crate::automaton::TileKind;
+use crate::automaton::TileSet;
+use crate::automaton::TileTableBytes;
 use crate::check::validate_assumption_3;
 use crate::check::validate_operator_form;
 use crate::mold::FrozenTable;
@@ -1479,6 +1485,8 @@ pub struct Pbg
     adaptations: Vec<Adaptation>,
     /// The mold and context tables.
     molds: MoldTable,
+    /// The tile automaton's tables, derived from the mold table.
+    automaton: TileAutomaton,
 }
 
 impl Pbg
@@ -1639,6 +1647,7 @@ impl Pbg
             .iter()
             .flat_map(|rule| rule.adaptations.iter().copied())
             .collect();
+        let automaton = TileAutomaton::derive(&molds);
         Self {
             dag,
             forms,
@@ -1646,6 +1655,7 @@ impl Pbg
             rule_names,
             adaptations,
             molds,
+            automaton,
         }
     }
 
@@ -2350,6 +2360,101 @@ impl Pbg
     ) -> MoldId
     {
         self.molds.least_interchangeable(mold)
+    }
+
+    /// The tile kind of `mold`: what pushing it does to the slope, read off
+    /// its same-form neighbours, its required tail and its bounds.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a start, absorbing when a hole faces it on the left, for a
+    ///   successor and no predecessor; a mid for a predecessor and a successor
+    ///   or a required tail; an end for a predecessor alone; an operand,
+    ///   prefix, postfix or infix by the holes facing it otherwise.
+    /// - fails: an id past the table.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`PbgError::UnknownMold`] for an id past the table.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — over the built-in grammar every mold's kind is reread
+    ///   from the neighbour, tail and bound queries, and the first id past the
+    ///   table is refused; a swapped side or flag misclassifies.
+    /// - witness: `tests::walk::tile_kinds_observations_and_sets_agree_with_the_table`
+    #[spec(ensures: |ret| ret.is_ok() == self.molds.mold(mold).is_ok())]
+    #[inline]
+    pub fn tile_kind(
+        &self,
+        mold: MoldId,
+    ) -> Result<TileKind, PbgError>
+    {
+        self.automaton.kind(mold)
+    }
+
+    /// The observation class of `mold`: the molds a parser reads alike once
+    /// pushed, their identities, labels and same-form neighbours aside.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: two molds share a class exactly when their kinds, sorts,
+    ///   precedence groups, neighbour flags, form membership, next hole sorts
+    ///   and bound shapes agree.
+    /// - fails: an id past the table.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`PbgError::UnknownMold`] for an id past the table.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — over the built-in grammar every pair of molds'
+    ///   classes is compared with their readings through the public queries; a
+    ///   dropped component merges molds a parser tells apart, and a spurious
+    ///   one keeps alike molds apart.
+    /// - witness: `tests::walk::tile_kinds_observations_and_sets_agree_with_the_table`
+    #[spec(ensures: |ret| ret.is_ok() == self.molds.mold(mold).is_ok())]
+    #[inline]
+    pub fn observation(
+        &self,
+        mold: MoldId,
+    ) -> Result<Observation, PbgError>
+    {
+        self.automaton.observation(mold)
+    }
+
+    /// The molds of tile set `set`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each mold's bit is set exactly when the mold is in the set; a
+    ///   word past the table is empty.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — over the built-in grammar every mold's bit in every
+    ///   set is compared with its kind and sort; a misplaced word or bit admits
+    ///   a mold its frontier does not take.
+    /// - witness: `tests::walk::tile_kinds_observations_and_sets_agree_with_the_table`
+    #[spec(ensures: |ret| ret.word(crate::automaton::MoldWordIndex::of(MoldId::from(u32::MAX))) == crate::automaton::MoldWord::default())]
+    #[inline]
+    #[must_use]
+    pub fn tile_set(
+        &self,
+        set: TileSet,
+    ) -> MoldSet<'_>
+    {
+        self.automaton.set(set)
+    }
+
+    /// How many bytes the tile automaton's tables hold.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn tile_table_bytes(&self) -> TileTableBytes
+    {
+        self.automaton.bytes()
     }
 
     /// The grammar's fingerprint: the precedence DAG's fingerprint folded

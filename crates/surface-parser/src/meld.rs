@@ -214,6 +214,7 @@ use anodized::spec;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::Sort;
 use gandr_surface_grammar::StepSym;
+use gandr_surface_grammar::TileKind;
 use gandr_surface_grammar::TileLabel;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
@@ -229,7 +230,6 @@ use gandr_surface_syntax::SyntaxError;
 use gandr_surface_syntax::SyntaxTree;
 use gandr_surface_syntax::TreeBuilder;
 use gandr_theory_graphs::Assoc;
-use gandr_theory_graphs::Bound;
 use gandr_theory_graphs::Dir;
 use gandr_theory_graphs::Prec;
 use gandr_theory_graphs::PrecIndex;
@@ -531,6 +531,14 @@ primitive_copy_wrapper!(
 primitive_copy_wrapper!(
     /// Index of an operator cell.
     struct OperatorIndex(usize);
+);
+primitive_copy_wrapper!(
+    /// How many cells a slope holds: the index the next pushed cell takes.
+    pub struct SlopeHeight(usize);
+);
+primitive_copy_wrapper!(
+    /// Whether a push can reach an open frontier below the nearest.
+    pub struct ChainReach(bool);
 );
 
 impl From<StackIndex> for StackFloor
@@ -1315,18 +1323,6 @@ struct FormTable;
 
 impl FormTable
 {
-    /// Return whether `mold` has a same-form `≐`-predecessor.
-    ///
-    /// # Specification
-    /// trivial.
-    fn has_pred(
-        pbg: &Pbg,
-        mold: MoldId,
-    ) -> MoldHasPredecessor
-    {
-        MoldHasPredecessor::from(bool::from(pbg.mold_has_predecessor(mold)))
-    }
-
     /// Return whether `mold` has a same-form `≐`-successor.
     ///
     /// # Specification
@@ -1715,6 +1711,94 @@ impl<'pbg> MeldState<'pbg>
             return FormContinuation::from(false);
         };
         FormContinuation::from(bool::from(self.adjacent(head_mold, mold)))
+    }
+
+    /// The molds of the slope's open form frontiers, nearest first.
+    ///
+    /// A push consults these, nearest first, for whether the incoming tile
+    /// continues each: [`settle_completable`](Self::settle_completable)
+    /// passes the completable ones it does not continue, and
+    /// [`settle_filled_required_tail`](Self::settle_filled_required_tail) the
+    /// whole required tails, before the tile meets the next.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: yields the mold of each open frontier in the frontier cache,
+    ///   from the top of the slope down; leaves `self` unchanged.
+    /// - panics: none.
+    /// - executable: none — the specification macro cannot name this opaque
+    ///   iterator return; the caller owns its cursor.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — through the molder's push classes: a frontier skipped
+    ///   or read out of order groups candidates that one of the frontiers a
+    ///   push consults tells apart, which the differential witness reads as a
+    ///   verdict the dry runs do not reach.
+    /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+    #[inline]
+    pub(crate) fn open_frontier_molds(&self) -> impl Iterator<Item = MoldId> + '_
+    {
+        self.frontiers
+            .iter()
+            .rev()
+            .filter_map(|&index| match self.stack.get(index)?.role {
+                | Role::FormTile { mold, .. } => Some(mold),
+                | Role::Operand | Role::Operator { .. } => None,
+            })
+    }
+
+    /// How many cells the slope holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn slope_height(&self) -> SlopeHeight
+    {
+        SlopeHeight(self.stack.len())
+    }
+
+    /// Whether a push that continues none of the open frontiers it meets can
+    /// reach, below the nearest, an open frontier at or above `floor`.
+    ///
+    /// A push meets the nearest frontier, and passes it to the next when it
+    /// can close it on the way: a completable frontier
+    /// ([`settle_completable`](Self::settle_completable)) or a required tail
+    /// ([`settle_filled_required_tail`](Self::settle_filled_required_tail)).
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true exactly when, walking the open frontiers from the
+    ///   nearest while each is completable or a required tail, a frontier after
+    ///   the nearest stands at or above `floor`; leaves `self` unchanged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — through the molder's window classes: a reach that
+    ///   stops short shares a window whose tokens meet a member's own
+    ///   successors, which the differential witness reads as a window verdict
+    ///   the dry runs do not reach.
+    /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+    #[spec(ensures: |ret| !bool::from(ret) || self.frontiers.iter().rev().skip(1).any(|&index| index >= floor.0))]
+    pub(crate) fn settles_into(
+        &self,
+        floor: SlopeHeight,
+    ) -> ChainReach
+    {
+        for (position, &index) in self.frontiers.iter().rev().enumerate() {
+            if position > 0 && index >= floor.0 {
+                return ChainReach(true);
+            }
+            let Some(Role::FormTile { mold, .. }) = self.stack.get(index).map(|cell| cell.role)
+            else {
+                return ChainReach(false);
+            };
+            if !bool::from(FormTable::is_form_last(self.pbg, mold))
+                && !bool::from(self.pbg.mold_has_required_tail(mold))
+            {
+                return ChainReach(false);
+            }
+        }
+        ChainReach(false)
     }
 
     /// Return whether pushing `mold` is structurally admissible at the head.
@@ -3712,26 +3796,18 @@ impl<'pbg> MeldState<'pbg>
         mold: MoldId,
     ) -> Kind
     {
-        let (left, right) = self.pbg.bounds(mold).unwrap_or((Bound::Root, Bound::Root));
-        let left_hole = matches!(left, Bound::Value(_));
-        let has_pred = FormTable::has_pred(self.pbg, mold);
-        let has_succ = FormTable::has_succ(self.pbg, mold);
-        match (bool::from(has_pred), bool::from(has_succ)) {
-            | (false, true) => Kind::FormStart {
-                absorb_left: left_hole,
-            },
-            | (true, false) if bool::from(self.pbg.mold_has_required_tail(mold)) => Kind::FormMid,
-            | (true, false) => Kind::FormEnd,
-            | (true, true) => Kind::FormMid,
-            | (false, false) => {
-                let right_hole = matches!(right, Bound::Value(_));
-                match (left_hole, right_hole) {
-                    | (false, false) => Kind::Operand,
-                    | (false, true) => Kind::Operator(OpShape::Prefix),
-                    | (true, false) => Kind::Operator(OpShape::Postfix),
-                    | (true, true) => Kind::Operator(OpShape::Infix),
-                }
-            },
+        // The grammar derives each mold's kind once, from the same neighbour
+        // flags, required tail and bounds; an id past the table is an operand,
+        // which push routes to the unmolded path before classifying.
+        match self.pbg.tile_kind(mold) {
+            | Ok(TileKind::Start) => Kind::FormStart { absorb_left: false },
+            | Ok(TileKind::AbsorbingStart) => Kind::FormStart { absorb_left: true },
+            | Ok(TileKind::Mid) => Kind::FormMid,
+            | Ok(TileKind::End) => Kind::FormEnd,
+            | Ok(TileKind::Prefix) => Kind::Operator(OpShape::Prefix),
+            | Ok(TileKind::Postfix) => Kind::Operator(OpShape::Postfix),
+            | Ok(TileKind::Infix) => Kind::Operator(OpShape::Infix),
+            | Ok(TileKind::Operand) | Err(_) => Kind::Operand,
         }
     }
 

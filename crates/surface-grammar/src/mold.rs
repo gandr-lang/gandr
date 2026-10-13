@@ -291,6 +291,36 @@ mold_flag! {
     MoldsAdjacent
 }
 
+mold_flag! {
+    /// Whether a mold belongs to a tile set.
+    MoldInSet
+}
+
+/// What the tile automaton reads of one mold off the table's columns: its
+/// bounds, its neighbour and membership flags, and the steps out of its
+/// context to the right.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+pub struct MoldColumns<'table>
+{
+    /// The mold's precedence bounds, left and right.
+    pub bounds: (Bound<Prec>, Bound<Prec>),
+    /// Whether the mold has a same-form predecessor.
+    pub predecessor: MoldHasPredecessor,
+    /// Whether the mold has a same-form successor.
+    pub successor: MoldHasSuccessor,
+    /// Whether the mold can open its form.
+    pub first: MoldIsFormFirst,
+    /// Whether the mold can complete its form with no hole still required.
+    pub complete_last: MoldIsFormLast,
+    /// Whether the mold can end its form only once a trailing hole is filled.
+    pub required_tail: MoldHasRequiredTail,
+    /// The symbols crossed stepping out of the mold's context to the right.
+    pub right_steps: &'table [RCtxStep],
+}
+
 /// One declared label's two candidate menus.
 ///
 /// # Specification
@@ -1586,6 +1616,54 @@ impl MoldTable
             .copied()
             .unwrap_or(false);
         MoldHasRequiredTail::from(held)
+    }
+
+    /// The columns the tile automaton reads of mold `id`; none past the
+    /// table.
+    ///
+    /// The automaton reads them here rather than through the per-mold
+    /// queries above, so this crate instantiates none of those queries'
+    /// bodies itself: a size-optimized build shares a generic instantiation
+    /// across crates, and a query body instantiated here would be linked
+    /// into the parser's hot paths instead of inlined there.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: for a mold in the table, its stored bounds, neighbour and
+    ///   membership flags and right steps; none past the table.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the automaton's witness rereads every built-in mold's
+    ///   kind, class and sets through the per-mold queries; a column read at
+    ///   another index or side misclassifies a mold.
+    /// - witness: `tests::walk::tile_kinds_observations_and_sets_agree_with_the_table`
+    #[spec(ensures: |ret| ret.is_some() == usize::try_from(u32::from(id)).is_ok_and(|index| index < self.molds.len()))]
+    pub(crate) fn columns(
+        &self,
+        id: MoldId,
+    ) -> Option<MoldColumns<'_>>
+    {
+        let index = usize::try_from(u32::from(id)).ok()?;
+        let def = self.molds.get(index)?;
+        let flag = |column: &[bool]| column.get(index).copied().unwrap_or(false);
+        let right_steps = usize::try_from(u32::from(def.rctx))
+            .ok()
+            .and_then(|rctx| self.rctxs.get(rctx))
+            .map_or(&[][..], |data| data.right_steps.as_slice());
+        Some(MoldColumns {
+            bounds: self
+                .bounds
+                .get(index)
+                .copied()
+                .unwrap_or((Bound::Root, Bound::Root)),
+            predecessor: MoldHasPredecessor::from(flag(&self.has_pred)),
+            successor: MoldHasSuccessor::from(flag(&self.has_succ)),
+            first: MoldIsFormFirst::from(flag(&self.is_first)),
+            complete_last: MoldIsFormLast::from(flag(&self.is_complete_last)),
+            required_tail: MoldHasRequiredTail::from(flag(&self.is_required_tail)),
+            right_steps,
+        })
     }
 
     /// The molds that can open a form, ascending.

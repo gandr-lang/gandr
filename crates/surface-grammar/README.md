@@ -27,6 +27,7 @@ The checked precedence-bounded grammar of the gandr surface: rules over a preced
 - `MoldDef`, `RCtxId`, `RCtxStep`, `StepSym` and the `Pbg` mold queries — `mold`, `bounds`, `step`, `candidates`, `fresh_candidates`, `candidate_counts`, `adjacencies`, `mold_successors`, `molds_adjacent` with `MoldsAdjacent`, `form_first`, `form_last` and the per-mold flags: the mold table a parser reads.
 - `Pbg::closing_class`: the bracket family a mold's form completes into.
 - `Pbg::least_interchangeable`: the least mold a pushed tile is read exactly as, its label aside.
+- `Pbg::tile_kind`, `Pbg::observation`, `Pbg::tile_set` and `Pbg::tile_table_bytes`, with `TileKind`, `Observation`, `TileSet`, `MoldSet`, `MoldWord`, `MoldWordIndex`, `MoldInSet` and `TileTableBytes`: the tile automaton — each mold's kind and observation class, and the molds a parser admits by kind and sort as bitsets, derived once per grammar.
 - `Pbg::rule_of` and `Pbg::named_kind`: the rule a mold belongs to and the named kind that rule realises, total over the mold table — what a consumer of a molded tree dispatches on.
 - `Pbg::fingerprint`: the grammar's identity, pinned for the built-in surface.
 - `walk_index`, `reachable_molds`, `comparison_table`, `seen_key_verdict`, `GrammarWalkSym`, `MAX_WALK_CHAIN_LEN`: the walk machine over a grammar and the relations read off it.
@@ -99,6 +100,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Regex layout, successor runs and membership flags, lookups, the fingerprint | [`model`](src/model.rs) |
 | The gates | [`check`](src/check.rs) |
 | Molds, contexts and closing classes | [`mold`](src/mold.rs) |
+| Tile kinds, observation classes and tile sets | [`automaton`](src/automaton.rs) |
 | The walk index and comparison table | [`walk`](src/walk.rs) |
 | The built-in surface and its frozen tables | [`surface`](src/surface.rs) |
 | The bridges and the universe | [`surface::type_shell`](src/surface/type_shell.rs) |

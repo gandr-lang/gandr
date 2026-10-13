@@ -5,7 +5,11 @@
 //! - [`label()`] splits a source into lexemes, losslessly: every byte belongs
 //!   to exactly one token, layout included.
 //! - [`Molder`] chooses each token's mold from the grammar's candidates, the
-//!   one whose completion obligations are least.
+//!   one whose completion obligations are least. Candidates that push alike and
+//!   tied openers whose windows read alike share one dry run, by classes read
+//!   off the grammar's tile automaton (the `tables` module states the shape and
+//!   the decision); [`MoldVerdicts`] keeps the dry runs per candidate as the
+//!   oracle the differential witness reads them against.
 //! - [`MeldState`] is the resumable push machine over the checked grammar:
 //!   `push` is total, a batch parse is the fold of `push` followed by
 //!   [`commit`](MeldState::commit), and [`Checkpoint`] snapshots resume
@@ -101,6 +105,7 @@ mod mold;
 mod oblig;
 mod parse;
 mod spec;
+mod tables;
 #[cfg(test)]
 mod testing;
 
@@ -143,6 +148,8 @@ pub use crate::meld::TileText;
 pub use crate::meld::UnitBase;
 pub use crate::meld::UnitSeam;
 pub use crate::mold::CandidateLabel;
+pub use crate::mold::DisagreementCount;
+pub use crate::mold::MoldVerdicts;
 pub use crate::mold::Molder;
 pub use crate::mold::TokenIndex;
 pub use crate::mold::TokenLabels;
