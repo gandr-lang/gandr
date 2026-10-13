@@ -30,6 +30,7 @@
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
+use core::fmt;
 
 use anodized::spec;
 use gandr_core_term::ArenaWatermark;
@@ -109,6 +110,108 @@ pub(super) enum Rest
     /// The rest continues every local end of the statement's computation,
     /// which holds an exit.
     Distributed,
+}
+
+/// The exit a tail's polarity determines: `return` over a value, `become`
+/// over a computation.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one variant per exit keyword.
+/// - provides: the keyword an inferred exit stands for, and the text a fix that
+///   writes it inserts.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a value tail and a computation tail, each asserted as its
+///   exact exit.
+/// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Exit
+{
+    /// `return v`: the tail is a value, and the body returns it.
+    Return,
+    /// `become c`: the tail is a computation, and the body runs it in tail
+    /// position.
+    Become,
+}
+
+impl fmt::Display for Exit
+{
+    /// Writes the keyword: `return` or `become`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(match *self {
+            | Self::Return => "return",
+            | Self::Become => "become",
+        })
+    }
+}
+
+/// Whether an attribute on the declaration or the module holding an inferred
+/// exit asks for its keyword to be written.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one variant for an `explicit_exits` attribute on the owning
+///   declaration or an enclosing module, one for none.
+/// - provides: the module's half of the `explicit-exits` lint's switch; the
+///   driver's flag is the other.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a module and a declaration carrying the attribute and a
+///   declaration carrying none, each asserted as its exact answer.
+/// - witness: `lower::exits::tests::an_explicit_exits_attribute_asks_within_its_form`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Explicitness
+{
+    /// An `explicit_exits` attribute decorates the declaration or a module
+    /// enclosing it.
+    Asked,
+    /// No attribute asks.
+    Unasked,
+}
+
+/// An exit the lowering inferred where a path through a body ends in a form
+/// that is no exit.
+///
+/// The lowering writes the exit the tail's polarity determines and checks it
+/// as a written one; this record is what a face reads to show the keyword the
+/// source left out, and what the `explicit-exits` lint reports.
+///
+/// # Specification
+/// - requires: nothing to construct this data; the lowering produces it over
+///   the tree it lowered.
+/// - ensures: the span is the tail's own bytes, so no diagnostic names a
+///   keyword the source did not write; the exit is the one the tail's polarity
+///   names.
+/// - provides: the inferred exits of a lowered module, in source order.
+/// - fails: not applicable to the record itself.
+/// - panics: not applicable to the record itself.
+///
+/// # Adequacy
+/// - hypothesis: L3 — tails of each polarity, nested in matches and blocks,
+///   asserted at their exact spans and exits.
+/// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct InferredExit
+{
+    /// The bytes of the tail the exit was inferred at.
+    pub span: ByteSpan,
+    /// The exit the tail's polarity names.
+    pub exit: Exit,
+    /// Whether an attribute asks for the keyword.
+    pub explicitness: Explicitness,
 }
 
 quenchant_shape::reason_enum! {
@@ -367,9 +470,10 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a path through a grouping, a block and a match
     ///   reaches an exit in each, an exit under none is refused, and a path
-    ///   through nested matches missing its exit is refused where it ends.
+    ///   through nested matches without its exit takes the inferred one where
+    ///   it ends.
     /// - witness: `lower::tests::an_exit_lowers_where_a_path_passes_and_nowhere_else`
-    /// - witness: `lower::exits::tests::a_path_missing_its_exit_is_refused_where_it_ends`
+    /// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
     #[spec(
         captures: before = (
             self.exits.contains(&inner) || self.exits.contains(&outer),
@@ -572,6 +676,49 @@ impl<'source> Lowerer<'_, 'source>
                 commute(sink, minted, origin)
             }
         })
+    }
+
+    /// Every exit the mint sweep inferred in a declaration that lowered, in
+    /// source order.
+    ///
+    /// # Specification
+    /// - requires: the attribute pass and the documentation pass have run, so
+    ///   every refusal is offered and every asked slot is marked.
+    /// - ensures: one record per inferred exit minted under a declaration that
+    ///   holds no refusal, at its tail's span, asked exactly when its owning
+    ///   slot is; sorted by span.
+    /// - provides: the inferred exits a lowered module exposes.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — tails of each polarity in a lowered declaration, and
+    ///   one in a declaration an attribute refuses, asserted as the exact list.
+    /// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
+    /// - witness: `lower::exits::tests::an_explicit_exits_attribute_asks_within_its_form`
+    #[spec(ensures: |ret| ret.len() <= self.elided.len() && ret.is_sorted())]
+    pub(super) fn inferred_exits(&self) -> Vec<InferredExit>
+    {
+        let mut found: Vec<InferredExit> = self
+            .elided
+            .iter()
+            .filter(|&&(position, _)| !self.collected.refused(position).0)
+            .filter_map(|&(position, exit)| {
+                let tail = self.tree.node(position)?;
+                let explicitness = match self.collected.owner_of(position) {
+                    | Maybe::Present(slot) if self.asked.contains(&slot) => Explicitness::Asked,
+                    | Maybe::Present(_) | Maybe::Absent(_) => Explicitness::Unasked,
+                };
+                Some(InferredExit {
+                    span: tail.span(),
+                    exit,
+                    explicitness,
+                })
+            })
+            .collect();
+        found.sort_unstable();
+
+        found
     }
 }
 

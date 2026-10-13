@@ -12,13 +12,13 @@ def rec down(n : Nat) -> -F Nat {
   }
 }
 
-@[ refuses("MissingExit") ]
+@[ checks ]
 def produced(n : Nat) -> -F Nat { pure n }
 
-@[ refuses("MissingExit") ]
+@[ checks ]
 def called(n : Nat) -> -F Nat { down(n) }
 
-@[ refuses("MissingExit") ]
+@[ checks ]
 def one_arm(n : Nat) -> -F Nat {
   case n {
     Zero => return n,
@@ -26,13 +26,13 @@ def one_arm(n : Nat) -> -F Nat {
   }
 }
 
-@[ refuses("MissingExit") ]
+@[ checks ]
 def sequenced(n : Nat) -> -F Nat {
   run m <- down(n) ;
   pure m
 }
 
-@[ refuses("MissingExit") ]
+@[ checks ]
 def nested(n : Nat) -> -F Nat {
   case n {
     Zero => return n,
@@ -46,11 +46,11 @@ def nested(n : Nat) -> -F Nat {
   }
 }
 
-@[ refuses("MissingExit") ]
+@[ checks ]
 def thunked : +U (-F Nat) ;
 def thunked = thunk { pure Zero } ;
 
-@[ refuses("MissingExit") ]
+@[ checks ]
 def lambda : +U (Nat -> -F Nat) ;
 def lambda = thunk { fn (n) { pure n } } ;
 

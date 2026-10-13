@@ -167,7 +167,10 @@ impl From<Component> for usize
 ///
 /// The vocabulary is the core's, read through one lens: every former the
 /// printer spells, and the formers it cannot spell named so that the printer
-/// writes `?` for them rather than guessing.
+/// writes `?` for them rather than guessing. A computation's formers are
+/// spelled only under [`crate::present_computation`], from its root and in the
+/// bodies of the thunks it reaches; a type or a value presented alone admits
+/// none.
 ///
 /// # Specification
 /// - requires: the children are handles of the source that answered.
@@ -298,8 +301,9 @@ pub enum Former<'source, Node>
     Record(Arity),
     /// An injection into the summand at this position: `+{.i = v}`.
     Injection(Component, Node),
-    /// A suspended computation, which the printer shows as opaque.
-    Thunk,
+    /// A suspended computation over its body: `thunk { c }` in a presentation
+    /// of a computation, opaque in a presentation of a value.
+    Thunk(Node),
     /// A universe lift of a value, which the surface does not write.
     ValueLift,
     /// The code of a value type: a type read where a value is.
@@ -317,7 +321,23 @@ pub enum Former<'source, Node>
     Funext(Node, Node),
     /// Universe equivalence `equiv(f, g)` over its two translators.
     Equiv(Node, Node),
-    /// A computation term, which no position the printer fills admits.
+    /// The returner over its value: `v` where a path through a body ends,
+    /// `pure v` anywhere else.
+    Return(Node),
+    /// A sequencing bind over the computation it runs and the rest, which
+    /// stands under one binder for the value returned: `run x <- c ; rest`.
+    Bind(Node, Node),
+    /// A force of a thunk value: `force v`.
+    Force(Node),
+    /// An application of a computation to one value argument; the printer
+    /// spells a spine of them as one call, `f(a, b)`, a forced value at its
+    /// head as the value itself.
+    Application(Node, Node),
+    /// A lambda over its body, which stands under one binder: `fn (x) { c }`.
+    Lambda(Node),
+    /// A computation the printer has no spelling for: a case analysis, a
+    /// split, a projection, a fixpoint, a native operation, a transport, an
+    /// effect or a control operator.
     Computation,
     /// A handle that names no node, or a node whose name the source cannot
     /// spell.

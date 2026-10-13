@@ -50,6 +50,7 @@ use gandr_surface_corpus::Outcome;
 use gandr_surface_corpus::Settlement;
 use gandr_surface_corpus::Stated;
 use gandr_surface_corpus::Tally;
+use gandr_surface_diagnostics::Lint;
 use gandr_surface_lowering::DeclarationCount;
 
 use crate::compose::Composed;
@@ -78,6 +79,75 @@ pub enum Verb
     /// `test`: every fixture has a line, settled or not, and so does every
     /// unsettled declaration.
     Test,
+}
+
+/// Where a lint reports its findings: only within the declarations and
+/// modules an attribute enables it on, or everywhere.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Reach
+{
+    /// Within the forms an attribute enables it on.
+    #[default]
+    Attributed,
+    /// Everywhere, attribute or not.
+    Everywhere,
+}
+
+/// Where `check` reports each lint's findings; `test` reports none.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: every lint reaches the forms an attribute enables it on, and a
+///   lint the run enables reaches everywhere.
+/// - provides: the driver's `--lint` flags, read by
+///   [`crate::Entries::linting`].
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an asked and an unasked inferred exit, under the default
+///   and under `explicit-exits` enabled, each printed or not.
+/// - witness: `entry::tests::an_inferred_exit_is_reported_where_a_lint_reaches`
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Lints
+{
+    /// Where `explicit-exits` reports.
+    explicit_exits: Reach,
+}
+
+impl Lints
+{
+    /// The lints that reach everywhere: each of `enabled`, the rest within
+    /// their attributes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn enabling<Enabled>(enabled: Enabled) -> Self
+    where
+        Enabled: IntoIterator<Item = Lint>,
+    {
+        let mut lints = Self::default();
+        for lint in enabled {
+            match lint {
+                | Lint::ExplicitExits => lints.explicit_exits = Reach::Everywhere,
+            }
+        }
+        lints
+    }
+
+    /// Where `explicit-exits` reports.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn explicit_exits(self) -> Reach
+    {
+        self.explicit_exits
+    }
 }
 
 /// Whether, and how, a verb prints one declaration.
@@ -910,6 +980,7 @@ def broken = missing ;"#,
             spellings: gandr_surface_diagnostics::Spellings::default(),
             failures: gandr_surface_diagnostics::Failures::default(),
             shadowed: Vec::new(),
+            inferred: Vec::new(),
             program,
         };
         let mut engine = RunReport::default();

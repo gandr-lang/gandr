@@ -50,6 +50,7 @@ use gandr_surface_corpus::ExpectationFault;
 use gandr_surface_corpus::Refusal;
 use gandr_surface_corpus::Stated;
 use gandr_surface_corpus::Surviving;
+use gandr_surface_lowering::Exit;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::Origin;
 use gandr_surface_lowering::OriginTable;
@@ -107,6 +108,9 @@ pub enum Label
     /// A declared name or a binder over a builtin: the primary locus of a
     /// shadowing warning.
     Shadows,
+    /// A tail the source wrote without its exit: the primary locus of an
+    /// `explicit-exits` finding, naming the exit inferred there.
+    Inferred(Exit),
     /// The declaration or refusal a ledger line reports.
     Reported,
 }
@@ -149,6 +153,7 @@ impl fmt::Display for Label
             | Self::Met(wanted) => write!(f, "the type met, where {} is required", Shape(wanted)),
             | Self::Endpoint => f.write_str("an endpoint the point does not convert to"),
             | Self::Shadows => f.write_str("shadows a builtin"),
+            | Self::Inferred(exit) => write!(f, "exits by an inferred `{exit}`"),
             | Self::Reported => f.write_str("reported here"),
         }
     }
@@ -500,7 +505,6 @@ impl Annotations
             | LoweringRefusal::LowercaseModuleName { .. }
             | LoweringRefusal::NonExhaustiveMatch { .. }
             | LoweringRefusal::UnmarkedSelfReference { .. }
-            | LoweringRefusal::MissingExit { .. }
             | LoweringRefusal::Unreachable { .. }
             | LoweringRefusal::WithoutK { .. }
             | LoweringRefusal::BudgetExceeded { .. }

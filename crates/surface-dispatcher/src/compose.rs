@@ -128,6 +128,7 @@ use gandr_surface_diagnostics::Failures;
 use gandr_surface_diagnostics::Spellings;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::DeclarationOutcome;
+use gandr_surface_lowering::InferredExit;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::OriginTable;
@@ -256,6 +257,10 @@ pub enum Composed<'source>
         /// the order shadowed: under the warn-and-allow policy the source's
         /// binding wins and each is a warning, not a refusal.
         shadowed: Vec<ShadowedBuiltin>,
+        /// Every exit the lowering inferred where a path through a body ends,
+        /// in source order: each a finding of the `explicit-exits` lint where
+        /// an attribute or the run asks for it.
+        inferred: Vec<InferredExit>,
         /// The kernel artifact of every declaration that crossed into the
         /// kernel, in kernel admission order, each under its structured name,
         /// once the module's admission ran; a composition read before its
@@ -322,6 +327,7 @@ impl Composed<'_>
                 spellings,
                 failures,
                 shadowed,
+                inferred,
                 program,
                 ..
             } => Self::Settled {
@@ -332,6 +338,7 @@ impl Composed<'_>
                 spellings,
                 failures,
                 shadowed,
+                inferred,
                 kernel: Maybe::Present(kernel),
                 program,
             },
@@ -821,9 +828,10 @@ pub fn lower_parsed<'source>(
 ///   no expectation can state, the lowering's origin table, moved rather than
 ///   copied, the spellings of the types its checker refusals compare and its
 ///   failures name, the failures themselves, every builtin the source shadowed,
-///   the program, and no kernel artifact yet ([`admitted::Absent::Pending`]); a
-///   settle fault is carried in its place. The admission holds the arena the
-///   verdicts were judged over, the verdicts and the module's structured names.
+///   every exit the lowering inferred, the program, and no kernel artifact yet
+///   ([`admitted::Absent::Pending`]); a settle fault is carried in its place.
+///   The admission holds the arena the verdicts were judged over, the verdicts
+///   and the module's structured names.
 /// - provides: the composition a face renders before the kernel has been
 ///   offered anything; the readmission mints nothing the settle comparison or
 ///   the program reads.
@@ -870,6 +878,7 @@ pub fn judge(
             let failures = Failures::of(&verdicts);
             let spellings = Spellings::of(&arena, &module, &report, &failures);
             let shadowed = module.recognition().shadowed().to_vec();
+            let inferred = module.inferred_exits().to_vec();
             Ok(Composed::Settled {
                 report,
                 exercised,
@@ -878,6 +887,7 @@ pub fn judge(
                 spellings,
                 failures,
                 shadowed,
+                inferred,
                 kernel: Maybe::Absent(admitted::Absent::Pending),
                 program,
             })
@@ -1309,8 +1319,11 @@ mod tests
     use gandr_core_checker::Verdict;
     use gandr_core_checker::bridge;
     use gandr_core_checker::check_module;
+    use gandr_core_term::CertificateEquality;
     use gandr_core_term::CoreArena;
     use gandr_core_term::FailureClass;
+    use gandr_core_term::Value;
+    use gandr_core_term::equal_certificate_syntax;
     use gandr_kernel_term::decode;
     use gandr_surface_corpus::CorpusRoot;
     use gandr_surface_corpus::Outcome;
@@ -1318,6 +1331,7 @@ mod tests
     use gandr_surface_corpus::RefusalName;
     use gandr_surface_corpus::Settlement;
     use gandr_surface_corpus::settle;
+    use gandr_surface_diagnostics::constant_names;
     use gandr_surface_grammar::Pbg;
     use gandr_surface_grammar::built_in;
     use gandr_surface_lowering::DeclarationOutcome;
@@ -1327,6 +1341,12 @@ mod tests
     use gandr_surface_lowering::lower_module;
     use gandr_surface_lowering::namespace::Recognition;
     use gandr_surface_parser::parse;
+    use gandr_surface_pretty::CoreNode;
+    use gandr_surface_pretty::CoreSource;
+    use gandr_surface_pretty::Fidelity;
+    use gandr_surface_pretty::Name;
+    use gandr_surface_pretty::PageWidth;
+    use gandr_surface_pretty::present_computation;
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
 
@@ -1775,6 +1795,7 @@ def h = 1 ;"#,
             let failures = super::Failures::of(&verdicts);
             let spellings = super::Spellings::of(&arena, &module, &report, &failures);
             let shadowed = module.recognition().shadowed().to_vec();
+            let inferred = module.inferred_exits().to_vec();
             let readmitted_first = Composed::Settled {
                 report,
                 exercised,
@@ -1783,6 +1804,7 @@ def h = 1 ;"#,
                 spellings,
                 failures,
                 shadowed,
+                inferred,
                 kernel: Maybe::Present(kernel),
                 program,
             };
@@ -1980,5 +2002,87 @@ def h = 1 ;"#,
             "the two refused forms have distinct source spans"
         );
         assert_eq!(super::unstatable(&module).as_slice(), &[first, last]);
+    }
+
+    #[test]
+    fn a_body_prints_with_its_exits_elided_and_reads_back_to_its_term()
+    {
+        let grammar = grammar();
+        let source = SourceText::from(
+            "def kept(n : Integer) -> -F Integer { return n }\n\
+             def kept_elided(n : Integer) -> -F Integer { n }\n\
+             def kept_printed : +U (Integer -> -F Integer) ;\n\
+             def kept_printed = thunk { fn (a) { a } } ;\n\
+             def called(n : Integer) -> -F Integer { become kept(n) }\n\
+             def called_elided(n : Integer) -> -F Integer { kept(n) }\n\
+             def called_printed : +U (Integer -> -F Integer) ;\n\
+             def called_printed = thunk { fn (a) { kept(a) } } ;\n\
+             def sequenced(n : Integer) -> -F Integer { run m <- kept(n) ; become kept(m) }\n\
+             def sequenced_elided(n : Integer) -> -F Integer { run m <- kept(n) ; kept(m) }\n\
+             def sequenced_printed : +U (Integer -> -F Integer) ;\n\
+             def sequenced_printed = thunk { fn (a) { run b <- kept(a) ; kept(b) } } ;\n\
+             def suspended(n : Integer) -> -F (+U (-F Integer)) { return thunk { become kept(n) } }\n\
+             def suspended_elided(n : Integer) -> -F (+U (-F Integer)) { thunk { kept(n) } }\n\
+             def suspended_printed : +U (Integer -> -F (+U (-F Integer))) ;\n\
+             def suspended_printed = thunk { fn (a) { thunk { kept(a) } } } ;\n",
+        );
+        let mut lowerings = LoweringCount::default();
+        let Lowered::Module { module, arena } = lower_source(&grammar, source, &mut lowerings)
+            .expect("the module lowers")
+            .into_lowered()
+        else {
+            panic!("the module is read");
+        };
+        let spelled = constant_names(&module);
+        let names: Vec<Name<'_>> = spelled
+            .iter()
+            .map(|name| Name::from(name.as_str()))
+            .collect();
+        let printer = CoreSource::new(&arena, &names);
+        let body = |wanted: &str| {
+            let declaration = module
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.name().as_ref() == wanted)
+                .unwrap_or_else(|| panic!("`{wanted}` is declared"));
+            match declaration.outcome() {
+                | DeclarationOutcome::Completed { body, .. }
+                | DeclarationOutcome::Bodied { body } => body,
+                | other => panic!("`{wanted}` lowers a body, not {other:?}"),
+            }
+        };
+        let printed = |wanted: &str| {
+            let Some(&Value::Thunk(computation)) = arena.value(body(wanted))
+            else {
+                panic!("`{wanted}` is a suspended function");
+            };
+            let presentation = present_computation(
+                &printer,
+                CoreNode::Computation(computation),
+                PageWidth::from(100_u32),
+            )
+            .expect("the body lays out");
+            (presentation.to_string(), presentation.fidelity())
+        };
+        for (written, expected) in [
+            ("kept", "fn (a) { a }"),
+            ("called", "fn (a) { kept(a) }"),
+            ("sequenced", "fn (a) { run b <- kept(a) ; kept(b) }"),
+            ("suspended", "fn (a) { thunk { kept(a) } }"),
+        ] {
+            let (elided, restated) = (format!("{written}_elided"), format!("{written}_printed"));
+            for name in [written, elided.as_str(), restated.as_str()] {
+                assert_eq!(
+                    printed(name),
+                    (String::from(expected), Fidelity::Faithful),
+                    "`{name}` prints in the canonical form, its exits elided"
+                );
+            }
+            assert_eq!(
+                equal_certificate_syntax(&arena, body(written), body(&restated)),
+                CertificateEquality::Equal,
+                "`{written}`'s printed body reads back to its term"
+            );
+        }
     }
 }

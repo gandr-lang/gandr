@@ -157,6 +157,8 @@ pub use crate::format::FormatStep;
 pub use crate::format::Formatting;
 pub use crate::format::Rewrite;
 pub use crate::report::Goals;
+pub use crate::report::Lints;
+pub use crate::report::Reach;
 pub use crate::report::RunReport;
 pub use crate::report::RunVerdict;
 pub use crate::report::Shown;
@@ -206,6 +208,9 @@ pub enum Invocation
         /// Whether an unsettled obligation fails the run or is reported as a
         /// goal.
         goals: Goals,
+        /// Where each lint reports its findings: within its attributes, or
+        /// everywhere for a lint the run enables.
+        lints: Lints,
         /// The sources and directories of sources to check, in order.
         paths: Vec<PathBuf>,
         /// The threads the sources are parsed and lowered on.
@@ -264,6 +269,8 @@ pub enum Outcome
     {
         /// The verb whose output and gate the walk is rendered under.
         verb: Verb,
+        /// Where each lint reports its findings.
+        lints: Lints,
         /// The walk, not yet started.
         walk: Walk,
         /// The width to visit the walk at.
@@ -319,15 +326,16 @@ impl core::fmt::Display for StatusReport
 /// - requires: nothing; every [`Invocation`] variant routes.
 /// - ensures: each variant maps to exactly one [`Outcome`] variant: a bare
 ///   invocation to the status report, `check` to a walk run under
-///   [`Verb::Check`] with the same goals setting, and `test` to a walk run
-///   under [`Verb::Test`], each walk over the invocation's paths in order at
-///   the invocation's width; `run` to a [`Script`] of its path; `stage` to a
-///   [`Staging`] of its programs, in order, at its width; `fmt` to a
-///   [`Formatting`] of its paths, in order, at its page and rewrite. Routing
-///   performs no I/O of its own: a walk, a script or a formatting reads nothing
-///   until it is advanced, a staging builds nothing until it runs, and building
-///   the grammar a walk parses with is computation. The optional `tracing`
-///   feature reports a span to the caller's subscriber.
+///   [`Verb::Check`] with the same goals and lints settings, and `test` to a
+///   walk run under [`Verb::Test`] with every lint at its attributes, each walk
+///   over the invocation's paths in order at the invocation's width; `run` to a
+///   [`Script`] of its path; `stage` to a [`Staging`] of its programs, in
+///   order, at its width; `fmt` to a [`Formatting`] of its paths, in order, at
+///   its page and rewrite. Routing performs no I/O of its own: a walk, a script
+///   or a formatting reads nothing until it is advanced, a staging builds
+///   nothing until it runs, and building the grammar a walk parses with is
+///   computation. The optional `tracing` feature reports a span to the caller's
+///   subscriber.
 /// - provides: the outcome the driver renders.
 /// - fails: never; routing is total over the invocation vocabulary.
 /// - panics: none.
@@ -350,8 +358,8 @@ impl core::fmt::Display for StatusReport
     captures: [
         status = matches!(invocation, Invocation::Status),
         verb = match &invocation {
-            &Invocation::Check { goals, width, .. } => Some((Verb::Check(goals), width)),
-            &Invocation::Test { width, .. } => Some((Verb::Test, width)),
+            &Invocation::Check { goals, lints, width, .. } => Some((Verb::Check(goals), lints, width)),
+            &Invocation::Test { width, .. } => Some((Verb::Test, Lints::default(), width)),
             &Invocation::Status | &Invocation::Run { .. } | &Invocation::Stage { .. }
                 | &Invocation::Format { .. } => None,
         },
@@ -368,7 +376,7 @@ impl core::fmt::Display for StatusReport
     ],
     ensures: |ref ret| match *ret {
         Outcome::Status(_) => status,
-        Outcome::Run { verb: routed, width, .. } => Some((routed, width)) == verb,
+        Outcome::Run { verb: routed, lints, width, .. } => Some((routed, lints, width)) == verb,
         Outcome::Script(_) => !status && verb.is_none() && staged.is_none() && formatted.is_none(),
         Outcome::Stage(ref staging) =>
             staged.as_ref().is_some_and(|&(ref programs, width)|
@@ -383,15 +391,18 @@ pub fn dispatch(invocation: Invocation) -> Outcome
         | Invocation::Status => Outcome::Status(StatusReport),
         | Invocation::Check {
             goals,
+            lints,
             paths,
             width,
         } => Outcome::Run {
             verb: Verb::Check(goals),
+            lints,
             walk: Walk::new(paths),
             width,
         },
         | Invocation::Test { paths, width } => Outcome::Run {
             verb: Verb::Test,
+            lints: Lints::default(),
             walk: Walk::new(paths),
             width,
         },
@@ -412,10 +423,12 @@ mod tests
     use std::path::PathBuf;
 
     use anodized::spec;
+    use gandr_surface_diagnostics::Lint;
     use quenchant_shape::shape::Maybe;
 
     use super::Goals;
     use super::Invocation;
+    use super::Lints;
     use super::Outcome;
     use super::ScriptRun;
     use super::StatusReport;
@@ -468,27 +481,36 @@ mod tests
         assert!(!rendered.contains(['\n', '\r']));
     }
 
-    /// `check` keeps its goals setting, its width and its paths' order.
+    /// `check` keeps its goals and lints settings, its width and its paths'
+    /// order.
     #[test]
     fn check_routes_to_a_walk_under_the_check_verb()
     {
         let three = Width::Threads(Threads::from(
             core::num::NonZeroUsize::MIN.saturating_add(2),
         ));
-        for (goals, width) in [(Goals::Gated, Width::SERIAL), (Goals::Reported, three)] {
+        for (goals, lints, width) in [
+            (Goals::Gated, Lints::default(), Width::SERIAL),
+            (
+                Goals::Reported,
+                Lints::enabling([Lint::ExplicitExits]),
+                three,
+            ),
+        ] {
             let paths = vec![
                 PathBuf::from("no/such/first.gandr"),
                 PathBuf::from("no/such/second.gandr"),
             ];
             let outcome = dispatch(Invocation::Check {
                 goals,
+                lints,
                 paths,
                 width,
             });
             assert!(
-                matches!(outcome, Outcome::Run { verb: Verb::Check(routed), width: routed_width, .. }
-                    if routed == goals && routed_width == width),
-                "check routes under its own goals setting and width"
+                matches!(outcome, Outcome::Run { verb: Verb::Check(routed), lints: routed_lints, width: routed_width, .. }
+                    if routed == goals && routed_lints == lints && routed_width == width),
+                "check routes under its own goals and lints settings and width"
             );
             assert_eq!(
                 first_fault_path(outcome),

@@ -80,10 +80,12 @@ impl Source for ContentSource<'_>
     /// # Specification
     /// - requires: nothing; any index is admissible.
     /// - ensures: each core former read as its [`Former`], over the same
-    ///   indices; every computation former as [`Former::Computation`]; an
-    ///   unresolved node, a hole, a mark, the unknown type, an empty record,
-    ///   and an index past the table, as [`Former::Unreadable`]. Native data
-    ///   syntax is outside this source adapter's fragment.
+    ///   indices; a return, a bind, a force, an application and a lambda as
+    ///   their own formers, every other computation former as
+    ///   [`Former::Computation`]; an unresolved node, a hole, a mark, the
+    ///   unknown type, an empty record, and an index past the table, as
+    ///   [`Former::Unreadable`]. Native data syntax is outside this source
+    ///   adapter's fragment.
     /// - provides: the printer's input over checkpoint tables.
     /// - fails: never.
     /// - panics: none.
@@ -108,12 +110,9 @@ impl Source for ContentSource<'_>
 (Some(&ContentNode::Reify(_)), Former::Reify) |
 (Some(&ContentNode::DataCase { .. } | &ContentNode::RecordProjection(..) | &ContentNode::TupleProjection(..) |
 &ContentNode::Primitive(..) | &ContentNode::Transport(..) | &ContentNode::ElementTransport { .. } | &ContentNode::TelescopeTransport { .. } |
-&ContentNode::Lambda(_) | &ContentNode::Application(..) |
 &ContentNode::Perform { .. } | &ContentNode::Handle { .. } | &ContentNode::Resume(..) | &ContentNode::Split(..) | &ContentNode::Reset(_) | &ContentNode::Shift(_) | &ContentNode::With(..) | &ContentNode::Project(..) | &ContentNode::ListFold { .. } |
-&ContentNode::Return(_) | &ContentNode::Bind(..) | &ContentNode::Force(_) |
 &ContentNode::Case { .. } | &ContentNode::Fixpoint { .. }), Former::Computation) |
 (Some(&ContentNode::ListNil), Former::ListNil) |
-(Some(&ContentNode::Thunk(_)), Former::Thunk) |
 (Some(&ContentNode::ValueLift { .. }), Former::ValueLift) |
 (Some(&ContentNode::TypeLift { .. }), Former::TypeLift) => true,
         (Some(&ContentNode::Stack { input: a, output: b }), Former::Stack(c, d))
@@ -124,6 +123,8 @@ impl Source for ContentSource<'_>
         | (Some(&ContentNode::PathEquiv { forward: a, backward: b, .. }), Former::PathEquiv(c, d))
         | (Some(&ContentNode::ListCons(a, b)), Former::ListCons(c, d))
         | (Some(&ContentNode::StaticApplication(a, b)), Former::StaticApplication(c, d))
+        | (Some(&ContentNode::Application(a, b)), Former::Application(c, d))
+        | (Some(&ContentNode::Bind(a, b)), Former::Bind(c, d))
         | (Some(&ContentNode::Arrow { domain: a, codomain: b }), Former::Arrow { domain: c, codomain: d })
         | (Some(&ContentNode::Pi { domain: a, codomain: b }), Former::Pi { domain: c, codomain: d })
         | (Some(&ContentNode::StaticPi { domain: a, codomain: b }), Former::StaticPi { domain: c, codomain: d }) => a == c && b == d,
@@ -149,6 +150,10 @@ impl Source for ContentSource<'_>
         | (Some(&ContentNode::ThunkType(a)), Former::ThunkType(b))
         | (Some(&ContentNode::Element { code: a, .. }), Former::Element(b))
         | (Some(&ContentNode::ComputationElement { code: a, .. }), Former::ComputationElement(b))
+        | (Some(&ContentNode::Thunk(a)), Former::Thunk(b))
+        | (Some(&ContentNode::Lambda(a)), Former::Lambda(b))
+        | (Some(&ContentNode::Return(a)), Former::Return(b))
+        | (Some(&ContentNode::Force(a)), Former::Force(b))
         | (Some(&ContentNode::StaticLambda(a)), Former::StaticLambda(b)) => a == b,
         (Some(&ContentNode::Returner { result, ref effects }), Former::Returner(actual)) => result == actual && effects.signatures().len() == 0,
         (Some(&ContentNode::Returner { result, ref effects }), Former::EffectfulReturner { result: actual, .. }) => result == actual && effects.signatures().len() != 0,
@@ -197,14 +202,16 @@ impl Source for ContentSource<'_>
             | ContentNode::Transport(..)
             | ContentNode::ElementTransport { .. }
             | ContentNode::TelescopeTransport { .. }
-            | ContentNode::Lambda(_)
-            | ContentNode::Application(..)
-            | ContentNode::Return(_)
-            | ContentNode::Bind(..)
-            | ContentNode::Force(_)
             | ContentNode::ListFold { .. }
             | ContentNode::Case { .. }
             | ContentNode::Fixpoint { .. } => Former::Computation,
+            | ContentNode::Lambda(body) => Former::Lambda(body),
+            | ContentNode::Application(function, argument) => {
+                Former::Application(function, argument)
+            },
+            | ContentNode::Return(value) => Former::Return(value),
+            | ContentNode::Bind(bound, rest) => Former::Bind(bound, rest),
+            | ContentNode::Force(thunk) => Former::Force(thunk),
             | ContentNode::PathUniverse(source, target) => Former::PathUniverse(source, target),
             | ContentNode::Funext(left, right) => Former::Funext(left, right),
             | ContentNode::Equiv(forward, backward) => Former::Equiv(forward, backward),
@@ -224,7 +231,7 @@ impl Source for ContentSource<'_>
             | ContentNode::Injection(summand, body) => {
                 Former::Injection(Component::from(usize::from(summand)), body)
             },
-            | ContentNode::Thunk(_) => Former::Thunk,
+            | ContentNode::Thunk(body) => Former::Thunk(body),
             | ContentNode::ValueLift { .. } => Former::ValueLift,
             | ContentNode::Quote(quoted) => Former::Quote(quoted),
             | ContentNode::QuoteComputation(quoted) => Former::QuoteComputation(quoted),

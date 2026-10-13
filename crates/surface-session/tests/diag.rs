@@ -11,6 +11,7 @@ use std::path::Path;
 use anodized::spec;
 use gandr_surface_corpus::RefusalName;
 use gandr_surface_corpus::RefusalSpelling;
+use gandr_surface_diagnostics::Identifier;
 use gandr_surface_diagnostics::Severity;
 use gandr_surface_diagnostics::report_span;
 use gandr_surface_dispatcher::Goals;
@@ -205,8 +206,8 @@ fn step<'text>(
 /// - requires: the source submits without an invocation fault through a strict
 ///   session.
 /// - ensures: preserves each named refusal’s identifier and primary span, in
-///   report order, while omitting unnamed goals. Every present span addresses
-///   complete source characters.
+///   report order, while omitting unnamed goals and lint findings. Every
+///   present span addresses complete source characters.
 /// - panics: if submission fails or the strict step emits a fixture ledger
 ///   line.
 ///
@@ -244,8 +245,10 @@ fn located(source: Text<'_>) -> Vec<(RefusalSpelling, Maybe<ByteSpan, report_spa
                 diagnostic.message.text
             );
             match diagnostic.identifier {
-                | Maybe::Present(identifier) => Some((identifier, diagnostic.span)),
-                | Maybe::Absent(_) => None,
+                | Maybe::Present(Identifier::Refusal(spelling)) => {
+                    Some((spelling, diagnostic.span))
+                },
+                | Maybe::Present(Identifier::Lint(_)) | Maybe::Absent(_) => None,
             }
         })
         .collect()

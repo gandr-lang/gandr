@@ -433,6 +433,74 @@ mod cli
     }
 
     #[test]
+    fn a_lint_reports_each_inferred_exit_and_its_fix_settles_it()
+    {
+        let scratch = Scratch::new(Path::new("lint"));
+        let elided = "def kept(n: Integer) -> -F Integer { n }\ndef called(n: Integer) -> -F \
+                      Integer { kept(n) }\n";
+        let source = scratch.file(Path::new("exits.gandr"), Text::from(elided));
+        let check = Path::new("check");
+        let lint = [check, Path::new("--lint"), Path::new("explicit-exits")];
+        let plain = ran(gandr(&[check, &source]));
+        assert_eq!(code(&plain), Code(0_i32), "{}", stdout(&plain));
+        assert_eq!(
+            printed(&plain),
+            "",
+            "the lint is off without an attribute or a flag"
+        );
+
+        let user = ran(gandr(&[lint[0], lint[1], lint[2], &source]));
+        assert_eq!(code(&user), Code(0_i32), "a finding settles nothing");
+        let findings = printed(&user);
+        assert_eq!(
+            findings.matches("warning[explicit-exits]").count(),
+            2_usize,
+            "{findings}"
+        );
+        assert!(findings.contains("{ return n }"), "{findings}");
+        assert!(findings.contains("{ become kept(n) }"), "{findings}");
+
+        let json = ran(gandr(&[
+            lint[0],
+            lint[1],
+            lint[2],
+            Path::new("--verbosity"),
+            Path::new("json"),
+            &source,
+        ]));
+        let fixes: Vec<(usize, usize, String)> = stdout(&json)
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("one JSON object"))
+            .filter(|report| report["level"] == "warning")
+            .map(|report| {
+                assert_eq!(report["name"], "explicit-exits");
+                let fix = &report["fix"];
+                (
+                    usize::try_from(fix["start"].as_u64().expect("a start")).expect("in range"),
+                    usize::try_from(fix["end"].as_u64().expect("an end")).expect("in range"),
+                    fix["replacement"]
+                        .as_str()
+                        .expect("a replacement")
+                        .to_owned(),
+                )
+            })
+            .collect();
+        let mut fixed = String::from(elided);
+        for &(start, end, ref replacement) in fixes.iter().rev() {
+            fixed.replace_range(start .. end, replacement);
+        }
+        assert_eq!(
+            fixed,
+            "def kept(n: Integer) -> -F Integer { return n }\ndef called(n: Integer) -> -F \
+             Integer { become kept(n) }\n"
+        );
+        std::fs::write(&source, &fixed).expect("the fixed source is written");
+        let again = ran(gandr(&[lint[0], lint[1], lint[2], &source]));
+        assert_eq!(code(&again), Code(0_i32), "{}", stdout(&again));
+        assert_eq!(printed(&again), "", "the fixed source has no finding");
+    }
+
+    #[test]
     fn goals_report_an_obligation_without_failing()
     {
         let scratch = Scratch::new(Path::new("goals"));

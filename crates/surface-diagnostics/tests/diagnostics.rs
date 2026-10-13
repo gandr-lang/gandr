@@ -25,6 +25,9 @@ mod diagnostics
     use gandr_surface_diagnostics::Class;
     use gandr_surface_diagnostics::Diagnostic;
     use gandr_surface_diagnostics::Failures;
+    use gandr_surface_diagnostics::Fix;
+    use gandr_surface_diagnostics::Identifier;
+    use gandr_surface_diagnostics::Lint;
     use gandr_surface_diagnostics::Severity;
     use gandr_surface_diagnostics::Subject;
     use gandr_surface_diagnostics::Unsettlement;
@@ -34,6 +37,7 @@ mod diagnostics
     use gandr_surface_diagnostics::report_span;
     use gandr_surface_dispatcher::Composed;
     use gandr_surface_dispatcher::Goals;
+    use gandr_surface_dispatcher::Lints;
     use gandr_surface_dispatcher::LoweringCount;
     use gandr_surface_dispatcher::SourceRoot;
     use gandr_surface_dispatcher::Standing;
@@ -807,6 +811,128 @@ mod diagnostics
             .iter()
             .all(|diagnostic| diagnostic.severity == Severity::Warning),
             "a warning unsettles nothing"
+        );
+    }
+
+    #[test]
+    fn an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword()
+    {
+        let text = "@[ explicit_exits ]\ndef kept(n: Integer) -> -F Integer { n }\ndef called(n: \
+                    Integer) -> -F Integer { kept(n) }\n";
+        let path = Path::new("exits.gandr");
+        let tail = |needle: &str| {
+            let start = text
+                .find(needle)
+                .expect("the tail is written")
+                .saturating_add(2);
+            let end = start.saturating_add(needle.len()).saturating_sub(4);
+            (
+                ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end))
+                    .expect("the tail is ordered"),
+                ByteSpan::new(ByteOffset::from(start), ByteOffset::from(start))
+                    .expect("an insertion is ordered"),
+            )
+        };
+        let (returned, before_returned) = tail("{ n }");
+        let (called, before_called) = tail("{ kept(n) }");
+        let finding = |diagnostic: &Diagnostic| {
+            (
+                diagnostic.severity,
+                diagnostic.detail.class,
+                diagnostic.identifier,
+                diagnostic.span,
+                diagnostic
+                    .annotations
+                    .first()
+                    .map(|primary| primary.label.clone()),
+                diagnostic.fix.clone(),
+            )
+        };
+        let lint = (
+            Severity::Warning,
+            Class::Lint(Lint::ExplicitExits),
+            Maybe::Present(Identifier::Lint(Lint::ExplicitExits)),
+        );
+        let asked = printed(
+            path,
+            SourceRoot::Strict,
+            SourceText::from(text),
+            Verb::Check(Goals::Gated),
+        );
+        assert_eq!(
+            asked.iter().map(finding).collect::<Vec<_>>(),
+            [(
+                lint.0,
+                lint.1,
+                lint.2,
+                Maybe::Present(returned),
+                Some(String::from("exits by an inferred `return`")),
+                Maybe::Present(Fix {
+                    span: before_returned,
+                    replacement: String::from("return "),
+                }),
+            )],
+            "the attribute asks for the exit its declaration's body left out, and nowhere else"
+        );
+        let step = unsettled(path, SourceRoot::Strict, SourceText::from(text));
+        let everywhere: Vec<Diagnostic> = entries(&step, Verb::Check(Goals::Gated))
+            .linting(Lints::enabling([Lint::ExplicitExits]))
+            .collect();
+        assert_eq!(
+            everywhere.iter().map(finding).collect::<Vec<_>>(),
+            [
+                (
+                    lint.0,
+                    lint.1,
+                    lint.2,
+                    Maybe::Present(returned),
+                    Some(String::from("exits by an inferred `return`")),
+                    Maybe::Present(Fix {
+                        span: before_returned,
+                        replacement: String::from("return "),
+                    }),
+                ),
+                (
+                    lint.0,
+                    lint.1,
+                    lint.2,
+                    Maybe::Present(called),
+                    Some(String::from("exits by an inferred `become`")),
+                    Maybe::Present(Fix {
+                        span: before_called,
+                        replacement: String::from("become "),
+                    }),
+                ),
+            ],
+            "the lint enabled by the run finds every elided exit, each in source order"
+        );
+        assert!(
+            entries(&step, Verb::Test)
+                .linting(Lints::enabling([Lint::ExplicitExits]))
+                .all(|diagnostic| diagnostic.severity != Severity::Warning),
+            "`test` prints settlements, never a lint's finding"
+        );
+        let mut fixed = String::from(text);
+        for diagnostic in everywhere.iter().rev() {
+            if let Maybe::Present(ref fix) = diagnostic.fix {
+                fixed.replace_range(
+                    usize::from(fix.span.start()) .. usize::from(fix.span.end()),
+                    &fix.replacement,
+                );
+            }
+        }
+        assert_eq!(
+            fixed,
+            "@[ explicit_exits ]\ndef kept(n: Integer) -> -F Integer { return n }\ndef called(n: \
+             Integer) -> -F Integer { become kept(n) }\n"
+        );
+        let rechecked = unsettled(path, SourceRoot::Strict, SourceText::from(fixed.as_str()));
+        assert_eq!(
+            entries(&rechecked, Verb::Check(Goals::Gated))
+                .linting(Lints::enabling([Lint::ExplicitExits]))
+                .collect::<Vec<_>>(),
+            [],
+            "the fixed source settles and the lint finds nothing in it"
         );
     }
 

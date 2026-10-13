@@ -20,12 +20,13 @@
 //!
 //! The lowering writes five bridges the source did not spell — a force, a
 //! thunk, a returner, a quote and a decode — at checked sites, by the sort of
-//! the position, and two more: the nominal type of a constructor written
-//! without an annotation, and the eliminations a match compiles to. Each
-//! carries the origin of the syntax node whose position demanded it, marked
-//! [`Provenance::Inserted`] with the [`Insertion`] it is, so a printer or a
-//! diagnostic can show the cast a reader did not write, and every node the
-//! source did write is [`Provenance::Written`].
+//! the position, and more: the `return` an exit inferred at a tail over a
+//! value, the nominal type of a constructor written without an annotation,
+//! and the eliminations a match compiles to. Each carries the origin of the
+//! syntax node whose position demanded it, marked [`Provenance::Inserted`]
+//! with the [`Insertion`] it is, so a printer or a diagnostic can show the
+//! cast a reader did not write, and every node the source did write is
+//! [`Provenance::Written`].
 //!
 //! # A match keeps its arms
 //!
@@ -108,15 +109,15 @@ quenchant_shape::reason_enum! {
 
 /// One of the insertions the lowering writes at a checked site.
 ///
-/// The five bridges, the classifier of a constructor written without one,
-/// the eliminations a match compiles to, a recursive function's fixpoint, a
-/// compound endpoint, and the transport a derived identity operation unfolds
-/// to.
+/// The five bridges, the `return` of an inferred exit, the classifier of a
+/// constructor written without one, the eliminations a match compiles to, a
+/// recursive function's fixpoint, a compound endpoint, and the transport a
+/// derived identity operation unfolds to.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the tag distinguishes force, thunk, returner, quote, decode,
-///   classifier, match, fixpoint, endpoint and identity.
+///   return, classifier, match, fixpoint, endpoint and identity.
 /// - provides: the kind of an insertion recorded in an origin.
 /// - fails: not applicable to the tag itself.
 /// - panics: not applicable to the tag itself.
@@ -144,6 +145,9 @@ pub enum Insertion
     /// A decode over a value name standing where a type is read: the type the
     /// code denotes.
     Decode,
+    /// The `return` an exit inferred where a path through a body ends in a
+    /// value: the returner over the value the source wrote there.
+    Return,
     /// The nominal type of a constructor of a family without parameters,
     /// which the source wrote no annotation for.
     Classifier,

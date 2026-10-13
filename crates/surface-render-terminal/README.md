@@ -13,7 +13,7 @@ The terminal face of the diagnostics model: one `Diagnostic` laid out as the loc
 
 ## Synopsis
 
-**What.** `render` writes a `gandr-surface-diagnostics` `Diagnostic` at a `Verbosity` in a `RenderStyle`: the severity, identifier and message on the first line, the path with line and column, the excerpt with each annotation and each located context marked under its bytes, each context as `label; while sentence`, each unlocated context and the note as notes, and the details the verbosity adds. A ledger line renders as `path: line`.
+**What.** `render` writes a `gandr-surface-diagnostics` `Diagnostic` at a `Verbosity` in a `RenderStyle`: the severity, identifier and message on the first line, the path with line and column, the excerpt with each annotation and each located context marked under its bytes, each context as `label; while sentence`, each unlocated context and the note as notes, a fix as a help that shows the patched source, and the details the verbosity adds. A ledger line renders as `path: line`.
 
 **Why.** A projection decides nothing: what a diagnostic says is decided once in the model, so the terminal and the editor cannot disagree. This crate is the only one in the workspace that depends on `annotate-snippets`, and none of its types crosses the API.
 

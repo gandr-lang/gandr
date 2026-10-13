@@ -34,6 +34,8 @@ use gandr_surface_diagnostics::Subject;
 use gandr_surface_diagnostics::Unsettlement;
 use gandr_surface_diagnostics::diagnose;
 use gandr_surface_diagnostics::report_span;
+use gandr_surface_lowering::Explicitness;
+use gandr_surface_lowering::InferredExit;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::OriginTable;
 use gandr_surface_lowering::namespace::ShadowedBuiltin;
@@ -41,6 +43,8 @@ use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
 use crate::compose::Composed;
+use crate::report::Lints;
+use crate::report::Reach;
 use crate::report::Shown;
 use crate::report::Verb;
 use crate::report::shown;
@@ -135,7 +139,8 @@ enum Cursor<'step>
     Last(Last<'step>),
     /// The note on a pending source the lowering read, then its declarations.
     Lowered(Remaining<'step>),
-    /// The shadowing warnings and then the declarations still to visit.
+    /// The shadowing warnings, the lint findings and then the declarations
+    /// still to visit.
     Declarations(Remaining<'step>),
     /// The refusals of a pending source still to print.
     Pending
@@ -162,6 +167,9 @@ struct Remaining<'step>
     /// The builtins the source shadowed, warned of before its declarations;
     /// none under `test`.
     shadowed: slice::Iter<'step, ShadowedBuiltin>,
+    /// The exits the lowering inferred, each a finding where a lint reaches,
+    /// printed after the warnings; none under `test`.
+    inferred: slice::Iter<'step, InferredExit>,
     /// The declarations, in admission order.
     declarations: slice::Iter<'step, DeclarationReport<'step>>,
     /// The table their core nodes are located through.
@@ -182,6 +190,8 @@ pub struct Entries<'step>
     text: SourceText<'step>,
     /// The verb the walk runs under.
     verb: Verb,
+    /// Where each lint reports its findings.
+    lints: Lints,
     /// What remains.
     cursor: Cursor<'step>,
 }
@@ -196,11 +206,13 @@ pub struct Entries<'step>
 ///   ledger lines, and nothing under `check`. A pending source the lowering
 ///   read prints its ledger line, then its declarations as any source does.
 ///   Under `check`, a source the lowering read first prints a warning for each
-///   builtin it shadowed, in the order shadowed; `test` prints none. Each
-///   declaration is printed as [`shown`] decides under `verb`: nothing when it
-///   is counted; a goal when it is a goal; when it has a line, a ledger line if
-///   it settled, a refusal if it produced one, and an unsettled diagnostic
-///   otherwise. Declarations keep admission order.
+///   builtin it shadowed, in the order shadowed, then a finding for each exit
+///   the lowering inferred where an attribute asks for it, in source order
+///   ([`Entries::linting`] widens where a lint reaches); `test` prints none.
+///   Each declaration is printed as [`shown`] decides under `verb`: nothing
+///   when it is counted; a goal when it is a goal; when it has a line, a ledger
+///   line if it settled, a refusal if it produced one, and an unsettled
+///   diagnostic otherwise. Declarations keep admission order.
 /// - provides: the one pass a face prints a step through, so no refusal a step
 ///   carries can reach the walk without reaching a face.
 /// - fails: never.
@@ -215,9 +227,10 @@ pub struct Entries<'step>
 ///   fixtures.
 /// - witness: `entry::tests::each_verb_prints_its_entries`
 /// - witness: `entry::tests::a_shadowed_builtin_is_warned_of_under_check_alone`
+/// - witness: `entry::tests::an_inferred_exit_is_reported_where_a_lint_reaches`
 /// - witness: `entry::tests::counted_declarations_preserve_visible_order_and_exhaustion`
 /// - witness: `entry::tests::faults_and_empty_sources_stay_exhausted`
-#[spec(ensures: |ref ret| ret.verb == verb && match *step {
+#[spec(ensures: |ref ret| ret.verb == verb && ret.lints == Lints::default() && match *step {
     Step::Fault { path, .. } => core::ptr::eq(core::ptr::from_ref(ret.path), core::ptr::from_ref(path))
         && ret.text.as_ref().is_empty() && matches!(ret.cursor, Cursor::Done),
     Step::Source { path, text, .. } => core::ptr::eq(core::ptr::from_ref(ret.path), core::ptr::from_ref(path)) && core::ptr::eq(core::ptr::from_ref(ret.text.as_ref()), core::ptr::from_ref(text.as_ref())),
@@ -243,6 +256,7 @@ pub fn entries<'step>(
         path,
         text,
         verb,
+        lints: Lints::default(),
         cursor,
     }
 }
@@ -254,8 +268,9 @@ pub fn entries<'step>(
 /// - ensures: pending refusals are ledger lines only under test; other
 ///   whole-source refusals are refusals. A lowered source starts with its
 ///   ledger line; other settled compositions start at their declarations, after
-///   their shadowing warnings under `check`. Borrowed declaration, warning and
-///   refusal slices retain their complete order.
+///   their shadowing warnings and inferred exits under `check`. Borrowed
+///   declaration, warning, inferred-exit and refusal slices retain their
+///   complete order.
 /// - provides: the first state of a lazy entry traversal.
 /// - fails: never.
 /// - panics: none.
@@ -279,15 +294,16 @@ pub fn entries<'step>(
     },
     (Standing::Settled | Standing::Unsettled | Standing::Refused | Standing::Lowered,
         &Composed::Refused(expected), &Cursor::Last(Last::Source(refusal))) => refusal == expected,
-    (Standing::Lowered, &Composed::Settled { ref report, ref origins, ref spellings, ref failures, ref shadowed, .. },
+    (Standing::Lowered, &Composed::Settled { ref report, ref origins, ref spellings, ref failures, ref shadowed, ref inferred, .. },
         &Cursor::Lowered(ref held))
     | (Standing::Settled | Standing::Unsettled | Standing::Refused,
-        &Composed::Settled { ref report, ref origins, ref spellings, ref failures, ref shadowed, .. },
+        &Composed::Settled { ref report, ref origins, ref spellings, ref failures, ref shadowed, ref inferred, .. },
         &Cursor::Declarations(ref held)) =>
         core::ptr::eq(core::ptr::from_ref(held.declarations.as_slice()), core::ptr::from_ref(report.declarations()))
             && match verb {
-                Verb::Check(_) => core::ptr::eq(core::ptr::from_ref(held.shadowed.as_slice()), core::ptr::from_ref(shadowed.as_slice())),
-                Verb::Test => held.shadowed.as_slice().is_empty(),
+                Verb::Check(_) => core::ptr::eq(core::ptr::from_ref(held.shadowed.as_slice()), core::ptr::from_ref(shadowed.as_slice()))
+                    && core::ptr::eq(core::ptr::from_ref(held.inferred.as_slice()), core::ptr::from_ref(inferred.as_slice())),
+                Verb::Test => held.shadowed.as_slice().is_empty() && held.inferred.as_slice().is_empty(),
             }
             && core::ptr::eq(core::ptr::from_ref(held.origins), core::ptr::from_ref(origins))
             && core::ptr::eq(core::ptr::from_ref(held.spellings), core::ptr::from_ref(spellings))
@@ -326,11 +342,13 @@ fn cursor<'step>(
                 ref spellings,
                 ref failures,
                 ref shadowed,
+                ref inferred,
                 ..
             },
         ) => {
             let held = Remaining {
                 shadowed: warned(verb, shadowed),
+                inferred: considered(verb, inferred),
                 declarations: report.declarations().iter(),
                 origins,
                 spellings,
@@ -362,6 +380,22 @@ fn warned(
     }
 }
 
+/// The inferred exits `verb` considers of `inferred`: every one under
+/// `check`, none under `test`, whose ledger records settlements alone.
+///
+/// # Specification
+/// trivial.
+fn considered(
+    verb: Verb,
+    inferred: &[InferredExit],
+) -> slice::Iter<'_, InferredExit>
+{
+    match verb {
+        | Verb::Check(_) => inferred.iter(),
+        | Verb::Test => [].iter(),
+    }
+}
+
 /// What a declaration's diagnostic is about, when its verb prints it.
 #[derive(Clone, Copy, Debug)]
 enum Printed<'step>
@@ -374,6 +408,33 @@ enum Printed<'step>
 
 impl<'step> Entries<'step>
 {
+    /// These entries, each lint reaching where `lints` says.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the same entries, printing each lint's findings where `lints`
+    ///   reaches, attribute or not; [`entries`] reaches only the forms an
+    ///   attribute enables a lint on.
+    /// - provides: the driver's `--lint` flags, read where a step is printed.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an asked and an unasked inferred exit, under the
+    ///   default and under `explicit-exits` enabled, each printed or not.
+    /// - witness: `entry::tests::an_inferred_exit_is_reported_where_a_lint_reaches`
+    #[spec(ensures: |ref ret| ret.lints == lints)]
+    #[inline]
+    #[must_use]
+    pub fn linting(
+        mut self,
+        lints: Lints,
+    ) -> Self
+    {
+        self.lints = lints;
+        self
+    }
+
     /// What `declaration` prints, when its verb prints it.
     ///
     /// # Specification
@@ -484,7 +545,8 @@ impl Iterator for Entries<'_>
     ///   ending the traversal. Exhaustion remains exhausted on every subsequent
     ///   call.
     /// - provides: declaration order, preceded by a lowered-source ledger line
-    ///   when present; pending refusals retain their source order.
+    ///   when present and by the source's warnings and lint findings; pending
+    ///   refusals retain their source order.
     /// - fails: never; exhaustion is None.
     /// - panics: none.
     ///
@@ -497,20 +559,21 @@ impl Iterator for Entries<'_>
     /// - witness: `entry::tests::each_verb_prints_its_entries`
     /// - witness: `entry::tests::counted_declarations_preserve_visible_order_and_exhaustion`
     /// - witness: `entry::tests::faults_and_empty_sources_stay_exhausted`
+    /// - witness: `entry::tests::an_inferred_exit_is_reported_where_a_lint_reaches`
     #[spec(
         captures: [before = match self.cursor {
             Cursor::Done => 0_usize,
             Cursor::Last(_) => 1_usize,
-            Cursor::Lowered(ref held) => held.shadowed.len().saturating_add(held.declarations.len()).saturating_add(1_usize),
-            Cursor::Declarations(ref held) => held.shadowed.len().saturating_add(held.declarations.len()),
+            Cursor::Lowered(ref held) => held.shadowed.len().saturating_add(held.inferred.len()).saturating_add(held.declarations.len()).saturating_add(1_usize),
+            Cursor::Declarations(ref held) => held.shadowed.len().saturating_add(held.inferred.len()).saturating_add(held.declarations.len()),
             Cursor::Pending { ref unstatable } => unstatable.len(),
         }],
         ensures: |ref ret| {
             let remaining = match self.cursor {
                 Cursor::Done => 0_usize,
                 Cursor::Last(_) => 1_usize,
-                Cursor::Lowered(ref held) => held.shadowed.len().saturating_add(held.declarations.len()).saturating_add(1_usize),
-                Cursor::Declarations(ref held) => held.shadowed.len().saturating_add(held.declarations.len()),
+                Cursor::Lowered(ref held) => held.shadowed.len().saturating_add(held.inferred.len()).saturating_add(held.declarations.len()).saturating_add(1_usize),
+                Cursor::Declarations(ref held) => held.shadowed.len().saturating_add(held.inferred.len()).saturating_add(held.declarations.len()),
                 Cursor::Pending { ref unstatable } => unstatable.len(),
             };
             ret.as_ref().map_or(remaining == 0_usize, |diagnostic| remaining < before && diagnostic.path.as_path() == self.path)
@@ -541,6 +604,18 @@ impl Iterator for Entries<'_>
                     self.cursor = Cursor::Declarations(held);
                     return Some(diagnose(self.path, self.text, Subject::Shadowed(warned)));
                 }
+                while let Some(inferred) = held.inferred.next() {
+                    if inferred.explicitness == Explicitness::Asked
+                        || self.lints.explicit_exits() == Reach::Everywhere
+                    {
+                        self.cursor = Cursor::Declarations(held);
+                        return Some(diagnose(
+                            self.path,
+                            self.text,
+                            Subject::InferredExit(inferred),
+                        ));
+                    }
+                }
                 while let Some(declaration) = held.declarations.next() {
                     if let Maybe::Present(printed) = self.declaration(declaration, &held) {
                         let diagnostic = self.build(printed);
@@ -562,6 +637,7 @@ mod tests
     use std::path::PathBuf;
 
     use gandr_surface_diagnostics::Class;
+    use gandr_surface_diagnostics::Lint;
     use gandr_surface_diagnostics::Severity;
     use gandr_surface_grammar::built_in;
     use gandr_surface_syntax::ByteOffset;
@@ -571,6 +647,7 @@ mod tests
 
     use super::entries;
     use crate::Goals;
+    use crate::Lints;
     use crate::LoweringCount;
     use crate::SourceRoot;
     use crate::Standing;
@@ -718,6 +795,71 @@ mod tests
             )
         )]);
         assert!(entries(&shadowing, Verb::Test).next().is_none());
+    }
+
+    #[test]
+    fn an_inferred_exit_is_reported_where_a_lint_reaches()
+    {
+        let grammar = built_in().expect("the grammar builds");
+        let text = SourceText::from(
+            "def add : Integer ;\ndef add = 1 ;\n@[ explicit_exits ]\ndef asked(n: Integer) -> -F \
+             Integer { n }\ndef unasked(n: Integer) -> -F Integer { n }\n",
+        );
+        let at = |start: usize| {
+            Maybe::Present(
+                ByteSpan::new(
+                    ByteOffset::from(start),
+                    ByteOffset::from(start.saturating_add(1_usize)),
+                )
+                .expect("ordered"),
+            )
+        };
+        let shadowed = Maybe::Present(
+            ByteSpan::new(ByteOffset::from(4_usize), ByteOffset::from(7_usize)).expect("ordered"),
+        );
+        let asked = at(text
+            .as_ref()
+            .find("{ n }")
+            .expect("asked")
+            .saturating_add(2_usize));
+        let unasked = at(text
+            .as_ref()
+            .rfind("{ n }")
+            .expect("unasked")
+            .saturating_add(2_usize));
+        let finding = |diagnostic: gandr_surface_diagnostics::Diagnostic| {
+            (diagnostic.detail.class, diagnostic.span)
+        };
+        let lint = Class::Lint(Lint::ExplicitExits);
+        let source = step(
+            Path::new("exits.gandr"),
+            SourceRoot::Strict,
+            text,
+            Standing::Settled,
+            &grammar,
+        );
+        assert_eq!(
+            entries(&source, Verb::Check(Goals::Gated))
+                .map(finding)
+                .collect::<Vec<_>>(),
+            [(Class::Warning, shadowed), (lint, asked)],
+            "by default a lint reaches the forms its attribute marks, after the warnings"
+        );
+        assert_eq!(
+            entries(&source, Verb::Check(Goals::Reported))
+                .linting(Lints::enabling([Lint::ExplicitExits]))
+                .map(finding)
+                .collect::<Vec<_>>(),
+            [(Class::Warning, shadowed), (lint, asked), (lint, unasked)],
+            "a lint the run enables reaches every inferred exit, in source order"
+        );
+        assert!(
+            entries(&source, Verb::Test)
+                .linting(Lints::enabling([Lint::ExplicitExits]))
+                .next()
+                .is_none(),
+            "`test` prints settlements alone"
+        );
     }
 
     #[test]

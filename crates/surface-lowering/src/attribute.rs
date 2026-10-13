@@ -41,18 +41,22 @@
 //!
 //! # Attributes: a closed registry and a side table
 //!
-//! The registry is closed: `checks` takes no payload, `owes` an integer,
-//! `refuses`, `runs` and `doc` a text. Five diagnostics cover what an attribute
-//! can get wrong, checked in this order: an unknown name, with the registered
-//! name within edit distance two when one exists; the same attribute written
-//! twice for one declared name, naming the first; a payload that is not a value
-//! at all, decided before the schema is consulted because being no value is a
-//! different fact from being the wrong one; a missing payload; and a payload of
-//! a form the schema does not admit, a payload on a marker included. A payload
-//! is read as a value under no binder, and the schema types it at the literal:
-//! an integer or a text. A well-formed `doc` entry never reaches the registry,
-//! because the parser reads it as documentation (the `doc` module); `doc` is
-//! registered so that a malformed one meets the payload diagnostics.
+//! The registry is closed: `checks` and `explicit_exits` take no payload,
+//! `owes` an integer, `refuses`, `runs` and `doc` a text. Five diagnostics
+//! cover what an attribute can get wrong, checked in this order: an unknown
+//! name, with the registered name within edit distance two when one exists;
+//! the same attribute written twice for one declared name, naming the first;
+//! a payload that is not a value at all, decided before the schema is
+//! consulted because being no value is a different fact from being the wrong
+//! one; a missing payload; and a payload of a form the schema does not admit,
+//! a payload on a marker included. A payload is read as a value under no
+//! binder, and the schema types it at the literal: an integer or a text. A
+//! well-formed `doc` entry never reaches the registry, because the parser
+//! reads it as documentation (the `doc` module); `doc` is registered so that a
+//! malformed one meets the payload diagnostics. `explicit_exits` is read by
+//! the lowering, which marks every exit it inferred under the declaration or
+//! module the attribute decorates as asked for; a module takes attributes as a
+//! declaration does, and the lowering files them under the module's key.
 //!
 //! Executable predicates preserve the registry inventory, exact lookup, the
 //! payload decision table, distance bounds and the borrowed identity of a filed
@@ -165,6 +169,14 @@ const SUGGESTION_BOUND: EditDistance = EditDistance(2_usize);
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RegisteredAttribute(&'static str);
+
+impl RegisteredAttribute
+{
+    /// `explicit_exits`: the declaration, or every member of the module, it
+    /// decorates asks for every exit to be written, so the `explicit-exits`
+    /// lint reports each exit the lowering inferred there.
+    pub const EXPLICIT_EXITS: Self = Self("explicit_exits");
+}
 
 impl AsRef<str> for RegisteredAttribute
 {
@@ -344,12 +356,16 @@ pub struct AttributeRegistry;
 ///   suggestions select the earlier eligible row.
 /// - witness: `attribute::tests::every_registered_attribute_answers_its_schema`
 /// - witness: `attribute::tests::suggestions_include_the_bound_and_break_ties_by_registry_order`
-const REGISTRY: [(&str, AttributeSchema); 5_usize] = [
+const REGISTRY: [(&str, AttributeSchema); 6_usize] = [
     ("checks", AttributeSchema::Marker),
     ("owes", AttributeSchema::Integer),
     ("refuses", AttributeSchema::Text),
     ("runs", AttributeSchema::Text),
     ("doc", AttributeSchema::Text),
+    (
+        RegisteredAttribute::EXPLICIT_EXITS.0,
+        AttributeSchema::Marker,
+    ),
 ];
 
 impl AttributeRegistry
@@ -1059,6 +1075,7 @@ mod tests
             ("refuses", AttributeSchema::Text),
             ("runs", AttributeSchema::Text),
             ("doc", AttributeSchema::Text),
+            ("explicit_exits", AttributeSchema::Marker),
         ];
 
         for (spelling, schema) in expected {
@@ -1106,6 +1123,7 @@ mod tests
             ("refuse", "refuses"),
             ("run", "runs"),
             ("docs", "doc"),
+            ("explicit_exit", "explicit_exits"),
         ];
 
         for (written, nearest) in expected {

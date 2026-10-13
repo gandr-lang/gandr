@@ -175,7 +175,6 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         | LoweringRefusal::LowercaseModuleName { .. } => "a lowercase initial",
         | LoweringRefusal::NonExhaustiveMatch { .. } => "some value matches no arm",
         | LoweringRefusal::UnmarkedSelfReference { .. } => "recursion without a claim",
-        | LoweringRefusal::MissingExit { .. } => "the body ends here without an exit",
         | LoweringRefusal::Unreachable { .. } => "no path reaches this",
         | LoweringRefusal::WithoutK { .. } => "a path matched against reflexivity",
         | LoweringRefusal::BudgetExceeded { .. } => "the lowering's allowance ran out",

@@ -11,9 +11,9 @@
 //! pressure the same document breaks, a continuation indented two columns.
 //!
 //! Before the walk builds anything, a scan over the same nodes collects the
-//! names the term spells, so a dependent arrow's generated binder never reads
-//! as a constant or an abstract type the term mentions. Both passes bound
-//! their scheduled visits, including when the source changes between passes.
+//! names the term spells, so a generated binder never reads as a constant or
+//! an abstract type the term mentions. Both passes bound their scheduled
+//! visits, including when the source changes between passes.
 //!
 //! # Products, sums and tuples are written between their braces
 //!
@@ -109,14 +109,31 @@
 //! when a wider computation width improves a presentation at an acceptable
 //! cost.
 //!
+//! # A body's statements break together
+//!
+//! A body's statements, `run x <- c ; rest`, are separated by soft lines that
+//! break with the group around them rather than one choice each: the whole
+//! body, and the body of each lambda, thunk and block `{ … }` within it, is a
+//! group, on one line when it fits and one statement per line otherwise, a
+//! block's statements two columns in and its closer on a line of its own.
+//!
+//! - **Alternatives.** Independent choices, as at the break points above, would
+//!   leave some statements of one body joined and others split, which no
+//!   formatted source writes.
+//! - **Reversal.** A ruled layout for bodies that joins short statements; the
+//!   walk then builds choices per statement and the goldens move with it.
+//!
 //! # Binder names
 //!
-//! The core is nameless, so a dependent arrow's binder and a static
-//! abstraction's are generated: `a` through `z`, then `a1`, `b1`, and so on,
-//! the outermost binder first, skipping every constant or abstract-type name
-//! encountered by the scan. A new binder is refused when the candidate counter
-//! cannot advance; cached names remain available. Name avoidance refers to the
-//! scanned view, not an atomic snapshot of a changing source.
+//! The core is nameless, so the binders of dependent arrows, static
+//! abstractions, lambdas and binds are generated: `a` through `z`, then `a1`,
+//! `b1`, and so on, the outermost binder first, skipping every constant or
+//! abstract-type name encountered by the scan. Two binders whose scopes do not
+//! nest, such as a bind inside the computation another bind runs and that
+//! other bind's own, take the same name. A new binder is refused when the
+//! candidate counter cannot advance; cached names remain available. Name
+//! avoidance refers to the scanned view, not an atomic snapshot of a changing
+//! source.
 //!
 //! - **Alternatives.** Printing a de Bruijn index reads as nothing the surface
 //!   parses; reusing a mentioned name would make the codomain ambiguous.
@@ -220,7 +237,7 @@ struct Glyphs<'text>(&'text str);
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Spelled(String);
 
-/// A name generated for a dependent arrow's binder.
+/// A name generated for a binder the core leaves nameless.
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct BinderName(String);
@@ -230,9 +247,9 @@ struct BinderName(String);
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct Ordinal(u32);
 
-/// How many binders — of dependent arrows and of static abstractions — are
-/// open at a point of the walk; read as a position, the binder that many
-/// binders in.
+/// How many binders — of dependent arrows, static abstractions, lambdas and
+/// binds — are open at a point of the walk; read as a position, the binder
+/// that many binders in.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct OpenBinders(usize);
@@ -264,8 +281,8 @@ enum Kind
 /// - requires: nothing.
 /// - ensures: the value-type formers answer [`Kind::ValueType`], the
 ///   computation-type formers [`Kind::CompType`], the value formers
-///   [`Kind::Value`], a computation [`Kind::Computation`], and an unreadable
-///   handle [`Kind::Unknown`].
+///   [`Kind::Value`], the computation formers [`Kind::Computation`], and an
+///   unreadable handle [`Kind::Unknown`].
 /// - provides: the check that a node fills the position it stands in.
 /// - fails: never.
 /// - panics: none.
@@ -286,11 +303,12 @@ enum Kind
     | Kind::CompType => matches!(*former, Former::Returner(_) | Former::EffectfulReturner { .. } | Former::Arrow { .. }
         | Former::With(..) | Former::Pi { .. } | Former::ComputationElement(_)),
     | Kind::Value => matches!(*former, Former::Variable { .. } | Former::Constant(_) | Former::Unit
-        | Former::Literal(_) | Former::Tuple(_) | Former::Record(_) | Former::Injection(..) | Former::Thunk | Former::ValueLift
+        | Former::Literal(_) | Former::Tuple(_) | Former::Record(_) | Former::Injection(..) | Former::Thunk(_) | Former::ValueLift
         | Former::Reify | Former::ListNil | Former::ListCons(..)
         | Former::Quote(_) | Former::QuoteComputation(_) | Former::StaticLambda(_) | Former::StaticApplication(..)
         | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_) | Former::Funext(..) | Former::Equiv(..)),
-    | Kind::Computation => matches!(*former, Former::Computation),
+    | Kind::Computation => matches!(*former, Former::Return(_) | Former::Bind(..) | Former::Force(_)
+        | Former::Application(..) | Former::Lambda(_) | Former::Computation),
     | Kind::Unknown => matches!(*former, Former::Unreadable),
 })]
 const fn kind<Node>(former: &Former<'_, Node>) -> Kind
@@ -327,7 +345,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::ListNil
         | Former::ListCons(..)
         | Former::Injection(..)
-        | Former::Thunk
+        | Former::Thunk(_)
         | Former::Reify
         | Former::ValueLift
         | Former::Quote(_)
@@ -337,6 +355,11 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Here(_)
         | Former::Funext(..)
         | Former::Equiv(..) => Kind::Value,
+        | Former::Return(_)
+        | Former::Bind(..)
+        | Former::Force(_)
+        | Former::Application(..)
+        | Former::Lambda(_)
         | Former::Computation => Kind::Computation,
         | Former::Unreadable => Kind::Unknown,
     }
@@ -354,6 +377,52 @@ pub enum Admits
     CompType,
     /// A value.
     Value,
+    /// A computation, where a path through a body ends or where it goes on.
+    Computation(Tail),
+}
+
+/// Whether a path through a body ends at a computation's position.
+///
+/// A returner where a path ends is written as its value and every other
+/// computation there bare, the exit the lowering infers left out; anywhere
+/// else a returner is `pure v`, since a written `return` there would leave
+/// the body.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Tail
+{
+    /// The body ends here: a definition's body, the rest of a bind there, a
+    /// lambda's or a thunk's body.
+    Ends,
+    /// The body goes on: the computation a bind runs, the function a call
+    /// applies.
+    Continues,
+}
+
+/// Whether a thunk's body is spelled or the thunk written opaque.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Bodies
+{
+    /// `<thunk>`: a value presented alone is a normal form, whose thunks are
+    /// closures a reader does not read.
+    Opaque,
+    /// `thunk { c }`: a computation presented is a body a reader reads.
+    Spelled,
+}
+
+impl Bodies
+{
+    /// How a presentation rooted at a position admitting `admits` writes its
+    /// thunks.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn of(admits: Admits) -> Self
+    {
+        match admits {
+            | Admits::Computation(_) => Self::Spelled,
+            | Admits::Type | Admits::ValueType | Admits::CompType | Admits::Value => Self::Opaque,
+        }
+    }
 }
 
 /// How the walk treats a node it reaches.
@@ -393,7 +462,7 @@ enum Reach
     let admitted = matches!((admits, kind), (_, Kind::Unknown)
         | (Admits::Type, Kind::ValueType | Kind::CompType)
         | (Admits::ValueType, Kind::ValueType) | (Admits::CompType, Kind::CompType)
-        | (Admits::Value, Kind::Value));
+        | (Admits::Value, Kind::Value) | (Admits::Computation(_), Kind::Computation));
     (ret == Reach::Deep) == deep && (ret == Reach::Spell) == (!deep && admitted)
         && (ret == Reach::Misplaced) == (!deep && !admitted)
 })]
@@ -411,11 +480,15 @@ fn reach(
         | (Admits::Type, Kind::ValueType | Kind::CompType)
         | (Admits::ValueType, Kind::ValueType)
         | (Admits::CompType, Kind::CompType)
-        | (Admits::Value, Kind::Value) => Reach::Spell,
+        | (Admits::Value, Kind::Value)
+        | (Admits::Computation(_), Kind::Computation) => Reach::Spell,
         | (Admits::Type, Kind::Value | Kind::Computation)
         | (Admits::ValueType, Kind::CompType | Kind::Value | Kind::Computation)
         | (Admits::CompType, Kind::ValueType | Kind::Value | Kind::Computation)
-        | (Admits::Value, Kind::ValueType | Kind::CompType | Kind::Computation) => Reach::Misplaced,
+        | (Admits::Value, Kind::ValueType | Kind::CompType | Kind::Computation)
+        | (Admits::Computation(_), Kind::ValueType | Kind::CompType | Kind::Value) => {
+            Reach::Misplaced
+        },
     }
 }
 
@@ -455,7 +528,9 @@ enum Children<Node>
     },
 }
 
-/// The children `former` reads, each with what its position admits.
+/// The children `former` reads, each with what its position admits, in a
+/// position admitting `admits` of a presentation writing its thunks as
+/// `bodies` says.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -469,7 +544,12 @@ enum Children<Node>
 ///   admit value types, the arrows' codomains computation types; a decode's
 ///   code, an injection's body, a static abstraction's body and a static
 ///   application's operator and argument admit values; native path endpoints,
-///   maps and component paths admit values; every other former is a leaf.
+///   maps and component paths admit values; a return's and a force's operand
+///   and an application's argument admit values; the computation a bind runs
+///   and the function an application applies admit computations where the body
+///   goes on, the rest of a bind what its own position admits; a lambda's body,
+///   and a thunk's when bodies are spelled, admit computations where the body
+///   ends; every other former, an opaque thunk among them, is a leaf.
 /// - provides: the one table of child positions the scan and the walk share.
 /// - fails: never.
 /// - panics: none.
@@ -484,6 +564,7 @@ enum Children<Node>
 /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
 /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
 /// - witness: `goldens::tests::native_paths_preserve_ordered_endpoints_and_maps`
+/// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
 #[spec(ensures: |ret| match *former {
     | Former::Stack(..) | Former::With(..) => matches!(ret,
         Children::Two(Slot { admits: Admits::CompType, .. }, Slot { admits: Admits::CompType, .. })),
@@ -509,13 +590,25 @@ enum Children<Node>
         Children::One(Slot { admits: Admits::CompType, .. })),
     | Former::List(_) | Former::Returner(_) | Former::EffectfulReturner { .. } | Former::Quote(_) => matches!(ret,
         Children::One(Slot { admits: Admits::ValueType, .. })),
-    | Former::PathRefl(_) | Former::Here(_) | Former::Element(_) | Former::ComputationElement(_) | Former::Injection(..) | Former::StaticLambda(_) => matches!(ret,
+    | Former::PathRefl(_) | Former::Here(_) | Former::Element(_) | Former::ComputationElement(_) | Former::Injection(..) | Former::StaticLambda(_)
+        | Former::Return(_) | Former::Force(_) => matches!(ret,
         Children::One(Slot { admits: Admits::Value, .. })),
+    | Former::Bind(..) => matches!(ret,
+        Children::Two(Slot { admits: Admits::Computation(Tail::Continues), .. }, Slot { admits: rest, .. }) if rest == admits),
+    | Former::Application(..) => matches!(ret,
+        Children::Two(Slot { admits: Admits::Computation(Tail::Continues), .. }, Slot { admits: Admits::Value, .. })),
+    | Former::Lambda(_) => matches!(ret, Children::One(Slot { admits: Admits::Computation(Tail::Ends), .. })),
+    | Former::Thunk(_) => match bodies {
+        Bodies::Spelled => matches!(ret, Children::One(Slot { admits: Admits::Computation(Tail::Ends), .. })),
+        Bodies::Opaque => matches!(ret, Children::None),
+    },
     | _ => matches!(ret, Children::None),
 })]
 fn children<Node>(
     node: Node,
     former: &Former<'_, Node>,
+    admits: Admits,
+    bodies: Bodies,
 ) -> Children<Node>
 where
     Node: Copy,
@@ -575,7 +668,22 @@ where
         | Former::ComputationElement(child)
         | Former::Injection(_, child)
         | Former::StaticLambda(child)
-        | Former::Here(child) => Children::One(slot(child, Admits::Value)),
+        | Former::Here(child)
+        | Former::Return(child)
+        | Former::Force(child) => Children::One(slot(child, Admits::Value)),
+        | Former::Bind(bound, rest) => Children::Two(
+            slot(bound, Admits::Computation(Tail::Continues)),
+            slot(rest, admits),
+        ),
+        | Former::Application(function, argument) => Children::Two(
+            slot(function, Admits::Computation(Tail::Continues)),
+            slot(argument, Admits::Value),
+        ),
+        | Former::Lambda(body) => Children::One(slot(body, Admits::Computation(Tail::Ends))),
+        | Former::Thunk(body) => match bodies {
+            | Bodies::Spelled => Children::One(slot(body, Admits::Computation(Tail::Ends))),
+            | Bodies::Opaque => Children::None,
+        },
         | Former::BaseType(_)
         | Former::Universe { .. }
         | Former::TypeLift
@@ -585,7 +693,6 @@ where
         | Former::Unit
         | Former::ListNil
         | Former::Literal(_)
-        | Former::Thunk
         | Former::Reify
         | Former::ValueLift
         | Former::Computation
@@ -627,18 +734,22 @@ fn below(
 ///
 /// A piece stands bare in a slot that admits its binding and is parenthesized
 /// in one that admits only tighter pieces. The order is the grammar's: an
-/// atom, then the bridges, then `->`. Every arity-shaped former is an atom,
-/// its entries between its own delimiters.
+/// atom, then the bridges and the keyword-led computations, then `->`, then a
+/// bind's statements. Every arity-shaped former is an atom, its entries
+/// between its own delimiters.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Binding
 {
-    /// A name, a literal, a universe, a bracketed or braced form.
+    /// A name, a literal, a universe, a bracketed or braced form, a call.
     Atom,
-    /// `+U C` or `-F A`.
+    /// `+U C`, `-F A`, `pure v`, `force v`, `fn (x) { c }` or `thunk { c }`.
     Prefix,
     /// `A -> C`, `(x : A) -> C`, or the static abstraction `\a. v`, whose
     /// body runs as far right as an arrow's codomain.
     Arrow,
+    /// `run x <- c ; rest`, whose rest runs to the end of the block it stands
+    /// in; anywhere else it is a block of its own, `{ … }`.
+    Sequence,
 }
 
 /// One finished document and how it binds.
@@ -651,7 +762,7 @@ struct Piece
     binding: Binding,
 }
 
-/// The two bridges between the sorts.
+/// The bridges between the sorts, and the keywords that lead a computation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Prefix
 {
@@ -659,6 +770,10 @@ enum Prefix
     Thunk,
     /// The returner `-F A`.
     Returner,
+    /// A returner where the body goes on, `pure v`.
+    Pure,
+    /// A force, `force v`.
+    Force,
 }
 
 /// The delimiters of the arity-shaped formers, one per polarity of the
@@ -797,9 +912,16 @@ enum Join
     /// A static abstraction over its body, its binder named as a dependent
     /// arrow's is.
     StaticLambda,
-    /// An operator applied to this many arguments, the spine of static
-    /// applications it was written as.
+    /// An operator applied to this many arguments: the spine of static
+    /// applications it was written as, or of a call.
     Apply(Arity),
+    /// A bind over the computation it runs and the rest, its binder named as
+    /// a dependent arrow's is.
+    Sequence,
+    /// A lambda over its body, its binder named as a dependent arrow's is.
+    Lambda,
+    /// A thunk over its body.
+    Thunk,
     /// A bracketed value former over its items.
     Bracket(Bracket),
 }
@@ -818,8 +940,8 @@ enum Task<Node>
         /// How many value formers enclose the node.
         depth: ValueDepth,
     },
-    /// Open the binder of the dependent arrow or static abstraction whose
-    /// body follows.
+    /// Open the binder of the dependent arrow, static abstraction, bind or
+    /// lambda whose body follows.
     Bind,
     /// Close that binder.
     Unbind,
@@ -855,7 +977,7 @@ pub enum Walked
     OverBudget,
 }
 
-/// The names dependent arrows' binders take, by position.
+/// The names generated binders take, by position.
 ///
 /// The names are `a`, `b`, …, `z`, then `a1`, `b1`, …, skipping every name a
 /// node of the term already spells, so a binder never reads as a constant or
@@ -892,8 +1014,8 @@ impl<'names> Binders<'names>
     /// - requires: nothing.
     /// - ensures: cached positions borrow their stored names; distinct
     ///   positions answer distinct names; no answer is a mentioned name.
-    /// - provides: the binder of a dependent arrow and the occurrences that
-    ///   name it.
+    /// - provides: the binder of a dependent arrow, a static abstraction, a
+    ///   lambda or a bind, and the occurrences that name it.
     /// - fails: [`binder::Absent::Exhausted`] when the candidate counter cannot
     ///   advance, before issuing its maximum ordinal; cached names still
     ///   resolve.
@@ -1028,6 +1150,7 @@ fn mentioned<S>(
 where
     S: Source + ?Sized,
 {
+    let bodies = Bodies::of(admits);
     let mut names = BTreeSet::new();
     let mut pending = Vec::from([(root, admits, ValueDepth::ROOT)]);
     let mut visits = 0_u32;
@@ -1045,7 +1168,7 @@ where
             let _fresh = names.insert(name);
         }
         let below = below(depth, kind);
-        match children(node, &former) {
+        match children(node, &former, admits, bodies) {
             | Children::None => {},
             | Children::Components {
                 of,
@@ -1215,10 +1338,13 @@ struct Walk<'walk, 'meter, 'names>
     pieces: Vec<Piece>,
     /// The binder names by position.
     binders: Binders<'names>,
-    /// How many dependent arrows' binders are open.
+    /// How many binders — of dependent arrows, static abstractions, binds and
+    /// lambdas — are open.
     open: OpenBinders,
     /// Whether every node so far was spelled in full.
     fidelity: Fidelity,
+    /// How the presentation writes its thunks.
+    bodies: Bodies,
 }
 
 impl Walk<'_, '_, '_>
@@ -1450,9 +1576,9 @@ impl Walk<'_, '_, '_>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the name of the binder `index` dependent arrows out from the
+    /// - ensures: the name of the binder `index` binders out from the
     ///   occurrence; `?`, approximate, when fewer binders are open.
-    /// - provides: the spelling of a bound type variable.
+    /// - provides: the spelling of a bound variable.
     /// - fails: as [`Self::leaf`].
     /// - panics: none.
     ///
@@ -1466,6 +1592,7 @@ impl Walk<'_, '_, '_>
     /// - witness: `goldens::tests::long_dependent_function_type_breaks_at_the_narrow_page`
     /// - witness: `goldens::tests::a_binder_skips_the_names_the_type_mentions`
     /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
+    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
     #[spec(
         captures: [entry = self.pieces.len(), fidelity = self.fidelity],
         ensures: |ref ret| ((fidelity != Fidelity::Approximate && index.0 < self.open.0)
@@ -1651,6 +1778,93 @@ impl Walk<'_, '_, '_>
         Ok(self.builder.concat(head, choice)?)
     }
 
+    /// `head`, `body` and a closing brace, as one group: on one line, a space
+    /// inside each brace, or `body` on its own lines two columns in and the
+    /// brace on a line of its own.
+    ///
+    /// # Specification
+    /// - requires: `head` ends with its opening brace.
+    /// - ensures: a group whose flat branch is `head body }` with one space
+    ///   either side of `body` and whose broken branch breaks after `head`,
+    ///   indents `body` two columns and puts the closer on its own line; every
+    ///   soft line inside `body` breaks with the group unless a group of its
+    ///   own holds it.
+    /// - provides: the layout of a lambda's, a thunk's and a bound block's
+    ///   body.
+    /// - fails: the builder's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns [`PresentationError::Build`] when the builder refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a lambda over a bind at the wide page and at a page
+    ///   it overflows distinguishes a missing indent, a closer left inline and
+    ///   a statement separator that breaks apart from its block.
+    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+    #[spec(
+        captures: [entry = self.pieces.len()],
+        ensures: |ref ret| self.pieces.len() == entry && match *ret {
+            | Ok(doc) => doc != head && doc != body,
+            | Err(PresentationError::Build(_)) => true,
+            | Err(_) => false,
+        },
+    )]
+    fn block(
+        &mut self,
+        head: DocId,
+        body: DocId,
+    ) -> Result<DocId, PresentationError>
+    {
+        let line = self.builder.line();
+        let inner = self.builder.concat(line, body)?;
+        let inner = self.builder.nest(NestAmount::from(CONTINUATION), inner)?;
+        let close = self.leaf(Glyphs("}"))?;
+        let doc = self.builder.concat_all([head, inner, line, close])?;
+        Ok(self.builder.group(doc)?)
+    }
+
+    /// `piece` bare when it binds at most as loosely as `loosest`, a block
+    /// `{ … }` when it is a bind's statements, and parenthesized otherwise.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the piece's document bare when its binding is at most
+    ///   `loosest`; between braces, as [`Self::block`] lays them out, when it
+    ///   is a [`Binding::Sequence`] the slot does not admit; else between
+    ///   parentheses.
+    /// - provides: the slots a computation stands in where its body goes on.
+    /// - fails: as [`Self::leaf`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::leaf`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a bind run by a bind and a returner at a call's head
+    ///   distinguish a block from parentheses and from a bare operand.
+    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+    #[spec(
+        captures: [entry = self.pieces.len()],
+        ensures: |ref ret| self.pieces.len() == entry && match *ret {
+            | Ok(doc) => (doc == piece.doc) == (piece.binding <= loosest),
+            | Err(PresentationError::Build(_)) => piece.binding > loosest,
+            | Err(_) => false,
+        },
+    )]
+    fn bare_or_block(
+        &mut self,
+        piece: Piece,
+        loosest: Binding,
+    ) -> Result<DocId, PresentationError>
+    {
+        if piece.binding == Binding::Sequence && loosest < Binding::Sequence {
+            let open = self.leaf(Glyphs("{"))?;
+            return self.block(open, piece.doc);
+        }
+        self.bare_up_to(piece, loosest)
+    }
+
     /// Spells one node, or schedules its children and their join.
     ///
     /// # Specification
@@ -1659,14 +1873,17 @@ impl Walk<'_, '_, '_>
     /// - ensures: a value at the depth limit finishes as `<deep>`; a node of a
     ///   sort its position does not admit, an unreadable node and a former
     ///   without a surface spelling finish as `?`; a thunk finishes as
-    ///   `<thunk>`; a leaf former finishes as its spelling, the 0-ary product
-    ///   as `Unit`, the 0-ary sum as `Void` and the sum of two 0-ary products
-    ///   as `Bool`; a composite former pushes its join below its children's
-    ///   visits, each labelled entry's label scheduled just before it, a
-    ///   dependent arrow's codomain and a static abstraction's body between the
-    ///   opening and the closing of its binder; a static application schedules
-    ///   its spine as [`Self::spine`] does; a decode and a quote push their
-    ///   child's visit alone, so the child's piece is theirs.
+    ///   `<thunk>` where bodies are opaque; a leaf former finishes as its
+    ///   spelling, the 0-ary product as `Unit`, the 0-ary sum as `Void` and the
+    ///   sum of two 0-ary products as `Bool`; a composite former pushes its
+    ///   join below its children's visits, each labelled entry's label
+    ///   scheduled just before it, a dependent arrow's codomain, a static
+    ///   abstraction's, a lambda's body and a bind's rest between the opening
+    ///   and the closing of its binder; a static application schedules its
+    ///   spine as [`Self::spine`] does and an application its call as
+    ///   [`Self::call`] does; a decode, a quote and a returner where the body
+    ///   ends push their child's visit alone, so the child's piece is theirs,
+    ///   and a returner anywhere else is `pure v`.
     /// - provides: one step of the walk.
     /// - fails: as [`Self::leaf`].
     /// - panics: none.
@@ -1684,6 +1901,7 @@ impl Walk<'_, '_, '_>
     /// - witness: `goldens::tests::beyond_the_depth_limit_renders_deep`
     /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
     /// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
+    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
     #[spec(
         captures: [entry = self.pieces.len(), pending = tasks.len(), opened = self.open, fidelity = self.fidelity],
         ensures: |ref ret| self.open == opened
@@ -1754,7 +1972,10 @@ impl Walk<'_, '_, '_>
                 let index = usize::try_from(u32::from(index)).unwrap_or(usize::MAX);
                 return self.variable(OpenBinders(index));
             },
-            | Former::Thunk => return self.approximate(Glyphs("<thunk>")),
+            | Former::Thunk(_) => match self.bodies {
+                | Bodies::Opaque => return self.approximate(Glyphs("<thunk>")),
+                | Bodies::Spelled => Some(Join::Thunk),
+            },
             | Former::Reify => return self.approximate(Glyphs("<stack>")),
             | Former::Stack(..) => {
                 self.fidelity = Fidelity::Approximate;
@@ -1834,6 +2055,21 @@ impl Walk<'_, '_, '_>
                 Self::spine(source, operator, argument, depth, tasks);
                 return Ok(());
             },
+            | Former::Application(function, argument) => {
+                Self::call(source, function, argument, depth, tasks);
+                return Ok(());
+            },
+            | Former::Return(_) => match admits {
+                | Admits::Computation(Tail::Ends) => None,
+                | Admits::Computation(Tail::Continues)
+                | Admits::Type
+                | Admits::ValueType
+                | Admits::CompType
+                | Admits::Value => Some(Join::Prefix(Prefix::Pure)),
+            },
+            | Former::Force(_) => Some(Join::Prefix(Prefix::Force)),
+            | Former::Bind(..) => Some(Join::Sequence),
+            | Former::Lambda(_) => Some(Join::Lambda),
             | Former::Element(_)
             | Former::ComputationElement(_)
             | Former::Quote(_)
@@ -1848,8 +2084,11 @@ impl Walk<'_, '_, '_>
             admits: slot.admits,
             depth: below,
         };
-        let binds_last = matches!(join, Some(Join::Pi | Join::StaticLambda));
-        match children(node, &former) {
+        let binds_last = matches!(
+            join,
+            Some(Join::Pi | Join::StaticLambda | Join::Sequence | Join::Lambda)
+        );
+        match children(node, &former, admits, self.bodies) {
             | Children::None => {},
             | Children::Components {
                 of,
@@ -1980,6 +2219,88 @@ impl Walk<'_, '_, '_>
         });
     }
 
+    /// Schedules an application and the applications under its function as
+    /// one call, `f(a1, …, an)`.
+    ///
+    /// # Specification
+    /// - requires: the application at `depth` applies `function` to `argument`,
+    ///   and `tasks` is the walk's stack.
+    /// - ensures: the function is read down through every application it is, at
+    ///   most [`DEPTH_LIMIT`] arguments in all, each argument scheduled as a
+    ///   value at `depth`; a force at the head of the spine is scheduled as the
+    ///   value it forces, the bridge the lowering writes before a value it
+    ///   calls, and any other head as a computation where the body goes on; the
+    ///   join over the head and the arguments, left to right, is pushed below
+    ///   their visits, the head visited first.
+    /// - provides: the one spelling the surface writes a call in.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Every turn adds one argument, and the loop stops at [`DEPTH_LIMIT`]
+    /// arguments.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call of a forced constant on two arguments and a
+    ///   call whose head is a returner observe argument order, the elided force
+    ///   and the head's parentheses.
+    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+    #[spec(
+        captures: [entry = tasks.len()],
+        ensures: |()| tasks.get(entry..).is_some_and(|scheduled| {
+            let Some((&Task::Join(Join::Apply(Arity(arity))), visits)) = scheduled.split_first()
+            else { return false; };
+            arity > 0_usize && u32::try_from(arity).is_ok_and(|count| count <= DEPTH_LIMIT.0)
+                && arity.checked_add(1_usize) == Some(visits.len())
+                && visits.split_last().is_some_and(|(head, arguments)|
+                    matches!(*head, Task::Visit { admits: Admits::Value | Admits::Computation(Tail::Continues), depth: at, .. } if at == depth)
+                        && arguments.iter().all(|task| matches!(*task, Task::Visit { admits: Admits::Value, depth: at, .. } if at == depth)))
+        }),
+    )]
+    fn call<S>(
+        source: &S,
+        function: S::Node,
+        argument: S::Node,
+        depth: ValueDepth,
+        tasks: &mut Vec<Task<S::Node>>,
+    ) where
+        S: Source + ?Sized,
+    {
+        let limit = usize::try_from(u32::from(DEPTH_LIMIT)).unwrap_or(usize::MAX);
+        let mut arguments = Vec::from([argument]);
+        let mut head = function;
+        while arguments.len() < limit {
+            let Former::Application(inner, next) = source.read(head)
+            else {
+                break;
+            };
+            arguments.push(next);
+            head = inner;
+        }
+        tasks.push(Task::Join(Join::Apply(Arity(arguments.len()))));
+        for node in arguments {
+            tasks.push(Task::Visit {
+                node,
+                admits: Admits::Value,
+                depth,
+            });
+        }
+        tasks.push(if let Former::Force(thunk) = source.read(head) {
+            Task::Visit {
+                node: thunk,
+                admits: Admits::Value,
+                depth,
+            }
+        }
+        else {
+            Task::Visit {
+                node: head,
+                admits: Admits::Computation(Tail::Continues),
+                depth,
+            }
+        });
+    }
+
     /// A leaf naming the binder the join at hand closes over, `?` and
     /// approximate when the names ran out.
     ///
@@ -2029,14 +2350,18 @@ impl Walk<'_, '_, '_>
     /// # Specification
     /// - requires: available operands are the top finished pieces in operand
     ///   order, last on top; application arity comes from a bounded spine.
-    /// - ensures: `+U C` and `-F A` with the operand parenthesized unless it is
-    ///   an atom; `#{…}`, `+{…}` and `&{…}` around their entries, each bare and
-    ///   after its label when it has one; `A -> C` with the domain bare up to a
-    ///   bridge and the codomain bare, a break after the arrow; `(x : A) -> C`
-    ///   naming the binder by the binders open outside it, a break after the
-    ///   arrow; `\a. v` naming its binder so, a break after the dot; `f(a1, …,
-    ///   an)` with the operator parenthesized unless it is an atom; every list
-    ///   with a break after each comma and before the closer.
+    /// - ensures: `+U C`, `-F A`, `pure v` and `force v` with the operand
+    ///   parenthesized unless it is an atom; `#{…}`, `+{…}` and `&{…}` around
+    ///   their entries, each bare and after its label when it has one; `A -> C`
+    ///   with the domain bare up to a bridge and the codomain bare, a break
+    ///   after the arrow; `(x : A) -> C` naming the binder by the binders open
+    ///   outside it, a break after the arrow; `\a. v` naming its binder so, a
+    ///   break after the dot; `f(a1, …, an)` with the operator parenthesized
+    ///   unless it is an atom, a block when it is a bind; every list with a
+    ///   break after each comma and before the closer; `run x <- c ; rest`
+    ///   naming its binder so, the bound computation a block when it is itself
+    ///   a bind, a soft line after the semicolon; `fn (x) { c }` naming its
+    ///   binder so and `thunk { c }`, each a block.
     /// - provides: every composite spelling.
     /// - fails: a missing operand, which the walk's scheduling excludes, or the
     ///   builder's refusal.
@@ -2060,19 +2385,22 @@ impl Walk<'_, '_, '_>
     /// - witness: `goldens::tests::records_spell_their_fields_in_label_order`
     /// - witness: `goldens::tests::long_dependent_function_type_breaks_at_the_narrow_page`
     /// - witness: `walk::tests::missing_operands_are_unbalanced_not_layout_failures`
+    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
     #[spec(
         captures: [entry = self.pieces.len(), taken = match join {
-            Join::Prefix(_) | Join::EffectReturner(_) | Join::StaticLambda | Join::Bracket(Bracket::PathRefl | Bracket::Here | Bracket::List) => Some(1_usize),
+            Join::Prefix(_) | Join::EffectReturner(_) | Join::StaticLambda | Join::Lambda | Join::Thunk
+                | Join::Bracket(Bracket::PathRefl | Bracket::Here | Bracket::List) => Some(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Positional, .. } => Some(count),
             Join::Braced { arity: Arity(count), entries: Entries::Labelled(_), .. } => count.checked_mul(2_usize),
-            Join::Arrow | Join::Pi | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv) => Some(2_usize),
+            Join::Arrow | Join::Pi | Join::Sequence | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv) => Some(2_usize),
             Join::Apply(Arity(arguments)) => arguments.checked_add(1_usize),
         }],
         ensures: |ref ret| match *ret {
             | Ok(()) => taken.and_then(|count| entry.checked_sub(count)).and_then(|rest| rest.checked_add(1_usize)) == Some(self.pieces.len())
                 && self.pieces.last().is_some_and(|piece| piece.binding == match join {
-                    Join::Prefix(_) | Join::EffectReturner(_) => Binding::Prefix,
+                    Join::Prefix(_) | Join::EffectReturner(_) | Join::Lambda | Join::Thunk => Binding::Prefix,
                     Join::Arrow | Join::Pi | Join::StaticLambda => Binding::Arrow,
+                    Join::Sequence => Binding::Sequence,
                     Join::Apply(_) | Join::Bracket(_) | Join::Braced { .. } => Binding::Atom,
                 }),
             | Err(PresentationError::Build(_) | PresentationError::Unbalanced) => self.pieces.len() <= entry,
@@ -2096,6 +2424,8 @@ impl Walk<'_, '_, '_>
                 let head = self.leaf(match prefix {
                     | Prefix::Thunk => Glyphs("+U "),
                     | Prefix::Returner => Glyphs("-F "),
+                    | Prefix::Pure => Glyphs("pure "),
+                    | Prefix::Force => Glyphs("force "),
                 })?;
                 (self.builder.concat(head, operand)?, Binding::Prefix)
             },
@@ -2160,13 +2490,41 @@ impl Walk<'_, '_, '_>
                 let head = self.space_or_break(head)?;
                 (self.builder.concat(head, body.doc)?, Binding::Arrow)
             },
+            | Join::Sequence => {
+                let rest = self.pop()?;
+                let bound = self.pop()?;
+                let bound = self.bare_or_block(bound, Binding::Arrow)?;
+                let binder = self.binder()?;
+                let run = self.leaf(Glyphs("run "))?;
+                let arrow = self.leaf(Glyphs(" <- "))?;
+                let semicolon = self.leaf(Glyphs(" ;"))?;
+                let line = self.builder.line();
+                (
+                    self.builder
+                        .concat_all([run, binder, arrow, bound, semicolon, line, rest.doc])?,
+                    Binding::Sequence,
+                )
+            },
+            | Join::Lambda => {
+                let body = self.pop()?;
+                let binder = self.binder()?;
+                let open = self.leaf(Glyphs("fn ("))?;
+                let close = self.leaf(Glyphs(") {"))?;
+                let head = self.builder.concat_all([open, binder, close])?;
+                (self.block(head, body.doc)?, Binding::Prefix)
+            },
+            | Join::Thunk => {
+                let body = self.pop()?;
+                let head = self.leaf(Glyphs("thunk {"))?;
+                (self.block(head, body.doc)?, Binding::Prefix)
+            },
             | Join::Apply(Arity(count)) => {
                 let mut arguments = Vec::with_capacity(count);
                 for _ in 0_usize .. count {
                     arguments.push(self.pop()?);
                 }
                 let operator = self.pop()?;
-                let operator = self.bare_up_to(operator, Binding::Atom)?;
+                let operator = self.bare_or_block(operator, Binding::Atom)?;
                 let opener = self.leaf(Glyphs("("))?;
                 let mut items = Vec::from([operator, opener]);
                 for (position, argument) in arguments.iter().rev().enumerate() {
@@ -2223,9 +2581,10 @@ impl Walk<'_, '_, '_>
 /// - ensures: the root's document and whether every node was spelled in full;
 ///   [`Walked::OverBudget`] when either pass exhausts its scheduled-visit
 ///   budget. A scan refusal builds nothing; a walk refusal may leave partial
-///   documents in the builder when the source changes after the scan.
-/// - provides: the document [`crate::present_type`] and
-///   [`crate::present_value`] lay out.
+///   documents in the builder when the source changes after the scan. A
+///   computation's document is one group, so its statements break together.
+/// - provides: the document [`crate::present_type`], [`crate::present_value`]
+///   and [`crate::present_computation`] lay out.
 /// - fails: the builder's refusal, or bookkeeping the walk's scheduling
 ///   excludes.
 /// - panics: none.
@@ -2270,6 +2629,7 @@ where
         binders: Binders::new(mentioned),
         open: OpenBinders(0_usize),
         fidelity: Fidelity::Faithful,
+        bodies: Bodies::of(admits),
     };
     let mut tasks = Vec::from([Task::Visit {
         node: root,
@@ -2302,8 +2662,14 @@ where
     if !walk.pieces.is_empty() {
         return Err(PresentationError::Unbalanced);
     }
+    // A body's statements break together: on one line when the whole body
+    // fits, one statement per line otherwise.
+    let doc = match walk.bodies {
+        | Bodies::Spelled => walk.builder.group(root.doc)?,
+        | Bodies::Opaque => root.doc,
+    };
     Ok(Walked::Built {
-        doc: root.doc,
+        doc,
         fidelity: walk.fidelity,
     })
 }
@@ -2520,6 +2886,7 @@ mod tests
             binders: super::Binders::new(super::BTreeSet::new()),
             open: super::OpenBinders(0_usize),
             fidelity: Fidelity::Faithful,
+            bodies: super::Bodies::Opaque,
         };
         let refusal = super::PresentationError::Build(
             gandr_surface_layout::error::BuildError::LimitExceeded {
@@ -2557,6 +2924,7 @@ mod tests
             binders: super::Binders::new(super::BTreeSet::new()),
             open: super::OpenBinders(0_usize),
             fidelity: Fidelity::Faithful,
+            bodies: super::Bodies::Opaque,
         };
         walk.atom(super::Glyphs("x")).expect("one operand builds");
         assert_eq!(

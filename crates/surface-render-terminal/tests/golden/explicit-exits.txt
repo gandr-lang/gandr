@@ -1,0 +1,10 @@
+warning[explicit-exits]: this path ends without its exit; the lowering infers `return`, which the `explicit-exits` lint asks to be written
+  ╭▸ exits.gandr:2:38
+  │
+2 │ def kept(n: Integer) -> -F Integer { n }
+  │                                      ━ exits by an inferred `return`
+  ╰╴
+help: apply this edit
+  ╭╴
+2 │ def kept(n: Integer) -> -F Integer { return n }
+  ╰╴                                     ++++++

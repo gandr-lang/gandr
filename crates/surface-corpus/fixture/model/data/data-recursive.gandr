@@ -19,10 +19,26 @@ def rec plus(n : Nat, m : Nat) -> -F Nat {
 }
 
 @[ checks ]
+def rec plus_elided(n : Nat, m : Nat) -> -F Nat {
+  case m {
+    Zero => n,
+    Succ(p) => { run r <- plus_elided[<](n, p); Succ(r) }
+  }
+}
+
+@[ checks ]
 def rec length(a : Type, xs : List(a)) -> -F Nat {
   case xs {
     Nil => return Zero,
     Cons(x, rest) => { run r <- length[<](a, rest); return Succ(r) }
+  }
+}
+
+@[ checks ]
+def rec length_elided(a : Type, xs : List(a)) -> -F Nat {
+  case xs {
+    Nil => Zero,
+    Cons(x, rest) => { run r <- length_elided[<](a, rest); Succ(r) }
   }
 }
 
@@ -35,10 +51,26 @@ def rec append(a : Type, ys : List(a), xs : List(a)) -> -F List(a) {
 }
 
 @[ checks ]
+def rec append_elided(a : Type, ys : List(a), xs : List(a)) -> -F List(a) {
+  case xs {
+    Nil => ys,
+    Cons(x, rest) => { run r <- append_elided[<](a, ys, rest); (Cons(x, r) : List(a)) }
+  }
+}
+
+@[ checks ]
 def rec map(a : Type, b : Type, f : a => b, xs : List(a)) -> -F List(b) {
   case xs {
     Nil => return (Nil : List(b)),
     Cons(x, rest) => { run y <- f(x); run r <- map[<](a, b, f, rest); return (Cons(y, r) : List(b)) }
+  }
+}
+
+@[ checks ]
+def rec map_elided(a : Type, b : Type, f : a => b, xs : List(a)) -> -F List(b) {
+  case xs {
+    Nil => (Nil : List(b)),
+    Cons(x, rest) => { run y <- f(x); run r <- map_elided[<](a, b, f, rest); (Cons(y, r) : List(b)) }
   }
 }
 
@@ -51,6 +83,14 @@ def rec length_nat(xs : List(Nat)) -> -F Nat {
 }
 
 @[ checks ]
+def rec length_nat_elided(xs : List(Nat)) -> -F Nat {
+  case xs {
+    Nil => Zero,
+    Cons(x, rest) => { run r <- length_nat_elided[<](rest); Succ(r) }
+  }
+}
+
+@[ checks ]
 def rec append_nat(ys : List(Nat), xs : List(Nat)) -> -F List(Nat) {
   case xs {
     Nil => return ys,
@@ -59,10 +99,26 @@ def rec append_nat(ys : List(Nat), xs : List(Nat)) -> -F List(Nat) {
 }
 
 @[ checks ]
+def rec append_nat_elided(ys : List(Nat), xs : List(Nat)) -> -F List(Nat) {
+  case xs {
+    Nil => ys,
+    Cons(x, rest) => { run r <- append_nat_elided[<](ys, rest); (Cons(x, r) : List(Nat)) }
+  }
+}
+
+@[ checks ]
 def rec map_nat(f : Nat => Nat, xs : List(Nat)) -> -F List(Nat) {
   case xs {
     Nil => return (Nil : List(Nat)),
     Cons(x, rest) => { run y <- f(x); run r <- map_nat[<](f, rest); return (Cons(y, r) : List(Nat)) }
+  }
+}
+
+@[ checks ]
+def rec map_nat_elided(f : Nat => Nat, xs : List(Nat)) -> -F List(Nat) {
+  case xs {
+    Nil => (Nil : List(Nat)),
+    Cons(x, rest) => { run y <- f(x); run r <- map_nat_elided[<](f, rest); (Cons(y, r) : List(Nat)) }
   }
 }
 
@@ -78,6 +134,10 @@ def three = Succ(two) ;
 def five : +U (-F Nat) ;
 def five = thunk { become plus(two, three) } ;
 
+@[ runs("ctor[1](ctor[1](ctor[1](ctor[1](ctor[1](ctor[0]())))))") ]
+def five_elided : +U (-F Nat) ;
+def five_elided = thunk { plus_elided(two, three) } ;
+
 @[ runs("ctor[1](ctor[1](ctor[1](ctor[0]())), ctor[1](ctor[0](), ctor[0]()))") ]
 def small : List(Nat) ;
 def small = (Cons(two, (Cons(Zero, (Nil : List(Nat))) : List(Nat))) : List(Nat)) ;
@@ -86,18 +146,38 @@ def small = (Cons(two, (Cons(Zero, (Nil : List(Nat))) : List(Nat))) : List(Nat))
 def bump : Nat => Nat ;
 def bump = thunk { fn (n) { return Succ(n) } } ;
 
+@[ runs("<fun>") ]
+def bump_elided : Nat => Nat ;
+def bump_elided = thunk { fn (n) { Succ(n) } } ;
+
 @[ runs("ctor[1](ctor[1](ctor[0]()))") ]
 def counted : +U (-F Nat) ;
 def counted = thunk { become length_nat(small) } ;
+
+@[ runs("ctor[1](ctor[1](ctor[0]()))") ]
+def counted_elided : +U (-F Nat) ;
+def counted_elided = thunk { length_nat_elided(small) } ;
 
 @[ runs("ctor[1](ctor[1](ctor[1](ctor[1](ctor[0]()))), ctor[1](ctor[1](ctor[1](ctor[0]())), ctor[1](ctor[0](), ctor[0]())))") ]
 def joined : +U (-F List(Nat)) ;
 def joined = thunk { become append_nat(small, (Cons(three, (Nil : List(Nat))) : List(Nat))) } ;
 
+@[ runs("ctor[1](ctor[1](ctor[1](ctor[1](ctor[0]()))), ctor[1](ctor[1](ctor[1](ctor[0]())), ctor[1](ctor[0](), ctor[0]())))") ]
+def joined_elided : +U (-F List(Nat)) ;
+def joined_elided = thunk { append_nat_elided(small, (Cons(three, (Nil : List(Nat))) : List(Nat))) } ;
+
 @[ runs("ctor[1](ctor[1](ctor[1](ctor[1](ctor[0]()))), ctor[1](ctor[1](ctor[0]()), ctor[0]()))") ]
 def bumped : +U (-F List(Nat)) ;
 def bumped = thunk { become map_nat(bump, small) } ;
 
+@[ runs("ctor[1](ctor[1](ctor[1](ctor[1](ctor[0]()))), ctor[1](ctor[1](ctor[0]()), ctor[0]()))") ]
+def bumped_elided : +U (-F List(Nat)) ;
+def bumped_elided = thunk { map_nat_elided(bump_elided, small) } ;
+
 @[ checks ]
 def lengthened : +U (-F Nat) ;
 def lengthened = thunk { become length(Nat, small) } ;
+
+@[ checks ]
+def lengthened_elided : +U (-F Nat) ;
+def lengthened_elided = thunk { length_elided(Nat, small) } ;

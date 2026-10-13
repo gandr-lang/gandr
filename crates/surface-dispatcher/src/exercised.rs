@@ -722,7 +722,6 @@ fn lowering_row(
         | LoweringRefusal::LowercaseModuleName { .. }
         | LoweringRefusal::NonExhaustiveMatch { .. }
         | LoweringRefusal::UnmarkedSelfReference { .. }
-        | LoweringRefusal::MissingExit { .. }
         | LoweringRefusal::Unreachable { .. }
         | LoweringRefusal::WithoutK { .. }
         | LoweringRefusal::BudgetExceeded { .. }

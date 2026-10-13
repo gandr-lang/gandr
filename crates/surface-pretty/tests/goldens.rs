@@ -62,6 +62,7 @@ mod tests
     use gandr_surface_pretty::PageWidth;
     use gandr_surface_pretty::Presentation;
     use gandr_surface_pretty::Source;
+    use gandr_surface_pretty::present_computation;
     use gandr_surface_pretty::present_type;
     use gandr_surface_pretty::present_value;
 
@@ -91,6 +92,8 @@ mod tests
         Type(CoreNode),
         /// A value, through [`present_value`].
         Value(CoreNode),
+        /// An elaborated body, through [`present_computation`].
+        Computation(CoreNode),
     }
 
     /// A golden pair: its file stem, the one-line spelling, and the fidelity
@@ -135,6 +138,7 @@ mod tests
         match root {
             | Root::Type(node) => present_type(source, node, page),
             | Root::Value(node) => present_value(source, node, page),
+            | Root::Computation(node) => present_computation(source, node, page),
         }
         .expect("a presentation within the default ceilings lays out")
     }
@@ -1342,5 +1346,63 @@ mod tests
             assert_eq!(rendered.as_ref(), expected);
             assert_eq!(rendered.fidelity(), Fidelity::Approximate);
         }
+    }
+
+    #[test]
+    fn an_elaborated_body_prints_with_its_exits_elided()
+    {
+        let mut core = CoreArena::new();
+        let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let kept = core.value_constant(ConstantIndex::from(0_usize));
+        let one = integer(&mut core, Sign::NonNegative, Written("1"));
+        let two = integer(&mut core, Sign::NonNegative, Written("2"));
+        // `{ return n }` and `{ n }` lower to this one body.
+        let returned = core.computation_return(bound);
+        let identity = core.computation_lambda(returned);
+        // `{ become kept(n) }` and `{ kept(n) }` lower to this one body.
+        let forced = core.computation_force(kept);
+        let call = core.computation_application(forced, bound);
+        let calling = core.computation_lambda(call);
+        // A returner where the body goes on is `pure`, the end of a block a
+        // bind runs among them; a bind run by a bind is a block of its own.
+        let pure_one = core.computation_return(one);
+        let inner = core.computation_bind(pure_one, returned);
+        let outer = core.computation_bind(inner, call);
+        let sequenced = core.computation_lambda(outer);
+        // A returner at a call's head stands in parentheses, and a thunk in a
+        // body is spelled.
+        let applied = core.computation_application(pure_one, two);
+        let suspended = core.value_thunk(applied);
+        let suspends = core.computation_return(suspended);
+        // A case analysis has no spelling here.
+        let case = core.computation_case(bound, &[returned, returned]);
+        let analysed = core.computation_lambda(case);
+        let names = [Name::from("kept")];
+        let source = CoreSource::new(&core, &names);
+        let body = |id| Root::Computation(CoreNode::Computation(id));
+        for (root, expected, fidelity) in [
+            (body(identity), "fn (a) { a }", Fidelity::Faithful),
+            (body(calling), "fn (a) { kept(a) }", Fidelity::Faithful),
+            (body(forced), "force kept", Fidelity::Faithful),
+            (body(pure_one), "1", Fidelity::Faithful),
+            (body(suspends), "thunk { (pure 1)(2) }", Fidelity::Faithful),
+            (body(analysed), "fn (a) { ? }", Fidelity::Approximate),
+        ] {
+            assert_eq!(
+                spelled(&source, root),
+                (expected.to_owned(), fidelity),
+                "{expected}"
+            );
+        }
+        assert_eq!(
+            spelled(&source, Root::Value(CoreNode::Value(suspended))),
+            ("<thunk>".to_owned(), Fidelity::Approximate),
+            "a value presented alone keeps its thunks opaque"
+        );
+        pin(&source, body(sequenced), Pinned {
+            name: "elided-body",
+            flat: "fn (a) { run b <- { run b <- pure 1 ; pure b } ; kept(b) }",
+            fidelity: Fidelity::Faithful,
+        });
     }
 }
