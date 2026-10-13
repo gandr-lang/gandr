@@ -21,9 +21,9 @@ publish.workspace = true
 # logic/BigInt stays disabled.
 [dependencies]
 anodized.workspace = true
-gandr-surface-diagnostics.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-render-remote = { workspace = true, features = ["serde"] }
+gandr-surface-render-terminal.workspace = true
 gandr-surface-repl.workspace = true
 gandr-surface-syntax.workspace = true
 ratatui.workspace = true

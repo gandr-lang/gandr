@@ -53,6 +53,7 @@ use gandr_core_checker::CheckingForm;
 use gandr_core_checker::Mismatch;
 use gandr_surface_corpus::CorpusRefusal;
 use gandr_surface_corpus::Refusal;
+use gandr_surface_lowering::Ending;
 use gandr_surface_lowering::FormFault;
 use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::LoweringRefusal;
@@ -157,6 +158,10 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
             | FormFault::Repaired(Repair::GhostClose(ClosingClass::Paren)) => "missing `)`",
             | FormFault::Repaired(Repair::GhostClose(ClosingClass::Bracket)) => "missing `]`",
             | FormFault::Repaired(Repair::GhostClose(ClosingClass::Brace)) => "missing `}`",
+            | FormFault::Repaired(Repair::Unended(Ending::Tile(_))) => {
+                "its closing tile belongs here"
+            },
+            | FormFault::Repaired(Repair::Unended(Ending::Unnamed)) => "the form stops here",
             | FormFault::ExtraOperand => "an operand the form does not take",
             | FormFault::MisplacedTile => "out of place",
         },
@@ -243,10 +248,12 @@ const fn checked(refusal: CheckRefusal) -> Culprit
 mod tests
 {
     use gandr_surface_corpus::Refusal;
+    use gandr_surface_lowering::Ending;
     use gandr_surface_lowering::FormFault;
     use gandr_surface_lowering::FormName;
     use gandr_surface_lowering::LoweringRefusal;
     use gandr_surface_lowering::Repair;
+    use gandr_surface_lowering::TileName;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::ByteSpan;
     use gandr_surface_syntax::ClosingClass;
@@ -266,6 +273,8 @@ mod tests
             Repair::GhostClose(ClosingClass::Paren),
             Repair::GhostClose(ClosingClass::Bracket),
             Repair::GhostClose(ClosingClass::Brace),
+            Repair::Unended(Ending::Tile(TileName::SEMICOLON)),
+            Repair::Unended(Ending::Unnamed),
         ]
         .into_iter()
         .map(|repair| {
@@ -281,7 +290,7 @@ mod tests
         labels.dedup();
         assert_eq!(
             labels.len(),
-            6_usize,
+            8_usize,
             "each repair names what the source left out"
         );
     }

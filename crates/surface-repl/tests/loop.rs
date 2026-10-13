@@ -20,19 +20,19 @@ mod tests
     use gandr_core_incremental::NodeIndex;
     use gandr_kernel_term::BaseType;
     use gandr_storage_records::InMemoryBlockStore;
-    use gandr_surface_diagnostics::Class;
-    use gandr_surface_diagnostics::Entry;
-    use gandr_surface_diagnostics::RenderStyle;
+    use gandr_surface_diagnostics::Severity;
     use gandr_surface_diagnostics::Verbosity;
-    use gandr_surface_diagnostics::entries;
     use gandr_surface_dispatcher::Goals;
     use gandr_surface_dispatcher::SourceRoot;
     use gandr_surface_dispatcher::Verb;
+    use gandr_surface_dispatcher::entries;
     use gandr_surface_grammar::Pbg;
     use gandr_surface_grammar::built_in;
     use gandr_surface_render_remote::HlRole;
     use gandr_surface_render_remote::OutKind;
     use gandr_surface_render_remote::TranscriptBlock;
+    use gandr_surface_render_terminal::RenderStyle;
+    use gandr_surface_render_terminal::render;
     use gandr_surface_repl::CompletionStatus;
     use gandr_surface_repl::Ended;
     use gandr_surface_repl::Fault;
@@ -271,16 +271,15 @@ mod tests
             .expect("the session does not fault")
             .into_step(Path::new(""));
         entries(&step, Verb::Check(Goals::Reported))
-            .filter_map(|entry| match entry {
-                | Entry::Report(report) if report.class() != Class::Goal => Some((
+            .filter_map(|diagnostic| match diagnostic.severity {
+                | Severity::Error | Severity::Warning => Some((
                     OutKind::Diag,
-                    report
-                        .render(style, Verbosity::User)
+                    render(&diagnostic, style, Verbosity::User)
                         .to_string()
                         .trim_end()
                         .to_owned(),
                 )),
-                | Entry::Report(_) | Entry::Line(_) => None,
+                | Severity::Goal | Severity::Ledger => None,
             })
             .collect()
     }

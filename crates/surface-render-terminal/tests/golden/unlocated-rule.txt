@@ -1,0 +1,10 @@
+error[ShapeMismatch]: expected a thunk type `+U C`
+  ╭▸ force.gandr:2:30
+  │
+2 │ def a = thunk { become force 1 } ;
+  │                              ━ its type is not of the required shape: found `Integer`
+  │
+  ├ note: while checking the body of this thunk
+  ├ note: while comparing the type this synthesises with the one it is checked against
+  ├ note: while forcing this
+  ╰ note: `a` is expected to check, and this refusal leaves it unsettled

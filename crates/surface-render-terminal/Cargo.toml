@@ -1,0 +1,38 @@
+[package]
+name = "gandr-surface-render-terminal"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Lays a gandr diagnostic out for a terminal: a source snippet with its loci, contexts and notes"
+repository.workspace = true
+license.workspace = true
+keywords = ["diagnostics", "gandr", "language"]
+categories = ["development-tools"]
+publish.workspace = true
+
+# The renderer reads the diagnostics model alone: no producer, no dispatcher.
+# `annotate-snippets` lays the snippet out; the model names the spans it
+# rebases onto the excerpt. The pinned anodized facade supplies core-only
+# specification helpers; logic/BigInt stays disabled.
+[dependencies]
+annotate-snippets.workspace = true
+anodized.workspace = true
+gandr-surface-diagnostics.workspace = true
+gandr-surface-syntax.workspace = true
+quenchant-shape.workspace = true
+
+# The suite renders diagnostics of real compositions: the dispatcher's walk
+# over the built-in grammar, with the lowering's refusals built directly; one
+# golden cuts a checker refusal's origin table down to its primary node, which
+# names the refusal's node through the checker's and the corpus's types; and
+# it parses the JSON image back.
+[dev-dependencies]
+gandr-core-checker.workspace = true
+gandr-surface-corpus.workspace = true
+gandr-surface-dispatcher.workspace = true
+gandr-surface-grammar.workspace = true
+gandr-surface-lowering.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

@@ -56,32 +56,35 @@
 //! `window/logMessage`; a measured wait of the next change on the admission
 //! moves the admission to a cancellable worker.
 //!
-//! # Diagnostics are the renderer's reports
+//! # Diagnostics are the model's
 //!
-//! The one input is the dispatcher's step, read by `gandr-surface-diagnostics`'
-//! `entries` under the verb `check --goals`. A face that read refusals from a
-//! list kept beside the step could drop or duplicate one; reading the step
-//! means the editor receives exactly the reports the terminal prints, in the
-//! order it prints them.
+//! The one input is the dispatcher's step, read by its `entries` under the
+//! verb `check --goals`, each a diagnostic of `gandr-surface-diagnostics`. A
+//! face that read refusals from a list kept beside the step could drop or
+//! duplicate one; reading the step means the editor receives exactly the
+//! diagnostics the terminal prints, in the order it prints them, with the
+//! same loci, labels and contexts.
 //!
-//! | Report | Range | Code | Severity | Message | Related information |
-//! | ------ | ----- | ---- | -------- | ------- | ------------------- |
-//! | a refusal | the primary span | the refusal's vocabulary name | error | the plain message, the primary label and the note | each context locus, with its label, then each nested reason, outermost first, with its `while` clause |
-//! | an unsettled declaration | the primary span | none | error | the message and the primary label | each context locus, with its label |
-//! | a goal | the primary span | none | information | the message and the primary label | none |
+//! | Diagnostic | Range | Code | Severity | Message | Related information |
+//! | ---------- | ----- | ---- | -------- | ------- | ------------------- |
+//! | a refusal | the primary annotation | the refusal's vocabulary name | error | the plain message, the primary label, each unlocated context, the note | each other annotation, with its label, then each located context, outermost first, with its judgement, `while` clause and binders |
+//! | an unsettled declaration | the primary annotation | none | error | the message and the primary label | each other annotation, with its label |
+//! | a goal | the primary annotation | none | information | the message and the primary label | none |
 //! | a shadowing warning | the shadowing name | `ShadowedBuiltin` | warning | the message and the primary label | none |
-//! | a report the renderer leaves unlocated | the document's origin | as its kind | as its kind | the message, and the note of a refusal | none |
+//! | a diagnostic with no primary annotation | the document's origin | as its kind | as its kind | the message, each unlocated context, and the note of a refusal | each located context |
 //! | a ledger line | the document's origin | none | error | the line | none |
 //! | a fault before composition | the document's origin | none | error | the fault | none |
 //!
-//! The message carries every line the terminal prints around the snippet: the
-//! report's message, then the primary locus's label on a line of its own, then
-//! a refused declaration's note after `note: `. The protocol gives a diagnostic
-//! one text field beside its range and related locations, so a label the
-//! underline carries in the terminal would otherwise never reach the editor.
-//! The alternative is the first line alone, which leaves an editor user without
-//! the one line that says what the span is. The choice reverses when the
-//! protocol gains a field for the primary locus's label.
+//! The message carries every line the terminal prints around the snippet but
+//! the snippet itself: the message, then the primary annotation's label on a
+//! line of its own, then each context the refusal stood inside that marks no
+//! bytes, as `while …` on a line of its own, then a refused declaration's note
+//! after `note: `. The protocol gives a diagnostic one text field beside its
+//! range and related locations, so a label the underline carries in the
+//! terminal, and a context no location can carry, would otherwise never reach
+//! the editor. The alternative is the first line alone, which leaves an editor
+//! user without the one line that says what the span is. The choice reverses
+//! when the protocol gains a field for the primary locus's label.
 //!
 //! The `gandr.diagnostics.verbosity` setting chooses how much of each report
 //! the message carries, at the levels `gandr check --verbosity` names. Above
@@ -144,17 +147,15 @@ use gandr_core_incremental::BackendArtifact;
 use gandr_core_incremental::MemoryCheckpointStore;
 use gandr_core_incremental::ResumeCensus;
 use gandr_storage_records::InMemoryBlockStore;
-use gandr_surface_diagnostics::Class;
-use gandr_surface_diagnostics::Entry;
-use gandr_surface_diagnostics::RenderStyle;
-use gandr_surface_diagnostics::Report;
+use gandr_surface_diagnostics::AnnotationKind;
+use gandr_surface_diagnostics::Severity as Seriousness;
 use gandr_surface_diagnostics::Verbosity;
-use gandr_surface_diagnostics::entries;
 use gandr_surface_dispatcher::ComposeFault;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::classify;
+use gandr_surface_dispatcher::entries;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::PbgError;
 use gandr_surface_grammar::RoleTable;
@@ -293,7 +294,7 @@ pub fn roles() -> Result<&'static RoleTable, &'static PbgError>
 /// # Adequacy
 /// - hypothesis: L2 — over every corpus source, a document opened through it
 ///   publishes the reports the walk renders under the same root.
-/// - witness: `session::session::every_corpus_report_is_published_where_the_walk_renders_it`
+/// - witness: `session::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
 /// - witness: `recheck::tests::a_fault_is_published_at_the_origin`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |session| session.root() == classify(&uri.path())))]
 pub fn open(uri: &DocumentUri) -> DocumentSession
@@ -437,36 +438,38 @@ pub struct Rechecked
 ///
 /// # Specification
 /// - requires: `session` was opened for `uri`; any text is admissible input.
-/// - ensures: the text is judged once, and each entry `gandr check --goals`
-///   prints for the judgement's step becomes one diagnostic, in the order
-///   printed: a report at the range its span projects to, with the refusal's
-///   vocabulary name as its code, its message, primary label and note as its
-///   message at `verbosity` as [`diagnostic`] writes it, each context locus as
-///   a related location carrying its label, then each nested reason, outermost
-///   first, as a related location carrying the judgement it stands for, and the
-///   severity of a goal as information, of a warning as a warning and of every
-///   other report as an error; a report the renderer leaves unlocated, and a
-///   ledger line, at the document's origin. A fault that keeps the document
-///   from composing, and a grammar that did not build, is one error at the
-///   origin naming it. The timing carries the judgement's form census, the
-///   incremental checker's census, and the wall of the whole recheck; its
-///   admission is pending when the judgement left one.
+/// - ensures: the text is judged once, and each diagnostic the dispatcher's
+///   walk yields for the judgement's step under `gandr check --goals` becomes
+///   one LSP diagnostic, in that order, as [`diagnostic`] writes it at
+///   `verbosity`: the range of its first primary annotation, the refusal's
+///   vocabulary name as its code, its message, primary label, unlocated
+///   contexts and note as its message, each context annotation and then each
+///   located context, outermost first, as a related location carrying its
+///   label, and the severity of a goal as information, of a warning as a
+///   warning and of every other diagnostic as an error; a diagnostic with no
+///   primary annotation, and a ledger line, at the document's origin. A fault
+///   that keeps the document from composing, and a grammar that did not build,
+///   is one error at the origin naming it. The timing carries the judgement's
+///   form census, the incremental checker's census, and the wall of the whole
+///   recheck; its admission is pending when the judgement left one.
 /// - provides: the one recheck every synchronisation publishes.
 /// - fails: never; a fault is a diagnostic.
 /// - panics: none.
 /// - intension: one submission per call, and one projection per span end.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — over every corpus source, the diagnostics are the reports
-///   the dispatcher's walk renders for that source under `check --goals`, at
-///   the same ranges and codes; L3 — a type mismatch and a duplicate signature
-///   are asserted at their related locations, a force refused inside a thunk at
-///   its nested reasons, and a pending source at its ledger line.
-/// - witness: `session::session::every_corpus_report_is_published_where_the_walk_renders_it`
+/// - hypothesis: L2 — over every corpus source, the diagnostics are the ones
+///   the dispatcher's walk yields for that source under `check --goals`, at the
+///   same ranges and codes; L3 — a type mismatch and a duplicate signature are
+///   asserted at their related locations, a mismatch under a function at its
+///   annotations then its rules in order, an unlocated rule in its message, and
+///   a pending source at its ledger line.
+/// - witness: `session::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
 /// - witness: `session::session::an_edit_to_a_large_document_rechecks_its_forms`
 /// - witness: `recheck::tests::causal_contexts_become_lsp_related_information`
 /// - witness: `recheck::tests::a_labeled_context_keeps_its_locus_and_cause_in_related_information`
-/// - witness: `recheck::tests::nested_reasons_become_lsp_related_information`
+/// - witness: `recheck::tests::related_information_is_the_annotations_then_the_located_contexts`
+/// - witness: `recheck::tests::an_unlocated_context_is_appended_to_the_message`
 /// - witness: `recheck::tests::a_shadowed_builtin_is_published_as_a_warning`
 /// - witness: `recheck::tests::a_fault_is_published_at_the_origin`
 #[spec(ensures: |ret| ret.diagnostics.iter().all(|diagnostic|
@@ -553,6 +556,8 @@ quenchant_shape::reason_enum! {
     }
 }
 
+// refused_by: statement_fold · collision: `/// - witness:
+// `session::session::every_corpus_report_is_publis…`
 /// Run the admission the document's latest recheck left in its `session`.
 ///
 /// # Specification
@@ -706,8 +711,8 @@ pub fn trial(
 }
 
 /// The diagnostics `submission`, the judgement of `text` at `uri`, publishes
-/// at `verbosity`: each entry `gandr check --goals` prints for its step, in
-/// order.
+/// at `verbosity`: each diagnostic `gandr check --goals` prints for its step,
+/// in order.
 ///
 /// # Specification
 /// trivial.
@@ -722,9 +727,13 @@ fn diagnostics_of(
     let index = LineIndex::new(text.as_ref().into());
     let step = submission.into_step(Path::new(&path));
     entries(&step, Verb::Check(Goals::Reported))
-        .map(|entry| match entry {
-            | Entry::Report(report) => diagnostic(&report, &index, uri, verbosity),
-            | Entry::Line(line) => Diagnostic::at_origin(line.to_string()),
+        .map(|found| match found.severity {
+            | Seriousness::Ledger => {
+                Diagnostic::at_origin(format!("{}: {}", found.path.display(), found.message.text))
+            },
+            | Seriousness::Error | Seriousness::Warning | Seriousness::Goal => {
+                diagnostic(&found, &index, uri, verbosity)
+            },
         })
         .collect()
 }
@@ -776,45 +785,50 @@ pub fn highlight(text: SourceText<'_>) -> Vec<HlSpan>
         .unwrap_or_default()
 }
 
-/// The diagnostic `report` is published as at `verbosity`.
+/// The editor diagnostic `found` is published as at `verbosity`.
 ///
 /// # Specification
-/// - requires: `index` was built from the text `report` is about.
-/// - ensures: as [`recheck`] states for one report. A span the renderer locates
-///   lies inside the text on character boundaries, so it always projects; the
-///   origin stands in for one that would not. At [`Verbosity::Json`] the
-///   message is the report's JSON image; at every other level it is the
-///   report's plain message, then the primary locus's label on its own line
-///   when the report is located, then its note on a line of its own after
-///   `note: ` when it closes with one, then each detail line the level adds,
-///   each on a line of its own: what the terminal prints, in the one text field
-///   the protocol gives a diagnostic.
-/// - provides: the one map from a renderer report to an editor diagnostic.
+/// - requires: `index` was built from the text `found` is about; `found` is no
+///   ledger line.
+/// - ensures: as [`recheck`] states for one diagnostic. A span the model
+///   locates lies inside the text on character boundaries, so it always
+///   projects; the origin stands in for one that would not. The range is the
+///   first primary annotation's. At [`Verbosity::Json`] the message is the
+///   diagnostic's JSON image; at every other level it is the plain message,
+///   then the primary annotation's label on its own line when it is located,
+///   then each unlocated context as `while …` on a line of its own, then its
+///   note on a line of its own after `note: ` when it closes with one, then
+///   each detail line the level adds: what the terminal prints, in the one text
+///   field the protocol gives a diagnostic. The related information is every
+///   annotation but the primary one, in order, then every located context,
+///   outermost first.
+/// - provides: the one map from a model diagnostic to an editor diagnostic.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a type mismatch and duplicate signature have exact
 ///   primary and causal locations, and a refused declaration's message carries
-///   its label and note. L2 — every corpus report agrees with its wire ranges,
-///   code, message and related labels, distinguishing omitted, misclassified or
-///   misprojected report fields without pinning wording.
+///   its label and note. L2 — every corpus diagnostic agrees with its wire
+///   ranges, code, message and related labels, distinguishing omitted,
+///   misclassified or misprojected fields without pinning wording.
 /// - witness: `recheck::tests::causal_contexts_become_lsp_related_information`
 /// - witness: `recheck::tests::a_labeled_context_keeps_its_locus_and_cause_in_related_information`
-/// - witness: `recheck::tests::nested_reasons_become_lsp_related_information`
 /// - witness: `recheck::tests::a_refusal_publishes_its_label_and_note`
+/// - witness: `recheck::tests::an_unlocated_context_is_appended_to_the_message`
 /// - witness: `recheck::tests::one_refusal_is_published_at_every_verbosity`
 /// - witness: `recheck::tests::a_shadowed_builtin_is_published_as_a_warning`
-/// - witness: `session::session::every_corpus_report_is_published_where_the_walk_renders_it`
+/// - witness: `session::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
 #[spec(ensures: |ret| ret.source == "gandr"
-    && ret.severity == match report.class() { Class::Goal => Severity::INFORMATION, Class::Warning => Severity::WARNING, _ => Severity::ERROR }
-    && ret.code.is_some() == matches!(report.identifier(), Maybe::Present(_))
-    && (verbosity == Verbosity::Json || ret.message.starts_with(&report.message().to_string()))
-    && ret.related_information.len() == report.context().into_iter()
-        .filter(|slot| matches!(slot, Maybe::Present(_))).count().saturating_add(report.reasons().len())
+    && ret.severity == match found.severity { Seriousness::Goal => Severity::INFORMATION, Seriousness::Warning => Severity::WARNING, _ => Severity::ERROR }
+    && ret.code.is_some() == matches!(found.identifier, Maybe::Present(_))
+    && (verbosity == Verbosity::Json || ret.message.starts_with(found.message.text.as_str()))
+    && ret.related_information.len() == found.annotations.iter()
+        .filter(|annotation| annotation.kind == AnnotationKind::Context).count()
+        .saturating_add(found.contexts.iter().filter(|context| matches!(context.locus, Maybe::Present(_))).count())
     && ret.related_information.iter().all(|related| related.location.uri == *uri))]
 fn diagnostic(
-    report: &Report<'_>,
+    found: &gandr_surface_diagnostics::Diagnostic,
     index: &LineIndex<'_>,
     uri: &DocumentUri,
     verbosity: Verbosity,
@@ -828,62 +842,70 @@ fn diagnostic(
         )
         .unwrap_or_default()
     };
-    let range = match report.span() {
-        | Maybe::Present(span) => range_of(span),
+    let primary = found.primary();
+    let range = match primary {
+        | Maybe::Present(annotation) => range_of(annotation.locus.span),
         | Maybe::Absent(_) => Range::default(),
     };
-    let severity = match report.class() {
-        | Class::Goal => Severity::INFORMATION,
-        | Class::Warning => Severity::WARNING,
-        | Class::Refusal(_) | Class::Unsettled(_) => Severity::ERROR,
+    let severity = match found.severity {
+        | Seriousness::Goal => Severity::INFORMATION,
+        | Seriousness::Warning => Severity::WARNING,
+        | Seriousness::Error | Seriousness::Ledger => Severity::ERROR,
     };
     let message = if verbosity == Verbosity::Json {
-        String::from(report.render(RenderStyle::Plain, Verbosity::Json))
+        found.json()
     }
     else {
-        let mut message = report.message().to_string();
-        if let Maybe::Present(label) = report.label() {
+        let mut message = found.message.text.clone();
+        if let Maybe::Present(annotation) = primary {
             message.push('\n');
-            message.push_str(&label.to_string());
+            message.push_str(&annotation.label);
         }
-        if let Maybe::Present(note) = report.note() {
+        for context in &found.contexts {
+            if let Maybe::Absent(_) = context.locus {
+                message.push('\n');
+                message.push_str(&context.note());
+            }
+        }
+        if let Maybe::Present(ref note) = found.note {
             message.push_str("\nnote: ");
-            message.push_str(&note.to_string());
+            message.push_str(note);
         }
-        for detail in report.details(verbosity) {
+        for detail in found.details(verbosity) {
             message.push('\n');
             message.push_str(&detail.to_string());
         }
         message
     };
     let mut diagnostic = Diagnostic::new(range, severity, message);
-    if let Maybe::Present(spelling) = report.identifier() {
+    if let Maybe::Present(ref spelling) = found.identifier {
         diagnostic.code = Some(spelling.to_string());
     }
-    let reasons = report
-        .reasons()
-        .into_iter()
-        .map(|reason| RelatedInformation {
-            location: Location {
-                uri: uri.clone(),
-                range: range_of(reason.span),
-            },
-            message: reason.to_string(),
-        });
-    diagnostic.related_information = report
-        .context()
-        .into_iter()
-        .filter_map(|slot| match slot {
-            | Maybe::Present(annotation) => Some(RelatedInformation {
+    let contexts = found
+        .contexts
+        .iter()
+        .filter_map(|context| match context.locus {
+            | Maybe::Present(locus) => Some(RelatedInformation {
                 location: Location {
                     uri: uri.clone(),
-                    range: range_of(annotation.span),
+                    range: range_of(locus.span),
                 },
-                message: annotation.label.to_string(),
+                message: context.label(),
             }),
             | Maybe::Absent(_) => None,
+        });
+    diagnostic.related_information = found
+        .annotations
+        .iter()
+        .filter(|annotation| annotation.kind == AnnotationKind::Context)
+        .map(|annotation| RelatedInformation {
+            location: Location {
+                uri: uri.clone(),
+                range: range_of(annotation.locus.span),
+            },
+            message: annotation.label.clone(),
         })
-        .chain(reasons)
+        .chain(contexts)
         .collect();
     diagnostic
 }
@@ -1018,19 +1040,19 @@ mod tests
     }
 
     #[test]
-    fn nested_reasons_become_lsp_related_information()
+    fn related_information_is_the_annotations_then_the_located_contexts()
     {
-        let uri = DocumentUri::from("file:///strict/force.gandr");
-        let text = "def a : +U (-F Integer) ;\ndef a = thunk { become force 1 } ;\n";
+        let uri = DocumentUri::from("file:///strict/returned.gandr");
+        let text = "def g(v: Integer) -> -F String { return v }\n";
         let diagnostics = checked(&uri, SourceText::from(text));
         let [ref diagnostic] = *diagnostics.as_slice()
         else {
-            panic!("one shape mismatch");
+            panic!("one mismatch");
         };
         assert_eq!(
             (diagnostic.range, diagnostic.code.as_deref()),
-            (range(Span(1, 29, 1, 30)), Some("ShapeMismatch")),
-            "the forced integer is the primary locus"
+            (range(Span(0, 40, 0, 41)), Some("TypeMismatch")),
+            "the returned value is the lead range"
         );
         let related: Vec<(Range, &str)> = diagnostic
             .related_information
@@ -1040,16 +1062,80 @@ mod tests
         assert_eq!(
             related,
             [
+                (range(Span(0, 24, 0, 30)), "the type it is checked against"),
+                (range(Span(0, 9, 0, 16)), "the type it synthesises"),
                 (
-                    range(Span(1, 8, 1, 32)),
-                    "while checking this against `+U (-F Integer)`"
+                    range(Span(0, 0, 0, 43)),
+                    "checked against `+U (Integer -> -F String)`; while checking the body of \
+                     this thunk"
                 ),
                 (
-                    range(Span(1, 23, 1, 30)),
-                    "while checking this against `-F Integer`"
+                    range(Span(0, 6, 0, 7)),
+                    "checked against `Integer -> -F String`; while checking the body of this \
+                     function; binds v : Integer"
+                ),
+                (
+                    range(Span(0, 33, 0, 41)),
+                    "checked against `-F String`; while checking the value this returns"
                 ),
             ],
-            "the thunk and the force it holds, outermost first"
+            "the refusal's own annotations, then every rule it stood inside, outermost first"
+        );
+    }
+
+    #[test]
+    fn an_unlocated_context_is_appended_to_the_message()
+    {
+        let uri = DocumentUri::from("file:///strict/force.gandr");
+        let text =
+            SourceText::from("def a : +U (-F Integer) ;\ndef a = thunk { become force 1 } ;\n");
+        let pbg = gandr_surface_grammar::built_in().expect("the grammar builds");
+        let root = gandr_surface_dispatcher::SourceRoot::Strict;
+        let step = gandr_surface_dispatcher::Step::Source {
+            path: std::path::Path::new("force.gandr"),
+            root,
+            text,
+            composed: gandr_surface_dispatcher::compose(
+                &pbg,
+                root.corpus_root(),
+                text,
+                &mut gandr_surface_dispatcher::LoweringCount::default(),
+            )
+            .expect("the source composes"),
+            standing: gandr_surface_dispatcher::Standing::Unsettled,
+        };
+        let mut found: Vec<gandr_surface_diagnostics::Diagnostic> =
+            super::entries(&step, super::Verb::Check(super::Goals::Reported)).collect();
+        let [ref mut force] = *found.as_mut_slice()
+        else {
+            panic!("one shape mismatch");
+        };
+        let outermost = force.contexts.first_mut().expect("the thunk's rule");
+        outermost.locus =
+            Maybe::Absent(gandr_surface_diagnostics::context_locus::Absent::Unrecorded);
+        let index = super::LineIndex::new(text.as_ref().into());
+        let published = super::diagnostic(force, &index, &uri, Verbosity::User);
+        assert_eq!(
+            published.message.lines().collect::<Vec<_>>(),
+            [
+                "expected a thunk type `+U C`",
+                "its type is not of the required shape: found `Integer`",
+                "while checking the body of this thunk",
+                "note: `a` is expected to check, and this refusal leaves it unsettled",
+            ],
+            "a context with no bytes to relate is a `while` line of the message, after the label"
+        );
+        assert_eq!(
+            published
+                .related_information
+                .iter()
+                .map(|related| (related.location.range, related.message.as_str()))
+                .collect::<Vec<_>>(),
+            [(
+                range(Span(1, 23, 1, 30)),
+                "checked against `-F Integer`; while forcing this"
+            )],
+            "the located context stays related information"
         );
     }
 
@@ -1093,10 +1179,22 @@ mod tests
         else {
             panic!("one original declaration");
         };
-        assert_eq!(related.location, Location {
-            uri,
-            range: range(Span(0, 0, 0, 17))
-        });
+        assert_eq!(
+            (&related.location, related.message.as_str()),
+            (
+                &Location {
+                    uri,
+                    range: range(Span(0, 0, 0, 17))
+                },
+                "first written here"
+            ),
+            "the first signature keeps its locus and says what it is"
+        );
+        assert_eq!(
+            diagnostic.range,
+            range(Span(1, 0, 1, 17)),
+            "the duplicate is the lead range"
+        );
     }
 
     #[test]
@@ -1318,3 +1416,5 @@ mod tests
         );
     }
 }
+// weave: run 'weave explain crates/surface-lsp/src/recheck.rs' for per-hunk
+// detail, 'weave check' to verify your resolution

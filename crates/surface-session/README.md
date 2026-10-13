@@ -41,7 +41,7 @@ The interactive session: each revision of one source lowered, judged exactly as 
 - **A block store.** Any `BlockStore`: `gandr-storage-records`' `InMemoryBlockStore` for a session that dies with its process; a store that outlives it carries the kernel checkpoints to the next.
 - **A backend identity.** A `BackendArtifact` naming the checker build, so checkpoints a different checker judged are never restored.
 - **The text.** The caller owns the source's buffer and submits each revision whole; the submission borrows it.
-- **A renderer.** `gandr-surface-diagnostics` renders the `Step` a submission turns into.
+- **A face.** The dispatcher's `entries` reads the `Step` a submission turns into as `gandr-surface-diagnostics` diagnostics, which `gandr-surface-render-terminal` lays out and `gandr-surface-lsp` publishes.
 
 ## Examples
 

@@ -5,7 +5,10 @@ error[ShapeMismatch]: expected a thunk type `+U C`
   │         ┬──────────────┬─────┯──
   │         │              │     │
   │         │              │     its type is not of the required shape: found `Integer`
-  │         │              while checking this against `-F Integer`
-  │         while checking this against `+U (-F Integer)`
+  │         │              checked against `-F Integer`; while forcing this
+  │         checked against `+U (-F Integer)`; while checking the body of this thunk
   │
-  ╰ note: unsettled `a` states checks owing 0
+  ├ note: `a` is expected to check, and this refusal leaves it unsettled
+  ├ class: malformed source
+  ├ detail: the rule here requires a thunk type `+U C`
+  ╰ expression: `1`

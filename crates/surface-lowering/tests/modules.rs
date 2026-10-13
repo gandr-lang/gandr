@@ -63,6 +63,7 @@ mod modules
     use gandr_surface_parser::parse;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::ByteSpan;
+    use gandr_surface_syntax::ClosingClass;
     use gandr_surface_syntax::SourceText;
     use gandr_surface_syntax::SyntaxTree;
     use quenchant_shape::shape::Maybe;
@@ -2234,17 +2235,19 @@ mod modules
                 [
                     (bad, Role::Declared, Amounts::Refused(LoweringRefusal::MalformedForm {
                         form: refused,
-                        fault: FormFault::Repaired(Repair::Grout(_)),
+                        fault: FormFault::Repaired(Repair::GhostClose(ClosingClass::Paren)),
                         ..
                     })),
                     (member, Role::Declared, Amounts::Bodied),
                     (top, Role::Declared, Amounts::Bodied),
-                ] if bad == "M.bad" && *refused == FormName::from(NamedKind("def_value"))
+                ] if bad == "M.bad"
+                    && *refused == FormName::from(NamedKind("parenthesized_expression"))
                     && member == "M.good"
                     && top == "good"
             ),
-            "the repair stays inside the member it repairs; the module keeps its other \
-             member and the declaration after it, got {found:?}"
+            "the repair stays inside the member it repairs and names the group left open, \
+             not the definition it cut short; the module keeps its other member and the \
+             declaration after it, got {found:?}"
         );
         assert_eq!(
             strata(&lowered),

@@ -3,39 +3,38 @@ name = "gandr-surface-diagnostics"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "Renders a gandr dispatcher step: refusals, unsettled declarations and goals as source snippets"
+description = "The gandr diagnostics model: refusals, unsettled declarations, goals, warnings and ledger lines, built from what the producers recorded"
 repository.workspace = true
 license.workspace = true
 keywords = ["diagnostics", "gandr", "language"]
 categories = ["development-tools"]
 publish.workspace = true
 
-# The renderer reads the step's own vocabulary: the dispatcher's step and
-# verb, the settle comparison's declaration report and refusal names, the
-# lowering's refusals and origin table, the checker's refusals and the failure
-# classes beneath them, the kernel's occurrence sites and descent rules those
-# refusals carry, and the source text spans are measured against. The
-# snippet backend stays behind the crate's API. The JSON verbosity level
-# derives its image through serde and encodes it through serde_json.
-# The pinned anodized facade supplies core-only specification helpers;
-# logic/BigInt stays disabled.
+# The model reads the producers' own vocabulary: the settle comparison's
+# declaration report and refusal names, the lowering's refusals and origin
+# table, the checker's refusals, failures and the failure classes beneath
+# them, the kernel's occurrence sites and descent rules those refusals carry,
+# and the source text spans are measured against. The pretty printer spells
+# the types a failure names while the arena is at hand. The JSON image derives
+# through serde and encodes through serde_json. The pinned anodized facade
+# supplies core-only specification helpers; logic/BigInt stays disabled.
 [dependencies]
-annotate-snippets.workspace = true
 anodized.workspace = true
 gandr-core-checker.workspace = true
 gandr-core-term.workspace = true
 gandr-kernel-term.workspace = true
 gandr-surface-corpus.workspace = true
-gandr-surface-dispatcher.workspace = true
 gandr-surface-lowering.workspace = true
+gandr-surface-pretty.workspace = true
 gandr-surface-syntax.workspace = true
 quenchant-shape.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
-# The suite composes sources through the dispatcher's composition, which takes
-# the built-in grammar.
+# The suite builds diagnostics from real compositions: the dispatcher's walk
+# over the built-in grammar.
 [dev-dependencies]
+gandr-surface-dispatcher.workspace = true
 gandr-surface-grammar.workspace = true
 
 [lints]

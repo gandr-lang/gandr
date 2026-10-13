@@ -25,7 +25,7 @@ use std::io;
 use std::io::Write;
 
 use anodized::spec;
-use gandr_surface_diagnostics::RenderStyle;
+use gandr_surface_render_terminal::RenderStyle;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 use rustyline::DefaultEditor;

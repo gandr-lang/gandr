@@ -40,7 +40,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 - `StaticArity`, `ArgumentPosition` and family refusals preserve the failing argument or arity.
 - `CheckRefusal::classify` assigns producer-failure classes; actual judgments, rather than a duplicate variant-to-class table, witness their refusals.
 - `CheckRefusal::compared`, `Compared` and `compared::Absent`: the types a refusal sets against each other, the one its rule expected and the one it found, as nodes a face spells.
-- `trace_value`, `Pending`, `pending::Absent` and `ModuleReport::pending`: the value and computation judgements a refusal stood inside, outermost first, each a term and the type it was checked against, and `check_module`'s trail of each refused body by position.
+- `Failure`, `Obligation`, `FrameRole`, `FoldPremise`, `Pursuit`, `Stage`, `judged` and `ModuleReport::failures`: what the checking machine held when it refused, read off the one run that refused — the refusal, the frames it stood inside, outermost first, each a closed rule role with the term and type it judged and the binders it opened, and the goal under way — kept per refused body by position.
 - `bridge::readmit` and `bridge::Readmission`: independent admission of accepted declarations into a fresh kernel environment.
 - `bridge::Readmitted` and `bridge::Outcome`: each origin and its defined-value, admitted-data, assumed-hole, static-definition, marked, refused or rejected outcome.
 - `bridge::ArtifactAudit`: owed-hole and native-runtime assumptions used by admitted declarations.
@@ -123,7 +123,8 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 | The fragment's type views | [`view`](src/view.rs) |
 | The context, resolution by admission position, adoption | [`context`](src/context.rs) |
 | Declaration input | [`declaration`](src/declaration.rs) |
-| Verdicts, holes at the declaration grain, definitions, refused-body trails | [`module`](src/module.rs) |
+| Verdicts, holes at the declaration grain, definitions, refused-body failures | [`module`](src/module.rs) |
+| The machine's failure and its frame roles | [`failure`](src/failure.rs) |
 | The ledger | [`ledger`](src/ledger.rs) |
 | Refusal classes | [`refusal`](src/refusal.rs) |
 | Support | [`support`](src/support.rs) |

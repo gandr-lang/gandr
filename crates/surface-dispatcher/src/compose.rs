@@ -120,6 +120,8 @@ use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_corpus::SettleFault;
 use gandr_surface_corpus::SettleReport;
 use gandr_surface_corpus::settle;
+use gandr_surface_diagnostics::Failures;
+use gandr_surface_diagnostics::Spellings;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweredModule;
@@ -135,8 +137,6 @@ use quenchant_shape::shape::Maybe;
 
 use crate::evaluate::Program;
 use crate::exercised::Exercised;
-use crate::spelled::Spellings;
-use crate::spelled::Trails;
 
 /// How many sources a run has lowered.
 #[repr(transparent)]
@@ -239,13 +239,14 @@ pub enum Composed<'source>
         /// that produced it: the table a checker refusal's node is located
         /// through.
         origins: OriginTable,
-        /// The types the checker refusals compare, and the types the
-        /// judgements they stood inside were checked against, spelled while
-        /// the arena was at hand: the table a refusal's types are read from.
+        /// The types the checker refusals compare, and the types and binders
+        /// their failures name, spelled while the arena was at hand: the
+        /// table a refusal's types are read from.
         spellings: Spellings,
-        /// The judgements each refused body stood inside, outermost first, by
-        /// position: a refusal's nested reasons.
-        trails: Trails,
+        /// The failure the checking machine kept for each refused body, by
+        /// admission position: the rules it stood inside and the hypotheses
+        /// in scope.
+        failures: Failures,
         /// Every builtin the source's declarations and binders shadowed, in
         /// the order shadowed: under the warn-and-allow policy the source's
         /// binding wins and each is a warning, not a refusal.
@@ -314,7 +315,7 @@ impl Composed<'_>
                 unstatable,
                 origins,
                 spellings,
-                trails,
+                failures,
                 shadowed,
                 program,
                 ..
@@ -324,7 +325,7 @@ impl Composed<'_>
                 unstatable,
                 origins,
                 spellings,
-                trails,
+                failures,
                 shadowed,
                 kernel: Maybe::Present(kernel),
                 program,
@@ -817,11 +818,10 @@ pub fn lower_parsed<'source>(
 ///   carry, the refusals of the declarations refused at their own form, which
 ///   no expectation can state, the lowering's origin table, moved rather than
 ///   copied, the spellings of the types its checker refusals compare and its
-///   trails were checked against, the trails themselves, every builtin the
-///   source shadowed, the program, and no kernel artifact yet
-///   ([`admitted::Absent::Pending`]); a settle fault is carried in its place.
-///   The admission holds the arena the verdicts were judged over, the verdicts
-///   and the module's structured names.
+///   failures name, the failures themselves, every builtin the source shadowed,
+///   the program, and no kernel artifact yet ([`admitted::Absent::Pending`]); a
+///   settle fault is carried in its place. The admission holds the arena the
+///   verdicts were judged over, the verdicts and the module's structured names.
 /// - provides: the composition a face renders before the kernel has been
 ///   offered anything; the readmission mints nothing the settle comparison or
 ///   the program reads.
@@ -865,8 +865,8 @@ pub fn judge(
         | Ok(report) => {
             let exercised = Exercised::of(&arena, &module, &report);
             let unstatable = unstatable(&module);
-            let trails = Trails::of(&verdicts);
-            let spellings = Spellings::of(&arena, &module, &report, &trails);
+            let failures = Failures::of(&verdicts);
+            let spellings = Spellings::of(&arena, &module, &report, &failures);
             let shadowed = module.recognition().shadowed().to_vec();
             Ok(Composed::Settled {
                 report,
@@ -874,7 +874,7 @@ pub fn judge(
                 unstatable,
                 origins: module.into_origins(),
                 spellings,
-                trails,
+                failures,
                 shadowed,
                 kernel: Maybe::Absent(admitted::Absent::Pending),
                 program,
@@ -1741,8 +1741,8 @@ def h = 1 ;"#,
             .expect("the verdicts settle");
             let exercised = Exercised::of(&arena, &module, &report);
             let unstatable = super::unstatable(&module);
-            let trails = super::Trails::of(&verdicts);
-            let spellings = super::Spellings::of(&arena, &module, &report, &trails);
+            let failures = super::Failures::of(&verdicts);
+            let spellings = super::Spellings::of(&arena, &module, &report, &failures);
             let shadowed = module.recognition().shadowed().to_vec();
             let readmitted_first = Composed::Settled {
                 report,
@@ -1750,7 +1750,7 @@ def h = 1 ;"#,
                 unstatable,
                 origins: module.into_origins(),
                 spellings,
-                trails,
+                failures,
                 shadowed,
                 kernel: Maybe::Present(kernel),
                 program,
@@ -1861,3 +1861,5 @@ def h = 1 ;"#,
         assert_eq!(super::unstatable(&module).as_slice(), &[first, last]);
     }
 }
+// weave: run 'weave explain crates/surface-dispatcher/src/compose.rs' for
+// per-hunk detail, 'weave check' to verify your resolution

@@ -15,6 +15,7 @@ mod namespace
     use gandr_surface_grammar::NamedKind;
     use gandr_surface_grammar::Pbg;
     use gandr_surface_grammar::built_in;
+    use gandr_surface_lowering::Ending;
     use gandr_surface_lowering::FormFault;
     use gandr_surface_lowering::FormName;
     use gandr_surface_lowering::ImportDeclaration;
@@ -47,7 +48,6 @@ mod namespace
     use gandr_surface_parser::parse;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::ByteSpan;
-    use gandr_surface_syntax::GroutShape;
     use gandr_surface_syntax::SourceText;
     use gandr_surface_syntax::SyntaxTree;
     use quenchant_shape::shape::Maybe;
@@ -1366,9 +1366,9 @@ mod namespace
             LoweringRefusal::MalformedForm {
                 span: bytes(32_usize, 32_usize),
                 form: FormName::from(NamedKind("import_declaration")),
-                fault: FormFault::Repaired(Repair::Grout(GroutShape::Postfix)),
+                fault: FormFault::Repaired(Repair::Unended(Ending::Unnamed)),
             },
-            "the parser's repair where the alias belongs refuses the import, by its form"
+            "the end the parser appended where the alias belongs refuses the import, by its form"
         );
     }
 

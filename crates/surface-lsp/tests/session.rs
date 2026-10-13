@@ -18,13 +18,14 @@ mod session
     use std::path::PathBuf;
 
     use anodized::spec;
-    use gandr_surface_diagnostics::Entry;
-    use gandr_surface_diagnostics::Report;
-    use gandr_surface_diagnostics::entries;
+    use gandr_surface_diagnostics::AnnotationKind;
+    use gandr_surface_diagnostics::Diagnostic;
+    use gandr_surface_diagnostics::Severity;
     use gandr_surface_dispatcher::Goals;
     use gandr_surface_dispatcher::Step;
     use gandr_surface_dispatcher::Verb;
     use gandr_surface_dispatcher::Walk;
+    use gandr_surface_dispatcher::entries;
     use gandr_surface_grammar::RoleTable;
     use gandr_surface_grammar::built_in;
     use gandr_surface_lsp::Body;
@@ -81,7 +82,7 @@ mod session
         ///   isolated source; instrumented postconditions observe the directory
         ///   and emptiness, distinguishing skipped creation or retained stale
         ///   contents.
-        /// - witness: `session::session::a_refusal_is_published_where_the_renderer_renders_it`
+        /// - witness: `session::session::a_refusal_is_published_where_the_model_locates_it`
         #[spec(requires: test.components().count() == 1
             && matches!(test.components().next(), Some(std::path::Component::Normal(_))),
             ensures: |ret| ret.0.is_dir() && std::fs::read_dir(&ret.0).is_ok_and(|mut entries| entries.next().is_none()))]
@@ -115,7 +116,7 @@ mod session
         /// - hypothesis: L3 — the refusal session drops a root containing its
         ///   source; the instrumented absence check detects skipped or
         ///   incomplete removal.
-        /// - witness: `session::session::a_refusal_is_published_where_the_renderer_renders_it`
+        /// - witness: `session::session::a_refusal_is_published_where_the_model_locates_it`
         #[spec(requires: self.0.is_dir(), ensures: !self.0.exists())]
         fn drop(&mut self)
         {
@@ -148,7 +149,7 @@ mod session
     /// - hypothesis: L2 — a path containing a space and non-ASCII character has
     ///   a pinned URI; corpus sessions link each published URI to its source.
     /// - witness: `session::session::wire_helpers_preserve_escaped_paths_and_unicode_payloads`
-    /// - witness: `session::session::every_corpus_report_is_published_where_the_walk_renders_it`
+    /// - witness: `session::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
     #[spec(requires: path.is_absolute() && path.to_str().is_some(),
         ensures: |ret| ret.strip_prefix("file://").is_some_and(|encoded|
             percent_encoding::percent_decode_str(encoded).eq(path.as_os_str().as_encoded_bytes().iter().copied())))]
@@ -323,8 +324,8 @@ mod session
     /// - hypothesis: L2 — every located corpus report agrees with the server;
     ///   L3 — the pinned refusal location distinguishes byte/UTF-16 coordinate
     ///   shifts.
-    /// - witness: `session::session::every_corpus_report_is_published_where_the_walk_renders_it`
-    /// - witness: `session::session::a_refusal_is_published_where_the_renderer_renders_it`
+    /// - witness: `session::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
+    /// - witness: `session::session::a_refusal_is_published_where_the_model_locates_it`
     #[spec(
         requires: index.utf16_pos_of_byte(ByteOffset::from(usize::from(byte))).is_ok(),
         ensures: |ret| index.utf16_pos_of_byte(ByteOffset::from(usize::from(byte))).is_ok_and(|position|
@@ -342,64 +343,86 @@ mod session
         json!({"line": usize::from(pos.row), "character": usize::from(pos.col)})
     }
 
-    /// The range, code and message a renderer report reads as, each projected
-    /// independently of the server: the wire's own view of `report`.
+    /// The range, code, message and related information a model diagnostic
+    /// reads as, each projected independently of the server: the wire's own
+    /// view of `diagnostic`.
     ///
     /// # Specification
-    /// - requires: index describes the report source; located spans project.
-    /// - ensures: the primary range, optional code, message (title, then the
-    ///   primary label and the note on lines of their own when present) and
-    ///   related ranges and labels are represented in the comparison object,
-    ///   preserving context order.
-    /// - provides: an independent renderer-stage observation of editor
+    /// - requires: index describes the diagnostic's source; located spans
+    ///   project.
+    /// - ensures: the primary range, optional code, message (the message, then
+    ///   the primary label, each unlocated context and the note on lines of
+    ///   their own when present) and related ranges and labels — every context
+    ///   annotation, then every located context — are represented in the
+    ///   comparison object, in order; a ledger line is its line at the origin.
+    /// - provides: an independent model-stage observation of editor
     ///   diagnostics.
-    /// - fails: never for valid report spans.
+    /// - fails: never for valid spans.
     /// - panics: a located span lies inside a character.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — every corpus report, including absent locations and
-    ///   causal contexts, is compared against the actual wire publication;
-    ///   exact ranges, codes and labels distinguish lost or misprojected report
+    /// - hypothesis: L2 — every corpus diagnostic, including absent locations
+    ///   and causal contexts, is compared against the actual wire publication;
+    ///   exact ranges, codes and labels distinguish lost or misprojected
     ///   fields.
-    /// - witness: `session::session::every_corpus_report_is_published_where_the_walk_renders_it`
+    /// - witness: `session::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
     #[spec(ensures: |ret|
-        ret.get("code").is_some_and(|code| code.is_null() == matches!(report.identifier(), Maybe::Absent(_)))
+        ret.get("code").is_some_and(|code| code.is_null() == matches!(diagnostic.identifier, Maybe::Absent(_)))
             && ret.get("message").is_some_and(Value::is_string)
             && ret.get("related").and_then(Value::as_array).is_some_and(|related|
-                related.len() == report.context().into_iter().filter(|slot| matches!(slot, Maybe::Present(_))).count()))]
+                related.len() == diagnostic.annotations.iter().filter(|annotation| annotation.kind == AnnotationKind::Context).count()
+                    .saturating_add(diagnostic.contexts.iter().filter(|context| matches!(context.locus, Maybe::Present(_))).count())))]
     fn rendered(
-        report: &Report<'_>,
+        diagnostic: &Diagnostic,
         index: &LineIndex<'_>,
     ) -> Value
     {
         let origin = json!({"line": 0_i32, "character": 0_i32});
-        let range = match report.span() {
-            | Maybe::Present(span) => {
-                json!({"start": position(index, span.start()), "end": position(index, span.end())})
-            },
-            | Maybe::Absent(_) => json!({"start": origin, "end": origin}),
-        };
-        let code = match report.identifier() {
-            | Maybe::Present(spelling) => json!(spelling.to_string()),
+        let at_origin = json!({"start": origin, "end": origin});
+        if diagnostic.severity == Severity::Ledger {
+            return json!({
+                "range": at_origin,
+                "code": null,
+                "message": format!("{}: {}", diagnostic.path.display(), diagnostic.message.text),
+                "related": [],
+            });
+        }
+        let range = |span: gandr_surface_syntax::ByteSpan| json!({"start": position(index, span.start()), "end": position(index, span.end())});
+        let code = match diagnostic.identifier {
+            | Maybe::Present(ref spelling) => json!(spelling.to_string()),
             | Maybe::Absent(_) => Value::Null,
         };
-        let related: Vec<_> = report.context().into_iter().filter_map(|slot| match slot {
-            Maybe::Present(annotation) => Some(json!({
-                "range": {"start": position(index, annotation.span.start()), "end": position(index, annotation.span.end())},
-                "message": annotation.label.to_string(),
-            })),
-            Maybe::Absent(_) => None,
-        }).collect();
-        let label = match report.label() {
-            | Maybe::Present(label) => format!("\n{label}"),
-            | Maybe::Absent(_) => String::new(),
+        let mut related: Vec<_> = diagnostic
+            .annotations
+            .iter()
+            .filter(|annotation| annotation.kind == AnnotationKind::Context)
+            .map(|annotation| json!({"range": range(annotation.locus.span), "message": annotation.label}))
+            .collect();
+        let mut message = diagnostic.message.text.clone();
+        let lead = match diagnostic.primary() {
+            | Maybe::Present(primary) => {
+                message.push('\n');
+                message.push_str(&primary.label);
+                range(primary.locus.span)
+            },
+            | Maybe::Absent(_) => at_origin,
         };
-        let note = match report.note() {
-            | Maybe::Present(note) => format!("\nnote: {note}"),
-            | Maybe::Absent(_) => String::new(),
-        };
-        let message = format!("{}{label}{note}", report.message());
-        json!({"range": range, "code": code, "message": message, "related": related})
+        for context in &diagnostic.contexts {
+            match context.locus {
+                | Maybe::Present(locus) => {
+                    related.push(json!({"range": range(locus.span), "message": context.label()}));
+                },
+                | Maybe::Absent(_) => {
+                    message.push('\n');
+                    message.push_str(&context.note());
+                },
+            }
+        }
+        if let Maybe::Present(ref note) = diagnostic.note {
+            message.push_str("\nnote: ");
+            message.push_str(note);
+        }
+        json!({"range": lead, "code": code, "message": message, "related": related})
     }
 
     /// The range, code and message of each diagnostic a publication carries.
@@ -418,7 +441,7 @@ mod session
     /// - hypothesis: L2 — every corpus publication is compared with independent
     ///   renderer-stage observations, distinguishing dropped or reordered
     ///   diagnostics and missing codes, titles or causal labels.
-    /// - witness: `session::session::every_corpus_report_is_published_where_the_walk_renders_it`
+    /// - witness: `session::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
     #[spec(requires: publication.pointer("/params/diagnostics").is_some_and(Value::is_array),
         ensures: |ret| publication.pointer("/params/diagnostics").and_then(Value::as_array).is_some_and(|diagnostics|
             ret.len() == diagnostics.len() && ret.iter().zip(diagnostics).all(|(projected, original)|
@@ -462,7 +485,7 @@ mod session
     /// # Adequacy
     /// - hypothesis: L2 — full corpus report/token comparisons read both strict
     ///   and fixture roots, distinguishing a wrong or unavailable corpus root.
-    /// - witness: `session::session::every_corpus_report_is_published_where_the_walk_renders_it`
+    /// - witness: `session::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
     /// - witness: `session::session::corpus_tokens_cover_the_highlighted_bytes`
     #[spec(ensures: |ret| ret.is_absolute() && ret.is_dir() && ret.ends_with("surface-corpus"))]
     fn corpus() -> PathBuf
@@ -627,7 +650,7 @@ mod session
     }
 
     #[test]
-    fn a_refusal_is_published_where_the_renderer_renders_it()
+    fn a_refusal_is_published_where_the_model_locates_it()
     {
         let scratch = Scratch::new(Path::new("refusal"));
         let path = scratch.0.join("broken.gandr");
@@ -639,36 +662,18 @@ mod session
         else {
             panic!("the walk reaches the source");
         };
-        let renderings = entries(&step, Verb::Check(Goals::Reported))
-            .map(|entry| match entry {
-                | Entry::Report(report) => report
-                    .render(
-                        gandr_surface_diagnostics::RenderStyle::Plain,
-                        gandr_surface_diagnostics::Verbosity::User,
-                    )
-                    .to_string(),
-                | Entry::Line(line) => line.to_string(),
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(renderings.len(), 1_usize, "one refusal, one rendering");
-        let rendering = &renderings[0];
-        let heading = rendering
-            .lines()
-            .next()
-            .expect("a rendering has a first line");
-        let code = heading
-            .strip_prefix("error[")
-            .and_then(|rest| rest.split_once(']'))
-            .map(|(code, _)| code)
-            .expect("a refusal's heading names its code");
-        let located = rendering
-            .lines()
-            .find_map(|line| line.split_once(&format!("{}:", path.display())))
-            .map(|(_, at)| at.trim().to_owned())
-            .expect("a located report names its line and column");
-        let (line, column) = located.split_once(':').expect("line:column");
-        let line: u64 = line.parse().expect("a line number");
-        let column: u64 = column.parse().expect("a column number");
+        let found = entries(&step, Verb::Check(Goals::Reported)).collect::<Vec<_>>();
+        assert_eq!(found.len(), 1_usize, "one refusal, one diagnostic");
+        let Maybe::Present(ref code) = found[0].identifier
+        else {
+            panic!("a refusal names its code");
+        };
+        let Maybe::Present(primary) = found[0].primary()
+        else {
+            panic!("the refusal is located");
+        };
+        let line = u64::try_from(primary.locus.line).expect("a line number");
+        let column = u64::try_from(primary.locus.column).expect("a column number");
 
         let source = Source {
             uri: uri(&path),
@@ -685,7 +690,7 @@ mod session
         assert_eq!(diagnostics.len(), 1_usize, "one refusal, one diagnostic");
         assert_eq!(
             diagnostics[0]["code"],
-            json!(code),
+            json!(code.to_string()),
             "the diagnostic's code is the rendering's identifier"
         );
         assert_eq!(
@@ -701,7 +706,7 @@ mod session
     }
 
     #[test]
-    fn every_corpus_report_is_published_where_the_walk_renders_it()
+    fn every_corpus_diagnostic_is_published_as_the_model_builds_it()
     {
         let root = corpus();
         let mut walk = Walk::new(vec![root.join("strict"), root.join("fixture")]);
@@ -714,18 +719,7 @@ mod session
             };
             let index = LineIndex::new(text.as_ref().into());
             let reports = entries(&step, Verb::Check(Goals::Reported))
-                .map(|entry| match entry {
-                    | Entry::Report(report) => rendered(&report, &index),
-                    | Entry::Line(line) => json!({
-                        "range": {
-                            "start": {"line": 0_i32, "character": 0_i32},
-                            "end": {"line": 0_i32, "character": 0_i32},
-                        },
-                        "code": null,
-                        "message": line.to_string(),
-                        "related": [],
-                    }),
-                })
+                .map(|diagnostic| rendered(&diagnostic, &index))
                 .collect::<Vec<_>>();
             let source = Source {
                 uri: uri(path),

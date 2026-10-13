@@ -12,11 +12,11 @@ use anodized::spec;
 use gandr_core_incremental::ItemKey;
 use gandr_core_term::FailureClass;
 use gandr_surface_diagnostics::Class;
-use gandr_surface_diagnostics::Entry;
-use gandr_surface_diagnostics::entries;
+use gandr_surface_diagnostics::Severity;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Verb;
+use gandr_surface_dispatcher::entries;
 use gandr_surface_parser::Oblig;
 use gandr_surface_parser::ObligationInstance;
 use gandr_surface_parser::parse;
@@ -310,13 +310,18 @@ fn recovery_then_a_valid_declaration_reports_the_repair_and_keeps_both()
     let path = Path::new("recovery.gandr");
     let step = submission.into_step(path);
     let reports: Vec<_> = entries(&step, Verb::Check(Goals::Reported))
-        .map(|entry| match entry {
-            | Entry::Report(report) => (
-                report.class(),
-                report.identifier().map(|spelling| spelling.to_string()),
-                report.span(),
-            ),
-            | Entry::Line(line) => panic!("a strict source prints no ledger line: {line}"),
+        .map(|diagnostic| {
+            assert_ne!(
+                diagnostic.severity,
+                Severity::Ledger,
+                "a strict source prints no ledger line: {}",
+                diagnostic.message.text
+            );
+            (
+                diagnostic.detail.class,
+                diagnostic.identifier.map(|spelling| spelling.to_string()),
+                diagnostic.span,
+            )
         })
         .collect();
     assert_eq!(

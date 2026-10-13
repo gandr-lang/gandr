@@ -16,50 +16,12 @@
 //! judged; a [`Comparison`] reads them back by node, so a synthesised type the
 //! label cannot point at is still named in it.
 //!
-//! # A refusal's nested reasons are the judgements it stood inside
+//! # The rules a refusal stood inside are contexts, not loci
 //!
-//! The composition keeps, for each refused body, the value and computation
-//! judgements the refusal stood inside, outermost first. Each one whose term
-//! the origin table locates is a [`Reason`]: its term's bytes, and whether the
-//! term was checked, against which type, or synthesised. A reason at the
-//! primary locus, or at bytes an outer reason already marks, says nothing the
-//! report does not, and is left out; a term with no origin is left out rather
-//! than located at a guess.
-//!
-//! A refused body's trail, kept by the dispatcher, is the value and computation
-//! judgements the refusal stood inside, outermost first. `Report::reasons`
-//! reads each one whose term the origin table locates as a `Reason`: the term's
-//! bytes and how it was judged — checked against a type, spelled where the
-//! dispatcher could spell it, or synthesised. The snippet marks each as a
-//! context locus labelled with a `while` clause, so a force of an integer
-//! inside a thunk renders as:
-//!
-//! ```text
-//! error[ShapeMismatch]: expected a thunk type `+U C`
-//!   ╭▸ force.gandr:2:30
-//!   │
-//! 2 │ def a = thunk { become force 1 } ;
-//!   │         ┬──────────────┬─────┯──
-//!   │         │              │     │
-//!   │         │              │     its type is not of the required shape: found `Integer`
-//!   │         │              while checking this against `-F Integer`
-//!   │         while checking this against `+U (-F Integer)`
-//!   │
-//!   ╰ note: unsettled `a` states checks owing 0
-//! ```
-//!
-//! A reason at the primary locus, or at bytes an outer reason already marks,
-//! says nothing the snippet does not, and is left out, so a body refused where
-//! it stands has none; a term with no origin is left out rather than located at
-//! a guess. The language server publishes the same reasons as related
-//! information.
-//!
-//! The alternatives were a `note: while …` line per reason after the snippet,
-//! which repeats the source position in prose where the snippet can point at
-//! it, and a reason per machine frame, which names the rule waiting on a
-//! subterm but not the subterm's own bytes. Reversal: a reason with no locus
-//! worth showing — a term only the lowering minted — becomes a note when a
-//! reader needs it.
+//! The judgements a checker refusal stood inside are its failure's
+//! obligations, which the `frame` module reads into contexts. The loci here
+//! are the ones the refusal itself names: the term refused, and the types it
+//! compares where they were written.
 //!
 //! # Context is causal
 //!
@@ -77,7 +39,6 @@ use gandr_core_checker::CheckingForm;
 use gandr_core_checker::CoreNode;
 use gandr_core_checker::ExpectedShape;
 use gandr_core_checker::Mismatch;
-use gandr_core_checker::Pending;
 use gandr_core_checker::TermNode;
 use gandr_core_checker::TypeNode;
 use gandr_core_checker::UnadmittedFormer;
@@ -89,8 +50,6 @@ use gandr_surface_corpus::ExpectationFault;
 use gandr_surface_corpus::Refusal;
 use gandr_surface_corpus::Stated;
 use gandr_surface_corpus::Surviving;
-use gandr_surface_dispatcher::Spellings;
-use gandr_surface_dispatcher::spelling;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::Origin;
 use gandr_surface_lowering::OriginTable;
@@ -100,6 +59,8 @@ use quenchant_shape::shape::Maybe;
 use crate::culprit::Culprit;
 use crate::report::Unsettlement;
 use crate::report::report_span;
+use crate::spelled::Spellings;
+use crate::spelled::spelling;
 
 quenchant_shape::reason_enum! {
     /// Why a context slot holds no annotation.
@@ -146,6 +107,8 @@ pub enum Label
     /// A declared name or a binder over a builtin: the primary locus of a
     /// shadowing warning.
     Shadows,
+    /// The declaration or refusal a ledger line reports.
+    Reported,
 }
 
 impl fmt::Display for Label
@@ -168,7 +131,7 @@ impl fmt::Display for Label
     ///   observations distinguish lost notation and label placement, not
     ///   arbitrary wording or failing destinations.
     /// - witness: `diagnostics::diagnostics::a_labeled_context_retains_its_locus_and_cause`
-    /// - witness: `diagnostics::diagnostics::a_type_mismatch_renders_as_a_located_report`
+    /// - witness: `diagnostics::diagnostics::a_type_mismatch_is_located_at_its_term`
     #[inline]
     fn fmt(
         &self,
@@ -186,6 +149,7 @@ impl fmt::Display for Label
             | Self::Met(wanted) => write!(f, "the type met, where {} is required", Shape(wanted)),
             | Self::Endpoint => f.write_str("an endpoint the point does not convert to"),
             | Self::Shadows => f.write_str("shadows a builtin"),
+            | Self::Reported => f.write_str("reported here"),
         }
     }
 }
@@ -223,7 +187,7 @@ impl<'step> Comparison<'step>
     /// # Adequacy
     /// - hypothesis: L3 — a value mismatch reads both spellings in their roles,
     ///   and a lowering refusal reads none.
-    /// - witness: `diagnostics::diagnostics::a_type_mismatch_renders_as_a_located_report`
+    /// - witness: `diagnostics::diagnostics::a_type_mismatch_is_located_at_its_term`
     /// - witness: `diagnostics::diagnostics::a_mismatch_label_spells_both_types`
     #[spec(ensures: |ret| match refusal {
         Refusal::Checking(checked) => {
@@ -346,117 +310,6 @@ impl fmt::Display for PrimaryLabel<'_>
             return Ok(());
         }
         write!(f, ": {}", self.comparison)
-    }
-}
-
-/// How a judgement a refusal stood inside judged its term.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Judging<'step>
-{
-    /// The term was checked against a type, spelled when the composition
-    /// could spell it.
-    Checked(Maybe<&'step str, spelling::Absent>),
-    /// The term's type was synthesised.
-    Synthesised,
-}
-
-/// One judgement a refusal stood inside, at its term's bytes: a nested reason.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Reason<'step>
-{
-    /// The bytes of the term under judgement.
-    pub span: ByteSpan,
-    /// How the term was judged.
-    pub judging: Judging<'step>,
-}
-
-impl<'step> Reason<'step>
-{
-    /// The located reasons `pending` gives, outermost first.
-    ///
-    /// # Specification
-    /// - requires: `origins` and `spellings` were built over the arena
-    ///   `pending` names.
-    /// - ensures: one reason per judgement of `pending` whose term `origins`
-    ///   locates, in order, except one at `primary` or at bytes an earlier
-    ///   reason marks; each checked against the spelling of its expected type,
-    ///   absent where the spellings hold none, or synthesised.
-    /// - provides: the nested reasons a report renders beside its primary
-    ///   locus.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a force refused inside a thunk keeps the thunk as a
-    ///   checked reason with its type and drops the force, which is the primary
-    ///   locus; a mismatch at a declaration's whole body keeps none.
-    /// - witness: `diagnostics::diagnostics::a_refusal_names_the_judgements_it_stood_inside`
-    #[spec(ensures: |ret| ret.len() <= pending.len()
-        && ret.iter().all(|reason| primary != Maybe::Present(reason.span))
-        && ret.iter().enumerate().all(|(at, reason)| ret.iter().take(at).all(|outer| outer.span != reason.span)))]
-    pub(crate) fn trail(
-        pending: &[Pending],
-        origins: &OriginTable,
-        spellings: &'step Spellings,
-        primary: Maybe<ByteSpan, report_span::Absent>,
-    ) -> Vec<Self>
-    {
-        let mut reasons: Vec<Self> = Vec::with_capacity(pending.len());
-        for judgement in pending {
-            let Maybe::Present(span) = node(origins, CoreNode::Term(judgement.term))
-            else {
-                continue;
-            };
-            if primary == Maybe::Present(span) || reasons.iter().any(|outer| outer.span == span) {
-                continue;
-            }
-            let judging = match judgement.expected {
-                | Maybe::Present(expected) => {
-                    Judging::Checked(spellings.get(expected).map(AsRef::as_ref))
-                },
-                | Maybe::Absent(_) => Judging::Synthesised,
-            };
-            reasons.push(Self { span, judging });
-        }
-        reasons
-    }
-}
-
-impl fmt::Display for Reason<'_>
-{
-    /// Writes the judgement the reason stands for, as a clause beginning
-    /// `while`.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: writes ``while checking this against `T` `` for a term
-    ///   checked against a spelled type, `while checking this` for one whose
-    ///   type has no spelling, and `while synthesising the type of this` for a
-    ///   synthesised one; propagates a destination failure.
-    /// - provides: the label a terminal writes under the reason's bytes and an
-    ///   editor shows at its related location.
-    /// - fails: if the formatter rejects a write.
-    /// - panics: none.
-    /// - executable: none — the formatter exposes no output buffer or
-    ///   independent observation of the destination's failure.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a checked thunk and a synthesised application render
-    ///   their two clauses.
-    /// - witness: `diagnostics::diagnostics::a_refusal_names_the_judgements_it_stood_inside`
-    #[inline]
-    fn fmt(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result
-    {
-        match self.judging {
-            | Judging::Checked(Maybe::Present(expected)) => {
-                write!(f, "while checking this against `{expected}`")
-            },
-            | Judging::Checked(Maybe::Absent(_)) => f.write_str("while checking this"),
-            | Judging::Synthesised => f.write_str("while synthesising the type of this"),
-        }
     }
 }
 
@@ -585,7 +438,7 @@ impl Annotations
     ///   the no-source-location boundary. Other lowering constructors are not
     ///   individually enumerated.
     /// - witness: `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`
-    /// - witness: `diagnostics::diagnostics::a_refused_declaration_renders_its_snippet`
+    /// - witness: `diagnostics::diagnostics::a_refused_declaration_is_located`
     /// - witness: `locus::tests::run_refusals_have_no_invented_source_locus`
     #[spec(ensures: |ref ret| {
         let label = Label::Culprit(Culprit::of(Refusal::Lowering(refusal)));
@@ -686,7 +539,7 @@ impl Annotations
     ///   producer's primary label and causal spans. Distinct origin records and
     ///   missing nodes distinguish wrong locations from missing metadata. Other
     ///   producer payloads are outside these finite fixtures.
-    /// - witness: `diagnostics::diagnostics::a_refused_declaration_renders_its_snippet`
+    /// - witness: `diagnostics::diagnostics::a_refused_declaration_is_located`
     /// - witness: `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`
     /// - witness: `locus::tests::refusal_locations_keep_origin_families_and_missing_nodes_distinct`
     #[spec(ensures: |ref ret| {
@@ -694,7 +547,7 @@ impl Annotations
         let labelled = match ret.primary {
             Maybe::Present(annotation) => annotation.label == label,
             Maybe::Absent(report_span::Absent::Run | report_span::Absent::Unrecorded) => true,
-            Maybe::Absent(report_span::Absent::OutsideText) => false,
+            Maybe::Absent(report_span::Absent::OutsideText | report_span::Absent::Standing) => false,
         };
         labelled && ret.context.iter().all(|slot| !matches!(*slot,
             Maybe::Absent(report_context::Absent::OutsideText)))
@@ -735,7 +588,7 @@ impl Annotations
 ///   missing nodes. Computation mismatches and shape failures expose context
 ///   order; selected whole-declaration failures expose fallback precedence.
 ///   Other checker constructors are not individually enumerated.
-/// - witness: `diagnostics::diagnostics::a_type_mismatch_renders_as_a_located_report`
+/// - witness: `diagnostics::diagnostics::a_type_mismatch_is_located_at_its_term`
 /// - witness: `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`
 /// - witness: `locus::tests::refusal_locations_keep_origin_families_and_missing_nodes_distinct`
 /// - witness: `locus::tests::checker_fallbacks_preserve_causal_roles`
@@ -744,7 +597,7 @@ impl Annotations
     let labelled = match ret.primary {
         Maybe::Present(annotation) => annotation.label == label,
         Maybe::Absent(report_span::Absent::Unrecorded) => true,
-        Maybe::Absent(report_span::Absent::Run | report_span::Absent::OutsideText) => false,
+        Maybe::Absent(report_span::Absent::Run | report_span::Absent::OutsideText | report_span::Absent::Standing) => false,
     };
     let role = |slot: &Maybe<Annotation, report_context::Absent>, wanted| match *slot {
         Maybe::Present(annotation) => annotation.label == wanted,
@@ -990,7 +843,7 @@ where
         _ => false,
     }
 })]
-fn node(
+pub fn node(
     origins: &OriginTable,
     core: CoreNode,
 ) -> Maybe<ByteSpan, node_span::Absent>
@@ -1067,7 +920,7 @@ impl fmt::Display for Checked
     ///   failing destinations are outside these observations.
     /// - witness: `locus::tests::former_titles_distinguish_subjects_not_node_addresses`
     /// - witness: `locus::tests::checker_titles_preserve_numeric_roles`
-    /// - witness: `diagnostics::diagnostics::a_type_mismatch_renders_as_a_located_report`
+    /// - witness: `diagnostics::diagnostics::a_type_mismatch_is_located_at_its_term`
     #[inline]
     fn fmt(
         &self,
@@ -1237,7 +1090,7 @@ impl fmt::Display for Shape
     /// # Adequacy
     /// - hypothesis: L1 — located reports exercise the diagnostic consumer, not
     ///   exhaustive shape wording or destination failures.
-    /// - witness: `diagnostics::diagnostics::a_type_mismatch_renders_as_a_located_report`
+    /// - witness: `diagnostics::diagnostics::a_type_mismatch_is_located_at_its_term`
     #[inline]
     fn fmt(
         &self,

@@ -1392,8 +1392,9 @@ struct Stretch
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum StatementBinding
 {
-    /// `run x <- c ;` names the value for the rest of the block.
-    Named,
+    /// `run x <- c ;` names the value for the rest of the block; the node is
+    /// the name's own.
+    Named(NodeIndex),
     /// `c ;` discards it, splitting it as the unit under a binder no name
     /// reaches.
     Discarded,
@@ -4858,7 +4859,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.statements.len() == before.saturating_add(1_usize)
                     && self.statements.last().is_some_and(|last| {
                         last.origin == run.node
-                            && matches!(last.binding, StatementBinding::Named | StatementBinding::Split(_))
+                            && matches!(last.binding, StatementBinding::Named(_) | StatementBinding::Split(_))
                             && self.reading(last.bound) == Reading::Computation(frame)
                     })
             },
@@ -4918,7 +4919,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.statements.push(Statement {
             origin: run.node,
             bound: bound.node,
-            binding: StatementBinding::Named,
+            binding: StatementBinding::Named(binder.node),
             rest: exits::Rest::Bound,
         });
 
@@ -8105,7 +8106,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
             let split = match statement.binding {
-                | StatementBinding::Named => None,
+                | StatementBinding::Named(_) => None,
                 | StatementBinding::Discarded => Some(gandr_core_term::ComponentCount::default()),
                 | StatementBinding::Split(arity) => Some(arity),
             };
@@ -8120,6 +8121,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
             let id = sink.arena.computation_bind(bound, chain);
             sink.origins.record_computation(id, origin);
+            if let StatementBinding::Named(name) = statement.binding
+                && let Maybe::Present(name) = self.origin_at(name)
+            {
+                sink.origins.record_binder(id, name);
+            }
             if statement.rest == exits::Rest::Distributed {
                 let _first = sink.distributed.insert(id, origin);
             }
@@ -8272,6 +8278,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             };
             let id = sink.arena.computation_lambda(body);
             sink.origins.record_computation(id, binder);
+            sink.origins.record_binder(id, binder);
             body = id;
             if let Some(evidence) = fixpoint.take() {
                 let closed = sink.arena.computation_fixpoint(body, evidence);
@@ -10817,7 +10824,6 @@ mod tests
     use gandr_surface_grammar::Pbg;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::GrammarFingerprint;
-    use gandr_surface_syntax::GroutShape;
     use gandr_surface_syntax::MoldId;
     use gandr_surface_syntax::NodeLabel;
     use gandr_surface_syntax::SourceFragment;
@@ -12202,6 +12208,47 @@ mod tests
         );
     }
 
+    #[test]
+    fn each_named_binder_records_where_its_name_is_written()
+    {
+        let text = "def f(n: Integer) -> -F Integer { run m <- pure n ; pure 2 ; return m }";
+        let mut arena = CoreArena::new();
+        let module = lowered(SourceText::from(text), &mut arena);
+        let Some(&Value::Thunk(lambda)) = arena.value(body_of(outcomes(&module)[0]))
+        else {
+            panic!("the function lowers to a thunk");
+        };
+        let Some(&Computation::Lambda(named)) = arena.computation(lambda)
+        else {
+            panic!("the parameter lowers to a lambda");
+        };
+        let Some(&Computation::Bind(_, discarded)) = arena.computation(named)
+        else {
+            panic!("the named statement is the outer bind");
+        };
+        let written = |opener| match module.origins().binder(opener) {
+            | Maybe::Present(origin) => {
+                text.get(usize::from(origin.span().start()) .. usize::from(origin.span().end()))
+            },
+            | Maybe::Absent(_) => None,
+        };
+        assert_eq!(
+            written(lambda),
+            Some("n"),
+            "a parameter's lambda binds its name"
+        );
+        assert_eq!(
+            written(named),
+            Some("m"),
+            "a named statement's bind binds its name"
+        );
+        assert_eq!(
+            written(discarded),
+            None,
+            "a discarded statement's bind binds no name"
+        );
+    }
+
     /// `c ;` binds its value under a binder no name reaches and splits it as
     /// the unit, so a name bound before it is read one index further out
     /// after it, and the bind's origin is the discarded computation.
@@ -13403,9 +13450,10 @@ mod tests
             LoweringRefusal::MalformedForm {
                 span: at(5_usize, 5_usize),
                 form: FormName::DECLARATION,
-                fault: FormFault::Repaired(Repair::Grout(GroutShape::Postfix)),
+                fault: FormFault::Repaired(Repair::Unended(crate::form::Ending::Unnamed)),
             },
-            "the grout the parser inserted is reported where it stands"
+            "the end the parser appended is reported past the last written tile, naming no \
+             tile where the grammar continues with several"
         );
         assert_eq!(
             refused.classify(),
@@ -13437,6 +13485,41 @@ mod tests
             "the source ends with both the case and the definition open; the refusal names \
              the case at the end of its last arm, not the definition at its opening brace"
         );
+    }
+
+    #[test]
+    fn an_unended_form_names_its_missing_tile_where_it_belongs()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let pbg = grammar();
+        for (source, point, form, tile, why) in [
+            (
+                "def a : Integer ;\ndef a = 1\ndef b : Integer ;\ndef b = 2 ;\n",
+                27_usize,
+                "def_value",
+                crate::form::TileName::SEMICOLON,
+                "a definition missing its `;` before the next is pointed past its value",
+            ),
+            (
+                "def s : String ;\ndef s = \"abc ;\n",
+                31_usize,
+                "string",
+                crate::form::TileName::QUOTE,
+                "a string never closed is pointed past its text on its own line, not the \
+                 definition it swallowed the `;` of",
+            ),
+        ] {
+            let tree = repaired(&pbg, SourceText::from(source));
+            assert_eq!(
+                refusal_in(&pbg, &tree),
+                LoweringRefusal::MalformedForm {
+                    span: at(point, point),
+                    form: FormName::from(NamedKind(form)),
+                    fault: FormFault::Repaired(Repair::Unended(crate::form::Ending::Tile(tile))),
+                },
+                "{why}"
+            );
+        }
     }
 
     #[test]

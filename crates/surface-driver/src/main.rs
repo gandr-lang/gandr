@@ -244,11 +244,8 @@ use std::process::ExitCode;
 use std::time::Instant;
 
 use anodized::spec;
-use gandr_surface_diagnostics::Entry;
-use gandr_surface_diagnostics::RenderStyle;
-use gandr_surface_diagnostics::TerminalCapability;
+use gandr_surface_diagnostics::Severity;
 use gandr_surface_diagnostics::Verbosity;
-use gandr_surface_diagnostics::entries;
 use gandr_surface_dispatcher::Evaluation;
 use gandr_surface_dispatcher::FormatStep;
 use gandr_surface_dispatcher::Formatting;
@@ -269,10 +266,13 @@ use gandr_surface_dispatcher::Threads;
 use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
+use gandr_surface_dispatcher::entries;
 use gandr_surface_format::FormatOptions;
 use gandr_surface_format::PageWidth;
 use gandr_surface_lsp::Capabilities;
 use gandr_surface_lsp::Served;
+use gandr_surface_render_terminal::RenderStyle;
+use gandr_surface_render_terminal::TerminalCapability;
 use gandr_surface_repl::Ended;
 #[cfg(unix)]
 use quenchant_shape::shape::Maybe;
@@ -1283,16 +1283,17 @@ fn usage(error: &clap::Error) -> ExitCode
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the status prints one line naming the driver's version. A walk
-///   prints, for each source, what `gandr-surface-diagnostics` renders of its
-///   step under the verb: each refusal, unsettled declaration and goal as a
-///   plain source snippet followed by an empty line, and each ledger line — a
-///   settled fixture or a pending source's refusal under `test`, a pending
-///   source the lowering read — prefixed with its path. Each path the walk
-///   cannot carry through the pipeline is a line on standard error. The run's
-///   report and its verdict close standard output, and the exit code is the
-///   verdict's. A script follows [`script`]: its value goes to standard output,
-///   its diagnostics to standard error and its run status chooses the exit. A
-///   staging follows [`stage`], and a formatting [`fmt`].
+///   prints, for each source, each diagnostic the dispatcher's `entries` yields
+///   for its step under the verb, laid out by `gandr-surface-render-terminal`:
+///   each refusal, unsettled declaration and goal as a plain source snippet
+///   followed by an empty line, and each ledger line — a settled fixture or a
+///   pending source's refusal under `test`, a pending source the lowering read
+///   — prefixed with its path. Each path the walk cannot carry through the
+///   pipeline is a line on standard error. The run's report and its verdict
+///   close standard output, and the exit code is the verdict's. A script
+///   follows [`script`]: its value goes to standard output, its diagnostics to
+///   standard error and its run status chooses the exit. A staging follows
+///   [`stage`], and a formatting [`fmt`].
 /// - provides: the one renderer every verb that reports through the dispatcher
 ///   shares.
 /// - fails: the first write error on either stream.
@@ -1468,16 +1469,17 @@ fn stage(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: consumes the walk, writing each step in walk order: each entry
-///   `gandr-surface-diagnostics` renders of a source step under `verb` to
-///   standard output at `verbosity` — below the JSON level a report as a plain
-///   snippet followed by an empty line and a ledger line as itself, at it each
-///   entry as one line of JSON — and each fault as one `gandr: <path>: <fault>`
-///   line to standard error; then the final report and verdict, at the JSON
-///   level as one object whose `level` is `summary`. The exit is zero for
-///   settled, one for unsettled and two for faulted, as the walk's final report
-///   decides under the offered verb, at every verbosity. Every byte written and
-///   the exit are the same at every width.
+/// - ensures: consumes the walk, writing each step in walk order: each
+///   diagnostic the dispatcher's `entries` yields for a source step under
+///   `verb`, laid out by `gandr-surface-render-terminal`, to standard output at
+///   `verbosity` — below the JSON level a report as a plain snippet followed by
+///   an empty line and a ledger line as itself, at it each entry as one line of
+///   JSON — and each fault as one `gandr: <path>: <fault>` line to standard
+///   error; then the final report and verdict, at the JSON level as one object
+///   whose `level` is `summary`. The exit is zero for settled, one for
+///   unsettled and two for faulted, as the walk's final report decides under
+///   the offered verb, at every verbosity. Every byte written and the exit are
+///   the same at every width.
 /// - provides: ordered rendering and severity aggregation for check and test.
 /// - fails: the first write error, without visiting or writing anything after
 ///   it.
@@ -1512,18 +1514,26 @@ fn run(
     let visited = walk.visit(width, |step| {
         match step {
             | Step::Source { .. } => {
-                for entry in entries(&step, verb) {
-                    let separator = match (entry, verbosity) {
+                for diagnostic in entries(&step, verb) {
+                    let separator = match (diagnostic.severity, verbosity) {
                         | (
-                            Entry::Report(_),
+                            Severity::Error | Severity::Warning | Severity::Goal,
                             Verbosity::User | Verbosity::Detailed | Verbosity::Debug,
                         ) => "\n",
-                        | (Entry::Report(_), Verbosity::Json) | (Entry::Line(_), _) => "",
+                        | (
+                            Severity::Error | Severity::Warning | Severity::Goal,
+                            Verbosity::Json,
+                        )
+                        | (Severity::Ledger, _) => "",
                     };
                     let written = writeln!(
                         stdout,
                         "{}{separator}",
-                        entry.render(RenderStyle::Plain, verbosity)
+                        gandr_surface_render_terminal::render(
+                            &diagnostic,
+                            RenderStyle::Plain,
+                            verbosity
+                        )
                     );
                     if let Err(error) = written {
                         return ControlFlow::Break(error);
@@ -1615,16 +1625,17 @@ fn script(
             writeln!(stderr, "gandr: {}: {fault}", path.display())?;
         },
         | ScriptRun::Source { step, ran } => {
-            for entry in entries(&step, Verb::Check(Goals::Reported)) {
-                match entry {
-                    | Entry::Report(report) => {
-                        writeln!(
-                            stderr,
-                            "{}\n",
-                            report.render(RenderStyle::Plain, Verbosity::User)
-                        )?;
+            for diagnostic in entries(&step, Verb::Check(Goals::Reported)) {
+                let rendered = gandr_surface_render_terminal::render(
+                    &diagnostic,
+                    RenderStyle::Plain,
+                    Verbosity::User,
+                );
+                match diagnostic.severity {
+                    | Severity::Error | Severity::Warning | Severity::Goal => {
+                        writeln!(stderr, "{rendered}\n")?;
                     },
-                    | Entry::Line(line) => writeln!(stderr, "{line}")?,
+                    | Severity::Ledger => writeln!(stderr, "{rendered}")?,
                 }
             }
             let path = match step {

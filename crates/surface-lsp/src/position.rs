@@ -188,7 +188,7 @@ impl Range
     ///   an astral character, every protocol line terminator, reversed and
     ///   empty ranges, and invalid endpoints distinguish swapped ends, UTF-8
     ///   byte counts and lost or reordered projection errors.
-    /// - witness: `session::session::every_corpus_report_is_published_where_the_walk_renders_it`
+    /// - witness: `session::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
     /// - witness: `position::tests::ranges_preserve_endpoint_order_and_projection_failures`
     #[spec(ensures: |ret| ret.as_ref().map(|range| (range.start, range.end))
         == Position::of_byte(index, start)

@@ -123,8 +123,8 @@ mod tests
 {
     use alloc::string::String;
 
-    use gandr_surface_diagnostics::RenderStyle;
     use gandr_surface_render_remote::OutKind;
+    use gandr_surface_render_terminal::RenderStyle;
     use gandr_surface_syntax::SourceText;
 
     use crate::LoopEvent;

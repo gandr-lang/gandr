@@ -590,6 +590,7 @@ dependencies = [
  "gandr-surface-format",
  "gandr-surface-lsp",
  "gandr-surface-mcp",
+ "gandr-surface-render-terminal",
  "gandr-surface-repl",
  "gandr-surface-tui",
  "quenchant-anodized",
@@ -677,7 +678,6 @@ dependencies = [
 name = "gandr-surface-diagnostics"
 version = "0.0.0"
 dependencies = [
- "annotate-snippets",
  "gandr-core-checker",
  "gandr-core-term",
  "gandr-kernel-term",
@@ -685,6 +685,7 @@ dependencies = [
  "gandr-surface-dispatcher",
  "gandr-surface-grammar",
  "gandr-surface-lowering",
+ "gandr-surface-pretty",
  "gandr-surface-syntax",
  "quenchant-anodized",
  "quenchant-shape",
@@ -702,11 +703,11 @@ dependencies = [
  "gandr-core-term",
  "gandr-kernel-term",
  "gandr-surface-corpus",
+ "gandr-surface-diagnostics",
  "gandr-surface-format",
  "gandr-surface-grammar",
  "gandr-surface-lowering",
  "gandr-surface-parser",
- "gandr-surface-pretty",
  "gandr-surface-syntax",
  "quenchant-anodized",
  "quenchant-shape",
@@ -844,6 +845,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-surface-render-terminal"
+version = "0.0.0"
+dependencies = [
+ "annotate-snippets",
+ "gandr-core-checker",
+ "gandr-surface-corpus",
+ "gandr-surface-diagnostics",
+ "gandr-surface-dispatcher",
+ "gandr-surface-grammar",
+ "gandr-surface-lowering",
+ "gandr-surface-syntax",
+ "quenchant-anodized",
+ "quenchant-shape",
+ "serde_json",
+]
+
+[[package]]
 name = "gandr-surface-repl"
 version = "0.0.0"
 dependencies = [
@@ -860,6 +878,7 @@ dependencies = [
  "gandr-surface-parser",
  "gandr-surface-pretty",
  "gandr-surface-render-remote",
+ "gandr-surface-render-terminal",
  "gandr-surface-session",
  "gandr-surface-syntax",
  "quenchant-anodized",
@@ -887,6 +906,7 @@ dependencies = [
  "gandr-surface-lowering",
  "gandr-surface-parser",
  "gandr-surface-pretty",
+ "gandr-surface-render-terminal",
  "gandr-surface-syntax",
  "proptest",
  "quenchant-anodized",
@@ -907,9 +927,9 @@ version = "0.0.0"
 dependencies = [
  "gandr-core-incremental",
  "gandr-kernel-term",
- "gandr-surface-diagnostics",
  "gandr-surface-grammar",
  "gandr-surface-render-remote",
+ "gandr-surface-render-terminal",
  "gandr-surface-repl",
  "gandr-surface-syntax",
  "quenchant-anodized",

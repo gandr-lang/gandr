@@ -21,22 +21,22 @@ use anodized::spec;
 use gandr_core_incremental::Resume;
 use gandr_core_incremental::submitted;
 use gandr_surface_corpus::Outcome;
-use gandr_surface_diagnostics::Class;
-use gandr_surface_diagnostics::Entry;
-use gandr_surface_diagnostics::RenderStyle;
+use gandr_surface_diagnostics::Severity;
 use gandr_surface_diagnostics::Verbosity;
-use gandr_surface_diagnostics::entries;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Evaluation;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Verb;
+use gandr_surface_dispatcher::entries;
 use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Presentation;
 use gandr_surface_render_remote::DiagCard;
 use gandr_surface_render_remote::HlSpan;
 use gandr_surface_render_remote::OutKind;
 use gandr_surface_render_remote::TranscriptBlock;
+use gandr_surface_render_terminal::RenderStyle;
+use gandr_surface_render_terminal::render;
 use gandr_surface_session::Submission;
 use gandr_surface_session::evaluate;
 use gandr_surface_session::spelled;
@@ -366,21 +366,18 @@ pub fn encode_submission(
     let mut step = submission.into_step(Path::new(""));
     let mut lines: Vec<(OutKind, String)> = Vec::new();
     let mut refused = false;
-    for entry in entries(&step, Verb::Check(Goals::Reported)) {
-        match entry {
-            | Entry::Report(report) => match report.class() {
-                | Class::Goal => {},
-                | Class::Warning => {
-                    let rendered = report.render(style, Verbosity::User).to_string();
-                    lines.push((OutKind::Diag, String::from(rendered.trim_end())));
-                },
-                | Class::Refusal(_) | Class::Unsettled(_) => {
-                    refused = true;
-                    let rendered = report.render(style, Verbosity::User).to_string();
-                    lines.push((OutKind::Diag, String::from(rendered.trim_end())));
-                },
+    for diagnostic in entries(&step, Verb::Check(Goals::Reported)) {
+        let rendered = render(&diagnostic, style, Verbosity::User).to_string();
+        match diagnostic.severity {
+            | Severity::Goal => {},
+            | Severity::Warning => {
+                lines.push((OutKind::Diag, String::from(rendered.trim_end())));
             },
-            | Entry::Line(line) => lines.push((OutKind::Info, line.to_string())),
+            | Severity::Error => {
+                refused = true;
+                lines.push((OutKind::Diag, String::from(rendered.trim_end())));
+            },
+            | Severity::Ledger => lines.push((OutKind::Info, rendered)),
         }
     }
     let mut standings = Standings::default();

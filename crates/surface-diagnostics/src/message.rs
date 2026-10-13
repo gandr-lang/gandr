@@ -6,7 +6,8 @@
 //! Every producer words its refusals for whoever reads its own code: the
 //! lowering names the grammar's sorts (`` `thunk_expression` has an operand
 //! where it takes none ``), the checker names its rules and positions. A
-//! report keeps that text as its [`Title`](crate::Title) and leads with its
+//! diagnostic keeps that text as its detail's
+//! [`title`](crate::DiagnosticDetail::title) and leads with its
 //! [`Message`](crate::Message) instead: one per refusal variant, chosen by an
 //! exhaustive match, naming forms in the words the source is written in, and
 //! naming no grammar sort, admission position or node. A refusal no source can
@@ -16,16 +17,16 @@
 //! Each producer words its refusals for whoever reads its code: the lowering
 //! names the grammar's sorts (`` `hole` has an operand where it takes none ``),
 //! the checker its rules (`the rule here requires a thunk type`). A report
-//! keeps that text as `Report::title` and leads with `Report::message` instead:
-//! one plain message per refusal variant, chosen by an exhaustive match in
-//! `message.rs`, naming the source's own names and its forms in words (`this
-//! hole has an operand it does not take`, `expected a thunk type`, `` `missing`
-//! is not defined ``), and naming no grammar sort, node or admission position.
-//! A refusal only a producer's broken invariant reaches says `internal error:`.
-//! Every other report's message is its title, which is already the user's. The
-//! terminal and the language server both lead with the message; the title stays
-//! for a face that wants the producer's words, the verbosity levels in
-//! particular.
+//! keeps that text as `DiagnosticDetail::title` and leads with its `Message`
+//! instead: one plain message per refusal variant, chosen by an exhaustive
+//! match in `message.rs`, naming the source's own names and its forms in words
+//! (`this hole has an operand it does not take`, `expected a thunk type`, ``
+//! `missing` is not defined ``), and naming no grammar sort, node or admission
+//! position. A refusal only a producer's broken invariant reaches says
+//! `internal error:`. Every other report's message is its title, which is
+//! already the user's. The terminal and the language server both lead with the
+//! message; the title stays for a face that wants the producer's words, the
+//! verbosity levels in particular.
 //!
 //! The alternative was rewording each producer's `Display`, which would leave
 //! the implementer text nowhere: the lowering's and the checker's own tests,
@@ -41,6 +42,7 @@ use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::CheckingForm;
 use gandr_surface_corpus::CorpusRefusal;
 use gandr_surface_corpus::Refusal;
+use gandr_surface_lowering::Ending;
 use gandr_surface_lowering::FormFault;
 use gandr_surface_lowering::FormName;
 use gandr_surface_lowering::FragmentBoundary;
@@ -241,6 +243,12 @@ fn lowered(
                         | ClosingClass::Bracket => "]",
                         | ClosingClass::Brace => "}",
                     })
+                },
+                | FormFault::Repaired(Repair::Unended(Ending::Tile(tile))) => {
+                    write!(f, "this {form} is missing its closing `{}`", tile.as_ref())
+                },
+                | FormFault::Repaired(Repair::Unended(Ending::Unnamed)) => {
+                    write!(f, "this {form} stops before it is finished")
                 },
                 | FormFault::ExtraOperand => {
                     write!(f, "this {form} has an operand it does not take")

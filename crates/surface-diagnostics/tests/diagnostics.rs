@@ -1,9 +1,9 @@
-//! The renderer over the dispatcher's steps.
+//! The diagnostics model over real compositions.
 //!
 //! Each case composes its source through the dispatcher — a walk over a
-//! scratch tree, or the composition itself where a golden needs a fixed path —
-//! and asserts the entries the step prints, their classes, their spans and
-//! their rendered text.
+//! scratch tree, or the composition itself where a case needs a fixed path —
+//! and asserts the diagnostics its step yields: their classes, their spans,
+//! their annotations, their contexts and their words.
 
 /// The cases, in a `cfg(test)` module so the crate's lint wall reads them as
 /// test code rather than as shipping code.
@@ -14,19 +14,20 @@ mod diagnostics
     use std::path::PathBuf;
 
     use anodized::spec;
+    use gandr_core_checker::CheckRefusal;
+    use gandr_core_checker::FrameRole;
+    use gandr_core_checker::TermNode;
     use gandr_core_term::FailureClass;
-    use gandr_surface_diagnostics::Annotation;
+    use gandr_surface_corpus::Refusal;
+    use gandr_surface_diagnostics::AnnotationKind;
     use gandr_surface_diagnostics::Class;
-    use gandr_surface_diagnostics::Entry;
-    use gandr_surface_diagnostics::Label;
-    use gandr_surface_diagnostics::RenderStyle;
-    use gandr_surface_diagnostics::Rendered;
-    use gandr_surface_diagnostics::Report;
-    use gandr_surface_diagnostics::TerminalCapability;
+    use gandr_surface_diagnostics::Diagnostic;
+    use gandr_surface_diagnostics::Failures;
+    use gandr_surface_diagnostics::Severity;
+    use gandr_surface_diagnostics::Subject;
     use gandr_surface_diagnostics::Unsettlement;
     use gandr_surface_diagnostics::Verbosity;
-    use gandr_surface_diagnostics::entries;
-    use gandr_surface_diagnostics::report_context;
+    use gandr_surface_diagnostics::diagnose;
     use gandr_surface_diagnostics::report_identifier;
     use gandr_surface_diagnostics::report_span;
     use gandr_surface_dispatcher::Composed;
@@ -38,7 +39,9 @@ mod diagnostics
     use gandr_surface_dispatcher::Verb;
     use gandr_surface_dispatcher::Walk;
     use gandr_surface_dispatcher::compose;
+    use gandr_surface_dispatcher::entries;
     use gandr_surface_grammar::built_in;
+    use gandr_surface_lowering::OriginTable;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::ByteSpan;
     use gandr_surface_syntax::SourceText;
@@ -46,16 +49,18 @@ mod diagnostics
 
     /// A declaration whose definition synthesises a type its signature does
     /// not convert to.
-    const MISMATCH: &str = r#"def wrong : Integer ;
-def wrong = "text" ;
-"#;
+    const MISMATCH: &str = "def wrong : Integer ;\ndef wrong = \"text\" ;\n";
 
-    /// The verbs, every one.
-    const VERBS: [Verb; 3_usize] = [
-        Verb::Check(Goals::Gated),
-        Verb::Check(Goals::Reported),
-        Verb::Test,
-    ];
+    /// A force of an integer, inside a thunk.
+    const FORCE: &str = "def a : +U (-F Integer) ;\ndef a = thunk { become force 1 } ;\n";
+
+    /// An application whose head is a return, not a function.
+    const APPLICATION: &str = "def b : +U (-F Integer) ;\ndef b = thunk { become (pure 1)(2) } \
+                               ;\n";
+
+    /// A mismatch under a `run` binder.
+    const BOUND: &str = "def id(x: Integer) -> -F Integer { return x }\ndef f(n: Integer) -> -F \
+                         String { run m <- id(n) ; return m }\n";
 
     /// A fresh scratch directory, removed when dropped.
     #[repr(transparent)]
@@ -68,17 +73,15 @@ def wrong = "text" ;
         /// # Specification
         /// - requires: `test` is one file-name component, owned by this test.
         /// - ensures: the returned path is an empty directory.
-        /// - provides: isolated storage for filesystem witnesses.
+        /// - provides: isolated storage for walk witnesses.
         /// - fails: never returns a failure.
         /// - panics: if an existing directory cannot be removed or creation
         ///   fails.
         ///
         /// # Adequacy
-        /// - hypothesis: L3 — a fresh owned directory has no entries; a nested
-        ///   source is then read back through a walk. Omitted creation and
-        ///   stale entries change those observations; concurrent writers and
-        ///   I/O errors are excluded.
-        /// - witness: `diagnostics::diagnostics::scratch_scope_removal_is_visible_to_a_new_walk`
+        /// - hypothesis: L3 — a fresh owned directory holds exactly the sources
+        ///   the walk witnesses write; stale entries would add diagnostics.
+        /// - witness: `diagnostics::diagnostics::each_verb_prints_its_entries`
         #[spec(
             requires: test.file_name() == Some(test.as_os_str()),
             ensures: |ref ret| std::fs::read_dir(&ret.0).is_ok_and(|mut entries| entries.next().is_none()),
@@ -97,41 +100,35 @@ def wrong = "text" ;
             Self(root)
         }
 
-        /// Write `text` at `relative`, creating its directories, and return
-        /// its path.
+        /// Write `text` at `relative`, creating its directories.
         ///
         /// # Specification
-        /// - requires: `relative` names a file through normal or
-        ///   current-directory components within this exclusively owned scratch
-        ///   directory.
-        /// - ensures: returns a path under the scratch root containing `text`.
+        /// - requires: `relative` names a file through normal components within
+        ///   this exclusively owned scratch directory.
+        /// - ensures: the file under the scratch root holds `text`.
         /// - provides: a source for a real filesystem walk.
         /// - fails: never returns a failure.
         /// - panics: if the parent directories or the file cannot be written.
         ///
         /// # Adequacy
-        /// - hypothesis: L3 — one nested source is read back through a real
-        ///   walk. Exact bytes and subsequent cleanup expose wrong content or
-        ///   placement; concurrent writes and filesystem failures are outside
-        ///   the domain.
-        /// - witness: `diagnostics::diagnostics::scratch_scope_removal_is_visible_to_a_new_walk`
+        /// - hypothesis: L3 — each written source is read back through a real
+        ///   walk and reports at its own path.
+        /// - witness: `diagnostics::diagnostics::each_verb_prints_its_entries`
         #[spec(
-            requires: relative.file_name().is_some() && relative.components().all(|component| matches!(component,
-                std::path::Component::Normal(_) | std::path::Component::CurDir)),
-            ensures: |ref ret| ret.starts_with(&self.0) && std::fs::metadata(ret).is_ok_and(|metadata|
-                metadata.is_file() && u64::try_from(text.as_ref().len()).is_ok_and(|length| metadata.len() == length)),
+            requires: relative.file_name().is_some() && relative.components().all(|component|
+                matches!(component, std::path::Component::Normal(_))),
+            ensures: std::fs::read_to_string(self.0.join(relative)).is_ok_and(|held| held == text.as_ref()),
         )]
         fn file(
             &self,
             relative: &Path,
             text: SourceText<'_>,
-        ) -> PathBuf
+        )
         {
             let path = self.0.join(relative);
             std::fs::create_dir_all(path.parent().expect("a file has a parent"))
                 .expect("the directories are created");
             std::fs::write(&path, text.as_ref()).expect("the file is written");
-            path
         }
     }
 
@@ -147,11 +144,8 @@ def wrong = "text" ;
         /// - panics: if removal fails.
         ///
         /// # Adequacy
-        /// - hypothesis: L3 — dropping a populated nested fixture leaves its
-        ///   root absent and a new source walk reports a fault. Omitted or
-        ///   incomplete removal changes the observation; concurrent recreation
-        ///   is excluded.
-        /// - witness: `diagnostics::diagnostics::scratch_scope_removal_is_visible_to_a_new_walk`
+        /// - hypothesis: L3 — the walk witness leaves no tree behind.
+        /// - witness: `diagnostics::diagnostics::each_verb_prints_its_entries`
         #[spec(ensures: matches!(self.0.try_exists(), Ok(false)))]
         fn drop(&mut self)
         {
@@ -160,927 +154,725 @@ def wrong = "text" ;
         }
     }
 
-    /// `text` composed under `root` by the dispatcher's one composition.
-    ///
-    /// # Specification
-    /// - requires: the source fits the built-in grammar and composition limits.
-    /// - ensures: every settled declaration span lies within `text`.
-    /// - provides: the dispatcher composition used by rendering witnesses.
-    /// - fails: never returns a failure.
-    /// - panics: if grammar construction or composition fails.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — mismatch, duplicate-signature and goal sources retain
-    ///   their expected spans and classes in the resulting reports.
-    ///   Wrong-source composition or shifted spans change those observations;
-    ///   run limits and grammar-construction failure are excluded.
-    /// - witness: `diagnostics::diagnostics::a_type_mismatch_renders_as_a_located_report`
-    /// - witness: `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`
-    /// - witness: `diagnostics::diagnostics::a_goal_renders_as_its_golden`
-    #[spec(ensures: |ref ret| match *ret {
-        Composed::Settled { ref report, .. } => report.declarations().iter().all(|declaration| text.fragment(declaration.span()).is_ok()),
-        Composed::Refused(_) => true,
-    })]
-    fn composed(
-        root: SourceRoot,
-        text: SourceText<'_>,
-    ) -> Composed<'_>
-    {
-        let grammar = built_in().expect("the built-in grammar builds");
-        compose(
-            &grammar,
-            root.corpus_root(),
-            text,
-            &mut LoweringCount::default(),
-        )
-        .expect("the source composes")
-    }
-
     /// The step of a source at `path` under `root` whose text is `text`,
     /// standing unsettled.
     ///
     /// # Specification
     /// - requires: `text` composes within the built-in limits.
-    /// - ensures: returns an unsettled source step borrowing `path` and `text`
-    ///   under the supplied root.
-    /// - provides: a source step for report observations.
+    /// - ensures: an unsettled source step borrowing `path` and `text` under
+    ///   `root`.
+    /// - provides: a source step for diagnostic observations.
     /// - fails: never returns a failure.
     /// - panics: if grammar construction or composition fails.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — strict mismatch and fixture expectation sources
-    ///   produce different refusal and unsettlement reports at their own paths
-    ///   and spans. Wrong root, standing or source changes those observations;
-    ///   fault steps and composition failure are excluded.
-    /// - witness: `diagnostics::diagnostics::a_type_mismatch_renders_as_a_located_report`
-    /// - witness: `diagnostics::diagnostics::an_unsettled_declaration_renders_as_its_golden`
+    /// - hypothesis: L3 — strict refusals and fixture expectations build
+    ///   different diagnostics at their own spans; a wrong root or source
+    ///   changes those observations.
+    /// - witness: `diagnostics::diagnostics::a_type_mismatch_is_located_at_its_term`
+    /// - witness: `diagnostics::diagnostics::the_settle_note_says_what_was_expected_in_words`
     #[spec(ensures: |ref ret| matches!(*ret,
-        Step::Source { path: held, root: actual, text: source, standing: Standing::Unsettled, .. }
-            if core::ptr::eq(core::ptr::from_ref(held), core::ptr::from_ref(path)) && actual == root && core::ptr::eq(core::ptr::from_ref(source.as_ref()), core::ptr::from_ref(text.as_ref()))
-    ))]
+        Step::Source { path: held, root: actual, standing: Standing::Unsettled, .. }
+            if core::ptr::eq(core::ptr::from_ref(held), core::ptr::from_ref(path)) && actual == root))]
     fn unsettled<'step>(
         path: &'step Path,
         root: SourceRoot,
         text: SourceText<'step>,
     ) -> Step<'step>
     {
+        let grammar = built_in().expect("the built-in grammar builds");
         Step::Source {
             path,
             root,
             text,
-            composed: composed(root, text),
+            composed: compose(
+                &grammar,
+                root.corpus_root(),
+                text,
+                &mut LoweringCount::default(),
+            )
+            .expect("the source composes"),
             standing: Standing::Unsettled,
         }
     }
 
-    /// The reports `step` prints under `verb`, in order.
+    /// The diagnostics a source at `path` under `root` with `text` prints
+    /// under `verb`.
     ///
     /// # Specification
-    /// - requires: every visible entry for this source and verb is a report.
-    /// - ensures: preserves report order and each report borrows the step path.
-    /// - provides: collected reports for semantic and rendering assertions.
+    /// trivial.
+    fn printed(
+        path: &Path,
+        root: SourceRoot,
+        text: SourceText<'_>,
+        verb: Verb,
+    ) -> Vec<Diagnostic>
+    {
+        let step = unsettled(path, root, text);
+        entries(&step, verb).collect()
+    }
+
+    /// The one diagnostic a strict source with `text` prints under plain
+    /// `check`.
+    ///
+    /// # Specification
+    /// - requires: the source prints exactly one diagnostic.
+    /// - ensures: that diagnostic.
+    /// - provides: the subject of most cases.
     /// - fails: never returns a failure.
-    /// - panics: if an entry is a ledger line.
+    /// - panics: if the source prints another number of diagnostics.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — three distinct refusals retain source order and exact
-    ///   locations under each verb. Reordering, dropping or misrouting reports
-    ///   changes the sequence; mixed ledger streams are excluded.
-    /// - witness: `diagnostics::diagnostics::a_refused_declaration_renders_its_snippet`
-    #[spec(ensures: |ref ret| ret.iter().all(|report| match *step {
-        Step::Source { path, .. } | Step::Fault { path, .. } => core::ptr::eq(core::ptr::from_ref(report.path()), core::ptr::from_ref(path)),
-    }))]
-    fn reports<'step>(
-        step: &'step Step<'step>,
-        verb: Verb,
-    ) -> Vec<Report<'step>>
+    /// - hypothesis: L3 — every single-refusal source prints one diagnostic; a
+    ///   source printing two fails loudly rather than asserting the wrong one.
+    /// - witness: `diagnostics::diagnostics::a_refusal_names_the_rules_it_stood_inside`
+    #[spec(ensures: |ref ret| ret.path.as_path() == path)]
+    fn only(
+        path: &Path,
+        text: SourceText<'_>,
+    ) -> Diagnostic
     {
-        entries(step, verb)
-            .map(|entry| match entry {
-                | Entry::Report(report) => report,
-                | Entry::Line(line) => panic!("a report, not the ledger line {line}"),
+        let mut printed = printed(path, SourceRoot::Strict, text, Verb::Check(Goals::Gated));
+        assert_eq!(printed.len(), 1_usize, "one diagnostic: {printed:?}");
+        printed.remove(0)
+    }
+
+    /// The bytes of each appearance of `needle` in `text`, in order.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the span of every occurrence, first to last.
+    /// - provides: an independent expected locus, indexed by occurrence.
+    /// - fails: never returns a failure.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — repeated equal siblings are told apart by their
+    ///   occurrence index.
+    /// - witness: `diagnostics::diagnostics::repeated_equal_siblings_point_at_the_right_occurrence`
+    #[spec(ensures: |ref ret| ret.iter().all(|&span| text.fragment(span).is_ok_and(|fragment| fragment.as_ref() == needle.as_ref())))]
+    fn nth(
+        text: SourceText<'_>,
+        needle: SourceText<'_>,
+    ) -> Vec<ByteSpan>
+    {
+        text.as_ref()
+            .match_indices(needle.as_ref())
+            .map(|(start, _)| {
+                ByteSpan::new(
+                    ByteOffset::from(start),
+                    ByteOffset::from(start.saturating_add(needle.as_ref().len())),
+                )
+                .expect("the span is ordered")
             })
             .collect()
     }
 
-    /// The bytes of the first occurrence of `needle` in `text`.
+    /// Each context `diagnostic` carries, as the source text of its bytes
+    /// (empty when unlocated) and its label.
     ///
     /// # Specification
-    /// - requires: `needle` occurs in `text`.
-    /// - ensures: returns the span of its first occurrence.
-    /// - provides: an independent expected source locus.
-    /// - fails: never returns a failure.
-    /// - panics: if the needle is absent or the end is not representable.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — unique ASCII needles in mismatch and refusal sources
-    ///   are checked against produced spans and rendered line/column locations.
-    ///   Shifted bounds or wrong needles change the observation; empty needles
-    ///   and repeated occurrences are outside the witnesses.
-    /// - witness: `diagnostics::diagnostics::a_type_mismatch_renders_as_a_located_report`
-    /// - witness: `diagnostics::diagnostics::a_refused_declaration_renders_its_snippet`
-    #[spec(ensures: |ret| text.fragment(ret).is_ok_and(|fragment| fragment.as_ref() == needle.as_ref()))]
-    fn span_of(
+    /// trivial.
+    fn contexts(
         text: SourceText<'_>,
-        needle: SourceText<'_>,
-    ) -> ByteSpan
+        diagnostic: &Diagnostic,
+    ) -> Vec<(String, String)>
     {
-        let start = text
-            .as_ref()
-            .find(needle.as_ref())
-            .expect("the needle occurs");
-        let end = start
-            .checked_add(needle.as_ref().len())
-            .expect("the end is representable");
-        ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end)).expect("the span is ordered")
+        diagnostic
+            .contexts
+            .iter()
+            .map(|context| match context.locus {
+                | Maybe::Present(locus) => (
+                    String::from(
+                        text.fragment(locus.span)
+                            .expect("a context lies inside the text")
+                            .as_ref(),
+                    ),
+                    context.label(),
+                ),
+                | Maybe::Absent(_) => (String::new(), context.note()),
+            })
+            .collect()
     }
 
-    /// Remove complete SGR styling from the backend's escape-free input.
+    /// What an origin table cut down for the unlocated cases keeps.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum Kept
+    {
+        /// The primary node alone.
+        Primary,
+        /// Nothing.
+        Nothing,
+    }
+
+    /// The force refusal built over an origin table cut down to `kept`.
     ///
     /// # Specification
-    /// - requires: every escape starts a complete backend SGR sequence ending
-    ///   in `m`; the source content contains no literal escapes.
-    /// - ensures: removes those controls while preserving the other characters.
-    /// - provides: a plain-text observer for forced styling.
-    /// - fails: never.
-    /// - panics: none.
+    /// - requires: nothing.
+    /// - ensures: the force refusal's diagnostic, located at its operand when
+    ///   the primary node is kept, unlocated otherwise; every rule it stood
+    ///   inside names a node the table records nothing for, as a node the
+    ///   checker minted does.
+    /// - provides: the subject of the unlocated cases.
+    /// - fails: never returns a failure.
+    /// - panics: if the force source does not refuse with a shape mismatch.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a mismatch with primary and causal annotations
-    ///   renders to identical plain text after SGR removal. Dropped glyphs or
-    ///   retained controls change equality; other terminal controls and literal
-    ///   source escapes are excluded.
-    /// - witness: `diagnostics::diagnostics::forced_styling_colors_actual_facade_annotations`
-    #[spec(ensures: |ref ret| ret.len() <= styled.as_ref().len() && !ret.contains('\u{1b}'))]
-    fn unstyled(styled: &Rendered) -> String
+    /// - hypothesis: L3 — one table keeps the primary node alone, the other
+    ///   nothing; the rules lose their loci in both.
+    /// - witness: `diagnostics::diagnostics::an_unlocated_rule_becomes_a_note`
+    /// - witness: `diagnostics::diagnostics::an_unlocated_report_claims_no_span`
+    #[spec(ensures: |ref ret| matches!(ret.span, Maybe::Present(_)) == (kept == Kept::Primary))]
+    fn force_without_rules(kept: Kept) -> Diagnostic
     {
-        let text: &str = styled.as_ref();
-        let mut plain = String::with_capacity(text.len());
-        let mut escaped = false;
-        for character in text.chars() {
-            match (escaped, character) {
-                | (false, '\u{1b}') => escaped = true,
-                | (false, _) => plain.push(character),
-                | (true, 'm') => escaped = false,
-                | (true, _) => {},
-            }
+        let text = SourceText::from(FORCE);
+        let step = unsettled(Path::new("force.gandr"), SourceRoot::Strict, text);
+        let Step::Source {
+            path,
+            composed:
+                Composed::Settled {
+                    ref report,
+                    ref origins,
+                    ref spellings,
+                    ref failures,
+                    ..
+                },
+            ..
+        } = step
+        else {
+            panic!("the force source settles");
+        };
+        let declaration = report
+            .declarations()
+            .iter()
+            .find(|declaration| matches!(declaration.produced().refusal(), Maybe::Present(_)))
+            .expect("one declaration refuses");
+        let Maybe::Present(refusal @ Refusal::Checking(CheckRefusal::ShapeMismatch { at, .. })) =
+            declaration.produced().refusal()
+        else {
+            panic!("the force refuses its operand's shape");
+        };
+        let TermNode::Value(value) = at
+        else {
+            panic!("the operand is a value");
+        };
+        let mut table = OriginTable::new();
+        if kept == Kept::Primary {
+            let Maybe::Present(origin) = origins.value(value)
+            else {
+                panic!("the operand is recorded");
+            };
+            table.record_value(value, origin);
         }
-        plain
+        diagnose(path, text, Subject::Refused {
+            declaration,
+            refusal,
+            origins: &table,
+            spellings,
+            failure: failures.get(declaration.constant()),
+        })
     }
 
     #[test]
-    fn a_type_mismatch_renders_as_a_located_report()
+    fn a_type_mismatch_is_located_at_its_term()
     {
-        let path = Path::new("mismatch.gandr");
-        let text = SourceText::from(MISMATCH);
-        let step = unsettled(path, SourceRoot::Strict, text);
-        let reports = reports(&step, Verb::Check(Goals::Gated));
-        assert_eq!(reports.len(), 1_usize, "one mismatch, one report");
-        let report = reports[0];
+        let diagnostic = only(Path::new("mismatch.gandr"), SourceText::from(MISMATCH));
+        assert_eq!(diagnostic.severity, Severity::Error);
         assert_eq!(
-            report.class(),
+            diagnostic.detail.class,
             Class::Refusal(FailureClass::MalformedSource),
             "a type mismatch is malformed source"
         );
         assert_eq!(
-            report.span(),
-            Maybe::Present(span_of(text, SourceText::from(r#""text""#))),
+            diagnostic.span,
+            Maybe::Present(nth(SourceText::from(MISMATCH), SourceText::from("\"text\""))[0]),
             "the checker's refusal is located at the mismatched term through the origin table"
         );
-        let rendered = report
-            .render(RenderStyle::Plain, Verbosity::User)
-            .to_string();
-        assert!(
-            rendered.contains("mismatch.gandr:2:13"),
-            "the report names its source at the term: {rendered}"
+        let primary = match diagnostic.primary() {
+            | Maybe::Present(primary) => primary,
+            | Maybe::Absent(reason) => panic!("the mismatch is located: {reason:?}"),
+        };
+        assert_eq!(
+            (primary.locus.line, primary.locus.column),
+            (2_usize, 13_usize)
         );
         assert_eq!(
-            format!("{rendered}\n"),
-            include_str!("golden/type-mismatch.txt"),
-            "the terminal layout is a public surface"
-        );
-        assert_eq!(
-            (report.message().to_string(), report.title().to_string()),
             (
-                "mismatched types".to_owned(),
-                "the type this term synthesises does not convert to the type it is checked \
-                 against"
-                    .to_owned()
+                diagnostic.message.text.as_str(),
+                diagnostic.detail.title.as_str()
             ),
-            "the snippet leads with the plain message and keeps the checker's own words as \
-             the title"
+            (
+                "mismatched types",
+                "the type this term synthesises does not convert to the type it is checked against"
+            ),
+            "the message is plain; the checker's own words stay the title"
+        );
+        assert_eq!(
+            diagnostic.expression,
+            Maybe::Present(String::from("\"text\""))
         );
     }
 
     #[test]
     fn a_mismatch_label_spells_both_types()
     {
-        let mismatch = SourceText::from(MISMATCH);
-        let shape =
-            SourceText::from("def a : +U (-F Integer) ;\ndef a = thunk { become force 1 } ;\n");
-        let head = SourceText::from("def f(xs: List(Integer)) -> -F Integer {\n  pure 1\n}\n");
-        let steps = [mismatch, shape, head]
-            .map(|text| unsettled(Path::new("spelled.gandr"), SourceRoot::Strict, text));
-        let [ref mismatched, ref shaped, ref unresolved] = steps;
-        let only = |step| {
-            let [report] = *reports(step, Verb::Check(Goals::Gated)).as_slice()
-            else {
-                panic!("one refusal, one report");
-            };
-            report
-        };
-        let (mismatch, shape, head) = (only(mismatched), only(shaped), only(unresolved));
-        let labelled = |report: Report<'_>| match report.label() {
-            | Maybe::Present(label) => label.to_string(),
+        let label = |diagnostic: &Diagnostic| match diagnostic.primary() {
+            | Maybe::Present(primary) => primary.label.clone(),
             | Maybe::Absent(reason) => panic!("a located refusal carries a label: {reason:?}"),
         };
+        let mismatch = only(Path::new("spelled.gandr"), SourceText::from(MISMATCH));
         assert_eq!(
-            (mismatch.comparison().expected, mismatch.comparison().found),
-            (Maybe::Present("Integer"), Maybe::Present("String")),
+            (
+                mismatch.detail.compared.expected.clone(),
+                mismatch.detail.compared.found.clone()
+            ),
+            (
+                Maybe::Present(String::from("Integer")),
+                Maybe::Present(String::from("String"))
+            ),
             "a mismatch expects its signature's type and found its body's"
         );
         assert_eq!(
-            labelled(mismatch),
+            label(&mismatch),
             "its type does not convert: expected `Integer`, found `String`"
         );
         assert_eq!(
-            labelled(shape),
+            label(&only(Path::new("spelled.gandr"), SourceText::from(FORCE))),
             "its type is not of the required shape: found `Integer`",
             "a shape mismatch expects a former, which its title names, and spells what it found"
         );
+        let head = label(&only(
+            Path::new("spelled.gandr"),
+            SourceText::from("def f(xs: List(Integer)) -> -F Integer {\n  pure 1\n}\n"),
+        ));
         assert!(
-            !labelled(head).contains(": "),
-            "a refusal that compares no types carries none: {}",
-            labelled(head)
+            !head.contains(": "),
+            "a refusal that compares no types carries none: {head}"
         );
     }
 
     #[test]
-    fn a_refusal_names_the_judgements_it_stood_inside()
+    fn a_refusal_keeps_its_failure_and_spells_its_types()
     {
-        let force =
-            SourceText::from("def a : +U (-F Integer) ;\ndef a = thunk { become force 1 } ;\n");
-        let application =
-            SourceText::from("def b : +U (-F Integer) ;\ndef b = thunk { become (pure 1)(2) } ;\n");
-        let bound = SourceText::from(
-            "def f : +U (Integer -> -F Integer) ;\ndef f = thunk { fn (x) { return x } } ;\ndef d : +U \
-             (-F Integer) ;\ndef d = thunk { run y <- (force f)(\"no\") ; return y } ;\n",
-        );
-        let mismatch = SourceText::from(MISMATCH);
-        let steps = [
-            unsettled(Path::new("force.gandr"), SourceRoot::Strict, force),
-            unsettled(
-                Path::new("application.gandr"),
-                SourceRoot::Strict,
-                application,
-            ),
-            unsettled(Path::new("bound.gandr"), SourceRoot::Strict, bound),
-            unsettled(Path::new("mismatch.gandr"), SourceRoot::Strict, mismatch),
-        ];
-        let only = |step| {
-            let [report] = *reports(step, Verb::Check(Goals::Gated)).as_slice()
-            else {
-                panic!("one refusal, one report");
-            };
-            report
+        let text = SourceText::from(MISMATCH);
+        let step = unsettled(Path::new("kept.gandr"), SourceRoot::Strict, text);
+        let Step::Source {
+            composed:
+                Composed::Settled {
+                    ref report,
+                    ref failures,
+                    ..
+                },
+            ..
+        } = step
+        else {
+            panic!("the source settles");
         };
-        let named = |text: SourceText<'_>, report: Report<'_>| -> Vec<(String, String)> {
-            report
-                .reasons()
-                .iter()
-                .map(|reason| {
-                    (
-                        <&str>::from(
-                            text.fragment(reason.span)
-                                .expect("a reason lies inside the text"),
-                        )
-                        .to_owned(),
-                        reason.to_string(),
-                    )
-                })
-                .collect()
+        let refused = report
+            .declarations()
+            .iter()
+            .find(|declaration| matches!(declaration.produced().refusal(), Maybe::Present(_)))
+            .expect("one declaration refuses");
+        let Maybe::Present(failure) = failures.get(refused.constant())
+        else {
+            panic!("the refused body keeps its failure");
+        };
+        assert!(
+            !failure.obligations().is_empty(),
+            "the failure keeps the rules it stood inside"
+        );
+        let clean = unsettled(
+            Path::new("clean.gandr"),
+            SourceRoot::Strict,
+            SourceText::from("def a = 1 ;\n"),
+        );
+        let Step::Source {
+            composed: Composed::Settled { ref failures, .. },
+            ..
+        } = clean
+        else {
+            panic!("the clean source settles");
         };
         assert_eq!(
-            named(force, only(&steps[0])),
+            *failures,
+            Failures::default(),
+            "a module that refuses nothing keeps no failure"
+        );
+    }
+
+    #[test]
+    fn a_refusal_names_the_rules_it_stood_inside()
+    {
+        assert_eq!(
+            contexts(
+                SourceText::from(FORCE),
+                &only(Path::new("force.gandr"), SourceText::from(FORCE))
+            ),
             [
                 (
-                    "thunk { become force 1 }".to_owned(),
-                    "while checking this against `+U (-F Integer)`".to_owned()
+                    String::from("thunk { become force 1 }"),
+                    String::from(
+                        "checked against `+U (-F Integer)`; while checking the body of this thunk"
+                    )
                 ),
                 (
-                    "force 1".to_owned(),
-                    "while checking this against `-F Integer`".to_owned()
+                    String::from("force 1"),
+                    String::from("checked against `-F Integer`; while forcing this")
                 ),
             ],
             "the force of an integer stands inside the thunk, outermost first"
         );
+        let application = only(
+            Path::new("application.gandr"),
+            SourceText::from(APPLICATION),
+        );
         assert_eq!(
-            named(application, only(&steps[1])),
+            contexts(SourceText::from(APPLICATION), &application),
             [
                 (
-                    "thunk { become (pure 1)(2) }".to_owned(),
-                    "while checking this against `+U (-F Integer)`".to_owned()
+                    String::from("thunk { become (pure 1)(2) }"),
+                    String::from(
+                        "checked against `+U (-F Integer)`; while checking the body of this thunk"
+                    )
                 ),
                 (
-                    "(pure 1)(2)".to_owned(),
-                    "while checking this against `-F Integer`".to_owned()
+                    String::from("(pure 1)(2)"),
+                    String::from(
+                        "checked against `-F Integer`; while synthesising the function this \
+                         applies"
+                    )
                 ),
             ],
-            "the unsynthesisable head stands inside the application and the thunk"
+            "the head that is not a function stands inside the application and the thunk"
         );
         assert_eq!(
-            named(bound, only(&steps[2]))
-                .last()
-                .map(|named| named.1.as_str()),
-            Some("while synthesising the type of this"),
-            "the application whose argument mismatched was synthesised"
+            application
+                .contexts
+                .iter()
+                .map(|context| context.role)
+                .collect::<Vec<_>>(),
+            [FrameRole::ThunkBody, FrameRole::ApplicationHead],
+            "each context keeps its rule's stable name"
         );
         assert_eq!(
-            named(mismatch, only(&steps[3])),
+            contexts(
+                SourceText::from(MISMATCH),
+                &only(Path::new("mismatch.gandr"), SourceText::from(MISMATCH))
+            ),
             Vec::new(),
-            "a body refused where it stands has no reason beyond its primary locus"
+            "a body refused where it stands has no rule beyond its primary locus"
         );
-        for (step, golden) in [
-            (&steps[0], include_str!("golden/nested-force.txt")),
-            (&steps[1], include_str!("golden/nested-application.txt")),
-        ] {
-            assert_eq!(
-                format!(
-                    "{}\n",
-                    only(step).render(RenderStyle::Plain, Verbosity::User)
-                ),
-                golden,
-                "the terminal layout is a public surface"
-            );
-        }
     }
 
     #[test]
-    fn a_shadowed_builtin_renders_as_a_warning()
+    fn a_mismatch_under_a_binder_names_it()
     {
-        let text = SourceText::from(
-            "def add : Integer ;\ndef add = 1 ;\ndef f(int: Integer) -> -F Integer { return int \
-             }\ndef g : Integer ;\ndef g = missing ;\n",
-        );
-        let step = unsettled(Path::new("shadow.gandr"), SourceRoot::Strict, text);
-        let checked = reports(&step, Verb::Check(Goals::Gated));
-        assert_eq!(
-            checked.iter().map(Report::class).collect::<Vec<_>>(),
-            [
-                Class::Warning,
-                Class::Warning,
-                Class::Refusal(FailureClass::MalformedSource),
-            ],
-            "each shadowed builtin is a warning, printed before the declarations' reports"
+        let diagnostic = only(Path::new("bound.gandr"), SourceText::from(BOUND));
+        let named = contexts(SourceText::from(BOUND), &diagnostic);
+        assert!(
+            named.contains(&(
+                String::from("run"),
+                String::from(
+                    "checked against `-F String`; while checking the body under this binding; \
+                     binds m : Integer"
+                )
+            )),
+            "the run names the binder it opened and its type: {named:?}"
         );
         assert_eq!(
-            checked.iter().map(Report::span).collect::<Vec<_>>(),
-            [
-                Maybe::Present(span_of(text, SourceText::from("add"))),
-                Maybe::Present(span_of(text, SourceText::from("int"))),
-                Maybe::Present(span_of(text, SourceText::from("missing"))),
-            ],
-            "a declaration's warning sits at its name, a binder's at the binder"
+            diagnostic
+                .hypotheses
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            ["n : Integer", "m : Integer"],
+            "the hypotheses in scope are the parameter and the run's binder, outermost first"
         );
-        let [ref declared, ref bound, _] = *checked.as_slice()
-        else {
-            panic!("three reports");
-        };
-        for report in [declared, bound] {
+        assert_eq!(
+            diagnostic.span,
+            Maybe::Present(nth(SourceText::from(BOUND), SourceText::from("m"))[1]),
+            "the mismatch is the returned binder"
+        );
+    }
+
+    #[test]
+    fn an_unlocated_rule_becomes_a_note()
+    {
+        let diagnostic = force_without_rules(Kept::Primary);
+        assert!(
+            diagnostic
+                .contexts
+                .iter()
+                .all(|context| matches!(context.locus, Maybe::Absent(_))),
+            "a rule whose node the table records nothing for marks no bytes"
+        );
+        assert_eq!(
+            contexts(SourceText::from(FORCE), &diagnostic)
+                .into_iter()
+                .map(|(_, note)| note)
+                .collect::<Vec<_>>(),
+            [
+                "while checking the body of this thunk",
+                "while comparing the type this synthesises with the one it is checked against",
+                "while forcing this",
+            ],
+            "each unlocated rule reads as its sentence, outermost first"
+        );
+        assert!(
+            diagnostic
+                .annotations
+                .iter()
+                .all(|annotation| annotation.kind == AnnotationKind::Primary),
+            "an unlocated rule adds no annotation"
+        );
+    }
+
+    #[test]
+    fn an_unlocated_report_claims_no_span()
+    {
+        let diagnostic = force_without_rules(Kept::Nothing);
+        assert_eq!(
+            diagnostic.span,
+            Maybe::Absent(report_span::Absent::Unrecorded),
+            "a node the table records nothing for is no locus"
+        );
+        assert!(matches!(diagnostic.primary(), Maybe::Absent(_)));
+        assert!(
+            diagnostic.annotations.is_empty(),
+            "an unlocated report marks nothing"
+        );
+        assert!(
+            matches!(diagnostic.excerpt, Maybe::Absent(_)),
+            "and quotes no line"
+        );
+        assert!(
+            matches!(diagnostic.expression, Maybe::Absent(_)),
+            "and names no expression"
+        );
+    }
+
+    #[test]
+    fn a_return_position_failure_points_at_the_returned_value()
+    {
+        let text = "def g(v: Integer) -> -F String { return v }\n";
+        let diagnostic = only(Path::new("returned.gandr"), SourceText::from(text));
+        assert_eq!(
+            diagnostic.span,
+            Maybe::Present(nth(SourceText::from(text), SourceText::from("v"))[1]),
+            "the mismatch is the value returned, not the return or the function"
+        );
+        assert_eq!(
+            diagnostic.contexts.last().map(|context| context.role),
+            Some(FrameRole::ReturnValue),
+            "the innermost rule is the return's"
+        );
+    }
+
+    #[test]
+    fn repeated_equal_siblings_point_at_the_right_occurrence()
+    {
+        let text = "def h(a: String, b: Integer) -> -F Integer { return b }\ndef k(u: Integer) \
+                    -> -F Integer { become h(\"no\", \"no\") }\n";
+        assert_eq!(
+            only(Path::new("siblings.gandr"), SourceText::from(text)).span,
+            Maybe::Present(nth(SourceText::from(text), SourceText::from("\"no\""))[1]),
+            "the second of two equal arguments is the one that mismatches"
+        );
+    }
+
+    #[test]
+    fn a_shadowed_builtin_is_a_warning()
+    {
+        let text = "def add : Integer ;\ndef add = 1 ;\ndef f(int: Integer) -> -F Integer { return \
+                    int }\ndef g : Integer ;\ndef g = missing ;\n";
+        let checked = printed(
+            Path::new("shadow.gandr"),
+            SourceRoot::Strict,
+            SourceText::from(text),
+            Verb::Check(Goals::Gated),
+        );
+        assert_eq!(
+            checked
+                .iter()
+                .map(|diagnostic| (
+                    diagnostic.severity,
+                    diagnostic.detail.class,
+                    diagnostic.span
+                ))
+                .collect::<Vec<_>>(),
+            [
+                (
+                    Severity::Warning,
+                    Class::Warning,
+                    Maybe::Present(nth(SourceText::from(text), SourceText::from("add"))[0])
+                ),
+                (
+                    Severity::Warning,
+                    Class::Warning,
+                    Maybe::Present(nth(SourceText::from(text), SourceText::from("int"))[0])
+                ),
+                (
+                    Severity::Error,
+                    Class::Refusal(FailureClass::MalformedSource),
+                    Maybe::Present(nth(SourceText::from(text), SourceText::from("missing"))[0])
+                ),
+            ],
+            "each shadowed builtin is a warning at its name, printed before the declarations"
+        );
+        for warning in &checked[.. 2] {
             assert!(
-                matches!(report.identifier(), Maybe::Present(spelling) if spelling.as_ref() == "ShadowedBuiltin"),
+                matches!(warning.identifier, Maybe::Present(ref spelling) if spelling.as_ref() == "ShadowedBuiltin"),
                 "a warning is named as the refusal the reject policy files"
             );
             assert_eq!(
-                report.label().map(|label| label.to_string()),
-                Maybe::Present("shadows a builtin".to_owned())
+                warning
+                    .annotations
+                    .first()
+                    .map(|primary| primary.label.as_str()),
+                Some("shadows a builtin")
             );
         }
         assert_eq!(
-            bound.title().to_string(),
+            checked[1].message.text,
             "`int` shadows a builtin name; the source's binding wins"
         );
-        assert_eq!(
-            format!("{}\n", declared.render(RenderStyle::Plain, Verbosity::User)),
-            include_str!("golden/shadowed-builtin.txt"),
-            "the terminal layout is a public surface"
-        );
         assert!(
-            entries(&step, Verb::Test).all(
-                |entry| !matches!(entry, Entry::Report(report) if report.class() == Class::Warning)
-            ),
+            printed(
+                Path::new("shadow.gandr"),
+                SourceRoot::Strict,
+                SourceText::from(text),
+                Verb::Test
+            )
+            .iter()
+            .all(|diagnostic| diagnostic.severity != Severity::Warning),
             "`test` prints settlements, never a warning"
         );
-        let Composed::Settled { ref report, .. } = composed(
-            SourceRoot::Strict,
-            SourceText::from("def add : Integer ;\ndef add = 1 ;\n"),
-        )
-        else {
-            panic!("the source is read as a module");
-        };
-        assert_eq!(
-            report.tally().settlement(),
-            gandr_surface_corpus::Settlement::Settled,
+        assert!(
+            printed(
+                Path::new("shadow.gandr"),
+                SourceRoot::Strict,
+                SourceText::from("def add : Integer ;\ndef add = 1 ;\n"),
+                Verb::Check(Goals::Gated),
+            )
+            .iter()
+            .all(|diagnostic| diagnostic.severity == Severity::Warning),
             "a warning unsettles nothing"
-        );
-    }
-
-    #[test]
-    fn one_refusal_renders_at_every_verbosity()
-    {
-        let text =
-            SourceText::from("def a : +U (-F Integer) ;\ndef a = thunk { become force 1 } ;\n");
-        let step = unsettled(Path::new("force.gandr"), SourceRoot::Strict, text);
-        let [report] = *reports(&step, Verb::Check(Goals::Gated)).as_slice()
-        else {
-            panic!("one refusal, one report");
-        };
-        for (verbosity, golden) in [
-            (Verbosity::User, include_str!("golden/nested-force.txt")),
-            (
-                Verbosity::Detailed,
-                include_str!("golden/verbosity-detailed.txt"),
-            ),
-            (Verbosity::Debug, include_str!("golden/verbosity-debug.txt")),
-            (Verbosity::Json, include_str!("golden/verbosity-json.txt")),
-        ] {
-            assert_eq!(
-                format!("{}\n", report.render(RenderStyle::Plain, verbosity)),
-                golden,
-                "each level's layout is a public surface: {verbosity:?}"
-            );
-        }
-        let user = report
-            .render(RenderStyle::Plain, Verbosity::User)
-            .to_string();
-        let detailed = report
-            .render(RenderStyle::Plain, Verbosity::Detailed)
-            .to_string();
-        assert!(
-            !user.contains("class: ") && detailed.contains("class: malformed source"),
-            "the class shows from the detailed level"
-        );
-        assert!(
-            !detailed.contains("spans: "),
-            "byte spans wait for the debug level"
-        );
-        let image: serde_json::Value =
-            serde_json::from_str(report.render(RenderStyle::Styled, Verbosity::Json).as_ref())
-                .expect("the JSON image parses, whatever the style");
-        assert_eq!(image["name"], "ShapeMismatch");
-        assert_eq!(image["message"], report.message().to_string());
-        assert_eq!(image["title"], report.title().to_string());
-        assert_eq!(
-            (&image["primary"]["line"], &image["primary"]["column"]),
-            (&serde_json::json!(2_u64), &serde_json::json!(30_u64)),
-            "the primary locus is where the terminal points"
-        );
-        assert_eq!(
-            image["reasons"].as_array().map(Vec::len),
-            Some(report.reasons().len()),
-            "every nested reason is in the image"
         );
     }
 
     #[test]
     fn refusals_of_one_class_label_what_their_locus_is()
     {
-        let mismatch = SourceText::from(MISMATCH);
-        let head = SourceText::from("def f(xs: List(Integer)) -> -F Integer {\n  pure 1\n}\n");
-        let mismatched = unsettled(Path::new("mismatch.gandr"), SourceRoot::Strict, mismatch);
-        let unresolved = unsettled(Path::new("head.gandr"), SourceRoot::Strict, head);
-        let [mismatch_report] = *reports(&mismatched, Verb::Check(Goals::Gated)).as_slice()
-        else {
-            panic!("one mismatch, one report");
-        };
-        let [head_report] = *reports(&unresolved, Verb::Check(Goals::Gated)).as_slice()
-        else {
-            panic!("one unresolved head, one report");
-        };
+        let mismatch = only(Path::new("mismatch.gandr"), SourceText::from(MISMATCH));
+        let head = only(
+            Path::new("head.gandr"),
+            SourceText::from("def f(xs: List(Integer)) -> -F Integer {\n  pure 1\n}\n"),
+        );
         assert_eq!(
-            (mismatch_report.class(), head_report.class()),
+            (mismatch.detail.class, head.detail.class),
             (
                 Class::Refusal(FailureClass::MalformedSource),
                 Class::Refusal(FailureClass::MalformedSource)
             ),
             "both refusals are the author's mistake"
         );
-        let labelled = |report: Report<'_>| match report.label() {
-            | Maybe::Present(label) => label.to_string(),
+        let label = |diagnostic: &Diagnostic| match diagnostic.primary() {
+            | Maybe::Present(primary) => primary.label.clone(),
             | Maybe::Absent(reason) => panic!("a located refusal carries a label: {reason:?}"),
         };
-        let (mismatch_label, head_label) = (labelled(mismatch_report), labelled(head_report));
         assert_ne!(
-            mismatch_label, head_label,
+            label(&mismatch),
+            label(&head),
             "a term whose type does not convert and a head nothing answers are different loci"
         );
-        for (report, label) in [
-            (mismatch_report, &mismatch_label),
-            (head_report, &head_label),
-        ] {
+        for diagnostic in [&mismatch, &head] {
             assert_ne!(
-                *label,
-                report.class().to_string(),
+                label(diagnostic),
+                diagnostic.detail.class.to_string(),
                 "the underline says what the bytes are, not the class"
             );
-            let title = report.title().to_string();
             assert!(
-                !title.contains(".."),
-                "the range locates the refusal; the title repeats no byte range: {title}"
-            );
-            assert!(
-                report
-                    .render(RenderStyle::Plain, Verbosity::User)
-                    .to_string()
-                    .contains(label.as_str()),
-                "the terminal prints the label under the locus"
+                !diagnostic.detail.title.contains(".."),
+                "the annotation locates the refusal; the title repeats no byte range"
             );
         }
     }
 
     #[test]
-    fn a_pathless_report_names_input_and_renders_causal_context()
+    fn a_report_exposes_the_context_it_marks()
     {
-        let text = SourceText::from(MISMATCH);
-        let step = unsettled(Path::new(""), SourceRoot::Strict, text);
-        let reports = reports(&step, Verb::Check(Goals::Gated));
-        assert_eq!(reports.len(), 1_usize, "one mismatch, one report");
-        let rendered = reports[0]
-            .render(RenderStyle::Plain, Verbosity::User)
-            .to_string();
-        assert!(
-            rendered.contains("<input>:2:13"),
-            "a source with no path is named `<input>`: {rendered}"
+        let marked = |diagnostic: &Diagnostic| -> Vec<(ByteSpan, String)> {
+            diagnostic
+                .annotations
+                .iter()
+                .filter(|annotation| annotation.kind == AnnotationKind::Context)
+                .map(|annotation| (annotation.locus.span, annotation.label.clone()))
+                .collect()
+        };
+        assert_eq!(
+            marked(&only(
+                Path::new("mismatch.gandr"),
+                SourceText::from(MISMATCH)
+            )),
+            [(
+                nth(SourceText::from(MISMATCH), SourceText::from("Integer"))[0],
+                String::from("the type it is checked against")
+            )],
+            "the signature stands as the expected type; the synthesised type has no origin"
         );
-        assert!(
-            rendered.contains("1 │ def wrong : Integer ;\n  │             ───────"),
-            "the signature the term is checked against stands as context: {rendered}"
+        let duplicate = "def a : Integer ;\ndef a : Integer ;\ndef a = 1 ;\n";
+        assert_eq!(
+            marked(&only(
+                Path::new("duplicate.gandr"),
+                SourceText::from(duplicate)
+            )),
+            [(
+                nth(
+                    SourceText::from(duplicate),
+                    SourceText::from("def a : Integer ;")
+                )[0],
+                String::from("first written here")
+            )],
+            "the first signature is the duplicate's one context locus"
         );
+        let goals = printed(
+            Path::new("hole.gandr"),
+            SourceRoot::Strict,
+            SourceText::from("def hole : Integer ;\n"),
+            Verb::Check(Goals::Reported),
+        );
+        let [ref goal] = *goals.as_slice()
+        else {
+            panic!("one goal");
+        };
+        assert_eq!(goal.severity, Severity::Goal);
+        assert_eq!(marked(goal), Vec::new(), "a goal names no context");
     }
 
     #[test]
     fn a_labeled_context_retains_its_locus_and_cause()
     {
-        let text = SourceText::from(
-            r"def a : Integer ;
-def a : Integer ;
-def a = 1 ;
-",
-        );
-        let step = unsettled(Path::new("duplicate.gandr"), SourceRoot::Strict, text);
-        let reports = reports(&step, Verb::Check(Goals::Gated));
-        assert_eq!(reports.len(), 1_usize, "one duplicate, one report");
-        let rendered = reports[0]
-            .render(RenderStyle::Plain, Verbosity::User)
-            .to_string();
-        assert!(
-            rendered.contains(
-                "1 │ def a : Integer ;
-  │ ─────────────────"
-            ),
-            "the first signature remains secondary context: {rendered}"
+        let duplicate = "def a : Integer ;\ndef a : Integer ;\ndef a = 1 ;\n";
+        let diagnostic = only(Path::new("duplicate.gandr"), SourceText::from(duplicate));
+        assert_eq!(
+            diagnostic
+                .annotations
+                .iter()
+                .map(|annotation| (annotation.kind, annotation.locus.line))
+                .collect::<Vec<_>>(),
+            [
+                (AnnotationKind::Primary, 2_usize),
+                (AnnotationKind::Context, 1_usize)
+            ],
+            "the duplicate is primary on its own line; the first signature is context on its own"
         );
         assert!(
-            rendered.contains(
-                "2 │ def a : Integer ;
-  │ ━━━━━━━━━━━━━━━━━"
-            ),
-            "the duplicate retains its primary locus: {rendered}"
+            diagnostic
+                .annotations
+                .iter()
+                .all(|annotation| !annotation.label.is_empty()),
+            "each annotation says what its bytes are"
         );
-    }
-
-    #[test]
-    fn render_style_follows_terminal_capability()
-    {
-        assert_eq!(
-            TerminalCapability::from(false),
-            TerminalCapability::NonTerminal
-        );
-        assert_eq!(TerminalCapability::from(true), TerminalCapability::Terminal);
-        assert_eq!(
-            RenderStyle::for_terminal(TerminalCapability::from(false)),
-            RenderStyle::Plain,
-            "a pipe or a file is plain"
-        );
-        assert_eq!(
-            RenderStyle::for_terminal(TerminalCapability::from(true)),
-            RenderStyle::Styled,
-            "a terminal is styled"
-        );
-    }
-
-    #[test]
-    fn forced_styling_colors_actual_facade_annotations()
-    {
-        let text = SourceText::from(MISMATCH);
-        let step = unsettled(Path::new("mismatch.gandr"), SourceRoot::Strict, text);
-        let reports = reports(&step, Verb::Check(Goals::Gated));
-        assert_eq!(reports.len(), 1_usize, "one mismatch, one report");
-        let plain = reports[0]
-            .render(RenderStyle::Plain, Verbosity::User)
-            .to_string();
-        let styled = reports[0].render(RenderStyle::Styled, Verbosity::User);
-        assert!(
-            !plain.contains('\u{1b}'),
-            "plain rendering is escape-free: {plain}"
-        );
-        let escaped: &str = styled.as_ref();
-        assert!(
-            escaped.contains("\u{1b}["),
-            "forced styling colours the report: {escaped:?}"
-        );
-        assert_eq!(
-            unstyled(&styled),
-            plain,
-            "styling colours the same text the plain form writes"
-        );
-    }
-
-    #[test]
-    fn a_refused_declaration_renders_its_snippet()
-    {
-        let scratch = Scratch::new(Path::new("refused"));
-        let text = SourceText::from(
-            r#"def answer = 42 ;
-def broken = missing ;
-def wrong : Integer ;
-def wrong = "text" ;
-@[ owes(1) ] def later : Integer ;
-"#,
-        );
-        let path = scratch.file(Path::new("refused.gandr"), text);
-        for verb in VERBS {
-            let mut walk = Walk::new(vec![path.clone()]);
-            let mut seen = Vec::new();
-            while let Maybe::Present(step) = walk.step() {
-                for report in reports(&step, verb) {
-                    seen.push((
-                        report.class(),
-                        report.span(),
-                        report
-                            .render(RenderStyle::Plain, Verbosity::User)
-                            .to_string(),
-                    ));
-                }
-            }
-            let malformed = Class::Refusal(FailureClass::MalformedSource);
-            let located = |needle: &str| Maybe::Present(span_of(text, SourceText::from(needle)));
-            assert_eq!(
-                seen.iter()
-                    .map(|&(class, span, _)| (class, span))
-                    .collect::<Vec<_>>(),
-                vec![
-                    (malformed, located("missing")),
-                    (malformed, located(r#""text""#)),
-                    (malformed, located("owes(1)")),
-                ],
-                "the lowering's, the checker's and the corpus root's refusals each report at their \
-                 own span"
-            );
-            for ((line, column), seen) in [(2_usize, 14_usize), (4, 13), (5, 4)]
-                .into_iter()
-                .zip(&seen)
-            {
-                let rendered = &seen.2;
-                assert!(
-                    rendered.contains(&format!("╭▸ {}:{line}:{column}", path.display())),
-                    "every refused declaration renders its snippet: {rendered}"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn an_unsettled_declaration_renders_as_its_golden()
-    {
-        let text = SourceText::from(
-            r#"@[ refuses("UnresolvedName") ] def answer = 42 ;
-"#,
-        );
-        let step = unsettled(Path::new("unsettled.gandr"), SourceRoot::Fixture, text);
-        let reports = reports(&step, Verb::Check(Goals::Gated));
-        assert_eq!(
-            reports.len(),
-            1_usize,
-            "one unsettled declaration, one report"
-        );
-        assert_eq!(
-            reports[0].class(),
-            Class::Unsettled(Unsettlement::Unproduced),
-            "the stated refusal was not produced"
-        );
-        assert_eq!(
-            format!(
-                "{}\n",
-                reports[0].render(RenderStyle::Plain, Verbosity::User)
-            ),
-            include_str!("golden/unsettled.txt"),
-            "the terminal layout is a public surface"
-        );
-    }
-
-    #[test]
-    fn a_goal_renders_as_its_golden()
-    {
-        let text = SourceText::from(
-            r"def hole : Integer ;
-",
-        );
-        let step = unsettled(Path::new("hole.gandr"), SourceRoot::Strict, text);
-        let gated = reports(&step, Verb::Check(Goals::Gated));
-        assert_eq!(
-            gated.iter().map(Report::class).collect::<Vec<_>>(),
-            vec![Class::Unsettled(Unsettlement::Obligations)],
-            "under plain `check` the owed signature is unsettled"
-        );
-        let reported = reports(&step, Verb::Check(Goals::Reported));
-        assert_eq!(
-            reported.iter().map(Report::class).collect::<Vec<_>>(),
-            vec![Class::Goal],
-            "under `check --goals` it is a goal"
-        );
-        assert_eq!(
-            format!(
-                "{}\n",
-                reported[0].render(RenderStyle::Plain, Verbosity::User)
-            ),
-            include_str!("golden/goal.txt"),
-            "the terminal layout is a public surface"
-        );
-    }
-
-    #[test]
-    fn a_span_outside_the_text_is_unlocated()
-    {
-        let composed_text = SourceText::from(
-            r"def answer = 42 ;
-def broken = missing ;
-",
-        );
-        let path = Path::new("broken.gandr");
-        let step = Step::Source {
-            path,
-            root: SourceRoot::Strict,
-            text: SourceText::from("def"),
-            composed: composed(SourceRoot::Strict, composed_text),
-            standing: Standing::Unsettled,
-        };
-        let reports = reports(&step, Verb::Check(Goals::Gated));
-        assert_eq!(reports.len(), 1_usize, "one refusal, one report");
-        assert_eq!(
-            reports[0].span(),
-            Maybe::Absent(report_span::Absent::OutsideText),
-            "a span the text cannot answer is no locus"
-        );
-        let rendered = reports[0]
-            .render(RenderStyle::Plain, Verbosity::User)
-            .to_string();
-        assert!(
-            rendered.contains("broken.gandr") && !rendered.contains('│'),
-            "an unlocated report names its path and quotes no line: {rendered}"
-        );
-    }
-
-    #[test]
-    fn each_verb_prints_its_entries()
-    {
-        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-        enum Observed
-        {
-            Report(Class),
-            Ledger,
-        }
-        let scratch = Scratch::new(Path::new("entries"));
-        let sources = [
-            ("fixture/hole.gandr", "def hole : Integer ;\n"),
-            ("fixture/pending/lowered.gandr", "def a = 1 ;\n"),
-            ("fixture/pending/whole.gandr", "pure 3\n"),
-            (
-                "fixture/settled.gandr",
-                "@[ owes(1) ] def later : Integer ;\n",
-            ),
-            (
-                "fixture/unproduced.gandr",
-                "@[ refuses(\"UnresolvedName\") ] def answer = 42 ;\n",
-            ),
-            ("strict/whole.gandr", "pure 3\n"),
-        ];
-        for (relative, text) in sources {
-            scratch.file(Path::new(relative), SourceText::from(text));
-        }
-        let printed = |verb: Verb| {
-            let mut walk = Walk::new(vec![scratch.0.clone()]);
-            let mut printed = Vec::new();
-            while let Maybe::Present(step) = walk.step() {
-                let path = match step {
-                    | Step::Source { path, .. } | Step::Fault { path, .. } => path,
-                };
-                for entry in entries(&step, verb) {
-                    let observation = match entry {
-                        | Entry::Report(report) => Observed::Report(report.class()),
-                        | Entry::Line(line) => {
-                            let rendered = line.to_string();
-                            let prefix = format!("{}: ", path.display());
-                            let payload = rendered
-                                .strip_prefix(&prefix)
-                                .expect("the ledger names its source");
-                            assert!(!rendered.ends_with('\n'), "the ledger adds no terminator");
-                            assert_eq!(
-                                entry
-                                    .render(RenderStyle::Plain, Verbosity::User)
-                                    .to_string(),
-                                rendered,
-                                "below the JSON level a ledger line prints as itself"
-                            );
-                            let image: serde_json::Value = serde_json::from_str(
-                                entry.render(RenderStyle::Plain, Verbosity::Json).as_ref(),
-                            )
-                            .expect("a ledger line's JSON image parses");
-                            assert_eq!(
-                                image,
-                                serde_json::json!({
-                                    "level": "line",
-                                    "path": path.display().to_string(),
-                                    "line": rendered.as_str(),
-                                }),
-                                "the JSON image carries the path and the line"
-                            );
-                            if path.ends_with("fixture/pending/whole.gandr") {
-                                assert!(payload.contains("pure_expression"));
-                                assert!(
-                                    payload
-                                        .split(|character: char| !character.is_ascii_digit())
-                                        .filter_map(|digits| digits.parse::<usize>().ok())
-                                        .eq([0_usize, 6_usize])
-                                );
-                            }
-                            if path.ends_with("fixture/settled.gandr") {
-                                assert!(payload.contains("later"));
-                                assert!(
-                                    payload
-                                        .split(|character: char| !character.is_ascii_digit())
-                                        .filter_map(|digits| digits.parse::<usize>().ok())
-                                        .eq([13_usize, 34_usize, 1_usize, 1_usize])
-                                );
-                            }
-                            Observed::Ledger
-                        },
-                    };
-                    printed.push((
-                        path.strip_prefix(&scratch.0)
-                            .expect("within scratch")
-                            .to_path_buf(),
-                        observation,
-                    ));
-                }
-            }
-            printed
-        };
-        let check = |hole| {
-            vec![
-                (PathBuf::from("fixture/hole.gandr"), Observed::Report(hole)),
-                (
-                    PathBuf::from("fixture/pending/lowered.gandr"),
-                    Observed::Ledger,
-                ),
-                (
-                    PathBuf::from("fixture/unproduced.gandr"),
-                    Observed::Report(Class::Unsettled(Unsettlement::Unproduced)),
-                ),
-                (
-                    PathBuf::from("strict/whole.gandr"),
-                    Observed::Report(Class::Refusal(FailureClass::Unrepresentable)),
-                ),
-            ]
-        };
-        assert_eq!(
-            printed(Verb::Check(Goals::Gated)),
-            check(Class::Unsettled(Unsettlement::Obligations))
-        );
-        assert_eq!(printed(Verb::Check(Goals::Reported)), check(Class::Goal));
-        assert_eq!(printed(Verb::Test), vec![
-            (
-                PathBuf::from("fixture/hole.gandr"),
-                Observed::Report(Class::Unsettled(Unsettlement::Obligations))
-            ),
-            (
-                PathBuf::from("fixture/pending/lowered.gandr"),
-                Observed::Ledger
-            ),
-            (
-                PathBuf::from("fixture/pending/whole.gandr"),
-                Observed::Ledger
-            ),
-            (PathBuf::from("fixture/settled.gandr"), Observed::Ledger),
-            (
-                PathBuf::from("fixture/unproduced.gandr"),
-                Observed::Report(Class::Unsettled(Unsettlement::Unproduced))
-            ),
-            (
-                PathBuf::from("strict/whole.gandr"),
-                Observed::Report(Class::Refusal(FailureClass::Unrepresentable))
-            ),
-        ]);
     }
 
     #[test]
@@ -1095,16 +887,14 @@ def broken = missing ;
                 &[][..],
             ),
             (
-                "def broken = missing ;
-",
+                "def broken = missing ;\n",
                 Verb::Check(Goals::Gated),
                 Maybe::Present("UnresolvedName"),
                 &[][..],
                 &["missing"][..],
             ),
             (
-                "@[ owes(0) ] def hole : Integer ;
-",
+                "@[ owes(0) ] def hole : Integer ;\n",
                 Verb::Check(Goals::Reported),
                 Maybe::Absent(report_identifier::Absent::Statement),
                 &[0_usize, 1_usize][..],
@@ -1112,16 +902,18 @@ def broken = missing ;
             ),
         ];
         for (source, verb, identifier, numbers, names) in cases {
-            let step = unsettled(
+            let held = printed(
                 Path::new("named.gandr"),
                 SourceRoot::Fixture,
                 SourceText::from(source),
+                verb,
             );
-            let reports = reports(&step, verb);
-            assert_eq!(reports.len(), 1_usize);
-            let report = reports[0];
-            let named = match report.identifier() {
-                | Maybe::Present(spelling) => Maybe::Present(spelling.to_string()),
+            let [ref diagnostic] = *held.as_slice()
+            else {
+                panic!("one diagnostic for {source:?}");
+            };
+            let named = match diagnostic.identifier {
+                | Maybe::Present(ref spelling) => Maybe::Present(spelling.to_string()),
                 | Maybe::Absent(reason) => Maybe::Absent(reason),
             };
             let expected = match identifier {
@@ -1129,7 +921,7 @@ def broken = missing ;
                 | Maybe::Absent(reason) => Maybe::Absent(reason),
             };
             assert_eq!(named, expected, "stable refusal identity for {source:?}");
-            let title = report.title().to_string();
+            let title = &diagnostic.detail.title;
             for name in names {
                 assert!(title.contains(name), "source name in {title}");
             }
@@ -1138,94 +930,251 @@ def broken = missing ;
                     .split(|character: char| !character.is_ascii_digit())
                     .filter_map(|digits| digits.parse::<usize>().ok())
                     .eq(numbers.iter().copied()),
-                "title preserves semantic numeric roles without core addresses: {title}"
+                "the title keeps its numeric roles without core addresses: {title}"
             );
         }
     }
 
     #[test]
-    fn a_report_exposes_the_context_it_marks()
+    fn the_settle_note_says_what_was_expected_in_words()
     {
-        let mismatch = SourceText::from(MISMATCH);
-        let step = unsettled(Path::new("mismatch.gandr"), SourceRoot::Strict, mismatch);
-        let found = reports(&step, Verb::Check(Goals::Gated));
-        assert_eq!(found.len(), 1_usize, "one mismatch, one report");
-        assert_eq!(
-            found[0].context(),
-            [
-                Maybe::Present(Annotation {
-                    span: span_of(mismatch, SourceText::from("Integer")),
-                    label: Label::Expected,
-                }),
-                Maybe::Absent(report_context::Absent::Unrecorded),
-            ],
-            "the signature stands as the expected type; the synthesised type has no origin"
-        );
+        for (source, note) in [
+            (
+                "@[ owes(0) ] def a = missing ;\n",
+                "`a` is expected to check, and this refusal leaves it unsettled",
+            ),
+            (
+                "@[ owes(3) ] def b = missing ;\n",
+                "`b` is expected to check owing 3 obligations, and this refusal leaves it \
+                 unsettled; surviving obligations: 0 undeclared, 3 unproduced",
+            ),
+            (
+                "@[ refuses(\"TypeMismatch\") ] def c = missing ;\n",
+                "`c` is expected to be refused with TypeMismatch, and this refusal is not that \
+                 one",
+            ),
+        ] {
+            let held = printed(
+                Path::new("noted.gandr"),
+                SourceRoot::Fixture,
+                SourceText::from(source),
+                Verb::Check(Goals::Gated),
+            );
+            let [ref diagnostic] = *held.as_slice()
+            else {
+                panic!("one refusal for {source:?}");
+            };
+            assert_eq!(
+                diagnostic.note,
+                Maybe::Present(String::from(note)),
+                "the note says what was expected and why it did not happen"
+            );
+        }
+    }
 
-        let duplicate = SourceText::from(
-            r"def a : Integer ;
-def a : Integer ;
-def a = 1 ;
-",
-        );
-        let step = unsettled(Path::new("duplicate.gandr"), SourceRoot::Strict, duplicate);
-        let found = reports(&step, Verb::Check(Goals::Gated));
-        assert_eq!(found.len(), 1_usize, "one duplicate, one report");
-        assert_eq!(
-            found[0].context(),
-            [
-                Maybe::Present(Annotation {
-                    span: ByteSpan::new(ByteOffset::from(0_usize), ByteOffset::from(17_usize))
-                        .expect("the first signature's span is ordered"),
-                    label: Label::First,
-                }),
-                Maybe::Absent(report_context::Absent::Unnamed),
-            ],
-            "the first signature is the duplicate's one context locus"
-        );
+    #[test]
+    fn a_refused_declaration_is_located()
+    {
+        let text = "def answer = 42 ;\ndef broken = missing ;\ndef wrong : Integer ;\ndef wrong = \
+                    \"text\" ;\n@[ owes(1) ] def later : Integer ;\n";
+        let malformed = Class::Refusal(FailureClass::MalformedSource);
+        for verb in [
+            Verb::Check(Goals::Gated),
+            Verb::Check(Goals::Reported),
+            Verb::Test,
+        ] {
+            assert_eq!(
+                printed(
+                    Path::new("refused.gandr"),
+                    SourceRoot::Strict,
+                    SourceText::from(text),
+                    verb
+                )
+                .iter()
+                .map(|diagnostic| (diagnostic.detail.class, diagnostic.span))
+                .collect::<Vec<_>>(),
+                [
+                    (
+                        malformed,
+                        Maybe::Present(nth(SourceText::from(text), SourceText::from("missing"))[0])
+                    ),
+                    (
+                        malformed,
+                        Maybe::Present(
+                            nth(SourceText::from(text), SourceText::from("\"text\""))[0]
+                        )
+                    ),
+                    (
+                        malformed,
+                        Maybe::Present(nth(SourceText::from(text), SourceText::from("owes(1)"))[0])
+                    ),
+                ],
+                "the lowering's, the checker's and the corpus root's refusals each sit at their \
+                 own span under {verb:?}"
+            );
+        }
+    }
 
-        let hole = SourceText::from("def hole : Integer ;\n");
-        let step = unsettled(Path::new("hole.gandr"), SourceRoot::Strict, hole);
-        let found = reports(&step, Verb::Check(Goals::Reported));
-        assert_eq!(found.len(), 1_usize, "one goal, one report");
+    #[test]
+    fn one_refusal_details_each_verbosity()
+    {
+        let diagnostic = only(Path::new("force.gandr"), SourceText::from(FORCE));
+        let names = |verbosity| {
+            diagnostic
+                .details(verbosity)
+                .into_iter()
+                .map(|detail| detail.name)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(names(Verbosity::User), Vec::<&str>::new());
+        assert_eq!(names(Verbosity::Json), Vec::<&str>::new());
+        assert_eq!(names(Verbosity::Detailed), [
+            "class",
+            "detail",
+            "expression"
+        ]);
+        assert_eq!(names(Verbosity::Debug), [
+            "class",
+            "detail",
+            "expression",
+            "spans",
+            "rules",
+            "refusal"
+        ]);
+        let bound = only(Path::new("bound.gandr"), SourceText::from(BOUND));
+        assert!(
+            bound
+                .details(Verbosity::Detailed)
+                .iter()
+                .any(|detail| detail.name == "hypotheses"
+                    && detail.text == "`n : Integer`, `m : Integer`"),
+            "the hypotheses show from the detailed level"
+        );
+        let image: serde_json::Value =
+            serde_json::from_str(&diagnostic.json()).expect("the JSON image parses");
+        assert_eq!(image["name"], "ShapeMismatch");
+        assert_eq!(image["message"], diagnostic.message.text.as_str());
+        assert_eq!(image["title"], diagnostic.detail.title.as_str());
         assert_eq!(
-            found[0].context(),
-            [
-                Maybe::Absent(report_context::Absent::Unnamed),
-                Maybe::Absent(report_context::Absent::Unnamed),
-            ],
-            "a goal names no context"
+            (&image["primary"]["line"], &image["primary"]["column"]),
+            (&serde_json::json!(2_u64), &serde_json::json!(30_u64)),
+            "the primary locus is where the terminal points"
+        );
+        assert_eq!(
+            image["contexts"].as_array().map(Vec::len),
+            Some(diagnostic.contexts.len()),
+            "every context is in the image"
         );
     }
 
     #[test]
-    fn scratch_scope_removal_is_visible_to_a_new_walk()
+    fn each_verb_prints_its_entries()
     {
-        let scratch = Scratch::new(Path::new("scope-removal"));
-        assert!(
-            std::fs::read_dir(&scratch.0)
-                .expect("scratch is readable")
-                .next()
-                .is_none()
-        );
-        let text = SourceText::from(
-            "def answer = 17 ;
-",
-        );
-        let path = scratch.file(Path::new("strict/nested/source.gandr"), text);
-        {
-            let mut walk = Walk::new(vec![path.clone()]);
-            let Maybe::Present(Step::Source { text: observed, .. }) = walk.step()
-            else {
-                panic!("the written source is readable");
-            };
-            assert_eq!(observed, text);
-            assert!(matches!(walk.step(), Maybe::Absent(_)));
+        let scratch = Scratch::new(Path::new("entries"));
+        for (relative, text) in [
+            ("fixture/hole.gandr", "def hole : Integer ;\n"),
+            ("fixture/pending/lowered.gandr", "def a = 1 ;\n"),
+            ("fixture/pending/whole.gandr", "pure 3\n"),
+            (
+                "fixture/settled.gandr",
+                "@[ owes(1) ] def later : Integer ;\n",
+            ),
+            (
+                "fixture/unproduced.gandr",
+                "@[ refuses(\"UnresolvedName\") ] def answer = 42 ;\n",
+            ),
+            ("strict/whole.gandr", "pure 3\n"),
+        ] {
+            scratch.file(Path::new(relative), SourceText::from(text));
         }
-        let root = scratch.0.clone();
-        drop(scratch);
-        assert!(matches!(root.try_exists(), Ok(false)));
-        let mut missing = Walk::new(vec![path]);
-        assert!(matches!(missing.step(), Maybe::Present(Step::Fault { .. })));
+        let printed = |verb: Verb| {
+            let mut walk = Walk::new(vec![scratch.0.clone()]);
+            let mut printed = Vec::new();
+            while let Maybe::Present(step) = walk.step() {
+                for diagnostic in entries(&step, verb) {
+                    if diagnostic.severity == Severity::Ledger {
+                        let image: serde_json::Value = serde_json::from_str(&diagnostic.json())
+                            .expect("a ledger line's JSON image parses");
+                        assert_eq!(image["level"], "line");
+                        assert_eq!(
+                            image["line"],
+                            format!("{}: {}", diagnostic.path.display(), diagnostic.message.text)
+                                .as_str(),
+                            "the JSON image carries the line as the terminal prints it"
+                        );
+                    }
+                    printed.push((
+                        diagnostic
+                            .path
+                            .strip_prefix(&scratch.0)
+                            .expect("within scratch")
+                            .to_path_buf(),
+                        diagnostic.severity,
+                        diagnostic.detail.class,
+                    ));
+                }
+            }
+            printed
+        };
+        let check = |hole: Severity, class: Class| {
+            vec![
+                (PathBuf::from("fixture/hole.gandr"), hole, class),
+                (
+                    PathBuf::from("fixture/pending/lowered.gandr"),
+                    Severity::Ledger,
+                    Class::Ledger,
+                ),
+                (
+                    PathBuf::from("fixture/unproduced.gandr"),
+                    Severity::Error,
+                    Class::Unsettled(Unsettlement::Unproduced),
+                ),
+                (
+                    PathBuf::from("strict/whole.gandr"),
+                    Severity::Error,
+                    Class::Refusal(FailureClass::Unrepresentable),
+                ),
+            ]
+        };
+        assert_eq!(
+            printed(Verb::Check(Goals::Gated)),
+            check(Severity::Error, Class::Unsettled(Unsettlement::Obligations))
+        );
+        assert_eq!(
+            printed(Verb::Check(Goals::Reported)),
+            check(Severity::Goal, Class::Goal)
+        );
+        assert_eq!(printed(Verb::Test), vec![
+            (
+                PathBuf::from("fixture/hole.gandr"),
+                Severity::Error,
+                Class::Unsettled(Unsettlement::Obligations)
+            ),
+            (
+                PathBuf::from("fixture/pending/lowered.gandr"),
+                Severity::Ledger,
+                Class::Ledger
+            ),
+            (
+                PathBuf::from("fixture/pending/whole.gandr"),
+                Severity::Ledger,
+                Class::Ledger
+            ),
+            (
+                PathBuf::from("fixture/settled.gandr"),
+                Severity::Ledger,
+                Class::Ledger
+            ),
+            (
+                PathBuf::from("fixture/unproduced.gandr"),
+                Severity::Error,
+                Class::Unsettled(Unsettlement::Unproduced)
+            ),
+            (
+                PathBuf::from("strict/whole.gandr"),
+                Severity::Error,
+                Class::Refusal(FailureClass::Unrepresentable)
+            ),
+        ]);
     }
 }

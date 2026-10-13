@@ -58,6 +58,7 @@ use core::fmt;
 use anodized::spec;
 use gandr_surface_grammar::NamedKind;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::ClosingClass;
 use gandr_surface_syntax::GroutShape;
@@ -838,7 +839,8 @@ pub fn former_of(kind: NamedKind<'_>) -> Former
 ///
 /// # Specification
 /// - requires: the originating parser node supplies the insertion context.
-/// - ensures: grout retains its shape and a minted close retains its family.
+/// - ensures: grout retains its shape and a minted close retains its family; an
+///   unended form retains the tile its grammar ends it with.
 /// - provides: the repair class independently of its source span.
 /// - fails: no variant certifies which node the parser inserted.
 /// - panics: none.
@@ -847,9 +849,11 @@ pub fn former_of(kind: NamedKind<'_>) -> Former
 ///
 /// # Adequacy
 /// - hypothesis: L3 — grout and a ghost close retain different exact payloads
-///   when their node labels are classified. The evidence covers those labels,
-///   not the parser's repair-selection algorithm.
+///   when their node labels are classified, and a form read with its ghost end
+///   names the tile it lacks. The evidence covers those labels, not the
+///   parser's repair-selection algorithm.
 /// - witness: `form::tests::every_label_shape_is_read_and_unknown_molds_are_located`
+/// - witness: `lower::tests::an_unended_form_names_its_missing_tile_where_it_belongs`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Repair
 {
@@ -858,6 +862,35 @@ pub enum Repair
     Grout(GroutShape),
     /// A closing tile of this family that the source never wrote.
     GhostClose(ClosingClass),
+    /// The tile that ends a form the source never finished: the reading of
+    /// the parser's postfix grout, the ghost end it appends to a form whose
+    /// end is no paired closer (a definition's `;`, a string's `"`).
+    Unended(Ending),
+}
+
+/// The tile a form the source never finished ends with.
+///
+/// # Specification
+/// - requires: the grammar's successors of the form's last written tile supply
+///   the tile.
+/// - ensures: a named tile is the one label every form-ending successor of that
+///   tile carries.
+/// - provides: what a message says is missing.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the grammar is absent from the value.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Repair`].
+/// - witness: `lower::tests::an_unended_form_names_its_missing_tile_where_it_belongs`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Ending
+{
+    /// The form ends with this tile.
+    Tile(TileName),
+    /// The grammar ends the form with more than one tile there, or the last
+    /// written tile is unknown.
+    Unnamed,
 }
 
 impl fmt::Display for Repair
@@ -883,6 +916,10 @@ impl fmt::Display for Repair
                 f.write_str("a `]` the source never wrote")
             },
             | Self::GhostClose(ClosingClass::Brace) => f.write_str("a `}` the source never wrote"),
+            | Self::Unended(Ending::Tile(tile)) => {
+                write!(f, "a closing `{}` the source never wrote", tile.0)
+            },
+            | Self::Unended(Ending::Unnamed) => f.write_str("an end the source never wrote"),
         }
     }
 }
@@ -1239,7 +1276,8 @@ impl Piece
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Repaired
 {
-    /// The bytes the inserted node stands at.
+    /// The bytes the inserted node stands at; for an unended form, the point
+    /// just past the last written material its end tile belongs after.
     pub span: ByteSpan,
     /// What was inserted.
     pub repair: Repair,
@@ -1451,9 +1489,10 @@ impl Default for Pieces
                     let reported = match (read.repair, first_repair) {
                         | (Maybe::Present(found), Maybe::Present(first)) => {
                             found == first
-                                || (matches!(first.repair, Repair::GhostClose(_))
-                                    && node.label() != NodeLabel::Wald
-                                    && matches!(found.nested, Maybe::Present(_))
+                                || (matches!(
+                                    first.repair,
+                                    Repair::GhostClose(_) | Repair::Grout(GroutShape::Postfix)
+                                ) && node.label() != NodeLabel::Wald
                                     && node.span().start() <= found.span.start()
                                     && found.span.end() <= node.span().end())
                         },
@@ -1537,11 +1576,16 @@ pub fn read_pieces<'source>(
         read.pieces.push(piece);
     }
 
+    if let (Holder::Rule(_), Maybe::Present(found)) = (own, read.repair)
+        && found.repair == Repair::Grout(GroutShape::Postfix)
+    {
+        read.repair = Maybe::Present(unended(pbg, tree, position, found));
+    }
     if matches!(own, Holder::Rule(_))
         && matches!(
             read.repair,
             Maybe::Present(Repaired {
-                repair: Repair::GhostClose(_),
+                repair: Repair::GhostClose(_) | Repair::Unended(_),
                 ..
             })
         )
@@ -1554,6 +1598,113 @@ pub fn read_pieces<'source>(
     Ok(())
 }
 
+/// The reading of the ghost end `ghost` the parser appended to the form at
+/// `form`, which never reached its last tile.
+///
+/// # Specification
+/// - requires: `ghost` is a postfix grout child of `form`; the melder mints
+///   that grout only as such a ghost end, at the end of the form's last written
+///   own tile.
+/// - ensures: [`Repair::Unended`] naming the tile every form-ending successor
+///   of that last tile carries. When the grammar names that tile, the point is
+///   just past the first written material after the last tile — the operand the
+///   end tile follows — or past the tile itself when nothing follows; when it
+///   does not, past the tile itself, since what follows is no part of the form.
+///   Trailing whitespace is excluded; `nested` is kept.
+/// - provides: what a message says is missing, and where.
+/// - fails: never; an unknown tile is [`Ending::Unnamed`].
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a definition missing its `;` before the next definition
+///   is pointed past its value and names `;`; a string never closed is pointed
+///   past its text on its own line and names `"`; a declaration stopping at its
+///   name names nothing and is pointed past the name, not past a stray `;`
+///   after it.
+/// - witness: `lower::tests::an_unended_form_names_its_missing_tile_where_it_belongs`
+/// - witness: `lower::tests::a_repaired_declaration_is_refused`
+#[spec(ensures: |ret| ret.nested == ghost.nested && matches!(ret.repair, Repair::Unended(_)))]
+fn unended(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'_>,
+    form: NodeIndex,
+    ghost: Repaired,
+) -> Repaired
+{
+    let point = ghost.span.start();
+    let mut frontier: Maybe<(MoldId, ByteSpan), nested::Absent> =
+        Maybe::Absent(nested::Absent::Own);
+    let mut written = Maybe::Absent(nested::Absent::Own);
+    let rule = match tree.node(form).map(Node::label) {
+        | Some(NodeLabel::Meld(mold)) => pbg.rule_of(mold).ok().map(|rule| rule.name),
+        | _ => None,
+    };
+    let own = |mold| pbg.rule_of(mold).is_ok_and(|held| Some(held.name) == rule);
+    for child in tree.children(form) {
+        let Some(held) = tree.node(child)
+        else {
+            continue;
+        };
+        let span = held.span();
+        match held.label() {
+            | NodeLabel::Tile(mold) if span.end() == point && span.start() < point && own(mold) => {
+                frontier = Maybe::Present((mold, span));
+            },
+            | NodeLabel::Tile(_) | NodeLabel::Meld(_) | NodeLabel::Wald
+                if span.start() >= point && matches!(written, Maybe::Absent(_)) =>
+            {
+                written = Maybe::Present(span);
+            },
+            | NodeLabel::Tile(_)
+            | NodeLabel::Meld(_)
+            | NodeLabel::Wald
+            | NodeLabel::Grout { .. }
+            | NodeLabel::GhostClose { .. }
+            | NodeLabel::Space
+            | NodeLabel::Doc => {},
+        }
+    }
+    let ending = match frontier {
+        | Maybe::Present((mold, _)) => {
+            let mut labels = pbg
+                .mold_successors(mold)
+                .iter()
+                .filter(|&&(_, next)| bool::from(pbg.mold_is_form_last(next)))
+                .filter_map(|&(_, next)| pbg.mold(next).ok().map(|def| def.label));
+            match labels.next() {
+                | Some(first) if labels.all(|label| label == first) => {
+                    Ending::Tile(TileName(first))
+                },
+                | Some(_) | None => Ending::Unnamed,
+            }
+        },
+        | Maybe::Absent(_) => Ending::Unnamed,
+    };
+    let (floor, mut end) = match (ending, written, frontier) {
+        | (Ending::Tile(_), Maybe::Present(span), _) | (_, _, Maybe::Present((_, span))) => {
+            (usize::from(span.start()), usize::from(span.end()))
+        },
+        | (_, _, Maybe::Absent(_)) => (usize::from(point), usize::from(point)),
+    };
+    let source = tree.source();
+    let text: &str = source.as_ref();
+    while end > floor
+        && end
+            .checked_sub(1_usize)
+            .and_then(|before| text.as_bytes().get(before))
+            .is_some_and(u8::is_ascii_whitespace)
+    {
+        end = end.saturating_sub(1_usize);
+    }
+    let at = ByteOffset::from(end);
+
+    Repaired {
+        span: ByteSpan::new(at, at).unwrap_or(ghost.span),
+        repair: Repair::Unended(ending),
+        nested: ghost.nested,
+    }
+}
+
 /// The deepest repair inside the operands `pieces` names, with the form that
 /// holds it.
 ///
@@ -1561,9 +1712,10 @@ pub fn read_pieces<'source>(
 /// - requires: `pieces` were read from `tree`.
 /// - ensures: among the grout and minted closes standing as children of a form
 ///   inside one of the operands, the one at the greatest depth, the first in
-///   source order among equals, with the name of the form whose child it is;
-///   absent when no operand holds one.
-/// - provides: the inner repair a minted close follows from.
+///   source order among equals, with the name of the form whose child it is; a
+///   ghost end is read as that form's [`Repair::Unended`]; absent when no
+///   operand holds one.
+/// - provides: the inner repair a minted close or a ghost end follows from.
 /// - fails: [`LoweringRefusal::UnknownMold`] for a holding form whose mold
 ///   `pbg` does not hold.
 /// - panics: none.
@@ -1573,8 +1725,10 @@ pub fn read_pieces<'source>(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a source ending inside a case's arms, within a
-///   definition, finds the case's minted close under the definition's own.
+///   definition, finds the case's minted close under the definition's own; a
+///   string never closed, within a definition, is read as the string's end.
 /// - witness: `lower::tests::a_missing_close_is_reported_at_the_innermost_form`
+/// - witness: `lower::tests::an_unended_form_names_its_missing_tile_where_it_belongs`
 #[spec(ensures: |ret| match ret {
     | Ok(Maybe::Present(found)) => matches!(found.nested, Maybe::Present(_)),
     | Ok(Maybe::Absent(_)) | Err(LoweringRefusal::UnknownMold { .. }) => true,
@@ -1595,7 +1749,8 @@ fn nested_repair<'source>(
             | Piece::Tile { .. } => None,
         })
         .collect();
-    let mut deepest: Maybe<(usize, Repaired), nested::Absent> = Maybe::Absent(nested::Absent::Own);
+    let mut deepest: Maybe<(usize, NodeIndex, Repaired), nested::Absent> =
+        Maybe::Absent(nested::Absent::Own);
     while let Some((form, depth)) = forms.pop() {
         let Some(holder) = tree.node(form)
         else {
@@ -1622,7 +1777,7 @@ fn nested_repair<'source>(
             };
             let span = held.span();
             let deeper = match deepest {
-                | Maybe::Present((best, ref found)) => {
+                | Maybe::Present((best, _, ref found)) => {
                     depth > best || (depth == best && span.start() < found.span.start())
                 },
                 | Maybe::Absent(_) => true,
@@ -1632,7 +1787,7 @@ fn nested_repair<'source>(
                 else {
                     continue;
                 };
-                deepest = Maybe::Present((depth, Repaired {
+                deepest = Maybe::Present((depth, form, Repaired {
                     span,
                     repair,
                     nested: Maybe::Present(name),
@@ -1641,7 +1796,12 @@ fn nested_repair<'source>(
         }
     }
     Ok(match deepest {
-        | Maybe::Present((_, found)) => Maybe::Present(found),
+        | Maybe::Present((_, holder, found))
+            if found.repair == Repair::Grout(GroutShape::Postfix) =>
+        {
+            Maybe::Present(unended(pbg, tree, holder, found))
+        },
+        | Maybe::Present((_, _, found)) => Maybe::Present(found),
         | Maybe::Absent(reason) => Maybe::Absent(reason),
     })
 }
@@ -2488,10 +2648,10 @@ mod tests
             read.repair,
             Maybe::Present(Repaired {
                 span: at(5_usize, 5_usize),
-                repair: Repair::Grout(GroutShape::Postfix),
+                repair: Repair::Unended(super::Ending::Unnamed),
                 nested: Maybe::Absent(crate::form::nested::Absent::Own),
             }),
-            "the grout the parser inserted is reported where it stands"
+            "the end the parser appended is reported past the last written tile"
         );
         assert!(
             read.pieces
@@ -2790,7 +2950,7 @@ mod tests
             read.repair,
             Maybe::Present(Repaired {
                 span: at(5_usize, 5_usize),
-                repair: Repair::Grout(GroutShape::Postfix),
+                repair: Repair::Unended(super::Ending::Unnamed),
                 nested: Maybe::Absent(crate::form::nested::Absent::Own),
             })
         );
