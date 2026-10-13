@@ -554,6 +554,7 @@ fn run_binder_annotation_molds_clean() -> Result<(), Box<dyn Error>>
     );
     Ok(())
 }
+
 /// The circuit block form molds to a **zero-obligation** reading, over its
 /// worked examples plus one case per rung of the surface: the empty interface,
 /// the occurrence label, the pinned-endpoint binder, the invertible face, and
@@ -1071,6 +1072,7 @@ fn corpus_molds_to_zero_obligations() -> Result<(), Box<dyn Error>>
     assert_eq!(0, total, "the corpus carries zero total obligations");
     Ok(())
 }
+
 #[test]
 fn incomplete_input_flags_statement_local_obligations() -> Result<(), Box<dyn Error>>
 {
@@ -1097,6 +1099,7 @@ fn incomplete_input_flags_statement_local_obligations() -> Result<(), Box<dyn Er
     }
     Ok(())
 }
+
 #[test]
 fn mixed_set_precedence_requires_obligation_and_commits() -> Result<(), Box<dyn Error>>
 {
@@ -1122,6 +1125,7 @@ fn mixed_set_precedence_requires_obligation_and_commits() -> Result<(), Box<dyn 
     );
     Ok(())
 }
+
 #[test]
 fn malformed_programs_repair_predictably() -> Result<(), Box<dyn Error>>
 {
@@ -1140,6 +1144,10 @@ fn malformed_programs_repair_predictably() -> Result<(), Box<dyn Error>>
         ("def x = 1 ~ 2;", Oblig::UnmoldedTok),
         // An unterminated string force-closes.
         ("def x = \"open", Oblig::MissingTile),
+        // A tile standing where its form's earlier tiles are absent: a
+        // signature has no value tail, so its `=` begins a partial value form
+        // whose head is missing, never a clean one.
+        ("def s : Integer = s;", Oblig::MissingTile),
     ];
     for &(src, expected_class) in cases {
         let result = parse(pbg, SourceText::from(src))?;
@@ -1167,6 +1175,7 @@ fn malformed_programs_repair_predictably() -> Result<(), Box<dyn Error>>
     }
     Ok(())
 }
+
 /// An unclosed value delimiter must be repaired at the declaration boundary,
 /// so a following definition remains a distinct top-level item.
 ///
@@ -1249,6 +1258,7 @@ fn unclosed_definition_delimiter_does_not_absorb_following_definition() -> Resul
     );
     Ok(())
 }
+
 /// The declaration boundary belongs to item position, not to the `def`
 /// keyword: a repair bounded before a surviving `def` must be bounded before
 /// every other declaration head too.
@@ -1305,6 +1315,7 @@ fn an_unclosed_delimiter_yields_to_every_declaration_family() -> Result<(), Box<
     }
     Ok(())
 }
+
 #[test]
 fn malformed_input_continues_into_a_later_definition() -> Result<(), Box<dyn Error>>
 {
@@ -1523,6 +1534,7 @@ fn corpus_files_cold_parse_within_p99_latency_budget() -> Result<(), Box<dyn Err
     );
     Ok(())
 }
+
 #[test]
 fn expected_agrees_with_committed_finalize() -> Result<(), Box<dyn Error>>
 {
@@ -1592,6 +1604,7 @@ fn expected_agrees_with_committed_finalize() -> Result<(), Box<dyn Error>>
     );
     Ok(())
 }
+
 #[test]
 fn minimization_prefers_clean_readings() -> Result<(), Box<dyn Error>>
 {

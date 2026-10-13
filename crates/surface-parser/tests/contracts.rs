@@ -328,7 +328,7 @@ fn a_transparent_ascription_admits_the_same_signature() -> Result<(), Box<dyn Er
 fn a_path_payload_parses_only_parenthesized() -> Result<(), Box<dyn Error>>
 {
     let pbg = built();
-    let parenthesized = parse(pbg, SourceText::from("def s : !(Seat.Report). end = s;"))?;
+    let parenthesized = parse(pbg, SourceText::from("def s : !(Seat.Report). end ;"))?;
     assert!(
         bool::from(parenthesized.is_clean()),
         "the parenthesized path payload molds clean; obligations: {:?}",
@@ -339,7 +339,7 @@ fn a_path_payload_parses_only_parenthesized() -> Result<(), Box<dyn Error>>
         dot_rules(pbg, parenthesized.tree())?.as_slice(),
         "the first `.` is the path's and the second the send's"
     );
-    let bare = parse(pbg, SourceText::from("def s : !Seat.Report. end = s;"))?;
+    let bare = parse(pbg, SourceText::from("def s : !Seat.Report. end ;"))?;
     assert!(
         !bool::from(bare.is_clean()),
         "the bare path payload is a repair, not a second reading"
