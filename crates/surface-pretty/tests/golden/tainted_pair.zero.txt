@@ -1,2 +1,2 @@
-("abcdefghijklmnopq",
-  "rstuvwxyzabcdefgh")
+#{"abcdefghijklmnopq",
+  "rstuvwxyzabcdefgh"}

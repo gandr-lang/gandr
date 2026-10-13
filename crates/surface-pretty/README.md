@@ -21,8 +21,8 @@ The presentation printer: a checked core type or a normal-form value, written in
 
 ## Provided features
 
-- `present_type`: a value or computation type at a page width. Witnesses: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`, `goldens::tests::universes_spell_their_sort_and_level`, `goldens::tests::dependent_function_type_breaks_before_codomain`, `goldens::tests::long_dependent_function_type_breaks_at_the_narrow_page`, `goldens::tests::arrow_chain_breaks_before_each_continuation`, `goldens::tests::nullary_declared_data_uses_its_bare_name`, `goldens::tests::a_binder_skips_the_names_the_type_mentions`, `goldens::tests::static_operators_spell_as_the_grammar_writes_them`.
-- `present_value`: a value at a page width, bounded at `DEPTH_LIMIT`. Witnesses: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`, `goldens::tests::string_controls_stay_in_one_escaped_literal`, `goldens::tests::pair_of_injections_pins_sum_notation`, `goldens::tests::n_ary_tuples_spell_with_their_commas`, `goldens::tests::record_value_breaks_fields_at_the_narrow_page`, `goldens::tests::beyond_the_depth_limit_renders_deep`.
+- `present_type`: a value or computation type at a page width. Witnesses: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`, `goldens::tests::n_ary_products_and_sums_spell_between_their_braces`, `goldens::tests::records_spell_their_fields_in_label_order`, `goldens::tests::universes_spell_their_sort_and_level`, `goldens::tests::dependent_function_type_breaks_before_codomain`, `goldens::tests::long_dependent_function_type_breaks_at_the_narrow_page`, `goldens::tests::arrow_chain_breaks_before_each_continuation`, `goldens::tests::nullary_declared_data_uses_its_bare_name`, `goldens::tests::a_binder_skips_the_names_the_type_mentions`, `goldens::tests::static_operators_spell_as_the_grammar_writes_them`.
+- `present_value`: a value at a page width, bounded at `DEPTH_LIMIT`. Witnesses: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`, `goldens::tests::string_controls_stay_in_one_escaped_literal`, `goldens::tests::pair_of_injections_pins_sum_notation`, `goldens::tests::n_ary_tuples_and_injections_spell_between_their_braces`, `goldens::tests::records_spell_their_fields_in_label_order`, `goldens::tests::record_value_breaks_fields_at_the_narrow_page`, `goldens::tests::beyond_the_depth_limit_renders_deep`.
 - `Presentation`, `Fidelity`: the text, and whether it says the whole node, by the nodes met rather than the characters written. Witnesses: `goldens::tests::fidelity_follows_nodes_not_the_characters_of_a_name`, `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`.
 - `Source`, `Former`, `Name`: the one question the printer asks of its input; a malformed source — a child of the wrong sort, a dangling node, a cycle — is written `?`, never a panic. Witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`.
 - `CoreSource`, `CoreNode`: the core arena as a source, constants and abstract types named from a table indexed by constant.
@@ -93,7 +93,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | ----- | ------ |
 | One spelling per former, tests and their limits, references | [`src/lib.rs`](src/lib.rs) |
 | The input is a source | [`former`](src/former.rs) |
-| Chains, native universe paths, break points, binder names, bounds | [`walk`](src/walk.rs) |
+| Products, sums and tuples between their braces, native universe paths, break points, binder names, bounds | [`walk`](src/walk.rs) |
 
 The deferred golden rows, each with the former it needs, are tracked in [#206](https://github.com/gandr-lang/gandr/issues/206).
 

@@ -1,2 +1,2 @@
-("analytical engine", ("ada lovelace",
-  1843))
+#{.engine = "analytical engine",
+  .name = "ada lovelace", .year = 1843}

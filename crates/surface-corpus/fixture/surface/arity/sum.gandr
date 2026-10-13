@@ -2,7 +2,7 @@
 def one : +{Integer} ;
 def one = +{.0 = 1} ;
 
-@[ checks ]
+@[ runs("inj[2](unit)") ]
 def third : +{Integer, String, Unit} ;
 def third = +{.2 = unit} ;
 

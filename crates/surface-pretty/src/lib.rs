@@ -20,33 +20,37 @@
 //! # One spelling per former
 //!
 //! Every former has exactly one spelling, the one the surface grammar parses:
-//! `Integer`, `String`, `Unit`, `A * B`, `A + B`, `+U C`, `-F A`, `A -> C`,
-//! `(x : A) -> C`, `Type`, `Type[-]`, `Type[+, l]`, `Type[-, l]`; `unit`,
-//! literals, `(a, b)`, `Inl(v)`, `Inr(v)`. A former the surface does not write
-//! — a lift, the numeric atom, a variable past every binder — is written `?`.
+//! `Integer`, `String`, `Unit`, `#{A, B}`, `#{l : A, m : B}`, `+{A, B}`,
+//! `&{C, D}`, `+U C`, `-F A`, `A -> C`, `(x : A) -> C`, `Type`, `Type[-]`,
+//! `Type[+, l]`, `Type[-, l]`; `unit`, literals, `#{a, b}`, `#{.l = v}`,
+//! `+{.i = v}`. Every braced former is written between its delimiters at any
+//! arity from one, its labels in their declared order; the binary sugar
+//! `A * B`, `A + B`, `C & D` and `(a, b)` parses and is never printed. A former
+//! the surface does not write — a lift, the numeric atom, a variable past
+//! every binder, the empty record — is written `?`.
 //! Effectful returners display their interface names as diagnostic notation.
 //! Both are [`Fidelity::Approximate`], not round-trippable source. A page the
 //! one-line spelling fits selects it unchanged.
 //!
 //! Every former has exactly one spelling, the one the surface grammar parses,
 //! so a printed type reads back as the type it names: `Integer`, `String`,
-//! `Unit`, `Void`, `Bool`, `A * B * …`, `A + B + …`, `+U C`, `-F A`, `A -> C`,
-//! `(x : A) -> C`, the static Pi `A -> B` between value types, `Type`,
-//! `Type[-]`, `Type[+, l]`, `Type[-, l]`, an abstract type and a constant by
-//! name, and a decode as the code it reads; values are `unit`, literals with
-//! their canonical digits and escapes, `(a,)`, `(a, b, …)`, `Inl(v)`, `Inr(v)`,
-//! the static abstraction `\a. v`, and a static application as its spine, `f(a,
-//! b)` for `f` applied to `a` and then to `b` (the type operators of
-//! `gandr-surface-grammar`). Binding strength follows the grammar's bands,
-//! tightest first: atoms, the bridges `+U` and `-F` (built-in spellings in
-//! `gandr-surface-grammar`), product, sum, arrow. A product or a sum is written
-//! as one chain of its components, and a component of equal strength on either
-//! side is parenthesized; an arrow's domain is bare up to a sum and its
-//! codomain bare. A static abstraction binds as loosely as an arrow, its body
-//! running to the right, and an application is an atom whose operator is
-//! parenthesized unless it is one, so a redex reads `(\a. a)(Integer)`. The
-//! value-function alias `(A, B) => C` is never printed: it lowers to `+U (A ->
-//! B -> -F C)`, and the printer writes what the core holds.
+//! `Unit`, `Void`, `Bool`, `#{A, B, …}`, `#{l : A, …}`, `+{A, B, …}`,
+//! `&{C, D}`, `+U C`, `-F A`, `A -> C`, `(x : A) -> C`, the static Pi `A -> B`
+//! between value types, `Type`, `Type[-]`, `Type[+, l]`, `Type[-, l]`, an
+//! abstract type and a constant by name, and a decode as the code it reads;
+//! values are `unit`, literals with their canonical digits and escapes,
+//! `#{a, b, …}`, `#{.l = v, …}`, `+{.i = v}`, the static abstraction `\a. v`,
+//! and a static application as its spine, `f(a, b)` for `f` applied to `a` and
+//! then to `b` (the type operators of `gandr-surface-grammar`). Binding
+//! strength follows the grammar's bands, tightest first: atoms, every braced
+//! former among them, then the bridges `+U` and `-F` (built-in spellings in
+//! `gandr-surface-grammar`), then arrow; an arrow's domain is bare up to a
+//! bridge and its codomain bare. A static abstraction binds as loosely as an
+//! arrow, its body running to the right, and an application is an atom whose
+//! operator is parenthesized unless it is one, so a redex reads
+//! `(\a. a)(Integer)`. The sugar `A * B`, `A + B`, `C & D`, `(a, b)` and the
+//! value-function alias `(A, B) => C` parse and are never printed: the printer
+//! writes what the core holds, the alias as `+U (A -> B -> -F C)`.
 //!
 //! A node the surface has no spelling for — a lift, the numeric atom, a linear
 //! or unbound variable, a term where a type stands — is written `?`, and a
@@ -119,9 +123,13 @@
 extern crate alloc;
 
 mod content_source;
+
 mod core_source;
+
 mod error;
+
 mod former;
+
 mod walk;
 
 use core::fmt;
@@ -304,6 +312,8 @@ impl fmt::Display for Presentation
 ///   scanned leaf that becomes a cycle distinguishes the second-pass budget;
 ///   other source mutations, page widths and layout ceilings are not exhausted.
 /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
+/// - witness: `goldens::tests::n_ary_products_and_sums_spell_between_their_braces`
+/// - witness: `goldens::tests::records_spell_their_fields_in_label_order`
 /// - witness: `goldens::tests::dependent_function_type_breaks_before_codomain`
 /// - witness: `goldens::tests::long_dependent_function_type_breaks_at_the_narrow_page`
 /// - witness: `goldens::tests::arrow_chain_breaks_before_each_continuation`
@@ -332,12 +342,12 @@ where
 /// # Specification
 /// - requires: nothing; `source` may be malformed.
 /// - ensures: the root written as [`present_type`] writes a type, a value's
-///   formers spelled `unit`, as their literal, `(a, b)`, `Inl(v)` and `Inr(v)`,
-///   a constant by its name and the code of a type as the type; a thunk is
-///   written `<thunk>`, and a value [`DEPTH_LIMIT`] value formers deep is
-///   written `<deep>` inside the formers around it, each making the
-///   presentation approximate. Output has the same line-ending and width
-///   guarantees as [`present_type`].
+///   formers spelled `unit`, as their literal, `#{a, b}`, `#{.l = v}` in label
+///   order and `+{.i = v}` at any summand, a constant by its name and the code
+///   of a type as the type; a thunk is written `<thunk>`, and a value
+///   [`DEPTH_LIMIT`] value formers deep is written `<deep>` inside the formers
+///   around it, each making the presentation approximate. Output has the same
+///   line-ending and width guarantees as [`present_type`].
 /// - provides: the normal form a transcript line or a probe shows.
 /// - fails: as [`present_type`].
 /// - panics: none.
@@ -353,6 +363,7 @@ where
 ///   refusal.
 /// - witness: `goldens::tests::string_controls_stay_in_one_escaped_literal`
 /// - witness: `goldens::tests::pair_of_injections_pins_sum_notation`
+/// - witness: `goldens::tests::n_ary_tuples_and_injections_spell_between_their_braces`
 /// - witness: `goldens::tests::record_value_breaks_fields_at_the_narrow_page`
 /// - witness: `goldens::tests::beyond_the_depth_limit_renders_deep`
 /// - witness: `goldens::tests::fidelity_follows_nodes_not_the_characters_of_a_name`

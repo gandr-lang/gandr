@@ -38,7 +38,6 @@ use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Literal;
-use gandr_kernel_term::Side;
 
 /// A name a node carries, as its source spells it: an abstract type's or a
 /// constant's.
@@ -100,7 +99,7 @@ impl Borrow<str> for Name<'_>
     }
 }
 
-/// How many components a product, a sum or a tuple has.
+/// How many components a product, a sum, a tuple or a record has.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Arity(usize);
@@ -131,8 +130,8 @@ impl From<Arity> for usize
     }
 }
 
-/// The position of one component of a product, a sum or a tuple, counting
-/// from zero.
+/// The position of one component of a product, a sum, a tuple or a record,
+/// counting from zero; a record's fields count in label order.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Component(usize);
@@ -195,7 +194,7 @@ pub enum Former<'source, Node>
     Reify,
     /// A stack's ordered input and output computation types.
     Stack(Node, Node),
-    /// A lazy pair's two computation types.
+    /// A lazy pair's two computation types: `&{C, D}`.
     With(Node, Node),
     /// The empty native list.
     ListNil,
@@ -212,11 +211,14 @@ pub enum Former<'source, Node>
     /// A rigid base type: `Integer`, `String`, or the numeric atom.
     BaseType(BaseType),
     /// The product of a value type's components, which the source answers by
-    /// [`Source::component`]: `Unit` at arity zero, `A * B * …` from two.
+    /// [`Source::component`]: `Unit` at arity zero, `#{A, …}` from one.
     Product(Arity),
     /// The sum of a value type's components, which the source answers by
-    /// [`Source::component`]: `Void` at arity zero, `A + B + …` from two.
+    /// [`Source::component`]: `Void` at arity zero, `+{A, …}` from one.
     Sum(Arity),
+    /// A record type of this many fields, which the source answers in label
+    /// order by [`Source::component`] and [`Source::label`]: `#{l : A, …}`.
+    RecordType(Arity),
     /// The suspension `+U C` of a computation type.
     ThunkType(Node),
     /// The universe of one sort at a level.
@@ -289,11 +291,13 @@ pub enum Former<'source, Node>
     /// A literal.
     Literal(&'source Literal),
     /// A tuple of values, which the source answers by [`Source::component`]:
-    /// `(a,)` at arity one, `(a, b, …)` from two; the empty tuple is
-    /// [`Former::Unit`].
+    /// `#{a, …}` from arity one; the empty tuple is [`Former::Unit`].
     Tuple(Arity),
-    /// A sum injection.
-    Injection(Side, Node),
+    /// A record value of this many fields, which the source answers in label
+    /// order by [`Source::component`] and [`Source::label`]: `#{.l = a, …}`.
+    Record(Arity),
+    /// An injection into the summand at this position: `+{.i = v}`.
+    Injection(Component, Node),
     /// A suspended computation, which the printer shows as opaque.
     Thunk,
     /// A universe lift of a value, which the surface does not write.
@@ -351,14 +355,15 @@ pub trait Source
         node: Self::Node,
     ) -> Former<'_, Self::Node>;
 
-    /// The handle of component `index` of the product, the sum or the tuple
-    /// `node` names.
+    /// The handle of component `index` of the product, the sum, the tuple, the
+    /// record or the record type `node` names.
     ///
     /// # Specification
     /// - requires: nothing; any handle and any position are admissible.
     /// - ensures: the handle of the component at `index` when [`read`] answers
-    ///   a [`Former::Product`], a [`Former::Sum`] or a [`Former::Tuple`] for
-    ///   `node` and `index` is below its arity; none otherwise.
+    ///   a [`Former::Product`], a [`Former::Sum`], a [`Former::Tuple`], a
+    ///   [`Former::Record`] or a [`Former::RecordType`] for `node` and `index`
+    ///   is below its arity, a record's fields in label order; none otherwise.
     /// - provides: the children of an n-ary former, which a [`Former`] counts
     ///   but does not hold.
     /// - fails: never; a missing component is an absence, which the printer
@@ -371,16 +376,45 @@ pub trait Source
     ///
     /// # Adequacy
     /// - hypothesis: L3 — core-backed and table-backed readers answer the
-    ///   components of products and sums of arity zero, two and three, and of
-    ///   tuples of arity one to three, in order, and none past the arity or for
-    ///   another former; a reversed or shifted component changes a golden
-    ///   spelling.
+    ///   components of products and sums of arity zero to three, of tuples of
+    ///   arity one to three and of records of two fields, in order, and none
+    ///   past the arity or for another former; a reversed or shifted component
+    ///   changes a golden spelling.
     /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
-    /// - witness: `goldens::tests::n_ary_products_and_sums_spell_as_one_chain`
+    /// - witness: `goldens::tests::n_ary_products_and_sums_spell_between_their_braces`
+    /// - witness: `goldens::tests::records_spell_their_fields_in_label_order`
     /// - witness: `content_source::tests::value_ty_covers_every_reachable_former`
     fn component(
         &self,
         node: Self::Node,
         index: Component,
     ) -> Option<Self::Node>;
+
+    /// The label of field `index` of the record or the record type `node`
+    /// names.
+    ///
+    /// # Specification
+    /// - requires: nothing; any handle and any position are admissible.
+    /// - ensures: the label of the field [`component`] answers at `index` when
+    ///   [`read`] answers a [`Former::Record`] or a [`Former::RecordType`] for
+    ///   `node` and `index` is below its arity; none otherwise.
+    /// - provides: the labels a record's fields are written under, which a
+    ///   [`Former`] counts but does not hold.
+    /// - fails: never; a missing label is an absence, which the printer spells
+    ///   `?`.
+    /// - panics: none.
+    /// - executable: none — as for [`read`].
+    ///
+    /// [`component`]: Self::component
+    /// [`read`]: Self::read
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — core-backed records of two fields spell each field
+    ///   under its own label; a shifted or swapped label changes the golden.
+    /// - witness: `goldens::tests::records_spell_their_fields_in_label_order`
+    fn label(
+        &self,
+        node: Self::Node,
+        index: Component,
+    ) -> Option<Name<'_>>;
 }

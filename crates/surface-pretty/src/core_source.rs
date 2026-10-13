@@ -141,19 +141,20 @@ impl<'arena> CoreSource<'arena>
         | (Some(&Value::Constant(index)), Former::Constant(name)) => self.names.get(usize::from(index))
             .is_some_and(|held| held.as_ref() == name.as_ref()),
         | (Some(&Value::Constant(index)), Former::Unreadable) => usize::from(index) >= self.names.len(),
-        (Some(&Value::Constructor { .. } | &Value::Record(_) | &Value::Hole(_) | &Value::Mark { .. } | &Value::Here(_) | &Value::Returned(_)) | None,
+        (Some(&Value::Constructor { .. } | &Value::Hole(_) | &Value::Mark { .. } | &Value::Here(_) | &Value::Returned(_)) | None,
 Former::Unreadable) | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::ListNil), Former::ListNil) |
 (Some(&Value::Thunk(_)), Former::Thunk) |
 (Some(&Value::Lift { .. }), Former::ValueLift) => true,
+        | (Some(&Value::Record(ref fields)), Former::Unreadable) => fields.is_empty(),
+        | (Some(&Value::Record(ref fields)), Former::Record(arity)) => !fields.is_empty() && usize::from(arity) == fields.len(),
         | (Some(&Value::Literal(ref literal)), Former::Literal(actual)) =>
             core::ptr::eq(core::ptr::from_ref(literal), core::ptr::from_ref(actual)),
         | (Some(&Value::Tuple(ref components)), Former::Unit) => components.is_empty(),
         | (Some(&Value::Tuple(ref components)), Former::Tuple(arity)) => !components.is_empty() && usize::from(arity) == components.len(),
         | (Some(&Value::PathProduct(first, second)), Former::PathProduct(actual_first, actual_second)) =>
             actual_first == CoreNode::Value(first) && actual_second == CoreNode::Value(second),
-        | (Some(&Value::Injection(summand, body)), Former::Injection(actual_side, actual_body)) =>
-            summand == actual_side.into() && actual_body == CoreNode::Value(body),
-        | (Some(&Value::Injection(summand, _)), Former::Unreadable) => usize::from(summand) > 1,
+        | (Some(&Value::Injection(summand, body)), Former::Injection(actual_summand, actual_body)) =>
+            usize::from(summand) == usize::from(actual_summand) && actual_body == CoreNode::Value(body),
         | (Some(&Value::Quote(quoted)), Former::Quote(actual)) => actual == CoreNode::ValueType(quoted),
         | (Some(&Value::QuoteComputation(quoted)), Former::QuoteComputation(actual)) => actual == CoreNode::CompType(quoted),
         | (Some(&Value::StaticLambda(body)), Former::StaticLambda(actual)) => actual == CoreNode::Value(body),
@@ -171,15 +172,17 @@ Former::Unreadable) | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::Li
             return Former::Unreadable;
         };
         match *value {
-            // The source grammar has no native data or record reader, a hole
-            // or a mark is displayed by the session, not spelled here, and
-            // reflexivity and a compound endpoint have no former of their own.
+            // The source grammar has no native data reader, a hole or a mark
+            // is displayed by the session, not spelled here, reflexivity and a
+            // compound endpoint have no former of their own, and the surface
+            // writes no empty record: `#{}` is the unit.
             | Value::Constructor { .. }
-            | Value::Record(_)
             | Value::Hole(_)
             | Value::Mark { .. }
             | Value::Here(_)
             | Value::Returned(_) => Former::Unreadable,
+            | Value::Record(ref fields) if fields.is_empty() => Former::Unreadable,
+            | Value::Record(ref fields) => Former::Record(Arity::from(fields.len())),
             | Value::Reify(_) => Former::Reify,
             | Value::Primitive { primitive, .. } => {
                 Former::Constant(Name::from(<&'static str>::from(primitive.name())))
@@ -200,10 +203,8 @@ Former::Unreadable) | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::Li
             | Value::Literal(ref literal) => Former::Literal(literal),
             | Value::Tuple(ref components) if components.is_empty() => Former::Unit,
             | Value::Tuple(ref components) => Former::Tuple(Arity::from(components.len())),
-            // The surface writes only the first two summands.
-            | Value::Injection(summand, body) => match gandr_kernel_term::Side::try_from(summand) {
-                | Ok(side) => Former::Injection(side, CoreNode::Value(body)),
-                | Err(_) => Former::Unreadable,
+            | Value::Injection(summand, body) => {
+                Former::Injection(Component::from(usize::from(summand)), CoreNode::Value(body))
             },
             | Value::Thunk(_) => Former::Thunk,
             | Value::Lift { .. } => Former::ValueLift,
@@ -244,13 +245,14 @@ Former::Unreadable) | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::Li
     #[spec(ensures: |ret| match (self.arena.value_type(id), ret) {
         | (Some(&ValueType::Stack { input, output }), Former::Stack(a, b)) => a == CoreNode::CompType(input) && b == CoreNode::CompType(output),
         | (Some(&ValueType::PathUniverse(source, target)), Former::PathUniverse(actual_source, actual_target)) => actual_source == CoreNode::Value(source) && actual_target == CoreNode::Value(target),
-        (Some(&ValueType::Data { .. } | &ValueType::Record(_) | &ValueType::Unknown | &ValueType::Path { .. }) | None,
+        (Some(&ValueType::Data { .. } | &ValueType::Unknown | &ValueType::Path { .. }) | None,
 Former::Unreadable) |
 (Some(&ValueType::Lift { .. }), Former::TypeLift) => true,
-        | (Some(&ValueType::Product(ref parts) | &ValueType::Sum(ref parts)), Former::Unreadable) => parts.len() == 1,
+        | (Some(&ValueType::Record(ref fields)), Former::Unreadable) => fields.is_empty(),
+        | (Some(&ValueType::Record(ref fields)), Former::RecordType(arity)) => !fields.is_empty() && usize::from(arity) == fields.len(),
         | (Some(&ValueType::Base(base)), Former::BaseType(actual)) => base == actual,
         | (Some(&ValueType::Product(ref parts)), Former::Product(arity))
-        | (Some(&ValueType::Sum(ref parts)), Former::Sum(arity)) => parts.len() != 1 && usize::from(arity) == parts.len(),
+        | (Some(&ValueType::Sum(ref parts)), Former::Sum(arity)) => usize::from(arity) == parts.len(),
         | (Some(&ValueType::List(element)), Former::List(actual)) => actual == CoreNode::ValueType(element),
         | (Some(&ValueType::Thunk(body)), Former::ThunkType(actual)) => actual == CoreNode::CompType(body),
         | (Some(&ValueType::Universe { sort, ref level }), Former::Universe { sort: actual_sort, level: actual_level }) =>
@@ -273,15 +275,14 @@ Former::Unreadable) |
             return Former::Unreadable;
         };
         match *value_type {
-            // These classifiers have no spelling in the source grammar.
-            | ValueType::Data { .. } | ValueType::Record(_) | ValueType::Unknown => {
+            // A native data classifier and a path type have no spelling in the
+            // source grammar, and the surface writes no empty record type:
+            // `#{}` is `Unit`.
+            | ValueType::Data { .. } | ValueType::Unknown | ValueType::Path { .. } => {
                 Former::Unreadable
             },
-            | ValueType::Path { .. } => Former::Unreadable,
-            // The 1-ary product and sum have no spelling yet.
-            | ValueType::Product(ref parts) | ValueType::Sum(ref parts) if parts.len() == 1 => {
-                Former::Unreadable
-            },
+            | ValueType::Record(ref fields) if fields.is_empty() => Former::Unreadable,
+            | ValueType::Record(ref fields) => Former::RecordType(Arity::from(fields.len())),
             | ValueType::Product(ref parts) => Former::Product(Arity::from(parts.len())),
             | ValueType::Sum(ref parts) => Former::Sum(Arity::from(parts.len())),
             | ValueType::Stack { input, output } => {
@@ -414,11 +415,11 @@ impl Source for CoreSource<'_>
         | CoreNode::ValueType(id) if self.arena.value_type(id).is_none() => matches!(ret, Former::Unreadable),
         | CoreNode::CompType(id) if self.arena.comp_type(id).is_none() => matches!(ret, Former::Unreadable),
         | CoreNode::Value(_) => matches!(ret, Former::Variable { .. } | Former::Constant(_) | Former::Unit
-            | Former::Literal(_) | Former::Tuple(_) | Former::Injection(..) | Former::Thunk | Former::ValueLift
-            | Former::Reify | Former::ListNil | Former::ListCons(..)
+            | Former::Literal(_) | Former::Tuple(_) | Former::Record(_) | Former::Injection(..) | Former::Thunk
+            | Former::ValueLift | Former::Reify | Former::ListNil | Former::ListCons(..)
             | Former::Quote(_) | Former::QuoteComputation(_) | Former::StaticLambda(_) | Former::StaticApplication(..)
             | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Unreadable),
-        | CoreNode::ValueType(_) => matches!(ret, Former::BaseType(_) | Former::Product(_)
+        | CoreNode::ValueType(_) => matches!(ret, Former::BaseType(_) | Former::Product(_) | Former::RecordType(_)
             | Former::Stack(..) | Former::List(_)
             | Former::Sum(_) | Former::ThunkType(_) | Former::Universe { .. } | Former::TypeLift
             | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::PathUniverse(..) | Former::Unreadable),
@@ -467,33 +468,39 @@ impl Source for CoreSource<'_>
         }
     }
 
-    /// The handle of component `index` of the product, the sum or the tuple
-    /// `node` names in the arena.
+    /// The handle of component `index` of the product, the sum, the tuple,
+    /// the record or the record type `node` names in the arena.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the value type at `index` among a held product's or sum's
-    ///   components, and the value at `index` among a held tuple's; none for an
+    /// - ensures: the value type at `index` among a held product's, sum's or
+    ///   record type's components, and the value at `index` among a held
+    ///   tuple's or record's, a record's fields in label order; none for an
     ///   index past them, another former, another family or a missing handle.
-    /// - provides: the printer's reading of an n-ary product, sum or tuple.
+    /// - provides: the printer's reading of an n-ary former.
     /// - fails: never.
     /// - panics: none.
+    /// - intension: a record's field is reached by counting through its
+    ///   label-ordered map, linear in the fields before it.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the golden chains read every component of products
-    ///   and sums of arity two and three, and of tuples of arity one to three,
-    ///   in order; a direct read past the arity and of a non-product observes
-    ///   the absence.
-    /// - witness: `goldens::tests::n_ary_products_and_sums_spell_as_one_chain`
-    /// - witness: `goldens::tests::n_ary_tuples_spell_with_their_commas`
+    /// - hypothesis: L3 — the golden braces read every component of products
+    ///   and sums of arity one to three, of tuples of arity one to three and of
+    ///   records of two fields, in order; a direct read past the arity and of a
+    ///   non-product observes the absence.
+    /// - witness: `goldens::tests::n_ary_products_and_sums_spell_between_their_braces`
+    /// - witness: `goldens::tests::n_ary_tuples_and_injections_spell_between_their_braces`
+    /// - witness: `goldens::tests::records_spell_their_fields_in_label_order`
     /// - witness: `core_source::tests::components_read_in_order_and_stop_at_the_arity`
     #[spec(ensures: |ret| ret == match node {
         | CoreNode::ValueType(id) => match self.arena.value_type(id) {
             | Some(&(ValueType::Product(ref parts) | ValueType::Sum(ref parts))) => parts.get(usize::from(index)).map(|&part| CoreNode::ValueType(part)),
+            | Some(&ValueType::Record(ref fields)) => fields.values().nth(usize::from(index)).map(|&field| CoreNode::ValueType(field)),
             | _ => None,
         },
         | CoreNode::Value(id) => match self.arena.value(id) {
             | Some(&Value::Tuple(ref components)) => components.get(usize::from(index)).map(|&component| CoreNode::Value(component)),
+            | Some(&Value::Record(ref fields)) => fields.values().nth(usize::from(index)).map(|&field| CoreNode::Value(field)),
             | _ => None,
         },
         | CoreNode::Computation(_) | CoreNode::CompType(_) => None,
@@ -510,26 +517,89 @@ impl Source for CoreSource<'_>
                 | ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts
                     .get(usize::from(index))
                     .map(|&part| CoreNode::ValueType(part)),
+                | ValueType::Record(ref fields) => fields
+                    .values()
+                    .nth(usize::from(index))
+                    .map(|&field| CoreNode::ValueType(field)),
                 | _ => None,
             },
             | CoreNode::Value(id) => match *self.arena.value(id)? {
                 | Value::Tuple(ref components) => components
                     .get(usize::from(index))
                     .map(|&component| CoreNode::Value(component)),
+                | Value::Record(ref fields) => fields
+                    .values()
+                    .nth(usize::from(index))
+                    .map(|&field| CoreNode::Value(field)),
                 | _ => None,
             },
             | CoreNode::Computation(_) | CoreNode::CompType(_) => None,
         }
+    }
+
+    /// The label of field `index` of the record or the record type `node`
+    /// names in the arena.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the label at `index` among a held record's or record type's
+    ///   fields, in label order; none for an index past them, another former,
+    ///   another family or a missing handle.
+    /// - provides: the printer's reading of a record's labels.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: as [`Self::component`], linear in the fields before it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — records and record types of two fields written out of
+    ///   label order spell each field under its own label; a direct read past
+    ///   the fields and of a tuple observes the absence.
+    /// - witness: `goldens::tests::records_spell_their_fields_in_label_order`
+    /// - witness: `core_source::tests::components_read_in_order_and_stop_at_the_arity`
+    #[spec(ensures: |ret| ret.as_ref().map(|name| -> &str { name.as_ref() }) == match node {
+        | CoreNode::ValueType(id) => match self.arena.value_type(id) {
+            | Some(&ValueType::Record(ref fields)) => fields.keys().nth(usize::from(index)).map(AsRef::as_ref),
+            | _ => None,
+        },
+        | CoreNode::Value(id) => match self.arena.value(id) {
+            | Some(&Value::Record(ref fields)) => fields.keys().nth(usize::from(index)).map(AsRef::as_ref),
+            | _ => None,
+        },
+        | CoreNode::Computation(_) | CoreNode::CompType(_) => None,
+    })]
+    #[inline]
+    fn label(
+        &self,
+        node: CoreNode,
+        index: Component,
+    ) -> Option<Name<'_>>
+    {
+        let label = match node {
+            | CoreNode::ValueType(id) => match *self.arena.value_type(id)? {
+                | ValueType::Record(ref fields) => fields.keys().nth(usize::from(index)),
+                | _ => None,
+            },
+            | CoreNode::Value(id) => match *self.arena.value(id)? {
+                | Value::Record(ref fields) => fields.keys().nth(usize::from(index)),
+                | _ => None,
+            },
+            | CoreNode::Computation(_) | CoreNode::CompType(_) => None,
+        }?;
+        Some(Name::from(label.as_ref()))
     }
 }
 
 #[cfg(test)]
 mod tests
 {
+    use alloc::collections::BTreeMap;
+    use alloc::string::String;
+
     use gandr_core_term::ValueTypeId;
     use gandr_core_term::Zone;
     use gandr_kernel_term::BaseType;
     use gandr_kernel_term::DeBruijnIndex;
+    use gandr_kernel_term::FieldLabel;
 
     use super::Component;
     use super::ConstantIndex;
@@ -592,8 +662,9 @@ mod tests
         }
     }
 
-    /// A product's and a sum's components read in order, and nothing reads
-    /// past the arity or below another former.
+    /// A product's, a sum's and a record's components read in order, a
+    /// record's fields and labels in label order whatever order they were
+    /// given in, and nothing reads past the arity or below another former.
     #[test]
     fn components_read_in_order_and_stop_at_the_arity()
     {
@@ -604,9 +675,26 @@ mod tests
         let product = arena.value_type_product(&[integer, string, unit]);
         let sum = arena.value_type_sum(&[string, integer]);
         let returns = arena.comp_type_returner(product);
+        let record_type = arena.value_type_record(BTreeMap::from([
+            (FieldLabel::from(String::from("b")), string),
+            (FieldLabel::from(String::from("a")), integer),
+        ]));
+        let first = arena.value_unit();
+        let second = arena.value_tuple(&[first]);
+        let record = arena.value_record(BTreeMap::from([
+            (FieldLabel::from(String::from("y")), second),
+            (FieldLabel::from(String::from("x")), first),
+        ]));
         let source = CoreSource::new(&arena, &[]);
         let read = |node: ValueTypeId, index: usize| {
             source.component(CoreNode::ValueType(node), Component::from(index))
+        };
+        let labels = |node: CoreNode| {
+            [0_usize, 1, 2].map(|index| {
+                source
+                    .label(node, Component::from(index))
+                    .map(|label| String::from(label.as_ref()))
+            })
         };
         assert!(matches!(
             source.read(CoreNode::ValueType(product)),
@@ -631,6 +719,49 @@ mod tests
             Some(CoreNode::ValueType(integer)),
             None
         ]);
+        assert_eq!(
+            [
+                read(record_type, 0),
+                read(record_type, 1),
+                read(record_type, 2)
+            ],
+            [
+                Some(CoreNode::ValueType(integer)),
+                Some(CoreNode::ValueType(string)),
+                None
+            ],
+            "a record type's fields read in label order"
+        );
+        assert_eq!(
+            [0_usize, 1, 2]
+                .map(|index| source.component(CoreNode::Value(record), Component::from(index))),
+            [
+                Some(CoreNode::Value(first)),
+                Some(CoreNode::Value(second)),
+                None
+            ],
+            "a record's fields read in label order"
+        );
+        assert_eq!(
+            labels(CoreNode::ValueType(record_type)),
+            [Some(String::from("a")), Some(String::from("b")), None],
+            "a record type's labels read in label order and stop at its fields"
+        );
+        assert_eq!(
+            labels(CoreNode::Value(record)),
+            [Some(String::from("x")), Some(String::from("y")), None],
+            "a record's labels read in label order and stop at its fields"
+        );
+        assert_eq!(
+            labels(CoreNode::ValueType(product)),
+            [None, None, None],
+            "a product has no labels"
+        );
+        assert_eq!(
+            labels(CoreNode::Value(second)),
+            [None, None, None],
+            "a tuple has no labels"
+        );
         assert_eq!(read(unit, 0), None, "the unit has no component");
         assert_eq!(read(integer, 0), None, "a base type has no component");
         assert_eq!(
