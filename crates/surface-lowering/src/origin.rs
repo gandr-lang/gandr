@@ -174,6 +174,10 @@ pub enum Insertion
     /// which runs it before the computation around it or suspends it as the
     /// type read there decides.
     Nested,
+    /// The delimiter around a body a `return` in a handled subject leaves,
+    /// and the capture that `return` is: the capture discards every handler
+    /// frame up to the delimiter, which returns the value.
+    Unwind,
 }
 
 /// Whether the source wrote a minted core node or the lowering inserted it.

@@ -358,6 +358,11 @@ fn lowered(
             "{exit} leaves a loop, and no loop runs here; a function, a lambda or a thunk \
              inside a loop has a body of its own"
         ),
+        | LoweringRefusal::AcrossHandler { exit, .. } => write!(
+            f,
+            "{exit} would leave a handler's subject while its handler is still running; \
+             `return` leaves past the handler, or end the subject with its result"
+        ),
         | LoweringRefusal::ForNeedsListCase { .. } => f.write_str(
             "`for` loops are not supported yet: a list has no case to step through it with; \
              loop over it by recursion instead",
@@ -763,6 +768,7 @@ mod tests
     use gandr_surface_lowering::AscriptionForm;
     use gandr_surface_lowering::AttributeRegistry;
     use gandr_surface_lowering::AttributeSchema;
+    use gandr_surface_lowering::CrossedExit;
     use gandr_surface_lowering::FormFault;
     use gandr_surface_lowering::FormName;
     use gandr_surface_lowering::FragmentBoundary;
@@ -912,6 +918,10 @@ mod tests
             LoweringRefusal::OutsideLoop {
                 span,
                 exit: LoopExit::Break,
+            },
+            LoweringRefusal::AcrossHandler {
+                span,
+                exit: CrossedExit::Continue,
             },
             LoweringRefusal::ForNeedsListCase { span },
             LoweringRefusal::WithoutK { span },

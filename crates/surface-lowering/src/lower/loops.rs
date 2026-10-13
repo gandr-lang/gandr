@@ -41,7 +41,10 @@
 //! leave the function, as they do outside one. `break` and `continue` leave
 //! the nearest loop and nothing else: a function, a lambda, a thunk or a
 //! copattern clause inside a loop has a body of its own, and one written there
-//! is [`LoweringRefusal::OutsideLoop`]. The machine runs a loop's body in the
+//! is [`LoweringRefusal::OutsideLoop`]. A capability scope inside a loop
+//! keeps its handler's frame live while its subject runs, so a `break` or a
+//! `continue` there is [`LoweringRefusal::AcrossHandler`]; a loop inside the
+//! subject is a loop as any other. The machine runs a loop's body in the
 //! continuation the loop was entered with, so an exit through a loop, and a
 //! `become` inside one, leaves no frame of the loop's behind.
 //!
@@ -89,6 +92,7 @@ use super::exits::mark_copies;
 use super::exits::record_copies;
 use super::lowered;
 use super::native::answered;
+use crate::error::CrossedExit;
 use crate::error::FragmentBoundary;
 use crate::error::LoopExit;
 use crate::error::LoweringRefusal;
@@ -241,8 +245,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: `body` is the block just read for the loop at `site`.
     /// - ensures: the block's last computation is where a path through a loop's
     ///   body ends and where a `break` or a `continue` may stand, and answers
-    ///   what the loop answers; the block's statements as
-    ///   [`Self::paths_through`] marks them.
+    ///   what the loop answers; it carries the loop's frame and body, and no
+    ///   loop past a frame, the loop being the nearest; the block's statements
+    ///   as [`Self::paths_through`] marks them.
     /// - provides: the one opening of a body every loop shares.
     /// - fails: [`LoweringRefusal::Unreachable`], as [`Self::paths_through`].
     /// - panics: none.
@@ -258,7 +263,9 @@ impl<'source> Lowerer<'_, 'source>
             ret.is_err()
                 || (self.iterated.contains(&body.last)
                     && self.looping.contains(&body.last)
-                    && self.exitable.contains(&body.last))
+                    && self.exitable.contains(&body.last)
+                    && self.framed.contains(&body.last) == self.framed.contains(&site.at.node)
+                    && !self.looped_past.contains(&body.last))
         },
     )]
     fn iterate(
@@ -269,6 +276,12 @@ impl<'source> Lowerer<'_, 'source>
     {
         let _end = self.iterated.insert(body.last);
         let _iteration = self.looping.insert(body.last);
+        if self.framed.contains(&site.at.node) {
+            let _framed = self.framed.insert(body.last);
+        }
+        if let Some(&owner) = self.bodies.get(&site.at.node) {
+            let _owner = self.bodies.insert(body.last, owner);
+        }
         let answer = match self.answers.get(&site.at.node) {
             | Some(&answer) => {
                 let _passed = self.answers.insert(body.last, answer);
@@ -396,21 +409,30 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: `Ok` exactly when a path through a loop's body passes `site`.
     /// - provides: the one admission `break` and `continue` share.
     /// - fails: the not-in-tail refusal where no path passes at all;
-    ///   [`LoweringRefusal::OutsideLoop`] where a path passes and no loop's
-    ///   body is on it.
+    ///   [`LoweringRefusal::AcrossHandler`] where the nearest loop's body holds
+    ///   a handled subject `site` stands in, since the exit would run code in
+    ///   place of the live handler's frame; [`LoweringRefusal::OutsideLoop`]
+    ///   where a path passes and no loop's body is on it.
     /// - panics: none.
     ///
     /// # Errors
     /// The exit's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::broken`].
+    /// - hypothesis: L3 — as [`Self::broken`], and a `break` and a `continue`
+    ///   in a subject of a scope a loop holds, each refused by name.
     /// - witness: `lower::loops::tests::a_loop_exit_off_every_loop_body_is_refused_by_name`
+    /// - witness: `lower::capability::tests::an_exit_that_would_run_in_a_live_frame_is_refused`
     #[spec(
         ensures: |ret| match ret {
             | Ok(()) => self.exitable.contains(&site.at.node) && self.looping.contains(&site.at.node),
             | Err(LoweringRefusal::OutsideLoop { span, exit: refused }) => {
                 span == site.at.span && refused == exit && !self.looping.contains(&site.at.node)
+                    && !self.looped_past.contains(&site.at.node)
+            },
+            | Err(LoweringRefusal::AcrossHandler { span, .. }) => {
+                span == site.at.span && !self.looping.contains(&site.at.node)
+                    && self.looped_past.contains(&site.at.node)
             },
             | Err(_) => !self.exitable.contains(&site.at.node),
         },
@@ -425,6 +447,15 @@ impl<'source> Lowerer<'_, 'source>
             return Err(site.out(FragmentBoundary::NotInTail));
         }
         if !self.looping.contains(&site.at.node) {
+            if self.looped_past.contains(&site.at.node) {
+                return Err(LoweringRefusal::AcrossHandler {
+                    span: site.at.span,
+                    exit: match exit {
+                        | LoopExit::Break => CrossedExit::Break,
+                        | LoopExit::Continue => CrossedExit::Continue,
+                    },
+                });
+            }
             return Err(LoweringRefusal::OutsideLoop {
                 span: site.at.span,
                 exit,

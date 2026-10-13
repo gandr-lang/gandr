@@ -757,6 +757,7 @@ fn lowering_row(
         | LoweringRefusal::UnmarkedSelfReference { .. }
         | LoweringRefusal::Unreachable { .. }
         | LoweringRefusal::OutsideLoop { .. }
+        | LoweringRefusal::AcrossHandler { .. }
         | LoweringRefusal::ForNeedsListCase { .. }
         | LoweringRefusal::WithoutK { .. }
         | LoweringRefusal::BudgetExceeded { .. }

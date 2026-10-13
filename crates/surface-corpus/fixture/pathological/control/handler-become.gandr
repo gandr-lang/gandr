@@ -1,0 +1,14 @@
+@[ checks ]
+def one() -> -F Integer {
+  return 1
+}
+
+@[ refuses("AcrossHandler") ]
+def became() -> -F Integer {
+  handle c : Proc {
+    become one()
+  } with {
+    pure(x) => pure x,
+    oper exit(code, k) => k(unit)
+  }
+}

@@ -1,0 +1,110 @@
+@[ runs("101") ]
+def resumed() -> -F Integer {
+  handle c : Proc {
+    c.exit(5);
+    pure 1
+  } with {
+    pure(x) => pure x + 100,
+    oper exit(code, k) => k(unit)
+  }
+}
+
+@[ checks ]
+def left(n : Integer) -> -F Integer {
+  handle c : Proc {
+    c.exit(1);
+    return n
+  } with {
+    pure(x) => pure x + 100,
+    oper exit(code, k) => k(unit)
+  }
+}
+
+@[ runs("5") ]
+def left_run : +U (-F Integer) ;
+def left_run = thunk { become left(5) } ;
+
+@[ runs("9") ]
+def discarded() -> -F Integer {
+  handle c : Proc {
+    c.exit(5);
+    return 1
+  } with {
+    pure(x) => pure x + 100,
+    oper exit(code, k) => pure 9
+  }
+}
+
+@[ runs("4") ]
+def nested() -> -F Integer {
+  handle a : Proc {
+    handle b : Proc {
+      return 4
+    } with {
+      pure(x) => pure x + 10,
+      oper exit(code, k) => k(unit)
+    }
+  } with {
+    pure(x) => pure x + 100,
+    oper exit(code, k) => k(unit)
+  }
+}
+
+@[ checks ]
+def branch(n : Integer) -> -F Integer {
+  handle c : Proc {
+    run m <- case n {
+      0 => return 8,
+      _ => pure n,
+    } ;
+    c.exit(2);
+    pure m + 1
+  } with {
+    pure(x) => pure x + 100,
+    oper exit(code, k) => k(unit)
+  }
+}
+
+@[ runs("8") ]
+def branch_zero : +U (-F Integer) ;
+def branch_zero = thunk { become branch(0) } ;
+
+@[ runs("102") ]
+def branch_one : +U (-F Integer) ;
+def branch_one = thunk { become branch(1) } ;
+
+@[ runs("105") ]
+def looped() -> -F Integer {
+  handle c : Proc {
+    run v <- loop {
+      break(5)
+    } ;
+    pure v
+  } with {
+    pure(x) => pure x + 100,
+    oper exit(code, k) => k(unit)
+  }
+}
+
+@[ runs("2") ]
+def looped_out() -> -F Integer {
+  handle c : Proc {
+    loop {
+      return 2
+    }
+  } with {
+    pure(x) => pure x + 100,
+    oper exit(code, k) => k(unit)
+  }
+}
+
+@[ runs("9") ]
+def answered() -> -F Integer {
+  handle c : Proc {
+    c.exit(1);
+    pure 1
+  } with {
+    pure(x) => pure x,
+    oper exit(code, k) => return 9
+  }
+}

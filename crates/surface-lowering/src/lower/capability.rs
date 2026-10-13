@@ -70,9 +70,39 @@
 //! clause to read, and the parser's recovery from a dropped token worsened
 //! wherever a call stood. Reversal: a recovery that never reads a form's
 //! inner tiles without the tile that opens it. Within an operation clause
-//! `k(v)` resumes the subject with `pure v`. The subject and each clause are
-//! bodies of their own, as a lambda's is: an exit written inside one leaves
-//! that body. Coverage — one clause per operation of `I` — is the checker's.
+//! `k(v)` resumes the subject with `pure v`; `k` is bound in that clause
+//! alone, so a resumption written elsewhere names nothing. Coverage — one
+//! clause per operation of `I` — is the checker's.
+//!
+//! # Exits across a scope
+//!
+//! Each clause is a body of its own, as a lambda's is: an exit written
+//! inside one leaves that body, so its value is the scope's. The subject is
+//! no body: its tail is its result, which the `pure` clause receives, and an
+//! exit written in it acts on the body around the scope, past the handler's
+//! frame, which is live while the subject runs.
+//!
+//! - choice: a `return` in the subject leaves the body around the scope with
+//!   its value, every handler frame between unwound and no `pure` clause run. A
+//!   `become` there, and a `break` or a `continue` whose loop holds the scope,
+//!   are [`LoweringRefusal::AcrossHandler`]: each would run code in place of
+//!   the live frame, and a computation run there is no tail of the body. A loop
+//!   inside the subject is a loop as any other.
+//! - mechanism: the core's delimited control. The `return` mints a shift that
+//!   never resumes what it captures, and the body it leaves is minted under a
+//!   reset; the machine's shift captures through handler frames to the nearest
+//!   reset, as the checker types it, so the frames are dropped with the
+//!   capture. No clause runs while unwinding, and unwinding performs no effect.
+//! - alternatives: a `return` that leaves the subject alone, its value passed
+//!   to `pure` — the reading a `pure` tail already spells; a jump former in the
+//!   core, which every pass over core terms and the command IL would learn, and
+//!   whose label the machine could not keep as a mark while a delimiter is
+//!   live; a sum the subject returns and the scope's continuation inspects,
+//!   which needs the types the lowering does not read.
+//! - cost: a body holding such a `return` keeps its reset frame while it runs,
+//!   so its own tail calls no longer run in constant continuation.
+//! - reversal: relocatable continuation marks, with which the `return` becomes
+//!   a jump to the body's own continuation and no reset is minted.
 
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
@@ -792,11 +822,7 @@ impl<'source> Lowerer<'_, 'source>
         let held = self.bind(binder, frame)?;
         let _first = self.capabilities.insert(held);
         let subject = self.block(site, &mut cursor, Frame::Inner(held))?;
-        self.open_body(
-            site,
-            subject,
-            Maybe::Absent(native::answered::Absent::Unstated),
-        )?;
+        self.open_subject(site, subject)?;
 
         let mut cursor = Cursor::new(handlers, site.at.span);
         closed(site, &mut cursor, TileName::WITH)?;

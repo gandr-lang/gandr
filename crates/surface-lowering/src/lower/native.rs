@@ -1253,7 +1253,9 @@ impl<'source> Lowerer<'_, 'source>
         };
         let frame = match site.reading {
             | Reading::Value(frame) => frame,
-            | Reading::Computation(_) if self.exits.contains(&site.at.node) => {
+            | Reading::Computation(_)
+                if self.exits.contains(&site.at.node) || self.results.contains(&site.at.node) =>
+            {
                 self.require(site, Produced::Value)?
             },
             | _ => return Err(declined),

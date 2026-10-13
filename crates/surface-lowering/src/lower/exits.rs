@@ -9,10 +9,12 @@
 //! node's paths do with the body it stands in: never leave it, sometimes, or
 //! always. A function, a lambda, a thunk and a copattern block never do,
 //! since an exit inside one, or inside one of its clauses, leaves it and not
-//! the body around it. A `break` and a `continue` always leave the loop body
-//! they stand in; a loop sometimes leaves where it stands, through a `break`
-//! of its own, and always leaves without one, since its body only runs again
-//! or exits.
+//! the body around it. A capability scope never does either: its clauses are
+//! bodies of their own, and a `return` in its subject leaves by unwinding,
+//! not by the commuting. A `break` and a `continue` always leave the loop
+//! body they stand in; a loop sometimes leaves where it stands, through a
+//! `break` of its own, and always leaves without one, since its body only
+//! runs again or exits.
 //!
 //! The **classification** reads the survey at each block a path runs through.
 //! A statement whose computation sometimes leaves distributes the rest of the
@@ -20,7 +22,9 @@
 //! every position in tail position of it joins too. A statement whose
 //! computation always leaves makes the rest of the block unreachable, which is
 //! refused. An exit standing where no path passes — a call's head, outside any
-//! body — is refused as not in tail.
+//! body — is refused as not in tail. A handled subject is a block a path runs
+//! through on its way through the body the scope stands in: its tail is the
+//! subject's result, and every position on its paths is framed.
 //!
 //! The **mint** sweep commutes each body once, when the function, the lambda
 //! or the thunk that owns it is minted: a bind whose rest is distributed
@@ -31,7 +35,9 @@
 //! continues what the loop's own position continues, or an exit — a
 //! `return`, a `become`, a `continue` or a re-entry — which stays. A match
 //! leaf's copy of an arm body carries the exits, the `break`s, the loops and
-//! the distributed binds of the arm with it.
+//! the distributed binds of the arm with it. A handled subject is commuted as
+//! a body is, its own; a `return` framed in it is a capture its body's
+//! delimiter discards, and that body is minted under the delimiter.
 //!
 //! The decision, the alternatives and what reverses it are the crate's: see
 //! the crate documentation's section on exits.
@@ -65,6 +71,7 @@ use crate::form::Shape;
 use crate::form::TileName;
 use crate::form::read_pieces;
 use crate::form::shape_of;
+use crate::origin::Insertion;
 use crate::origin::Origin;
 
 #[cfg(test)]
@@ -349,13 +356,13 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: nothing; the survey reads the tree alone.
     /// - ensures: every node holds its [`Leaves`], children before parents:
     ///   `return`, `become`, `break` and `continue` always leave; a function, a
-    ///   lambda, a thunk and a copattern block never do, since an exit inside
-    ///   one leaves it; a `loop` sometimes does when a `break` of its own
-    ///   stands in it and always does otherwise, and a `while` or a `for`
-    ///   sometimes does; a form holding no exit outside such a body never does;
-    ///   a block or a grouping does what the child that leaves most does; a
-    ///   match always leaves when every arm does; every other form holding an
-    ///   exit sometimes does.
+    ///   lambda, a thunk, a copattern block and a capability scope never do,
+    ///   since an exit inside one leaves it or unwinds past it; a `loop`
+    ///   sometimes does when a `break` of its own stands in it and always does
+    ///   otherwise, and a `while` or a `for` sometimes does; a form holding no
+    ///   exit outside such a body never does; a block or a grouping does what
+    ///   the child that leaves most does; a match always leaves when every arm
+    ///   does; every other form holding an exit sometimes does.
     /// - provides: what the classification of a block reads to decide where the
     ///   rest of the block goes, before any statement in it is classified.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] when the sweep outruns the
@@ -415,9 +422,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: every child of `position` is surveyed.
     /// - ensures: as [`Self::survey`] states it, for one node; a node that is
     ///   no form sometimes leaves when a child does and never otherwise; a
-    ///   `break` holds one, a loop, a function, a lambda, a thunk and a
-    ///   copattern block hold none, and every other node holds one when a child
-    ///   does; a node holding a `break` leaves at least sometimes.
+    ///   `break` holds one, a loop, a function, a lambda, a thunk, a copattern
+    ///   block and a capability scope hold none, and every other node holds one
+    ///   when a child does; a node holding a `break` leaves at least sometimes.
     /// - provides: the per-node half of [`Self::survey`].
     /// - fails: never.
     /// - panics: none.
@@ -457,6 +464,7 @@ impl<'source> Lowerer<'_, 'source>
             | Former::Thunk
             | Former::Lambda
             | Former::LazyRecord
+            | Former::Scope
             | Former::Declaration
             | Former::Module => (Leaves::Never, Breaks::Never),
             | Former::Loop if broken == Breaks::Never => (Leaves::Always, Breaks::Never),
@@ -538,7 +546,9 @@ impl<'source> Lowerer<'_, 'source>
     /// Mark `inner`, standing in tail position of `outer`, with the paths
     /// through `outer`: where a path ends, where an exit may stand, where a
     /// local end continues a block, where a path through a loop's body ends,
-    /// and where a `break` or a `continue` may stand.
+    /// where a `break` or a `continue` may stand, where a handled subject's
+    /// result is, where a handler's frame is live, and the body the path runs
+    /// through.
     ///
     /// # Specification
     /// - requires: `inner` stands in tail position of `outer`: a block's last
@@ -562,12 +572,14 @@ impl<'source> Lowerer<'_, 'source>
             self.joined.contains(&inner) || self.joined.contains(&outer),
             self.iterated.contains(&inner) || self.iterated.contains(&outer),
             self.looping.contains(&inner) || self.looping.contains(&outer),
+            self.framed.contains(&inner) || self.framed.contains(&outer),
         ),
         ensures: self.exits.contains(&inner) == before.0
             && self.exitable.contains(&inner) == before.1
             && self.joined.contains(&inner) == before.2
             && self.iterated.contains(&inner) == before.3
-            && self.looping.contains(&inner) == before.4,
+            && self.looping.contains(&inner) == before.4
+            && self.framed.contains(&inner) == before.5,
     )]
     pub(super) fn pass_paths(
         &mut self,
@@ -581,10 +593,16 @@ impl<'source> Lowerer<'_, 'source>
             &mut self.joined,
             &mut self.iterated,
             &mut self.looping,
+            &mut self.results,
+            &mut self.framed,
+            &mut self.looped_past,
         ] {
             if marks.contains(&outer) {
                 let _marked = marks.insert(inner);
             }
+        }
+        if let Some(&body) = self.bodies.get(&outer) {
+            let _owner = self.bodies.insert(inner, body);
         }
     }
 
@@ -594,8 +612,9 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `body` is the block just read for the body at `site`, and
     ///   `answer` the type the body states, when it states one.
-    /// - ensures: the block's last computation is where a path ends, and the
-    ///   block's statements as [`Self::paths_through`] marks them.
+    /// - ensures: the block's last computation is where a path ends, in the
+    ///   body it ends, and the block's statements as [`Self::paths_through`]
+    ///   marks them.
     /// - provides: the one opening of a body every function, lambda, thunk and
     ///   copattern clause shares.
     /// - fails: [`LoweringRefusal::Unreachable`], as [`Self::paths_through`].
@@ -608,7 +627,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::paths_through`].
     /// - witness: `lower::exits::tests::an_exit_under_nesting_leaves_its_function`
     /// - witness: `lower::exits::tests::code_no_path_reaches_is_refused`
-    #[spec(ensures: |ret| ret.is_err() || (self.exits.contains(&body.last) && self.exitable.contains(&body.last)))]
+    #[spec(ensures: |ret| ret.is_err() || (self.exits.contains(&body.last) && self.exitable.contains(&body.last)
+        && self.bodies.get(&body.last) == Some(&body.last)))]
     pub(super) fn open_body(
         &mut self,
         site: super::Site,
@@ -617,7 +637,54 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let _tail = self.exits.insert(body.last);
+        let _owner = self.bodies.insert(body.last, body.last);
         self.paths_through(site, body, answer)
+    }
+
+    /// Read `subject`, the block the capability scope at `site` handles, as
+    /// one a path runs through on its way through the body the scope stands
+    /// in.
+    ///
+    /// # Specification
+    /// - requires: `subject` is the block just read for the scope at `site`.
+    /// - ensures: the block's last computation is where a path through the
+    ///   subject ends, its result, and no exit; every position on the block's
+    ///   paths is framed, belongs to the body `site` belongs to, when a path
+    ///   through one passes `site`, and stands past the loop whose body `site`
+    ///   stands in, when one does; the block's statements as
+    ///   [`Self::paths_through`] marks them.
+    /// - provides: the opening of a handled subject, which is no body: a
+    ///   `return` in it leaves the body around the scope.
+    /// - fails: [`LoweringRefusal::Unreachable`], as [`Self::paths_through`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::Unreachable`] for statements no path reaches.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a `return` in a subject leaves its function, its
+    ///   `pure` clause not run; a `become`, and a `break` of a loop around the
+    ///   scope, are refused; a loop inside the subject runs as any loop.
+    /// - witness: `lower::capability::tests::a_return_in_a_subject_leaves_past_the_handler`
+    /// - witness: `lower::capability::tests::an_exit_that_would_run_in_a_live_frame_is_refused`
+    #[spec(ensures: |ret| ret.is_err() || (self.results.contains(&subject.last)
+        && self.framed.contains(&subject.last) && !self.exits.contains(&subject.last)
+        && self.bodies.get(&subject.last) == self.bodies.get(&site.at.node)))]
+    pub(super) fn open_subject(
+        &mut self,
+        site: super::Site,
+        subject: Block,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let _result = self.results.insert(subject.last);
+        let _framed = self.framed.insert(subject.last);
+        if self.looping.contains(&site.at.node) || self.looped_past.contains(&site.at.node) {
+            let _past = self.looped_past.insert(subject.last);
+        }
+        if let Some(&body) = self.bodies.get(&site.at.node) {
+            let _owner = self.bodies.insert(subject.last, body);
+        }
+        self.paths_through(site, subject, Maybe::Absent(answered::Absent::Unstated))
     }
 
     /// Run the paths through `block` on to its statements.
@@ -627,10 +694,12 @@ impl<'source> Lowerer<'_, 'source>
     ///   and `answer` is the type the block answers, when one is stated.
     /// - ensures: the last computation and every statement's computation are
     ///   where an exit may stand, and where a `break` or a `continue` may when
-    ///   the last computation is on a path through a loop's body; a statement
-    ///   whose computation sometimes leaves distributes the rest of the block,
-    ///   its computation joining the block and answering `answer`; a statement
-    ///   whose computation never leaves keeps its rest bound.
+    ///   the last computation is on a path through a loop's body; every
+    ///   statement's computation carries the last computation's frame, its loop
+    ///   past the frame, and its body; a statement whose computation sometimes
+    ///   leaves distributes the rest of the block, its computation joining the
+    ///   block and answering `answer`; a statement whose computation never
+    ///   leaves keeps its rest bound.
     /// - provides: the statement half of the classification of exits.
     /// - fails: [`LoweringRefusal::Unreachable`] for a statement whose
     ///   computation always leaves, at the bytes from the next statement to the
@@ -650,6 +719,8 @@ impl<'source> Lowerer<'_, 'source>
         && super::stretch(&self.statements, block.statements).iter().all(|statement| {
             self.exitable.contains(&statement.bound)
                 && (!self.looping.contains(&block.last) || self.looping.contains(&statement.bound))
+                && (!self.framed.contains(&block.last) || self.framed.contains(&statement.bound))
+                && self.bodies.get(&block.last).is_none_or(|body| self.bodies.get(&statement.bound) == Some(body))
                 && (statement.rest == Rest::Distributed) == (self.leaves_at(statement.bound) == Leaves::Sometimes)
                 && (statement.rest == Rest::Bound || self.joined.contains(&statement.bound))
         })))]
@@ -662,6 +733,9 @@ impl<'source> Lowerer<'_, 'source>
     {
         let _last = self.exitable.insert(block.last);
         let looping = self.looping.contains(&block.last);
+        let framed = self.framed.contains(&block.last);
+        let past = self.looped_past.contains(&block.last);
+        let body = self.bodies.get(&block.last).copied();
         for position in block.statements.start .. block.statements.end {
             let Some(&statement) = self.statements.get(position)
             else {
@@ -670,6 +744,15 @@ impl<'source> Lowerer<'_, 'source>
             let _path = self.exitable.insert(statement.bound);
             if looping {
                 let _iteration = self.looping.insert(statement.bound);
+            }
+            if framed {
+                let _framed = self.framed.insert(statement.bound);
+            }
+            if past {
+                let _past = self.looped_past.insert(statement.bound);
+            }
+            if let Some(body) = body {
+                let _owner = self.bodies.insert(statement.bound, body);
             }
             match self.leaves_at(statement.bound) {
                 | Leaves::Never => {},
@@ -738,26 +821,34 @@ impl<'source> Lowerer<'_, 'source>
         }
     }
 
-    /// Mint `body`, the block of a function's, a lambda's or a thunk's body or
-    /// a copattern clause, with every exit put where the body ends.
+    /// Mint `body`, the block of a function's, a lambda's or a thunk's body, a
+    /// copattern clause or a handled subject, with every exit put where the
+    /// body ends.
     ///
     /// # Specification
     /// - requires: every node the block names is already minted or absent;
     ///   `origin` is the body's owner's.
     /// - ensures: the block [`Self::mint_block`] mints, commuted by [`commute`]
-    ///   once any bind with a distributed rest is minted; nothing when the
-    ///   block did not lower.
-    /// - provides: the body half of thunks, lambdas, copattern clauses and
-    ///   function tails.
+    ///   once any bind with a distributed rest is minted, and delimited by a
+    ///   reset, inserted at `origin`, when a `return` framed in a subject
+    ///   leaves the body; nothing when the block did not lower.
+    /// - provides: the body half of thunks, lambdas, copattern clauses,
+    ///   function tails and handled subjects.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a body with no early exit is the block itself, and
-    ///   one with an exit two matches deep leaves from where it stands.
+    /// - hypothesis: L3 — a body with no early exit is the block itself, one
+    ///   with an exit two matches deep leaves from where it stands, and one
+    ///   holding a scope whose subject returns is delimited.
     /// - witness: `lower::tests::a_block_binds_each_statement_over_the_next`
     /// - witness: `lower::exits::tests::an_exit_under_nesting_leaves_its_function`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.computation(id).is_some()))]
+    /// - witness: `lower::capability::tests::a_return_in_a_subject_leaves_past_the_handler`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Absent(_) => true,
+        | Maybe::Present(id) => sink.arena.computation(id).is_some()
+            && (!self.delimited.contains(&body.last) || matches!(sink.arena.computation(id), Some(&Computation::Reset(_)))),
+    })]
     pub(super) fn mint_body(
         &self,
         body: Block,
@@ -766,13 +857,64 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<ComputationId, lowered::Absent>
     {
         self.mint_block(body, sink).map(|minted| {
-            if sink.distributed.is_empty() {
+            let commuted = if sink.distributed.is_empty() {
                 minted
             }
             else {
                 commute(sink, minted, origin)
+            };
+            if self.delimited.contains(&body.last) {
+                let id = sink.arena.computation_reset(commuted);
+                sink.origins
+                    .record_computation(id, origin.inserted(Insertion::Unwind));
+                id
+            }
+            else {
+                commuted
             }
         })
+    }
+
+    /// The `return` minted as `returned`, written in a handled subject, as the
+    /// capture that leaves its body: every handler frame up to the body's
+    /// delimiter is captured and discarded, and the delimiter returns the
+    /// value.
+    ///
+    /// # Specification
+    /// - requires: `returned` is the returner a `return` at `origin` minted.
+    /// - ensures: a shift, inserted at `origin`, over `returned` with every
+    ///   free index raised past the shift's own binder, which binds the
+    ///   captured stack the body never resumes; every node the raise minted at
+    ///   its source's origin.
+    /// - provides: the mint half of a `return` across a handler's frame.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a `return` of a parameter in a subject leaves its
+    ///   function with the parameter's value, the return clause not run.
+    /// - witness: `lower::capability::tests::a_return_in_a_subject_leaves_past_the_handler`
+    #[spec(ensures: |ret| matches!(sink.arena.computation(ret), Some(&Computation::Shift(_))))]
+    pub(super) fn unwind(
+        sink: &mut Sink<'_>,
+        returned: ComputationId,
+        origin: Origin,
+    ) -> ComputationId
+    {
+        let mark = sink.arena.watermark();
+        let mut carried = Vec::new();
+        let raised = gandr_core_term::shift_computation_under_traced(
+            sink.arena,
+            returned,
+            Binders::NONE,
+            Binders::from(1_u32),
+            &mut carried,
+        );
+        record_copies(sink, mark, &carried, origin);
+        let id = sink.arena.computation_shift(raised);
+        sink.origins
+            .record_computation(id, origin.inserted(Insertion::Unwind));
+        id
     }
 
     /// Every exit the mint sweep inferred in a declaration that lowered, in
