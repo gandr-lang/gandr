@@ -169,6 +169,7 @@ jobs:
           lookup-only: ${{ github.event_name == 'push' }}
       - &save-policy-state
         name: save the policy state
+        id: save-policy-state
         if: ${{ !cancelled() && env.ACT != 'true' && ((github.event_name == 'push' && hashFiles('build-state-cargo-dylint-crate.tar.zst') != '') || (github.event_name == 'workflow_dispatch' && steps.policy-library.outcome == 'success' && steps.invocation-state.outcome == 'success')) && steps.policy-state-restore.outputs.cache-hit != 'true' }}
         uses: *cache-save
         with:
@@ -217,13 +218,38 @@ jobs:
           restore-keys: gandr-v3-test-state-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_BUILD_STATE }}-${{ env.CI_BUILD_GENERATION }}-
           # Promotion already downloads the verified queue artifact.
           lookup-only: ${{ github.event_name == 'push' }}
+      # A cache a queue run saves is visible to that queue ref alone, so
+      # only main's promotion and a dispatch save: a queue run's save would
+      # take gigabytes of the repository's cache for no reader.
       - &save-test-state
         name: cache complete test state
-        if: ${{ !cancelled() && env.ACT != 'true' && (github.event_name == 'push' || steps.build-state-archive.outcome == 'success') && steps.test-state-restore.outputs.cache-hit != 'true' && hashFiles(format('build-state-{0}.tar.zst', env.CI_BUILD_STATE)) != '' }}
+        id: save-test-state
+        if: ${{ !cancelled() && env.ACT != 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' && steps.build-state-archive.outcome == 'success') && steps.test-state-restore.outputs.cache-hit != 'true' && hashFiles(format('build-state-{0}.tar.zst', env.CI_BUILD_STATE)) != '' }}
         uses: *cache-save
         with:
           path: build-state-${{ env.CI_BUILD_STATE }}.tar.zst
           key: ${{ steps.test-state-restore.outputs.cache-primary-key }}
+      # One state per lane: each landing's supersedes the previous one, which
+      # would otherwise sit in the cache until it evicted the tool caches.
+      - &delete-superseded-state
+        name: delete superseded test state
+        if: ${{ env.ACT != 'true' && github.event_name == 'push' && steps.save-test-state.outcome == 'success' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_STATE_KEY: ${{ steps.test-state-restore.outputs.cache-primary-key }}
+          CI_STATE_PREFIX: gandr-v3-test-state-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_BUILD_STATE }}-
+        run: gh cache list --repo "$GITHUB_REPOSITORY" --ref refs/heads/main --key "$CI_STATE_PREFIX" --limit 100 --json id,key --jq '.[] | select(.key != env.CI_STATE_KEY) | .id' | xargs -r -n1 gh cache delete --repo "$GITHUB_REPOSITORY"
+      # Hand on only the units this run's builds used: Cargo never deletes
+      # the ones a manifest change superseded (ci:prune-enforcing). A failed
+      # prune hands on the whole directory, which is correct, only larger.
+      - &prune-build-state
+        name: prune build state to this run's units
+        if: &hand-on-state ${{ !cancelled() && env.CI_PLAIN_BASELINE != 'true' && steps.build-workspace.outcome == 'success' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'merge_group' && steps.test-state-restore.outputs.cache-hit != 'true')) }}
+        continue-on-error: true
+        env:
+          CI_PRUNE_TASK: ${{ env.CI_ENFORCING == 'true' && 'ci:prune-enforcing' || 'ci:prune-plain' }}
+        run: mise run "$CI_PRUNE_TASK"
       # Keep modes and mtimes in a zstd tar; upload without zip recompression.
       # Each flavor keeps only its own test-profile target directory.
       # Dispatches also upload, so warm measurements cover the promotion path.
@@ -232,7 +258,7 @@ jobs:
       - &archive-build-state
         name: archive build state
         id: build-state-archive
-        if: ${{ !cancelled() && env.CI_PLAIN_BASELINE != 'true' && steps.build-workspace.outcome == 'success' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'merge_group' && steps.test-state-restore.outputs.cache-hit != 'true')) }}
+        if: *hand-on-state
         shell: bash
         env:
           CI_BUILD_TARGET: ${{ env.CI_ENFORCING == 'true' && 'target/enforcing/debug' || 'target/debug' }}
@@ -442,6 +468,7 @@ jobs:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --locked --workspace --all-features --no-deps --document-private-items --profile test
       - *upload-test-report
+      - *prune-build-state
       - *archive-build-state
       - *upload-build-state
       - *save-test-state
@@ -907,7 +934,11 @@ jobs:
     needs: &promote-needs [build-state, ci-image-ref]
     if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(join(fromJSON(needs.build-state.outputs.artifacts || '[]'), ' '), 'build-state-cargo-test-plain-only--') }}
     runs-on: *linux
-    permissions: *build-state-read-permissions
+    # Promotion deletes the state its landing superseded.
+    permissions: &promote-permissions
+      contents: read
+      packages: read
+      actions: write
     container: *ci-image # zizmor: ignore[unpinned-images]
     env:
       CI_BUILD_STATE: cargo-test-plain-only
@@ -922,13 +953,14 @@ jobs:
       - *unpack-build-state
       - *fetch-dependencies
       - *save-test-state
+      - *delete-superseded-state
 
   promote-cargo-test-enforcing:
     name: promote enforcing build state (linux)
     needs: *promote-needs
     if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(join(fromJSON(needs.build-state.outputs.artifacts || '[]'), ' '), 'build-state-cargo-test-enforcing--') }}
     runs-on: *linux
-    permissions: *build-state-read-permissions
+    permissions: *promote-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
     env:
       CI_BUILD_STATE: cargo-test-enforcing
@@ -940,7 +972,9 @@ jobs:
     needs: *promote-needs
     if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(join(fromJSON(needs.build-state.outputs.artifacts || '[]'), ' '), 'build-state-cargo-test-macos-enforcing--') }}
     runs-on: macos-latest
-    permissions: *macos-read-permissions
+    permissions:
+      contents: read
+      actions: write
     env:
       CI_BUILD_STATE: cargo-test-macos-enforcing
       CI_INSTALL_TOOLCHAIN: "true"
@@ -952,7 +986,7 @@ jobs:
     needs: *promote-needs
     if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && (contains(join(fromJSON(needs.build-state.outputs.artifacts || '[]'), ' '), 'build-state-cargo-dylint-crate--') || contains(fromJSON(needs.build-state.outputs.artifacts || '[]'), 'dylint-drivers')) }}
     runs-on: *linux
-    permissions: *build-state-read-permissions
+    permissions: *promote-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
     env:
       CI_BUILD_STATE: cargo-dylint-crate
@@ -977,5 +1011,12 @@ jobs:
         if: *promote-drivers
         run: tar -xf dylint-drivers.tar -C "$HOME"
       - *save-policy-state
+      - name: delete superseded policy state
+        if: ${{ env.ACT != 'true' && steps.save-policy-state.outcome == 'success' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_STATE_KEY: ${{ steps.policy-state-restore.outputs.cache-primary-key }}
+        run: gh cache list --repo "$GITHUB_REPOSITORY" --ref refs/heads/main --key policy-state-v --limit 100 --json id,key --jq '.[] | select(.key != env.CI_STATE_KEY) | .id' | xargs -r -n1 gh cache delete --repo "$GITHUB_REPOSITORY"
       - *save-gate-binary
       - *save-dylint-drivers

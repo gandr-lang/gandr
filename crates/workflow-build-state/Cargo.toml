@@ -1,0 +1,27 @@
+[package]
+name = "gandr-workflow-build-state"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Prunes a Cargo target directory to the units one build used, so carried build state stays the size of one build"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["cache", "cargo", "ci", "gandr"]
+categories = ["development-tools::build-utils"]
+publish.workspace = true
+
+[[bin]]
+name = "build-state"
+path = "src/main.rs"
+
+# The pinned anodized facade supplies the specification attribute; serde
+# reads Cargo's JSON messages.
+[dependencies]
+anodized.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true
