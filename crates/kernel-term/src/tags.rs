@@ -163,11 +163,14 @@
 //! decision alphabet of [`NODE_V_PATH_EQUIV`]'s evidence.
 //!
 //! [`NODE_V_QUANTIFIED_EVALUATION`] and [`NODE_V_DEPENDENT_EVALUATION`] name
-//! the next two function-identity introductions — higher-order argument
-//! coverage and identity at dependent arrows — and carry no shape yet; a
-//! reader refuses them as it refuses any unassigned byte. Filling any of
-//! these slots holds [`FORMAT_VERSION`]: every byte in both ranges is a node
-//! tag, refused by name by the closed-vocabulary reader until it is admitted.
+//! the next two function-identity introductions — a component whose body
+//! applies its higher-order argument, and identity at dependent arrows — and
+//! carry no shape yet; a reader refuses them as it refuses any unassigned
+//! byte. Higher-order argument coverage itself needed no node: the higher
+//! evaluation's kernel-generated coverage binds a function argument as two
+//! functions and their identity. Filling any of these slots holds
+//! [`FORMAT_VERSION`]: every byte in both ranges is a node tag, refused by
+//! name by the closed-vocabulary reader until it is admitted.
 //!
 //! # The lazy product
 //!
@@ -551,8 +554,8 @@ pub const NODE_V_HIGHER_EVALUATION: WireTag = WireTag(0x38);
 /// only evaluation names, so the eliminator continues rather than returns.
 pub const NODE_C_RELATED_APPLICATION: WireTag = WireTag(0x39);
 
-/// Reserved node tag: higher evaluation with quantified evidence, covering
-/// higher-order arguments.
+/// Reserved node tag: higher evaluation with quantified evidence, for a
+/// component whose body applies its higher-order argument.
 pub const NODE_V_QUANTIFIED_EVALUATION: WireTag = WireTag(0x3A);
 /// Reserved node tag: higher evaluation at a dependent arrow.
 pub const NODE_V_DEPENDENT_EVALUATION: WireTag = WireTag(0x3B);

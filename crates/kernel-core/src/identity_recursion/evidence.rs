@@ -88,20 +88,21 @@ impl Relation
     ///
     /// # Specification
     /// - ensures: interprets the relation at `(value, value)` and constructs
-    ///   Unit/pair evidence or native path reflexivity. A neutral sum retains
-    ///   the structural diagonal program: case on the index, then the
-    ///   corresponding payload diagonal. This operation never installs a
-    ///   relation at an abstract type.
-    /// - fails: `NonFibrant` for a bridge, `HigherEvaluationRequired` at a
-    ///   function fibre, or an index-checking error. Function reflexivity uses
-    ///   `function_reflexivity` with a producer-supplied higher introduction.
+    ///   Unit/pair evidence, native path reflexivity, or `here` at a function
+    ///   coordinate, the persisted reflexivity its path type admits by
+    ///   conversion. A neutral sum, or a function reached through a neutral
+    ///   projection, retains the structural diagonal program: case on the
+    ///   index, then the corresponding payload diagonal. This operation never
+    ///   installs a relation at an abstract type.
+    /// - fails: `NonFibrant` for a bridge, or an index-checking error. The λ's
+    ///   own action, ap, is `function_reflexivity` with a producer-supplied
+    ///   higher introduction.
     /// - panics: none.
     ///
     /// # Errors
     /// `NonFibrant`, `Typing`, `Arena`, or `Evidence` for an impossible empty
-    /// diagonal; `HigherEvaluationRequired` at a function fibre and
-    /// `HigherFieldRequired` at a certificate fibre; native path formation
-    /// errors.
+    /// diagonal; `HigherFieldRequired` at a certificate fibre; native path
+    /// formation errors.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — Unit, Base and Product diagonals compute; a neutral
@@ -432,10 +433,13 @@ impl Fibers
     ///
     /// # Specification
     /// - ensures: Unit, pairs and checked native path reflexivity are
-    ///   constructive; code syntax inequality never establishes Empty.
+    ///   constructive; code syntax inequality never establishes Empty. An
+    ///   identity function fibre at one function is `here` of it, the persisted
+    ///   reflexivity its path type admits by conversion.
     /// - fails: `Evidence` on Empty, `NeutralFiber` on a residual, `Arena` on
-    ///   invalid addresses; named higher or explicit-certificate requirements
-    ///   and native path formation errors retain their causes.
+    ///   invalid addresses; `HigherEvaluationRequired` at a bridge's function
+    ///   fibre or two distinct functions; named higher or explicit-certificate
+    ///   requirements and native path formation errors retain their causes.
     /// - panics: none.
     ///
     /// # Errors
@@ -443,17 +447,19 @@ impl Fibers
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the composition witness has the computed product
-    ///   fibre and cannot erase an empty coordinate.
+    ///   fibre and cannot erase an empty coordinate; reflexivity at a function
+    ///   is its `here`, and transport along it returns its input.
     /// - witness: `identity_recursion::tests::product_transport_composes_componentwise`
     /// - witness: `path_universe::tests::universe_fold_tests::universe_clause_is_native`
+    /// - witness: `identity_recursion::function::tests::lambda_reflexivity_replays_higher_evaluation`
     #[spec(ensures: |ret| match (self.get(self.root()), &ret) {
-        (Ok(Fiber::Empty), &Err(RelationError::Evidence)) | (Ok(Fiber::Function { .. }), &Err(RelationError::HigherEvaluationRequired)) | (Ok(Fiber::Certificate(..)), &Err(RelationError::HigherFieldRequired))
+        (Ok(Fiber::Empty), &Err(RelationError::Evidence)) | (Ok(Fiber::Function { .. }), &Err(RelationError::HigherEvaluationRequired | RelationError::NeutralFiber)) | (Ok(Fiber::Certificate(..)), &Err(RelationError::HigherFieldRequired))
         | (Ok(Fiber::Discrete(..) | Fiber::Suspended(..)), &Err(RelationError::NeutralFiber))
         | (Ok(Fiber::Universe(..) | Fiber::Product(..)), &Err(_)) | (Err(_), &Err(RelationError::Arena)) => true,
         (Ok(Fiber::Unit), &Ok(value)) => matches!(arena.value(value).and_then(gandr_kernel_term::Value::components), Some(&[])),
         (Ok(Fiber::Universe(..)), &Ok(value)) => matches!(arena.value(value), Some(&gandr_kernel_term::Value::PathRefl(_))),
         (Ok(Fiber::Product(..)), &Ok(value)) => matches!(arena.value(value).and_then(gandr_kernel_term::Value::components), Some(&[_, _])),
-
+        (Ok(Fiber::Function { left, right, mode: super::Mode::Identity, .. }), &Ok(value)) => left == right && matches!(arena.value(value), Some(&gandr_kernel_term::Value::Here(_))),
         _ => false,
     })]
     pub(super) fn inhabitant(
@@ -493,12 +499,13 @@ impl Fibers
     ///   universe pairs the unit diagonal with native path reflexivity.
     /// - witness: `element_identity::tests::a_higher_field_checks_and_computes_square_symmetry`
     #[spec(ensures: |ret| match (self.get(self.root()), ret.as_ref()) {
-        (Ok(Fiber::Empty), Err(&RelationError::Evidence)) | (Ok(Fiber::Function { .. }), Err(&RelationError::HigherEvaluationRequired)) | (Ok(Fiber::Certificate(..)), Err(&RelationError::HigherFieldRequired))
+        (Ok(Fiber::Empty), Err(&RelationError::Evidence)) | (Ok(Fiber::Function { .. }), Err(&(RelationError::HigherEvaluationRequired | RelationError::NeutralFiber))) | (Ok(Fiber::Certificate(..)), Err(&RelationError::HigherFieldRequired))
         | (Ok(Fiber::Discrete(..) | Fiber::Suspended(..)), Err(&RelationError::NeutralFiber))
         | (Ok(Fiber::Universe(..) | Fiber::Product(..)), Err(_)) | (Err(_), Err(&RelationError::Arena)) => true,
         (Ok(Fiber::Unit), Ok(diagonal)) => diagonal.universe.is_empty() && matches!(arena.value(diagonal.value).and_then(gandr_kernel_term::Value::components), Some(&[])),
         (Ok(Fiber::Universe(..)), Ok(diagonal)) => diagonal.universe == [diagonal.value] && matches!(arena.value(diagonal.value), Some(&gandr_kernel_term::Value::PathRefl(_))),
         (Ok(Fiber::Product(..)), Ok(diagonal)) => matches!(arena.value(diagonal.value).and_then(gandr_kernel_term::Value::components), Some(&[_, _])),
+        (Ok(Fiber::Function { left, right, mode: super::Mode::Identity, .. }), Ok(diagonal)) => left == right && diagonal.universe.is_empty() && matches!(arena.value(diagonal.value), Some(&gandr_kernel_term::Value::Here(_))),
         _ => false,
     })]
     pub(crate) fn diagonal(
@@ -558,6 +565,15 @@ impl Fibers
                             continue;
                         },
                         | Fiber::Empty => return Err(RelationError::Evidence),
+                        | Fiber::Function {
+                            left,
+                            right,
+                            mode: super::Mode::Identity,
+                            ..
+                        } if left == right => {
+                            let (point, _) = self.native_indices(left, right)?;
+                            arena.value_here(point)
+                        },
                         | Fiber::Function { .. } => {
                             return Err(RelationError::HigherEvaluationRequired);
                         },

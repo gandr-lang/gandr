@@ -35,9 +35,11 @@
 //!   computation rule on reflexivity that the fold's Sum and universe fibres do
 //!   not supply without a second equality; identity as a producer-chosen
 //!   relation, which hands fibre selection to an untrusted party.
-//! - reversal: a type the fold does not cover (dependent arrows, quantified
-//!   functions) needs a fold clause first; the evidence tags `0x3A` and `0x3B`
-//!   are reserved by name for its quantified and dependent evaluations.
+//! - reversal: a type the fold does not cover (dependent arrows) needs a fold
+//!   clause first. A higher-order argument needed none: higher evaluation's own
+//!   coverage binds it, two functions and their identity. The evidence tag
+//!   `0x3A` stays reserved for the quantified evaluation a body applying that
+//!   argument needs, and `0x3B` for the dependent one.
 //!
 //! **Identity at an open type is a neutral fibre.** A domain that mentions a
 //! bound variable or reaches a sealed atom has no fold clause: its fibre would
