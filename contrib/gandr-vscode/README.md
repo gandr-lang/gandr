@@ -70,6 +70,8 @@ No setting selects the server's features. The client adopts what `initialize` ad
 
 `gandr.diagnostics.verbosity` chooses how much of each report a diagnostic shows, at the levels `gandr check --verbosity` names: `user`, the default, shows the message, the label and the note; `detailed` adds the report's class, the checker's own wording and the offending source text; `debug` adds every locus's byte span and the checker's refusal as its implementers print it; `json` shows the whole report as one line of JSON. Changing it republishes the open files' diagnostics at the new level.
 
+`gandr.diagnostics.quiet` keeps the form you are typing free of red: a diagnostic of the form the cursor is in waits until the cursor leaves the form, the form's `;` or `}` arrives, or the file goes that many seconds without a change, 1.5 by default. A diagnostic elsewhere in the file shows at once. `0` shows every diagnostic at once.
+
 ## Develop the extension
 
 `mise exec -- aube run watch` recompiles on every change into `dist/src`. To run the extension without installing it, bundle once and start an Extension Development Host:

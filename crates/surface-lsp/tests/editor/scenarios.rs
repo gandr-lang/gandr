@@ -15,6 +15,7 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use anodized::spec;
+use gandr_surface_lsp::DocumentUri;
 use percent_encoding::AsciiSet;
 use percent_encoding::NON_ALPHANUMERIC;
 use percent_encoding::utf8_percent_encode;
@@ -38,6 +39,7 @@ use super::buffer::Text;
 use super::buffer::Typing;
 use super::client::Client;
 use super::client::Method;
+use super::client::Quiet;
 use super::client::Record;
 use super::editing::Oracle;
 use super::editing::Session;
@@ -550,7 +552,7 @@ fn hovering_every_position_of_each_corpus_source_answers_without_fault()
     let positions = AtomicUsize::new(0_usize);
     let answered = AtomicUsize::new(0_usize);
     each_in_parallel(&sources, |source| {
-        let mut client = Client::initialized(Record::Dropped);
+        let mut client = Client::initialized(Record::Dropped, Quiet::Unheld);
         let _opened = client.notify(
             Method("textDocument/didOpen"),
             &json!({ "textDocument": {
@@ -668,6 +670,257 @@ fn restoring_a_semicolon_clears_its_diagnostic()
         "the `;` clears the diagnostic"
     );
     session.closes_over_streams();
+}
+
+/// The document the quiet scenario types into: three declarations, the last
+/// naming the first.
+const QUIET_SEED: &str = "def one = 1 ;\ndef mid = 2 ;\ndef two = one ;\n";
+
+/// The document's URI.
+const QUIET_URI: &str = "file:///strict/quiet.gandr";
+
+/// The declaration the quiet scenario types on the line after the seed's.
+const QUIET_DECLARATION: &str = "def three = two ;";
+
+/// Each diagnostic notification among `messages`, as the `[code, line]` of
+/// each diagnostic it publishes.
+///
+/// # Specification
+/// trivial.
+fn publications(messages: &[Value]) -> Vec<Vec<Value>>
+{
+    messages
+        .iter()
+        .filter(|message| message.get("method") == Some(&json!("textDocument/publishDiagnostics")))
+        .map(|message| {
+            message
+                .pointer("/params/diagnostics")
+                .and_then(Value::as_array)
+                .map(|diagnostics| {
+                    diagnostics
+                        .iter()
+                        .map(|diagnostic| {
+                            json!([
+                                diagnostic.get("code"),
+                                diagnostic.pointer("/range/start/line")
+                            ])
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        })
+        .collect()
+}
+
+/// A connection with [`QUIET_SEED`] open at [`QUIET_URI`], changed one
+/// ranged change at a time, each at the next version.
+struct Typist
+{
+    /// The connection.
+    client: Client,
+    /// The version the latest change carried.
+    version: i32,
+}
+
+impl Typist
+{
+    /// A connection at the quiet interval `quiet`, the seed open at version 1.
+    ///
+    /// # Specification
+    /// trivial.
+    fn opened(quiet: Quiet) -> Self
+    {
+        let mut client = Client::initialized(Record::Dropped, quiet);
+        let _opened = client.notify(
+            Method("textDocument/didOpen"),
+            &json!({ "textDocument": {
+                "uri": QUIET_URI, "languageId": "gandr", "version": 1_i32, "text": QUIET_SEED,
+            } }),
+        );
+        Self {
+            client,
+            version: 1_i32,
+        }
+    }
+
+    /// Replace what lies from `start` to `end` with `text` in one ranged
+    /// change, and return its publications.
+    ///
+    /// # Specification
+    /// trivial.
+    fn replace(
+        &mut self,
+        start: Position,
+        end: Position,
+        Text(text): Text<'_>,
+    ) -> Vec<Vec<Value>>
+    {
+        self.version = self.version.saturating_add(1_i32);
+        publications(&self.client.notify(
+            Method("textDocument/didChange"),
+            &json!({
+                "textDocument": { "uri": QUIET_URI, "version": self.version },
+                "contentChanges": [{
+                    "range": {
+                        "start": { "line": start.line, "character": start.character },
+                        "end": { "line": end.line, "character": end.character },
+                    },
+                    "text": text,
+                }],
+            }),
+        ))
+    }
+
+    /// Type `text` at `at`, one character a change, and return each
+    /// keystroke's publications.
+    ///
+    /// # Specification
+    /// trivial.
+    fn type_at(
+        &mut self,
+        at: Position,
+        Text(text): Text<'_>,
+    ) -> Vec<Vec<Vec<Value>>>
+    {
+        let mut caret = at;
+        text.chars()
+            .map(|typed| {
+                let published = self.replace(caret, caret, Text(typed.encode_utf8(&mut [0_u8; 4])));
+                caret.character = caret
+                    .character
+                    .saturating_add(u32::try_from(typed.len_utf16()).unwrap_or(u32::MAX));
+                published
+            })
+            .collect()
+    }
+
+    /// Let the document's quiet interval pass, and return what that
+    /// publishes.
+    ///
+    /// # Specification
+    /// trivial.
+    fn lapse(&mut self) -> Vec<Vec<Value>>
+    {
+        publications(&self.client.lapse(&DocumentUri::from(QUIET_URI)))
+    }
+}
+
+#[test]
+fn typing_a_declaration_holds_its_diagnostics_until_its_terminator()
+{
+    let at = |line: u32, character: u32| Position { line, character };
+    let seed_lines = u32::try_from(QUIET_SEED.lines().count()).expect("the seed is short");
+    let declared = u32::try_from(QUIET_DECLARATION.len()).expect("the declaration is short");
+
+    // With a zero interval, each keystroke publishes what a fresh connection
+    // opening the same text does: the unfinished declaration is red from its
+    // first character to its last.
+    let mut unheld = Typist::opened(Quiet::Unheld);
+    let today = unheld.type_at(at(seed_lines, 0), Text(QUIET_DECLARATION));
+    for (cut, publications) in QUIET_DECLARATION
+        .char_indices()
+        .map(|(offset, typed)| offset.saturating_add(typed.len_utf8()))
+        .zip(&today)
+    {
+        let mut fresh = Client::initialized(Record::Dropped, Quiet::Default);
+        let typed = QUIET_DECLARATION.get(.. cut).unwrap_or_default();
+        let text = format!("{QUIET_SEED}{typed}");
+        let opened = fresh.notify(
+            Method("textDocument/didOpen"),
+            &json!({ "textDocument": {
+                "uri": QUIET_URI, "languageId": "gandr", "version": 1_i32, "text": text,
+            } }),
+        );
+        assert_eq!(
+            *publications,
+            self::publications(&opened),
+            "with a zero interval, typing `{text}` publishes what opening it does"
+        );
+    }
+    let unfinished = |code: &str| vec![vec![json!([code, seed_lines])]];
+    let mut expected = vec![unfinished("OutOfFragment"); 2];
+    expected.extend(vec![
+        unfinished("MalformedForm");
+        QUIET_DECLARATION.len().saturating_sub(3)
+    ]);
+    expected.push(vec![Vec::new()]);
+    assert_eq!(
+        today, expected,
+        "each keystroke of the declaration is red until its `;`"
+    );
+
+    // Under the interval, nothing of the declaration under the caret
+    // publishes; the `;` that ends it leaves nothing held.
+    let mut quiet = Typist::opened(Quiet::Default);
+    assert_eq!(
+        quiet.type_at(at(seed_lines, 0), Text(QUIET_DECLARATION)),
+        vec![vec![Vec::<Value>::new()]; QUIET_DECLARATION.len()],
+        "the declaration under the caret publishes nothing while it is typed"
+    );
+    assert_eq!(
+        quiet.lapse(),
+        Vec::<Vec<Value>>::new(),
+        "and its `;` leaves nothing held"
+    );
+
+    // A declaration left unfinished is held while the caret is in it.
+    let line = seed_lines.saturating_add(1);
+    assert_eq!(
+        quiet.type_at(at(seed_lines, declared), Text("\n")),
+        [vec![Vec::<Value>::new()]],
+        "a new line after the `;` publishes nothing"
+    );
+    assert_eq!(
+        quiet.type_at(at(line, 0), Text("def four =")),
+        vec![vec![Vec::<Value>::new()]; 10],
+        "an unfinished declaration under the caret publishes nothing"
+    );
+
+    // An edit two declarations above `two` refuses it on that keystroke, and
+    // the caret leaving the unfinished declaration publishes its refusal.
+    // `three`, which names `two`, is noted as unsettled by that refusal.
+    assert_eq!(
+        quiet.replace(at(0, 7), at(0, 7), Text("s")),
+        [vec![
+            json!(["UnresolvedName", 2_i32]),
+            json!(["UnknownConstant", seed_lines]),
+            json!(["MalformedForm", line]),
+        ]],
+        "the refusal the edit causes below publishes at once, and the declaration the caret left publishes"
+    );
+    assert_eq!(
+        quiet.replace(at(0, 7), at(0, 8), Text("")),
+        [vec![json!(["MalformedForm", line])]],
+        "undoing the edit clears its refusal"
+    );
+
+    // Back in the unfinished declaration, its refusal is held again until
+    // the document is quiet for the interval.
+    assert_eq!(
+        quiet.type_at(at(line, 10), Text(" 4")),
+        vec![vec![Vec::<Value>::new()]; 2],
+        "typing in the unfinished declaration holds its refusal again"
+    );
+    assert_eq!(
+        quiet.lapse(),
+        [vec![json!(["MalformedForm", line])]],
+        "the interval passing publishes the held refusal"
+    );
+    assert_eq!(
+        quiet.lapse(),
+        Vec::<Vec<Value>>::new(),
+        "a released refusal is published once"
+    );
+    assert_eq!(
+        quiet.type_at(at(line, 12), Text(" ;")),
+        [vec![Vec::<Value>::new()], vec![Vec::new()]],
+        "typing in the declaration again holds its refusal again, and the `;` clears it"
+    );
+    assert_eq!(
+        quiet.lapse(),
+        Vec::<Vec<Value>>::new(),
+        "the finished declaration holds nothing"
+    );
 }
 
 proptest! {

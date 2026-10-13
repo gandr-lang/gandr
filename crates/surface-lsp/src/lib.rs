@@ -11,9 +11,12 @@
 //! is the dispatcher's composition of the whole text. The server publishes,
 //! as editor diagnostics, the reports the diagnostics renderer gives that
 //! step: the same reports, at the same spans, under the same refusal names
-//! `gandr check --goals` prints. Each synchronisation logs one line: the forms
-//! molded, the items the incremental checker judged, and the wall. A token
-//! request highlights the document whole through the grammar's role table,
+//! `gandr check --goals` prints, less any diagnostic of the form the caret is
+//! writing, which waits until the caret leaves the form, the form's
+//! terminator arrives or the document is quiet (the `quiet` module states the
+//! hold and its trade). Each synchronisation logs one line: the forms molded,
+//! the items the incremental checker judged, and the wall. A token request
+//! highlights the document whole through the grammar's role table,
 //! the same classification a terminal face styles. An inline-completion
 //! request molds the form the cursor is in up to the cursor and answers, as
 //! ranked snippets, the ways the parser's completion query offers to go on
@@ -124,8 +127,8 @@
 //! | monikers | `textDocument/moniker` | declined: no cross-repository index reads them |
 //! | workspace symbols | `workspace/symbol` | blocked: a workspace of more than the open documents |
 //! | workspace folders, file watching, file operations | `workspace/didChangeWorkspaceFolders`, `didChangeWatchedFiles`, `willCreateFiles` and the other file operations | blocked: a workspace of more than the open documents |
-//! | configuration | `workspace/didChangeConfiguration` | served: the `gandr` section's `diagnostics.verbosity`, as the `recheck` module states |
-//! | pulled configuration | `workspace/configuration` | declined: the setting is pushed; reverses for a client that only answers pulls |
+//! | configuration | `workspace/didChangeConfiguration` | served: the `gandr` section's `diagnostics.verbosity`, as the `recheck` module states, and `diagnostics.quiet`, as the `quiet` module states |
+//! | pulled configuration | `workspace/configuration` | declined: the settings are pushed; reverses for a client that only answers pulls |
 //! | window messages and progress | `window/showMessage`, `logMessage`, `workDoneProgress/*` | declined: the timing line goes to the server's log; reverses for a client that reads only the protocol stream |
 //! | gandr's extensions | `gandr/goals`, `gandr/syntaxTree`, `gandr/serverStatus`, the render-bus attach through the language server's stream | blocked: each as the assessment in § Extensions beyond the specification names; the bus itself is served on the hub's socket (the `bus` module) |
 //!
@@ -215,7 +218,9 @@
 //! accepted revision, which a fresh connection lacks, so it is held to
 //! answering, not to agreeing. A hover at every byte of every corpus source
 //! answers without a fault, and the share it answers is recorded as a floor
-//! that may only rise.
+//! that may only rise. Those sessions name a quiet interval of zero, since
+//! their oracle has no caret and holds nothing; the quiet scenario types one
+//! declaration under the interval and pins every keystroke's publication.
 //!
 //! **One execution per session.** A single editor's session is `serve`
 //! itself, on a thread of its own over in-memory framed streams, so every
@@ -272,6 +277,9 @@
 //! - The rust-analyzer contributors. "LSP Extensions." <https://rust-analyzer.github.io/book/contributing/lsp-extensions.html>
 //!   — the `experimental/` and `rust-analyzer/` methods the extensions
 //!   assessment weighs.
+//! - The rust-analyzer contributors. "`crates/rust-analyzer/src/diagnostics.rs`." <https://github.com/rust-lang/rust-analyzer/blob/master/crates/rust-analyzer/src/diagnostics.rs>
+//!   — the native syntax and semantic diagnostics kept apart and fetched as
+//!   separate tasks, the precedent the quiet publication cites.
 //! - The Lean developers. "Lean.Data.Lsp.Extra." <https://lean-lang.org/doc/api/Lean/Data/Lsp/Extra.html>
 //!   — `$/lean/plainGoal`, `$/lean/plainTermGoal`, `$/lean/fileProgress` and
 //!   the `$/lean/rpc/*` session the infoview runs on.
@@ -306,6 +314,7 @@ mod outline;
 mod position;
 mod proposal;
 mod protocol;
+mod quiet;
 mod reading;
 mod recheck;
 mod rpc;
@@ -338,6 +347,7 @@ pub use crate::protocol::ContentChange;
 pub use crate::protocol::Diagnostic;
 pub use crate::protocol::DocumentUri;
 pub use crate::protocol::DocumentVersion;
+pub use crate::quiet::QUIET;
 pub use crate::recheck::Reached;
 pub use crate::recheck::Tried;
 pub use crate::server::Peer;

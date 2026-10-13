@@ -878,7 +878,7 @@ fn main() -> ExitCode
 #[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(ABRUPT) || ret == ExitCode::from(FAULTED))]
 fn lsp() -> ExitCode
 {
-    let mut input = std::io::stdin().lock();
+    let mut input = std::io::BufReader::new(std::io::stdin());
     let mut output = std::io::stdout().lock();
     let mut log = std::io::stderr();
     ended(gandr_surface_lsp::serve(&mut input, &mut output, &mut log))

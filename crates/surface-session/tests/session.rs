@@ -569,6 +569,28 @@ fn a_judged_revision_reports_before_its_admission()
 }
 
 #[test]
+fn a_judged_revision_hands_its_tree_to_a_reader()
+{
+    let text = gandr_surface_syntax::SourceText::from("def a = 1 ;\ndef b = a ;\ndef c = ");
+    let mut reading = session(SourceRoot::Strict);
+    let mut read = Vec::new();
+    let judged = reading
+        .judge_reading(text, |tree| read.push((tree.source(), tree.forms().len())))
+        .expect("judges");
+    assert_eq!(
+        read,
+        [(text, 3)],
+        "the reader reads the revision's own tree once, every form of it"
+    );
+    let plain = session(SourceRoot::Strict).judge(text).expect("judges");
+    assert_eq!(
+        (rows(judged.composed()), judged.standing()),
+        (rows(plain.composed()), plain.standing()),
+        "reading the tree changes nothing the judgement reports"
+    );
+}
+
+#[test]
 fn import_namespace_carries_across_lines_and_resolves_source_declarations()
 {
     let mut session = session(SourceRoot::Strict);

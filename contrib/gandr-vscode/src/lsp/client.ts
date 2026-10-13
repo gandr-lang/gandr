@@ -46,16 +46,13 @@ export class GandrLanguageClient extends LanguageClient {
       run: server,
       debug: server,
     };
-    // The server reads `gandr.diagnostics.verbosity` from the initialization
-    // options at startup, and from the `gandr` section each
-    // `workspace/didChangeConfiguration` pushes, republishing open documents
-    // at the new level.
-    const verbosity = vscode.workspace
-      .getConfiguration("gandr")
-      .get<string>("diagnostics.verbosity", "user");
+    // The server reads `gandr.diagnostics.verbosity` and
+    // `gandr.diagnostics.quiet` from the initialization options at startup,
+    // and from the `gandr` section each `workspace/didChangeConfiguration`
+    // pushes, republishing open documents at a new verbosity.
     const clientOptions: LanguageClientOptions = {
       documentSelector: [{ scheme: "file", language: "gandr" }],
-      initializationOptions: { diagnostics: { verbosity } },
+      initializationOptions: diagnosticSettings(),
       outputChannel,
       traceOutputChannel,
     };
@@ -77,11 +74,8 @@ export class GandrLanguageClient extends LanguageClient {
     if (!this.isRunning()) {
       return Promise.resolve();
     }
-    const verbosity = vscode.workspace
-      .getConfiguration("gandr")
-      .get<string>("diagnostics.verbosity", "user");
     return this.sendNotification("workspace/didChangeConfiguration", {
-      settings: { gandr: { diagnostics: { verbosity } } },
+      settings: { gandr: diagnosticSettings() },
     }).then(
       () => undefined,
       (error: unknown) => {
@@ -89,4 +83,16 @@ export class GandrLanguageClient extends LanguageClient {
       },
     );
   }
+}
+
+// The `gandr.diagnostics` settings the server reads, as the `gandr` section
+// carries them.
+function diagnosticSettings(): { diagnostics: { verbosity: string; quiet: number } } {
+  const gandr = vscode.workspace.getConfiguration("gandr");
+  return {
+    diagnostics: {
+      verbosity: gandr.get<string>("diagnostics.verbosity", "user"),
+      quiet: gandr.get<number>("diagnostics.quiet", 1.5),
+    },
+  };
 }

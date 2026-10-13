@@ -51,15 +51,20 @@
 use alloc::collections::BTreeMap;
 use core::cell::OnceCell;
 use core::fmt;
+use core::ops::ControlFlow;
+use core::time::Duration;
 use std::io::BufRead;
 use std::io::Write;
 use std::sync::mpsc::Sender;
+use std::time::Instant;
 
 use anodized::spec;
 use gandr_surface_diagnostics::Verbosity;
 use gandr_surface_render_remote::DocId;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_render_remote::RenderFrame;
+use gandr_surface_syntax::ByteOffset;
+use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 use serde::Deserialize as _;
@@ -101,6 +106,12 @@ use crate::protocol::SelectionRangeParams;
 use crate::protocol::SemanticTokens;
 use crate::protocol::Settings;
 use crate::protocol::StringValue;
+use crate::quiet::Holding;
+use crate::quiet::Met;
+use crate::quiet::QUIET;
+use crate::quiet::formless;
+use crate::quiet::paced;
+use crate::quiet::publishable;
 use crate::reading::Reading;
 use crate::recheck::DocumentSession;
 use crate::recheck::Timing;
@@ -123,7 +134,6 @@ use crate::tokens::encode;
 use crate::tokens::overlapping;
 use crate::transport::Body;
 use crate::transport::TransportFault;
-use crate::transport::read_frame;
 use crate::transport::write_frame;
 use crate::view::report;
 
@@ -149,6 +159,19 @@ pub enum Window
     Within(Range),
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a copy has no caret.
+    mod uncareted {
+        /// The reason the caret is unknown.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub(super) enum Absent {
+            /// The copy was opened, or its last change named no range: the
+            /// whole text arrived at once, and nothing in it is being typed.
+            Unranged,
+        }
+    }
+}
+
 /// One connection's copy of an open document, as that connection last
 /// synchronised it, and the session its revisions are submitted to.
 struct Document
@@ -160,6 +183,12 @@ struct Document
     text: HeldText,
     /// The session holding its forms between synchronisations.
     session: DocumentSession,
+    /// Where its last change left the caret: the end of the text the last
+    /// ranged change inserted.
+    caret: Maybe<ByteOffset, uncareted::Absent>,
+    /// The diagnostics its session judged at its version, every one; those
+    /// published and those the quiet publication holds.
+    checked: Vec<Diagnostic>,
     /// The diagnostics last published at its version.
     published: Vec<Diagnostic>,
     /// The checked proposals kept for its version, in the order kept.
@@ -182,6 +211,8 @@ impl Document
             version,
             text: HeldText::new(),
             session: open(uri),
+            caret: Maybe::Absent(uncareted::Absent::Unranged),
+            checked: Vec::new(),
             published: Vec::new(),
             proposals: Vec::new(),
         }
@@ -255,19 +286,20 @@ impl HeldText
         self.hovering = OnceCell::new();
     }
 
-    /// Apply `change` to the text held, as [`apply`] does, and drop what was
-    /// read off it.
+    /// Apply `change` to the text held, as [`apply`] does, drop what was read
+    /// off it, and return where the change left the caret.
     ///
     /// # Specification
     /// trivial.
     fn apply(
         &mut self,
         change: ContentChange,
-    )
+    ) -> Maybe<ByteOffset, uncareted::Absent>
     {
-        apply(&mut self.text, change);
+        let caret = apply(&mut self.text, change);
         self.reading = OnceCell::new();
         self.hovering = OnceCell::new();
+        caret
     }
 
     /// The reading of the text held, made now when no request has asked since
@@ -508,7 +540,8 @@ pub enum Flow
 }
 
 /// One synchronisation's line in the server log: the document, the version
-/// it reached, and what rechecking it cost.
+/// it reached, what rechecking it cost, and whether its publication held a
+/// diagnostic back.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Logged
 {
@@ -518,6 +551,33 @@ pub struct Logged
     version: DocumentVersion,
     /// What rechecking it cost.
     timing: Timing,
+    /// Whether its publication held a diagnostic back.
+    holding: Holding,
+}
+
+impl Logged
+{
+    /// The document synchronised.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn uri(&self) -> &DocumentUri
+    {
+        &self.uri
+    }
+
+    /// Whether the synchronisation's publication held a diagnostic back.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn holding(&self) -> Holding
+    {
+        self.holding
+    }
 }
 
 impl fmt::Display for Logged
@@ -810,7 +870,7 @@ impl Workspace
             .iter()
             .map(|change| {
                 let mut text = String::from(document.text.source().as_ref());
-                apply(&mut text, change.clone());
+                let _caret = apply(&mut text, change.clone());
                 text
             })
             .collect();
@@ -921,6 +981,7 @@ impl Workspace
             phase: Phase::Running,
             peer: Peer(u64::MAX),
             verbosity: Verbosity::User,
+            quiet: QUIET,
         };
         let answer = match classify(request) {
             | Err(malformed) => malformed.response(),
@@ -1039,7 +1100,8 @@ impl Workspace
 }
 
 /// One connection's state: where it stands in the lifecycle, which connection
-/// it is, and how much of each report its diagnostics carry.
+/// it is, how much of each report its diagnostics carry, and how long a
+/// diagnostic of the form under the caret waits.
 pub struct Server
 {
     /// Where the connection stands in the lifecycle.
@@ -1049,6 +1111,9 @@ pub struct Server
     /// The level its editor's `gandr.diagnostics.verbosity` setting names:
     /// read at `initialize` and at each `workspace/didChangeConfiguration`.
     verbosity: Verbosity,
+    /// The interval its editor's `gandr.diagnostics.quiet` setting names, read
+    /// as the verbosity is; zero holds nothing.
+    quiet: Duration,
 }
 
 impl Default for Server
@@ -1078,7 +1143,69 @@ impl Server
             phase: Phase::Waiting,
             peer,
             verbosity: Verbosity::User,
+            quiet: QUIET,
         }
+    }
+
+    /// How long a document goes without a change before the diagnostics held
+    /// for the form under its caret publish; zero when nothing is held.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn quiet(&self) -> Duration
+    {
+        self.quiet
+    }
+
+    /// Publish whatever this connection's copy of `uri` holds back: every
+    /// diagnostic its session judged at its version, when its last
+    /// publication left any out.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: when this connection holds a copy of `uri` whose published
+    ///   diagnostics are fewer than it checked, one diagnostic notification at
+    ///   `uri` and the copy's version carrying all of them, recorded as the
+    ///   copy's publication; nothing otherwise.
+    /// - provides: the promotion a passed deadline makes, and the one a
+    ///   configuration that holds nothing makes.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a held diagnostic publishes at the copy's version
+    ///   when released, and a copy holding nothing publishes nothing.
+    /// - witness: `editor::editor::scenarios::typing_a_declaration_holds_its_diagnostics_until_its_terminator`
+    /// - witness: `session::session::a_held_diagnostic_publishes_once_the_document_is_quiet`
+    #[spec(ensures: |ret| ret.len() <= 1)]
+    #[inline]
+    #[must_use]
+    pub fn release(
+        &self,
+        workspace: &mut Workspace,
+        uri: &DocumentUri,
+    ) -> Vec<Outgoing>
+    {
+        let Some(held) = workspace.documents.get(uri)
+        else {
+            return Vec::new();
+        };
+        let Maybe::Present(document) = held.own(self.peer)
+        else {
+            return Vec::new();
+        };
+        if document.published.len() >= document.checked.len() {
+            return Vec::new();
+        }
+        let release = publish(PublishParams {
+            uri: uri.clone(),
+            version: Some(document.version),
+            diagnostics: document.checked.clone(),
+        });
+        workspace.published_by(self.peer, &release);
+        vec![release]
     }
 
     /// Handle one message body over `workspace`.
@@ -1182,7 +1309,8 @@ impl Server
     ///   copy at the line's version runs the admission that copy's session
     ///   holds, as [`admit`] states, and carries its wall; a kernel
     ///   disagreement adds one diagnostic notification at the line's URI and
-    ///   version whose one diagnostic names it, recorded as the copy's. Every
+    ///   version whose one diagnostic names it, recorded as the copy's
+    ///   publication and as all it checked, and the line holds nothing. Every
     ///   other line is left as it was.
     /// - provides: the second half of every synchronisation; [`serve`] writes
     ///   what it returns, then logs the lines.
@@ -1234,6 +1362,8 @@ impl Server
             let admitted = admit(&mut document.session, logged.timing);
             logged.timing = admitted.timing;
             if let Maybe::Present(fault) = admitted.fault {
+                document.checked = vec![fault.clone()];
+                logged.holding = Holding(false);
                 let correction = publish(PublishParams {
                     uri: logged.uri.clone(),
                     version: Some(logged.version),
@@ -1251,11 +1381,11 @@ impl Server
     /// # Specification
     /// - requires: nothing.
     /// - ensures: initialization and shutdown advance the lifecycle once, and
-    ///   initialization takes the verbosity its options name, the user level
-    ///   when they name none; other requests preserve it, and no request
-    ///   changes `workspace`. The response echoes the identifier and carries
-    ///   the method result or its lifecycle, unknown-method or
-    ///   invalid-parameter error.
+    ///   initialization takes the verbosity and the quiet interval its options
+    ///   name, the user level and [`QUIET`] when they name none; other requests
+    ///   preserve both, and no request changes `workspace`. The response echoes
+    ///   the identifier and carries the method result or its lifecycle,
+    ///   unknown-method or invalid-parameter error.
     /// - provides: one response per request.
     /// - fails: refusals are error responses, never Rust errors.
     /// - panics: none.
@@ -1273,10 +1403,11 @@ impl Server
     /// - witness: `server::tests::formatting_answers_the_edits_that_lay_a_document_out`
     /// - witness: `server::tests::a_configuration_change_republishes_at_its_verbosity`
     #[spec(
-        captures: [phase = self.phase, initial = initial_verbosity(&params)],
+        captures: [phase = self.phase, initial = initial_settings(&params)],
         ensures: |ret| match (phase, method.as_ref()) {
             (Phase::Waiting, "initialize") => self.phase == Phase::Running
-                && self.verbosity == initial
+                && self.verbosity == initial.verbosity().unwrap_or_default()
+                && self.quiet == initial.quiet().unwrap_or(QUIET)
                 && matches!(ret, Outgoing::Success { result: Answer::Initialize(_), .. }),
             (Phase::Waiting, _) => self.phase == phase && matches!(ret,
                 Outgoing::Failure { ref error, .. } if error.code == ErrorCode::SERVER_NOT_INITIALIZED),
@@ -1337,7 +1468,9 @@ impl Server
         match (self.phase, name) {
             | (Phase::Waiting, "initialize") => {
                 self.phase = Phase::Running;
-                self.verbosity = initial_verbosity(&params);
+                let settings = initial_settings(&params);
+                self.verbosity = settings.verbosity().unwrap_or_default();
+                self.quiet = settings.quiet().unwrap_or(QUIET);
                 success(
                     id,
                     Answer::Initialize(Box::new(InitializeResult::advertised())),
@@ -1503,20 +1636,24 @@ impl Server
     ///   responses. Exit ends the session; running-state opens and changes
     ///   publish this connection's copy of the document at its supplied version
     ///   to this connection alone, log one timing line, and make that copy the
-    ///   latest. An open gives this connection a copy with a session of its own
-    ///   when it holds none, then sets the copy's text and version; every other
-    ///   connection's copy is untouched. A change applies each content change
-    ///   in order to this connection's copy, as [`apply`] states; an empty
-    ///   change list preserves text. Close lets this connection's copy go,
-    ///   forgets the document once no connection holds a copy, and publishes a
-    ///   versionless empty diagnostic list to this connection, even for an
-    ///   unknown URI. A running-state configuration change whose `gandr`
-    ///   section names a verbosity other than this connection's takes it, then
+    ///   latest; a change holds back the diagnostics of the form under the
+    ///   caret it leaves, as [`publishable`] states, while the quiet interval
+    ///   is not zero. An open gives this connection a copy with a session of
+    ///   its own when it holds none, then sets the copy's text and version;
+    ///   every other connection's copy is untouched. A change applies each
+    ///   content change in order to this connection's copy, as [`apply`]
+    ///   states; an empty change list preserves text. Close lets this
+    ///   connection's copy go, forgets the document once no connection holds a
+    ///   copy, and publishes a versionless empty diagnostic list to this
+    ///   connection, even for an unknown URI. A running-state configuration
+    ///   change whose `gandr` section names a quiet interval takes it. One that
+    ///   names a verbosity other than this connection's takes it, then
     ///   republishes every copy this connection holds, in URI order, at its
-    ///   version, to this connection alone, logging one timing line each; a
-    ///   change naming none, or the verbosity already held, changes nothing.
-    ///   Unknown, malformed and out-of-phase notifications leave documents
-    ///   alone.
+    ///   version, to this connection alone, logging one timing line each;
+    ///   otherwise, one that names a zero interval publishes what each copy
+    ///   holds back, as [`Server::release`] states, and one naming neither
+    ///   changes nothing. Unknown, malformed and out-of-phase notifications
+    ///   leave documents alone.
     /// - provides: document synchronization, configuration and termination.
     /// - fails: unreadable parameters and changes to documents this connection
     ///   holds no copy of are ignored.
@@ -1537,10 +1674,10 @@ impl Server
         captures: [phase = self.phase, count = workspace.documents.len()],
         ensures: |ret| self.phase == phase
             && (ret.messages.len() <= 1 || method.as_ref() == "workspace/didChangeConfiguration")
-            && ret.log.len() == match method.as_ref() {
-                "textDocument/didOpen" | "textDocument/didChange" => usize::from(!ret.messages.is_empty()),
-                "workspace/didChangeConfiguration" => ret.messages.len(),
-                _ => 0_usize,
+            && match method.as_ref() {
+                "textDocument/didOpen" | "textDocument/didChange" => ret.log.len() == usize::from(!ret.messages.is_empty()),
+                "workspace/didChangeConfiguration" => ret.log.len() <= ret.messages.len(),
+                _ => ret.log.is_empty(),
             }
             && ret.flow == if method.as_ref() == "exit" { Flow::Exit(self.closed()) } else { Flow::Continue }
             && if ret.messages.is_empty() { workspace.documents.len() == count } else {
@@ -1589,8 +1726,9 @@ impl Server
                 let document = &mut held.document;
                 document.version = text_document.version;
                 document.text.replace(text_document.text);
+                document.caret = Maybe::Absent(uncareted::Absent::Unranged);
                 document.proposals.clear();
-                let outcome = synchronised(&uri, document, self.verbosity);
+                let outcome = synchronised(&uri, document, self.verbosity, self.quiet);
                 for message in &outcome.messages {
                     workspace.published_by(self.peer, message);
                 }
@@ -1616,9 +1754,10 @@ impl Server
                 document.version = text_document.version;
                 document.proposals.clear();
                 for change in content_changes {
-                    document.text.apply(change);
+                    document.caret = document.text.apply(change);
                 }
-                let outcome = synchronised(&text_document.uri, document, self.verbosity);
+                let outcome =
+                    synchronised(&text_document.uri, document, self.verbosity, self.quiet);
                 for message in &outcome.messages {
                     workspace.published_by(self.peer, message);
                 }
@@ -1639,26 +1778,42 @@ impl Server
                 }))
             },
             | (Phase::Running, "workspace/didChangeConfiguration") => {
-                let Some(verbosity) = serde_json::from_value::<ConfigurationParams>(params)
+                let Some(settings) = serde_json::from_value::<ConfigurationParams>(params)
                     .ok()
                     .and_then(|params| params.settings)
                     .and_then(|sections| sections.gandr)
-                    .and_then(Settings::verbosity)
-                    .filter(|&verbosity| verbosity != self.verbosity)
                 else {
                     return Outcome::quiet();
                 };
+                if let Some(quiet) = settings.quiet() {
+                    self.quiet = quiet;
+                }
+                let mut outcome = Outcome::quiet();
+                let Some(verbosity) = settings
+                    .verbosity()
+                    .filter(|&verbosity| verbosity != self.verbosity)
+                else {
+                    if settings.quiet().is_some_and(|quiet| quiet.is_zero()) {
+                        let uris: Vec<DocumentUri> = workspace.documents.keys().cloned().collect();
+                        for uri in &uris {
+                            outcome.messages.extend(self.release(workspace, uri));
+                        }
+                    }
+                    return outcome;
+                };
                 self.verbosity = verbosity;
                 let peer = self.peer;
-                let mut outcome = Outcome::quiet();
                 for (uri, held) in &mut workspace.documents {
                     let Maybe::Present(document) = held.own_mut(peer)
                     else {
                         continue;
                     };
-                    let republished = synchronised(uri, document, verbosity);
+                    let republished = synchronised(uri, document, verbosity, self.quiet);
                     outcome.messages.extend(republished.messages);
                     outcome.log.extend(republished.log);
+                }
+                for message in &outcome.messages {
+                    workspace.published_by(peer, message);
                 }
                 outcome
             },
@@ -1937,69 +2092,97 @@ impl Workspace
     }
 }
 
-/// `text` with `change` applied.
+/// `text` with `change` applied, and where the change left the caret.
 ///
 /// # Specification
 /// - requires: nothing; any range is admissible input.
-/// - ensures: a change naming no range replaces the whole text; a ranged one
-///   replaces the bytes between its two ends, each resolved through the line
-///   index of the text as it stands as [`crate::position::Position::byte`]
-///   states, an end before the start read as the start.
+/// - ensures: a change naming no range replaces the whole text and leaves no
+///   caret; a ranged one replaces the bytes between its two ends, each resolved
+///   through the line index of the text as it stands as
+///   [`crate::position::Position::byte`] states, an end before the start read
+///   as the start, and leaves the caret at the end of the text it inserted.
 /// - provides: incremental synchronisation, with full synchronisation as the
-///   change that names no range.
+///   change that names no range; the caret the quiet publication reads.
 /// - fails: never.
 /// - panics: none; a resolved end is always a character boundary.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — successive ranged changes, one after a character beyond
 ///   the basic plane, an inverted range, and a rangeless change, each asserted
-///   at the exact text it leaves.
+///   at the exact text it leaves and the caret it leaves.
 /// - witness: `server::tests::ranged_changes_edit_the_held_text_in_order`
 #[spec(
     captures: [length = text.len(), replaced = change.text.len(), whole = change.range.is_none()],
-    ensures: |_| if whole { text.len() == replaced }
-        else { replaced <= text.len() && text.len() <= length.saturating_add(replaced) },
+    ensures: |ret| if whole { text.len() == replaced && matches!(ret, Maybe::Absent(_)) }
+        else { replaced <= text.len() && text.len() <= length.saturating_add(replaced)
+            && matches!(ret, Maybe::Present(caret) if usize::from(caret) <= text.len()) },
 )]
 fn apply(
     text: &mut String,
     change: ContentChange,
-)
+) -> Maybe<ByteOffset, uncareted::Absent>
 {
     let Some(range) = change.range
     else {
         *text = change.text;
-        return;
+        return Maybe::Absent(uncareted::Absent::Unranged);
     };
     let index = LineIndex::new(text.as_str().into());
     let start = usize::from(range.start.byte(&index));
     let end = usize::from(range.end.byte(&index)).max(start);
     text.replace_range(start .. end, &change.text);
+    Maybe::Present(ByteOffset::from(start.saturating_add(change.text.len())))
 }
 
-/// The verbosity the `initialize` parameters `params` name: the one their
-/// initialization options' `diagnostics.verbosity` names, the user level when
-/// they name none or cannot be read.
+/// The settings the `initialize` parameters `params` name in their
+/// initialization options, none when they name none or cannot be read.
 ///
 /// # Specification
 /// trivial.
-fn initial_verbosity(params: &Value) -> Verbosity
+fn initial_settings(params: &Value) -> Settings
 {
     InitializeParams::deserialize(params)
         .ok()
         .and_then(|params| params.initialization_options)
-        .and_then(Settings::verbosity)
         .unwrap_or_default()
 }
 
-/// Recheck `document`, open at `uri`, at `verbosity`: the notification
-/// publishing its diagnostics and the line logging what the recheck cost.
+/// The range of `form`, the form under `document`'s caret in the revision
+/// its session judged.
+///
+/// # Specification
+/// trivial.
+fn caret_range(
+    document: &Document,
+    form: Maybe<ByteSpan, formless::Absent>,
+) -> Maybe<Range, formless::Absent>
+{
+    let span = match form {
+        | Maybe::Present(span) => span,
+        | Maybe::Absent(reason) => return Maybe::Absent(reason),
+    };
+    let index = LineIndex::new(document.text.text.as_str().into());
+    Range::of_bytes(
+        &index,
+        gandr_surface_render_remote::ByteOffset::from(usize::from(span.start())),
+        gandr_surface_render_remote::ByteOffset::from(usize::from(span.end())),
+    )
+    .map_or(Maybe::Absent(formless::Absent::Between), Maybe::Present)
+}
+
+/// Recheck `document`, open at `uri`, at `verbosity`, holding back for
+/// `quiet` the diagnostics of the form under its caret: the notification
+/// publishing the rest and the line logging what the recheck cost.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: one diagnostic notification naming the supplied URI and held
 ///   version, with the diagnostics the document's session judges for its whole
-///   text, rendered at `verbosity`, and one log line naming the same URI and
-///   version, its admission pending when the judgement left one.
+///   text, rendered at `verbosity`, less those [`publishable`] holds for the
+///   form under the document's caret while `quiet` is not zero; the copy
+///   records every judged diagnostic as checked. One log line names the same
+///   URI and version, its admission pending when the judgement left one, and
+///   whether the publication held any.
 /// - provides: the publication shared by open, change and configuration
 ///   notifications.
 /// - fails: never.
@@ -2008,37 +2191,50 @@ fn initial_verbosity(params: &Value) -> Verbosity
 /// # Adequacy
 /// - hypothesis: L3 — opening and changing the known document, including a
 ///   refusal and an empty change list, distinguish wrong URI, version and stale
-///   text through exact publications and subsequent token streams.
+///   text through exact publications and subsequent token streams; typing a
+///   declaration distinguishes a held diagnostic from a published one.
 /// - witness: `server::tests::synchronisation_publishes_and_close_clears`
 /// - witness: `server::tests::ignored_messages_and_empty_changes_preserve_document_text`
 /// - witness: `session::session::an_edit_to_a_large_document_rechecks_its_forms`
 /// - witness: `server::tests::a_configuration_change_republishes_at_its_verbosity`
+/// - witness: `editor::editor::scenarios::typing_a_declaration_holds_its_diagnostics_until_its_terminator`
 #[spec(ensures: |ret| ret.flow == Flow::Continue
     && matches!(*ret.messages.as_slice(), [Outgoing::Notification { method: "textDocument/publishDiagnostics", ref params, .. }]
-        if params.uri == *uri && params.version == Some(document.version))
+        if params.uri == *uri && params.version == Some(document.version)
+            && params.diagnostics.len() <= document.checked.len())
     && matches!(*ret.log.as_slice(), [ref logged] if logged.uri == *uri && logged.version == document.version))]
 fn synchronised(
     uri: &DocumentUri,
     document: &mut Document,
     verbosity: Verbosity,
+    quiet: Duration,
 ) -> Outcome
 {
+    let caret = match document.caret {
+        | Maybe::Present(caret) if !quiet.is_zero() => Maybe::Present(caret),
+        | Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(formless::Absent::Uncareted),
+    };
     let rechecked = recheck(
         uri,
         &mut document.session,
         document.text.source(),
         verbosity,
+        caret,
     );
+    let form = caret_range(document, rechecked.form);
+    let (published, holding) = publishable(&rechecked.diagnostics, &form);
+    document.checked = rechecked.diagnostics;
     Outcome {
         messages: vec![publish(PublishParams {
             uri: uri.clone(),
             version: Some(document.version),
-            diagnostics: rechecked.diagnostics,
+            diagnostics: published,
         })],
         log: vec![Logged {
             uri: uri.clone(),
             version: document.version,
             timing: rechecked.timing,
+            holding,
         }],
         flow: Flow::Continue,
     }
@@ -2054,9 +2250,13 @@ fn synchronised(
 ///   it produces is written as one frame, in order; then the admissions its
 ///   synchronisations left run, as [`Server::admit`] states, each correction
 ///   written as one frame, and every line logged is written to `log` with a
-///   line terminator, before the next frame is read; the session ends at `exit`
-///   or at a stream closed at a frame boundary, as [`Server::closed`] states. A
-///   line `log` refuses is dropped: the log is the operator's, and the protocol
+///   line terminator, before the next frame is read. A synchronisation whose
+///   publication held a diagnostic back arms its document's deadline the
+///   server's quiet interval later, and one that held nothing disarms it; a
+///   deadline that passes with no frame read publishes what the document holds
+///   back, as [`Server::release`] states. The session ends at `exit` or at a
+///   stream closed at a frame boundary, as [`Server::closed`] states. A line
+///   `log` refuses is dropped: the log is the operator's, and the protocol
 ///   never depends on it.
 /// - provides: the language server over any pair of streams and a log: the
 ///   driver's standard input, output and error, or memory.
@@ -2073,11 +2273,13 @@ fn synchronised(
 /// # Adequacy
 /// - hypothesis: L2 — a whole session over in-memory streams, from `initialize`
 ///   to `exit`, asserted frame by frame; L3 — a session closed without `exit`,
-///   one whose stream breaks inside a frame, and an editor-shaped edit to a
-///   large document whose log carries one timing line per synchronisation.
+///   one whose stream breaks inside a frame, an editor-shaped edit to a large
+///   document whose log carries one timing line per synchronisation, and a held
+///   diagnostic published once the document is quiet.
 /// - witness: `session::session::a_session_round_trips_over_in_memory_streams`
 /// - witness: `session::session::a_stream_closed_without_exit_ends_abruptly`
 /// - witness: `session::session::an_edit_to_a_large_document_rechecks_its_forms`
+/// - witness: `session::session::a_held_diagnostic_publishes_once_the_document_is_quiet`
 #[inline]
 pub fn serve<Input, Output, Log>(
     input: &mut Input,
@@ -2085,34 +2287,66 @@ pub fn serve<Input, Output, Log>(
     log: &mut Log,
 ) -> Result<Served, TransportFault>
 where
-    Input: BufRead,
+    Input: BufRead + Send,
     Output: Write,
     Log: Write,
 {
     let mut workspace = Workspace::default();
     let mut server = Server::default();
-    loop {
-        let read = read_frame(input)?;
-        let Maybe::Present(body) = read
-        else {
-            return Ok(server.closed());
+    paced(input, |met, deadlines| {
+        let body = match met {
+            | Met::Closed => return Ok(ControlFlow::Break(server.closed())),
+            | Met::Quiet(uri) => {
+                for message in &server.release(&mut workspace, &uri) {
+                    written(output, message)?;
+                }
+                return Ok(ControlFlow::Continue(()));
+            },
+            | Met::Frame(body) => body,
         };
         let mut outcome = server.handle(&mut workspace, &body);
         for message in &outcome.messages {
-            let encoded = serde_json::to_vec(message).map_err(TransportFault::Encode)?;
-            write_frame(output, &Body::from(encoded))?;
+            written(output, message)?;
         }
         for message in &server.admit(&mut workspace, &mut outcome.log) {
-            let encoded = serde_json::to_vec(message).map_err(TransportFault::Encode)?;
-            write_frame(output, &Body::from(encoded))?;
+            written(output, message)?;
         }
+        deadlines.note(&outcome.log, server.quiet(), Instant::now());
         for line in &outcome.log {
             let _unlogged = writeln!(log, "{line}");
         }
-        if let Flow::Exit(served) = outcome.flow {
-            return Ok(served);
-        }
-    }
+        Ok(match outcome.flow {
+            | Flow::Exit(served) => ControlFlow::Break(served),
+            | Flow::Continue => ControlFlow::Continue(()),
+        })
+    })
+}
+
+/// Write `message` to `output` as one frame.
+///
+/// # Specification
+/// - requires: nothing of the stream.
+/// - ensures: the message's JSON encoding is written as one frame.
+/// - fails: [`TransportFault::Encode`] for a message that does not encode, and
+///   the stream's fault for a frame it refuses.
+/// - panics: none.
+/// - executable: none — the stream is opaque.
+///
+/// # Errors
+/// [`TransportFault`], as above.
+///
+/// # Adequacy
+/// - hypothesis: L2 — every frame a served session writes passes here.
+/// - witness: `session::session::a_session_round_trips_over_in_memory_streams`
+fn written<Output>(
+    output: &mut Output,
+    message: &Outgoing,
+) -> Result<(), TransportFault>
+where
+    Output: Write,
+{
+    let encoded = serde_json::to_vec(message).map_err(TransportFault::Encode)?;
+    write_frame(output, &Body::from(encoded))
 }
 
 #[cfg(test)]
@@ -3054,6 +3288,14 @@ mod tests
                 .map(|held| String::from(held.document.text.source().as_ref()))
                 .expect("the document is open")
         };
+        let caret = |server: &Connected| {
+            server
+                .workspace
+                .documents
+                .get(&uri)
+                .map(|held| held.document.caret)
+                .expect("the document is open")
+        };
         let changed = send(
             &mut server,
             Json(
@@ -3077,6 +3319,11 @@ mod tests
             "each change applies to the text the ones before it left, counted in UTF-16 units, \
              an inverted range inserting at its start"
         );
+        assert_eq!(
+            caret(&server),
+            super::Maybe::Present(gandr_surface_syntax::ByteOffset::from(11_usize)),
+            "the caret is where the last change's text ends: after its `!`"
+        );
         let restored = send(
             &mut server,
             Json(
@@ -3089,6 +3336,11 @@ mod tests
             held(&server),
             "def f = 42 ;\n",
             "a rangeless change replaces the whole text"
+        );
+        assert_eq!(
+            caret(&server),
+            super::Maybe::Absent(super::uncareted::Absent::Unranged),
+            "a rangeless change leaves no caret"
         );
         assert_eq!(
             restored.pointer("/0/params/diagnostics"),
