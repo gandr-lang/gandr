@@ -22,13 +22,16 @@
 //!   of its uses; a written type with its text and its universe. A keyword or a
 //!   delimiter inside a term answers that term, so `return` and `{` answer the
 //!   computation they open.
-//! - **The innermost declaration holding the cursor**, about its range, as for
-//!   its name: the keyword that introduces it, the colon of its signature, the
-//!   layout and documentation inside it.
+//! - **The head of the innermost declaration holding the cursor** — from its
+//!   first attribute to the brace opening its own body, or all of it when it
+//!   has none — about the head, as for its name: the keyword that introduces
+//!   it, the colon of its signature, the layout and documentation before its
+//!   body. Inside a body, a member answers by its own entries, and a position
+//!   no entry holds answers nothing, rather than the declaration around it.
 //!
-//! A position in no declaration hovers nothing, and so does a document whose
-//! grammar did not build. Every type is spelled through the shared printer at
-//! 80 columns.
+//! A position in no declaration's head hovers nothing, and so does a document
+//! whose grammar did not build. Every type is spelled through the shared
+//! printer at 80 columns.
 //!
 //! The alternative was to look the name under the cursor up among the
 //! session's items by its occurrence among the document's declarations: it
@@ -136,10 +139,10 @@ pub fn hovering(text: SourceText<'_>) -> Hovering
 ///   about the name's range; else, on the innermost typed node holding the
 ///   position, a fenced block of its type — a binder's name or a written type's
 ///   text before ` : ` — and, for a term checked against a type spelled
-///   otherwise, that type in a second block, about the node's range; else,
-///   inside a non-module declaration, as on its name, about its range. Absent
-///   elsewhere, and absent for a declaration with neither a type, a refusal nor
-///   documentation.
+///   otherwise, that type in a second block, about the node's range; else, in
+///   the head of a non-module declaration — from its start to the brace opening
+///   its own body — as on its name, about the head. Absent elsewhere, and
+///   absent for a declaration with neither a type, a refusal nor documentation.
 /// - provides: the answer to `textDocument/hover`.
 /// - fails: never; an absence names its reason.
 /// - panics: none.
@@ -198,11 +201,11 @@ pub fn hover<Store, Blocks>(
     }
     let enclosing = found.iter().rfind(|found| {
         found.symbol.kind != SymbolKind::MODULE
-            && found.symbol.range.start <= position
-            && position < found.symbol.range.end
+            && found.head.start <= position
+            && position < found.head.end
     });
     match enclosing {
-        | Some(enclosing) => declared(session, table, enclosing, enclosing.symbol.range),
+        | Some(enclosing) => declared(session, table, enclosing, enclosing.head),
         | None => Maybe::Absent(hovered::Absent::Untyped),
     }
 }
@@ -554,5 +557,123 @@ mod tests
             Err(hovered::Absent::Unknown),
             "an undocumented module has no type to show"
         );
+    }
+
+    /// A described-member hover row: what the position is, the text, the
+    /// line and character, and the expected hover.
+    type Row<'text> = (
+        &'text str,
+        &'text str,
+        (u32, u32),
+        Result<String, hovered::Absent>,
+    );
+
+    #[test]
+    fn a_described_member_hovers_its_own_type()
+    {
+        let data = "data NatDiv : Type {\n  Zero : NatDiv;\n  Succ : (n : NatDiv) --> NatDiv;\n  \
+                    oper divmod(m : NatDiv, n : NatDiv) -> (quot : NatDiv, rem : NatDiv);\n  \
+                    rule divmod(m, Zero) ==> (Zero, m);\n}\n";
+        let sign = "sign Cat {\n  sort Ob : Type;\n  sort Hom(dom : Ob, cod : Ob) : Type;\n  \
+                    oper id : (a : Ob) --> Hom(a, a);\n  \
+                    oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);\n  \
+                    rule unitL : comp(id(a), f) ==> f;\n}\n";
+        let rows: [Row<'_>; 14] = [
+            (
+                "a data family's name",
+                data,
+                (0, 6),
+                Ok(fenced(SourceText::from("NatDiv : Type"))),
+            ),
+            (
+                "a data family's keyword",
+                data,
+                (0, 1),
+                Ok(fenced(SourceText::from("NatDiv : Type"))),
+            ),
+            (
+                "a constant constructor",
+                data,
+                (1, 3),
+                Ok(fenced(SourceText::from("Zero : NatDiv"))),
+            ),
+            (
+                "a constructor with a field",
+                data,
+                (2, 3),
+                Ok(fenced(SourceText::from("Succ : +U (NatDiv -> -F NatDiv)"))),
+            ),
+            (
+                "a constructor's field",
+                data,
+                (2, 10),
+                Ok(fenced(SourceText::from("n : NatDiv"))),
+            ),
+            (
+                "a rule's head",
+                data,
+                (4, 8),
+                Ok(fenced(SourceText::from(
+                    "+U (NatDiv -> NatDiv -> -F #{NatDiv, NatDiv})",
+                ))),
+            ),
+            (
+                "a rule's pattern variable",
+                data,
+                (4, 14),
+                Ok(fenced(SourceText::from("NatDiv"))),
+            ),
+            (
+                "a rule's results",
+                data,
+                (4, 27),
+                Ok(fenced(SourceText::from("#{NatDiv, NatDiv}"))),
+            ),
+            (
+                "a member's keyword",
+                data,
+                (3, 3),
+                Err(hovered::Absent::Untyped),
+            ),
+            (
+                "a field's parenthesis",
+                data,
+                (2, 9),
+                Err(hovered::Absent::Untyped),
+            ),
+            (
+                "an indexed sort",
+                sign,
+                (2, 8),
+                Ok(fenced(SourceText::from("Hom : +U (Ob -> Ob -> -F Type)"))),
+            ),
+            (
+                "an operation over the sorts before it",
+                sign,
+                (3, 8),
+                Ok(fenced(SourceText::from(
+                    "id : +U ((a : Ob) -> -F Hom(a, a))",
+                ))),
+            ),
+            (
+                "a law's application",
+                sign,
+                (5, 22),
+                Ok(fenced(SourceText::from("Hom(a, a)"))),
+            ),
+            (
+                "a sign member's keyword",
+                sign,
+                (5, 3),
+                Err(hovered::Absent::Untyped),
+            ),
+        ];
+        for (position, text, (line, character), expected) in rows {
+            assert_eq!(
+                shown(SourceText::from(text), (line.into(), character.into())),
+                expected,
+                "{position}"
+            );
+        }
     }
 }

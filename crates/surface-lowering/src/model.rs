@@ -77,6 +77,7 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Name;
 use gandr_theory_levitation::SignDesc;
@@ -511,6 +512,96 @@ pub fn derive(presentation: &Presentation) -> ModelSignature
     }
 
     ModelSignature { components }
+}
+
+/// Whether a telescope binder is named after it, and so binds.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) struct Dependent(pub bool);
+
+/// The tail of a derived value component's telescope.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Tail<'form>
+{
+    /// An operation's results.
+    Results(&'form [SortTerm]),
+    /// A law's carrier and endpoints.
+    Path(&'form SortTerm, &'form FreeTerm, &'form FreeTerm),
+}
+
+/// Whether each binder of `telescope` is named by a later binder's sort or
+/// by `tail`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one flag per binder, in order: affirmative exactly when the
+///   binder's name is a variable of a later binder's index terms or of the
+///   tail's sorts and terms.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `comp`'s sort binders bind and its morphisms do not;
+///   every binder of `unitL` binds.
+/// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
+#[spec(ensures: |ret| ret.len() == telescope.len())]
+pub(crate) fn dependence(
+    telescope: &[Binder],
+    tail: Tail<'_>,
+) -> Vec<Dependent>
+{
+    let mut named: Vec<&Name> = Vec::new();
+    match tail {
+        | Tail::Results(results) => {
+            for result in results {
+                sort_vars(result, &mut named);
+            }
+        },
+        | Tail::Path(carrier, left, right) => {
+            sort_vars(carrier, &mut named);
+            named.extend(left.to_node().vars());
+            named.extend(right.to_node().vars());
+        },
+    }
+    let mut flags = Vec::with_capacity(telescope.len());
+    for binder in telescope.iter().rev() {
+        flags.push(Dependent(named.contains(&&binder.name)));
+        sort_vars(&binder.sort, &mut named);
+    }
+    flags.reverse();
+
+    flags
+}
+
+/// Push every variable of `sort`'s index terms onto `into`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one entry per variable leaf of each index term, in order.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`dependence`].
+/// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
+#[spec(
+    captures: before = into.len(),
+    ensures: into.len() >= before,
+)]
+fn sort_vars<'term>(
+    sort: &'term SortTerm,
+    into: &mut Vec<&'term Name>,
+)
+{
+    for index in &sort.indices {
+        into.extend(index.to_node().vars());
+    }
 }
 
 /// A `sign` block a module declares, as the lowering read it: its checked

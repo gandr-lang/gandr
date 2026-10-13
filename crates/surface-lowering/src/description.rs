@@ -258,6 +258,8 @@ pub struct DescribedDeclaration
     /// What a `sign` block presents to the signature of its models; a family
     /// or a top-level operation presents none.
     pub presentation: crate::model::Presented,
+    /// Where the members are written.
+    pub written: written::WrittenMembers,
 }
 
 /// Descriptions and member-local refusals in declaration order.
@@ -645,6 +647,7 @@ impl Reader<'_, '_>
         let mut operations = Vec::new();
         let mut operation_spans = Vec::new();
         let mut rules = Vec::new();
+        let mut written = written::WrittenMembers::default();
         for member in split_members(run.remaining()) {
             let Some(first) = member.first()
             else {
@@ -658,16 +661,20 @@ impl Reader<'_, '_>
                 continue;
             }
             let result = if member.eat(Spelling("rule")).0 {
-                self.rule(&mut member).map(|rule| rules.push(rule))
+                self.rule(&mut member).map(|(rule, face)| {
+                    rules.push(rule);
+                    written.faces.push(face);
+                })
             }
             else if member.eat(Spelling("oper")).0 {
                 if polarity == DeclPolarity::Codata {
                     Err(member.fault(DescriptionFault::MemberPolarity))
                 }
                 else {
-                    self.operation(&mut member).map(|operation| {
+                    self.operation(&mut member).map(|(operation, ports)| {
                         operations.push(operation);
                         operation_spans.push(span);
+                        written.operations.push(ports);
                     })
                 }
             }
@@ -678,7 +685,10 @@ impl Reader<'_, '_>
                 match polarity {
                     | DeclPolarity::Data => self
                         .generator(&mut member, &family, &parameters, indices)
-                        .map(|ctor| ctors.push(ctor)),
+                        .map(|(ctor, signature)| {
+                            ctors.push(ctor);
+                            written.constructors.push(signature);
+                        }),
                     | DeclPolarity::Codata => self.observation(&mut member, &family).map(
                         |observation| match observation {
                             | Observation::Nullary(ctor) => ctors.push(ctor),
@@ -721,13 +731,17 @@ impl Reader<'_, '_>
             parameters,
             classifier: Maybe::Present(classifier),
             presentation: Maybe::Absent(crate::model::presentation::Absent::Family),
+            written,
         })
     }
 
-    /// Read a generator judgment and require a uniform result head.
+    /// Read a generator judgment and require a uniform result head, keeping
+    /// where its name, each field and its result are written.
     ///
     /// # Specification
-    /// - ensures: each payload field keeps its type, grade and order.
+    /// - ensures: each payload field keeps its type, grade and order; the
+    ///   written constructor holds the name tile, one port per field, its name
+    ///   tile when written, and the result's bytes.
     /// - fails: nonuniform results, higher-order fields and incomplete
     ///   judgments are located.
     /// - panics: none.
@@ -739,32 +753,44 @@ impl Reader<'_, '_>
     /// - hypothesis: L3 — reordered or instantiated parameters cannot pass head
     ///   uniformity.
     /// - witness: `description::tests::data_lowering_preserves_constructor_fields`
-    #[spec(ensures: |result| result.as_ref().map_or(true, |ctor| ctor.result == *family))]
+    /// - witness: `described::tests::a_data_rule_answers_each_node_at_its_sort`
+    #[spec(ensures: |result| result.as_ref().map_or(true, |read| read.0.result == *family))]
     fn generator(
         &self,
         run: &mut Run<'_>,
         family: &Name,
         parameters: &[FamilyParameter],
         indices: family::IndexArity,
-    ) -> Result<CtorDesc<DescriptionGrade>, DescriptionDiagnostic>
+    ) -> Result<(CtorDesc<DescriptionGrade>, written::WrittenConstructor), DescriptionDiagnostic>
     {
         let named = run.take()?;
         if !run.eat(Spelling(":")).0 {
             return Err(run.fault(DescriptionFault::GeneratorJudgment));
         }
         let mut fields = Vec::new();
+        let mut ports = Vec::new();
+        let port = |named: Maybe<ByteSpan, written::port_name::Absent>, sort: Placed| {
+            written::WrittenPort {
+                named,
+                sort: written::WrittenSort {
+                    span: sort.span,
+                    indices: Vec::new(),
+                },
+            }
+        };
         let result = if run.eat(Spelling("(")).0 {
             while !run.eat(Spelling(")")).0 {
                 let grade = self.grade(run)?;
                 let first = run.take()?;
-                let ty = if run.eat(Spelling(":")).0 {
-                    run.take()?
+                let (ty, label) = if run.eat(Spelling(":")).0 {
+                    (run.take()?, Maybe::Present(first.span))
                 }
                 else {
-                    first
+                    (first, Maybe::Absent(written::port_name::Absent::Unnamed))
                 };
                 let field = self.field(ty, family, grade)?;
                 fields.push(field);
+                ports.push(port(label, ty));
                 if !run.eat(Spelling(",")).0 && !run.at(Spelling(")")).0 {
                     return Err(run.fault(DescriptionFault::Malformed));
                 }
@@ -779,6 +805,10 @@ impl Reader<'_, '_>
             if run.eat(Spelling("-->")).0 {
                 let field = self.field(first, family, DescriptionGrade::Finite(Multiplicity(1)))?;
                 fields.push(field);
+                ports.push(port(
+                    Maybe::Absent(written::port_name::Absent::Unnamed),
+                    first,
+                ));
                 run.take()?
             }
             else {
@@ -788,11 +818,18 @@ impl Reader<'_, '_>
         self.uniform_result(result, family, parameters, indices)?;
         let attrs = self.attrs(run)?;
         run.end()?;
-        Ok(CtorDesc::new(
-            self.text(named).0,
-            Code::product_of(fields),
-            family.clone(),
-            attrs,
+        Ok((
+            CtorDesc::new(
+                self.text(named).0,
+                Code::product_of(fields),
+                family.clone(),
+                attrs,
+            ),
+            written::WrittenConstructor {
+                named: named.span,
+                fields: ports,
+                result: result.span,
+            },
         ))
     }
 
@@ -827,7 +864,7 @@ impl Reader<'_, '_>
         let grade = self.grade(run)?;
         let named = run.take()?;
         if run.eat(Spelling("(")).0 {
-            let inputs = self.ports(run)?;
+            let (inputs, _written) = self.ports(run)?;
             if !run.eat(Spelling(":")).0 {
                 return Err(run.fault(DescriptionFault::Malformed));
             }
@@ -1083,6 +1120,7 @@ fn split_members(pieces: &[Piece]) -> Vec<&[Piece]>
 mod family;
 mod members;
 mod sign;
+pub mod written;
 
 #[cfg(test)]
 mod tests;

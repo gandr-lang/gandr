@@ -55,7 +55,11 @@
 //!
 //! [`type_of`] spells the type the latest resume gives a declaration at the
 //! caller's page width — its signature, its synthesised type or its declared
-//! universe — so every face names a declaration's type in the same words.
+//! universe — so every face names a declaration's type in the same words. The
+//! type of a node inside a declaration is not the session's: a face reads it
+//! off the dispatcher's type table, whose entries come from the typed run, the
+//! description route's types for `sign` and `data` members, and the universes
+//! of the written types the run formed.
 //!
 //! Each decision, with the alternative it was chosen over and what would
 //! reverse it, is in the module that owns it.
