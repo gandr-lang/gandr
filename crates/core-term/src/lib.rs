@@ -13,7 +13,9 @@
 //! - [`shift_value_type`], [`shift_comp_type`], [`instantiate_comp_type`] and
 //!   [`strengthen_comp_type`] are the rewrites a type that mentions a bound
 //!   variable needs, and [`instantiate_value`] the substitution static beta
-//!   takes, as iterative machines memoized per node.
+//!   takes, as iterative machines memoized per node; [`rename_value_traced`]
+//!   and [`rename_value_type_traced`] rename constants and atoms by a
+//!   [`Renaming`], the step a functor application instantiates its body by.
 //! - [`Context`] is the two-zone typing context `Γ; Σ`: flat, de Bruijn,
 //!   id-addressed and name-free. Names live in the surface syntax and in
 //!   diagnostics, above this crate.
@@ -155,6 +157,7 @@ pub use crate::import::TypeImporter;
 pub use crate::rewrite::Binders;
 pub use crate::rewrite::Carried;
 pub use crate::rewrite::Nesting;
+pub use crate::rewrite::Renaming;
 pub use crate::rewrite::Unenclosed;
 pub use crate::rewrite::elaborate_nested_traced;
 pub use crate::rewrite::fill_hole;
@@ -163,6 +166,8 @@ pub use crate::rewrite::instantiate_computation_traced;
 pub use crate::rewrite::instantiate_value;
 pub use crate::rewrite::instantiate_value_type;
 pub use crate::rewrite::instantiate_value_type_under;
+pub use crate::rewrite::rename_value_traced;
+pub use crate::rewrite::rename_value_type_traced;
 pub use crate::rewrite::shift_comp_type;
 pub use crate::rewrite::shift_comp_type_under;
 pub use crate::rewrite::shift_computation_under_traced;
