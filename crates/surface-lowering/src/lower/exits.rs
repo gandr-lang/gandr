@@ -53,6 +53,7 @@ use gandr_core_term::Carried;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
+use gandr_core_term::SplitMotive;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
@@ -1634,10 +1635,16 @@ fn rebuild(
             Computation::Split {
                 scrutinee,
                 arity,
+                motive,
                 body,
             },
             &[commuted],
-        ) if commuted != body => sink.arena.computation_split(scrutinee, arity, commuted),
+        ) if commuted != body => match motive {
+            | SplitMotive::Ambient => sink.arena.computation_split(scrutinee, arity, commuted),
+            | SplitMotive::Scrutinee(motive) => sink
+                .arena
+                .computation_dependent_split(scrutinee, arity, motive, commuted),
+        },
         | (
             Computation::Case {
                 scrutinee,

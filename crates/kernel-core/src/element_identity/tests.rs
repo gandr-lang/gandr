@@ -549,6 +549,44 @@ fn native_evidence_checks_against_the_fold_fibre()
 }
 
 #[test]
+fn a_pair_of_paths_inhabits_the_identity_of_a_dependent_pair()
+{
+    // Σ (b : Bool). Path(Bool, b, b), between #{true, here(true)} and itself.
+    let mut arena = TermArena::new();
+    let boolean = boolean(&mut arena);
+    let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let family = arena.value_type_path(boolean.ty, bound, bound);
+    let sigma = arena.value_type_sigma(boolean.ty, family);
+    let here_truth = arena.value_here(boolean.truth);
+    let pair = arena.value_tuple(&[boolean.truth, here_truth]);
+    check_closed_value(&mut arena, pair, sigma).expect("the pair lies in its first's fibre");
+    let skewed = arena.value_tuple(&[boolean.falsity, here_truth]);
+    assert!(
+        matches!(
+            check_closed_value(&mut arena, skewed, sigma),
+            Err(KernelError::Identity(IdentityError::EndpointsDiffer { .. }))
+        ),
+        "the same second component over `false` lies in another fibre"
+    );
+
+    // The identity reads a path between the first components and, over it,
+    // a path from the left second component transported to the right one.
+    let identity = arena.value_type_path(sigma, pair, pair);
+    let here_here = arena.value_here(here_truth);
+    let paths = arena.value_tuple(&[here_truth, here_here]);
+    check_closed_value(&mut arena, paths, identity).expect("two reflexivities relate a pair");
+    let here_falsity = arena.value_here(boolean.falsity);
+    let strayed = arena.value_tuple(&[here_falsity, here_here]);
+    assert!(
+        matches!(
+            check_closed_value(&mut arena, strayed, identity),
+            Err(KernelError::Identity(IdentityError::EndpointsDiffer { .. }))
+        ),
+        "the first path must join the first components"
+    );
+}
+
+#[test]
 fn a_higher_field_checks_and_computes_square_symmetry()
 {
     let mut arena = TermArena::new();

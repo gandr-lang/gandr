@@ -77,6 +77,7 @@ use crate::hole::MarkIndex;
 use crate::syntax::CompType;
 use crate::syntax::ComponentCount;
 use crate::syntax::Computation;
+use crate::syntax::SplitMotive;
 use crate::syntax::Value;
 use crate::syntax::ValueType;
 use crate::syntax::Zone;
@@ -1163,22 +1164,22 @@ impl CoreArena
     }
 
     /// Mint a split of an already-allocated scrutinee into a body under one
-    /// binder per component.
+    /// binder per component, checked against the ambient type.
     ///
     /// # Specification
     /// - requires: `scrutinee` names a value node and `body` a computation
     ///   node, both already allocated in this arena.
-    /// - ensures: appends the split of `arity` components and returns a fresh
-    ///   id strictly above its children.
-    /// - provides: the only way to mint this former, which is what keeps a
-    ///   child id below its parent's.
+    /// - ensures: appends the split of `arity` components with the ambient
+    ///   motive and returns a fresh id strictly above its children.
+    /// - provides: one of the two ways to mint this former, which is what keeps
+    ///   a child id below its parent's.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — distinct child ids and an arity other than the body's
     ///   distinguish swapped children, a dropped arity and confused formers.
     /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
-    #[spec(ensures: |ret| self.computation(ret).is_some_and(|held| *held == Computation::Split { scrutinee, arity, body }))]
+    #[spec(ensures: |ret| self.computation(ret).is_some_and(|held| *held == Computation::Split { scrutinee, arity, motive: SplitMotive::Ambient, body }))]
     #[inline]
     pub fn computation_split(
         &mut self,
@@ -1190,6 +1191,44 @@ impl CoreArena
         self.alloc_computation(Computation::Split {
             scrutinee,
             arity,
+            motive: SplitMotive::Ambient,
+            body,
+        })
+    }
+
+    /// Mint a split of an already-allocated scrutinee into a body under one
+    /// binder per component, checked against a motive under one binder of the
+    /// scrutinee.
+    ///
+    /// # Specification
+    /// - requires: `scrutinee` names a value node, `motive` a computation-type
+    ///   node and `body` a computation node, all already allocated in this
+    ///   arena; whether the motive reads its binder is a typing fact this
+    ///   constructor does not decide.
+    /// - ensures: appends the split of `arity` components with the scrutinee
+    ///   motive `motive` and returns a fresh id strictly above its children.
+    /// - provides: one of the two ways to mint this former, which is what keeps
+    ///   a child id below its parent's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, an arity and a motive distinguish
+    ///   a dropped motive, swapped children and confused formers.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.computation(ret).is_some_and(|held| *held == Computation::Split { scrutinee, arity, motive: SplitMotive::Scrutinee(motive), body }))]
+    #[inline]
+    pub fn computation_dependent_split(
+        &mut self,
+        scrutinee: ValueId,
+        arity: ComponentCount,
+        motive: CompTypeId,
+        body: ComputationId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Split {
+            scrutinee,
+            arity,
+            motive: SplitMotive::Scrutinee(motive),
             body,
         })
     }
@@ -1251,6 +1290,39 @@ impl CoreArena
     ) -> ValueTypeId
     {
         self.alloc_value_type(ValueType::Product(components.into()))
+    }
+
+    /// Mint a dependent pair over an already-allocated first factor and a
+    /// second factor scoped under the first's binder.
+    ///
+    /// Minting does not check the scoping: whether the second factor reads the
+    /// binder is a typing fact, so a second factor that ignores it is
+    /// representable here.
+    ///
+    /// # Specification
+    /// - requires: `first` and `second` name value-type nodes already allocated
+    ///   in this arena; whether `second` reads the binder is a typing fact this
+    ///   constructor does not decide.
+    /// - ensures: appends the dependent pair and returns a fresh id strictly
+    ///   above both factors.
+    /// - provides: the only way to mint this former, which is what keeps a
+    ///   child id below its parent's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids distinguish swapped or dropped
+    ///   factors and a dependent pair confused with the product of the same two
+    ///   factors.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.value_type(ret) == Some(&ValueType::Sigma { first, second }))]
+    #[inline]
+    pub fn value_type_sigma(
+        &mut self,
+        first: ValueTypeId,
+        second: ValueTypeId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Sigma { first, second })
     }
 
     /// Mint a sum over already-allocated value types, in order.
@@ -2709,6 +2781,21 @@ mod tests
                 crate::Computation::Split {
                     scrutinee: second,
                     arity: crate::ComponentCount::from(2_usize),
+                    motive: crate::SplitMotive::Ambient,
+                    body: left,
+                },
+            ),
+            (
+                arena.computation_dependent_split(
+                    second,
+                    crate::ComponentCount::from(2_usize),
+                    result,
+                    left,
+                ),
+                crate::Computation::Split {
+                    scrutinee: second,
+                    arity: crate::ComponentCount::from(2_usize),
+                    motive: crate::SplitMotive::Scrutinee(result),
                     body: left,
                 },
             ),
@@ -2726,6 +2813,10 @@ mod tests
                 arena.value_type_product(&[other, domain, other]),
                 ValueType::Product([other, domain, other].into()),
             ),
+            (arena.value_type_sigma(domain, other), ValueType::Sigma {
+                first: domain,
+                second: other,
+            }),
             (arena.value_type_unit(), ValueType::unit()),
             (
                 arena.value_type_sum(&[domain, other]),

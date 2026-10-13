@@ -451,6 +451,19 @@ pub enum ContentNode
     /// Bind every component of a tuple in the body, component zero
     /// outermost.
     Split(NodeIndex, gandr_core_term::ComponentCount, NodeIndex),
+    /// Bind every component of a tuple in the body, component zero
+    /// outermost, under a motive over the scrutinee.
+    DependentSplit
+    {
+        /// The tuple.
+        scrutinee: NodeIndex,
+        /// How many components the body binds.
+        arity: gandr_core_term::ComponentCount,
+        /// The motive, under one binder of the scrutinee.
+        motive: NodeIndex,
+        /// The body.
+        body: NodeIndex,
+    },
     /// A delimited answer boundary.
     Reset(NodeIndex),
     /// Capture a stack, bound in the body.
@@ -735,6 +748,14 @@ pub enum ContentNode
         domain: NodeIndex,
         /// The codomain.
         codomain: NodeIndex,
+    },
+    /// A dependent pair, whose second factor binds the first.
+    Sigma
+    {
+        /// The first factor.
+        first: NodeIndex,
+        /// The second factor, under the binder.
+        second: NodeIndex,
     },
     /// A session type: its protocol and state, payload edges in slot order.
     SessionType(gandr_core_term::session::SessionType<NodeIndex>),
@@ -1026,6 +1047,7 @@ impl ContentNode
         | Self::Scope { .. }
         | Self::Resume(..)
         | Self::Split(..)
+        | Self::DependentSplit { .. }
         | Self::Reset(_)
         | Self::Shift(_)
         | Self::With(..)
@@ -1065,6 +1087,7 @@ impl ContentNode
         | Self::Abstract(_)
         | Self::SessionType(_)
         | Self::StaticPi { .. }
+        | Self::Sigma { .. }
         | Self::UnknownType => matches!(ret, Sort::ValueType),
         | Self::WithType(..)
         | Self::Returner { .. }
@@ -1128,6 +1151,7 @@ impl ContentNode
             | Self::Scope { .. }
             | Self::Resume(..)
             | Self::Split(..)
+            | Self::DependentSplit { .. }
             | Self::Reset(_)
             | Self::Shift(_)
             | Self::With(..)
@@ -1167,6 +1191,7 @@ impl ContentNode
             | Self::Abstract(_)
             | Self::SessionType(_)
             | Self::StaticPi { .. }
+            | Self::Sigma { .. }
             | Self::UnknownType => Sort::ValueType,
             | Self::WithType(..)
             | Self::Returner { .. }
@@ -1218,6 +1243,7 @@ impl ContentNode
             | Self::Exercise { capability, payload, ref signature, .. } => ret.iter().eq([(capability, V), (payload, V)].into_iter().chain(signature.types().map(|ty| (ty, A)))),
             | Self::Capability { ref authority, .. } => ret.iter().eq(authority.types().map(|ty| (ty, A))),
             | Self::Resume(stack, body) | Self::Split(stack, _, body) => actual == Some(&[(stack, V), (body, M)][..]),
+            | Self::DependentSplit { scrutinee, motive, body, .. } => actual == Some(&[(scrutinee, V), (motive, C), (body, M)][..]),
             | Self::Reset(body) | Self::Shift(body) | Self::Project(_, body) => actual == Some(&[(body, M)][..]),
             | Self::With(first, second) => actual == Some(&[(first, M), (second, M)][..]),
             | Self::Primitive(_, arguments) => actual.is_some_and(|children| children.iter().copied().eq(arguments.iter().copied().map(|argument| (argument, V)))),
@@ -1272,6 +1298,10 @@ impl ContentNode
             | Self::StaticPi {
                 domain: a,
                 codomain: b,
+            }
+            | Self::Sigma {
+                first: a,
+                second: b,
             } => actual == Some(&[(a, A), (b, A)][..]),
             | Self::ThunkType(a) | Self::QuoteComputation(a) => actual == Some(&[(a, C)][..]),
             | Self::Returner { result, ref effects } => ret.iter().eq(core::iter::once((result, A)).chain(effects.types().map(|ty| (ty, A)))),
@@ -1357,6 +1387,12 @@ impl ContentNode
             | Self::Resume(stack, body) | Self::Split(stack, _, body) => {
                 Children::of(&[(stack, V), (body, M)])
             },
+            | Self::DependentSplit {
+                scrutinee,
+                motive,
+                body,
+                ..
+            } => Children::of(&[(scrutinee, V), (motive, C), (body, M)]),
             | Self::Reset(body) | Self::Shift(body) | Self::Project(_, body) => {
                 Children::of(&[(body, M)])
             },
@@ -1498,7 +1534,8 @@ impl ContentNode
             | Self::StaticPi {
                 domain: first,
                 codomain: second,
-            } => Children::of(&[(first, A), (second, A)]),
+            }
+            | Self::Sigma { first, second } => Children::of(&[(first, A), (second, A)]),
             | Self::ThunkType(body) => Children::of(&[(body, C)]),
             | Self::List(element) => Children::of(&[(element, A)]),
             | Self::Returner {
@@ -1565,6 +1602,7 @@ impl ContentNode
             | Self::Capability { .. }
             | Self::Resume(..)
             | Self::Split(..)
+            | Self::DependentSplit { .. }
             | Self::Reset(_)
             | Self::Shift(_)
             | Self::With(..)
@@ -1628,6 +1666,7 @@ impl ContentNode
             | Self::StaticLambda(_)
             | Self::StaticApplication(..)
             | Self::StaticPi { .. }
+            | Self::Sigma { .. }
             | Self::ComputationElement { .. }
             | Self::Unresolved(_)
             | Self::Hole(_)
@@ -2867,12 +2906,28 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
             | Computation::Split {
                 scrutinee,
                 arity,
+                motive: gandr_core_term::SplitMotive::Ambient,
                 body,
             } => ContentNode::Split(
                 self.discover(ArenaNode::Value(scrutinee)),
                 arity,
                 self.discover(ArenaNode::Computation(body)),
             ),
+            | Computation::Split {
+                scrutinee,
+                arity,
+                motive: gandr_core_term::SplitMotive::Scrutinee(motive),
+                body,
+            } => {
+                let scrutinee = self.discover(ArenaNode::Value(scrutinee));
+                let motive = self.discover(ArenaNode::CompType(motive));
+                ContentNode::DependentSplit {
+                    scrutinee,
+                    arity,
+                    motive,
+                    body: self.discover(ArenaNode::Computation(body)),
+                }
+            },
             | Computation::Reset(body) => {
                 ContentNode::Reset(self.discover(ArenaNode::Computation(body)))
             },
@@ -3108,6 +3163,13 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 ContentNode::StaticPi {
                     domain,
                     codomain: self.discover(ArenaNode::ValueType(codomain)),
+                }
+            },
+            | ValueType::Sigma { first, second } => {
+                let first = self.discover(ArenaNode::ValueType(first));
+                ContentNode::Sigma {
+                    first,
+                    second: self.discover(ArenaNode::ValueType(second)),
                 }
             },
             | ValueType::Unknown => ContentNode::UnknownType,
@@ -3436,6 +3498,17 @@ where
         | ContentNode::Split(scrutinee, arity, body) => {
             ContentNode::Split(image(scrutinee), arity, image(body))
         },
+        | ContentNode::DependentSplit {
+            scrutinee,
+            arity,
+            motive,
+            body,
+        } => ContentNode::DependentSplit {
+            scrutinee: image(scrutinee),
+            arity,
+            motive: image(motive),
+            body: image(body),
+        },
         | ContentNode::Reset(body) => ContentNode::Reset(image(body)),
         | ContentNode::Shift(body) => ContentNode::Shift(image(body)),
         | ContentNode::With(first, second) => ContentNode::With(image(first), image(second)),
@@ -3717,6 +3790,13 @@ where
             ContentNode::StaticPi {
                 domain,
                 codomain: image(codomain),
+            }
+        },
+        | ContentNode::Sigma { first, second } => {
+            let first = image(first);
+            ContentNode::Sigma {
+                first,
+                second: image(second),
             }
         },
         | ContentNode::ComputationElement { code, ref target } => ContentNode::ComputationElement {
@@ -4058,6 +4138,17 @@ fn mint_node(
                 | _ => ill_sorted,
             }
         },
+        | ContentNode::Sigma { first, second } => {
+            match (
+                minted_value_type(states, first),
+                minted_value_type(states, second),
+            ) {
+                | (Maybe::Present(first), Maybe::Present(second)) => {
+                    Maybe::Present(Minted::ValueType(arena.value_type_sigma(first, second)))
+                },
+                | _ => ill_sorted,
+            }
+        },
         | ContentNode::ThunkType(body) => match minted_comp_type(states, body) {
             | Maybe::Present(body) => {
                 Maybe::Present(Minted::ValueType(arena.value_type_thunk(body)))
@@ -4174,6 +4265,7 @@ fn mint_node(
         | ContentNode::Scope { .. }
         | ContentNode::Resume(..)
         | ContentNode::Split(..)
+        | ContentNode::DependentSplit { .. }
         | ContentNode::Reset(_)
         | ContentNode::Shift(_)
         | ContentNode::With(..)

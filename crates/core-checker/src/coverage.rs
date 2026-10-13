@@ -644,9 +644,11 @@ impl Walker<'_, '_, '_>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the kind of `column`'s former; a type no pattern head
-    ///   inhabits, a product of neither zero nor two components and a sum of
-    ///   other than two summands are opaque.
+    /// - ensures: the kind of `column`'s former, a dependent pair read as the
+    ///   pair of its factors, since the head former of its second factor does
+    ///   not depend on the binder; a type no pattern head inhabits, a product
+    ///   of neither zero nor two components and a sum of other than two
+    ///   summands are opaque.
     /// - fails: a dangling type.
     /// - panics: none.
     ///
@@ -673,6 +675,7 @@ impl Walker<'_, '_, '_>
                 | [first, second] => Ok(Kind::Product(first, second)),
                 | _ => Ok(Kind::Opaque),
             },
+            | Some(&ValueType::Sigma { first, second }) => Ok(Kind::Product(first, second)),
             | Some(&ValueType::Sum(ref parts)) => match **parts {
                 | [left, right] => Ok(Kind::Sum(left, right)),
                 | _ => Ok(Kind::Opaque),

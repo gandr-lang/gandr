@@ -422,7 +422,7 @@ mod tests
     #[test]
     fn each_marked_position_hovers_its_answer()
     {
-        let rows: [(&str, &str, Result<String, hovered::Absent>); 15] = [
+        let rows: [(&str, &str, Result<String, hovered::Absent>); 16] = [
             (
                 "a synthesised declaration's name",
                 "def ans$0wer = 42 ;\n",
@@ -460,6 +460,14 @@ mod tests
                 "a written value type",
                 "def answer : Inte$0ger ;\n",
                 Ok(fenced(SourceText::from("Integer : Type"))),
+            ),
+            (
+                "a declaration written with a dependent record",
+                "def r$0ing : #{n : Integer, v : Path(Integer, n, n)} ;\ndef ring = #{2, here(2)} \
+                 ;\n",
+                Ok(fenced(SourceText::from(
+                    "ring : #{a : Integer, b : Path(Integer, a, a)}",
+                ))),
             ),
             (
                 "a written computation type",

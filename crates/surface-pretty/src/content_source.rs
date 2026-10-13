@@ -247,7 +247,13 @@ impl Source for ContentSource<'_>
                 clauses: Arity::from(clauses.len()),
             },
             | ContentNode::Resume(stack, resumed) => Former::Resume(stack, resumed),
-            | ContentNode::Split(scrutinee, arity, body) => Former::Split {
+            | ContentNode::Split(scrutinee, arity, body)
+            | ContentNode::DependentSplit {
+                scrutinee,
+                arity,
+                body,
+                ..
+            } => Former::Split {
                 scrutinee,
                 arity: Arity::from(usize::from(arity)),
                 body,
@@ -441,6 +447,7 @@ impl Source for ContentSource<'_>
                 Former::StaticApplication(operator, argument)
             },
             | ContentNode::StaticPi { domain, codomain } => Former::StaticPi { domain, codomain },
+            | ContentNode::Sigma { first, second } => Former::Sigma { first, second },
             | ContentNode::SessionType(ref session) => Former::Session {
                 protocol: session.protocol(),
                 state: session.state(),

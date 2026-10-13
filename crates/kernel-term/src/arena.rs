@@ -920,6 +920,7 @@ impl TermArena
     #[spec(
         requires: match computation {
             Computation::DataCase { scrutinee, motive, ref branches } => self.value(scrutinee).is_some() && self.comp_type(motive).is_some() && branches.iter().all(|branch| self.computation(*branch).is_some()),
+            Computation::SigmaSplit { scrutinee, motive, body } => self.value(scrutinee).is_some() && self.comp_type(motive).is_some() && self.computation(body).is_some(),
             Computation::RecordProjection(record, _) | Computation::TupleProjection(record, _) => self.value(record).is_some(),
             Computation::Lambda(body) | Computation::Fixpoint { body, .. } => self.computation(body).is_some(),
             Computation::Application(head, argument) => self.computation(head).is_some() && self.value(argument).is_some(),
@@ -976,7 +977,7 @@ impl TermArena
             ValueType::Data { ref arguments, .. } => arguments.iter().all(|argument| self.value(*argument).is_some()),
             ValueType::Record(ref fields) => fields.values().all(|field| self.value_type(*field).is_some()),
             ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.iter().all(|part| self.value_type(*part).is_some()),
-            ValueType::StaticPi { domain: first, codomain: second } => self.value_type(first).is_some() && self.value_type(second).is_some(),
+            ValueType::StaticPi { domain: first, codomain: second } | ValueType::Sigma { first, second } => self.value_type(first).is_some() && self.value_type(second).is_some(),
             ValueType::PathUniverse(first, second) | ValueType::FlowUniverse(first, second) => self.value(first).is_some() && self.value(second).is_some(),
             ValueType::Path { domain, left, right } | ValueType::Flow { domain, source: left, target: right } => self.value_type(domain).is_some() && self.value(left).is_some() && self.value(right).is_some(),
             ValueType::Thunk(body) => self.comp_type(body).is_some(),
@@ -1772,6 +1773,51 @@ impl TermArena
         })
     }
 
+    /// Mint the dependent pair's eliminator over an already-allocated
+    /// scrutinee, motive and body.
+    ///
+    /// # Specification
+    /// - requires: `scrutinee` resolves in this arena's value family, `motive`
+    ///   in its computation-type family and `body` in its computation family.
+    /// - ensures: appends the node and returns the computation family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is strictly greater than
+    ///   the body's id, which the precondition keeps live.
+    /// - provides: the dependent split; the motive is scoped under one binder
+    ///   and the body under two, which is a typing fact rather than a
+    ///   representation one.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children and observes the exact stored nodes and ordered edges; a
+    ///   swapped child or a dropped motive changes the stored node.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value(scrutinee).is_some() && self.comp_type(motive).is_some()
+                && self.computation(body).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations.saturating_add(1)
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.computations).unwrap_or(u32::MAX)
+                && self.computations.last() == Some(&Computation::SigmaSplit { scrutinee, motive, body }),
+    )]
+    #[inline]
+    pub fn computation_sigma_split(
+        &mut self,
+        scrutinee: ValueId,
+        motive: CompTypeId,
+        body: ComputationId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::SigmaSplit {
+            scrutinee,
+            motive,
+            body,
+        })
+    }
+
     /// Mint the empty value type: the sum of no summands.
     ///
     /// # Specification
@@ -1893,6 +1939,44 @@ impl TermArena
     ) -> ValueTypeId
     {
         self.alloc_value_type(ValueType::Product(components.into()))
+    }
+
+    /// Mint a dependent pair over an already-allocated first factor and a
+    /// second factor scoped under its binder.
+    ///
+    /// # Specification
+    /// - requires: `first` and `second` resolve in this arena.
+    /// - ensures: appends the node and returns the value-type family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is strictly greater than
+    ///   both factor ids, which the precondition keeps live.
+    /// - provides: the dependent pair type, acyclic by construction; whether
+    ///   the second factor reads the binder is a typing fact.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children and observes the exact stored nodes and ordered edges; a
+    ///   swapped factor or a dependent pair minted as a product changes the
+    ///   stored node.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value_type(first).is_some() && self.value_type(second).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types.saturating_add(1)
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.value_types).unwrap_or(u32::MAX)
+                && self.value_types.last() == Some(&ValueType::Sigma { first, second }),
+    )]
+    #[inline]
+    pub fn value_type_sigma(
+        &mut self,
+        first: ValueTypeId,
+        second: ValueTypeId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Sigma { first, second })
     }
 
     /// Mint a sum over already-allocated value types, in summand order.
@@ -2909,6 +2993,7 @@ Value::QuoteComputation(quoted) => ret.as_slice() == [AnyNode::CompType(quoted)]
 }),
         AnyNode::Computation(id) => match self.computation(id) {
             Some(&Computation::DataCase { scrutinee, motive, ref branches }) => ret.iter().copied().eq([AnyNode::Value(scrutinee), AnyNode::CompType(motive)].into_iter().chain(branches.iter().copied().map(AnyNode::Computation))),
+            Some(&Computation::SigmaSplit { scrutinee, motive, body }) => ret.as_slice() == [AnyNode::Value(scrutinee), AnyNode::CompType(motive), AnyNode::Computation(body)],
             Some(&(Computation::RecordProjection(record, _) | Computation::TupleProjection(record, _))) => ret.as_slice() == [AnyNode::Value(record)],
             None => ret.is_empty(),
             Some(&Computation::ListFold { element, result, list, on_nil, on_cons }) => ret.as_slice() == [AnyNode::ValueType(element), AnyNode::ValueType(result), AnyNode::Value(list), AnyNode::Computation(on_nil), AnyNode::Computation(on_cons)],
@@ -2932,7 +3017,7 @@ ValueType::Data { ref arguments, .. } => ret.iter().copied().eq(arguments.iter()
 ValueType::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(AnyNode::ValueType)),
 ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => ret.is_empty(),
 ValueType::Product(ref parts) | ValueType::Sum(ref parts) => ret.iter().copied().eq(parts.iter().copied().map(AnyNode::ValueType)),
-ValueType::StaticPi { domain: first, codomain: second } =>
+ValueType::StaticPi { domain: first, codomain: second } | ValueType::Sigma { first, second } =>
                 ret.as_slice() == [AnyNode::ValueType(first), AnyNode::ValueType(second)],
 ValueType::Session { payloads, .. } => ret.as_slice() == [AnyNode::ValueType(payloads)],
 ValueType::PathUniverse(source, target) | ValueType::FlowUniverse(source, target) => ret.as_slice() == [AnyNode::Value(source), AnyNode::Value(target)],
@@ -3081,6 +3166,17 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                     children.extend([AnyNode::Value(scrutinee), AnyNode::CompType(motive)]);
                     children.extend(branches.iter().copied().map(AnyNode::Computation));
                 },
+                | Some(&Computation::SigmaSplit {
+                    scrutinee,
+                    motive,
+                    body,
+                }) => {
+                    children.extend([
+                        AnyNode::Value(scrutinee),
+                        AnyNode::CompType(motive),
+                        AnyNode::Computation(body),
+                    ]);
+                },
                 | Some(
                     &(Computation::RecordProjection(record, _)
                     | Computation::TupleProjection(record, _)),
@@ -3204,10 +3300,13 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                 | Some(&ValueType::Product(ref parts) | &ValueType::Sum(ref parts)) => {
                     children.extend(parts.iter().copied().map(AnyNode::ValueType));
                 },
-                | Some(&ValueType::StaticPi {
-                    domain: first,
-                    codomain: second,
-                }) => {
+                | Some(
+                    &ValueType::StaticPi {
+                        domain: first,
+                        codomain: second,
+                    }
+                    | &ValueType::Sigma { first, second },
+                ) => {
                     children.push(AnyNode::ValueType(first));
                     children.push(AnyNode::ValueType(second));
                 },

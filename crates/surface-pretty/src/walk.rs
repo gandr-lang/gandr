@@ -329,7 +329,7 @@ enum Kind
     | Kind::ValueType => matches!(*former, Former::BaseType(_) | Former::Product(_) | Former::RecordType(_)
         | Former::Stack(..) | Former::List(_)
         | Former::Sum(_) | Former::ThunkType(_) | Former::Universe { .. }
-        | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::Capability { .. } | Former::PathUniverse(..) | Former::Session { .. }
+        | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::Sigma { .. } | Former::Capability { .. } | Former::PathUniverse(..) | Former::Session { .. }
         | Former::Path { .. } | Former::Flow { .. } | Former::Data { .. } | Former::RunType(_)),
     | Kind::CompType => matches!(*former, Former::Returner(_) | Former::EffectfulReturner { .. } | Former::Arrow { .. }
         | Former::With(..) | Former::Pi { .. } | Former::ComputationElement(_)),
@@ -366,6 +366,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Abstract(_)
         | Former::Session { .. }
         | Former::StaticPi { .. }
+        | Former::Sigma { .. }
         | Former::Capability { .. }
         | Former::Path { .. }
         | Former::Flow { .. }
@@ -740,18 +741,19 @@ where
 /// - ensures: an n-ary former's components, answered by the source for `node`,
 ///   a record's and a record type's after their field labels and an injection's
 ///   body after its summand; type children admit types and term children terms
-///   as the grammar places them; a dependent arrow's codomain, a static
-///   abstraction's, a lambda's and a fixpoint's body, a bind's rest, a case's
-///   branches, a transport's motive, a return clause and a stack capture's body
-///   stand under one binder, a split's body under one per component, a data
-///   case's branch under one per field of its constructor, a fold's cell branch
-///   and a handler's operation clauses under two, a scope's subject under the
-///   capability's and a fork's child and parent each under one linear binder;
-///   the computation a bind runs, the function an application applies and a
-///   computation where a value is read admit computations where the body goes
-///   on, a body in braces one where it ends, and a bind's rest and the branches
-///   of a case what its own position admits; a thunk's body is a child only
-///   where bodies are spelled; every leaf former has none.
+///   as the grammar places them; a dependent arrow's codomain, a dependent
+///   pair's second factor, a static abstraction's, a lambda's and a fixpoint's
+///   body, a bind's rest, a case's branches, a transport's motive, a return
+///   clause and a stack capture's body stand under one binder, a split's body
+///   under one per component, a data case's branch under one per field of its
+///   constructor, a fold's cell branch and a handler's operation clauses under
+///   two, a scope's subject under the capability's and a fork's child and
+///   parent each under one linear binder; the computation a bind runs, the
+///   function an application applies and a computation where a value is read
+///   admit computations where the body goes on, a body in braces one where it
+///   ends, and a bind's rest and the branches of a case what its own position
+///   admits; a thunk's body is a child only where bodies are spelled; every
+///   leaf former has none.
 /// - provides: the one table of child positions the scan and the walk share.
 /// - fails: never.
 /// - panics: none.
@@ -772,7 +774,7 @@ where
     | Former::Tuple(arity) | Former::Record(arity) | Former::Data { arity, .. } | Former::Constructor { arity, .. }
         | Former::Primitive { arity, .. } => ret.len() == usize::from(arity)
         && ret.iter().all(|slot| slot.admits == Admits::Value && slot.binds == Binds::NONE),
-    | Former::Pi { .. } | Former::StaticLambda(_) | Former::Lambda(_) | Former::Bind(..) | Former::Fixpoint(_)
+    | Former::Pi { .. } | Former::Sigma { .. } | Former::StaticLambda(_) | Former::Lambda(_) | Former::Bind(..) | Former::Fixpoint(_)
         | Former::Shift(_) => ret.last().is_some_and(|slot| slot.binds == Binds::ONE),
     | Former::Case { arity, .. } | Former::DataCase { arity, .. } => ret.len() == usize::from(arity).saturating_add(1_usize)
         && ret.first().is_some_and(|slot| slot.admits == Admits::Value && slot.binds == Binds::NONE),
@@ -856,6 +858,10 @@ where
         | Former::StaticPi { domain, codomain } => {
             Vec::from([value_type(domain), value_type(codomain)])
         },
+        | Former::Sigma { first, second } => Vec::from([
+            value_type(first),
+            Slot::of(second, Admits::ValueType, Binds::ONE),
+        ]),
         | Former::Arrow { domain, codomain } => {
             Vec::from([value_type(domain), comp_type(codomain)])
         },
@@ -1461,6 +1467,9 @@ enum Join
     /// A dependent arrow over its domain and codomain, its binder named by the
     /// binders open where the join runs.
     Pi,
+    /// A dependent pair type over its two factors, its first label named as
+    /// a dependent arrow's binder is and its second by the next name.
+    Sigma,
     /// A static abstraction over its body, its binder named as a dependent
     /// arrow's is.
     StaticLambda,
@@ -2984,6 +2993,7 @@ impl Walk<'_, '_>
             },
             | Former::Arrow { .. } | Former::StaticPi { .. } => Some(Join::Arrow),
             | Former::Pi { .. } => Some(Join::Pi),
+            | Former::Sigma { .. } => Some(Join::Sigma),
             | Former::StaticLambda(_) => Some(Join::StaticLambda),
             | Former::Record(arity) => Some(Join::Braced {
                 brace: Brace::Hash,
@@ -3694,6 +3704,7 @@ impl Walk<'_, '_>
             | Former::Element(_)
             | Former::Abstract(_)
             | Former::StaticPi { .. }
+            | Former::Sigma { .. }
             | Former::Capability { .. }
             | Former::Session { .. }
             | Former::Returner(_)
@@ -3755,13 +3766,15 @@ impl Walk<'_, '_>
     ///   around their entries, each bare and after its label when it has one;
     ///   `A -> C` with the domain bare up to a bridge and the codomain bare, a
     ///   break after the arrow; `(x : A) -> C` naming the binder by the binders
-    ///   open outside it, a break after the arrow; `\a. v` naming its binder
-    ///   so, a break after the dot; `f(a1, …, an)` with the operator
-    ///   parenthesized unless it is an atom, a block when it is a bind; every
-    ///   list with a break after each comma and before the closer; `run x <- c
-    ///   ; rest` naming its binder so, the bound computation a block when it is
-    ///   itself a bind, a soft line after the semicolon; `fn (x) { c }` naming
-    ///   its binder so and `thunk { c }`, each a block.
+    ///   open outside it, a break after the arrow; `#{x : A, y : B}` naming its
+    ///   first label so and its second by the next name, a break after the
+    ///   comma; `\a. v` naming its binder so, a break after the dot; `f(a1, …,
+    ///   an)` with the operator parenthesized unless it is an atom, a block
+    ///   when it is a bind; every list with a break after each comma and before
+    ///   the closer; `run x <- c ; rest` naming its binder so, the bound
+    ///   computation a block when it is itself a bind, a soft line after the
+    ///   semicolon; `fn (x) { c }` naming its binder so and `thunk { c }`, each
+    ///   a block.
     /// - provides: every composite spelling.
     /// - fails: a missing operand, which the walk's scheduling excludes, or the
     ///   builder's refusal.
@@ -3793,7 +3806,7 @@ impl Walk<'_, '_>
             Join::Braced { arity: Arity(count), entries: Entries::Positional, .. } | Join::Session { payloads: Arity(count), .. }
                 | Join::Form { pieces: Arity(count), .. } => Some(count),
             Join::Braced { arity: Arity(count), entries: Entries::Labelled(_), .. } => count.checked_mul(2_usize),
-            Join::Arrow | Join::Pi | Join::Sequence | Join::Ua(_) | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::Then | Bracket::FlowProduct | Bracket::Arrow) => Some(2_usize),
+            Join::Arrow | Join::Pi | Join::Sigma | Join::Sequence | Join::Ua(_) | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::Then | Bracket::FlowProduct | Bracket::Arrow) => Some(2_usize),
             Join::Apply(Arity(arguments)) => arguments.checked_add(1_usize),
         }],
         ensures: |ref ret| match *ret {
@@ -3802,7 +3815,7 @@ impl Walk<'_, '_>
                     Join::Prefix(_) | Join::EffectReturner(_) | Join::Lambda | Join::Thunk => Binding::Prefix,
                     Join::Arrow | Join::Pi | Join::StaticLambda => Binding::Arrow,
                     Join::Sequence => Binding::Sequence,
-                    Join::Apply(_) | Join::Bracket(_) | Join::Braced { .. } | Join::Ua(_) => Binding::Atom,
+                    Join::Apply(_) | Join::Bracket(_) | Join::Braced { .. } | Join::Sigma | Join::Ua(_) => Binding::Atom,
                     Join::Session { binding, .. } | Join::Form { binding, .. } => binding,
                 }),
             | Err(PresentationError::Build(_) | PresentationError::Unbalanced) => self.pieces.len() <= entry,
@@ -3908,6 +3921,24 @@ impl Walk<'_, '_>
                     .concat_all(&[open, binder, colon, domain.doc, arrow])?;
                 let head = self.space_or_break(head)?;
                 (self.builder.concat(head, codomain.doc)?, Binding::Arrow)
+            },
+            | Join::Sigma => {
+                let second = self.pop()?;
+                let first = self.pop()?;
+                let binder = self.binder(OpenBinders(0_usize))?;
+                let label = self.binder(OpenBinders(1_usize))?;
+                let open = self.leaf(Glyphs("#{"))?;
+                let colon = self.leaf(Glyphs(" : "))?;
+                let comma = self.leaf(Glyphs(","))?;
+                let head = self
+                    .builder
+                    .concat_all(&[open, binder, colon, first.doc, comma])?;
+                let head = self.space_or_break(head)?;
+                let colon = self.leaf(Glyphs(" : "))?;
+                let inner = self.builder.concat_all(&[head, label, colon, second.doc])?;
+                let inner = self.none_or_break(inner)?;
+                let close = self.leaf(Glyphs("}"))?;
+                (self.builder.concat(inner, close)?, Binding::Atom)
             },
             | Join::StaticLambda => {
                 let body = self.pop()?;

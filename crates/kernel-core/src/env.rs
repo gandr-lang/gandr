@@ -1937,6 +1937,15 @@ fn collect_reachable(
                         .into_iter()
                         .chain(branches.iter().copied().map(AnyNode::Computation)),
                 ),
+                | Some(&Computation::SigmaSplit {
+                    scrutinee,
+                    motive,
+                    body,
+                }) => pending.extend([
+                    AnyNode::Value(scrutinee),
+                    AnyNode::CompType(motive),
+                    AnyNode::Computation(body),
+                ]),
                 | Some(
                     &(Computation::RecordProjection(record, _)
                     | Computation::TupleProjection(record, _)),
@@ -2095,10 +2104,13 @@ fn collect_reachable(
                 | Some(&ValueType::Product(ref parts) | &ValueType::Sum(ref parts)) => {
                     pending.extend(parts.iter().copied().map(AnyNode::ValueType));
                 },
-                | Some(&ValueType::StaticPi {
-                    domain: first,
-                    codomain: second,
-                }) => {
+                | Some(
+                    &ValueType::StaticPi {
+                        domain: first,
+                        codomain: second,
+                    }
+                    | &ValueType::Sigma { first, second },
+                ) => {
                     pending.push(AnyNode::ValueType(first));
                     pending.push(AnyNode::ValueType(second));
                 },

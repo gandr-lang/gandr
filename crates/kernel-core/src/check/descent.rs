@@ -497,6 +497,17 @@ fn walk(
                             .map(|&case| (AnyNode::Computation(case), depth, results)),
                     );
                 },
+                // The split's components are not structurally smaller than
+                // anything: the body only stands under their two binders.
+                | Some(&Computation::SigmaSplit {
+                    scrutinee,
+                    motive,
+                    body,
+                }) => {
+                    pending.push((AnyNode::Value(scrutinee), depth, results));
+                    pending.push((AnyNode::CompType(motive), deeper, results));
+                    pending.push((AnyNode::Computation(body), deeper.deeper(), results));
+                },
                 | Some(&Computation::Case {
                     scrutinee,
                     ref branches,
@@ -629,6 +640,10 @@ fn walk(
                 }) => {
                     pending.push((AnyNode::ValueType(first), depth, results));
                     pending.push((AnyNode::ValueType(second), depth, results));
+                },
+                | Some(&ValueType::Sigma { first, second }) => {
+                    pending.push((AnyNode::ValueType(first), depth, results));
+                    pending.push((AnyNode::ValueType(second), deeper, results));
                 },
                 | Some(
                     &ValueType::PathUniverse(source, target)

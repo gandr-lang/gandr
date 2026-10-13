@@ -313,6 +313,12 @@ fn worst(
                             .map(|&part| (AnyNode::ValueType(part), nest(reach))),
                     );
                 },
+                // A dependent pair's factors are nested positions, as a
+                // product's parts are.
+                | Some(&ValueType::Sigma { first, second }) => {
+                    pending.push((AnyNode::ValueType(first), nest(reach)));
+                    pending.push((AnyNode::ValueType(second), nest(reach)));
+                },
                 | Some(
                     &(ValueType::List(inner)
                     | ValueType::Session {
@@ -558,6 +564,15 @@ fn worst(
                             .iter()
                             .map(|&branch| (AnyNode::Computation(branch), reach)),
                     );
+                },
+                | Some(&Computation::SigmaSplit {
+                    scrutinee,
+                    motive,
+                    body,
+                }) => {
+                    pending.push((AnyNode::Value(scrutinee), reach));
+                    pending.push((AnyNode::CompType(motive), reach));
+                    pending.push((AnyNode::Computation(body), reach));
                 },
                 | Some(
                     &(Computation::RecordProjection(value, _)

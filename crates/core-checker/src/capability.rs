@@ -305,6 +305,7 @@ pub fn authorise(
         | ValueTypeView::Lift { .. }
         | ValueTypeView::Element { .. }
         | ValueTypeView::Product(..)
+        | ValueTypeView::Sigma { .. }
         | ValueTypeView::StaticPi { .. }
         | ValueTypeView::Session(_)
         | ValueTypeView::Abstract(_) => Err(CheckRefusal::ShapeMismatch {
@@ -382,7 +383,11 @@ pub fn reaches(
                 | ValueType::Path { carrier: inner, .. }
                 | ValueType::Flow { carrier: inner, .. } => pending.push(TypeNode::Value(inner)),
                 | ValueType::Thunk(body) => pending.push(TypeNode::Computation(body)),
-                | ValueType::StaticPi { domain, codomain } => {
+                | ValueType::StaticPi { domain, codomain }
+                | ValueType::Sigma {
+                    first: domain,
+                    second: codomain,
+                } => {
                     pending.extend([TypeNode::Value(domain), TypeNode::Value(codomain)]);
                 },
                 | ValueType::Stack { input, output } => {

@@ -159,24 +159,34 @@
 //! of no branches the absurd elimination. Matching the unknown type answers one
 //! unknown type for every component (`hole::Components::Unknown`).
 //!
-//! `Computation::Split { scrutinee, arity, body }` eliminates a product by
-//! binding every component at once: the body stands under one intuitionistic
-//! binder per component, component zero outermost and the last innermost, so a
-//! split of `n` components reads its last at index zero. The arity is stated
-//! rather than read off the scrutinee's type, so that a split of no components
-//! is well scoped on its own and types its scrutinee as the unit: it discards a
-//! unit value without a projection to name. Syntax equality compares the arity
-//! before the children, and `Binders::deeper_by` moves a walk under the body's
-//! binders.
+//! `Computation::Split { scrutinee, arity, motive, body }` eliminates a product
+//! or a dependent pair by binding every component at once: the body stands
+//! under one intuitionistic binder per component, component zero outermost and
+//! the last innermost, so a split of `n` components reads its last at index
+//! zero. The arity is stated rather than read off the scrutinee's type, so that
+//! a split of no components is well scoped on its own and types its scrutinee
+//! as the unit: it discards a unit value without a projection to name. Syntax
+//! equality compares the arity and the motive before the children, and
+//! `Binders::deeper_by` moves a walk under the body's binders.
 //!
-//! **Choice.** A motive-less, check-only split with an explicit arity, the
-//! n-ary form of the prototype's binary split, beside the positional
+//! The [`SplitMotive`] says what the body is checked against.
+//! `SplitMotive::Ambient` is the type the split is checked against, shifted
+//! past the components, so the split only checks and eliminates a product.
+//! `SplitMotive::Scrutinee(C)` is a computation type under one binder of the
+//! scrutinee, as a nominal case's motive is: the split synthesises `C` at the
+//! scrutinee, and the body checks against `C` at the tuple of the components it
+//! binds, so the body's type may read them.
+//!
+//! **Choice.** A split with an explicit arity and a motive that is either the
+//! ambient type or one under the scrutinee binder, beside the positional
 //! projection. **Alternatives.** Projection alone, which cannot type the
 //! discard of a unit, there being no component to project; a split reading its
 //! arity from the scrutinee's type, which leaves the empty split's scope
-//! undetermined before checking. **Reversal.** If dependent products arrive,
-//! the split gains a motive under the scrutinee binder, as the nominal case
-//! has.
+//! undetermined before checking; a second former for the dependent split,
+//! whose body has the same scope as the ambient split's and whose motive is a
+//! child the ambient split lacks, not a child read differently. **Reversal.**
+//! A split whose motive binds more than the scrutinee — an index of the
+//! scrutinee's type — gains a former of its own.
 //!
 //! **Choice.** One n-ary former per connective, with the unit as its empty
 //! instance, rather than a binary former, a separate unit and nesting for wider
@@ -187,6 +197,33 @@
 //! positional reading. **Reversal.** If n-ary values and the n-way case cannot
 //! be checked without per-arity rules that nesting avoids, return to binary
 //! formers and spell wider shapes by nesting.
+//!
+//! # The dependent pair
+//!
+//! `ValueType::Sigma { first, second }` is `Σ (x : A). B`, the second factor
+//! under one intuitionistic binder of the first. It is a positive value type at
+//! the join of its factors' levels. Its pair is the [`Value::Tuple`] of two
+//! components, checked against it: the first against `A`, the second against
+//! `B` at the first. A tuple that synthesises has its eager product, so a
+//! dependent pair is reached only by checking. It is eliminated by a split
+//! with a scrutinee motive and observed by the positional projection: `p.0`
+//! returns `A`, and `p.1` returns `B` at the value `p.0` returns, which
+//! [`Value::Returned`] spells in the type.
+//!
+//! **Choice.** `Product` stays its own n-ary former, and `Sigma` is binary and
+//! written only where the second factor reads its binder, as a dependent arrow
+//! is written only where its codomain reads its binder; a dependent record of
+//! more entries nests to the right. The two do not convert with each other,
+//! and neither has an η law: the eager product has none, and the dependent pair
+//! follows it. **Alternatives.** The product read as a dependent pair with a
+//! vacuous binder, which puts a binder into every walk over every first-order
+//! code and loses the n-ary reading; a native dependent record former keyed by
+//! labels, which the core would have to compare up to label order with
+//! dependencies between fields; a package-style existential, which hides the
+//! first component and so cannot state a law about it. **Reversal.** A
+//! conversion that identifies a dependent pair ignoring its binder with the
+//! binary product makes the two spellings one; a labelled consumer the
+//! positional pair cannot serve gains the labelled former.
 //!
 //! # Native universe paths
 //!
@@ -577,6 +614,23 @@ impl From<ComponentCount> for usize
     }
 }
 
+/// What a split's body is checked against.
+///
+/// The motive is a payload beside the split's children rather than a second
+/// former: the body stands under one binder per component either way, so no
+/// child changes its scope with the motive.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum SplitMotive
+{
+    /// The type the split is checked against, shifted past the components:
+    /// the body's type reads no component, and the split only checks.
+    Ambient,
+    /// A computation type under one intuitionistic binder of the scrutinee:
+    /// the split synthesises it at the scrutinee, and the body checks against
+    /// it at the tuple of the components the body binds.
+    Scrutinee(CompTypeId),
+}
+
 /// A computation: the negative fragment of the core term vocabulary.
 ///
 /// The eliminators — application, force, bind, case — synthesize; the
@@ -672,16 +726,18 @@ pub enum Computation
         /// bound.
         branches: alloc::boxed::Box<[ComputationId]>,
     },
-    /// A product elimination, binding every component of the scrutinee into
-    /// the body: component zero outermost, the last innermost. The arity is
-    /// the scrutinee's own, stated so that a split of no components types its
-    /// scrutinee as the unit.
+    /// A product or dependent-pair elimination, binding every component of
+    /// the scrutinee into the body: component zero outermost, the last
+    /// innermost. The arity is the scrutinee's own, stated so that a split of
+    /// no components types its scrutinee as the unit.
     Split
     {
-        /// The scrutinee value, of a product type.
+        /// The scrutinee value, of a product or a dependent-pair type.
         scrutinee: ValueId,
         /// How many components the scrutinee has, each bound in the body.
         arity: ComponentCount,
+        /// What the body is checked against.
+        motive: SplitMotive,
         /// The body, under one intuitionistic binder per component.
         body: ComputationId,
     },
@@ -843,6 +899,22 @@ pub enum ValueType
     /// type, inhabited by the empty [`Value::Tuple`] alone, and
     /// `Product([A, B])` the pair type `A × B`.
     Product(alloc::boxed::Box<[ValueTypeId]>),
+    /// The dependent pair `Σ (x : A). B`: a pair whose second component's
+    /// type reads the first. Its introduction is the [`Value::Tuple`] of two
+    /// components, checked only; its elimination a [`Computation::Split`]
+    /// with a [`SplitMotive::Scrutinee`] motive, or a
+    /// [`Computation::TupleProjection`].
+    ///
+    /// The scoping is the whole difference from a product of two components,
+    /// which is why the two are distinct nodes: the same two children, the
+    /// second under a binder here and in the ambient context there.
+    Sigma
+    {
+        /// The first factor `A`, in the ambient context.
+        first: ValueTypeId,
+        /// The second factor `B`, under one intuitionistic binder of `A`.
+        second: ValueTypeId,
+    },
     /// The sum of its summands, in order: `Sum([])` is the empty type and
     /// `Sum([A, B])` the binary sum `A + B`, with left and right injections.
     Sum(alloc::boxed::Box<[ValueTypeId]>),
@@ -1560,14 +1632,26 @@ fn equal_syntax(
                         &Computation::Split {
                             scrutinee: a,
                             arity: left_arity,
+                            motive: left_motive,
                             body: b,
                         },
                         &Computation::Split {
                             scrutinee: c,
                             arity: right_arity,
+                            motive: right_motive,
                             body: d,
                         },
-                    ) if left_arity == right_arity => pending.extend([V(a, c), C(b, d)]),
+                    ) if left_arity == right_arity => match (left_motive, right_motive) {
+                        | (SplitMotive::Ambient, SplitMotive::Ambient) => {
+                            pending.extend([V(a, c), C(b, d)]);
+                        },
+                        | (SplitMotive::Scrutinee(left), SplitMotive::Scrutinee(right)) => {
+                            pending.extend([V(a, c), CT(left, right), C(b, d)]);
+                        },
+                        | (SplitMotive::Ambient | SplitMotive::Scrutinee(_), _) => {
+                            return CertificateEquality::Different;
+                        },
+                    },
                     | (&Computation::Reset(a), &Computation::Reset(b))
                     | (&Computation::Shift(a), &Computation::Shift(b))
                     | (&Computation::Lambda(a), &Computation::Lambda(b)) => pending.push(C(a, b)),
@@ -1835,6 +1919,17 @@ fn equal_syntax(
                         && let ValueType::StaticPi {
                             domain: c,
                             codomain: d,
+                        } = *matched_right_value
+                    {
+                        pending.extend([VT(a, c), VT(b, d)]);
+                    }
+                    else if let ValueType::Sigma {
+                        first: a,
+                        second: b,
+                    } = *matched_left_value
+                        && let ValueType::Sigma {
+                            first: c,
+                            second: d,
                         } = *matched_right_value
                     {
                         pending.extend([VT(a, c), VT(b, d)]);

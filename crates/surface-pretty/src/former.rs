@@ -326,6 +326,15 @@ pub enum Former<'source, Node>
         /// The classifier of the result.
         codomain: Node,
     },
+    /// The dependent pair `#{x : A, y : B}`, whose second factor binds the
+    /// first.
+    Sigma
+    {
+        /// The classifier of the first component.
+        first: Node,
+        /// The classifier of the second, under the first's binder.
+        second: Node,
+    },
     /// The capability `Cap {op, …}`, `Cap[1] {op, …}` at the consumable
     /// grade; a scoped region has no spelling.
     Capability

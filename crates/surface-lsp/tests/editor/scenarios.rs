@@ -49,7 +49,7 @@ use super::editing::Session;
 /// changed. A change that answers more positions raises it; a position inside
 /// a declaration's body that no entry holds answers nothing, so the
 /// declaration's own answer is not counted there.
-const ANSWERED_FLOOR: usize = 722;
+const ANSWERED_FLOOR: usize = 724;
 
 /// The random edit scripts each scenario generates in a whole run.
 const CASES: u32 = 32;

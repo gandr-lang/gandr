@@ -2011,8 +2011,12 @@ enum Plan
     /// in order: an unparenthesized `*` chain is one former, and the
     /// positional telescope type `#{A, …}` another, of any arity.
     Product(Stretch),
-    /// The record type of the value types its labels name: `#{ l : A, … }`.
-    RecordType(BTreeMap<FieldLabel, NodeIndex>),
+    /// The type over labels `#{ l : A, … }`: its fields by label, the binders
+    /// of every entry but the last in the lowerer's parameter store, each
+    /// over the entries after it, and the last entry's type. The record type
+    /// of its fields when no later entry names an earlier label, the
+    /// dependent pairs nested to the right otherwise.
+    RecordType(BTreeMap<FieldLabel, NodeIndex>, Stretch, NodeIndex),
     /// The sum of the value types in the lowerer's operand store, in order.
     Sum(Stretch),
     /// The lazy record of the computation types in the lowerer's operand
@@ -2032,6 +2036,9 @@ enum Plan
     /// One entry of the lazy record the thunk at the node holds: the thunk
     /// forced, then observed along the nesting.
     Observe(NodeIndex, arity::Observed),
+    /// One entry of the dependent record the name at the node holds:
+    /// projected along the nesting.
+    Select(NodeIndex, arity::Observed),
     /// The thunked arrow from the domains in the lowerer's operand store to
     /// the returner of the codomain.
     ValueFunction(Stretch, NodeIndex),
@@ -6217,14 +6224,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: `site` is a projection; `pieces` is its reading.
     /// - ensures: a selection read as a computation off a name whose written
     ///   type is a thunked lazy record over labels observes the entry its label
-    ///   names. A chain of selections whose head is a capitalised name is a
-    ///   path: inside a functor whose parameter the head names, a one-link path
-    ///   is that parameter's value component, as [`Self::parameter_value`]
-    ///   reads it; otherwise it is resolved through the outermost scope at the
-    ///   depth that binds it: a path ending at an exported value component
-    ///   stands as that member's constant when the member is declared strictly
-    ///   before the declaration the path is written in. The chain is walked by
-    ///   an explicit loop, and its links are left unread.
+    ///   names; a selection off a name whose written type is a type over labels
+    ///   projects the entry its label names, as [`Self::selection`] reads it. A
+    ///   chain of selections whose head is a capitalised name is a path: inside
+    ///   a functor whose parameter the head names, a one-link path is that
+    ///   parameter's value component, as [`Self::parameter_value`] reads it;
+    ///   otherwise it is resolved through the outermost scope at the depth that
+    ///   binds it: a path ending at an exported value component stands as that
+    ///   member's constant when the member is declared strictly before the
+    ///   declaration the path is written in. The chain is walked by an explicit
+    ///   loop, and its links are left unread.
     /// - provides: the governed reading of a module path.
     /// - fails: yields [`LoweringRefusal::UnknownMember`], naming the module as
     ///   the path spells it and the member, for a selection a governing module
@@ -6251,12 +6260,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `modules::modules::a_module_namespace_is_not_a_projectable_record`
     /// - witness: `modules::modules::a_hidden_or_absent_user_module_component_is_declined_as_a_hole`
     /// - witness: `lower::arity::tests::an_observation_projects_along_the_nesting`
+    /// - witness: `lower::arity::tests::a_selection_projects_a_dependent_record_along_its_nesting`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.plans.get(usize::from(site.at.node)),
-                    Some(&(Plan::Constant(_) | Plan::Primitive(_) | Plan::Observe(..)))
+                    Some(&(Plan::Constant(_) | Plan::Primitive(_) | Plan::Observe(..) | Plan::Select(..)))
                 )
         },
     )]
@@ -6267,6 +6277,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         if self.observation(site, pieces)? == arity::Planned(true) {
+            return Ok(());
+        }
+        if self.selection(site, pieces)? == arity::Planned(true) {
             return Ok(());
         }
         let _frame = self.require(site, Produced::Value)?;
@@ -8670,7 +8683,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::FlowProduct(..)
                 | Plan::Recorded(_)
                 | Plan::Constructor(_) => Some(Produced::Value),
-                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Action(_) | Plan::Ride(..) | Plan::FlowThen(..) => {
+                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Action(_) | Plan::Ride(..) | Plan::FlowThen(..) => {
                     Some(Produced::Computation)
                 },
                 | Plan::Atom(_)
@@ -8681,7 +8694,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Telescope(..)
                 | Plan::StaticPi(..)
                 | Plan::Product(..)
-                | Plan::RecordType(_)
+                | Plan::RecordType(..)
                 | Plan::Sum(_)
                 | Plan::Former(TypeFormer::Thunk | TypeFormer::List | TypeFormer::Run, _)
                 | Plan::Path(..)
@@ -8878,13 +8891,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 sink.computation(id, origin)
             }),
             | Plan::Product(components) => self.mint_product(components, sink, origin),
-            | Plan::RecordType(ref fields) => self.mint_record_type(fields, sink, origin),
+            | Plan::RecordType(ref fields, binders, last) => {
+                self.mint_labelled_type(fields, binders, last, sink, origin)
+            },
             | Plan::Sum(summands) => self.mint_sum(summands, sink, origin),
             | Plan::With(entries) => self.mint_with(entries, sink, origin),
             | Plan::Copattern(clauses) => self.mint_copattern(clauses, sink, origin),
             | Plan::Observe(subject, observed) => {
                 self.mint_observe(subject, observed, sink, origin)
             },
+            | Plan::Select(subject, selected) => self.mint_select(subject, selected, sink, origin),
             | Plan::Block(block) => self.mint_block(block, sink).map(Lowered::Computation),
             | Plan::Loop(body) => self.mint_loop(body, sink, origin),
             | Plan::While(condition, body) => self.mint_while(condition, body, sink, origin),
@@ -9642,11 +9658,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Case(_)
             | Plan::EmptyCase(_)
             | Plan::Product(_)
-            | Plan::RecordType(_)
+            | Plan::RecordType(..)
             | Plan::Sum(_)
             | Plan::With(_)
             | Plan::Copattern(_)
             | Plan::Observe(..)
+            | Plan::Select(..)
             | Plan::Block(_)
             | Plan::Loop(_)
             | Plan::While(..)
@@ -14322,6 +14339,7 @@ mod tests
         let Some(&Computation::Split {
             scrutinee,
             arity,
+            motive: gandr_core_term::SplitMotive::Ambient,
             body,
         }) = arena.computation(split)
         else {
@@ -14398,6 +14416,7 @@ mod tests
         let Some(&Computation::Split {
             scrutinee,
             arity,
+            motive: gandr_core_term::SplitMotive::Ambient,
             body,
         }) = arena.computation(split)
         else {

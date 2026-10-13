@@ -78,6 +78,7 @@ fn children(
             | Computation::TelescopeRide { .. }
             | Computation::RelatedApplication { .. }
             | Computation::DataCase { .. }
+            | Computation::SigmaSplit { .. }
             | Computation::RecordProjection(..)
             | Computation::TupleProjection(..) => {
                 panic!("native elimination is outside the forward-translator fixture")
@@ -180,6 +181,7 @@ fn translate(
                     | Computation::TelescopeRide { .. }
                     | Computation::RelatedApplication { .. }
                     | Computation::DataCase { .. }
+                    | Computation::SigmaSplit { .. }
                     | Computation::RecordProjection(..)
                     | Computation::TupleProjection(..) => {
                         panic!("native elimination is outside the forward-translator fixture")

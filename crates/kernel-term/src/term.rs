@@ -533,6 +533,19 @@ pub enum Computation
         /// summand bound.
         branches: alloc::boxed::Box<[ComputationId]>,
     },
+    /// The dependent pair's eliminator: given a scrutinee of `Σ (x : A). B`
+    /// and a motive `C` under one scrutinee binder, the body runs under the
+    /// two components, the first outermost, against `C` at their pair; the
+    /// split synthesizes `C` at the scrutinee.
+    SigmaSplit
+    {
+        /// The dependent pair eliminated.
+        scrutinee: ValueId,
+        /// The result classifier under the scrutinee binder.
+        motive: CompTypeId,
+        /// The body, under the first and then the second component.
+        body: ComputationId,
+    },
     /// Pure right fold of a native list. The cons branch binds the head,
     /// then the folded tail result (index zero).
     ListFold

@@ -34,9 +34,10 @@
 //! and their arities. Native paths have distinct bytes. Element identity holds
 //! `0x30–0x37` and function identity `0x38–0x47`; [Element and function
 //! identity](#element-and-function-identity) states each assigned node's
-//! children and inline payload, and [The lazy product](#the-lazy-product) does
-//! the same for `0x65–0x67`. The original `0x00–0x1F` meanings are frozen,
-//! including the static operators at `0x1E–0x1F`.
+//! children and inline payload, [The lazy product](#the-lazy-product) does
+//! the same for `0x65–0x67` and [The dependent pair](#the-dependent-pair) for
+//! `0x6A–0x6B`. The original `0x00–0x1F` meanings are frozen, including the
+//! static operators at `0x1E–0x1F`.
 //!
 //! | Byte or range | Meaning | Artifact reader |
 //! | ------------- | ------- | --------------- |
@@ -94,10 +95,12 @@
 //! | `0x67` | Lazy projection, inline side byte and one computation child | Admitted |
 //! | `0x68` | Telescope ride, motive (the dependent arrow over a two-entry telescope), flow, source point, flow over it and input children | Admitted |
 //! | `0x69` | Flow product, two flow children | Admitted |
-//! | `0x6A–0xFF` | Unassigned | Refused |
+//! | `0x6A` | Dependent pair type, first factor and second factor under its binder | Admitted |
+//! | `0x6B` | Dependent split, scrutinee, motive under its binder and body under the two components | Admitted |
+//! | `0x6C–0xFF` | Unassigned | Refused |
 //!
 //! The admitted domain is sparse: the greatest assigned native byte is
-//! `0x69`, not a promise to accept every smaller byte. Boundary witnesses
+//! `0x6B`, not a promise to accept every smaller byte. Boundary witnesses
 //! admit assigned native tags, refuse inline opcodes and retired bytes as
 //! native nodes, and retain the frozen block. The unit and the empty type are
 //! zero-count products and sums, and List nil is a zero-child leaf; all three
@@ -217,6 +220,25 @@
 //! The three bytes hold [`FORMAT_VERSION`]: a reader that predates them
 //! refuses each by name as an unassigned byte, so no artifact means anything
 //! else by them.
+//!
+//! # The dependent pair
+//!
+//! The dependent pair `Σ (x : A). B` persists as its own former beside the
+//! product, binary, its second child scoped under the first's binder; its
+//! eliminator is the dependent split, whose motive binds the scrutinee and
+//! whose body binds the two components. The pair itself is the two-component
+//! [`NODE_V_TUPLE`], and its projections are [`NODE_C_TUPLE_PROJECTION`].
+//!
+//! | byte | node | family | children, in order | inline payload |
+//! | ---- | ---- | ------ | ------------------ | -------------- |
+//! | `0x6A` | [`NODE_VT_SIGMA`] | value type | the first factor; the second factor, under one value binder | none |
+//! | `0x6B` | [`NODE_C_SIGMA_SPLIT`] | computation | the scrutinee value; the motive, a computation type under one value binder; the body, under two value binders | none |
+//!
+//! The motive child of [`NODE_C_SIGMA_SPLIT`] is a computation-type node, so
+//! a value-type child there is refused as a polarity fault, as it is for the
+//! nominal case's motive. Both bytes hold [`FORMAT_VERSION`]: a reader that
+//! predates them refuses each by name as an unassigned byte, so no artifact
+//! means anything else by them.
 //!
 //! # Universe paths
 //!
@@ -746,6 +768,12 @@ pub const NODE_C_TELESCOPE_RIDE: WireTag = WireTag(0x68);
 /// Node tag: componentwise product of universe flows, over the flow of the
 /// left components and the flow of the right.
 pub const NODE_V_FLOW_PRODUCT: WireTag = WireTag(0x69);
+/// Node tag: the dependent pair `Σ (x : A). B`, over its first factor and its
+/// second factor scoped under the first's binder.
+pub const NODE_VT_SIGMA: WireTag = WireTag(0x6A);
+/// Node tag: the dependent pair's eliminator, over its scrutinee, its motive
+/// under the scrutinee binder and its body under the two components.
+pub const NODE_C_SIGMA_SPLIT: WireTag = WireTag(0x6B);
 /// Composition seam: the first output feeds the second input.
 pub const SEAM_SEQUENCE: WireTag = WireTag(0);
 /// Composition seam: the second output also feeds back into the first input.
@@ -932,7 +960,7 @@ pub struct NodeTagDescription
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_FLOW | NODE_V_STAY | NODE_V_FORWARD_FLOW | NODE_V_FUNCTION_FLOW | NODE_V_THEN | NODE_C_RIDE | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD | NODE_C_TELESCOPE_RIDE | NODE_V_FLOW_PRODUCT) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
+    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_FLOW | NODE_V_STAY | NODE_V_FORWARD_FLOW | NODE_V_FUNCTION_FLOW | NODE_V_THEN | NODE_C_RIDE | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD | NODE_C_TELESCOPE_RIDE | NODE_V_FLOW_PRODUCT | NODE_VT_SIGMA | NODE_C_SIGMA_SPLIT) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
             && match max_token_bound { Some(bound) => bound.0 >= 1, None => true },
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -984,7 +1012,7 @@ const fn row(
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_FLOW | NODE_V_STAY | NODE_V_FORWARD_FLOW | NODE_V_FUNCTION_FLOW | NODE_V_THEN | NODE_C_RIDE | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD | NODE_C_TELESCOPE_RIDE | NODE_V_FLOW_PRODUCT) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
+    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_FLOW | NODE_V_STAY | NODE_V_FORWARD_FLOW | NODE_V_FUNCTION_FLOW | NODE_V_THEN | NODE_C_RIDE | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD | NODE_C_TELESCOPE_RIDE | NODE_V_FLOW_PRODUCT | NODE_VT_SIGMA | NODE_C_SIGMA_SPLIT) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
             && !matches!(tag, NODE_VT_BASE | NODE_V_VARIABLE | NODE_V_CONSTANT | NODE_VT_ABSTRACT | NODE_V_LIST_NIL),
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -1084,7 +1112,7 @@ const fn bounded_alias(
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
-pub const NODE_TAG_TABLE: [NodeTagDescription; 71] = [
+pub const NODE_TAG_TABLE: [NodeTagDescription; 73] = [
     row(
         NODE_VT_BASE,
         ChildArity::Fixed(0),
@@ -1162,6 +1190,8 @@ pub const NODE_TAG_TABLE: [NodeTagDescription; 71] = [
     unbounded(NODE_C_PROJECT, ChildArity::Fixed(1)),
     unbounded(NODE_C_TELESCOPE_RIDE, ChildArity::Fixed(5)),
     unbounded(NODE_V_FLOW_PRODUCT, ChildArity::Fixed(2)),
+    unbounded(NODE_VT_SIGMA, ChildArity::Fixed(2)),
+    unbounded(NODE_C_SIGMA_SPLIT, ChildArity::Fixed(3)),
 ];
 
 #[cfg(test)]
@@ -1253,6 +1283,7 @@ mod tests
                         Some(&crate::Computation::Bind(_, _)) => row.tag == super::NODE_C_BIND,
                         Some(&crate::Computation::Force(_)) => row.tag == super::NODE_C_FORCE,
                         Some(&crate::Computation::Case { .. }) => row.tag == super::NODE_C_CASE,
+                        Some(&crate::Computation::SigmaSplit { .. }) => row.tag == super::NODE_C_SIGMA_SPLIT,
                         Some(&crate::Computation::Transport(_, _)) => row.tag == super::NODE_C_TRANSPORT,
                         Some(&crate::Computation::PathTransport { .. }) => row.tag == super::NODE_C_PATH_TRANSPORT,
                         Some(&crate::Computation::TelescopeTransport { .. }) => row.tag == super::NODE_C_TELESCOPE_TRANSPORT,
@@ -1271,6 +1302,7 @@ mod tests
                         Some(&crate::ValueType::Universe { sort: GroundSort::Value, .. }) => row.tag == super::NODE_VT_UNIVERSE,
                         Some(&crate::ValueType::Universe { sort: GroundSort::Computation, .. }) => row.tag == super::NODE_VT_COMPUTATION_UNIVERSE,
                         Some(&crate::ValueType::Product(_)) => row.tag == super::NODE_VT_PRODUCT,
+                        Some(&crate::ValueType::Sigma { .. }) => row.tag == super::NODE_VT_SIGMA,
                         Some(&crate::ValueType::Sum(_)) => row.tag == super::NODE_VT_SUM,
                         Some(&crate::ValueType::Thunk(_)) => row.tag == super::NODE_VT_THUNK,
                         Some(&crate::ValueType::Lift { .. }) => row.tag == super::NODE_VT_LIFT,
@@ -1425,6 +1457,8 @@ mod tests
         let telescope_ride =
             arena.computation_telescope_ride(telescope, stay, unit, returned, literal);
         let flow_product = arena.value_flow_product(stay, forward_flow);
+        let sigma = arena.value_type_sigma(base, element_path);
+        let sigma_split = arena.computation_sigma_split(pair, returner, bind);
         let nodes = alloc::vec![
             AnyNode::ValueType(base),
             AnyNode::ValueType(universe),
@@ -1497,6 +1531,8 @@ mod tests
             AnyNode::Computation(lazy_projection),
             AnyNode::Computation(telescope_ride),
             AnyNode::Value(flow_product),
+            AnyNode::ValueType(sigma),
+            AnyNode::Computation(sigma_split),
         ];
         (arena, nodes)
     }
@@ -1605,10 +1641,16 @@ mod tests
                 "the flow reservation is spent: {assigned_flow:#04x}"
             );
         }
-        for unassigned in 0x6A_u8 ..= u8::MAX {
+        for sigma in [super::NODE_VT_SIGMA, super::NODE_C_SIGMA_SPLIT] {
+            assert!(
+                assigned[usize::from(u8::from(sigma))],
+                "the dependent pair holds its bytes: {sigma}"
+            );
+        }
+        for unassigned in 0x6C_u8 ..= u8::MAX {
             assert!(
                 !assigned[usize::from(unassigned)],
-                "every byte above the flow product is unassigned: {unassigned:#04x}"
+                "every byte above the dependent split is unassigned: {unassigned:#04x}"
             );
         }
     }
@@ -1641,7 +1683,7 @@ mod tests
             .chain([0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x38, 0x39, 0x3A])
             .chain(0x48 ..= 0x4F)
             .chain([0x50, 0x51, 0x52, 0x5a, 0x5b, 0x5c])
-            .chain(0x5d ..= 0x69)
+            .chain(0x5d ..= 0x6b)
             .collect();
         let actual: Vec<_> = NODE_TAG_TABLE.iter().map(|row| u8::from(row.tag)).collect();
         assert_eq!(actual, expected);

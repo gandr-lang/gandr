@@ -1735,12 +1735,16 @@ pub fn loose_reach(
                     | Computation::Split {
                         scrutinee,
                         arity,
+                        motive,
                         body,
                     } => {
                         let inside = depth
                             .checked_add(usize::from(arity))
                             .ok_or(CheckRefusal::MachineInvariant)?;
                         work.push((CoreNode::Term(TermNode::Value(scrutinee)), depth));
+                        if let gandr_core_term::SplitMotive::Scrutinee(motive) = motive {
+                            work.push((CoreNode::Type(TypeNode::Computation(motive)), under));
+                        }
                         work.push((CoreNode::Term(TermNode::Computation(body)), inside));
                     },
                     | Computation::Perform {
@@ -2004,6 +2008,10 @@ pub fn loose_reach(
                     } => {
                         work.push((CoreNode::Type(TypeNode::Value(first)), depth));
                         work.push((CoreNode::Type(TypeNode::Value(second)), depth));
+                    },
+                    | ValueType::Sigma { first, second } => {
+                        work.push((CoreNode::Type(TypeNode::Value(first)), depth));
+                        work.push((CoreNode::Type(TypeNode::Value(second)), under));
                     },
                     | ValueType::Thunk(body) => {
                         work.push((CoreNode::Type(TypeNode::Computation(body)), depth));

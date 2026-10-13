@@ -299,6 +299,7 @@ pub(crate) fn session_at(
         | ValueTypeView::Lift { .. }
         | ValueTypeView::Element { .. }
         | ValueTypeView::Product(_)
+        | ValueTypeView::Sigma { .. }
         | ValueTypeView::StaticPi { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Abstract(_)

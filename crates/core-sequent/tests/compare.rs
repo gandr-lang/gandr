@@ -309,11 +309,13 @@ fn walk(
                             scrutinee,
                             arity,
                             body,
+                            ..
                         },
                         &Computation::Split {
                             scrutinee: other_scrutinee,
                             arity: other_arity,
                             body: other_body,
+                            ..
                         },
                     ) => {
                         pending.push(Pending::Values(scrutinee, other_scrutinee));

@@ -558,6 +558,7 @@ fn checking_row(
                 | ExpectedShape::Thunk
                 | ExpectedShape::Arrow
                 | ExpectedShape::Product
+                | ExpectedShape::Sigma
                 | ExpectedShape::StaticPi
                 | ExpectedShape::Path
                 | ExpectedShape::Telescope

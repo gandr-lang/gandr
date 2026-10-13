@@ -267,6 +267,7 @@ pub fn clause(
             | ValueType::Capability { .. }
             | ValueType::Lift { .. }
             | ValueType::StaticPi { .. }
+            | ValueType::Sigma { .. }
             | ValueType::Session(_)
             | ValueType::Flow { .. }
             | ValueType::Run(_) => Clause::Unclassified,

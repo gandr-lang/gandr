@@ -1425,6 +1425,7 @@ impl fmt::Display for Shape
             | ExpectedShape::Returner => "a returner `-F A`",
             | ExpectedShape::Arrow => "an arrow `A → C`",
             | ExpectedShape::Product => "an eager product `A * B`",
+            | ExpectedShape::Sigma => "a dependent record `#{x : A, y : B(x)}`",
             | ExpectedShape::StaticPi => "a type operator's classifier `K -> J`",
             | ExpectedShape::Path => "an element path type `Path(A, a, b)`",
             | ExpectedShape::Telescope => "a telescope motive `Π (y : A). Π (z : B). F C`",

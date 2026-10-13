@@ -1,0 +1,66 @@
+@[ checks ]
+data Ix(n : Integer) : Type {
+  MkIx : Ix(n);
+}
+
+/// A label a later entry names binds there: the type is a dependent pair.
+@[ checks ]
+def tagged : #{n : Integer, w : Ix(n)} ;
+def tagged = #{3, (MkIx : Ix(3))} ;
+
+@[ checks ]
+def tag_of(p : #{n : Integer, w : Ix(n)}) -> -F Integer {
+  case p {
+    #{m, w} => return m
+  }
+}
+
+@[ runs("3") ]
+def tag : +U (-F Integer) ;
+def tag = thunk { become tag_of(tagged) } ;
+
+@[ checks ]
+def index_of(p : #{n : Integer, w : Ix(n)}) -> -F Integer {
+  return p.n
+}
+
+@[ runs("3") ]
+def index : +U (-F Integer) ;
+def index = thunk { become index_of(tagged) } ;
+
+@[ checks ]
+def ring : #{n : Integer, v : Path(Integer, n, n)} ;
+def ring = #{2, here(2)} ;
+
+/// The second projection's type reads the first.
+@[ checks ]
+def lap(p : #{n : Integer, v : Path(Integer, n, n)}) -> -F Path(Integer, p.n, p.n) {
+  return p.v
+}
+
+/// A split's answer may name its scrutinee: each arm answers it at the pair.
+@[ checks ]
+def rebuilt(p : #{n : Integer, v : Path(Integer, n, n)}) -> -F Path(#{n : Integer, v : Path(Integer, n, n)}, p, p) {
+  case p {
+    #{.n = m, .v = w} => return here(#{m, w})
+  }
+}
+
+/// A record of three nests its links; a labelled pattern binds the entries it
+/// names, the later one's type reading the earlier.
+@[ checks ]
+def middle(t : #{a : Integer, b : Integer, c : Path(Integer, a, a)}) -> -F Integer {
+  case t {
+    #{.a = x, .c = z} => return x
+  }
+}
+
+/// A path between pairs is a path between the first components and, over
+/// it, a path between the second.
+@[ checks ]
+def both : Path(#{n : Integer, v : Path(Integer, n, n)}, #{2, here(2)}, #{2, here(2)}) ;
+def both = #{here(2), here(here(2))} ;
+
+@[ checks ]
+def moved : +U (-F Integer) ;
+def moved = thunk { transport(\s. Integer, both, 5) } ;

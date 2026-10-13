@@ -7,14 +7,20 @@
 //! is the record top, not a top for arbitrary values.
 
 use anodized::spec;
+use gandr_core_term::Binders;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::ConstructorTag;
+use gandr_core_term::SplitMotive;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::instantiate_comp_type;
+use gandr_core_term::shift_comp_type_under;
+use gandr_kernel_term::Component;
+use gandr_kernel_term::DeBruijnIndex;
 
 use super::Direction;
 use super::Frame;
@@ -28,6 +34,8 @@ use crate::ExpectedShape;
 use crate::TermNode;
 use crate::TypeNode;
 use crate::former;
+use crate::view::ValueTypeView;
+use crate::view::value_type_view;
 
 impl Machine<'_, '_>
 {
@@ -391,9 +399,12 @@ impl Machine<'_, '_>
     /// - requires: `term` is a projection with a synthesized operand type.
     /// - ensures: only an existing label yields its declared field classifier,
     ///   and only a component short of the product's arity yields that
-    ///   component's classifier.
+    ///   component's classifier; of a dependent pair, component zero yields the
+    ///   first factor and component one the second factor at the first
+    ///   component, read as the value the projection of component zero returns.
     /// - fails: a record projection of a non-record, a tuple projection of a
-    ///   non-product, absent labels and absent components refuse separately.
+    ///   non-product and non-dependent pair, absent labels and absent
+    ///   components refuse separately.
     /// - panics: none.
     ///
     /// # Errors
@@ -403,9 +414,11 @@ impl Machine<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — unequal fields and an absent label expose exact
     ///   lookup; each component of a three-component product and the component
-    ///   past its last expose positional lookup.
+    ///   past its last expose positional lookup; both components of a dependent
+    ///   pair and the component past them expose the fibre.
     /// - witness: `native_formers::native_formers::record_width_depth_and_projection`
     /// - witness: `native_formers::native_formers::tuple_projection_reads_each_component`
+    /// - witness: `judgement::tests::a_projection_of_a_dependent_pair_reads_its_second_factor_at_the_first`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Ascend(Produced::CompType(_)))))]
     pub(super) fn native_projection(
         &mut self,
@@ -438,6 +451,20 @@ impl Machine<'_, '_>
                 .get(usize::from(component))
                 .copied()
                 .ok_or(CheckRefusal::AbsentTupleComponent(term))?,
+            | (
+                Some(&Computation::TupleProjection(tuple, component)),
+                Some(&ValueType::Sigma { first, second }),
+            ) => match usize::from(component) {
+                | 0 => first,
+                | 1 => {
+                    let arena = self.context.arena_mut();
+                    let at_first =
+                        arena.computation_tuple_projection(tuple, Component::from(0_usize));
+                    let point = arena.value_returned(at_first);
+                    gandr_core_term::instantiate_value_type(arena, second, point)
+                },
+                | _ => return Err(CheckRefusal::AbsentTupleComponent(term)),
+            },
             | (Some(&Computation::TupleProjection(..)), _) => {
                 return Err(mismatch(ExpectedShape::Product));
             },
@@ -445,5 +472,121 @@ impl Machine<'_, '_>
         };
         let result = self.context.arena_mut().comp_type_returner(part);
         Ok(Step::Ascend(Produced::CompType(result)))
+    }
+
+    /// Open a dependent split's motive binder over the scrutinee's classifier
+    /// and form the motive under it.
+    ///
+    /// # Specification
+    /// - requires: `term` is a split with a motive over its scrutinee, and
+    ///   `classifier` its scrutinee's synthesised type.
+    /// - ensures: one binder of `classifier` is open and the motive's formation
+    ///   is the next goal, a frame awaiting it.
+    /// - fails: [`CheckRefusal::ShapeMismatch`] at the scrutinee, wanting a
+    ///   dependent pair, when the classifier is no dependent pair or the
+    ///   unknown type at its weak head, or the split binds other than two
+    ///   components; [`CheckRefusal::MachineInvariant`] for any other split.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`CheckRefusal`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a dependent split over a dependent pair forms its
+    ///   motive, and over an eager product is a shape mismatch.
+    /// - witness: `judgement::tests::a_dependent_split_synthesises_its_motive_at_the_scrutinee`
+    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Form(TypeNode::Computation(_))))))]
+    pub(super) fn sigma_split(
+        &mut self,
+        term: ComputationId,
+        classifier: ValueTypeId,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let Computation::Split {
+            scrutinee,
+            arity,
+            motive: SplitMotive::Scrutinee(motive),
+            ..
+        } = *self.computation(term)?
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let sigma = self.context.whnf_value_type(classifier)?;
+        let dependent = matches!(
+            value_type_view(self.context.arena(), sigma)?,
+            ValueTypeView::Sigma { .. } | ValueTypeView::Unknown
+        );
+        if !dependent || usize::from(arity) != 2_usize {
+            return Err(CheckRefusal::ShapeMismatch {
+                at: TermNode::Value(scrutinee),
+                wanted: ExpectedShape::Sigma,
+                found: TypeNode::Value(classifier),
+            });
+        }
+        self.wait(Frame::SigmaSplitMotive { term, sigma });
+        self.context
+            .binders()
+            .open(Zone::Intuitionistic, classifier);
+        Ok(Step::Descend(Goal::Form(TypeNode::Computation(motive))))
+    }
+
+    /// Check a dependent split's body under its two components against the
+    /// motive at their pair, and synthesise the motive at the scrutinee.
+    ///
+    /// # Specification
+    /// - requires: the motive has formed under its one open scrutinee binder,
+    ///   and `sigma` is the scrutinee's classifier at its weak head.
+    /// - ensures: the motive binder closes; the first component's binder is
+    ///   open over the first factor and the second's over the second factor;
+    ///   the body checks against the motive at the pair of the two, and the
+    ///   split synthesises the motive at the scrutinee once it has.
+    /// - fails: [`CheckRefusal::MachineInvariant`] for any other split or
+    ///   classifier, and the scope guard's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`CheckRefusal`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a body whose type reads the pair checks against the
+    ///   motive at it, and the split's type reads the scrutinee.
+    /// - witness: `judgement::tests::a_dependent_split_synthesises_its_motive_at_the_scrutinee`
+    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Computation { .. }))))]
+    pub(super) fn sigma_split_body(
+        &mut self,
+        term: ComputationId,
+        sigma: ValueTypeId,
+    ) -> Result<Step, CheckRefusal>
+    {
+        self.close()?;
+        let Computation::Split {
+            scrutinee,
+            arity,
+            motive: SplitMotive::Scrutinee(motive),
+            body,
+        } = *self.computation(term)?
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let (first, second) = match value_type_view(self.context.arena(), sigma)? {
+            | ValueTypeView::Sigma { first, second } => (first, second),
+            | ValueTypeView::Unknown => (sigma, sigma),
+            | _ => return Err(CheckRefusal::MachineInvariant),
+        };
+        let arena = self.context.arena_mut();
+        let result = instantiate_comp_type(arena, motive, scrutinee);
+        let lifted = shift_comp_type_under(arena, motive, Binders::ONE, Binders::from(2_u32));
+        let outer = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let inner = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let pair = arena.value_tuple(&[outer, inner]);
+        let expected = instantiate_comp_type(arena, lifted, pair);
+        self.context.binders().open(Zone::Intuitionistic, first);
+        self.context.binders().open(Zone::Intuitionistic, second);
+        self.wait(Frame::NativeYield(Produced::CompType(result)));
+        self.wait(Frame::SplitBody(arity));
+        Ok(Step::Descend(Goal::Computation {
+            term: body,
+            direction: Direction::Check(expected),
+        }))
     }
 }

@@ -62,12 +62,43 @@
 //! entries, at the type and at the copattern block alike. Reversal: an n-ary
 //! lazy record former in the core.
 //!
-//! # A telescope does not depend yet
+//! # A later label reads an earlier one: the dependent record
 //!
-//! The core has no dependent pair, so a labelled telescope type is a record
-//! whose later entries cannot name an earlier label: `#{n : Nat, v : Vec(A,
-//! n)}` refuses its `n` as an unbound name. Reversal: a core Σ, which lets
-//! the labels bind in the entries after them.
+//! A labelled telescope type binds each label in the entries after it, as a
+//! telescope Π binds its entries: `#{n : Integer, v : Path(Integer, n, n)}`.
+//! Where no later entry names an earlier label it is the record of its
+//! fields, so a record's type is unchanged by the labels it binds; where one
+//! does, it is the core's dependent pairs nested to the right, the labels
+//! erased, each link a `Σ` when a later entry names its label and the eager
+//! product of two otherwise: `#{a : A, b : B, c : C(a)}` is `Σ a : A. B ×
+//! C(a)`. Its value is the tuple of its entries in written order, nested
+//! as the type is, `#{x, y}` for two.
+//!
+//! Whether a later entry names a label is read from the source: a name
+//! spelling the label anywhere in a later entry marks the label's frame
+//! mentioned before any entry is read. A pattern at the type is compiled
+//! where its match is classified, which may come before the names in the
+//! entries resolve, so the frames' mention, the type's links and the
+//! pattern's splits are all this one syntactic reading. A name spelling the
+//! label under a binder of its own in a later entry links the label by a `Σ`
+//! whose second factor does not read it, which is that factor's product.
+//!
+//! The labels name places: a selection `p.v` off a name whose written type is
+//! a type over labels projects the entry the label names along the nesting,
+//! `p.1` in the core, whose type reads the first component as `p.0` (the
+//! checker's projection rule); a pattern at a scrutinee written with a
+//! dependent record, positional `#{m, w}` or labelled `#{.n = m, .v = w}`, is
+//! the dependent split of each link, whose motive is the match's answer with
+//! the scrutinee abstracted (`lower::native`). A record has no projection,
+//! so a selection off one is the projection of a type that is not a
+//! dependent pair, which the checker refuses by name.
+//!
+//! - Alternatives: a labelled dependent record former in the core, which keeps
+//!   the labels the lowering erases at the cost of a second eliminator beside
+//!   the split; a record whose later entries cannot name an earlier label,
+//!   which leaves the dependent record unwritable.
+//! - Reversal: a core former keyed by labels would carry them where the nested
+//!   pairs drop them.
 //!
 //! # A session entry reads the select and the offer
 //!
@@ -341,6 +372,16 @@ pub(super) struct Observed
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) struct Thunked(pub bool);
 
+/// Whether a link of a type over labels binds: a later entry names the
+/// link's label, so the link is a `Σ` and a split of it reads the match's
+/// motive at its scrutinee.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(super) struct Dependent(pub bool);
+
 /// Whether a form was read as an arity-shaped former and planned.
 ///
 /// # Specification
@@ -366,6 +407,9 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// The stated type, through parentheses, is another former.
             Otherwise,
+            /// The stated type over labels is a record: no later entry names
+            /// an earlier label.
+            Independent,
         }
     }
 }
@@ -1116,8 +1160,11 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `site` is a telescope type in type position.
     /// - ensures: positional entries plan the product of their types, of any
-    ///   arity; labelled entries plan the record type over them; each entry is
-    ///   read as a value type under the form's frame.
+    ///   arity, each read as a value type under the form's frame; labelled
+    ///   entries plan the type over their labels, every label but the last
+    ///   binding a frame extending the one before it, each entry's type read as
+    ///   a value type under the frames of the labels before it and its label
+    ///   kept by [`Self::label_entry`] at that frame.
     /// - fails: the wrong-sort refusal where no value type is read; the
     ///   entries' and the labels' own refusals.
     /// - panics: none.
@@ -1126,10 +1173,13 @@ impl<'source> Lowerer<'_, 'source>
     /// The telescope's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the unit, one component, three, and a record in two
-    ///   orders, each asserted as the exact core type.
+    /// - hypothesis: L3 — the unit, one component, three, a record in two
+    ///   orders, and a type over labels whose later entry names an earlier one,
+    ///   each asserted as the exact core type.
     /// - witness: `lower::arity::tests::a_telescope_type_lowers_by_its_arity`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&(Plan::Product(_) | Plan::RecordType(_)))))]
+    /// - witness: `lower::arity::tests::a_later_label_reading_an_earlier_one_lowers_to_nested_pairs`
+    /// - witness: `lower::arity::tests::each_label_names_what_it_labels`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&(Plan::Product(_) | Plan::RecordType(..)))))]
     pub(super) fn telescope_type(
         &mut self,
         site: Site,
@@ -1148,7 +1198,55 @@ impl<'source> Lowerer<'_, 'source>
                 Plan::Product(components)
             },
             | Arranged::Labelled(entries) => {
-                Plan::RecordType(self.fields(&entries, Reading::ValueType(frame)))
+                let Some((last, binding)) = entries.split_last()
+                else {
+                    return Err(site.fault(site.at.span, FormFault::MissingOperand));
+                };
+                let links = self.named_later(&entries)?;
+                let mut fields = BTreeMap::new();
+                let start = self.parameters.len();
+                let mut inner = frame;
+                for (entry, &Dependent(linked)) in binding.iter().zip(&links) {
+                    let Key::Label(name, key) = entry.key
+                    else {
+                        continue;
+                    };
+                    let declared = entry.held.at();
+                    self.read(declared.node, Reading::ValueType(inner));
+                    self.label_entry(entry, Reading::ValueType(inner));
+                    let _first =
+                        fields.insert(FieldLabel::from(String::from(name.as_ref())), declared.node);
+                    let extended = self.scope.extend_typed(
+                        inner,
+                        name,
+                        declared.node,
+                        Maybe::Present(key.span),
+                    );
+                    if linked {
+                        self.scope.mention(extended);
+                    }
+                    self.parameters.push(Parameter {
+                        binder: key.node,
+                        frame: extended,
+                        declared: Maybe::Present(declared.node),
+                    });
+                    inner = Frame::Inner(extended);
+                }
+                let declared = last.held.at();
+                self.read(declared.node, Reading::ValueType(inner));
+                self.label_entry(last, Reading::ValueType(inner));
+                if let Key::Label(name, _) = last.key {
+                    let _first =
+                        fields.insert(FieldLabel::from(String::from(name.as_ref())), declared.node);
+                }
+                Plan::RecordType(
+                    fields,
+                    Stretch {
+                        start,
+                        end: self.parameters.len(),
+                    },
+                    declared.node,
+                )
             },
         };
         self.plan(site, plan);
@@ -1357,8 +1455,40 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: `node` is a type's syntax node.
-    /// - ensures: the stated form's entries in written order; nothing when the
-    ///   type, so read, is another former.
+    /// - ensures: the stated form's entries in written order, as
+    ///   [`Self::stated_form`] reads them; nothing when the type, so read, is
+    ///   another former.
+    /// - fails: as [`Self::stated_form`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::stated_form`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::stated_form`].
+    /// - witness: `lower::arity::tests::an_injection_takes_its_index_from_its_label`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::BudgetExceeded { .. } | LoweringRefusal::MalformedForm { .. } | LoweringRefusal::UnknownMold { .. })))]
+    pub(super) fn stated_entries(
+        &mut self,
+        site: Site,
+        node: NodeIndex,
+        former: Former,
+        thunked: Thunked,
+    ) -> Result<Maybe<Vec<Entry<'source>>, stated_labels::Absent>, LoweringRefusal<'source>>
+    {
+        Ok(self
+            .stated_form(site, node, former, thunked)?
+            .map(|(_form, entries)| entries))
+    }
+
+    /// The type over labels `former` the type at `node` states, read through
+    /// parentheses and, when `thunked`, one `+U`: its own node and its
+    /// entries.
+    ///
+    /// # Specification
+    /// - requires: `node` is a type's syntax node.
+    /// - ensures: the stated form's node and its entries in written order;
+    ///   nothing when the type, so read, is another former.
     /// - fails: [`LoweringRefusal::BudgetExceeded`]; the stated form's own
     ///   malformation, at the stated form.
     /// - panics: none.
@@ -1374,19 +1504,24 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an injection under an annotation, a match over a
-    ///   parameter, a copattern block under its function's result and an
-    ///   observation of a thunked parameter each read their labels here.
+    ///   parameter, a copattern block under its function's result, an
+    ///   observation of a thunked parameter and a selection off a dependent
+    ///   record each read their labels here.
     /// - witness: `lower::arity::tests::an_injection_takes_its_index_from_its_label`
     /// - witness: `lower::arity::tests::an_observation_projects_along_the_nesting`
+    /// - witness: `lower::arity::tests::a_selection_projects_a_dependent_record_along_its_nesting`
     /// - witness: `lower::native::tests::sum_patterns_case_on_the_stated_arity`
     #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::BudgetExceeded { .. } | LoweringRefusal::MalformedForm { .. } | LoweringRefusal::UnknownMold { .. })))]
-    pub(super) fn stated_entries(
+    pub(super) fn stated_form(
         &mut self,
         site: Site,
         node: NodeIndex,
         former: Former,
         thunked: Thunked,
-    ) -> Result<Maybe<Vec<Entry<'source>>, stated_labels::Absent>, LoweringRefusal<'source>>
+    ) -> Result<
+        Maybe<(NodeIndex, Vec<Entry<'source>>), stated_labels::Absent>,
+        LoweringRefusal<'source>,
+    >
     {
         let mut at = node;
         let mut through = thunked;
@@ -1433,7 +1568,7 @@ impl<'source> Lowerer<'_, 'source>
                 };
                 break opened
                     .and_then(|()| self.type_entries(stated, &mut cursor, TileName::BRACE_CLOSE))
-                    .map(Maybe::Present);
+                    .map(|entries| Maybe::Present((at, entries)));
             }
             let inner = if held == Former::ParenthesizedType {
                 let _open = cursor.tile(TileName::PAREN_OPEN);
@@ -1738,6 +1873,197 @@ impl<'source> Lowerer<'_, 'source>
         Ok(Planned(true))
     }
 
+    /// Classify a selection `p.l` as a projection when `p` is a name whose
+    /// written type is a type over labels.
+    ///
+    /// # Specification
+    /// - requires: `site` is a projection; `pieces` is its reading.
+    /// - ensures: planned when the selection is one link off a name whose
+    ///   binder or declaration was written with the type `#{l : A, …}`: the
+    ///   entry the label names, projected along the nesting, the name read as a
+    ///   value under the form's frame; nothing is planned otherwise.
+    /// - fails: the unresolved-name refusal for a label the type lacks; the
+    ///   wrong-sort refusal where no computation is read; the name's own
+    ///   resolution refusals.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The selection's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the first and the last entry of a dependent record of
+    ///   two and of three, and a label it lacks.
+    /// - witness: `lower::arity::tests::a_selection_projects_a_dependent_record_along_its_nesting`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Select(..))))]
+    pub(super) fn selection(
+        &mut self,
+        site: Site,
+        pieces: &Pieces,
+    ) -> Result<Planned, LoweringRefusal<'source>>
+    {
+        let Ok((target, selected)) = Self::link(site, &pieces.pieces, site.at.span)
+        else {
+            return Ok(Planned(false));
+        };
+        if !matches!(self.form_at(target)?, Some((_, Former::Name))) {
+            return Ok(Planned(false));
+        }
+        let frame = site.reading.frame();
+        let named = Site {
+            at: target,
+            name: FormName::IDENTIFIER,
+            reading: Reading::Value(frame),
+        };
+        let declared = match self.resolve_name(named, frame, self.name_at(target))? {
+            | Maybe::Present(Resolved::Binder(bound)) => bound.declared,
+            | Maybe::Present(Resolved::Declaration { declared, .. }) => declared,
+            | Maybe::Absent(_) => Maybe::Absent(binder_type::Absent::Untyped),
+        };
+        let Maybe::Present(declared) = declared
+        else {
+            return Ok(Planned(false));
+        };
+        let Maybe::Present(stated) =
+            self.stated_entries(site, declared, Former::TelescopeType, Thunked(false))?
+        else {
+            return Ok(Planned(false));
+        };
+        if !stated
+            .first()
+            .is_some_and(|entry| matches!(entry.key, Key::Label(..)))
+        {
+            return Ok(Planned(false));
+        }
+        let (Place(index), _) = Self::labelled_in(&stated, self.name_at(selected), selected)?;
+        let frame = self.require(site, Produced::Computation)?;
+        self.read(target.node, Reading::Value(frame));
+        self.plan(
+            site,
+            Plan::Select(target.node, Observed {
+                index,
+                count: stated.len(),
+            }),
+        );
+
+        Ok(Planned(true))
+    }
+
+    /// Whether each link of a type over labels binds: one answer per entry
+    /// but the last, in written order, each whether a later entry names that
+    /// entry's label.
+    ///
+    /// # Specification
+    /// - requires: `typed` are the entries of a type over labels.
+    /// - ensures: the links of a type some later entry of which names an
+    ///   earlier label, as [`Self::named_later`] reads them; the independent
+    ///   absence for a record, and the other-former absence for entries that
+    ///   are not labelled.
+    /// - fails: the budget refusal; the unknown-mold refusal of a node in an
+    ///   entry.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As stated.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a match over a dependent record of two splits it with
+    ///   its motive, one over three splits its links as they bind, and one over
+    ///   a record projects its labels.
+    /// - witness: `lower::native::tests::a_pattern_at_a_dependent_record_splits_it_under_its_motive`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| match *found {
+        | Maybe::Present(ref links) => links.contains(&Dependent(true)),
+        | Maybe::Absent(_) => true,
+    }))]
+    pub(super) fn dependent_links(
+        &mut self,
+        typed: &[Entry<'source>],
+    ) -> Result<Maybe<Vec<Dependent>, stated_labels::Absent>, LoweringRefusal<'source>>
+    {
+        if !typed
+            .iter()
+            .all(|entry| matches!(entry.key, Key::Label(..)))
+        {
+            return Ok(Maybe::Absent(stated_labels::Absent::Otherwise));
+        }
+        let links = self.named_later(typed)?;
+
+        Ok(if links.contains(&Dependent(true)) {
+            Maybe::Present(links)
+        }
+        else {
+            Maybe::Absent(stated_labels::Absent::Independent)
+        })
+    }
+
+    /// For each entry but the last, whether a name in a later entry spells
+    /// its label.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one answer per entry but the last, in written order; an entry
+    ///   without a label answers no; a later entry answers yes when a node
+    ///   under it is a name or a type head whose text is the label, wherever it
+    ///   stands.
+    /// - fails: the budget refusal, one step per node visited; the unknown-mold
+    ///   refusal of a node in an entry.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As stated.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a path endpoint naming the first label links it, and
+    ///   an entry naming no label leaves its link a product.
+    /// - witness: `lower::native::tests::a_pattern_at_a_dependent_record_splits_it_under_its_motive`
+    /// - witness: `lower::arity::tests::a_later_label_reading_an_earlier_one_lowers_to_nested_pairs`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |links| links.len() == entries.len().saturating_sub(1)))]
+    fn named_later(
+        &mut self,
+        entries: &[Entry<'source>],
+    ) -> Result<Vec<Dependent>, LoweringRefusal<'source>>
+    {
+        let mut links = Vec::with_capacity(entries.len().saturating_sub(1));
+        let mut pending: Vec<NodeIndex> = Vec::new();
+        for (position, entry) in entries.iter().enumerate() {
+            if position.saturating_add(1) == entries.len() {
+                break;
+            }
+            let Key::Label(label, _) = entry.key
+            else {
+                links.push(Dependent(false));
+                continue;
+            };
+            pending.clear();
+            pending.extend(
+                entries
+                    .iter()
+                    .skip(position.saturating_add(1))
+                    .map(|later| later.held.at().node),
+            );
+            let mut named = false;
+            while let Some(node) = pending.pop() {
+                self.fuel.spend()?;
+                let Some(tree) = self.tree.node(node)
+                else {
+                    continue;
+                };
+                let placed = Placed::of(node, tree);
+                if matches!(
+                    self.form_at(placed)?,
+                    Some((_, Former::Name | Former::TypeHead))
+                ) && self.text_at(placed).as_ref() == label.as_ref()
+                {
+                    named = true;
+                    break;
+                }
+                pending.extend(self.tree.children(node));
+            }
+            links.push(Dependent(named));
+        }
+
+        Ok(links)
+    }
+
     /// Classify a value function space whose domain list names a binder: the
     /// telescope Π `(x : A, y : B(x)) => C`.
     ///
@@ -1938,6 +2264,67 @@ impl<'source> Lowerer<'_, 'source>
         );
 
         Ok(Planned(true))
+    }
+
+    /// Mint a type over labels: the record of its fields, or the dependent
+    /// pairs nested to the right where a later entry names an earlier label.
+    ///
+    /// # Specification
+    /// - requires: every entry's type is already minted or absent; every
+    ///   mention in the entries has been recorded.
+    /// - ensures: the record type over `fields` when no binder of `binders` is
+    ///   mentioned; otherwise the last entry's type wrapped, innermost first,
+    ///   by one link per binder: `Σ` over its entry's type when the binder is
+    ///   mentioned, the eager product of two otherwise; every node with the
+    ///   written origin; nothing when a type did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a record in two orders, a dependent record of two,
+    ///   and one of three whose middle label nothing names.
+    /// - witness: `lower::arity::tests::a_telescope_type_lowers_by_its_arity`
+    /// - witness: `lower::arity::tests::a_later_label_reading_an_earlier_one_lowers_to_nested_pairs`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::ValueType(_))))]
+    pub(super) fn mint_labelled_type(
+        &self,
+        fields: &BTreeMap<FieldLabel, NodeIndex>,
+        binders: Stretch,
+        last: NodeIndex,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let written = stretch(&self.parameters, binders);
+        if !written
+            .iter()
+            .any(|parameter| bool::from(self.scope.mentioned(parameter.frame)))
+        {
+            return self.mint_record_type(fields, sink, origin);
+        }
+        let mut nested = match self.value_type_at(last) {
+            | Maybe::Present(nested) => nested,
+            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        for parameter in written.iter().rev() {
+            let Maybe::Present(declared) = parameter.declared
+            else {
+                return Maybe::Absent(lowered::Absent::Unstated);
+            };
+            let first = match self.value_type_at(declared) {
+                | Maybe::Present(first) => first,
+                | Maybe::Absent(reason) => return Maybe::Absent(reason),
+            };
+            nested = if bool::from(self.scope.mentioned(parameter.frame)) {
+                sink.arena.value_type_sigma(first, nested)
+            }
+            else {
+                sink.arena.value_type_product(&[first, nested])
+            };
+            sink.origins.record_value_type(nested, origin);
+        }
+
+        Maybe::Present(Lowered::ValueType(nested))
     }
 
     /// Mint a record type over its fields.
@@ -2196,6 +2583,59 @@ impl<'source> Lowerer<'_, 'source>
         }
 
         Maybe::Present(Lowered::Computation(observing))
+    }
+
+    /// Mint a selection: the dependent record projected along the nesting to
+    /// the entry it selects.
+    ///
+    /// # Specification
+    /// - requires: the subject is already minted or absent.
+    /// - ensures: the subject projected at component one once per entry before
+    ///   the selected one, each projection but the last read as the value it
+    ///   returns, then at component zero unless the entry is the last;
+    ///   component zero of a type of one entry; every node with the written
+    ///   origin; nothing when the subject did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::selection`].
+    /// - witness: `lower::arity::tests::a_selection_projects_a_dependent_record_along_its_nesting`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))))]
+    pub(super) fn mint_select(
+        &self,
+        subject: NodeIndex,
+        selected: Observed,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let mut held: ValueId = match self.value_at(subject) {
+            | Maybe::Present(held) => held,
+            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let mut sides = path(selected);
+        if sides.is_empty() {
+            sides.push(Side::Left);
+        }
+        let mut projected = None;
+        for side in sides {
+            if let Some(inner) = projected {
+                held = sink.arena.value_returned(inner);
+                sink.origins.record_value(held, origin);
+            }
+            let component = gandr_kernel_term::Component::from(match side {
+                | Side::Left => 0_usize,
+                | Side::Right => 1_usize,
+            });
+            let id = sink.arena.computation_tuple_projection(held, component);
+            sink.origins.record_computation(id, origin);
+            projected = Some(id);
+        }
+
+        projected.map_or(Maybe::Absent(lowered::Absent::Unminted), |id| {
+            Maybe::Present(Lowered::Computation(id))
+        })
     }
 
     /// Mint a telescope Π: its entries' dependent arrows over the returner of

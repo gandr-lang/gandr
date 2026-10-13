@@ -1915,6 +1915,17 @@ fn decode_entry(
                 Family::Computation,
             )
         },
+        | tags::NODE_C_SIGMA_SPLIT => {
+            let scrutinee = read_value(reader, table, this, &mut children)?;
+            let motive = read_comp_type(reader, table, this, &mut children)?;
+            let body = read_computation(reader, table, this, &mut children)?;
+            (
+                DecodedNode::Computation(
+                    table.arena.computation_sigma_split(scrutinee, motive, body),
+                ),
+                Family::Computation,
+            )
+        },
         | tags::NODE_C_RECORD_PROJECTION => {
             let label = crate::FieldLabel::from(reader.read_text(MalformedSite::LiteralPayload)?);
             let record = read_value(reader, table, this, &mut children)?;
@@ -2319,6 +2330,12 @@ fn decode_entry(
             let domain = read_value_type(reader, table, this, &mut children)?;
             let codomain = read_value_type(reader, table, this, &mut children)?;
             let id = table.arena.value_type_static_pi(domain, codomain);
+            (DecodedNode::ValueType(id), Family::ValueType)
+        },
+        | tags::NODE_VT_SIGMA => {
+            let first = read_value_type(reader, table, this, &mut children)?;
+            let second = read_value_type(reader, table, this, &mut children)?;
+            let id = table.arena.value_type_sigma(first, second);
             (DecodedNode::ValueType(id), Family::ValueType)
         },
         | tags::NODE_CT_RETURNER => {

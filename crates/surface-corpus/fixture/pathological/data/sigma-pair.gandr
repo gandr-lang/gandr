@@ -1,0 +1,30 @@
+@[ checks ]
+data Ix(n : Integer) : Type {
+  MkIx : Ix(n);
+}
+
+/// The second component lies over another first.
+@[ refuses("TypeMismatch") ]
+def skewed : #{n : Integer, w : Ix(n)} ;
+def skewed = #{2, (MkIx : Ix(3))} ;
+
+/// A pair with no type to check against synthesises the product of its
+/// components, never a dependent pair.
+@[ checks ]
+def loose = #{2, (MkIx : Ix(2))} ;
+
+@[ checks ]
+def tag_of(p : #{n : Integer, w : Ix(n)}) -> -F Integer {
+  return p.n
+}
+
+@[ refuses("TypeMismatch") ]
+def unpaired : +U (-F Integer) ;
+def unpaired = thunk { become tag_of(loose) } ;
+
+/// A record has no projection: a selection off one is the projection of a
+/// type that is not a dependent pair.
+@[ refuses("ShapeMismatch") ]
+def at_record(r : #{n : Integer, s : String}) -> -F Integer {
+  return r.n
+}

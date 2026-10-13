@@ -108,6 +108,7 @@ use crate::hole::TermId;
 use crate::syntax::CompType;
 use crate::syntax::ComponentCount;
 use crate::syntax::Computation;
+use crate::syntax::SplitMotive;
 use crate::syntax::Value;
 use crate::syntax::ValueType;
 use crate::syntax::Zone;
@@ -1039,10 +1040,13 @@ impl<'arena> Engine<'arena>
     /// **The binding positions are the whole content of this function.** A
     /// lambda binds for its body, a static lambda for its body, a bind for
     /// its body and not its bound computation, a case for each branch and not
-    /// its scrutinee, and the dependent arrow for its codomain and not its
-    /// domain. A quote and a decode bind nothing: they cross between terms
-    /// and types at the depth they stand at. Nor does a static Pi: its
-    /// codomain stands in the ambient context.
+    /// its scrutinee, a split for its body under one binder per component and
+    /// for a dependent motive under one binder of the scrutinee, the
+    /// dependent arrow for its codomain and not its domain, and the dependent
+    /// pair for its second factor and not its first. A quote and a decode
+    /// bind nothing: they cross between terms and types at the depth they
+    /// stand at. Nor does a static Pi: its codomain stands in the ambient
+    /// context.
     ///
     /// # Specification
     /// - requires: `depth` is the number of binders crossed to reach `node`.
@@ -1086,11 +1090,11 @@ Computation::Perform { ref signature, .. } => 1_usize.saturating_add(signature.t
 Computation::Exercise { ref signature, .. } => 2_usize.saturating_add(signature.types().count()),
 Computation::Handle { ref signature, ref clauses, .. } | Computation::Scope { ref signature, ref clauses, .. } => 2_usize.saturating_add(signature.types().count()).saturating_add(clauses.len()),
 Computation::ListFold { .. } | Computation::TelescopeTransport { .. } => 5,
-Computation::PathTransport { .. } | Computation::Ride { .. } => 3,
+Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::Split { motive: SplitMotive::Scrutinee(_), .. } => 3,
 Computation::Primitive { ref arguments, .. } => arguments.len(),
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
 Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 1,
-Computation::Resume(..) | Computation::With(..) | Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) | Computation::Split { .. } => 2,
+Computation::Resume(..) | Computation::With(..) | Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) | Computation::Split { motive: SplitMotive::Ambient, .. } => 2,
 Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
 Computation::Hole(_) => 0_usize,
 Computation::Session(ref action) => action.values().count().saturating_add(action.computations().count()).saturating_add(action.value_types().count()),
@@ -1102,7 +1106,7 @@ ValueType::Product(ref components) | ValueType::Sum(ref components) => component
 ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => 0_usize,
 ValueType::Session(ref session) => session.payloads().len(),
 ValueType::Capability { ref authority, .. } => authority.types().count(),
-ValueType::Stack { .. } | ValueType::StaticPi { .. } | ValueType::PathUniverse(..) => 2,
+ValueType::Stack { .. } | ValueType::StaticPi { .. } | ValueType::Sigma { .. } | ValueType::PathUniverse(..) => 2,
 ValueType::Path { .. } | ValueType::Flow { .. } => 3,
 ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Run(_) => 1,
 }),
@@ -1318,13 +1322,20 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                     self.tasks.push(open(Node::Computation(body), depth));
                     self.tasks.push(open(Node::Value(stack), depth));
                 },
+                // A dependent split's motive binds the scrutinee; the body
+                // binds every component.
                 | Some(&Computation::Split {
                     scrutinee,
                     arity,
+                    motive,
                     body,
                 }) => {
                     self.tasks
                         .push(open(Node::Computation(body), depth.deeper_by(arity)));
+                    if let SplitMotive::Scrutinee(motive) = motive {
+                        self.tasks
+                            .push(open(Node::CompType(motive), depth.deeper()));
+                    }
                     self.tasks.push(open(Node::Value(scrutinee), depth));
                 },
                 | Some(&Computation::With(first, second)) => {
@@ -1515,6 +1526,11 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                         codomain: second,
                     } => {
                         self.tasks.push(open(Node::ValueType(second), depth));
+                        self.tasks.push(open(Node::ValueType(first), depth));
+                    },
+                    | ValueType::Sigma { first, second } => {
+                        self.tasks
+                            .push(open(Node::ValueType(second), depth.deeper()));
                         self.tasks.push(open(Node::ValueType(first), depth));
                     },
                     | ValueType::PathUniverse(source, target) => {
@@ -2246,11 +2262,11 @@ Computation::Perform { ref signature, .. } => 1_usize.saturating_add(signature.t
 Computation::Exercise { ref signature, .. } => 2_usize.saturating_add(signature.types().count()),
 Computation::Handle { ref signature, ref clauses, .. } | Computation::Scope { ref signature, ref clauses, .. } => 2_usize.saturating_add(signature.types().count()).saturating_add(clauses.len()),
 Computation::ListFold { .. } | Computation::TelescopeTransport { .. } => 5,
-Computation::PathTransport { .. } | Computation::Ride { .. } => 3,
+Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::Split { motive: SplitMotive::Scrutinee(_), .. } => 3,
 Computation::Primitive { ref arguments, .. } => arguments.len(),
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
 Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 1,
-Computation::Resume(..) | Computation::With(..) | Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) | Computation::Split { .. } => 2,
+Computation::Resume(..) | Computation::With(..) | Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) | Computation::Split { motive: SplitMotive::Ambient, .. } => 2,
 Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
 Computation::Hole(_) => 0_usize,
 Computation::Session(ref action) => action.values().count().saturating_add(action.computations().count()).saturating_add(action.value_types().count()),
@@ -2395,16 +2411,35 @@ Computation::Session(ref action) => action.values().count().saturating_add(actio
             | Computation::Split {
                 scrutinee,
                 arity,
+                motive,
                 body,
             } => {
                 let rewritten_body = Self::computation(&mut self.results, body);
+                let rewritten_motive = match motive {
+                    | SplitMotive::Ambient => SplitMotive::Ambient,
+                    | SplitMotive::Scrutinee(motive) => {
+                        SplitMotive::Scrutinee(Self::comp_type(&mut self.results, motive))
+                    },
+                };
                 let rewritten_scrutinee = Self::value(&mut self.results, scrutinee);
-                if (rewritten_scrutinee, rewritten_body) == (scrutinee, body) {
+                if (rewritten_scrutinee, rewritten_motive, rewritten_body)
+                    == (scrutinee, motive, body)
+                {
                     id
                 }
                 else {
-                    self.arena
-                        .computation_split(rewritten_scrutinee, arity, rewritten_body)
+                    match rewritten_motive {
+                        | SplitMotive::Ambient => {
+                            self.arena
+                                .computation_split(rewritten_scrutinee, arity, rewritten_body)
+                        },
+                        | SplitMotive::Scrutinee(motive) => self.arena.computation_dependent_split(
+                            rewritten_scrutinee,
+                            arity,
+                            motive,
+                            rewritten_body,
+                        ),
+                    }
                 }
             },
             | Computation::With(first, second) => {
@@ -2751,7 +2786,7 @@ ValueType::Product(ref components) | ValueType::Sum(ref components) => component
 ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => 0_usize,
 ValueType::Session(ref session) => session.payloads().len(),
 ValueType::Capability { ref authority, .. } => authority.types().count(),
-ValueType::Stack { .. } | ValueType::StaticPi { .. } | ValueType::PathUniverse(..) => 2,
+ValueType::Stack { .. } | ValueType::StaticPi { .. } | ValueType::Sigma { .. } | ValueType::PathUniverse(..) => 2,
 ValueType::Path { .. } | ValueType::Flow { .. } => 3,
 ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Run(_) => 1,
 })],
@@ -2958,6 +2993,17 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                 else {
                     self.arena
                         .value_type_static_pi(rewritten_domain, rewritten_codomain)
+                }
+            },
+            | ValueType::Sigma { first, second } => {
+                let rewritten_second = Self::value_type(&mut self.results, second);
+                let rewritten_first = Self::value_type(&mut self.results, first);
+                if (rewritten_first, rewritten_second) == (first, second) {
+                    id
+                }
+                else {
+                    self.arena
+                        .value_type_sigma(rewritten_first, rewritten_second)
                 }
             },
             | ValueType::Session(ref session) => {
@@ -3407,6 +3453,40 @@ pub fn shift_comp_type_under(
     match Engine::new(arena).run(Node::CompType(subject), scope, Rewrite::Shift(amount)) {
         | Node::CompType(id) => id,
         | Node::Computation(_) | Node::ValueType(_) | Node::Value(_) => subject,
+    }
+}
+
+/// Shift a value type while preserving a prefix of local binders.
+///
+/// # Specification
+/// - requires: the subject is live; scope counts the local intuitionistic
+///   binders.
+/// - ensures: only indices outside that scope rise by the amount; zero is
+///   identity.
+/// - provides: a family under its own binder carried under one binder more, as
+///   the identity at a dependent pair carries its second factor under the first
+///   coordinate's path.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a family keeps its own binder and lifts an ambient index.
+/// - witness: `rewrite::tests::a_value_type_under_its_binder_lifts_only_the_ambient_index`
+#[spec(captures: entry = arena.watermark(), ensures: |ret| (amount != Binders::NONE || (ret == subject && arena.watermark() == entry)) && (ret == subject || arena.value_type(ret).is_some()))]
+#[must_use]
+#[inline]
+pub fn shift_value_type_under(
+    arena: &mut CoreArena,
+    subject: ValueTypeId,
+    scope: Binders,
+    amount: Binders,
+) -> ValueTypeId
+{
+    if amount == Binders::NONE {
+        return subject;
+    }
+    match Engine::new(arena).run(Node::ValueType(subject), scope, Rewrite::Shift(amount)) {
+        | Node::ValueType(id) => id,
+        | Node::Computation(_) | Node::CompType(_) | Node::Value(_) => subject,
     }
 }
 
@@ -4602,6 +4682,46 @@ mod tests
         );
     }
 
+    /// A family under its own binder lifted past one more binder keeps its
+    /// own index and lifts the ambient one; a lift of nothing is the family
+    /// itself.
+    #[test]
+    fn a_value_type_under_its_binder_lifts_only_the_ambient_index()
+    {
+        let mut arena = CoreArena::new();
+        let own = variable(&mut arena, DeBruijnIndex::from(0));
+        let ambient = variable(&mut arena, DeBruijnIndex::from(1));
+        let nominal = ConstantIndex::from(7);
+        let family = arena.value_type_data(nominal, vec![own, ambient]);
+        assert_eq!(
+            super::shift_value_type_under(&mut arena, family, Binders::ONE, Binders::NONE),
+            family
+        );
+        let lifted = super::shift_value_type_under(&mut arena, family, Binders::ONE, Binders::ONE);
+        let Some(lifted) = arena.value_type(lifted)
+        else {
+            panic!("the family is in the arena");
+        };
+        let ValueType::Data { ref arguments, .. } = *lifted
+        else {
+            panic!("the family keeps its former");
+        };
+        let indices: Vec<Option<&Value>> = arguments
+            .iter()
+            .map(|&argument| arena.value(argument))
+            .collect();
+        assert_eq!(indices, [
+            Some(&Value::Variable {
+                zone: Zone::Intuitionistic,
+                index: DeBruijnIndex::from(0)
+            }),
+            Some(&Value::Variable {
+                zone: Zone::Intuitionistic,
+                index: DeBruijnIndex::from(2)
+            }),
+        ]);
+    }
+
     /// An intuitionistic occurrence at `index`.
     ///
     /// # Specification
@@ -4716,7 +4836,7 @@ mod tests
             | Some(&ValueType::Product(..)) => Token::Product,
             Some(&ValueType::Stack { .. } | &ValueType::List(_) | &ValueType::Data { .. } | &ValueType::Record(_) |
 &ValueType::Sum(..) | &ValueType::PathUniverse(..) | &ValueType::Path { .. } | &ValueType::Universe { ..
-} | &ValueType::Lift { .. } | &ValueType::Abstract(_) | &ValueType::StaticPi {
+} | &ValueType::Lift { .. } | &ValueType::Abstract(_) | &ValueType::StaticPi { .. } | &ValueType::Sigma {
 .. } | &ValueType::Capability { .. } | &ValueType::Unknown | &ValueType::Session(_) | &ValueType::Flow { .. } | &ValueType::Run(_)) | None => Token::Other,
             },
         | Visit::Value(id) => match arena.value(id) {
