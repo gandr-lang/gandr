@@ -216,9 +216,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CI_TEST_STATE: ${{ steps.test-state-restore.outputs.cache-hit == 'true' && 'exact cache hit' || steps.test-state-restore.outputs.cache-matched-key != '' && 'main''s newest state' || steps.download-build-state.outcome == 'success' && 'queue artifact' || steps.test-state-restore.outcome == 'success' && 'miss' || 'not used' }}
           CI_POLICY_STATE: ${{ steps.policy-state-restore.outputs.cache-hit == 'true' && 'exact cache hit' || steps.policy-state-restore.outputs.cache-matched-key != '' && 'main''s newest state' || steps.policy-state-restore.outcome == 'success' && 'miss' || 'not used' }}
+          CI_CLIPPY_STATE: ${{ steps.clippy-state-restore.outputs.cache-hit == 'true' && 'exact cache hit' || steps.clippy-state-restore.outputs.cache-matched-key != '' && 'main''s newest state' || steps.clippy-state-restore.outcome == 'success' && 'miss' || 'not used' }}
         run: >-
           gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs"
-          --jq '.jobs[] | select(.runner_name == env.RUNNER_NAME) | [.steps[] | select(.completed_at != null and .conclusion != "skipped") | "| \(.name) | \((((.completed_at | fromdate) - (.started_at | fromdate)) / 6 | round) / 10) |"] as $rows | "### Lane timing\n\nTest state: \(env.CI_TEST_STATE). Policy state: \(env.CI_POLICY_STATE).\n\n" + if $rows == [] then "Step times unavailable: the jobs API listed no steps for this job." else "| step | minutes |\n| --- | ---: |\n" + ($rows | join("\n")) end'
+          --jq '.jobs[] | select(.runner_name == env.RUNNER_NAME) | [.steps[] | select(.completed_at != null and .conclusion != "skipped") | "| \(.name) | \((((.completed_at | fromdate) - (.started_at | fromdate)) / 6 | round) / 10) |"] as $rows | "### Lane timing\n\n" + ([["Test", env.CI_TEST_STATE], ["Policy", env.CI_POLICY_STATE], ["Clippy", env.CI_CLIPPY_STATE]] | map(select(.[1] != "not used") | "\(.[0]) state: \(.[1]).") | join(" ")) + "\n\n" + if $rows == [] then "Step times unavailable: the jobs API listed no steps for this job." else "| step | minutes |\n| --- | ---: |\n" + ($rows | join("\n")) end'
           >> "$GITHUB_STEP_SUMMARY"
       # Compute once, before any restored build directory can add manifests.
       # The fingerprint names one exact state; the generation is the toolchain
@@ -615,27 +616,63 @@ jobs:
       - name: require the enforcing test pass
         run: test "$ENFORCING_RESULT" = success
 
-  # Clippy writes check metadata, which a restored build directory does not
-  # hold, so this lane restores only the shared crate downloads. Both passes
-  # cover the workspace: the plain expansion keeps each predicate as
-  # `(true || predicate)` with no panic, which is code the enforcing pass never
-  # lints. The plain pass is also the plain graph's compile check over every
-  # target, which the plain test lane no longer builds.
+  # Clippy writes check metadata, which a restored test build does not hold,
+  # so the lane keeps its own state: main's newest, restored by prefix on the
+  # toolchain pin alone, and Cargo's fingerprints decide what a change
+  # re-checks. A landing's push lints main again, prunes the state to the
+  # units that run used and saves it in place of the state it supersedes.
+  # Both passes cover the workspace: the plain expansion keeps each predicate
+  # as `(true || predicate)` with no panic, which is code the enforcing pass
+  # never lints. The plain pass is also the plain graph's compile check over
+  # every target, which the plain test lane no longer builds.
   cargo-clippy-crate:
     name: check Clippy wall
     needs: *rust-needs
-    if: &light-rust-lane ${{ !cancelled() && !failure() && needs.changes.outputs.rust == 'true' && github.event_name != 'push' }}
+    if: ${{ !cancelled() && !failure() && (needs.changes.outputs.rust == 'true' || github.event_name == 'push' && github.ref == 'refs/heads/main') }}
     runs-on: *linux
-    permissions: *build-state-read-permissions
+    # A landing's push deletes the Clippy state it superseded.
+    permissions:
+      contents: read
+      packages: read
+      actions: write
     container: *ci-image # zizmor: ignore[unpinned-images]
     steps:
       - *git-checkout
       - *install-policy-tools
       - *setup-rust
+      - name: restore the Clippy state
+        id: clippy-state-restore
+        uses: *cache-restore
+        with:
+          path: &clippy-state |
+            target/debug
+            target/enforcing/debug
+          key: clippy-state-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-${{ github.sha }}
+          restore-keys: clippy-state-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-
       - name: lint every target
+        id: clippy-plain
         run: cargo clippy --locked --workspace --all-targets -- --deny warnings
       - name: lint every target with specification enforcement
+        id: clippy-enforcing
         run: mise run check:clippy-enforcing
+      - name: prune the Clippy state to this run's units
+        id: prune-clippy-state
+        if: ${{ steps.clippy-plain.outcome == 'success' && steps.clippy-enforcing.outcome == 'success' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+        run: mise run ci:prune-clippy
+      - name: save the Clippy state
+        id: save-clippy-state
+        if: ${{ env.ACT != 'true' && steps.prune-clippy-state.outcome == 'success' && steps.clippy-state-restore.outputs.cache-hit != 'true' }}
+        uses: *cache-save
+        with:
+          path: *clippy-state
+          key: ${{ steps.clippy-state-restore.outputs.cache-primary-key }}
+      - name: delete superseded Clippy state
+        if: ${{ github.event_name == 'push' && steps.save-clippy-state.outcome == 'success' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_STATE_KEY: ${{ steps.clippy-state-restore.outputs.cache-primary-key }}
+        run: gh cache list --repo "$GITHUB_REPOSITORY" --ref refs/heads/main --key clippy-state-v --limit 100 --json id,key --jq '.[] | select(.key != env.CI_STATE_KEY) | .id' | xargs -r -n1 gh cache delete --repo "$GITHUB_REPOSITORY"
       - *lane-timing
   # The external plugin checks all local targets once per landing, beside the
   # build it would otherwise repeat on every pull request; the obligations lane
