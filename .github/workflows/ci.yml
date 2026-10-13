@@ -37,8 +37,11 @@ permissions:
 # queue's own per-entry temporary ref (refs/heads/gh-readonly-queue/...), so
 # each queue entry already gets a distinct concurrency group and can never
 # collide with, or be cancelled by, another one.
+# The event name keeps a scheduled or dispatched run of main out of the push
+# runs' group: a group holds one pending run, so either would otherwise
+# replace a pending push (and its promotion) or be replaced by the next one.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
