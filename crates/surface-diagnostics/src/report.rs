@@ -1,78 +1,55 @@
-//! One report — a refusal, an unsettled declaration, a goal or a warning — at
-//! the source it sits in, and the snippet it renders as.
+//! The builder: a refusal, an unsettled declaration, a goal, a warning or a
+//! ledger line, at the source it sits in, made into a [`Diagnostic`].
 //!
-//! # The class says whose fact the report is; the label says what the bytes are
+//! # The class says whose fact it is; the label says what the bytes are
 //!
 //! A refusal is classed by the [`FailureClass`] its producer's classifier
 //! gives it, a declaration unsettled with no refusal produced by what its
-//! unsettlement rests on, a goal as a goal, and a builtin the source shadowed
-//! as a warning. The class sorts reports; the primary locus is labelled with
-//! what its bytes are, never with the class. The title is the producer's
-//! message, which names no byte offsets, and a refusal's vocabulary name is
-//! the report's identifier, spelled as a `refuses` payload spells it.
+//! unsettlement rests on, a goal as a goal, a builtin the source shadowed as a
+//! warning and a ledger line as a line. The class sorts diagnostics; the
+//! primary annotation is labelled with what its bytes are, never with the
+//! class. The title is the producer's message, which names no byte offsets,
+//! and a refusal's vocabulary name is the diagnostic's identifier, spelled as
+//! a `refuses` payload spells it.
 //!
-//! | Kind | First line | Primary locus and label | Note |
-//! | ---- | ---------- | ----------------------- | ---- |
-//! | refusal | `error[<refusal>]: <message>` | the refusal's span, labelled with what the bytes there are | the declaration, what it states and its surviving obligations |
+//! | Kind | First line | Primary annotation and label | Note |
+//! | ---- | ---------- | ---------------------------- | ---- |
+//! | refusal | `error[<refusal>]: <message>` | the refusal's span, labelled with what the bytes there are | in words, what the declaration is expected to do and why the refusal leaves it unsettled |
 //! | unsettled declaration | ``error: `<name>` states …; produced …`` | the declaration, labelled with how it is unsettled | none |
 //! | goal | ``goal: `<name>` states …; produced …`` | the declaration, labelled with its surviving obligations | none |
-//! | source refused as a whole | `error[<refusal>]: the source is not a list of declarations: …` | the refusal's span, labelled with what the bytes there are | none |
+//! | source refused as a whole | `error[<refusal>]: the source is not a list of declarations: …` | the refusal's span | none |
 //! | shadowed builtin | ``warning[ShadowedBuiltin]: `<path>` shadows a builtin name; the source's binding wins`` | the shadowing name, labelled `shadows a builtin` | none |
+//! | ledger line | `<path>: <line>` | the declaration or refusal the line reports, when it has one | none |
 //!
-//! The refusal name in the first line is the spelling the corpus's `refuses`
-//! attribute states, so a reader can copy it into an expectation. A type
-//! mismatch renders as:
-//!
-//! ```text
-//! error[TypeMismatch]: mismatched types
-//!   ╭▸ mismatch.gandr:2:13
-//!   │
-//! 1 │ def wrong : Integer ;
-//!   │             ─────── the type it is checked against
-//! 2 │ def wrong = "text" ;
-//!   │             ━━━━━━ its type does not convert: expected `Integer`, found `String`
-//!   │
-//!   ╰ note: unsettled `wrong` states checks owing 0
-//! ```
-//!
-//! No message carries a byte range: the snippet's path, line and column locate
-//! the refusal, and an offset beside them is noise. Mismatch labels name causal
-//! roles, such as checked-against or synthesised type, while origins locate
-//! those roles in source. Labels expose no core node addresses. An empty path
-//! renders as `<input>`. A pending source's ledger line has no snippet, so it
-//! keeps the refusal's byte range after the producer's text.
+//! No message carries a byte range: a face locates the diagnostic by its
+//! annotations, and an offset beside them is noise. Labels expose no core node
+//! addresses. An empty path renders as `<input>`.
 //!
 //! # A shadowed builtin is a warning, named as the refusal it would be
 //!
-//! Under the warn-and-allow shadow policy, the default, a declaration or a
-//! binder over a builtin name wins and the lowering records the shadowing; the
-//! report on it is a warning, which settles nothing and fails no run. Its
-//! identifier is `ShadowedBuiltin`, the refusal the reject policy files for
-//! the same bytes, so one name reads the same fact under either policy.
-//!
 //! Under the default warn-and-allow shadow policy, a top-level declaration or a
 //! binder named after a builtin wins, and the lowering records the shadowing
-//! with the bytes of the name. Under `check` each record is a `Report` of class
-//! `Class::Warning`, printed before the source's declaration reports in the
+//! with the bytes of the name. Under `check` each record is a diagnostic of
+//! class [`Class::Warning`], printed before the source's declarations in the
 //! order shadowed; `test` prints none, because its ledger records settlements.
-//! A warning settles nothing and unsettles nothing, so `gandr check` still
-//! exits zero on a source whose only reports are warnings:
+//! A warning settles nothing, so `gandr check` still exits zero on a source
+//! whose only diagnostics are warnings. Its identifier is `ShadowedBuiltin`,
+//! the refusal the reject policy files for the same bytes, so one name reads
+//! the same fact under either policy. The alternative was a separate warning
+//! code, and a second vocabulary for one fact would have a reader learn two
+//! names. Reversal: a warning that is not a would-be refusal gets its own
+//! vocabulary. Witness:
+//! `diagnostics::diagnostics::a_shadowed_builtin_is_a_warning`.
 //!
-//! ```text
-//! warning[ShadowedBuiltin]: `add` shadows a builtin name; the source's binding wins
-//!   ╭▸ shadow.gandr:1:5
-//!   │
-//! 1 │ def add : Integer ;
-//!   ╰╴    ━━━ shadows a builtin
-//! ```
+//! # The settle note says what was expected and why it did not happen
 //!
-//! The identifier is `ShadowedBuiltin`, the refusal the reject policy files for
-//! the same bytes, so one name reads the same fact under either policy. The
-//! warning names the shadowed path at the shadowing site. The alternative was a
-//! separate warning code, and a second vocabulary for one fact would have a
-//! reader learn two names. Reversal: a warning that is not a would-be refusal
-//! gets its own vocabulary. Witness:
-//! `diagnostics::diagnostics::a_shadowed_builtin_renders_as_a_warning`.
+//! A refused declaration closes with a note in words: what its source
+//! expected of it — to check, to check owing some obligations, to be refused
+//! with another refusal, to run to an outcome, or nothing, its expectation
+//! being malformed — and that this refusal is why it is unsettled, then the
+//! obligations that survive when any do. The alternative was the settle
+//! comparison's own ledger spelling (``unsettled `a` states checks owing
+//! 0``), which reads as the comparison's record, not as a reason.
 //!
 //! # Native universe-path diagnostics
 //!
@@ -80,59 +57,65 @@
 //! malformed-source class. Shape diagnostics can name the expected sum or
 //! `Path_U` classifier; injection and case remain checking forms, not
 //! unsupported language constructs. A missing origin remains an absent
-//! annotation rather than an invented source span.
-//!
-//! **Choice.** Project the same typed refusal and causal roles used by ordinary
-//! checking, rather than add a second universe-specific diagnostic pipeline.
-//! The renderer certifies neither the candidate path nor its evidence.
-//! **Reversal.** A source notation may supply more precise origins; it must not
-//! change the refusal’s semantic class or infer certificate equality from its
-//! displayed maps.
+//! annotation rather than an invented source span. The builder projects the
+//! same typed refusal and causal roles ordinary checking uses, rather than a
+//! second universe-specific pipeline, and certifies neither the candidate
+//! path nor its evidence. Reversal: a source notation may supply more precise
+//! origins; it must not change the refusal's semantic class or infer
+//! certificate equality from its displayed maps.
 
+use alloc::string::String;
+use alloc::vec::Vec;
 use core::fmt;
 use std::path::Path;
 
-use annotate_snippets::AnnotationKind;
-use annotate_snippets::Group;
-use annotate_snippets::Level;
-use annotate_snippets::Origin;
-use annotate_snippets::Renderer;
-use annotate_snippets::Snippet;
-use annotate_snippets::renderer::DecorStyle;
 use anodized::spec;
-use gandr_core_checker::Pending;
+use gandr_core_checker::Failure;
 use gandr_core_term::FailureClass;
 use gandr_surface_corpus::DeclarationReport;
+use gandr_surface_corpus::Outcome;
 use gandr_surface_corpus::Refusal;
 use gandr_surface_corpus::RefusalName;
 use gandr_surface_corpus::RefusalSpelling;
+use gandr_surface_corpus::Stated;
 use gandr_surface_corpus::Surviving;
-use gandr_surface_dispatcher::Spellings;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::OriginTable;
 use gandr_surface_lowering::namespace::ShadowedBuiltin;
+use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
 use crate::culprit::Culprit;
+use crate::frame::contexts;
 use crate::locus::Annotation;
 use crate::locus::Annotations;
 use crate::locus::Checked;
 use crate::locus::Comparison;
 use crate::locus::Label;
 use crate::locus::PrimaryLabel;
-use crate::locus::Reason;
 use crate::locus::report_context;
 use crate::message::Plain;
-use crate::style::RenderStyle;
-use crate::style::Rendered;
-use crate::style::Verbosity;
+use crate::model::AnnotationKind;
+use crate::model::Compared;
+use crate::model::Diagnostic;
+use crate::model::DiagnosticAnnotation;
+use crate::model::DiagnosticDetail;
+use crate::model::Excerpt;
+use crate::model::Locus;
+use crate::model::Message;
+use crate::model::MessageKey;
+use crate::model::Severity;
+use crate::model::expression;
+use crate::model::producer;
+use crate::spelled::Spellings;
+use crate::spelled::kept;
 
 quenchant_shape::reason_enum! {
-    /// Why a report claims no span.
+    /// Why a diagnostic claims no span.
     pub mod report_span {
-        /// The reason a report is unlocated.
+        /// The reason a diagnostic is unlocated.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
             /// The refusal is about the run rather than a position in the
@@ -145,27 +128,43 @@ quenchant_shape::reason_enum! {
             /// The span the producer recorded lies outside the source's text,
             /// or splits one of its characters.
             OutsideText,
+            /// The ledger line records a source's standing, not a position in
+            /// it.
+            Standing,
         }
     }
 }
 
 quenchant_shape::reason_enum! {
-    /// Why a report carries no identifier.
+    /// Why a diagnostic carries no identifier.
     pub mod report_identifier {
-        /// The reason a report names no refusal.
+        /// The reason a diagnostic names no refusal.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
-            /// The report states what a declaration states and produced: it
-            /// carries no refusal to name, and its title is its statement.
+            /// The diagnostic states what a declaration states and produced,
+            /// or a source's standing: it carries no refusal to name.
             Statement,
         }
     }
 }
 
-/// The name a source with no path is rendered under.
-const PATHLESS: &str = "<input>";
+quenchant_shape::reason_enum! {
+    /// Why a diagnostic carries no note.
+    pub mod report_note {
+        /// The reason a diagnostic closes with no note.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The diagnostic states what a declaration states and produced,
+            /// or a source's standing: it carries no refusal to explain.
+            Statement,
+            /// The diagnostic is a warning: no declaration's settlement rests
+            /// on it, so it names none.
+            Warning,
+        }
+    }
+}
 
-/// What a report is about, and whose fact it records.
+/// What a diagnostic is about, and whose fact it records.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Class
 {
@@ -180,17 +179,20 @@ pub enum Class
     Goal,
     /// A builtin name the source shadowed, which the source's binding won.
     Warning,
+    /// A ledger line: a source's standing.
+    Ledger,
 }
 
 impl fmt::Display for Class
 {
-    /// Writes the failure class, the unsettlement, `goal` or `warning`.
+    /// Writes the failure class, the unsettlement, `goal`, `warning` or
+    /// `ledger`.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: writes the producer's failure class, the unsettlement reason
-    ///   or the goal label; propagates destination failure.
-    /// - provides: the human-readable report class.
+    ///   or the class's own word; propagates destination failure.
+    /// - provides: the human-readable class.
     /// - fails: if the formatter rejects a write.
     /// - panics: none.
     /// - executable: none — the formatter exposes neither output text nor an
@@ -198,9 +200,7 @@ impl fmt::Display for Class
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the four unsettlement reasons remain distinguishable
-    ///   from one refusal class and a goal. Collapsed labels change a finite
-    ///   observation; other failure classes and destination errors are
-    ///   excluded.
+    ///   from one refusal class, a goal, a warning and a ledger line.
     /// - witness: `report::tests::class_labels_keep_their_decision_surfaces_distinct`
     #[inline]
     fn fmt(
@@ -213,6 +213,7 @@ impl fmt::Display for Class
             | Self::Unsettled(unsettlement) => fmt::Display::fmt(&unsettlement, f),
             | Self::Goal => f.write_str("goal"),
             | Self::Warning => f.write_str("warning"),
+            | Self::Ledger => f.write_str("ledger"),
         }
     }
 }
@@ -245,9 +246,8 @@ impl fmt::Display for Unsettlement
     ///   independent destination-failure observer.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — all four unsettlement kinds have distinct public
-    ///   class labels. A collapsed reason changes an observation; exact prose
-    ///   and destination failures are outside this evidence.
+    /// - hypothesis: L3 — all four unsettlement kinds have distinct class
+    ///   labels.
     /// - witness: `report::tests::class_labels_keep_their_decision_surfaces_distinct`
     #[inline]
     fn fmt(
@@ -264,7 +264,7 @@ impl fmt::Display for Unsettlement
     }
 }
 
-/// What one report is about.
+/// What one diagnostic is about: the builder's input.
 #[derive(Clone, Copy, Debug)]
 pub enum Subject<'step>
 {
@@ -277,10 +277,10 @@ pub enum Subject<'step>
         refusal: Refusal<'step>,
         /// The table its core nodes are located through.
         origins: &'step OriginTable,
-        /// The spellings of the types it compares.
+        /// The spellings of the types it and its failure name.
         spellings: &'step Spellings,
-        /// The judgements its body was refused inside, outermost first.
-        pending: &'step [Pending],
+        /// The failure the checking machine kept, when it refused the body.
+        failure: Maybe<&'step Failure, kept::Absent>,
     },
     /// A declaration unsettled with no refusal produced.
     Unsettled
@@ -299,14 +299,65 @@ pub enum Subject<'step>
     /// A builtin the source's declaration or binder shadowed, under the
     /// warn-and-allow policy.
     Shadowed(&'step ShadowedBuiltin),
+    /// A ledger line: a settled fixture, a pending source's refusal or
+    /// declaration, or a pending source the lowering read.
+    Ledger
+    {
+        /// The line, after the path.
+        line: &'step str,
+        /// The bytes it reports, when it reports a position.
+        at: Maybe<ByteSpan, report_span::Absent>,
+    },
 }
 
-/// One refusal, unsettled declaration or goal, at the source it sits in.
-#[derive(Clone, Copy, Debug)]
-pub struct Report<'step>
+/// The diagnostic `subject`, a part of the source at `path` whose text is
+/// `text`, makes.
+///
+/// # Specification
+/// - requires: the subject's spans, origins and spellings were made over
+///   `text`.
+/// - ensures: a [`Diagnostic`] whose severity, identifier, message, detail,
+///   annotations, contexts, hypotheses, note, expression and excerpt are those
+///   the module states for the subject; every span it carries lies inside
+///   `text` on character boundaries, an unlocatable one left out with its
+///   reason, never clamped.
+/// - provides: the one builder every face's diagnostics come from.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a refusal, an unsettled declaration, a goal, a source
+///   refused whole, a warning and a ledger line each build their kind; finite
+///   UTF-8 boundaries expose clamping.
+/// - witness: `diagnostics::diagnostics::a_refused_declaration_is_located`
+/// - witness: `diagnostics::diagnostics::each_verb_prints_its_entries`
+/// - witness: `report::tests::utf8_boundaries_are_checked_per_locus_without_clamping`
+#[spec(ensures: |ref ret| ret.annotations.iter().all(|annotation| text.fragment(annotation.locus.span).is_ok())
+    && match ret.span { Maybe::Present(span) => text.fragment(span).is_ok(), Maybe::Absent(_) => true })]
+#[inline]
+#[must_use]
+pub fn diagnose(
+    path: &Path,
+    text: SourceText<'_>,
+    subject: Subject<'_>,
+) -> Diagnostic
 {
-    /// The source's path, as the walk reached it; empty for a source with no
-    /// file.
+    Report {
+        path,
+        text,
+        subject,
+    }
+    .diagnostic()
+}
+
+/// The name a source with no path is rendered under.
+pub const PATHLESS: &str = "<input>";
+
+/// One subject at the source it sits in: the view the builder reads.
+#[derive(Clone, Copy, Debug)]
+struct Report<'step>
+{
+    /// The source's path, as the walk reached it.
     path: &'step Path,
     /// The source's text, which every span of the subject is measured against.
     text: SourceText<'step>,
@@ -314,35 +365,137 @@ pub struct Report<'step>
     subject: Subject<'step>,
 }
 
-impl<'step> Report<'step>
+impl Report<'_>
 {
-    /// The report on `subject`, a part of the source at `path` whose text is
-    /// `text`.
+    /// The diagnostic.
     ///
     /// # Specification
     /// trivial.
-    pub(crate) const fn new(
-        path: &'step Path,
-        text: SourceText<'step>,
-        subject: Subject<'step>,
-    ) -> Self
+    fn diagnostic(&self) -> Diagnostic
     {
-        Self {
-            path,
-            text,
-            subject,
+        let annotations = self.annotations();
+        let span = match annotations.primary {
+            | Maybe::Present(primary) => Maybe::Present(primary.span),
+            | Maybe::Absent(reason) => Maybe::Absent(reason),
+        };
+        let mut marked: Vec<DiagnosticAnnotation> = Vec::new();
+        if let Maybe::Present(primary) = annotations.primary
+            && let Maybe::Present(locus) = Locus::of(self.text, primary.span)
+        {
+            marked.push(DiagnosticAnnotation {
+                kind: AnnotationKind::Primary,
+                locus,
+                label: alloc::format!("{}", PrimaryLabel {
+                    label: primary.label,
+                    comparison: self.comparison(),
+                }),
+            });
         }
-    }
-
-    /// The path of the source the report is about.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub const fn path(&self) -> &'step Path
-    {
-        self.path
+        for slot in annotations.context {
+            if let Maybe::Present(annotation) = slot
+                && let Maybe::Present(locus) = Locus::of(self.text, annotation.span)
+            {
+                marked.push(DiagnosticAnnotation {
+                    kind: AnnotationKind::Context,
+                    locus,
+                    label: alloc::format!("{}", annotation.label),
+                });
+            }
+        }
+        let (contexts, hypotheses) = match self.subject {
+            | Subject::Refused {
+                origins,
+                spellings,
+                failure: Maybe::Present(failure),
+                ..
+            } => contexts(failure, origins, spellings, self.text, span),
+            | Subject::Refused { .. }
+            | Subject::Unsettled { .. }
+            | Subject::Goal(_)
+            | Subject::Source(_)
+            | Subject::Shadowed(_)
+            | Subject::Ledger { .. } => (Vec::new(), Vec::new()),
+        };
+        let expression = match span {
+            | Maybe::Present(span) => match self.text.fragment(span) {
+                | Ok(fragment) if !fragment.as_ref().contains('\n') => {
+                    Maybe::Present(String::from(fragment.as_ref()))
+                },
+                | Ok(_) | Err(_) => Maybe::Absent(expression::Absent::Multiline),
+            },
+            | Maybe::Absent(_) => Maybe::Absent(expression::Absent::Unlocated),
+        };
+        let covered = marked.iter().map(|annotation| annotation.locus.span).chain(
+            contexts.iter().filter_map(|context| match context.locus {
+                | Maybe::Present(locus) => Some(locus.span),
+                | Maybe::Absent(_) => None,
+            }),
+        );
+        let excerpt = match excerpt(self.text, covered) {
+            | Maybe::Present(excerpt) => Maybe::Present(excerpt),
+            | Maybe::Absent(()) => Maybe::Absent(match span {
+                | Maybe::Absent(reason) => reason,
+                | Maybe::Present(_) => report_span::Absent::OutsideText,
+            }),
+        };
+        let comparison = self.comparison();
+        let owned = |side: Maybe<&str, crate::spelled::spelling::Absent>| match side {
+            | Maybe::Present(spelled) => Maybe::Present(String::from(spelled)),
+            | Maybe::Absent(reason) => Maybe::Absent(reason),
+        };
+        Diagnostic {
+            path: self.path.to_path_buf(),
+            severity: match self.subject {
+                | Subject::Goal(_) => Severity::Goal,
+                | Subject::Shadowed(_) => Severity::Warning,
+                | Subject::Ledger { .. } => Severity::Ledger,
+                | Subject::Refused { .. } | Subject::Unsettled { .. } | Subject::Source(_) => {
+                    Severity::Error
+                },
+            },
+            identifier: self.identifier(),
+            message: Message {
+                key: self.key(),
+                text: alloc::format!("{}", MessageText(self.subject)),
+            },
+            detail: DiagnosticDetail {
+                class: self.class(),
+                title: alloc::format!("{}", TitleText(self.subject)),
+                compared: Compared {
+                    expected: owned(comparison.expected),
+                    found: owned(comparison.found),
+                },
+                producer: match self.subject {
+                    | Subject::Refused {
+                        refusal, failure, ..
+                    } => Maybe::Present(match failure {
+                        | Maybe::Present(failure) => alloc::format!("{refusal:?}; {failure:?}"),
+                        | Maybe::Absent(_) => alloc::format!("{refusal:?}"),
+                    }),
+                    | Subject::Source(refusal) => Maybe::Present(alloc::format!("{refusal:?}")),
+                    | Subject::Unsettled { .. }
+                    | Subject::Goal(_)
+                    | Subject::Shadowed(_)
+                    | Subject::Ledger { .. } => Maybe::Absent(producer::Absent::Statement),
+                },
+            },
+            span,
+            annotations: marked,
+            contexts,
+            hypotheses,
+            note: match self.subject {
+                | Subject::Refused { declaration, .. } => {
+                    Maybe::Present(alloc::format!("{}", NoteText(declaration)))
+                },
+                | Subject::Unsettled { .. }
+                | Subject::Goal(_)
+                | Subject::Source(_)
+                | Subject::Ledger { .. } => Maybe::Absent(report_note::Absent::Statement),
+                | Subject::Shadowed(_) => Maybe::Absent(report_note::Absent::Warning),
+            },
+            expression,
+            excerpt,
+        }
     }
 
     /// What the report is about, and whose fact it records.
@@ -353,32 +506,26 @@ impl<'step> Report<'step>
     ///   [`Class::Refusal`] with the class their producer's classifier gives; a
     ///   declaration unsettled with no refusal is [`Class::Unsettled`] with
     ///   what it rests on; a goal is [`Class::Goal`]; a shadowed builtin is
-    ///   [`Class::Warning`].
-    /// - provides: the class a reader sorts reports by and a face chooses a
-    ///   severity from.
+    ///   [`Class::Warning`]; a ledger line [`Class::Ledger`].
+    /// - provides: the class a reader sorts diagnostics by.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — finite real reports expose the producer's exact class
-    ///   across refused declarations and whole-source refusal. Unproduced
-    ///   expectations and goals distinguish the non-refusal branches; arbitrary
-    ///   checker payloads are outside these fixtures.
-    /// - witness: `diagnostics::diagnostics::a_refused_declaration_renders_its_snippet`
-    /// - witness: `diagnostics::diagnostics::an_unsettled_declaration_renders_as_its_golden`
-    /// - witness: `diagnostics::diagnostics::a_goal_renders_as_its_golden`
+    ///   across refused declarations and whole-source refusal; unproduced
+    ///   expectations and goals distinguish the non-refusal branches.
+    /// - witness: `diagnostics::diagnostics::a_refused_declaration_is_located`
     /// - witness: `diagnostics::diagnostics::each_verb_prints_its_entries`
-    /// - witness: `diagnostics::diagnostics::a_shadowed_builtin_renders_as_a_warning`
     #[spec(ensures: |ret| ret == match self.subject {
         Subject::Refused { refusal, .. } => Class::Refusal(refusal.classify()),
         Subject::Unsettled { unsettlement, .. } => Class::Unsettled(unsettlement),
         Subject::Goal(_) => Class::Goal,
         Subject::Source(refusal) => Class::Refusal(refusal.classify()),
         Subject::Shadowed(_) => Class::Warning,
+        Subject::Ledger { .. } => Class::Ledger,
     })]
-    #[inline]
-    #[must_use]
-    pub fn class(&self) -> Class
+    fn class(&self) -> Class
     {
         match self.subject {
             | Subject::Refused { refusal, .. } => Class::Refusal(refusal.classify()),
@@ -386,82 +533,50 @@ impl<'step> Report<'step>
             | Subject::Goal(_) => Class::Goal,
             | Subject::Source(refusal) => Class::Refusal(refusal.classify()),
             | Subject::Shadowed(_) => Class::Warning,
+            | Subject::Ledger { .. } => Class::Ledger,
         }
     }
 
-    /// The bytes the report is about: its primary locus.
+    /// The message's stable key.
     ///
     /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the span the producer recorded for the subject — a lowering
-    ///   or corpus refusal's own span, the origin of the node a checker refusal
-    ///   names, or the declaration's span for an unsettled declaration, a goal,
-    ///   or a checker refusal about the declaration as a whole — when it lies
-    ///   inside the source's text on character boundaries.
-    /// - provides: the position a face marks, read from the producer and never
-    ///   from a search of the text.
-    /// - fails: never; an unlocated report is the [`report_span::Absent`]
-    ///   absence: [`Run`] for a lowering refusal about the run, [`Unrecorded`]
-    ///   for a node the origin table holds nothing for, [`OutsideText`] for a
-    ///   span the text cannot answer.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — real producer spans and finite UTF-8 boundary
-    ///   fixtures distinguish exact location from out-of-text metadata. Split
-    ///   characters and empty end positions expose accidental clamping. Other
-    ///   producer/span combinations are not enumerated.
-    /// - witness: `diagnostics::diagnostics::a_type_mismatch_renders_as_a_located_report`
-    /// - witness: `diagnostics::diagnostics::a_refused_declaration_renders_its_snippet`
-    /// - witness: `diagnostics::diagnostics::a_span_outside_the_text_is_unlocated`
-    /// - witness: `report::tests::utf8_boundaries_are_checked_per_locus_without_clamping`
-    ///
-    /// [`Run`]: report_span::Absent::Run
-    /// [`Unrecorded`]: report_span::Absent::Unrecorded
-    /// [`OutsideText`]: report_span::Absent::OutsideText
-    #[spec(ensures: |ret| match ret {
-        Maybe::Present(span) => self.text.fragment(span).is_ok(),
-        Maybe::Absent(_) => true,
-    })]
-    #[inline]
-    pub fn span(&self) -> Maybe<ByteSpan, report_span::Absent>
+    /// trivial.
+    fn key(&self) -> MessageKey
     {
-        match self.annotations().primary {
-            | Maybe::Present(primary) => Maybe::Present(primary.span),
-            | Maybe::Absent(reason) => Maybe::Absent(reason),
+        match self.subject {
+            | Subject::Refused { refusal, .. } => MessageKey::Refusal(refusal.name()),
+            | Subject::Source(refusal) => MessageKey::Refusal(Refusal::Lowering(refusal).name()),
+            | Subject::Shadowed(_) => MessageKey::Refusal(RefusalName::ShadowedBuiltin),
+            | Subject::Unsettled { unsettlement, .. } => MessageKey::Unsettled(unsettlement),
+            | Subject::Goal(_) => MessageKey::Goal,
+            | Subject::Ledger { .. } => MessageKey::Ledger,
         }
     }
 
-    /// The vocabulary name of the refusal the report is about: the identifier
-    /// its snippet's first line carries.
+    /// The vocabulary name of the refusal the report is about.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: a refused declaration names the refusal it produced, a source
     ///   refused as a whole the lowering's refusal, and a shadowed builtin
-    ///   `ShadowedBuiltin`, the refusal the reject policy files for it, each
-    ///   spelled as a `refuses` payload spells it.
-    /// - provides: the identifier [`Report::render`] writes, for a face that
-    ///   carries it beside the message rather than in a snippet.
-    /// - fails: never; an unsettled declaration and a goal carry no refusal to
-    ///   name, the [`report_identifier::Absent::Statement`] absence.
+    ///   `ShadowedBuiltin`, each spelled as a `refuses` payload spells it.
+    /// - provides: the identifier a face writes beside the message.
+    /// - fails: never; an unsettled declaration, a goal and a ledger line carry
+    ///   no refusal to name.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — checker and lowering refusals expose stable
-    ///   vocabulary identifiers; a goal exposes statement absence. These
-    ///   distinguish missing or substituted identifiers on the finite fixture
-    ///   subjects, not every refusal vocabulary member.
+    /// - hypothesis: L3 — checker and lowering refusals expose their stable
+    ///   vocabulary identifiers; a goal exposes statement absence.
     /// - witness: `diagnostics::diagnostics::a_report_preserves_refusal_identity_and_title_payloads`
     #[spec(ensures: |ret| match (self.subject, ret) {
         (Subject::Refused { refusal, .. }, Maybe::Present(spelling)) => spelling == refusal.name().spelling(),
         (Subject::Source(refusal), Maybe::Present(spelling)) => spelling == Refusal::Lowering(refusal).name().spelling(),
         (Subject::Shadowed(_), Maybe::Present(spelling)) => spelling == RefusalName::ShadowedBuiltin.spelling(),
-        (Subject::Unsettled { .. } | Subject::Goal(_), Maybe::Absent(report_identifier::Absent::Statement)) => true,
+        (Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Ledger { .. }, Maybe::Absent(report_identifier::Absent::Statement)) => true,
         _ => false,
     })]
-    #[inline]
-    pub fn identifier(&self) -> Maybe<RefusalSpelling, report_identifier::Absent>
+    fn identifier(&self) -> Maybe<RefusalSpelling, report_identifier::Absent>
     {
         match self.subject {
             | Subject::Refused { refusal, .. } => Maybe::Present(refusal.name().spelling()),
@@ -469,151 +584,9 @@ impl<'step> Report<'step>
                 Maybe::Present(Refusal::Lowering(refusal).name().spelling())
             },
             | Subject::Shadowed(_) => Maybe::Present(RefusalName::ShadowedBuiltin.spelling()),
-            | Subject::Unsettled { .. } | Subject::Goal(_) => {
+            | Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Ledger { .. } => {
                 Maybe::Absent(report_identifier::Absent::Statement)
             },
-        }
-    }
-
-    /// The report's title: the producer's own text for what the report is
-    /// about.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the producer's message for a refusal, what the declaration
-    ///   states and produced for an unsettled declaration or a goal, the
-    ///   lowering's refusal for a source refused as a whole, and the path a
-    ///   shadowed builtin is bound at.
-    /// - provides: the detail a face shows beside the [`Report::message`] it
-    ///   leads with, for a reader who wants the producer's own words.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — unresolved-name and goal titles preserve source names
-    ///   and numeric roles; mismatch titles expose no core addresses. Distinct
-    ///   stated/produced counts expose lost or swapped payloads. Other subjects
-    ///   and natural-language wording are excluded.
-    /// - witness: `diagnostics::diagnostics::a_report_preserves_refusal_identity_and_title_payloads`
-    /// - witness: `diagnostics::diagnostics::a_shadowed_builtin_renders_as_a_warning`
-    /// - witness: `report::tests::notes_and_titles_preserve_numeric_roles_and_omit_empty_survivors`
-    #[spec(ensures: |ret| matches!((self.subject, ret.0),
-        (Subject::Refused { .. }, Subject::Refused { .. })
-            | (Subject::Unsettled { .. }, Subject::Unsettled { .. })
-            | (Subject::Goal(_), Subject::Goal(_)) | (Subject::Source(_), Subject::Source(_))
-            | (Subject::Shadowed(_), Subject::Shadowed(_))
-    ))]
-    #[inline]
-    #[must_use]
-    pub const fn title(&self) -> Title<'step>
-    {
-        Title(self.subject)
-    }
-
-    /// The report's message: what its snippet's first line says after the
-    /// level and the identifier.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the plain message of a refusal, naming no grammar sort, node
-    ///   or admission position; the title of every other report.
-    /// - provides: the message [`Report::render`] writes and a face shows
-    ///   beside the report's span.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a type mismatch's message differs from its title, and
-    ///   one refusal of every vocabulary name has a plain message.
-    /// - witness: `diagnostics::diagnostics::a_type_mismatch_renders_as_a_located_report`
-    /// - witness: `message::tests::every_refusal_name_has_a_plain_message`
-    #[spec(ensures: |ret| matches!((self.subject, ret.0),
-        (Subject::Refused { .. }, Subject::Refused { .. })
-            | (Subject::Unsettled { .. }, Subject::Unsettled { .. })
-            | (Subject::Goal(_), Subject::Goal(_)) | (Subject::Source(_), Subject::Source(_))
-            | (Subject::Shadowed(_), Subject::Shadowed(_))
-    ))]
-    #[inline]
-    #[must_use]
-    pub const fn message(&self) -> Message<'step>
-    {
-        Message(self.subject)
-    }
-
-    /// The loci that explain the report beside its primary one.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the two context slots, in the order the refusal names them:
-    ///   the first occurrence a duplicate or a contradicted expectation
-    ///   repeats; the declaration a member is named before; the type a term is
-    ///   checked against, then the type it synthesises; the type a former met.
-    ///   Each locus keeps its producer's span and its own label.
-    /// - provides: the context loci [`Report::render`] marks, for a face that
-    ///   shows them as related locations.
-    /// - fails: never; an empty slot is the [`report_context::Absent`] absence:
-    ///   [`Unnamed`] for a slot the refusal names no locus for, [`Unrecorded`]
-    ///   for a node the origin table holds nothing for, [`OutsideText`] for a
-    ///   span the text cannot answer.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — mismatch and duplicate fixtures expose causal slot
-    ///   order. Finite UTF-8 boundaries distinguish outside-text context from
-    ///   unrecorded or unnamed context; a goal has two unnamed slots. Other
-    ///   producer payloads are outside these observations.
-    /// - witness: `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`
-    /// - witness: `report::tests::utf8_boundaries_are_checked_per_locus_without_clamping`
-    ///
-    /// [`Unnamed`]: report_context::Absent::Unnamed
-    /// [`Unrecorded`]: report_context::Absent::Unrecorded
-    /// [`OutsideText`]: report_context::Absent::OutsideText
-    #[spec(ensures: |ret| ret.iter().all(|slot| match *slot {
-        Maybe::Present(annotation) => self.text.fragment(annotation.span).is_ok(),
-        Maybe::Absent(_) => true,
-    }) && match self.subject {
-        Subject::Goal(_) | Subject::Shadowed(_) | Subject::Unsettled { unsettlement: Unsettlement::Obligations | Unsettlement::Unproduced | Unsettlement::RunOutcome, .. } =>
-            ret == [Maybe::Absent(report_context::Absent::Unnamed); 2_usize],
-        Subject::Refused { .. } | Subject::Source(_) | Subject::Unsettled { unsettlement: Unsettlement::Malformed, .. } => true,
-    })]
-    #[inline]
-    pub fn context(&self) -> [Maybe<Annotation, report_context::Absent>; 2_usize]
-    {
-        self.annotations().context
-    }
-
-    /// What the report's primary locus is, as its underline labels it.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the label [`Report::render`] writes under the primary locus:
-    ///   what the refused bytes are for a refusal, with the types a checker
-    ///   refusal compares, what the unsettlement rests on for a declaration
-    ///   unsettled with no refusal, the surviving obligations for a goal;
-    ///   absent exactly when [`Report::span`] is.
-    /// - provides: the label a face shows beside the title, for a face that
-    ///   does not draw the underline.
-    /// - fails: never; an unlocated report is the [`report_span::Absent`]
-    ///   absence [`Report::span`] gives.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a type mismatch and an unresolved type head, both
-    ///   malformed source, carry different labels; a mismatch carries its
-    ///   types; a run refusal carries none.
-    /// - witness: `diagnostics::diagnostics::refusals_of_one_class_label_what_their_locus_is`
-    /// - witness: `diagnostics::diagnostics::a_mismatch_label_spells_both_types`
-    #[spec(ensures: |ret| matches!((ret, self.span()), (Maybe::Present(_), Maybe::Present(_)) | (Maybe::Absent(_), Maybe::Absent(_)))
-        && match ret { Maybe::Present(label) => label.comparison == self.comparison(), Maybe::Absent(_) => true })]
-    #[inline]
-    pub fn label(&self) -> Maybe<PrimaryLabel<'step>, report_span::Absent>
-    {
-        match self.annotations().primary {
-            | Maybe::Present(primary) => Maybe::Present(PrimaryLabel {
-                label: primary.label,
-                comparison: self.comparison(),
-            }),
-            | Maybe::Absent(reason) => Maybe::Absent(reason),
         }
     }
 
@@ -623,8 +596,7 @@ impl<'step> Report<'step>
     /// - requires: nothing.
     /// - ensures: a refused declaration compares what [`Comparison::of`] reads
     ///   for its refusal; every other report compares no types.
-    /// - provides: the expected and found types a face spells beside the
-    ///   primary locus.
+    /// - provides: the expected and found types a primary label spells.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -634,11 +606,9 @@ impl<'step> Report<'step>
     /// - witness: `diagnostics::diagnostics::a_mismatch_label_spells_both_types`
     #[spec(ensures: |ret| match self.subject {
         Subject::Refused { refusal, spellings, .. } => ret == Comparison::of(refusal, spellings),
-        Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Source(_) | Subject::Shadowed(_) => ret == Comparison::none(),
+        Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Source(_) | Subject::Shadowed(_) | Subject::Ledger { .. } => ret == Comparison::none(),
     })]
-    #[inline]
-    #[must_use]
-    pub fn comparison(&self) -> Comparison<'step>
+    fn comparison(&self) -> Comparison<'_>
     {
         match self.subject {
             | Subject::Refused {
@@ -647,439 +617,9 @@ impl<'step> Report<'step>
             | Subject::Unsettled { .. }
             | Subject::Goal(_)
             | Subject::Source(_)
-            | Subject::Shadowed(_) => Comparison::none(),
+            | Subject::Shadowed(_)
+            | Subject::Ledger { .. } => Comparison::none(),
         }
-    }
-
-    /// The judgements the report's refusal stood inside, located, outermost
-    /// first: its nested reasons.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: a refused declaration's reasons are those [`Reason::trail`]
-    ///   reads from its judgements against its primary locus, less any whose
-    ///   bytes the text cannot answer; every other report has none.
-    /// - provides: the reasons [`Report::render`] marks, for a face that shows
-    ///   them as related locations.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a force refused inside a thunk names the thunk and
-    ///   the force; a goal names nothing.
-    /// - witness: `diagnostics::diagnostics::a_refusal_names_the_judgements_it_stood_inside`
-    #[spec(ensures: |ret| ret.iter().all(|reason| self.text.fragment(reason.span).is_ok())
-        && match self.subject {
-            Subject::Refused { .. } => true,
-            Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Source(_) | Subject::Shadowed(_) => ret.is_empty(),
-        })]
-    #[inline]
-    #[must_use]
-    pub fn reasons(&self) -> Vec<Reason<'step>>
-    {
-        match self.subject {
-            | Subject::Refused {
-                origins,
-                spellings,
-                pending,
-                ..
-            } => {
-                let mut reasons = Reason::trail(pending, origins, spellings, self.span());
-                reasons.retain(|reason| self.text.fragment(reason.span).is_ok());
-                reasons
-            },
-            | Subject::Unsettled { .. }
-            | Subject::Goal(_)
-            | Subject::Source(_)
-            | Subject::Shadowed(_) => Vec::new(),
-        }
-    }
-
-    /// The note the report closes with.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: a refused declaration closes with a note naming it, what it
-    ///   states and the obligations that survive; every other report closes
-    ///   with none.
-    /// - provides: the note [`Report::render`] writes, for a face that carries
-    ///   it beside the message.
-    /// - fails: never; a report that states what a declaration states and
-    ///   produced is the [`report_note::Absent::Statement`] absence, and a
-    ///   warning the [`report_note::Absent::Warning`] absence.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a refused declaration's note names it; an unsettled
-    ///   declaration has none.
-    /// - witness: `report::tests::notes_and_titles_preserve_numeric_roles_and_omit_empty_survivors`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Present(_)) == matches!(self.subject, Subject::Refused { .. }))]
-    #[inline]
-    pub const fn note(&self) -> Maybe<Note<'step>, report_note::Absent>
-    {
-        match self.subject {
-            | Subject::Refused { declaration, .. } => Maybe::Present(Note(declaration)),
-            | Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Source(_) => {
-                Maybe::Absent(report_note::Absent::Statement)
-            },
-            | Subject::Shadowed(_) => Maybe::Absent(report_note::Absent::Warning),
-        }
-    }
-
-    /// The report as a source snippet, laid out in `style` at `verbosity`, or
-    /// as one line of JSON.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the first line is the level — `error`, `goal` for a goal,
-    ///   `warning` for a shadowed builtin — with a refusal's vocabulary name as
-    ///   its identifier, and the message: a refusal's plain message, what the
-    ///   declaration states and produced for a declaration, the shadowed path
-    ///   for a warning. A located report then quotes the lines its loci cover
-    ///   under the source's path, line and column, the primary locus underlined
-    ///   and labelled with what its bytes are or with the surviving
-    ///   obligations, each context locus marked with what it explains, and each
-    ///   nested reason marked with the judgement it stands for; an unlocated
-    ///   report names the source's path alone. A refused declaration closes
-    ///   with a note naming it and what it states. A source with an empty path
-    ///   is named `<input>`. Plain adds no styling; styled adds the backend's
-    ///   colour sequences. Caller path controls remain literal in both modes.
-    ///   No framing terminator is appended, but a trailing path line ending can
-    ///   end an unlocated rendering. At [`Verbosity::Detailed`] and above the
-    ///   snippet closes with the report's class, the producer's own wording
-    ///   where it differs from the message, and the primary locus's source text
-    ///   when it is one line; at [`Verbosity::Debug`] then the byte span of
-    ///   every locus and the producer's refusal and judgements as their
-    ///   implementers print them. At [`Verbosity::Json`] the rendering is one
-    ///   line of JSON holding the level, the identifier, the class, the
-    ///   message, the title, the path, every locus with its bytes, line, column
-    ///   and label, and the note, whatever the style.
-    /// - provides: the plain text the driver prints and the tests compare, and
-    ///   the structured image a tool reads.
-    /// - fails: never.
-    /// - panics: none; every span reaches the snippet backend checked against
-    ///   the text.
-    /// - intension: the backend chooses the source window and the connector
-    ///   layout; the loci it receives are exactly the producer's.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L1 — one byte-exact golden for each report kind bounds
-    ///   layout evidence to those fixtures. L3 — pathless and causal-context
-    ///   observations distinguish lost locations; plain/styled pairs expose
-    ///   added colour. Literal path controls and UTF-8 boundary fixtures expose
-    ///   false sanitization or location guarantees. Other paths and producer
-    ///   payloads are not exhaustively covered.
-    /// - witness: `diagnostics::diagnostics::a_type_mismatch_renders_as_a_located_report`
-    /// - witness: `diagnostics::diagnostics::an_unsettled_declaration_renders_as_its_golden`
-    /// - witness: `diagnostics::diagnostics::a_goal_renders_as_its_golden`
-    /// - witness: `diagnostics::diagnostics::a_pathless_report_names_input_and_renders_causal_context`
-    /// - witness: `diagnostics::diagnostics::a_labeled_context_retains_its_locus_and_cause`
-    /// - witness: `diagnostics::diagnostics::forced_styling_colors_actual_facade_annotations`
-    /// - witness: `report::tests::literal_path_controls_are_not_styling_or_framing`
-    /// - witness: `report::tests::utf8_boundaries_are_checked_per_locus_without_clamping`
-    /// - witness: `diagnostics::diagnostics::a_refusal_names_the_judgements_it_stood_inside`
-    /// - witness: `diagnostics::diagnostics::a_shadowed_builtin_renders_as_a_warning`
-    /// - witness: `diagnostics::diagnostics::one_refusal_renders_at_every_verbosity`
-    #[spec(ensures: |ref ret| match verbosity {
-        Verbosity::Json => ret.as_ref().starts_with('{') && !ret.as_ref().contains('\n'),
-        Verbosity::User | Verbosity::Detailed | Verbosity::Debug => match style {
-            RenderStyle::Plain => match self.subject {
-                Subject::Goal(_) => ret.as_ref().starts_with("goal: "),
-                Subject::Unsettled { .. } => ret.as_ref().starts_with("error: "),
-                Subject::Refused { .. } | Subject::Source(_) => ret.as_ref().starts_with("error["),
-                Subject::Shadowed(_) => ret.as_ref().starts_with("warning["),
-            },
-            RenderStyle::Styled => ret.as_ref().contains("\u{1b}["),
-        },
-    })]
-    #[inline]
-    #[must_use]
-    pub fn render(
-        &self,
-        style: RenderStyle,
-        verbosity: Verbosity,
-    ) -> Rendered
-    {
-        if verbosity == Verbosity::Json {
-            return self.json();
-        }
-        let annotations = self.annotations();
-        let reasons: Vec<(ByteSpan, String)> = self
-            .reasons()
-            .into_iter()
-            .map(|reason| (reason.span, reason.to_string()))
-            .collect();
-        let title = self.message().to_string();
-        let level = match self.subject {
-            | Subject::Goal(_) => Level::INFO.with_name("goal"),
-            | Subject::Shadowed(_) => Level::WARNING,
-            | Subject::Refused { .. } | Subject::Unsettled { .. } | Subject::Source(_) => {
-                Level::ERROR
-            },
-        };
-        let identifier = self.identifier();
-        let message = match identifier {
-            | Maybe::Present(ref spelling) => {
-                level.primary_title(title.as_str()).id(spelling.as_ref())
-            },
-            | Maybe::Absent(report_identifier::Absent::Statement) => {
-                level.primary_title(title.as_str())
-            },
-        };
-        let origin = if self.path.as_os_str().is_empty() {
-            PATHLESS.to_owned()
-        }
-        else {
-            self.path.display().to_string()
-        };
-        let [first, second] = annotations.context;
-        let primary_label = match self.label() {
-            | Maybe::Present(label) => label.to_string(),
-            | Maybe::Absent(_) => String::new(),
-        };
-        let first_label = labelled(first);
-        let second_label = labelled(second);
-        let range = |annotation: Annotation| {
-            usize::from(annotation.span.start()) .. usize::from(annotation.span.end())
-        };
-        let mut group = Group::with_title(message);
-        match annotations.primary {
-            | Maybe::Present(primary) => {
-                let mut snippet = Snippet::source(self.text.as_ref())
-                    .path(origin.as_str())
-                    .annotation(
-                        AnnotationKind::Primary
-                            .span(range(primary))
-                            .label(primary_label.as_str()),
-                    );
-                for (annotation, label) in [(first, &first_label), (second, &second_label)] {
-                    if let Maybe::Present(annotation) = annotation {
-                        snippet = snippet.annotation(
-                            AnnotationKind::Context
-                                .span(range(annotation))
-                                .label(label.as_str()),
-                        );
-                    }
-                }
-                for &(span, ref label) in &reasons {
-                    snippet = snippet.annotation(
-                        AnnotationKind::Context
-                            .span(usize::from(span.start()) .. usize::from(span.end()))
-                            .label(label.as_str()),
-                    );
-                }
-                group = group.element(snippet);
-            },
-            | Maybe::Absent(_) => {
-                group = group.element(Origin::path(origin.as_str()));
-            },
-        }
-        let note = match self.note() {
-            | Maybe::Present(note) => Maybe::Present(note.to_string()),
-            | Maybe::Absent(reason) => Maybe::Absent(reason),
-        };
-        if let Maybe::Present(ref note) = note {
-            group = group.element(Level::NOTE.message(note.as_str()));
-        }
-        let details = self.details(verbosity);
-        for detail in &details {
-            group = group.element(
-                Level::NOTE
-                    .with_name(detail.name)
-                    .message(detail.text.as_str()),
-            );
-        }
-        let renderer = match style {
-            | RenderStyle::Plain => Renderer::plain(),
-            | RenderStyle::Styled => Renderer::styled(),
-        };
-        Rendered::from(renderer.decor_style(DecorStyle::Unicode).render(&[group]))
-    }
-
-    /// The lines a rendering at `verbosity` closes with, after the note.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: none below [`Verbosity::Detailed`]; then the class, the
-    ///   producer's wording where it differs from the message, and the primary
-    ///   locus's text when it is one line; at [`Verbosity::Debug`] then the
-    ///   byte spans and, for a refusal, the producer's refusal and the
-    ///   judgements it stood inside. Every text is one line.
-    /// - provides: the detail [`Report::render`] adds above the user level, and
-    ///   an editor's diagnostic closes its message with.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — one refusal rendered at each level shows the detail
-    ///   lines of its level and none of the next.
-    /// - witness: `diagnostics::diagnostics::one_refusal_renders_at_every_verbosity`
-    #[spec(ensures: |ref ret| (matches!(verbosity, Verbosity::User | Verbosity::Json) == ret.is_empty())
-        && ret.iter().all(|detail| !detail.text.contains('\n')))]
-    #[inline]
-    #[must_use]
-    pub fn details(
-        &self,
-        verbosity: Verbosity,
-    ) -> Vec<Detail>
-    {
-        let mut details = Vec::new();
-        if matches!(verbosity, Verbosity::User | Verbosity::Json) {
-            return details;
-        }
-        details.push(Detail {
-            name: "class",
-            text: self.class().to_string(),
-        });
-        let title = self.title().to_string();
-        if title != self.message().to_string() && !title.contains('\n') {
-            details.push(Detail {
-                name: "detail",
-                text: title,
-            });
-        }
-        let annotations = self.annotations();
-        if let Maybe::Present(primary) = annotations.primary
-            && let Ok(fragment) = self.text.fragment(primary.span)
-            && !fragment.as_ref().contains('\n')
-        {
-            details.push(Detail {
-                name: "expression",
-                text: format!("`{}`", fragment.as_ref()),
-            });
-        }
-        if verbosity != Verbosity::Debug {
-            return details;
-        }
-        let mut spans = match annotations.primary {
-            | Maybe::Present(primary) => format!("primary {}", primary.span),
-            | Maybe::Absent(reason) => format!("primary unlocated ({reason:?})"),
-        };
-        for annotation in annotations.context {
-            if let Maybe::Present(annotation) = annotation {
-                spans.push_str("; context ");
-                spans.push_str(&annotation.span.to_string());
-            }
-        }
-        for reason in self.reasons() {
-            spans.push_str("; reason ");
-            spans.push_str(&reason.span.to_string());
-        }
-        details.push(Detail {
-            name: "spans",
-            text: spans,
-        });
-        match self.subject {
-            | Subject::Refused {
-                refusal, pending, ..
-            } => {
-                details.push(Detail {
-                    name: "refusal",
-                    text: format!("{refusal:?}"),
-                });
-                if !pending.is_empty() {
-                    details.push(Detail {
-                        name: "judgements",
-                        text: format!("{pending:?}"),
-                    });
-                }
-            },
-            | Subject::Source(refusal) => details.push(Detail {
-                name: "refusal",
-                text: format!("{refusal:?}"),
-            }),
-            | Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Shadowed(_) => {},
-        }
-        details
-    }
-
-    /// The report as one line of JSON.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: one JSON object on one line: `level`, `name` (the refusal's
-    ///   vocabulary name, or null), `class`, `message`, `title`, `path`,
-    ///   `primary` (a locus, or null), `context` and `reasons` (loci), and
-    ///   `note` (or null); a locus holds its byte `start` and `end`, its
-    ///   one-based `line` and `column` in characters, and its `label`.
-    /// - provides: the [`Verbosity::Json`] rendering.
-    /// - fails: never; the image holds only strings, numbers, nulls and arrays,
-    ///   which always encode.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — one refusal's image parses back with its name,
-    ///   message, primary locus and reasons.
-    /// - witness: `diagnostics::diagnostics::one_refusal_renders_at_every_verbosity`
-    #[spec(ensures: |ref ret| ret.as_ref().starts_with('{') && !ret.as_ref().contains('\n'))]
-    fn json(&self) -> Rendered
-    {
-        let text = self.text.as_ref();
-        let locus = |span: ByteSpan, label: String| {
-            let start = usize::from(span.start());
-            let before = text.get(.. start).unwrap_or_default();
-            let line = before.matches('\n').count().saturating_add(1);
-            let column = before
-                .rsplit('\n')
-                .next()
-                .map_or(0, |current| current.chars().count())
-                .saturating_add(1);
-            JsonLocus {
-                start,
-                end: usize::from(span.end()),
-                line,
-                column,
-                label,
-            }
-        };
-        let annotations = self.annotations();
-        let primary = match (annotations.primary, self.label()) {
-            | (Maybe::Present(primary), Maybe::Present(label)) => {
-                Some(locus(primary.span, label.to_string()))
-            },
-            | (Maybe::Present(_) | Maybe::Absent(_), Maybe::Absent(_))
-            | (Maybe::Absent(_), Maybe::Present(_)) => None,
-        };
-        let context = annotations
-            .context
-            .into_iter()
-            .filter_map(|annotation| match annotation {
-                | Maybe::Present(annotation) => {
-                    Some(locus(annotation.span, annotation.label.to_string()))
-                },
-                | Maybe::Absent(_) => None,
-            })
-            .collect();
-        let reasons = self
-            .reasons()
-            .into_iter()
-            .map(|reason| locus(reason.span, reason.to_string()))
-            .collect();
-        let image = JsonReport {
-            level: match self.subject {
-                | Subject::Goal(_) => "goal",
-                | Subject::Shadowed(_) => "warning",
-                | Subject::Refused { .. } | Subject::Unsettled { .. } | Subject::Source(_) => {
-                    "error"
-                },
-            },
-            name: match self.identifier() {
-                | Maybe::Present(spelling) => Some(spelling.as_ref().to_owned()),
-                | Maybe::Absent(_) => None,
-            },
-            class: self.class().to_string(),
-            message: self.message().to_string(),
-            title: self.title().to_string(),
-            path: self.path.display().to_string(),
-            primary,
-            context,
-            reasons,
-            note: match self.note() {
-                | Maybe::Present(note) => Some(note.to_string()),
-                | Maybe::Absent(_) => None,
-            },
-        };
-        Rendered::from(serde_json::to_string(&image).unwrap_or_default())
     }
 
     /// Every locus the report marks, each checked against the source's text.
@@ -1089,19 +629,16 @@ impl<'step> Report<'step>
     /// - ensures: the subject's loci as its producer recorded them; a primary
     ///   locus the text cannot answer becomes the
     ///   [`report_span::Absent::OutsideText`] absence, and such a context locus
-    ///   is marked `OutsideText` in its original context slot.
-    /// - provides: the only loci [`Report::span`], [`Report::context`] and
-    ///   [`Report::render`] read.
+    ///   is marked `OutsideText` in its original slot.
+    /// - provides: the only loci a diagnostic's annotations come from.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — finite real producer spans and UTF-8 boundary cases
-    ///   expose unvalidated or clamped locations. Independent primary and
-    ///   context validation preserves the surviving causal slot. Arbitrary text
-    ///   sizes and other producer payloads are outside these fixtures.
+    ///   expose unvalidated or clamped locations; independent primary and
+    ///   context validation preserves the surviving causal slot.
     /// - witness: `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`
-    /// - witness: `diagnostics::diagnostics::a_span_outside_the_text_is_unlocated`
     /// - witness: `report::tests::utf8_boundaries_are_checked_per_locus_without_clamping`
     #[spec(ensures: |ref ret| {
         let primary = match ret.primary {
@@ -1112,6 +649,7 @@ impl<'step> Report<'step>
                     | Subject::Goal(declaration) => annotation.label == Label::Surviving(declaration.surviving()),
                 Subject::Unsettled { unsettlement, .. } => annotation.label == Label::Unsettled(unsettlement),
                 Subject::Shadowed(_) => annotation.label == Label::Shadows,
+                Subject::Ledger { .. } => annotation.label == Label::Reported,
             },
             Maybe::Absent(_) => true,
         };
@@ -1147,6 +685,16 @@ impl<'step> Report<'step>
             } => Annotations::at(declaration.span(), Label::Unsettled(unsettlement)),
             | Subject::Source(refusal) => Annotations::lowering(refusal),
             | Subject::Shadowed(shadowed) => Annotations::at(shadowed.span, Label::Shadows),
+            | Subject::Ledger { at, .. } => match at {
+                | Maybe::Present(span) => Annotations::at(span, Label::Reported),
+                | Maybe::Absent(reason) => Annotations {
+                    primary: Maybe::Absent(reason),
+                    context: [
+                        Maybe::Absent(report_context::Absent::Unnamed),
+                        Maybe::Absent(report_context::Absent::Unnamed),
+                    ],
+                },
+            },
         };
         let inside = |annotation: &Annotation| self.text.fragment(annotation.span).is_ok();
         let primary = match annotations.primary {
@@ -1166,150 +714,83 @@ impl<'step> Report<'step>
     }
 }
 
-quenchant_shape::reason_enum! {
-    /// Why a report carries no note.
-    pub mod report_note {
-        /// The reason a report closes with no note.
-        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub enum Absent {
-            /// The report states what a declaration states and produced: it
-            /// carries no refusal to name, and its title is its statement.
-            Statement,
-            /// The report is a warning: no declaration's settlement rests on
-            /// it, so it names none.
-            Warning,
-        }
-    }
-}
-
-/// The text of an annotation's label, or the empty text for a locus absent.
+/// The whole lines of `text` the spans `covered` touch.
 ///
 /// # Specification
-/// - requires: nothing.
-/// - ensures: absent loci have empty labels; present loci have a nonempty,
-///   single-line, unstyled role label.
-/// - provides: optional labels for the snippet backend.
+/// - requires: every span lies inside `text` on character boundaries.
+/// - ensures: the lines from the one holding the earliest start to the one
+///   holding the latest end, without the final line break, with the byte and
+///   one-based line they start at; absent when no span is given.
+/// - provides: the excerpt a diagnostic carries in place of its source.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — finite mismatch and duplicate snippets expose present
-///   role labels alongside absent context. Missing labels or added line/control
-///   characters change those renderings; arbitrary formatter failures are
-///   outside these infallible string observations.
-/// - witness: `diagnostics::diagnostics::a_type_mismatch_renders_as_a_located_report`
-/// - witness: `diagnostics::diagnostics::a_labeled_context_retains_its_locus_and_cause`
-/// - witness: `diagnostics::diagnostics::a_goal_renders_as_its_golden`
-#[spec(ensures: |ref ret| ret.is_empty() == matches!(annotation, Maybe::Absent(_))
-    && !ret.contains(['\r', '\n', '\u{1b}'])
-)]
-fn labelled<Reason>(annotation: Maybe<Annotation, Reason>) -> String
-where
-    Reason: Copy,
+/// - hypothesis: L3 — two spans on lines two and three excerpt exactly those
+///   lines; no span excerpts nothing.
+/// - witness: `report::tests::an_excerpt_is_the_lines_its_spans_touch`
+#[spec(ensures: |ret| match ret {
+    Maybe::Present(ref excerpt) => text.as_ref().get(usize::from(excerpt.start) ..).is_some_and(|rest| rest.starts_with(excerpt.text.as_str())),
+    Maybe::Absent(()) => true,
+})]
+fn excerpt(
+    text: SourceText<'_>,
+    covered: impl Iterator<Item = ByteSpan>,
+) -> Maybe<Excerpt, ()>
 {
-    match annotation {
-        | Maybe::Present(annotation) => annotation.label.to_string(),
-        | Maybe::Absent(_) => String::new(),
+    let mut bounds: Maybe<(usize, usize), ()> = Maybe::Absent(());
+    for span in covered {
+        let (start, end) = (usize::from(span.start()), usize::from(span.end()));
+        bounds = Maybe::Present(match bounds {
+            | Maybe::Present((low, high)) => (low.min(start), high.max(end)),
+            | Maybe::Absent(()) => (start, end),
+        });
     }
-}
-
-/// One line a rendering above the user level closes with: `name: text`.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Detail
-{
-    /// What the line states, written where a note writes `note`.
-    pub name: &'static str,
-    /// The line.
-    pub text: String,
-}
-
-impl fmt::Display for Detail
-{
-    /// The line as a plain rendering writes it: the name, a colon, the text.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn fmt(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result
-    {
-        write!(f, "{}: {}", self.name, self.text)
-    }
-}
-
-/// A report's JSON image.
-#[derive(Clone, Debug, serde::Serialize)]
-struct JsonReport
-{
-    /// `error`, `warning` or `goal`.
-    level: &'static str,
-    /// The refusal's vocabulary name, when the report carries a refusal.
-    name: Option<String>,
-    /// The report's class.
-    class: String,
-    /// The message the report leads with.
-    message: String,
-    /// The producer's own wording.
-    title: String,
-    /// The source's path, as the walk reached it.
-    path: String,
-    /// The primary locus, when the report is located.
-    primary: Option<JsonLocus>,
-    /// The context loci.
-    context: Vec<JsonLocus>,
-    /// The nested reasons, outermost first.
-    reasons: Vec<JsonLocus>,
-    /// The note a refused declaration closes with.
-    note: Option<String>,
-}
-
-/// One locus of a report's JSON image.
-#[derive(Clone, Debug, serde::Serialize)]
-struct JsonLocus
-{
-    /// The first byte.
-    start: usize,
-    /// The byte past the last.
-    end: usize,
-    /// The one-based line of the first byte.
-    line: usize,
-    /// The one-based column of the first byte, in characters.
-    column: usize,
-    /// What the locus says.
-    label: String,
+    let Maybe::Present((low, high)) = bounds
+    else {
+        return Maybe::Absent(());
+    };
+    let source = text.as_ref();
+    let before = source.get(.. low).unwrap_or_default();
+    let start = before
+        .rfind('\n')
+        .map_or(0_usize, |newline| newline.saturating_add(1));
+    let after = source.get(high ..).unwrap_or_default();
+    let end = after
+        .find('\n')
+        .map_or(source.len(), |newline| high.saturating_add(newline));
+    Maybe::Present(Excerpt {
+        text: String::from(source.get(start .. end).unwrap_or_default()),
+        start: ByteOffset::from(start),
+        line: before.matches('\n').count().saturating_add(1),
+    })
 }
 
 /// A report's title: the producer's message for a refusal, what the
 /// declaration states and produced otherwise.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug)]
-pub struct Title<'step>(Subject<'step>);
+struct TitleText<'step>(Subject<'step>);
 
-impl fmt::Display for Title<'_>
+impl fmt::Display for TitleText<'_>
 {
-    /// Writes the producer's message for a refusal, and what the declaration
-    /// states and produced otherwise.
+    /// Writes the producer's message for a refusal, what the declaration
+    /// states and produced otherwise, and a ledger line itself.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: writes the refusal's message or the declaration identity with
     ///   its stated and produced outcomes; whole-source refusal keeps its
     ///   scope.
-    /// - provides: a report title independent of terminal styling.
+    /// - provides: the producer's own wording, which a detailed level shows.
     /// - fails: if the formatter rejects a write.
     /// - panics: none.
-    /// - executable: none — the formatter exposes no output buffer or
-    ///   independent destination-failure observer.
+    /// - executable: none — the formatter exposes no output buffer.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — unresolved-name and goal titles retain source names
-    ///   and numeric roles; mismatch titles expose no core addresses. Distinct
-    ///   stated/produced counts expose substitution or reversal. Other wording
-    ///   and failing destinations are excluded.
+    ///   and numeric roles; mismatch titles expose no core addresses.
     /// - witness: `diagnostics::diagnostics::a_report_preserves_refusal_identity_and_title_payloads`
-    /// - witness: `report::tests::notes_and_titles_preserve_numeric_roles_and_omit_empty_survivors`
     #[inline]
     fn fmt(
         &self,
@@ -1344,6 +825,7 @@ impl fmt::Display for Title<'_>
                 "`{}` shadows a builtin name; the source's binding wins",
                 shadowed.path
             ),
+            | Subject::Ledger { line, .. } => f.write_str(line),
         }
     }
 }
@@ -1351,31 +833,28 @@ impl fmt::Display for Title<'_>
 /// The message a report leads with.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug)]
-pub struct Message<'step>(Subject<'step>);
+struct MessageText<'step>(Subject<'step>);
 
-impl fmt::Display for Message<'_>
+impl fmt::Display for MessageText<'_>
 {
     /// Writes a refusal's plain message, and every other report's title.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: a refused declaration writes its refusal's plain message; a
-    ///   source refused as a whole says so, then the plain message; an
-    ///   unsettled declaration, a goal and a warning write their title, which
-    ///   is already the user's; propagates a write failure.
-    /// - provides: the first line of a report and the language server's
-    ///   message.
+    ///   source refused as a whole says so, then the plain message; every other
+    ///   report writes its title, which is already the user's.
+    /// - provides: the first line of a diagnostic.
     /// - fails: if the formatter rejects a write.
     /// - panics: none.
-    /// - executable: none — the formatter exposes no output buffer or
-    ///   independent observation of the destination's failure.
+    /// - executable: none — the formatter exposes no output buffer.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — one refusal of every vocabulary name writes a
-    ///   nonempty, single-line message that names no grammar sort; a type
-    ///   mismatch's message differs from its producer's title.
+    ///   single-line message naming no grammar sort; a type mismatch's message
+    ///   differs from its producer's title.
     /// - witness: `message::tests::every_refusal_name_has_a_plain_message`
-    /// - witness: `diagnostics::diagnostics::a_type_mismatch_renders_as_a_located_report`
+    /// - witness: `diagnostics::diagnostics::a_mismatch_label_spells_both_types`
     #[inline]
     fn fmt(
         &self,
@@ -1389,9 +868,10 @@ impl fmt::Display for Message<'_>
                 "the source is not a list of declarations: {}",
                 Plain(Refusal::Lowering(refusal))
             ),
-            | Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Shadowed(_) => {
-                fmt::Display::fmt(&Title(self.0), f)
-            },
+            | Subject::Unsettled { .. }
+            | Subject::Goal(_)
+            | Subject::Shadowed(_)
+            | Subject::Ledger { .. } => fmt::Display::fmt(&TitleText(self.0), f),
         }
     }
 }
@@ -1399,42 +879,63 @@ impl fmt::Display for Message<'_>
 /// The note a refused declaration closes with.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug)]
-pub struct Note<'step>(&'step DeclarationReport<'step>);
+struct NoteText<'step>(&'step DeclarationReport<'step>);
 
-impl fmt::Display for Note<'_>
+impl fmt::Display for NoteText<'_>
 {
-    /// Writes the declaration's settlement, its name, what it states, and the
-    /// obligations that survive when any do.
+    /// Writes, in words, what the declaration is expected to do and that this
+    /// refusal leaves it unsettled, then the obligations that survive when any
+    /// do.
     ///
     /// # Specification
-    /// - requires: nothing.
-    /// - ensures: writes settlement, declaration identity and stated outcome,
-    ///   then surviving obligations exactly when the ledger is nonempty.
-    /// - provides: the context note after a refused declaration's snippet.
+    /// - requires: the declaration produced a refusal.
+    /// - ensures: names the declaration; says it is expected to check, to check
+    ///   owing its stated count, to be refused with its stated refusal, or to
+    ///   run to its stated outcome, or that its expectation states nothing and
+    ///   why; says the refusal is what leaves it unsettled; then the surviving
+    ///   obligations exactly when the ledger is nonempty.
+    /// - provides: the note after a refused declaration's snippet.
     /// - fails: if the formatter rejects a write.
     /// - panics: none.
-    /// - executable: none — the formatter exposes no output buffer or
-    ///   independent destination-failure observer.
+    /// - executable: none — the formatter exposes no output buffer.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — explicit fixture expectations produce empty ledgers
-    ///   and each direction of an obligation mismatch. Exact semantic counts
-    ///   and declaration names expose omitted or reversed payloads without
-    ///   pinning prose. Other statements and destination failures are excluded.
-    /// - witness: `report::tests::notes_and_titles_preserve_numeric_roles_and_omit_empty_survivors`
+    /// - hypothesis: L3 — a declaration expected to check, one owing three
+    ///   obligations and one expecting another refusal each say what they
+    ///   expected, with their counts and names.
+    /// - witness: `diagnostics::diagnostics::the_settle_note_says_what_was_expected_in_words`
     #[inline]
     fn fmt(
         &self,
         f: &mut fmt::Formatter<'_>,
     ) -> fmt::Result
     {
-        write!(
-            f,
-            "{} `{}` states {}",
-            self.0.settlement(),
-            self.0.name(),
-            self.0.stated()
-        )?;
+        let name = self.0.name();
+        match *self.0.stated() {
+            | Stated::Verdict(Outcome::Checks(owing)) if usize::from(owing) == 0_usize => {
+                write!(
+                    f,
+                    "`{name}` is expected to check, and this refusal leaves it unsettled"
+                )?;
+            },
+            | Stated::Verdict(Outcome::Checks(owing)) => write!(
+                f,
+                "`{name}` is expected to check owing {owing} obligations, and this refusal leaves \
+                 it unsettled"
+            )?,
+            | Stated::Verdict(Outcome::Refuses(expected)) => write!(
+                f,
+                "`{name}` is expected to be refused with {expected}, and this refusal is not \
+                 that one"
+            )?,
+            | Stated::Verdict(Outcome::Runs(ref spelled)) => write!(
+                f,
+                "`{name}` is expected to run to {spelled}, and this refusal leaves it unsettled"
+            )?,
+            | Stated::Malformed(fault) => {
+                write!(f, "`{name}` states no verdict to settle against: {fault}")?;
+            },
+        }
         let surviving = self.0.surviving();
         if surviving != Surviving::default() {
             write!(f, "; surviving obligations: {surviving}")?;
@@ -1443,41 +944,26 @@ impl fmt::Display for Note<'_>
     }
 }
 
-/// Report-level validation, framing and semantic payload boundaries.
+/// Builder-level validation and semantic payload boundaries.
 #[cfg(test)]
 mod tests
 {
     use std::path::Path;
 
     use gandr_core_term::FailureClass;
-    use gandr_surface_dispatcher::Composed;
-    use gandr_surface_dispatcher::Goals;
-    use gandr_surface_dispatcher::LoweringCount;
-    use gandr_surface_dispatcher::SourceRoot;
-    use gandr_surface_dispatcher::Standing;
-    use gandr_surface_dispatcher::Step;
-    use gandr_surface_dispatcher::Verb;
-    use gandr_surface_dispatcher::compose;
-    use gandr_surface_grammar::built_in;
     use gandr_surface_lowering::LoweringRefusal;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::ByteSpan;
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
 
-    use super::Annotation;
     use super::Class;
-    use super::Label;
-    use super::Note;
-    use super::RenderStyle;
-    use super::Report;
     use super::Subject;
     use super::Unsettlement;
-    use super::Verbosity;
-    use super::report_context;
+    use super::diagnose;
+    use super::excerpt;
     use super::report_span;
-    use crate::Entry;
-    use crate::entries;
+    use crate::model::AnnotationKind;
 
     #[test]
     fn class_labels_keep_their_decision_surfaces_distinct()
@@ -1490,6 +976,7 @@ mod tests
             Class::Unsettled(Unsettlement::Malformed),
             Class::Goal,
             Class::Warning,
+            Class::Ledger,
         ];
         let labels = classes.map(|class| class.to_string());
         for (index, label) in labels.iter().enumerate() {
@@ -1513,7 +1000,7 @@ mod tests
                 .expect("ordered span");
             let first = ByteSpan::new(ByteOffset::from(first_start), ByteOffset::from(first_end))
                 .expect("ordered context");
-            let report = Report::new(
+            let diagnostic = diagnose(
                 Path::new("boundary.gandr"),
                 text,
                 Subject::Source(LoweringRefusal::DuplicateDefinition {
@@ -1523,7 +1010,7 @@ mod tests
                 }),
             );
             assert_eq!(
-                report.span(),
+                diagnostic.span,
                 if primary_valid {
                     Maybe::Present(span)
                 }
@@ -1531,141 +1018,43 @@ mod tests
                     Maybe::Absent(report_span::Absent::OutsideText)
                 }
             );
-            assert_eq!(report.context(), [
-                if context_valid {
-                    Maybe::Present(Annotation {
-                        span: first,
-                        label: Label::First,
-                    })
-                }
-                else {
-                    Maybe::Absent(report_context::Absent::OutsideText)
-                },
-                Maybe::Absent(report_context::Absent::Unnamed),
-            ]);
-            let rendered = report.render(RenderStyle::Plain, Verbosity::User);
+            let marked: Vec<(AnnotationKind, ByteSpan)> = diagnostic
+                .annotations
+                .iter()
+                .map(|annotation| (annotation.kind, annotation.locus.span))
+                .collect();
+            let mut expected = Vec::new();
+            if primary_valid {
+                expected.push((AnnotationKind::Primary, span));
+            }
+            if context_valid {
+                expected.push((AnnotationKind::Context, first));
+            }
+            assert_eq!(marked, expected, "each locus is kept or dropped on its own");
             if primary_valid {
                 let column = if start == 4_usize { 3_usize } else { 1_usize };
-                assert!(
-                    rendered
-                        .as_ref()
-                        .contains(&format!("boundary.gandr:1:{column}"))
-                );
+                assert_eq!(diagnostic.annotations[0].locus.column, column);
             }
-            else {
-                assert!(rendered.as_ref().contains("boundary.gandr"));
-                assert!(!rendered.as_ref().contains("boundary.gandr:"));
-            }
-        }
-        let empty = ByteSpan::new(ByteOffset::from(0_usize), ByteOffset::from(0_usize))
-            .expect("empty span");
-        let report = Report::new(
-            Path::new("empty.gandr"),
-            SourceText::from(""),
-            Subject::Source(LoweringRefusal::UnresolvedName {
-                span: empty,
-                name: "empty".into(),
-            }),
-        );
-        assert_eq!(report.span(), Maybe::Present(empty));
-        assert!(
-            report
-                .render(RenderStyle::Plain, Verbosity::User)
-                .as_ref()
-                .contains("empty.gandr:1:1")
-        );
-    }
-
-    #[test]
-    fn literal_path_controls_are_not_styling_or_framing()
-    {
-        for path in [
-            "plain.gandr",
-            "escape\u{1b}[31m.gandr",
-            "final\n",
-            "final\r",
-        ] {
-            let report = Report::new(
-                Path::new(path),
-                SourceText::from(""),
-                Subject::Source(LoweringRefusal::BudgetExceeded {
-                    budget: 0_usize.into(),
-                }),
-            );
-            let plain = report.render(RenderStyle::Plain, Verbosity::User);
-            let styled = report.render(RenderStyle::Styled, Verbosity::User);
-            assert!(
-                plain.as_ref().ends_with(path),
-                "the literal path ends the unlocated report"
-            );
-            assert!(
-                styled.as_ref().contains(path),
-                "style preserves the path payload"
-            );
         }
     }
 
     #[test]
-    fn notes_and_titles_preserve_numeric_roles_and_omit_empty_survivors()
+    fn an_excerpt_is_the_lines_its_spans_touch()
     {
-        let text = SourceText::from(
-            "@[ owes(0) ] def quiet = 1 ;\n@[ owes(3) ] def pending : Integer ;\n@[ owes(0) ] def excess : Integer ;\n",
-        );
-        let grammar = built_in().expect("the grammar builds");
-        let step = Step::Source {
-            path: Path::new("payload.gandr"),
-            root: SourceRoot::Fixture,
-            text,
-            composed: compose(
-                &grammar,
-                SourceRoot::Fixture.corpus_root(),
-                text,
-                &mut LoweringCount::default(),
-            )
-            .expect("the fixture composes"),
-            standing: Standing::Unsettled,
+        let text = SourceText::from("one\ntwo\nthree\nfour\n");
+        let at = |start: usize, end: usize| {
+            ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end)).expect("ordered")
         };
-        let Step::Source {
-            composed: Composed::Settled { ref report, .. },
-            ..
-        } = step
+        let Maybe::Present(lines) = excerpt(text, [at(5, 6), at(9, 11)].into_iter())
         else {
-            panic!("the declarations reach the ledger");
+            panic!("two spans excerpt their lines");
         };
-        assert_eq!(report.declarations().len(), 3_usize);
-        for (declaration, (name, expected)) in report.declarations().iter().zip([
-            ("quiet", &[0_usize][..]),
-            ("pending", &[3_usize, 0_usize, 2_usize][..]),
-            ("excess", &[0_usize, 1_usize, 0_usize][..]),
-        ]) {
-            let note = Note(declaration).to_string();
-            assert!(note.contains(name), "the note retains declaration identity");
-            assert!(
-                note.split(|character: char| !character.is_ascii_digit())
-                    .filter_map(|digits| digits.parse::<usize>().ok())
-                    .eq(expected.iter().copied()),
-                "only stated and nonempty surviving payloads: {note}"
-            );
-        }
-        let mut stream = entries(&step, Verb::Check(Goals::Gated));
-        for (name, expected) in [
-            ("pending", [3_usize, 1_usize]),
-            ("excess", [0_usize, 1_usize]),
-        ] {
-            let Some(Entry::Report(report)) = stream.next()
-            else {
-                panic!("each owed declaration reports");
-            };
-            let title = report.title().to_string();
-            assert!(title.contains(name));
-            assert!(
-                title
-                    .split(|character: char| !character.is_ascii_digit())
-                    .filter_map(|digits| digits.parse::<usize>().ok())
-                    .eq(expected),
-                "stated count precedes the produced count: {title}"
-            );
-        }
-        assert!(stream.next().is_none());
+        assert_eq!(
+            (lines.text.as_str(), usize::from(lines.start), lines.line),
+            ("two\nthree", 4_usize, 2_usize)
+        );
+        assert_eq!(excerpt(text, [].into_iter()), Maybe::Absent(()));
     }
 }
+// weave: run 'weave explain crates/surface-diagnostics/src/report.rs' for
+// per-hunk detail, 'weave check' to verify your resolution

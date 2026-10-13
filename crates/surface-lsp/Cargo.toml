@@ -13,10 +13,10 @@ publish.workspace = true
 # The server reads the pipeline's own faces: a session per open document,
 # over the incremental checker's memory checkpoint store and the record
 # plane's memory block store; the dispatcher's root classification and
-# check verb, the renderer's reports, the grammar's highlighter over the
-# parser's tree, the parser's completion query, the printer's page width for
-# a hover's type, and the renderer seam's UTF-16 projection. The wire is
-# JSON, decoded and encoded through serde; a `file` URI's path is
+# check verb, the diagnostics model's diagnostics, the grammar's highlighter
+# over the parser's tree, the parser's completion query, the printer's page
+# width for a hover's type, and the renderer seam's UTF-16 projection. The
+# wire is JSON, decoded and encoded through serde; a `file` URI's path is
 # percent-decoded. The hub's render-bus face writes the seam's frames, so the
 # seam's serde image is on.
 # The pinned anodized facade supplies core-only specification helpers;

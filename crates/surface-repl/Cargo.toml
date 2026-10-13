@@ -13,12 +13,12 @@ publish.workspace = true
 
 # The loop asks the parser whether a buffer is complete, submits each complete
 # buffer to the interactive session, reads the dispatcher's step and the
-# settle report off the submission, prints refusals through the diagnostics
-# renderer, lays types from the incremental checker's checkpoints out through
-# the presentation printer, echoes the buffer through the grammar's role
-# table, and encodes everything onto the renderer seam's transcript blocks.
-# The session's checkpoints and kernel records live in memory. The terminal
-# face edits lines with rustyline.
+# settle report off the submission, prints each diagnostic the walk yields
+# through the terminal renderer, lays types from the incremental checker's
+# checkpoints out through the presentation printer, echoes the buffer through
+# the grammar's role table, and encodes everything onto the renderer seam's
+# transcript blocks. The session's checkpoints and kernel records live in
+# memory. The terminal face edits lines with rustyline.
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled.
 [dependencies]
@@ -35,6 +35,7 @@ gandr-surface-grammar.workspace = true
 gandr-surface-parser.workspace = true
 gandr-surface-pretty.workspace = true
 gandr-surface-render-remote.workspace = true
+gandr-surface-render-terminal.workspace = true
 gandr-surface-session.workspace = true
 gandr-surface-syntax.workspace = true
 quenchant-shape.workspace = true

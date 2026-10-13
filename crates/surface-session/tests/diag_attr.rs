@@ -9,13 +9,14 @@ use std::path::Path;
 
 use anodized::spec;
 use gandr_core_term::FailureClass;
+use gandr_surface_diagnostics::AnnotationKind;
 use gandr_surface_diagnostics::Class;
-use gandr_surface_diagnostics::Entry;
-use gandr_surface_diagnostics::Report;
-use gandr_surface_diagnostics::entries;
+use gandr_surface_diagnostics::Diagnostic;
+use gandr_surface_diagnostics::Severity;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Verb;
+use gandr_surface_dispatcher::entries;
 use gandr_surface_syntax::ByteSpan;
 use quenchant_shape::shape::Maybe;
 
@@ -97,14 +98,14 @@ fn spanned(
         .to_owned()
 }
 
-/// What `report`, over `source`, says.
+/// What `diagnostic`, over `source`, says.
 ///
 /// # Specification
-/// - requires: a named, located refusal whose primary and contextual spans
-///   address complete characters in this source.
+/// - requires: a named, located refusal whose annotations address complete
+///   characters in this source.
 /// - ensures: preserves the class and stable identifier and projects each
-///   source locus exactly, keeping context order and omitting absent context
-///   slots.
+///   annotated locus exactly, the primary one as the locus and the context ones
+///   in order.
 /// - panics: if the required identifier, location or source range is absent.
 ///
 /// # Adequacy
@@ -118,88 +119,56 @@ fn spanned(
 /// - witness: `tests::diag_attr::an_ill_typed_payload_becomes_an_ordinary_type_error`
 /// - witness: `tests::diag_attr::an_unknown_attribute_is_located_at_its_application`
 #[spec(
-    requires: matches!(report.identifier(), Maybe::Present(_))
-    && match report.span() {
-        Maybe::Present(span) => {
-            source.0.get(usize::from(span.start())..usize::from(span.end())).is_some()
-        }
-        Maybe::Absent(_) => false,
-    }
-    && report
-        .context()
-        .into_iter()
-        .all(|annotation| match annotation {
-            Maybe::Present(annotation) => {
-                source
-                    .0
-                    .get(
-                        usize::from(
-                            annotation.span.start(),
-                        )..usize::from(annotation.span.end()),
-                    )
-                    .is_some()
-            }
-            Maybe::Absent(_) => true,
-        }),
+    requires: matches!(diagnostic.identifier, Maybe::Present(_))
+    && matches!(diagnostic.span, Maybe::Present(_))
+    && diagnostic.annotations.iter().all(|annotation| {
+        source
+            .0
+            .get(usize::from(annotation.locus.span.start())..usize::from(annotation.locus.span.end()))
+            .is_some()
+    }),
     ensures: |ret| {
-    ret.class == report.class()
+    ret.class == diagnostic.detail.class
         && matches!(
-            report.identifier(), Maybe::Present(identifier) if ret.identifier.as_str() ==
+            diagnostic.identifier, Maybe::Present(ref identifier) if ret.identifier.as_str() ==
             identifier.as_ref()
         )
         && matches!(
-            report.span(), Maybe::Present(span) if source.0.get(usize::from(span.start())
+            diagnostic.span, Maybe::Present(span) if source.0.get(usize::from(span.start())
             ..usize::from(span.end())) == Some(ret.locus.as_str())
         )
-        && {
-            let mut found = ret.context.iter();
-            report
-                .context()
-                .into_iter()
-                .all(|annotation| match annotation {
-                    Maybe::Present(annotation) => {
-                        found
-                            .next()
-                            .is_some_and(|text| {
-                                source
-                                    .0
-                                    .get(
-                                        usize::from(
-                                            annotation.span.start(),
-                                        )..usize::from(annotation.span.end()),
-                                    ) == Some(text.as_str())
-                            })
-                    }
-                    Maybe::Absent(_) => true,
-                }) && found.next().is_none()
-        }
+        && ret.context.len() == diagnostic.annotations.iter().filter(|annotation| annotation.kind == AnnotationKind::Context).count()
 },
 )]
 fn seen(
     source: Text<'_>,
-    report: &Report<'_>,
+    diagnostic: &Diagnostic,
 ) -> Seen
 {
-    let Maybe::Present(identifier) = report.identifier()
+    let Maybe::Present(ref identifier) = diagnostic.identifier
     else {
-        panic!("an attribute misuse names a refusal: {}", report.title());
+        panic!(
+            "an attribute misuse names a refusal: {}",
+            diagnostic.detail.title
+        );
     };
-    let Maybe::Present(span) = report.span()
+    let Maybe::Present(span) = diagnostic.span
     else {
-        panic!("an attribute misuse is located: {}", report.title());
+        panic!(
+            "an attribute misuse is located: {}",
+            diagnostic.detail.title
+        );
     };
     Seen {
-        class: report.class(),
+        class: diagnostic.detail.class,
         identifier: identifier.to_string(),
         locus: spanned(source, span),
 
-        context: report
-            .context()
-            .into_iter()
-            .filter_map(|annotation| match annotation {
-                | Maybe::Present(annotation) => Some(spanned(source, annotation.span)),
-                | Maybe::Absent(_) => None,
-            })
+        context: diagnostic
+            .annotations
+            .iter()
+            .filter(|annotation| annotation.kind == AnnotationKind::Context)
+            .map(|annotation| spanned(source, annotation.locus.span))
             .collect(),
     }
 }
@@ -237,11 +206,14 @@ fn reports<'text>(source: impl Into<Text<'text>>) -> Vec<Seen>
     let step =
         submit(&mut session(SourceRoot::Fixture), source.0).into_step(Path::new("attribute.gandr"));
     entries(&step, Verb::Check(Goals::Reported))
-        .map(|entry| match entry {
-            | Entry::Report(report) => seen(source, &report),
-            | Entry::Line(line) => {
-                panic!("a fixture source with no pending refusal prints no line: {line}")
-            },
+        .map(|diagnostic| {
+            assert_ne!(
+                diagnostic.severity,
+                Severity::Ledger,
+                "a fixture source with no pending refusal prints no line: {}",
+                diagnostic.message.text
+            );
+            seen(source, &diagnostic)
         })
         .collect()
 }

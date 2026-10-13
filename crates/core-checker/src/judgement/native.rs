@@ -22,6 +22,7 @@ use super::Goal;
 use super::Machine;
 use super::Produced;
 use super::Step;
+use super::Waiting;
 use crate::CheckRefusal;
 use crate::ExpectedShape;
 use crate::TermNode;
@@ -78,8 +79,7 @@ impl Machine<'_, '_>
         if declared.len() != count {
             return Err(CheckRefusal::ConstructorArity(term));
         }
-        self.frames
-            .push(Frame::NativeYield(Produced::ValueType(datatype)));
+        self.wait(Frame::NativeYield(Produced::ValueType(datatype)));
         for (index, &field_type) in declared.iter().enumerate().rev() {
             let expected = former::instantiate(
                 self.context,
@@ -94,7 +94,7 @@ impl Machine<'_, '_>
                     .ok_or(CheckRefusal::MachineInvariant)?,
                 | _ => return Err(CheckRefusal::MachineInvariant),
             };
-            self.frames.push(Frame::NativeNext(Goal::Value {
+            self.wait(Frame::NativeNext(Goal::Value {
                 term: field,
                 direction: Direction::Check(expected),
             }));
@@ -138,7 +138,7 @@ impl Machine<'_, '_>
                     .ok_or(CheckRefusal::MachineInvariant)?,
                 | _ => return Err(CheckRefusal::MachineInvariant),
             };
-            self.frames.push(Frame::NativeNext(Goal::Value {
+            self.wait(Frame::NativeNext(Goal::Value {
                 term: argument,
                 direction: Direction::Check(expected),
             }));
@@ -180,19 +180,29 @@ impl Machine<'_, '_>
         else {
             return Err(CheckRefusal::MachineInvariant);
         };
-        self.frames.push(Frame::NativeRecord {
-            term,
-            base: self.native_types.len(),
+        let owner = self.owner;
+        self.frames.push(Waiting {
+            frame: Frame::NativeRecord {
+                term,
+                base: self.native_types.len(),
+            },
+            owner,
         });
         for &field in fields.values().rev() {
-            self.frames.push(Frame::NativeCollect);
-            self.frames.push(Frame::NativeNext(Goal::Value {
-                term: field,
-                direction: Direction::Synthesise,
-            }));
+            self.frames.push(Waiting {
+                frame: Frame::NativeCollect,
+                owner,
+            });
+            self.frames.push(Waiting {
+                frame: Frame::NativeNext(Goal::Value {
+                    term: field,
+                    direction: Direction::Synthesise,
+                }),
+                owner,
+            });
         }
         let first = self.frames.pop().ok_or(CheckRefusal::MachineInvariant)?;
-        self.resume(first, Produced::Checked)
+        self.resume(first.frame, Produced::Checked)
     }
 
     /// Check a record literal fieldwise, permitting width and recursive depth.
@@ -248,18 +258,25 @@ impl Machine<'_, '_>
         if !wanted.keys().all(|label| fields.contains_key(label)) {
             return Err(CheckRefusal::MissingRecordField { at: term, expected });
         }
+        let owner = self.owner;
         for (label, &field) in fields.iter().rev() {
             let direction = match wanted.get(label) {
                 | Some(&expected) => Direction::Check(expected),
                 | None => {
-                    self.frames.push(Frame::NativeDiscard);
+                    self.frames.push(Waiting {
+                        frame: Frame::NativeDiscard,
+                        owner,
+                    });
                     Direction::Synthesise
                 },
             };
-            self.frames.push(Frame::NativeNext(Goal::Value {
-                term: field,
-                direction,
-            }));
+            self.frames.push(Waiting {
+                frame: Frame::NativeNext(Goal::Value {
+                    term: field,
+                    direction,
+                }),
+                owner,
+            });
         }
         Ok(Step::Ascend(Produced::Checked))
     }
@@ -310,7 +327,7 @@ impl Machine<'_, '_>
         if count != signature.constructors().len() {
             return Err(CheckRefusal::NonExhaustiveDataCase(term));
         }
-        self.frames.push(Frame::NativeMotive { term, datatype });
+        self.wait(Frame::NativeMotive { term, datatype });
         self.context.binders().open(Zone::Intuitionistic, datatype);
         Ok(Step::Descend(Goal::Form(TypeNode::Computation(motive))))
     }
@@ -349,8 +366,7 @@ impl Machine<'_, '_>
         };
         let result =
             gandr_core_term::instantiate_comp_type(self.context.arena_mut(), motive, scrutinee);
-        self.frames
-            .push(Frame::NativeYield(Produced::CompType(result)));
+        self.wait(Frame::NativeYield(Produced::CompType(result)));
         for index in (0 .. count).rev() {
             let expected =
                 former::branch_type(self.context, datatype, ConstructorTag::from(index), motive)?;
@@ -361,7 +377,7 @@ impl Machine<'_, '_>
                     .ok_or(CheckRefusal::MachineInvariant)?,
                 | _ => return Err(CheckRefusal::MachineInvariant),
             };
-            self.frames.push(Frame::NativeNext(Goal::Computation {
+            self.wait(Frame::NativeNext(Goal::Computation {
                 term: branch,
                 direction: Direction::Check(expected),
             }));

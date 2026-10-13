@@ -1,0 +1,16 @@
+error[TypeMismatch]: mismatched types
+  ╭▸ bound.gandr:2:58
+  │
+1 │ def id(x: Integer) -> -F Integer { return x }
+  │                          ─────── the type it synthesises
+2 │ def f(n: Integer) -> -F String { run m <- id(n) ; return m }
+  │ ┬─────┬─────────────────┬────────┬────────────────┬──────┯──
+  │ │     │                 │        │                │      │
+  │ │     │                 │        │                │      its type does not convert: expected `String`, found `Integer`
+  │ │     │                 │        │                checked against `-F String`; while checking the value this returns
+  │ │     │                 │        checked against `-F String`; while checking the body under this binding; binds m : Integer
+  │ │     │                 the type it is checked against
+  │ │     checked against `Integer -> -F String`; while checking the body of this function; binds n : Integer
+  │ checked against `+U (Integer -> -F String)`; while checking the body of this thunk
+  │
+  ╰ note: `f` is expected to check, and this refusal leaves it unsettled

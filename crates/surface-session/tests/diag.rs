@@ -11,13 +11,13 @@ use std::path::Path;
 use anodized::spec;
 use gandr_surface_corpus::RefusalName;
 use gandr_surface_corpus::RefusalSpelling;
-use gandr_surface_diagnostics::Entry;
-use gandr_surface_diagnostics::entries;
+use gandr_surface_diagnostics::Severity;
 use gandr_surface_diagnostics::report_span;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Verb;
+use gandr_surface_dispatcher::entries;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use quenchant_shape::shape::Maybe;
@@ -236,12 +236,17 @@ fn located(source: Text<'_>) -> Vec<(RefusalSpelling, Maybe<ByteSpan, report_spa
 {
     let step = step(Path::new("located.gandr"), source);
     entries(&step, Verb::Check(Goals::Reported))
-        .filter_map(|entry| match entry {
-            | Entry::Report(report) => match report.identifier() {
-                | Maybe::Present(identifier) => Some((identifier, report.span())),
+        .filter_map(|diagnostic| {
+            assert_ne!(
+                diagnostic.severity,
+                Severity::Ledger,
+                "a strict source prints no ledger line: {}",
+                diagnostic.message.text
+            );
+            match diagnostic.identifier {
+                | Maybe::Present(identifier) => Some((identifier, diagnostic.span)),
                 | Maybe::Absent(_) => None,
-            },
-            | Entry::Line(line) => panic!("a strict source prints no ledger line: {line}"),
+            }
         })
         .collect()
 }

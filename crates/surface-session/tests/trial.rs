@@ -8,14 +8,15 @@ use std::path::Path;
 use anodized::spec;
 use gandr_core_incremental::MemoryCheckpointStore;
 use gandr_storage_records::InMemoryBlockStore;
-use gandr_surface_diagnostics::RenderStyle;
 use gandr_surface_diagnostics::Verbosity;
-use gandr_surface_diagnostics::entries;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Threads;
 use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::Width;
+use gandr_surface_dispatcher::entries;
+use gandr_surface_render_terminal::RenderStyle;
+use gandr_surface_render_terminal::render;
 use gandr_surface_session::Session;
 use gandr_surface_session::Submission;
 use gandr_surface_session::resumed;
@@ -72,8 +73,8 @@ fn shown(submission: &Submission<'_>) -> Shown
         submission.obligations()
     );
     let step = submission.clone().into_step(Path::new("candidate.gandr"));
-    for entry in entries(&step, Verb::Check(Goals::Reported)) {
-        text.push_str(entry.render(RenderStyle::Plain, Verbosity::User).as_ref());
+    for diagnostic in entries(&step, Verb::Check(Goals::Reported)) {
+        text.push_str(render(&diagnostic, RenderStyle::Plain, Verbosity::User).as_ref());
         text.push('\n');
     }
     Shown(text)

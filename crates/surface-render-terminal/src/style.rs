@@ -1,22 +1,18 @@
-//! How a report is laid out for its destination, and the text it becomes.
+//! How a diagnostic is laid out for its destination, and the text it becomes.
 //!
 //! # Plain unless asked
 //!
-//! [`RenderStyle::Plain`] adds no terminal styling. Styled output is the
-//! caller's explicit choice, and [`RenderStyle::for_terminal`] selects it for
-//! a terminal. Literal controls in caller-provided paths are preserved; style
-//! selection does not sanitize that content.
-//!
-//! `RenderStyle::Plain` adds no escape sequences. `RenderStyle::Styled` adds
-//! the backend's palette. `RenderStyle::for_terminal` maps the supplied
-//! terminal capability to a style; it reads no environment variable and probes
-//! no stream.
+//! [`RenderStyle::Plain`] adds no escape sequences; [`RenderStyle::Styled`]
+//! adds the backend's palette and is the caller's explicit choice.
+//! [`RenderStyle::for_terminal`] maps the terminal capability the caller
+//! observed to a style; it reads no environment variable and probes no
+//! stream.
 //!
 //! Paths retain literal control characters in both styles. This preserves
 //! source identity without introducing a path-escaping policy; style selection
-//! offers no terminal-sanitization guarantee. An unlocated report whose path
-//! ends in a line feed or carriage return retains that final control. Witness:
-//! `report::tests::literal_path_controls_are_not_styling_or_framing`.
+//! offers no terminal-sanitization guarantee. An unlocated diagnostic whose
+//! path ends in a line feed or carriage return retains that final control.
+//! Witness: `render::tests::literal_path_controls_are_not_styling_or_framing`.
 
 use core::fmt;
 
@@ -49,7 +45,7 @@ impl From<bool> for TerminalCapability
     /// - hypothesis: L3 — both boolean inputs reach an exact style observation
     ///   through the capability. A reversed or constant mapping changes one
     ///   result; operating-system detection is outside this conversion.
-    /// - witness: `diagnostics::diagnostics::render_style_follows_terminal_capability`
+    /// - witness: `render::render::render_style_follows_terminal_capability`
     #[spec(ensures: |ret| matches!(ret, Self::Terminal) == is_terminal)]
     #[inline]
     fn from(is_terminal: bool) -> Self
@@ -93,7 +89,7 @@ impl RenderStyle
     /// - hypothesis: L3 — the two capabilities exhaust the typed domain,
     ///   observed through their exact styles. Reversed or constant selection
     ///   changes a result; backend rendering is a separate decision surface.
-    /// - witness: `diagnostics::diagnostics::render_style_follows_terminal_capability`
+    /// - witness: `render::render::render_style_follows_terminal_capability`
     #[spec(ensures: |ret| matches!((capability, ret),
         (TerminalCapability::NonTerminal, Self::Plain)
             | (TerminalCapability::Terminal, Self::Styled)
@@ -109,30 +105,9 @@ impl RenderStyle
     }
 }
 
-/// How much of a report a rendering shows.
-///
-/// Every level renders the same report: a level chooses what to show, never
-/// what the report holds.
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Verbosity
-{
-    /// The message, the labels, the nested reasons and the note.
-    #[default]
-    User,
-    /// Adds the report's class, the producer's own wording of a refusal and
-    /// the source text of the primary locus.
-    Detailed,
-    /// Adds the byte span of every locus and the producer's refusal and
-    /// judgements as their implementers print them.
-    Debug,
-    /// The whole report as one line of JSON, for tools and agents; the style
-    /// adds nothing to it.
-    Json,
-}
-
-/// Owned presentation text. [`crate::Report::render`] adds no framing
-/// terminator; literal path content can include one. Adopting a string
-/// preserves its bytes unchanged.
+/// Owned presentation text. [`crate::render()`] adds no framing terminator;
+/// literal path content can include one. Adopting a string preserves its bytes
+/// unchanged.
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Rendered(String);

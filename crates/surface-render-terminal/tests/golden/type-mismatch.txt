@@ -6,4 +6,4 @@ error[TypeMismatch]: mismatched types
 2 │ def wrong = "text" ;
   │             ━━━━━━ its type does not convert: expected `Integer`, found `String`
   │
-  ╰ note: unsettled `wrong` states checks owing 0
+  ╰ note: `wrong` is expected to check, and this refusal leaves it unsettled

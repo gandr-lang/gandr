@@ -26,8 +26,8 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 - `compose`, `Composed`, `ComposeFault` and `LoweringCount`: the composition.
 - `lower_source`, `lower_parsed`, `Lowering`, `Lowered` and `judge_module`: the composition's two halves, for a caller that keeps the lowered module beside the verdicts; `lower_parsed` lowers a parse the caller made.
 - `judge`, `Judged`, `Admission` and `admitted::Absent`: the judging half split at the kernel admission, for a caller that renders the report before the kernel is offered the module.
-- `Spellings` and `spelling::Absent`: the types a module's checker refusals compare, and the types the judgements they stood inside were checked against, spelled while its arena was at hand.
-- `Trails`: the judgements each refused body stood inside, outermost first, by admission position, carried as `trails` on `Composed::Settled`.
+- `spellings` and `failures` on `Composed::Settled`: the diagnostics model's `Spellings` of the types a module's checker refusals compare and its failures name, spelled while its arena was at hand, and the `Failures` the checking machine kept for each refused body, by admission position.
+- `Entries` and `entries`: what one step prints under a verb, in order, each a diagnostic the diagnostics model builds — refusals, unsettled declarations, goals, shadowing warnings and ledger lines.
 - `shadowed` on `Composed::Settled`: every builtin the source's declarations and binders shadowed under the warn-and-allow policy, in the order shadowed, copied out of the lowered module's `Recognition` before its origin table moves; a face reports each as a warning.
 - `adapt`: the lowering's module as checker declaration input.
 - `SourceRoot` and `classify`: the root a source sits under, by its path.
@@ -52,7 +52,7 @@ Each nontrivial operation states an executable contract or a local exemption, pl
 
 ## Expected features
 
-- **A renderer.** The caller renders each `Outcome` and each `Step`; `gandr-surface-diagnostics` renders a source step. A `Step::Source` carries the source's text, and `Composed::Settled` the module's origin table and the spellings of the types its checker refusals compare, so a renderer can quote the lines a refusal covers, locate a checker refusal at its node's origin and name the types it compares without composing the source again. `StatusReport`'s `Display` writes one sentence and no line terminator; `RunReport`'s writes its counts one per line, without a trailing terminator.
+- **A renderer.** The caller renders each `Outcome`, and each diagnostic `entries` yields from a `Step`: `gandr-surface-render-terminal` lays one out for a terminal, `gandr-surface-lsp` publishes it to an editor. A diagnostic carries the lines of source it covers, its loci and the types its refusal names, so a face renders it without composing the source again. `StatusReport`'s `Display` writes one sentence and no line terminator; `RunReport`'s writes its counts one per line, without a trailing terminator.
 - **A file system.** `Walk::step` and `Walk::visit` list directories and read sources, and `Formatting::step` reads them and writes a changed layout back; every failure to do so is a fault step, never a panic.
 - **Threads.** `Walk::visit` starts scoped threads from `std`; a thread the host refuses to start leaves its sources to the others. `Staging::run` builds a `rayon` pool of its width once per run, and reports a pool the host refuses as `PoolFault`. The default width reads the host's physical performance cores: `hw.perflevel0.physicalcpu` on macOS, the `cpu_core` CPU list and each CPU's core siblings under `/sys/devices` on Linux; a host that reports neither runs on the parallelism `std` reports.
 
@@ -99,7 +99,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Routing, optional tracing | [`src/lib.rs`](src/lib.rs) |
 | One composition, the kernel's re-derivation | [`compose`](src/compose.rs) |
 | The run stage, native universe-path boundaries | [`evaluate`](src/evaluate.rs) |
-| Refusal types spelled at the judgement | [`spelled`](src/spelled.rs) |
+| What each verb prints of a step | [`entry`](src/entry.rs) |
 | Forking by source, judgement in walk order | [`walk`](src/walk.rs) |
 | The default width | [`width`](src/width.rs) |
 | Membership, the pending set | [`root`](src/root.rs) |

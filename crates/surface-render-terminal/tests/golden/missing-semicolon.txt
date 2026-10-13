@@ -1,0 +1,7 @@
+error[MalformedForm]: this def value is missing its closing `;`
+  ╭▸ semicolon.gandr:2:10
+  │
+2 │ def a = 1
+  │          ━ its closing tile belongs here
+  │
+  ╰ note: `a` is expected to check, and this refusal leaves it unsettled

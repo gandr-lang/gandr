@@ -56,6 +56,7 @@ quenchant-shape.workspace = true
 allocation-counter.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-surface-diagnostics.workspace = true
+gandr-surface-render-terminal.workspace = true
 proptest.workspace = true
 
 [lints]

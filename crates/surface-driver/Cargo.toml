@@ -32,6 +32,7 @@ gandr-surface-dispatcher.workspace = true
 gandr-surface-format.workspace = true
 gandr-surface-lsp.workspace = true
 gandr-surface-mcp.workspace = true
+gandr-surface-render-terminal.workspace = true
 gandr-surface-repl.workspace = true
 gandr-surface-tui.workspace = true
 quenchant-shape.workspace = true

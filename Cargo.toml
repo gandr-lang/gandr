@@ -30,6 +30,7 @@ members = [
   "crates/surface-parser",
   "crates/surface-pretty",
   "crates/surface-render-remote",
+  "crates/surface-render-terminal",
   "crates/surface-repl",
   "crates/surface-session",
   "crates/surface-syntax",
@@ -78,12 +79,12 @@ publish = false
 version = "0.8.1"
 default-features = false
 
-# Source-snippet layout: the backend the diagnostics renderer projects a
-# report into, the one rustc and cargo render through. Defaults off: `std`
+# Source-snippet layout: the backend the terminal renderer projects a
+# diagnostic into, the one rustc and cargo render through. Defaults off: `std`
 # only gives `anstyle` an `io::Write` sink, and a rendering is a `String`.
-# The choice, its alternatives and its reversal are in the consumer's README.
+# The choice, its alternatives and its reversal are in the consumer's docs.
 # consumers:
-# - surface-diagnostics
+# - surface-render-terminal
 [workspace.dependencies.annotate-snippets]
 version = "0.12.16"
 default-features = false
@@ -132,6 +133,7 @@ default-features = false
 # - surface-parser
 # - surface-pretty
 # - surface-render-remote
+# - surface-render-terminal
 # - surface-repl
 # - surface-session
 # - surface-syntax
@@ -243,6 +245,7 @@ default-features = false
 # - surface-diagnostics
 # - surface-dispatcher
 # - surface-lowering (dev)
+# - surface-render-terminal (dev)
 # - surface-repl
 # - surface-session
 [workspace.dependencies.gandr-core-checker]
@@ -413,28 +416,31 @@ path = "crates/storage-records"
 # consumers:
 # - surface-diagnostics
 # - surface-dispatcher
+# - surface-render-terminal (dev)
 # - surface-repl
 # - surface-session
 [workspace.dependencies.gandr-surface-corpus]
 path = "crates/surface-corpus"
 
-# Renders a dispatcher step: refusals, unsettled declarations and goals as
-# source snippets, and the ledger lines a verb prints beside them.
+# The diagnostics model: refusals, unsettled declarations, goals, warnings and
+# ledger lines as diagnostics every face projects, and their builders.
 # consumers:
+# - surface-dispatcher
 # - surface-driver
 # - surface-lsp
+# - surface-render-terminal
 # - surface-repl
 # - surface-session (dev)
-# - surface-tui
 [workspace.dependencies.gandr-surface-diagnostics]
 path = "crates/surface-diagnostics"
 
 # Routes a driver invocation into the surface pipeline, and composes that
 # pipeline over the sources a verb walks.
 # consumers:
-# - surface-diagnostics
+# - surface-diagnostics (dev)
 # - surface-driver
 # - surface-lsp
+# - surface-render-terminal (dev)
 # - surface-repl
 # - surface-session
 [workspace.dependencies.gandr-surface-dispatcher]
@@ -459,6 +465,7 @@ path = "crates/surface-format"
 # - surface-lowering
 # - surface-lsp
 # - surface-parser
+# - surface-render-terminal (dev)
 # - surface-repl
 # - surface-session
 # - surface-tui
@@ -479,6 +486,7 @@ path = "crates/surface-layout"
 # - surface-corpus
 # - surface-diagnostics
 # - surface-dispatcher
+# - surface-render-terminal (dev)
 # - surface-session
 [workspace.dependencies.gandr-surface-lowering]
 path = "crates/surface-lowering"
@@ -516,7 +524,7 @@ path = "crates/surface-parser"
 # The presentation printer: checked core types and normal-form values laid
 # out at a page width through the layout engine.
 # consumers:
-# - surface-dispatcher
+# - surface-diagnostics
 # - surface-lsp
 # - surface-repl
 # - surface-session
@@ -536,6 +544,16 @@ path = "crates/surface-pretty"
 # - surface-tui
 [workspace.dependencies.gandr-surface-render-remote]
 path = "crates/surface-render-remote"
+
+# The terminal face of the diagnostics model: a diagnostic laid out as a
+# source snippet with its loci, contexts and notes.
+# consumers:
+# - surface-driver
+# - surface-repl
+# - surface-session (dev)
+# - surface-tui
+[workspace.dependencies.gandr-surface-render-terminal]
+path = "crates/surface-render-terminal"
 
 # The read-evaluate loop: the completeness gate, the session loop and its
 # meta-commands, the transcript encoder, the batch and line-editor faces.
@@ -563,6 +581,7 @@ path = "crates/surface-session"
 # - surface-lowering
 # - surface-lsp
 # - surface-parser
+# - surface-render-terminal
 # - surface-repl
 # - surface-session
 # - surface-tui
@@ -848,6 +867,7 @@ default-features = false
 # - surface-lsp
 # - surface-mcp (dev)
 # - surface-pretty
+# - surface-render-terminal
 # - surface-repl
 # - surface-session
 # - theory-cell-complexes
@@ -970,6 +990,7 @@ features = ["alloc", "derive"]
 # - surface-lsp
 # - surface-mcp
 # - surface-render-remote (dev)
+# - surface-render-terminal (dev)
 # - surface-tui
 # - workflow-spec-cost
 [workspace.dependencies.serde_json]

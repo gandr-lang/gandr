@@ -6,9 +6,9 @@ use std::io::BufRead;
 use std::io::Write;
 
 use anodized::spec;
-use gandr_surface_diagnostics::RenderStyle;
 use gandr_surface_grammar::PbgError;
 use gandr_surface_render_remote::TranscriptBlock;
+use gandr_surface_render_terminal::RenderStyle;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 use rustyline::error::ReadlineError;

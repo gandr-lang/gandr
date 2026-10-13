@@ -1,0 +1,17 @@
+error[ShapeMismatch]: expected a thunk type `+U C`
+  ╭▸ force.gandr:2:30
+  │
+2 │ def a = thunk { become force 1 } ;
+  │         ┬──────────────┬─────┯──
+  │         │              │     │
+  │         │              │     its type is not of the required shape: found `Integer`
+  │         │              checked against `-F Integer`; while forcing this
+  │         checked against `+U (-F Integer)`; while checking the body of this thunk
+  │
+  ├ note: `a` is expected to check, and this refusal leaves it unsettled
+  ├ class: malformed source
+  ├ detail: the rule here requires a thunk type `+U C`
+  ├ expression: `1`
+  ├ spans: primary 55..56; rule 34..58; rule 49..56
+  ├ rules: ThunkBody, Force
+  ╰ refusal: Checking(ShapeMismatch { at: Value(ValueId(0)), wanted: Thunk, found: Value(ValueTypeId(3)) }); Failure { refusal: ShapeMismatch { at: Value(ValueId(0)), wanted: Thunk, found: Value(ValueTypeId(3)) }, obligations: [Obligation { role: ThunkBody, at: Term(Value(ValueId(1))), expected: Present(Value(ValueTypeId(1))), binders: [] }, Obligation { role: CompBridge, at: Term(Computation(ComputationId(0))), expected: Present(Computation(CompTypeId(0))), binders: [] }, Obligation { role: Force, at: Term(Computation(ComputationId(0))), expected: Absent(Synthesised), binders: [] }], pursuit: Pursuit { at: Term(Computation(ComputationId(0))), expected: Absent(Synthesised), stage: Resuming }, hypotheses: [] }

@@ -21,9 +21,9 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use anodized::spec;
-use gandr_surface_diagnostics::RenderStyle;
 use gandr_surface_grammar::PbgError;
 use gandr_surface_render_remote::TranscriptBlock;
+use gandr_surface_render_terminal::RenderStyle;
 use gandr_surface_repl::LoopError;
 use gandr_surface_repl::LoopEvent;
 use gandr_surface_repl::Prompt;

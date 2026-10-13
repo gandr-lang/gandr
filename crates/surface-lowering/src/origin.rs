@@ -36,6 +36,14 @@
 //! the scrutinee and every pattern and body. A live match and a coverage
 //! report read the arms from here and the tree from the arena.
 //!
+//! # A binder keeps its name
+//!
+//! The core is nameless: a lambda or a bind opens a binder by position. The
+//! table keeps, per lambda a function parameter lowers to and per bind a named
+//! `run` statement lowers to, the origin of the name the source wrote, so a
+//! diagnostic can say which name a hypothesis of the checker is. A split, a
+//! discarded statement and a lambda the lowering inserted record none.
+//!
 //! # The token is opaque on purpose
 //!
 //! A declaration's origin travels to a checker as an [`OriginToken`], a
@@ -386,6 +394,9 @@ pub struct OriginTable
     declarations: Vec<Origin>,
     /// Each lowered match's arms, ascending by the root of its tree.
     cases: Vec<(ComputationId, CaseOrigin)>,
+    /// The name each lambda or bind binds, by the computation that opens the
+    /// binder, ascending by id: the syntax the binder's name was written at.
+    binders: Vec<(ComputationId, Origin)>,
 }
 
 /// Record one family's origin, keeping the vector ascending by id.
@@ -887,6 +898,60 @@ impl OriginTable
     pub fn cases(&self) -> impl ExactSizeIterator<Item = (ComputationId, &CaseOrigin)>
     {
         self.cases.iter().map(|&(root, ref case)| (root, case))
+    }
+
+    /// Record the name the lambda or bind `opener` binds, written at `name`.
+    ///
+    /// # Specification
+    /// - requires: `opener` follows every opener already recorded.
+    /// - ensures: the pair is appended, so the binder list stays ascending and
+    ///   [`Self::binder`] finds it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a function's parameter and a `run` statement's name
+    ///   are answered by their own openers; a split statement records none.
+    /// - witness: `lower::tests::each_named_binder_records_where_its_name_is_written`
+    #[spec(
+        requires: self.binders.last().is_none_or(|&(held, _)| held < opener),
+        captures: before = self.binders.len(),
+        ensures: self.binders.len() == before.saturating_add(1)
+            && self.binders.last() == Some(&(opener, name)),
+    )]
+    #[inline]
+    pub fn record_binder(
+        &mut self,
+        opener: ComputationId,
+        name: Origin,
+    )
+    {
+        record(&mut self.binders, opener, name);
+    }
+
+    /// Where the name the lambda or bind `opener` binds is written.
+    ///
+    /// # Specification
+    /// - requires: nothing — an unrecorded id is admissible input.
+    /// - ensures: the origin recorded for `opener`'s binder, or the unrecorded
+    ///   absence for a computation that opens no named binder: a split, an
+    ///   inserted lambda, or a node that is no binder at all.
+    /// - provides: the binder's name, which a diagnostic writes beside the type
+    ///   the checker held for it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::record_binder`].
+    /// - witness: `lower::tests::each_named_binder_records_where_its_name_is_written`
+    #[spec(ensures: |ret| ret == find(&self.binders, opener))]
+    #[inline]
+    pub fn binder(
+        &self,
+        opener: ComputationId,
+    ) -> Maybe<Origin, origin::Absent>
+    {
+        find(&self.binders, opener)
     }
 }
 
