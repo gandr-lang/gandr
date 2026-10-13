@@ -53,6 +53,7 @@ use gandr_core_term::Carried;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
+use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::session::SessionAction;
@@ -75,7 +76,10 @@ use crate::form::TileName;
 use crate::form::read_pieces;
 use crate::form::shape_of;
 use crate::origin::Insertion;
+use crate::origin::Label;
+use crate::origin::Labelled;
 use crate::origin::Origin;
+use crate::origin::Provenance;
 
 #[cfg(test)]
 pub(in crate::lower) mod tests;
@@ -1230,16 +1234,19 @@ pub(super) fn commute(
 /// - ensures: with `rest'` the rest with every index past its binder raised by
 ///   the depth between the statement and the end, one copy per depth kept in
 ///   `copies`: `rest'` instantiated at `v` for an end `return v`, its nodes at
-///   their sources' origins; `x ← end; rest'` at the statement's origin for any
-///   other end.
+///   their sources' origins and each written use of the binder labelled with
+///   what replaced it; `x ← end; rest'` at the statement's origin for any other
+///   end.
 /// - provides: the continuation half of [`commute`].
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`commute`].
+/// - hypothesis: L3 — as [`commute`]; a use the instantiation replaces answers
+///   at its bytes.
 /// - witness: `lower::exits::tests::an_exit_under_nesting_leaves_its_function`
 /// - witness: `lower::exits::tests::a_bound_match_continues_its_block_at_each_local_arm`
+/// - witness: `lower::exits::tests::a_use_a_local_end_replaces_keeps_its_bytes`
 #[spec(captures: returned = matches!(sink.arena.computation(end.0), Some(&Computation::Return(_))),
     ensures: |ret| returned || matches!(sink.arena.computation(ret), Some(&Computation::Bind(bound, _)) if bound == end.0))]
 fn continue_end(
@@ -1275,6 +1282,53 @@ fn continue_end(
     sink.origins.record_computation(bound, statement.origin);
 
     bound
+}
+
+/// Label each written variable a rewrite replaced with the value that stands
+/// for it now, when that value answers at other bytes, and carry every label
+/// naming a replaced variable over to its replacement.
+///
+/// # Specification
+/// - requires: every node `carried` reports has its origin recorded.
+/// - ensures: one label per variable `carried` reports replaced whose origin is
+///   written and whose replacement's origin spans other bytes, naming the
+///   replacement; a label that named a replaced variable names its replacement.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a use of a bound match's binder, instantiated at the
+///   value an arm passes, answers at that value's type, through a chain of such
+///   instantiations too; a scrutinee a leaf's copy replaces answers at its
+///   bytes.
+/// - witness: `lower::exits::tests::a_use_a_local_end_replaces_keeps_its_bytes`
+#[spec(captures: before = sink.origins.labels().len(), ensures: sink.origins.labels().len() >= before)]
+pub(super) fn label_replaced(
+    sink: &mut Sink<'_>,
+    carried: &[Carried],
+)
+{
+    for pair in carried {
+        let Carried::Value(replaced, standing) = *pair
+        else {
+            continue;
+        };
+        if !matches!(sink.arena.value(replaced), Some(&Value::Variable { .. })) {
+            continue;
+        }
+        sink.origins.relabel(replaced, standing);
+        let (Maybe::Present(written), Maybe::Present(now)) =
+            (sink.origins.value(replaced), sink.origins.value(standing))
+        else {
+            continue;
+        };
+        if written.provenance() == Provenance::Written && now.span() != written.span() {
+            sink.origins.record_label(Label {
+                span: written.span(),
+                labelled: Labelled::Value(standing),
+            });
+        }
+    }
 }
 
 /// `rest`, under one binder, with every index past that binder raised by
@@ -1325,7 +1379,8 @@ fn carry(
 ///   `carried` reports the rewrite that minted them.
 /// - ensures: every node minted since `mark` carries the origin of the first
 ///   node `carried` reports it rewritten from, or `fallback`; every computation
-///   rewritten from a match's root carries the match's record.
+///   rewritten from a match's root carries the match's record; each written
+///   variable the rewrite replaced is labelled as [`label_replaced`] labels it.
 /// - provides: the origin half of [`carry`].
 /// - fails: never.
 /// - panics: none.
@@ -1333,6 +1388,7 @@ fn carry(
 /// # Adequacy
 /// - hypothesis: L3 — as [`carry`].
 /// - witness: `lower::tests::every_minted_node_has_an_origin`
+/// - witness: `lower::exits::tests::a_use_a_local_end_replaces_keeps_its_bytes`
 #[spec(ensures: sink.arena.computations_since(mark).all(|id| matches!(sink.origins.computation(id), Maybe::Present(_)))
     && sink.arena.values_since(mark).all(|id| matches!(sink.origins.value(id), Maybe::Present(_))))]
 pub(super) fn record_copies(
@@ -1360,6 +1416,7 @@ pub(super) fn record_copies(
         let origin = sources.comp_type(sink, id, fallback);
         sink.origins.record_comp_type(id, origin);
     }
+    label_replaced(sink, carried);
 }
 
 /// The node each copy one rewrite reported was made from, family by family:

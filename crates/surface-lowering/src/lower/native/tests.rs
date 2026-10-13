@@ -551,6 +551,16 @@ fn a_recursive_function_closes_a_fixpoint_over_its_last_parameter()
         Some(&variable(DeBruijnIndex::from(0_u32))),
         "the call applies the field alone, the leading parameter left out"
     );
+    let passed = source
+        .find("plus[<](n")
+        .map(|at| at.saturating_add(8_usize));
+    assert!(
+        module.origins().labels().iter().any(|label| {
+            Some(usize::from(label.span.start())) == passed
+                && matches!(label.labelled, crate::origin::Labelled::ValueType { .. })
+        }),
+        "the leading parameter, passed as itself, answers at its written type"
+    );
 
     let (outside, fixpoint) = opened("idle");
     assert_eq!(outside, 0_usize);
@@ -1295,6 +1305,56 @@ fn a_leaf_keeps_its_arm_body_written()
         returned,
         [Some("d"), Some("return d"), Some("return x"), Some("x")],
         "each return, and what it returns, at its own bytes"
+    );
+}
+
+#[test]
+fn a_relocated_annotation_keeps_its_bytes()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{MAYBE}def forget(b : Type, m : Maybe(b)) -> -F Maybe(b) {{ case m {{ Some(x) => return (None : Maybe(b)), None => return m }} }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let root = tail_of(&arena, body_named(&module, SurfaceName::from("forget")));
+    let written = |span: ByteSpan| source.get(usize::from(span.start()) .. usize::from(span.end()));
+    let annotated = source.find("(None").map(|at| at.saturating_add(14_usize));
+    let mut arguments = Vec::new();
+    for at in reachable(&arena, root) {
+        let Some(&Computation::Return(value)) = arena.computation(at)
+        else {
+            continue;
+        };
+        let Some(&Value::Constructor { datatype, .. }) = arena.value(value)
+        else {
+            continue;
+        };
+        let Some(ValueType::Data {
+            arguments: held, ..
+        }) = arena.value_type(datatype).cloned()
+        else {
+            panic!("the classifier is the annotation's family");
+        };
+        for argument in held {
+            let Maybe::Present(origin) = module.origins().value(argument)
+            else {
+                panic!("every node of the classifier has an origin");
+            };
+            arguments.push((
+                origin.provenance(),
+                written(origin.span()),
+                usize::from(origin.span().start()),
+            ));
+        }
+    }
+    assert_eq!(
+        arguments,
+        [(
+            Provenance::Written,
+            Some("b"),
+            annotated.unwrap_or_default()
+        )],
+        "the classifier under the arm's binder answers at the annotation's argument"
     );
 }
 
