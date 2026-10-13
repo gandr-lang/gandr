@@ -195,20 +195,23 @@ run = [
   "cargo run --locked --quiet --profile test --package gandr-lang -- test crates/surface-corpus/fixture",
 ]
 
-# Git writes conflict markers as EXACTLY seven marker characters followed by
-# end-of-line or whitespace plus a label (`<<<<<<< HEAD`, bare `=======`).
-# Anchoring on `([[:space:]]|$)` keeps real markers matched while rejecting
-# longer decorative runs -- setext underlines and `====` delimiter rules are
-# not conflicts. The `:/` pathspec scopes the scan to tracked files under the
-# repository root whatever directory the hook runs from.
-["check:conflict-markers"]
-description = "Detect unresolved Git conflict markers in tracked files"
+# Merge residue never lands: a conflict marker, or the resolution trailer a
+# merge driver appends as a comment. Git writes conflict markers as EXACTLY
+# seven marker characters followed by end-of-line or whitespace plus a label
+# (`<<<<<<< HEAD`, bare `=======`). Anchoring on `([[:space:]]|$)` keeps real
+# markers matched while rejecting longer decorative runs -- setext underlines
+# and `====` delimiter rules are not conflicts. The trailer patterns bracket a
+# character so this file does not match itself. The `:/` pathspec scopes the
+# scan to tracked files under the repository root whatever directory the hook
+# runs from.
+["check:merge-residue"]
+description = "Detect conflict markers and merge-driver trailers in tracked files"
 run = """
-if git grep -nIE '^(<<<<<<<|=======|>>>>>>>|\\|\\|\\|\\|\\|\\|\\|)([[:space:]]|$)' -- ':/'; then
-  echo 'conflict marker check FAILED: unresolved Git conflict markers found' >&2
+if git grep -nIE -e '^(<<<<<<<|=======|>>>>>>>|\\|\\|\\|\\|\\|\\|\\|)([[:space:]]|$)' -e 'weave[:] run' -e 'weave[ ]check' -- ':/'; then
+  echo 'merge residue check FAILED: conflict markers or merge-driver trailers found' >&2
   exit 1
 fi
-echo 'conflict marker check OK: no conflict markers in tracked files'
+echo 'merge residue check OK: no conflict markers or merge-driver trailers in tracked files'
 """
 
 # Workflow tools are build-time policy, never package dependencies. Check
