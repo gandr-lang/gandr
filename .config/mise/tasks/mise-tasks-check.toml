@@ -233,3 +233,24 @@ run = "treefmt --ci"
 ["check:lockfile"]
 description = "Check npm-backed pins install from the committed lockfile"
 run = "mise install --locked npm:oxfmt npm:oxlint npm:oxlint-tsgolint npm:@commitlint/cli"
+
+# The extension compiled only on its author's machine. treefmt's oxlint pass
+# never ran tsc, esbuild, or vsce, so a type error and a runtime deprecation
+# never failed the wall. `typescript/no-deprecated` is the type-aware rule
+# tsgolint 7.0.2004 provides; it refuses `@deprecated` APIs, including
+# `url.parse`. The bundle script reads emitted JavaScript, so compile follows
+# the `--noEmit` check. `--throw-deprecation` makes a Node deprecation on this
+# path a failure; `--deny-warnings` makes an oxlint warning one.
+["check:extension"]
+description = "Type-check, lint, bundle, and package the VS Code extension"
+depends = ["aube:install"]
+dir = "contrib/gandr-vscode"
+env.NODE_OPTIONS = "--throw-deprecation"
+run = [
+  "aube install --frozen-lockfile",
+  "aube exec -- tsc -p ./ --noEmit",
+  "oxlint --config ../../.oxlintrc.json --deny-warnings src",
+  "aube run compile",
+  "aube run bundle",
+  "aube run package",
+]

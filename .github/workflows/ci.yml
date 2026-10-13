@@ -239,18 +239,21 @@ jobs:
       # Missing bases and failed fetches/diffs force Rust checks, never skip
       # them. The queue always checks its complete merge result.
       rust: ${{ github.event_name != 'pull_request' || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.rust == 'true' }}
+      # Same fail-open for the extension, including a dispatch with no diff.
+      # A Rust-only pull request or queue entry does not pay for the lane.
+      extension: ${{ (github.event_name != 'pull_request' && github.event_name != 'merge_group') || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.extension == 'true' }}
     env:
-      CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+      CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
     steps:
       - *git-checkout
       - id: fetch
         name: fetch the comparison tree
-        if: ${{ github.event_name == 'pull_request' }}
+        if: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
         continue-on-error: true
         run: git fetch --depth=1 origin "$CI_BASE_SHA"
       - id: filter
         name: filter changed paths
-        if: ${{ github.event_name == 'pull_request' && steps.fetch.outcome == 'success' }}
+        if: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && steps.fetch.outcome == 'success' }}
         continue-on-error: true
         # One pipeline, no shell control flow or third-party filter action.
         # NUL framing preserves filenames; no-renames retains source deletions.
@@ -258,8 +261,7 @@ jobs:
         shell: bash
         run: >-
           git diff --no-renames --name-only -z "$CI_BASE_SHA" HEAD |
-          jq -rRs '"rust=" + (split("\u0000") | any(length > 0 and ((endswith(".md") or startswith("docs/") or startswith("LICENSE") or . == ".gitignore") | not)) | tostring)'
-          >> "$GITHUB_OUTPUT"
+          jq -rRs '(split("\u0000")) as $paths | "rust=" + ($paths | any(length > 0 and ((endswith(".md") or startswith("docs/") or startswith("LICENSE") or . == ".gitignore") | not)) | tostring), "extension=" + ($paths | any(startswith("contrib/gandr-vscode/") or . == "aube-lock.yaml" or . == "aube.lock" or . == ".oxlintrc.json" or . == "treefmt.toml" or . == ".config/mise/tasks/mise-tasks-check.toml" or . == ".github/workflows/ci.yml") | tostring)' >> "$GITHUB_OUTPUT"
 
   # Finds the pin-file tag of this checkout and whether it is published. A pull
   # request from a fork cannot publish with its read-only token, so a missing
@@ -586,6 +588,22 @@ jobs:
               git log -1 --format=%B "$commit" | env COMMITLINT_COMMIT="$commit" mise exec -- commitlint
             fi
           done
+
+  # Light lane: pull requests, the merge group, and dispatch. The changes
+  # filter keeps a Rust-only diff off this job. The image carries Node and
+  # aube; the bare-runner fallback installs the same pins.
+  extension-gate:
+    name: check the VS Code extension
+    needs: [changes, ci-image-ref]
+    if: ${{ !cancelled() && !failure() && needs.changes.outputs.extension == 'true' && github.event_name != 'push' }}
+    runs-on: *linux
+    permissions: *image-read-permissions
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    steps:
+      - *git-checkout
+      - *install-policy-tools
+      - name: type-check, lint, bundle, and package the extension
+        run: mise run check:extension
 
   # Completed queue runs supply successful builds independently of their test
   # verdict. A new queue ref can read these artifacts even when it cannot read

@@ -40,6 +40,7 @@
       }
     ],
     "typescript/consistent-indexed-object-style": ["error", "record"],
+    "typescript/no-deprecated": "error",
     "unicode-bom": ["error", "never"]
   }
 }
