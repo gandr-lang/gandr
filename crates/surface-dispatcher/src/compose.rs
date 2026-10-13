@@ -1192,9 +1192,9 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
 ///   crossed as a definition or an axiom, or stays on the checker's side as a
 ///   static definition; a refused declaration crosses as its mark, a reason, a
 ///   declaration holding a term hole or the unknown type stays behind as the
-///   user absence it is, and a declaration carrying element identity stays
-///   behind on the checker's side until the kernel checks it, so none of these
-///   is a disagreement.
+///   user absence it is, and a declaration holding a compound endpoint stays
+///   behind on the checker's side until the kernel reads a returned value, so
+///   none of these is a disagreement.
 /// - provides: the kernel's repetition of every acceptance a run reports, and
 ///   the environment the run's kernel artifact is exported from.
 /// - fails: the readmission of the first declaration the kernel rejected or the
@@ -1221,7 +1221,7 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
                     | bridge::Outcome::Marked(_) | bridge::Outcome::Static
                     | bridge::Outcome::Refused(bridge::Refusal::Withheld { .. } | bridge::Refusal::WithheldData { .. }
                         | bridge::Refusal::Hole { .. } | bridge::Refusal::Unknown { .. }
-                        | bridge::Refusal::ElementIdentity { .. }))),
+                        | bridge::Refusal::CompoundEndpoint { .. }))),
     Err(ref fault) =>
         verdicts.judged().iter().any(|judged| judged.constant() == fault.constant())
             && matches!(*fault.outcome(), bridge::Outcome::Rejected(_)
@@ -1248,7 +1248,7 @@ fn readmitted(
                 | bridge::Refusal::WithheldData { .. }
                 | bridge::Refusal::Hole { .. }
                 | bridge::Refusal::Unknown { .. }
-                | bridge::Refusal::ElementIdentity { .. },
+                | bridge::Refusal::CompoundEndpoint { .. },
             ) => {},
             | bridge::Outcome::Refused(
                 bridge::Refusal::OutOfFragment { .. }

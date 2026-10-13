@@ -31,8 +31,8 @@
 //! A sealed atom, a decode of a code no quote reaches and the unknown type
 //! expose no structure, so the recursion has nothing to unfold: their
 //! identity is the owner's obligation, never invented here. The checker
-//! refuses a transport at an open carrier by that name; forming the path type
-//! and reflexivity at one stay admitted, since neither needs the structure.
+//! refuses a transport at an open carrier by that name, and refuses the path
+//! type and reflexivity at a carrier that mentions a binder outside it.
 //!
 //! # Decisions
 //!

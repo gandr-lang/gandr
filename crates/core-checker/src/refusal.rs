@@ -383,14 +383,17 @@ pub enum CheckRefusal
         /// The path type's right endpoint.
         right: ValueId,
     },
-    /// A transport along a path whose carrier exposes no structure — a sealed
-    /// atom, the decode of a code no quote reaches, the unknown type — so the
-    /// identity recursion has nothing to transport by: identity at an open
-    /// type.
+    /// Identity at an open type: a path type whose carrier mentions a variable
+    /// bound outside it, reflexivity synthesised at such a type, or a
+    /// transport whose carrier exposes no structure — the decode of a code no
+    /// quote reaches, the unknown type. The owner of an open type supplies its
+    /// identity. The refusal lifts with identity at an open type read as a
+    /// neutral fibre: the path type and reflexivity formed there, and
+    /// transport stuck except on reflexivity, where it reduces.
     IdentityAtOpenType
     {
-        /// The transport.
-        at: ComputationId,
+        /// The path type, the reflexivity or the transport.
+        at: CoreNode,
         /// The open carrier.
         carrier: ValueTypeId,
     },
@@ -875,6 +878,7 @@ mod tests
     use super::CheckRefusal;
     use super::CheckingForm;
     use super::Compared;
+    use super::CoreNode;
     use super::ExpectedShape;
     use super::Mismatch;
     use super::TermNode;
@@ -944,7 +948,7 @@ mod tests
         );
         assert_eq!(
             CheckRefusal::IdentityAtOpenType {
-                at: body,
+                at: CoreNode::Term(TermNode::Computation(body)),
                 carrier: unit,
             }
             .compared(),

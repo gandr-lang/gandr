@@ -218,10 +218,11 @@ pub enum Refusal
         /// The path type's right endpoint.
         right: Site,
     },
-    /// A transport along a path whose carrier exposes no structure.
+    /// Identity at an open type: a path type or reflexivity at a carrier that
+    /// mentions an outside binder, or a transport at one with no structure.
     IdentityAtOpenType
     {
-        /// The transport.
+        /// The path type, the reflexivity or the transport.
         at: Site,
         /// The open carrier.
         carrier: TypeContent,
@@ -662,7 +663,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
  else if let CheckRefusal::ShiftWithoutReset { at } = matched_left_value && let Refusal::ShiftWithoutReset { at: projected } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
  else if let CheckRefusal::PathCode(at) = matched_left_value && let Refusal::PathCode(projected) = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::EndpointMismatch { at, left, right } = matched_left_value && let Refusal::EndpointMismatch { at: projected, left: projected_left, right: projected_right } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && projected_left == self.site(ArenaNode::Value(left)) && projected_right == self.site(ArenaNode::Value(right)) }
- else if let CheckRefusal::IdentityAtOpenType { at, .. } = matched_left_value && let Refusal::IdentityAtOpenType { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
+ else if let CheckRefusal::IdentityAtOpenType { at, .. } = matched_left_value && let Refusal::IdentityAtOpenType { at: projected, .. } = *matched_right_value { projected == self.core_site(at) }
  else if let CheckRefusal::CompoundEndpoint { at, .. } = matched_left_value && let Refusal::CompoundEndpoint { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::TypeMismatch(Mismatch::Value { at, .. }) = matched_left_value && let Refusal::TypeMismatch { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::SortMismatch { at, .. } = matched_left_value && let Refusal::SortMismatch { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
@@ -832,7 +833,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                 right: self.site(ArenaNode::Value(right)),
             },
             | CheckRefusal::IdentityAtOpenType { at, carrier } => Refusal::IdentityAtOpenType {
-                at: self.site(ArenaNode::Computation(at)),
+                at: self.core_site(at),
                 carrier: self.value_type(carrier),
             },
             | CheckRefusal::CompoundEndpoint { at, synthesised } => Refusal::CompoundEndpoint {

@@ -310,7 +310,8 @@ pub enum RefusalName
     /// Reflexivity met a path type whose endpoints its point does not both
     /// convert to.
     EndpointMismatch,
-    /// A transport along a path whose carrier exposes no structure.
+    /// Identity at an open type: a path type or reflexivity at a carrier that
+    /// mentions an outside binder, or a transport at one with no structure.
     IdentityAtOpenType,
     /// A compound endpoint whose computation returns no pure value.
     CompoundEndpoint,

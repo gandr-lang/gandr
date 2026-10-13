@@ -40,17 +40,16 @@
 //! by name. Each distinct node is erased once per declaration, so the kernel
 //! sees the sharing the producer built and no more.
 //!
-//! Element identity has rules in the judgement and none in erasure: a path
-//! type, reflexivity, a compound endpoint and element transport are each
-//! [`Refusal::ElementIdentity`], naming the former, while the kernel has no
-//! tag to receive them. The core's path type, reflexivity and transport
-//! mirror the kernel's identity tags one for one, so encoding them is a
-//! mapping rather than a translation; a compound endpoint has no kernel tag.
-//! The alternative, erasing reflexivity to its point and a path type to the
-//! fibre the recursion classifies, has the kernel re-derive a program other
-//! than the one the judgement accepted. The choice reverses when the kernel
-//! carries identity: its tags receive the three, and the compound endpoint
-//! waits for the kernel's reading of a returned value.
+//! Element identity erases one for one: the core's path type, reflexivity and
+//! element transport mirror the kernel's identity nodes, so each mints the
+//! kernel node of the same former over its children's images, and the kernel
+//! re-derives formation at a closed carrier, endpoint conversion and transport
+//! in its motive itself. The alternative, erasing reflexivity to its point and
+//! a path type to the fibre the recursion classifies, has the kernel re-derive
+//! a program other than the one the judgement accepted. A compound endpoint
+//! has no kernel node: it is [`Refusal::CompoundEndpoint`], located at the
+//! endpoint, and its declaration stays on the checker's side. The choice
+//! reverses when the kernel reads a returned value as the value it returns.
 //!
 //! The bridge builds the position map from the admissions themselves, the only
 //! map that cannot disagree with the environment it indexes. The alternative to
@@ -413,23 +412,6 @@ fn fault(refusal: CheckRefusal) -> Refusal
     }
 }
 
-/// An element-identity former the kernel's term vocabulary does not encode
-/// yet: its wire tags are reserved, and its checking has not landed beside
-/// them.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum IdentityFormer
-{
-    /// The path type `Path(A, a, b)`.
-    Path,
-    /// Reflexivity `here(a)`.
-    Here,
-    /// Transport `tr(P, p, x)` along an element path.
-    Transport,
-    /// A compound endpoint: a computation standing for the value it returns.
-    /// The kernel's vocabulary has no such node, so it never crosses.
-    CompoundEndpoint,
-}
-
 /// Why the bridge offered the kernel nothing for a declaration the judgement
 /// accepted.
 ///
@@ -527,14 +509,13 @@ pub enum Refusal
         /// The type's node.
         at: CoreNode,
     },
-    /// An element-identity former, refused by name until the kernel encodes
-    /// it: the judgement admits it, and the kernel has no tag to receive it.
-    ElementIdentity
+    /// A compound endpoint: a computation standing where a path endpoint is
+    /// read, taken as the value it returns. The kernel's vocabulary has no
+    /// such node, so the declaration holding it does not cross.
+    CompoundEndpoint
     {
-        /// The node carrying the former.
-        at: CoreNode,
-        /// The former.
-        former: IdentityFormer,
+        /// The endpoint.
+        at: ValueId,
     },
 }
 
@@ -547,9 +528,9 @@ impl Refusal
     /// - ensures: the class is a function of the variant alone. A withheld
     ///   constant is malformed source, since the declaration it names was
     ///   turned away for a reason its own entry reports; a former outside the
-    ///   fragment and an element-identity former the kernel does not encode are
-    ///   unrepresentable; a linear variable, a dangling id, a cyclic node, a
-    ///   declined certificate and a machine invariant are engine faults,
+    ///   fragment and a compound endpoint, which the kernel has no node for,
+    ///   are unrepresentable; a linear variable, a dangling id, a cyclic node,
+    ///   a declined certificate and a machine invariant are engine faults,
     ///   because a judged term from the judged arena holds none of them and an
     ///   unfolding holds by definition; a term hole and the unknown type are
     ///   user absences.
@@ -567,7 +548,7 @@ impl Refusal
     /// - witness: `bridge::tests::a_hole_is_refused_where_it_stands_and_its_filling_is_admitted`
     #[spec(ensures: |ret| match *self {
         | Self::Withheld { .. } | Self::WithheldData { .. } => matches!(ret, FailureClass::MalformedSource),
-        | Self::OutOfFragment { .. } | Self::ElementIdentity { .. } => matches!(ret, FailureClass::Unrepresentable),
+        | Self::OutOfFragment { .. } | Self::CompoundEndpoint { .. } => matches!(ret, FailureClass::Unrepresentable),
         | Self::LinearVariable { .. } | Self::DanglingNode { .. } | Self::Cyclic { .. }
             | Self::CertificateDeclined { .. } | Self::MachineInvariant => matches!(ret, FailureClass::EngineFault),
         | Self::Hole { .. } | Self::Unknown { .. } => matches!(ret, FailureClass::UserAbsence),
@@ -578,7 +559,7 @@ impl Refusal
     {
         match *self {
             | Self::Withheld { .. } | Self::WithheldData { .. } => FailureClass::MalformedSource,
-            | Self::OutOfFragment { .. } | Self::ElementIdentity { .. } => {
+            | Self::OutOfFragment { .. } | Self::CompoundEndpoint { .. } => {
                 FailureClass::Unrepresentable
             },
             | Self::LinearVariable { .. }
@@ -1874,6 +1855,72 @@ enum Frame
         /// The source code image.
         source: gandr_kernel_term::ValueId,
     },
+    /// Await the carrier of an element path type.
+    PathCarrier
+    {
+        /// The path type.
+        at: ValueTypeId,
+        /// The source endpoint.
+        left: ValueId,
+        /// The target endpoint.
+        right: ValueId,
+    },
+    /// Await the source endpoint of an element path type.
+    PathLeft
+    {
+        /// The path type.
+        at: ValueTypeId,
+        /// The carrier image.
+        carrier: gandr_kernel_term::ValueTypeId,
+        /// The target endpoint.
+        right: ValueId,
+    },
+    /// Await the target endpoint of an element path type.
+    PathRight
+    {
+        /// The path type.
+        at: ValueTypeId,
+        /// The carrier image.
+        carrier: gandr_kernel_term::ValueTypeId,
+        /// The source endpoint image.
+        left: gandr_kernel_term::ValueId,
+    },
+    /// Await the point of a reflexivity `here(a)`.
+    Here
+    {
+        /// The reflexivity.
+        at: ValueId,
+    },
+    /// Await the motive of an element transport.
+    PathTransportMotive
+    {
+        /// The transport.
+        at: ComputationId,
+        /// The path.
+        path: ValueId,
+        /// The operand.
+        value: ValueId,
+    },
+    /// Await the path of an element transport.
+    PathTransportPath
+    {
+        /// The transport.
+        at: ComputationId,
+        /// The motive image.
+        motive: gandr_kernel_term::ValueTypeId,
+        /// The operand.
+        value: ValueId,
+    },
+    /// Await the operand of an element transport.
+    PathTransportValue
+    {
+        /// The transport.
+        at: ComputationId,
+        /// The motive image.
+        motive: gandr_kernel_term::ValueTypeId,
+        /// The path image.
+        path: gandr_kernel_term::ValueId,
+    },
     /// Await a sum injection payload.
     Injection
     {
@@ -2945,8 +2992,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///   [`Refusal::Withheld`]; [`Refusal::CertificateDeclined`] for a step the
     ///   normaliser does not certify; [`Refusal::OutOfFragment`] for a numeric
     ///   literal, an injection, a value lift, and a static lambda read
-    ///   normalizing or open; [`Refusal::ElementIdentity`] for reflexivity and
-    ///   a compound endpoint.
+    ///   normalizing or open; [`Refusal::CompoundEndpoint`] for a compound
+    ///   endpoint.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -3064,18 +3111,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 return Ok(self.erased_value(at, target.value_constant(position)));
             },
             | Value::Hole(hole) => return Err(Refusal::Hole { at: node, hole }),
-            | Value::Here(_) => {
-                return Err(Refusal::ElementIdentity {
-                    at: node,
-                    former: IdentityFormer::Here,
-                });
-            },
-            | Value::Returned(_) => {
-                return Err(Refusal::ElementIdentity {
-                    at: node,
-                    former: IdentityFormer::CompoundEndpoint,
-                });
-            },
+            | Value::Here(point) => (Frame::Here { at }, CoreNode::Term(TermNode::Value(point))),
+            | Value::Returned(_) => return Err(Refusal::CompoundEndpoint { at }),
             | Value::Mark { body, .. } => (
                 Frame::UnmarkedValue { at },
                 CoreNode::Term(TermNode::Value(body)),
@@ -3128,12 +3165,13 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         at: ValueId,
     ) -> Result<ConstantIndex, Refusal>
     {
+        let node = CoreNode::Term(TermNode::Value(at));
         let refused = Refusal::OutOfFragment {
-            at: CoreNode::Term(TermNode::Value(at)),
+            at: node,
             former: UnadmittedFormer::StaticLambda,
         };
         if self.mode == Mode::Normalizing
-            || loose_reach(self.arena, at).map_err(fault)? != BinderDepth::default()
+            || loose_reach(self.arena, node).map_err(fault)? != BinderDepth::default()
         {
             return Err(refused);
         }
@@ -3245,11 +3283,15 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | Computation::Transport(path, value) => {
                 (Frame::TransportPath { at, value }, TermNode::Value(path))
             },
-            | Computation::PathTransport { .. } => {
-                return Err(Refusal::ElementIdentity {
-                    at: node,
-                    former: IdentityFormer::Transport,
-                });
+            | Computation::PathTransport {
+                motive,
+                path,
+                value,
+            } => {
+                self.memo().computations.insert(at, Image::Open);
+                self.frames
+                    .push(Frame::PathTransportMotive { at, path, value });
+                return Ok(Step::Descend(CoreNode::Type(TypeNode::Value(motive))));
             },
             | Computation::Lambda(body) => (Frame::Lambda { at }, TermNode::Computation(body)),
             | Computation::Fixpoint { body, evidence } => (
@@ -3346,12 +3388,14 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 Frame::PathSource { at, target_code },
                 CoreNode::Term(TermNode::Value(source)),
             ),
-            | ValueTypeView::Path { .. } => {
-                return Err(Refusal::ElementIdentity {
-                    at: CoreNode::Type(TypeNode::Value(at)),
-                    former: IdentityFormer::Path,
-                });
-            },
+            | ValueTypeView::Path {
+                carrier,
+                left,
+                right,
+            } => (
+                Frame::PathCarrier { at, left, right },
+                CoreNode::Type(TypeNode::Value(carrier)),
+            ),
             | ValueTypeView::Integer => {
                 return Ok(self.erased_value_type(at, target.value_type_base(BaseType::Integer)));
             },
@@ -3880,6 +3924,34 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | (Frame::TransportValue { at, path }, AnyNode::Value(value)) => {
                 Ok(self.erased_computation(at, target.computation_transport(path, value)))
             },
+            | (Frame::PathCarrier { at, left, right }, AnyNode::ValueType(carrier)) => {
+                self.frames.push(Frame::PathLeft { at, carrier, right });
+                self.argument(left)
+            },
+            | (Frame::PathLeft { at, carrier, right }, AnyNode::Value(left)) => {
+                self.frames.push(Frame::PathRight { at, carrier, left });
+                self.argument(right)
+            },
+            | (Frame::PathRight { at, carrier, left }, AnyNode::Value(right)) => {
+                Ok(self.erased_value_type(at, target.value_type_path(carrier, left, right)))
+            },
+            | (Frame::Here { at }, AnyNode::Value(point)) => {
+                Ok(self.erased_value(at, target.value_here(point)))
+            },
+            | (Frame::PathTransportMotive { at, path, value }, AnyNode::ValueType(motive)) => {
+                self.frames
+                    .push(Frame::PathTransportPath { at, motive, value });
+                Ok(Step::Descend(CoreNode::Term(TermNode::Value(path))))
+            },
+            | (Frame::PathTransportPath { at, motive, value }, AnyNode::Value(path)) => {
+                self.frames
+                    .push(Frame::PathTransportValue { at, motive, path });
+                self.argument(value)
+            },
+            | (Frame::PathTransportValue { at, motive, path }, AnyNode::Value(value)) => {
+                Ok(self
+                    .erased_computation(at, target.computation_path_transport(motive, path, value)))
+            },
             | (Frame::Thunk { at }, AnyNode::Computation(body)) => {
                 Ok(self.erased_value(at, target.value_thunk(body)))
             },
@@ -4025,8 +4097,13 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 | Frame::PathEquivBackward { .. }
                 | Frame::PathSource { .. }
                 | Frame::PathTarget { .. }
+                | Frame::PathLeft { .. }
+                | Frame::PathRight { .. }
+                | Frame::Here { .. }
                 | Frame::TransportPath { .. }
                 | Frame::TransportValue { .. }
+                | Frame::PathTransportPath { .. }
+                | Frame::PathTransportValue { .. }
                 | Frame::Injection { .. }
                 | Frame::ListHead { .. }
                 | Frame::ListTail { .. }
@@ -4045,6 +4122,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | (
                 Frame::PathEquivType { .. }
                 | Frame::ListType { .. }
+                | Frame::PathCarrier { .. }
+                | Frame::PathTransportMotive { .. }
                 | Frame::ListElement { .. }
                 | Frame::ListResult { .. }
                 | Frame::Quote { .. }
@@ -4345,7 +4424,6 @@ mod tests
 
     use super::Erasure;
     use super::Frame;
-    use super::IdentityFormer;
     use super::Mode as Reading;
     use super::Outcome;
     use super::Positions;
@@ -5747,40 +5825,91 @@ mod tests
     }
 
     #[test]
-    fn element_identity_is_refused_by_name_until_the_kernel_checks_it()
+    fn element_identity_is_readmitted_and_a_compound_endpoint_is_refused_by_name()
     {
+        // def id        : U (Integer -> F Integer) = thunk { \x. return x } ;
+        // def same      : Path(Integer, 0, 0) = here(0) ;
+        // def moved     : U (F Path(Integer, 0, 0))
+        //               = thunk { tr(y. Path(Integer, 0, y), here(0), here(0)) } ;
+        // def compound  : Path(Integer, (id 0), 0) = here(0) ;
         let mut arena = CoreArena::new();
         let integer = arena.value_type_base(BaseType::Integer);
+        let returns_integer = arena.comp_type_returner(integer);
+        let arrow = arena.comp_type_arrow(integer, returns_integer);
+        let suspended_arrow = arena.value_type_thunk(arrow);
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let returns_bound = arena.computation_return(bound);
+        let lambda = arena.computation_lambda(returns_bound);
+        let identity = arena.value_thunk(lambda);
         let zero = arena.value_literal(integer_literal());
         let here = arena.value_here(zero);
-        let returned = arena.computation_return(zero);
-        let compound = arena.value_returned(returned);
         let path = arena.value_type_path(integer, zero, zero);
-        let transport = arena.computation_path_transport(integer, here, zero);
-        let rows = [
-            (CoreNode::Type(TypeNode::Value(path)), IdentityFormer::Path),
-            (CoreNode::Term(TermNode::Value(here)), IdentityFormer::Here),
-            (
-                CoreNode::Term(TermNode::Value(compound)),
-                IdentityFormer::CompoundEndpoint,
+        let motive = arena.value_type_path(integer, zero, bound);
+        let transport = arena.computation_path_transport(motive, here, here);
+        let moved = arena.value_thunk(transport);
+        let returns_path = arena.comp_type_returner(path);
+        let suspended_path = arena.value_type_thunk(returns_path);
+        let named = arena.value_constant(ConstantIndex::from(0_usize));
+        let forced = arena.computation_force(named);
+        let applied = arena.computation_application(forced, zero);
+        let compound = arena.value_returned(applied);
+        let compound_path = arena.value_type_path(integer, compound, zero);
+        let module = [
+            declaration(
+                At(0),
+                Maybe::Present(suspended_arrow),
+                Maybe::Present(identity),
             ),
-            (
-                CoreNode::Term(TermNode::Computation(transport)),
-                IdentityFormer::Transport,
-            ),
+            declaration(At(1), Maybe::Present(path), Maybe::Present(here)),
+            declaration(At(2), Maybe::Present(suspended_path), Maybe::Present(moved)),
+            declaration(At(3), Maybe::Present(compound_path), Maybe::Present(here)),
         ];
-        for (at, former) in rows {
-            let refusal = erase(&mut arena, at).1;
-            assert_eq!(
-                refusal,
-                Err(Refusal::ElementIdentity { at, former }),
-                "{former:?} is refused by name, at its node"
-            );
-            assert!(
-                refusal.is_err_and(|refused| refused.classify() == FailureClass::Unrepresentable),
-                "the kernel's tags have not landed, so the former is unrepresentable there"
-            );
-        }
+        let (report, readmission) = judge_and_readmit(&mut arena, &module);
+        let verdicts: Vec<_> = report.judged().iter().map(Judged::verdict).collect();
+        assert!(
+            verdicts
+                .iter()
+                .all(|verdict| matches!(verdict, Verdict::Checked { .. })),
+            "the judgement accepts all four: {verdicts:?}"
+        );
+        let [_, ref same, ref transported, ref refused] = *readmission.readmitted()
+        else {
+            panic!("one outcome per declaration");
+        };
+        assert!(
+            matches!(*same.outcome(), Outcome::Defined { .. }),
+            "a path type and its reflexivity cross, and the kernel re-derives them: {:?}",
+            same.outcome()
+        );
+        assert!(
+            matches!(*transported.outcome(), Outcome::Defined { .. }),
+            "a transport in a motive under its binder crosses, and the kernel re-derives it: \
+             {:?}",
+            transported.outcome()
+        );
+        assert_eq!(
+            refused.outcome(),
+            &Outcome::Refused(Refusal::CompoundEndpoint { at: compound }),
+            "a compound endpoint is refused by name, at the endpoint"
+        );
+        assert_eq!(
+            Refusal::CompoundEndpoint { at: compound }.classify(),
+            FailureClass::Unrepresentable,
+            "the kernel has no node for a returned value"
+        );
+        assert_eq!(
+            [
+                crossed_at(&readmission, At(0)),
+                crossed_at(&readmission, At(1)),
+                crossed_at(&readmission, At(2)),
+            ],
+            [
+                ConstantIndex::from(0_usize),
+                ConstantIndex::from(1_usize),
+                ConstantIndex::from(2_usize),
+            ],
+            "the definition and both identity declarations enter in declaration order"
+        );
     }
 
     #[test]
