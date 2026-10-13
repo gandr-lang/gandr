@@ -1,13 +1,16 @@
 //! The client's side of a session: a connection driven in process, one
 //! message at a time, exactly as `serve` drives it, with every message sent
 //! and received kept so the same exchange can be replayed over framed
-//! streams.
+//! streams. Connections may share one workspace, as the hub's do.
 
+use alloc::rc::Rc;
 use alloc::vec::Vec;
+use core::cell::RefCell;
 use std::io::BufRead as _;
 
 use anodized::spec;
 use gandr_surface_lsp::Body;
+use gandr_surface_lsp::Peer;
 use gandr_surface_lsp::Served;
 use gandr_surface_lsp::Server;
 use gandr_surface_lsp::Workspace;
@@ -33,13 +36,23 @@ pub enum Record
     Dropped,
 }
 
-/// One connection over a workspace of its own, driven in process.
+/// A workspace the connections over it share, and how many have joined it.
+#[derive(Default)]
+struct Shared
+{
+    /// The workspace.
+    workspace: Workspace,
+    /// How many connections have joined, each numbered by its turn.
+    joined: u64,
+}
+
+/// One connection over a workspace, driven in process.
 pub struct Client
 {
     /// The connection.
     server: Server,
-    /// Its workspace.
-    workspace: Workspace,
+    /// Its workspace, shared with every connection beside it.
+    shared: Rc<RefCell<Shared>>,
     /// Whether the exchange is kept.
     record: Record,
     /// Every message sent, in order, when kept.
@@ -52,7 +65,8 @@ pub struct Client
 
 impl Client
 {
-    /// A connection past `initialize` and `initialized`.
+    /// A connection past `initialize` and `initialized`, over a workspace of
+    /// its own.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -69,9 +83,51 @@ impl Client
         && (record == Record::Dropped || ret.sent.len() == 2))]
     pub fn initialized(record: Record) -> Self
     {
+        Self::joining(Rc::new(RefCell::new(Shared::default())), record)
+    }
+
+    /// A second connection past `initialize` and `initialized`, over this
+    /// one's workspace, as a second editor reaches the hub.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the connection is running over the same workspace under a
+    ///   peer number no connection over it had.
+    /// - provides: the second editor of the shared-workspace scenarios.
+    /// - panics: the initialization is refused.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the two-editor scenarios open one document from both
+    ///   connections; a connection that shared no workspace would never meet
+    ///   the other's document, and its answers would agree trivially.
+    /// - witness: `editor::editor::scenarios::two_editors_on_one_buffer_each_keep_their_answers`
+    #[spec(ensures: |ret| Rc::ptr_eq(&ret.shared, &self.shared) && ret.requests == 1)]
+    pub fn beside(
+        &self,
+        record: Record,
+    ) -> Self
+    {
+        Self::joining(Rc::clone(&self.shared), record)
+    }
+
+    /// A connection over `shared`, numbered by its turn, past `initialize`
+    /// and `initialized`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn joining(
+        shared: Rc<RefCell<Shared>>,
+        record: Record,
+    ) -> Self
+    {
+        let peer = {
+            let mut joined = shared.borrow_mut();
+            joined.joined = joined.joined.saturating_add(1);
+            Peer::from(joined.joined)
+        };
         let mut client = Self {
-            server: Server::default(),
-            workspace: Workspace::default(),
+            server: Server::new(peer),
+            shared,
             record,
             sent: Vec::new(),
             received: Vec::new(),
@@ -207,8 +263,10 @@ impl Client
     ) -> Vec<Value>
     {
         let body = Body::from(serde_json::to_vec(&message).expect("a message encodes"));
-        let mut outcome = self.server.handle(&mut self.workspace, &body);
-        let admitted = self.server.admit(&mut self.workspace, &mut outcome.log);
+        let mut shared = self.shared.borrow_mut();
+        let mut outcome = self.server.handle(&mut shared.workspace, &body);
+        let admitted = self.server.admit(&mut shared.workspace, &mut outcome.log);
+        drop(shared);
         let messages: Vec<Value> = outcome
             .messages
             .iter()

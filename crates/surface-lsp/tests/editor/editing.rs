@@ -105,7 +105,52 @@ impl Session
         oracle: Oracle,
     ) -> Self
     {
-        let mut client = Client::initialized(Record::Kept);
+        Self::opening(Client::initialized(Record::Kept), uri, text, typing, oracle)
+    }
+
+    /// Open this session's document, at its current text, from a second
+    /// connection over the same workspace, as a second editor does.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the second session holds this one's URI and text at version
+    ///   1, and its publication was held to a fresh connection's.
+    /// - provides: the second editor of the shared-workspace scenarios.
+    /// - panics: the opening publication is missing, or disagrees with a fresh
+    ///   connection's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — both two-editor scenarios open their second editor
+    ///   here; a second open that disturbed the first's document shows at the
+    ///   first's next keystroke.
+    /// - witness: `editor::editor::scenarios::two_editors_on_one_buffer_each_keep_their_answers`
+    #[spec(ensures: |ret| ret.uri == self.uri && ret.buffer.text() == self.buffer.text())]
+    pub fn beside(
+        &self,
+        typing: Typing,
+    ) -> Self
+    {
+        Self::opening(
+            self.client.beside(Record::Kept),
+            self.uri.clone(),
+            self.buffer.text(),
+            typing,
+            self.oracle,
+        )
+    }
+
+    /// Open `text` at `uri` through `client`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn opening(
+        mut client: Client,
+        uri: String,
+        text: Text<'_>,
+        typing: Typing,
+        oracle: Oracle,
+    ) -> Self
+    {
         let opened = client.notify(
             Method("textDocument/didOpen"),
             &json!({ "textDocument": {

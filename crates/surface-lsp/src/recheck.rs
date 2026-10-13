@@ -92,23 +92,18 @@
 //! server reads the setting from the `initialize` parameters'
 //! `initializationOptions.diagnostics.verbosity`, and from the `gandr` section
 //! of each `workspace/didChangeConfiguration`; a change to another level
-//! republishes every document the connection holds, at its held version, to
-//! that connection alone. A value that names no level changes nothing.
+//! republishes every copy the connection holds, at its version, to that
+//! connection alone. A value that names no level changes nothing.
 //! Witnesses: `recheck::tests::one_refusal_is_published_at_every_verbosity`,
 //! `server::tests::a_configuration_change_republishes_at_its_verbosity`.
 //!
 //! The verbosity is a connection's, not the workspace's: each editor attached
-//! to one hub states its own. A synchronisation publishes at the verbosity of
-//! the connection whose open or change it follows, to every holder alike, so
-//! two editors at different levels on one document see the level of whichever
-//! changed it last. The alternative was a workspace-wide level, which would let
-//! one editor's setting rewrite another's diagnostics; and rendering every
-//! level for every holder, which would render each report four times for a case
-//! no client has asked for. The choice reverses when two holders at different
-//! levels are a use: each holder's publication is then rendered at its own
-//! level. The setting is pushed, not pulled with `workspace/configuration`: the
-//! server sends no request to the client, and a client that only answers pulls
-//! keeps the level it initialised with.
+//! to one hub states its own, and since each connection is published only its
+//! own copy's diagnostics, each editor sees its own level. The alternative was
+//! a workspace-wide level, which would let one editor's setting rewrite
+//! another's diagnostics. The setting is pushed, not pulled with
+//! `workspace/configuration`: the server sends no request to the client, and a
+//! client that only answers pulls keeps the level it initialised with.
 //!
 //! Every diagnostic's `source` is `gandr`. The code is the spelling a corpus
 //! `refuses` attribute states and a snippet's first line carries, so a code

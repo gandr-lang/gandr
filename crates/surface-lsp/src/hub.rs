@@ -4,9 +4,8 @@
 //! The hub accepts connections until none has been open for its linger, then
 //! removes its socket and returns. Each connection runs on a reader thread,
 //! which handles the frames it reads over the one [`Workspace`], and a writer
-//! thread, which drains the connection's outbox: its own answers and every
-//! publication another connection's synchronisation made for a document it
-//! holds open. A relay is the client's end: it carries frames between an
+//! thread, which drains the connection's outbox of its answers and
+//! publications. A relay is the client's end: it carries frames between an
 //! editor's standard streams and the hub's socket.
 //!
 //! # One hub serves a workspace's clients
@@ -16,16 +15,15 @@
 //! serve` detached when nothing answers, and carries frames between its
 //! standard streams and the socket unchanged. The hub, `run_hub`, accepts every
 //! connection the socket takes and serves each with a reader thread and a
-//! writer thread over one `Workspace`: the open documents with their text and
-//! sessions, which connections hold each open, and each connection's outbox. A
-//! synchronisation publishes to the connection that sent it and to every other
-//! holder, so an edit through one editor is what a second client's hover reads
-//! at the same version, and an open of a document another connection holds
-//! takes the opener's text into the held session, which molds only what
-//! differs. A connection that ends, cleanly or killed, lets go of what it held;
-//! a document no connection holds is forgotten with its session. The hub
-//! removes its socket and exits once no client has connected for its linger, a
-//! minute unless `--linger-ms` names another.
+//! writer thread over one `Workspace`: the open documents, each with every
+//! holding connection's own copy of its text and session. Each connection's
+//! changes apply to its own copy and it is answered from that copy, so two
+//! editors over one file are each answered for the text they hold, and the
+//! faces beside them read the copy that synchronised last. A connection that
+//! ends, cleanly or killed, lets go of what it held; a document no connection
+//! holds is forgotten with its sessions. The hub removes its socket and exits
+//! once no client has connected for its linger, a minute unless `--linger-ms`
+//! names another.
 //!
 //! **Discovery.** The socket is `$XDG_RUNTIME_DIR/gandr/<digest>.sock`, or
 //! `<temporary directory>/gandr-$USER/<digest>.sock` without that variable,
@@ -39,11 +37,11 @@
 //!
 //! **Serialisation.** One mutex guards the workspace; a connection holds it
 //! while it handles a frame and runs the admission that frame left, and sends
-//! what it made to the outboxes inside it, so every client reads the
-//! publications for a document in the order the hub made them. The relay
-//! decides its exit code from the frames it carries: a `shutdown` request
-//! before `exit` is clean, anything else abrupt, a broken client stream a
-//! fault, as `serve` decides them.
+//! what it made to its outbox inside it, so every face reads a document's
+//! copies in the order the hub changed them. The relay decides its exit code
+//! from the frames it carries: a `shutdown` request before `exit` is clean,
+//! anything else abrupt, a broken client stream a fault, as `serve` decides
+//! them.
 //!
 //! **A second face.** The hub reads each connection's first byte: a frame
 //! begins with its `Content-Length` header, so a connection beginning with `{`
@@ -54,9 +52,9 @@
 //! judging the text again. The face is a parameter so this crate does not
 //! depend on the protocols served beside it.
 //!
-//! **Alternatives.** A hub per document, or a session per connection with edits
-//! forwarded between them, would keep two judgements of one text that could
-//! disagree; one workspace per hub holds one. A lock file beside the socket
+//! **Alternatives.** A hub per document would keep a judgement per process
+//! that a face beside the editors could not read; one workspace per hub
+//! holds every copy where every face reads it. A lock file beside the socket
 //! would name the owner's process, at the cost of a second file whose staleness
 //! needs the same probe the socket answers directly. A hub that exits with its
 //! last client would cost the next editor start a cold session; the linger
@@ -260,13 +258,13 @@ pub type Face = fn(&mut BufReader<UnixStream>, Peer, &Mutex<Workspace>);
 ///   one is given, and one whose first byte is `r` to the render-bus face,
 ///   [`crate::bus::serve`]. Every other accepted connection is served as
 ///   [`Server::handle`] and [`Server::admit`] state, over the documents every
-///   connection shares: its answers and publications reach it in the order its
-///   handling made them, interleaved with the publications other connections'
-///   synchronisations made for documents it holds, and each synchronisation's
-///   timing line goes to `log`. A connection ends at `exit`, at the end of its
-///   stream, or at a stream fault; it then holds nothing and its socket is
-///   shut. The hub returns once no connection has been open for `linger`, its
-///   socket file removed first so a late client starts a fresh hub.
+///   connection shares, each connection answered from its own copy: its answers
+///   and publications reach it in the order its handling made them, and each
+///   synchronisation's timing line goes to `log`. A connection ends at `exit`,
+///   at the end of its stream, or at a stream fault; it then holds nothing and
+///   its socket is shut. The hub returns once no connection has been open for
+///   `linger`, its socket file removed first so a late client starts a fresh
+///   hub.
 /// - provides: the engine hub's whole lifetime.
 /// - fails: when accepting fails for a reason other than having nothing to
 ///   accept.
@@ -279,10 +277,10 @@ pub type Face = fn(&mut BufReader<UnixStream>, Peer, &Mutex<Workspace>);
 /// The error accepting a connection or configuring the listener returned.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — two connections share one document's edits and
-///   publications; one leaving leaves the other served; the hub, left with
+/// - hypothesis: L3 — two connections over one document are each answered for
+///   their own copy; one leaving leaves the other served; the hub, left with
 ///   none, removes its socket and returns.
-/// - witness: `hub::tests::two_clients_share_one_document`
+/// - witness: `hub::tests::two_clients_hold_their_own_copies`
 /// - witness: `hub::tests::a_hub_left_alone_exits_after_its_linger`
 /// - witness: `hub::tests::a_line_connection_reaches_the_second_face`
 /// - witness: `hub::tests::an_attached_view_follows_the_editors_edits`
@@ -358,7 +356,7 @@ where
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`run_hub`]'s witnesses.
-/// - witness: `hub::tests::two_clients_share_one_document`
+/// - witness: `hub::tests::two_clients_hold_their_own_copies`
 fn connection<Log>(
     stream: UnixStream,
     peer: Peer,
@@ -385,7 +383,6 @@ fn connection<Log>(
         return;
     }
     let (outbox, inbox) = channel::<Outgoing>();
-    lock(workspace).join(peer, outbox.clone());
     let writer = reading.get_ref().try_clone().map(|mut writing| {
         thread::spawn(move || {
             for message in inbox {
@@ -683,7 +680,7 @@ mod tests
         ///
         /// # Adequacy
         /// - hypothesis: L3 — the witnesses read exact versions and results.
-        /// - witness: `hub::tests::two_clients_share_one_document`
+        /// - witness: `hub::tests::two_clients_hold_their_own_copies`
         #[spec(ensures: |ret| ret.is_object())]
         fn receive(&mut self) -> Value
         {
@@ -767,7 +764,7 @@ mod tests
     }
 
     #[test]
-    fn two_clients_share_one_document()
+    fn two_clients_hold_their_own_copies()
     {
         let scratch = Scratch::new(Json("share"));
         let socket = scratch.socket();
@@ -782,26 +779,24 @@ mod tests
         let mut second = Client::new(&socket);
         second.send(open);
         assert_eq!(second.published(), Some(serde_json::json!(1_i32)));
-        assert_eq!(
-            first.published(),
-            Some(serde_json::json!(1_i32)),
-            "the other holder hears the second open"
-        );
         first.send(Json(
             r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{
                 "textDocument":{"uri":"file:///tmp/shared.gandr","version":2},
                 "contentChanges":[{"text":"def g = 1 ;\n"}]}}"#,
         ));
-        assert_eq!(first.published(), Some(serde_json::json!(2_i32)));
-        assert_eq!(second.published(), Some(serde_json::json!(2_i32)));
+        assert_eq!(
+            first.published(),
+            Some(serde_json::json!(2_i32)),
+            "the first hears its own change, and nothing of the second's open"
+        );
         second.send(Json(
             r#"{"jsonrpc":"2.0","id":5,"method":"textDocument/hover","params":{
                 "textDocument":{"uri":"file:///tmp/shared.gandr"},"position":{"line":0,"character":4}}}"#,
         ));
         assert_eq!(
             second.receive().pointer("/result/contents/value"),
-            Some(&serde_json::json!("```gandr\ng : Integer\n```")),
-            "an edit through one client is visible to the other's query"
+            Some(&serde_json::json!("```gandr\nf : Integer\n```")),
+            "each client is answered for the text it holds, and hears nothing of the other's change"
         );
         drop(first);
         second.send(Json(

@@ -37,10 +37,11 @@
 //! # One hub serves a workspace's clients
 //!
 //! On Unix, `run_hub` serves every connection a socket accepts over one
-//! workspace: each document is held once, whichever connections hold it open,
-//! and each synchronisation is published to every holder. `socket_for` names
-//! a workspace's socket, `bind` claims it unless another hub serves it, and
-//! `relay` carries a client's streams to the hub and back.
+//! workspace: each connection holds its own copy of every document it opens
+//! and is answered for it, and the other faces read the copy that synchronised
+//! last. `socket_for` names a workspace's socket, `bind` claims it unless
+//! another hub serves it, and `relay` carries a client's streams to the hub
+//! and back.
 //!
 //! # Example
 //!
