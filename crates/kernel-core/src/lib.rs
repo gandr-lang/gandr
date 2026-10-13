@@ -134,6 +134,17 @@
 //! reads one, rechecking an untrusted engine's term-conversion verdict decision
 //! by decision.
 //!
+//! # Sealing
+//!
+//! An abstract type carries the representation it was sealed over, and the
+//! kernel reads that representation only inside the admission that minted
+//! the atom: a sealed module's members are checked at the representation and
+//! exported at the atom, and every later declaration sees the atom alone. The
+//! kernel draws the admission's boundary from its own count and carries it in
+//! the atom's record, so an artifact replays to the same boundary through
+//! [`Environment::replay`]. The rule, its alternatives and its reversal are in
+//! [`seal`].
+//!
 //! # Universe identity boundaries
 //!
 //! The certified-equivalence type `Path_U` is native term syntax; conversion
@@ -265,6 +276,7 @@ pub mod levels;
 pub mod path_universe;
 pub mod replay;
 pub mod rewrite;
+pub mod seal;
 pub mod stage;
 pub mod support;
 mod witness;
@@ -293,6 +305,7 @@ pub use crate::encoding::encode_rewrite;
 pub use crate::encoding::encode_support;
 pub use crate::env::Admission;
 pub use crate::env::AdmittedDeclaration;
+pub use crate::env::ArtifactRefusal;
 pub use crate::env::AxiomReport;
 pub use crate::env::CheckedId;
 pub use crate::env::Environment;

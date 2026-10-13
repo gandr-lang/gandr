@@ -161,6 +161,90 @@ impl From<MintedAtom> for usize
     }
 }
 
+/// How many declarations after an abstract type its minting admission holds.
+///
+/// A count of admissions, not an index: the atom at position `a` closed after
+/// `n` holds positions `a + 1` through `a + n`, and `n = 0` closes it at once.
+///
+/// # Specification
+/// - requires: all host admission counts are representable.
+/// - ensures: distinguishes a scope's extent from an admission position and
+///   from a wire index at every signature.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; the
+///   environment that closes a scope and the codec that carries it supply its
+///   executable observations.
+///
+/// # Adequacy
+/// - hypothesis: L0 separates an extent from a position. L3 round-trips a
+///   sealed artifact whose atom holds its member and refuses an extent reaching
+///   past the artifact's last declaration.
+/// - witness: `sharing_format::sharing_format::a_sealed_artifact_round_trips_with_its_atom_table`
+/// - witness: `sharing_format::sharing_format::a_seal_reaching_past_the_artifact_is_refused`
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SealExtent(usize);
+
+impl From<usize> for SealExtent
+{
+    /// The extent of `count` declarations.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: usize) -> Self
+    {
+        Self(count)
+    }
+}
+
+impl From<SealExtent> for usize
+{
+    /// The number of declarations the extent holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(extent: SealExtent) -> Self
+    {
+        extent.0
+    }
+}
+
+/// Whether an abstract type's minting admission is still open, and if not,
+/// how far it reached.
+///
+/// Inside the minting admission the atom's representation is manifest: a
+/// declaration admitted there is checked with the atom read as its
+/// representation. Once the admission closes the atom is opaque for every
+/// later admission. The scope belongs to the atom, so no later declaration can
+/// claim its way inside: the kernel decides membership from the atom's own
+/// record and its own admission count.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: an open scope stays open until the environment holding the atom
+///   closes it; a closed scope holds exactly its extent.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a member admitted inside an open scope checks at the
+///   representation, a value of the representation offered after the scope
+///   closed is refused, and a decoded artifact's closed scope replays to the
+///   same boundary.
+/// - witness: `sharing_format::sharing_format::a_sealed_artifact_round_trips_with_its_atom_table`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum SealScope
+{
+    /// The minting admission is still open: every later admission reads the
+    /// representation until the environment closes it. An artifact writes an
+    /// open scope as closed after its last declaration.
+    Open,
+    /// The minting admission closed after this many further declarations.
+    Closed(SealExtent),
+}
+
 /// A declaration's prenex level interface: how many level parameters it binds
 /// and which landmark constraints it declares over them.
 ///
@@ -337,17 +421,26 @@ pub enum DeclarationContent
         declared: ValueTypeId,
     },
     /// A sealed abstract type: a minted nominal atom, declared at a universe
-    /// kind and with no unfolding rule.
+    /// kind, carrying the representation it was sealed over and the scope of
+    /// the admission that minted it.
     ///
     /// It is neither a definition nor a hole, and the distinction is the point.
     /// A definition carries a body a kernel must verify; an axiom claims an
     /// inhabitant and is therefore audited. An abstract type claims no
-    /// inhabitant — it introduces an uninterpreted type constant, a
-    /// conservative extension — so it is not audited as an axiom.
+    /// inhabitant — it introduces a type constant whose representation is read
+    /// only inside its minting admission, the existential package of a sealed
+    /// module opened where it was packed — so it is not audited as an axiom.
+    /// Outside that admission no rule reads the representation, and the atom
+    /// relates to nothing but itself.
     AbstractType
     {
         /// The atom's kind: a universe value-type root id.
         kind: ValueTypeId,
+        /// The type the atom was sealed over, which forms below its kind's
+        /// successor.
+        representation: ValueTypeId,
+        /// How far the minting admission reaches.
+        scope: SealScope,
     },
 }
 
@@ -643,6 +736,60 @@ impl Declaration
     ) -> Self
     {
         Self { name, ..self }
+    }
+
+    /// This declaration with an abstract type's minting admission closed after
+    /// `extent` further declarations, everything else unchanged.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: an abstract type comes back with its scope
+    ///   `SealScope::Closed(extent)`; any other declaration, which has no
+    ///   minting admission to close, comes back unchanged. Levels, provenance
+    ///   and name are untouched either way.
+    /// - provides: the record a producer writes once its environment has closed
+    ///   the atom's admission, so the artifact carries the boundary the
+    ///   environment drew.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an atom closed after its one member round-trips with
+    ///   that extent, and a definition passed through is unchanged.
+    /// - witness: `decl::tests::closing_a_scope_touches_only_an_abstract_type`
+    #[spec(
+        captures: entry = (self.content.clone(), self.provenance.len(), self.name.0.len()),
+        ensures: |ret| ret.provenance.len() == entry.1 && ret.name.0.len() == entry.2
+            && match entry.0 {
+                DeclarationContent::AbstractType { kind, representation, .. } => ret.content
+                    == DeclarationContent::AbstractType { kind, representation, scope: SealScope::Closed(extent) },
+                ref other => ret.content == *other,
+            },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn closed(
+        self,
+        extent: SealExtent,
+    ) -> Self
+    {
+        match self.content {
+            | DeclarationContent::AbstractType {
+                kind,
+                representation,
+                ..
+            } => Self {
+                content: DeclarationContent::AbstractType {
+                    kind,
+                    representation,
+                    scope: SealScope::Closed(extent),
+                },
+                ..self
+            },
+            | DeclarationContent::Data { .. }
+            | DeclarationContent::Def { .. }
+            | DeclarationContent::Axiom { .. } => self,
+        }
     }
 }
 
@@ -1085,14 +1232,17 @@ impl<'arena> DeclarationBuilder<'arena>
         }
     }
 
-    /// Finalize a sealed abstract type at an already-minted universe kind.
+    /// Finalize a sealed abstract type at an already-minted universe kind,
+    /// over an already-minted representation.
     ///
     /// # Specification
-    /// - requires: nothing — a non-universe kind is a rejection at a choke
-    ///   point, not a construction error.
-    /// - ensures: a declaration whose content is an abstract type and whose
-    ///   provenance is empty, an atom being what a projection produces rather
-    ///   than something carrying a projection of its own.
+    /// - requires: nothing — a non-universe kind or a representation that does
+    ///   not form below it is a rejection at a choke point, not a construction
+    ///   error.
+    /// - ensures: a declaration whose content is an abstract type carrying
+    ///   `kind`, `representation` and `scope`, and whose provenance is empty,
+    ///   an atom being what a projection produces rather than something
+    ///   carrying a projection of its own.
     /// - provides: the atom-minting construction surface.
     /// - fails: never.
     /// - panics: none.
@@ -1109,7 +1259,7 @@ impl<'arena> DeclarationBuilder<'arena>
     /// - witness: `decl::tests::finishers_preserve_payloads_and_staged_graphs`
     #[spec(
         captures: entry = (levels.params, levels.constraints.len()),
-        ensures: |ret| ret.content == DeclarationContent::AbstractType { kind }
+        ensures: |ret| ret.content == DeclarationContent::AbstractType { kind, representation, scope }
                 && ret.levels.params == entry.0
                 && ret.levels.constraints.len() == entry.1
                 && ret.name.0.is_empty()
@@ -1121,12 +1271,18 @@ impl<'arena> DeclarationBuilder<'arena>
         self,
         levels: LevelSignature,
         kind: ValueTypeId,
+        representation: ValueTypeId,
+        scope: SealScope,
     ) -> Declaration
     {
         let _kept = ManuallyDrop::new(self);
         Declaration {
             levels,
-            content: DeclarationContent::AbstractType { kind },
+            content: DeclarationContent::AbstractType {
+                kind,
+                representation,
+                scope,
+            },
             provenance: Vec::new(),
             name: StructuredName::default(),
         }
@@ -1374,13 +1530,19 @@ mod tests
                 let expected_content = match shape {
                     | 0 | 1 => super::DeclarationContent::Def { declared, body },
                     | 2 => super::DeclarationContent::Axiom { declared },
-                    | _ => super::DeclarationContent::AbstractType { kind: declared },
+                    | _ => super::DeclarationContent::AbstractType {
+                        kind: declared,
+                        representation: unit_type,
+                        scope: super::SealScope::Open,
+                    },
                 };
                 let declaration = match shape {
                     | 0 => builder.def(levels, declared, body),
                     | 1 => builder.sealed_def(levels, declared, body, provenance.clone()),
                     | 2 => builder.axiom(levels, declared),
-                    | _ => builder.abstract_type(levels, declared),
+                    | _ => {
+                        builder.abstract_type(levels, declared, unit_type, super::SealScope::Open)
+                    },
                 };
                 assert_eq!(arena, staged, "a finisher must not run rollback");
                 assert_eq!(declaration.content(), &expected_content);
@@ -1433,6 +1595,46 @@ mod tests
                 );
             }
         }
+    }
+
+    #[test]
+    fn closing_a_scope_touches_only_an_abstract_type()
+    {
+        let mut arena = TermArena::new();
+        let mut builder = DeclarationBuilder::new(&mut arena);
+        let kind = builder.arena().value_type_universe(
+            crate::types::GroundSort::Value,
+            gandr_kernel_strata::Level::zero(),
+        );
+        let integer = builder
+            .arena()
+            .value_type_base(crate::base::BaseType::Integer);
+        let atom = builder
+            .abstract_type(
+                LevelSignature::monomorphic(),
+                kind,
+                integer,
+                super::SealScope::Open,
+            )
+            .closed(super::SealExtent::from(2_usize));
+        assert_eq!(
+            atom.content(),
+            &super::DeclarationContent::AbstractType {
+                kind,
+                representation: integer,
+                scope: super::SealScope::Closed(super::SealExtent::from(2_usize)),
+            },
+            "an open atom closes at the extent its environment drew"
+        );
+        let unit = arena.value_unit();
+        let unit_type = arena.value_type_unit();
+        let definition =
+            DeclarationBuilder::new(&mut arena).def(LevelSignature::monomorphic(), unit_type, unit);
+        assert_eq!(
+            definition.clone().closed(super::SealExtent::from(2_usize)),
+            definition,
+            "a definition has no minting admission to close"
+        );
     }
 
     #[test]

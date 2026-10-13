@@ -1268,6 +1268,7 @@ mod tests
         let also_first = arena.value_type_abstract(ConstantIndex::from(0_usize));
         let second = arena.value_type_abstract(ConstantIndex::from(1_usize));
         let unit = arena.value_type_unit();
+        let integer = arena.value_type_base(BaseType::Integer);
         assert_eq!(
             Convertibility::Convertible,
             convertible_value_types(&arena, first, also_first),
@@ -1278,11 +1279,17 @@ mod tests
             convertible_value_types(&arena, first, second),
             "two atoms are two types however they were implemented"
         );
-        assert_eq!(
-            Convertibility::Distinct,
-            convertible_value_types(&arena, first, unit),
-            "and no arm relates an atom to a structural type, which is what opacity means here"
-        );
+        for structural in [unit, integer] {
+            assert_eq!(
+                (Convertibility::Distinct, Convertibility::Distinct),
+                (
+                    convertible_value_types(&arena, first, structural),
+                    convertible_value_types(&arena, structural, first),
+                ),
+                "and no arm relates an atom to a structural type in either direction, which is \
+                 what opacity means here"
+            );
+        }
     }
 
     #[test]

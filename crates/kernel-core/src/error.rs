@@ -662,6 +662,14 @@ pub enum KernelError
         /// The position the reference named.
         index: ConstantIndex,
     },
+    /// A seal named a position that is not an abstract type whose minting
+    /// admission is still open: a closed atom, an atom whose own scope closes
+    /// it, or any other declaration.
+    SealNotOpen
+    {
+        /// The position the seal named.
+        index: ConstantIndex,
+    },
     /// A declaration's sealing-provenance slot named an atom that does not
     /// occur in its declared type, which is an unfalsifiable claim about the
     /// elaborator's history rather than about the declaration.
@@ -839,6 +847,9 @@ impl core::fmt::Display for KernelError
             | Self::NotAnAbstractType { .. } => {
                 f.write_str("a sealed-atom reference named no abstract-type declaration")
             },
+            | Self::SealNotOpen { .. } => {
+                f.write_str("a seal named no abstract type whose minting admission is open")
+            },
             | Self::SealingProvenanceNotProjected { .. } => {
                 f.write_str("a claimed sealing atom does not occur in the declared type")
             },
@@ -990,6 +1001,7 @@ mod tests
             KernelError::ArenaFault,
             KernelError::AbstractTypeKindNotUniverse { actual: unit },
             KernelError::NotAnAbstractType { index },
+            KernelError::SealNotOpen { index },
             KernelError::SealingProvenanceNotProjected { atom: index },
             KernelError::SealingProvenanceNotCanonical { atom: index },
             KernelError::OutstandingStagedContent {

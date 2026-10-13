@@ -302,6 +302,10 @@ pub enum MalformedSite
     /// A structured-name segment was not UTF-8 or held the separator `.`, so it
     /// was not a segment a name can carry.
     NameSegment,
+    /// An abstract type's seal extent reached past the artifact's last
+    /// declaration, so its minting admission would hold declarations the
+    /// artifact does not carry.
+    SealExtent,
     /// A decoded child's polarity did not fit the slot its parent's constructor
     /// requires.
     Polarity,
@@ -366,6 +370,7 @@ impl fmt::Display for MalformedSite
             | Self::ConstraintForm => "a constraint side was not variable-only",
             | Self::LiteralPayload => "a literal payload was not reconstructible",
             | Self::NameSegment => "a name segment was not UTF-8 or held the separator",
+            | Self::SealExtent => "a seal extent reached past the artifact's last declaration",
             | Self::Polarity => "a decoded node had the wrong polarity for its slot",
             | Self::ChildOrder => "a child index was not strictly earlier than its entry",
             | Self::TableSize => "the subterm table exceeded the entry cap",
@@ -593,6 +598,7 @@ mod tests
             MalformedSite::ConstraintForm,
             MalformedSite::LiteralPayload,
             MalformedSite::NameSegment,
+            MalformedSite::SealExtent,
             MalformedSite::Polarity,
             MalformedSite::ChildOrder,
             MalformedSite::TableSize,

@@ -26,6 +26,7 @@ mod adversarial_depth
     use gandr_kernel_core::DefaultMemo;
     use gandr_kernel_core::ExpansionCensus;
     use gandr_kernel_core::ExpansionCount;
+    use gandr_kernel_core::Judgement;
     use gandr_kernel_core::LevelContext;
     use gandr_kernel_core::RewriteMemo;
     use gandr_kernel_core::RewritePlane;
@@ -128,8 +129,7 @@ mod adversarial_depth
                 let mut memo: DefaultMemo = DefaultMemo::new();
                 check_declaration_with_memo(
                     &mut arena,
-                    &[],
-                    &levels(),
+                    Judgement::new(&[], &levels()),
                     &declaration,
                     &mut memo,
                     &mut session,
@@ -140,8 +140,7 @@ mod adversarial_depth
                 let mut memo = NullMemo;
                 check_declaration_with_memo(
                     &mut arena,
-                    &[],
-                    &levels(),
+                    Judgement::new(&[], &levels()),
                     &declaration,
                     &mut memo,
                     &mut session,

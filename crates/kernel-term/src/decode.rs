@@ -71,6 +71,8 @@ use crate::decl::LevelSignature;
 use crate::decl::MarkedDeclaration;
 use crate::decl::MintedAtom;
 use crate::decl::NameSegment;
+use crate::decl::SealExtent;
+use crate::decl::SealScope;
 use crate::decl::StructuredName;
 use crate::encode::encode;
 use crate::encode::minted_atoms;
@@ -245,9 +247,9 @@ impl Table
 /// Which live declaration kind a decoded segment carried.
 ///
 /// A missing body root does not distinguish them: an axiom and an abstract
-/// type both decode to a single root and no body, and conflating the two would
-/// silently turn every atom back into a hole on replay — inverting exactly the
-/// distinction sealing exists to draw.
+/// type both decode with no body, and conflating the two would silently turn
+/// every atom back into a hole on replay — inverting exactly the distinction
+/// sealing exists to draw.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum DeclKind
 {
@@ -303,6 +305,9 @@ struct DeclMeta
     root_declared: GlobalIndex,
     /// The body value's global index, for a definition only.
     root_body: Option<GlobalIndex>,
+    /// The representation's global index and the scope's extent, for an
+    /// abstract type only.
+    sealed: Option<(GlobalIndex, SealExtent)>,
     /// Parameter roots for a data signature; empty for other declarations.
     parameters: Vec<GlobalIndex>,
     /// Constructor field roots for a data signature.
@@ -629,6 +634,7 @@ fn budget_report(
     for meta in metas {
         for root in core::iter::once(meta.root_declared)
             .chain(meta.root_body)
+            .chain(meta.sealed.map(|(representation, _)| representation))
             .chain(meta.parameters.iter().copied())
             .chain(meta.constructors.iter().flatten().copied())
         {
@@ -819,14 +825,18 @@ fn value_id_at(
 /// # Specification
 /// - requires: declared roots and all Data schema roots resolve to live value
 ///   types; exactly definitions have a body root, which resolves to a live
-///   value. The segment decoder establishes these conditions.
+///   value; exactly abstract types have a representation root, which resolves
+///   to a live value type. The segment decoder establishes these conditions.
 /// - ensures: returns one declaration per metadata record in order, preserving
-///   its mark, kind, roots and levels. Definition provenance is retained; other
-///   forms have none. Names move to the declarations and leave empty source
-///   names. The arena is unchanged.
+///   its mark, kind, roots and levels, and an abstract type's scope closed at
+///   its decoded extent. Definition provenance is retained; other forms have
+///   none. Names move to the declarations and leave empty source names. The
+///   arena is unchanged.
 /// - provides: assembly from already validated references, not recovery of
 ///   malformed root metadata or proof of producer claims.
-/// - fails: never within the validated-root domain.
+/// - fails: `DecodeError::Malformed` at `MalformedSite::SealExtent` when an
+///   abstract type's extent reaches past the last declaration; never otherwise
+///   within the validated-root domain.
 /// - panics: none within that domain.
 ///
 /// # Adequacy
@@ -848,11 +858,13 @@ fn value_id_at(
         && match meta.kind {
             DeclKind::Def => meta.root_body.is_some_and(|root| value_id_at(&table.nodes, root).is_some()),
             DeclKind::Data => meta.root_body.is_none() && meta.parameters.iter().chain(meta.constructors.iter().flatten()).all(|root| value_type_id_at(&table.nodes, *root).is_some()),
-            DeclKind::Axiom | DeclKind::AbstractType => meta.root_body.is_none(),
+            DeclKind::AbstractType => meta.root_body.is_none() && meta.sealed.is_some_and(|(root, _)| value_type_id_at(&table.nodes, root).is_some()),
+            DeclKind::Axiom => meta.root_body.is_none(),
         }),
     captures: entry = table.arena.watermark(),
-    ensures: |ret| table.arena.watermark() == entry && ret.as_ref().is_ok_and(|declarations|
-        declarations.len() == metas.len() && declarations.iter().zip(metas.iter()).all(|(marked, meta)| {
+    ensures: |ret| table.arena.watermark() == entry && ret.as_ref().map_or_else(
+        |error| *error == DecodeError::Malformed { site: MalformedSite::SealExtent },
+        |declarations| declarations.len() == metas.len() && declarations.iter().zip(metas.iter()).all(|(marked, meta)| {
             let declaration = marked.declaration();
             marked.mark() == meta.mark && declaration.levels() == &meta.levels
                 && declaration.provenance() == meta.provenance && meta.name.segments().is_empty()
@@ -862,8 +874,10 @@ fn value_id_at(
                         && meta.root_body.and_then(|root| value_id_at(&table.nodes, root)) == Some(body),
                     DeclarationContent::Axiom { declared } => matches!(meta.kind, DeclKind::Axiom)
                         && value_type_id_at(&table.nodes, meta.root_declared) == Some(declared),
-                    DeclarationContent::AbstractType { kind } => matches!(meta.kind, DeclKind::AbstractType)
-                        && value_type_id_at(&table.nodes, meta.root_declared) == Some(kind),
+                    DeclarationContent::AbstractType { kind, representation, scope } => matches!(meta.kind, DeclKind::AbstractType)
+                        && value_type_id_at(&table.nodes, meta.root_declared) == Some(kind)
+                        && meta.sealed.is_some_and(|(root, extent)| value_type_id_at(&table.nodes, root) == Some(representation)
+                            && scope == SealScope::Closed(extent)),
                     DeclarationContent::Data { ref parameters, ref constructors, kind } => matches!(meta.kind, DeclKind::Data)
                         && value_type_id_at(&table.nodes, meta.root_declared) == Some(kind)
                         && parameters.len() == meta.parameters.len()
@@ -880,7 +894,8 @@ fn build_declarations(
 ) -> Result<Vec<MarkedDeclaration>, DecodeError>
 {
     let mut declarations = Vec::new();
-    for meta in metas.iter_mut() {
+    let count = metas.len();
+    for (position, meta) in metas.iter_mut().enumerate() {
         let declared =
             value_type_id_at(&table.nodes, meta.root_declared).ok_or(DecodeError::Malformed {
                 site: MalformedSite::Polarity,
@@ -923,8 +938,27 @@ fn build_declarations(
                     meta.provenance.clone(),
                 )
             },
-            | DeclKind::AbstractType => DeclarationBuilder::new(&mut table.arena)
-                .abstract_type(meta.levels.clone(), declared),
+            | DeclKind::AbstractType => {
+                let (root, extent) = meta.sealed.ok_or(DecodeError::Malformed {
+                    site: MalformedSite::ChildOrder,
+                })?;
+                let representation =
+                    value_type_id_at(&table.nodes, root).ok_or(DecodeError::Malformed {
+                        site: MalformedSite::Polarity,
+                    })?;
+                let following = count.saturating_sub(position).saturating_sub(1);
+                if usize::from(extent) > following {
+                    return Err(DecodeError::Malformed {
+                        site: MalformedSite::SealExtent,
+                    });
+                }
+                DeclarationBuilder::new(&mut table.arena).abstract_type(
+                    meta.levels.clone(),
+                    declared,
+                    representation,
+                    SealScope::Closed(extent),
+                )
+            },
             | DeclKind::Axiom => {
                 DeclarationBuilder::new(&mut table.arena).axiom(meta.levels.clone(), declared)
             },
@@ -1551,6 +1585,12 @@ impl<'bytes> ByteReader<'bytes>
                 && table.families.get(root.offset().0) == Some(&Family::Value),
             (DeclKind::Data | DeclKind::Axiom | DeclKind::AbstractType, None) => true,
             _ => false,
+        }
+        && match (meta.kind, meta.sealed) {
+            (DeclKind::AbstractType, Some((root, _))) => root < table.next_index()
+                && table.families.get(root.offset().0) == Some(&Family::ValueType),
+            (DeclKind::Data | DeclKind::Def | DeclKind::Axiom, None) => true,
+            _ => false,
         }))]
 fn decode_declaration(
     reader: &mut ByteReader<'_>,
@@ -1572,6 +1612,7 @@ fn decode_declaration(
     let mut provenance: Vec<ConstantIndex> = Vec::new();
     let mut parameters = Vec::new();
     let mut constructors = Vec::new();
+    let mut sealed = None;
     let root_body = match kind {
         | DeclKind::Data => {
             let count = usize::from(reader.read_usize()?);
@@ -1594,9 +1635,17 @@ fn decode_declaration(
             provenance = decode_definition_slots(reader)?;
             Some(body)
         },
-        // An abstract type carries a kind root and stops, exactly like an
-        // axiom: no body, and therefore no per-definition annotation slots.
-        | DeclKind::Axiom | DeclKind::AbstractType => None,
+        // An abstract type carries its kind root, its representation root and
+        // its scope's extent: no body, and therefore no per-definition
+        // annotation slots. Whether the extent fits the artifact is decided at
+        // assembly, where the declaration count is known.
+        | DeclKind::AbstractType => {
+            let representation = decode_root(reader, table, Family::ValueType)?;
+            let extent = SealExtent::from(usize::from(reader.read_usize()?));
+            sealed = Some((representation, extent));
+            None
+        },
+        | DeclKind::Axiom => None,
     };
     Ok(DeclMeta {
         mark,
@@ -1605,6 +1654,7 @@ fn decode_declaration(
         levels,
         root_declared,
         root_body,
+        sealed,
         parameters,
         constructors,
         provenance,
@@ -3553,12 +3603,12 @@ mod tests
             })
         );
         assert_eq!(foreign.position.0, 4);
-        for version in [0_u16, 1, 2, 3, 0x0200, u16::MAX] {
+        for version in [0_u16, 1, 2, 3, 4, 0x0400, u16::MAX] {
             let mut image = magic.to_vec();
             image.extend_from_slice(&version.to_le_bytes());
             let mut reader = ByteReader::new(ArtifactImage::from(image.as_slice()));
             reader.expect_magic().expect("valid header");
-            let expected = if version == 3 {
+            let expected = if version == 4 {
                 Ok(())
             }
             else {
@@ -4114,6 +4164,7 @@ mod tests
                         u32::try_from(root).expect("small fixture"),
                     ),
                     root_body: None,
+                    sealed: None,
                     provenance: vec![],
                 })
                 .collect();
@@ -4194,6 +4245,7 @@ mod tests
             levels: super::LevelSignature::monomorphic(),
             root_declared: super::GlobalIndex::from(0_u32),
             root_body: Some(super::GlobalIndex::from(5_u32)),
+            sealed: None,
             provenance: vec![],
         };
         let metrics = super::budget_report(&table, &[meta]);
@@ -4239,7 +4291,7 @@ mod tests
     {
         let literal_artifact = |base: u8, literal: &[u8]| {
             let mut bytes = vec![
-                b'G', b'K', b'X', b'1', 3, 0, 0, 1, 0, 0, 0, 0, 0, 2, 0, base, 0x0c,
+                b'G', b'K', b'X', b'1', 4, 0, 0, 1, 0, 0, 0, 0, 0, 2, 0, base, 0x0c,
             ];
             bytes.extend_from_slice(literal);
             bytes.extend_from_slice(&[0, 1, 0, 0, 0, 0]);
@@ -4372,7 +4424,7 @@ mod tests
             })
         );
         let level_artifact = |level: &[u8]| {
-            let mut bytes = vec![b'G', b'K', b'X', b'1', 3, 0, 0, 1, 0, 1, 0, 3, 0, 1, 2];
+            let mut bytes = vec![b'G', b'K', b'X', b'1', 4, 0, 0, 1, 0, 1, 0, 3, 0, 1, 2];
             bytes.extend_from_slice(level);
             bytes.push(0);
             bytes
@@ -4983,6 +5035,7 @@ mod tests
                 levels,
                 root_declared: super::GlobalIndex::from(4_u32),
                 root_body: Some(super::GlobalIndex::from(5_u32)),
+                sealed: None,
                 provenance: vec![
                     super::ConstantIndex::from(129_usize),
                     super::ConstantIndex::from(0_usize),
@@ -4998,6 +5051,7 @@ mod tests
                 levels: super::LevelSignature::monomorphic(),
                 root_declared: super::GlobalIndex::from(0_u32),
                 root_body: None,
+                sealed: None,
                 provenance: vec![],
             },
             super::DeclMeta {
@@ -5009,6 +5063,10 @@ mod tests
                 levels: super::LevelSignature::new(super::LevelParamCount::from(1_u32), vec![]),
                 root_declared: super::GlobalIndex::from(4_u32),
                 root_body: None,
+                sealed: Some((
+                    super::GlobalIndex::from(0_u32),
+                    super::SealExtent::from(0_usize),
+                )),
                 provenance: vec![],
             },
         ];
@@ -5019,7 +5077,11 @@ mod tests
         let expected = [
             super::DeclarationContent::Def { declared, body },
             super::DeclarationContent::Axiom { declared: unit },
-            super::DeclarationContent::AbstractType { kind: declared },
+            super::DeclarationContent::AbstractType {
+                kind: declared,
+                representation: unit,
+                scope: super::SealScope::Closed(super::SealExtent::from(0_usize)),
+            },
         ];
         let names: &[&[&str]] = &[&["definition", "é"], &[""], &[]];
         assert_eq!(declarations.len(), 3);

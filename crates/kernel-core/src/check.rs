@@ -302,6 +302,7 @@ use crate::rewrite::shift_comp_type;
 use crate::rewrite::shift_value_type;
 use crate::rewrite::substitute_comp_type;
 use crate::rewrite::substitute_value_type;
+use crate::seal;
 use crate::support::LooseDepth;
 use crate::support::NodeOutcome;
 use crate::support::NodeSupport;
@@ -453,12 +454,13 @@ fn comp_shape_mismatch(
     }
 }
 
-/// The read-only inputs every judgement of one declaration stands on: the
-/// environment's admission log, this declaration's admitted level context,
-/// and the block a data declaration's own fields may name.
+/// The read-only inputs every judgement of one declaration stands on.
 ///
-/// Grouped because they travel together through both machines and are constant
-/// for the whole of one check, which is also why none is in a memo key.
+/// They are the environment's admission log, this declaration's admitted
+/// level context, the atoms whose minting admission is open, and the block a
+/// data declaration's own fields may name. Grouped because they travel
+/// together through both machines and are constant for the whole of one
+/// check, which is also why none is in a memo key.
 #[derive(Clone, Copy, Debug)]
 pub struct Judgement<'session>
 {
@@ -467,6 +469,9 @@ pub struct Judgement<'session>
     entries: &'session [AdmittedDeclaration],
     /// This declaration's admitted level context.
     levels: &'session LevelContext,
+    /// The atoms this declaration reads as their representations, because
+    /// it is admitted inside the admission that minted them.
+    manifest: &'session [ConstantIndex],
     /// The block in scope at its own position, while a data declaration's
     /// fields form.
     block: Block<'session>,
@@ -505,8 +510,25 @@ impl<'session> Judgement<'session>
         Self {
             entries,
             levels,
+            manifest: &[],
             block: Block::Outside,
         }
+    }
+
+    /// The same judgement inside the minting admissions of `manifest`: every
+    /// atom it names reads as its representation at a definition's declared
+    /// type and at every constant's synthesized type.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn unsealing(
+        self,
+        manifest: &'session [ConstantIndex],
+    ) -> Self
+    {
+        Self { manifest, ..self }
     }
 
     /// The same judgement with a data block in scope at its own position.
@@ -1023,14 +1045,15 @@ where
 /// point: a lookup, not an inference. The kernel resolves the position,
 /// requires the declaration it finds to be an abstract type, and reads the
 /// level out of a kind that admission already pinned to a universe. No branch
-/// consults the atom's representation, because none is recorded — which is what
-/// "an atom with no unfolding rule" means operationally.
+/// consults the atom's representation: formation is the same inside the
+/// minting admission and outside it, and only the seal rule, at a member's
+/// declared type and a constant's synthesized one, ever reads it.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: `|ret| match
 ///   entries.get(usize::from(atom)).map(AdmittedDeclaration::content) {
-///   Some(&DeclarationContent::AbstractType { kind }) =>
+///   Some(&DeclarationContent::AbstractType { kind, .. }) =>
 ///   arena.value_type(kind).map_or_else(|| ret.is_err(), |node| match *node {
 ///   ValueType::Universe { sort: GroundSort::Value, ref level } =>
 ///   ret.as_ref().is_ok_and(|actual| actual == level), _ => ret.is_err() }), _
@@ -1056,7 +1079,7 @@ where
 /// - witness: `check::tests::an_abstract_type_forms_at_its_declared_universe`
 /// - witness: `check::tests::an_atom_naming_a_definition_is_not_an_abstract_type`
 /// - witness: `check::tests::a_forward_atom_reference_is_not_an_abstract_type`
-#[spec(ensures: |ret| match entries.get(usize::from(atom)).map(AdmittedDeclaration::content) { Some(&DeclarationContent::AbstractType { kind }) => arena.value_type(kind).map_or_else(|| ret.is_err(), |node| match *node { ValueType::Universe { sort: GroundSort::Value, ref level } => ret.as_ref().is_ok_and(|actual| actual == level), _ => ret.is_err() }), _ => ret.is_err() })]
+#[spec(ensures: |ret| match entries.get(usize::from(atom)).map(AdmittedDeclaration::content) { Some(&DeclarationContent::AbstractType { kind, .. }) => arena.value_type(kind).map_or_else(|| ret.is_err(), |node| match *node { ValueType::Universe { sort: GroundSort::Value, ref level } => ret.as_ref().is_ok_and(|actual| actual == level), _ => ret.is_err() }), _ => ret.is_err() })]
 fn abstract_atom_level(
     arena: &TermArena,
     entries: &[AdmittedDeclaration],
@@ -1066,7 +1089,7 @@ fn abstract_atom_level(
     let entry = entries
         .get(usize::from(atom))
         .ok_or(KernelError::NotAnAbstractType { index: atom })?;
-    let DeclarationContent::AbstractType { kind } = *entry.content()
+    let DeclarationContent::AbstractType { kind, .. } = *entry.content()
     else {
         return Err(KernelError::NotAnAbstractType { index: atom });
     };
@@ -2040,12 +2063,18 @@ where
                         Produced::ValueType(synthesized)
                     },
                     | Value::Constant(index) => {
-                        let synthesized = match resolve_constant(judgement.entries, index) {
-                            | Maybe::Present(synthesized) => synthesized,
+                        let declared = match resolve_constant(judgement.entries, index) {
+                            | Maybe::Present(declared) => declared,
                             | Maybe::Absent(constant_type::Absent::Unadmitted) => {
                                 return Err(KernelError::UnboundConstant { index });
                             },
                         };
+                        // Inside a minting admission an earlier member typed at
+                        // one of its atoms reads at the representation, so the
+                        // sealed module's members check against each other
+                        // transparently.
+                        let synthesized =
+                            seal::unseal(arena, judgement.entries, judgement.manifest, declared)?;
                         Produced::ValueType(synthesized)
                     },
                     | Value::Literal(ref literal) => {
@@ -3352,13 +3381,17 @@ fn check_sealing_provenance(
 ///
 /// # Specification
 /// - requires: `declaration`'s content roots were minted into `arena`;
-///   `entries` is the environment's admission log.
+///   `judgement` pairs the environment's admission log with the declaration's
+///   level context and the ascending positions of the abstract types whose
+///   minting admission is open, outside any block.
 /// - ensures: `Ok(())` when the declared type forms, sealing provenance
-///   re-derives, a definition's body checks, and every deferred code checks
-///   within the operational ceiling. An axiom checks only its type; a sealed
-///   atom checks only that its kind is a universe. The original arena prefix
-///   remains, and successful content roots are readable. Synthesized
-///   intermediates are appended for the caller to truncate.
+///   re-derives, a definition's body checks — at its declared type with every
+///   manifest atom read as its representation, as is every constant it names —
+///   and every deferred code checks within the operational ceiling. An axiom
+///   checks only its type; a sealed atom checks that its kind is a universe and
+///   that its representation forms below that kind's successor. The original
+///   arena prefix remains, and successful content roots are readable.
+///   Synthesized intermediates are appended for the caller to truncate.
 /// - provides: the body check the choke point runs, with a fresh live memo on
 ///   both machines. Full typing and admission-log provenance still require the
 ///   rule derivation; an operational refusal does not establish ill-typedness.
@@ -3372,13 +3405,16 @@ fn check_sealing_provenance(
 /// - hypothesis: L2/L3 — the selected definitions, axiom and sealed atom
 ///   separate the three content arms; a bad code refuses. At the finite
 ///   occurrence boundary, a live memo accepts the shared valid declaration that
-///   the null memo refuses operationally.
+///   the null memo refuses operationally. A member inside its atom's minting
+///   admission checks at the representation and the same value outside it is
+///   refused.
 /// - witness: `check::tests::an_identity_thunk_checks`
 /// - witness: `check::tests::a_dependent_identity_checks_through_its_codes`
 /// - witness: `check::tests::a_code_that_is_not_of_its_declared_universe_refuses`
 /// - witness: `check::tests::an_axiom_checks_only_its_type`
 /// - witness: `check::tests::a_sealed_atom_checks_only_its_kind`
 /// - witness: `check::tests::obligation_ceiling_can_separate_memoized_and_memoless_checks`
+/// - witness: `env::tests::a_value_of_the_representation_does_not_inhabit_the_atom`
 #[spec(captures: entry_mark = arena.watermark(), ensures: |ret|
     entry_mark.clamped_into(gandr_kernel_term::ArenaWatermark::default(), arena.watermark()) == entry_mark
         && (ret.is_err() || (arena.value_type(declaration.declared_id()).is_some()
@@ -3389,8 +3425,7 @@ fn check_sealing_provenance(
 #[inline]
 pub fn check_declaration(
     arena: &mut TermArena,
-    entries: &[AdmittedDeclaration],
-    levels: &LevelContext,
+    judgement: Judgement<'_>,
     declaration: &Declaration,
 ) -> Result<(), KernelError>
 {
@@ -3399,8 +3434,7 @@ pub fn check_declaration(
     let mut census = ExpansionCensus::new();
     check_declaration_with_memo(
         arena,
-        entries,
-        levels,
+        judgement,
         declaration,
         &mut memo,
         &mut session,
@@ -3485,8 +3519,7 @@ pub fn check_declaration(
 #[inline]
 pub fn check_declaration_with_memo<M>(
     arena: &mut TermArena,
-    entries: &[AdmittedDeclaration],
-    levels: &LevelContext,
+    judgement: Judgement<'_>,
     declaration: &Declaration,
     memo: &mut M,
     session: &mut SupportContext,
@@ -3506,9 +3539,9 @@ where
             ref parameters,
             ref constructors,
         } => {
-            let position = ConstantIndex::from(entries.len());
+            let position = ConstantIndex::from(judgement.entries.len());
             occurrence::occurrences(arena, position, parameters, constructors)?;
-            Judgement::new(entries, levels).within_block(position, former::Signature {
+            judgement.within_block(position, former::Signature {
                 parameters,
                 constructors,
                 kind,
@@ -3516,7 +3549,7 @@ where
         },
         | DeclarationContent::Def { .. }
         | DeclarationContent::Axiom { .. }
-        | DeclarationContent::AbstractType { .. } => Judgement::new(entries, levels),
+        | DeclarationContent::AbstractType { .. } => judgement,
     };
     let mut owed: Vec<CodeObligation> = Vec::new();
     let _level = type_level(
@@ -3574,12 +3607,17 @@ where
             Ok(())
         },
         | DeclarationContent::Def { declared, body } => {
+            // The seal rule: inside the admission that minted an atom, a member
+            // declared at the atom is checked at its representation. The
+            // declaration keeps its declared type, so the member is exported at
+            // the atom.
+            let unsealed = seal::unseal(arena, judgement.entries, judgement.manifest, declared)?;
             let context: Vec<ValueTypeId> = Vec::new();
             let _checked = run(
                 arena,
                 judgement,
                 context,
-                Goal::CheckValue(body, declared),
+                Goal::CheckValue(body, unsealed),
                 Recording {
                     memo,
                     session,
@@ -3590,18 +3628,24 @@ where
             Ok(())
         },
         | DeclarationContent::Axiom { .. } => Ok(()),
-        // A sealed atom's whole admission obligation is that its kind is a
-        // universe of value types — the atom is a value type, so a computation
-        // universe is no kind for it. There is no body to check and no
-        // inhabitant claimed, so the kernel takes on nothing further — the
-        // property the atom route was chosen for.
-        | DeclarationContent::AbstractType { kind } => {
+        // A sealed atom's admission obligation is that its kind is a universe
+        // of value types — the atom is a value type, so a computation universe
+        // is no kind for it — and that its representation forms below that
+        // universe's successor, the bound a data declaration's fields meet.
+        // There is no body to check and no inhabitant claimed, so the kernel
+        // takes on nothing further — the property the atom route was chosen
+        // for.
+        | DeclarationContent::AbstractType {
+            kind,
+            representation,
+            ..
+        } => {
             let kind_node = arena.value_type(kind).ok_or(KernelError::ArenaFault)?;
-            match *kind_node {
+            let level = match *kind_node {
                 | ValueType::Universe {
                     sort: GroundSort::Value,
-                    ..
-                } => Ok(()),
+                    ref level,
+                } => level.clone(),
                 | ValueType::Universe {
                     sort: GroundSort::Computation,
                     ..
@@ -3619,10 +3663,27 @@ where
                 | ValueType::Element { .. }
                 | ValueType::Abstract(_)
                 | ValueType::Path { .. }
-                | ValueType::StaticPi { .. } => Err(KernelError::AbstractTypeKindNotUniverse {
-                    actual: value_type_witness(arena, kind),
-                }),
-            }
+                | ValueType::StaticPi { .. } => {
+                    return Err(KernelError::AbstractTypeKindNotUniverse {
+                        actual: value_type_witness(arena, kind),
+                    });
+                },
+            };
+            let formed = type_level(
+                arena,
+                judgement,
+                TypeLevelGoal::Value(representation),
+                Vec::new(),
+                Recording {
+                    memo,
+                    session,
+                    census,
+                    owed: &mut owed,
+                },
+            )?;
+            judgement
+                .levels
+                .check_universe_below(&formed, &level.succ()?)
         },
     };
     verdict?;
@@ -3946,6 +4007,8 @@ mod tests
     use gandr_kernel_term::GroundSort;
     use gandr_kernel_term::LevelParamCount;
     use gandr_kernel_term::LevelSignature;
+    use gandr_kernel_term::SealExtent;
+    use gandr_kernel_term::SealScope;
     use gandr_kernel_term::Side;
     use gandr_kernel_term::Summand;
     use gandr_kernel_term::TermArena;
@@ -4054,8 +4117,7 @@ mod tests
         let content_end = arena.watermark();
         let at_limit = super::check_declaration_with_memo(
             &mut arena,
-            environment.entries(),
-            &levels,
+            super::Judgement::new(environment.entries(), &levels),
             &at_limit,
             &mut NullMemo,
             &mut SupportContext::new(),
@@ -4068,8 +4130,7 @@ mod tests
         arena.truncate_to(content_end);
         let memoized = super::check_declaration_with_memo(
             &mut arena,
-            environment.entries(),
-            &levels,
+            super::Judgement::new(environment.entries(), &levels),
             &above_limit,
             &mut super::DefaultMemo::new(),
             &mut SupportContext::new(),
@@ -4082,8 +4143,7 @@ mod tests
         arena.truncate_to(content_end);
         let memoless = super::check_declaration_with_memo(
             &mut arena,
-            environment.entries(),
-            &levels,
+            super::Judgement::new(environment.entries(), &levels),
             &above_limit,
             &mut NullMemo,
             &mut SupportContext::new(),
@@ -4992,7 +5052,13 @@ mod tests
             let kind = staging
                 .arena()
                 .value_type_universe(GroundSort::Value, level(LevelConstant::from(2)));
-            staging.abstract_type(LevelSignature::monomorphic(), kind)
+            let integer = staging.arena().value_type_base(BaseType::Integer);
+            staging.abstract_type(
+                LevelSignature::monomorphic(),
+                kind,
+                integer,
+                SealScope::Closed(SealExtent::from(0_usize)),
+            )
         };
         let _admitted = environment
             .add_decl(atom)
@@ -5483,7 +5549,13 @@ mod tests
             let kind = staging
                 .arena()
                 .value_type_universe(GroundSort::Computation, level(LevelConstant::from(0)));
-            staging.abstract_type(LevelSignature::monomorphic(), kind)
+            let integer = staging.arena().value_type_base(BaseType::Integer);
+            staging.abstract_type(
+                LevelSignature::monomorphic(),
+                kind,
+                integer,
+                SealScope::Closed(SealExtent::from(0_usize)),
+            )
         };
         assert!(
             matches!(
@@ -5556,7 +5628,12 @@ mod tests
         let bad = {
             let mut staging = environment.stage();
             let kind = staging.arena().value_type_unit();
-            staging.abstract_type(LevelSignature::monomorphic(), kind)
+            staging.abstract_type(
+                LevelSignature::monomorphic(),
+                kind,
+                kind,
+                SealScope::Closed(SealExtent::from(0_usize)),
+            )
         };
         assert!(
             matches!(
@@ -5576,7 +5653,13 @@ mod tests
             let kind = staging
                 .arena()
                 .value_type_universe(GroundSort::Value, level(LevelConstant::from(0)));
-            staging.abstract_type(LevelSignature::monomorphic(), kind)
+            let integer = staging.arena().value_type_base(BaseType::Integer);
+            staging.abstract_type(
+                LevelSignature::monomorphic(),
+                kind,
+                integer,
+                SealScope::Closed(SealExtent::from(0_usize)),
+            )
         };
         let _admitted = environment.add_decl(atom).expect("an atom admits");
         let claiming = {
@@ -5605,7 +5688,13 @@ mod tests
             let kind = staging
                 .arena()
                 .value_type_universe(GroundSort::Value, level(LevelConstant::from(0)));
-            staging.abstract_type(LevelSignature::monomorphic(), kind)
+            let integer = staging.arena().value_type_base(BaseType::Integer);
+            staging.abstract_type(
+                LevelSignature::monomorphic(),
+                kind,
+                integer,
+                SealScope::Closed(SealExtent::from(0_usize)),
+            )
         };
         let _admitted = environment.add_decl(atom).expect("an atom admits");
         let repeated = {

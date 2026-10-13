@@ -61,6 +61,8 @@ use crate::decl::DeclarationContent;
 use crate::decl::LevelSignature;
 use crate::decl::MarkedDeclaration;
 use crate::decl::MintedAtom;
+use crate::decl::SealExtent;
+use crate::decl::SealScope;
 use crate::decl::StructuredName;
 use crate::tags;
 use crate::term::Computation;
@@ -231,8 +233,14 @@ pub fn encode(
     encode_minted_atom_table(&mut out, declarations);
     out.put_uvarint(WireU64::from(WireUsize::from(declarations.len())));
     let mut interner = Interner::new();
-    for declaration in declarations {
-        encode_declaration(&mut out, arena, &mut interner, declaration);
+    for (position, declaration) in declarations.iter().enumerate() {
+        let remaining = SealExtent::from(
+            declarations
+                .len()
+                .saturating_sub(position)
+                .saturating_sub(1),
+        );
+        encode_declaration(&mut out, arena, &mut interner, declaration, remaining);
     }
     out
 }
@@ -345,11 +353,13 @@ fn encode_minted_atom_table(
 /// # Specification
 /// - requires: the interner carries assignments from earlier segments of this
 ///   unchanged acyclic arena; assignments fit its index space. Dangling value
-///   and value-type roots are admitted.
+///   and value-type roots are admitted. `remaining` counts the declarations
+///   after this one in the sequence.
 /// - ensures: writes the mark, kind, name and level interface, then only newly
 ///   completed entries, in first-completion order. Definitions write
-///   declared/body roots and four annotation slots; the other kinds write one
-///   root and no slots.
+///   declared/body roots and four annotation slots; abstract types write their
+///   kind and representation roots and the extent of their scope, an open scope
+///   as `remaining`; the other kinds write one root and no slots.
 /// - provides: one segment with cross-declaration sharing. The predicate checks
 ///   the mark/kind bytes, root memo presence and global-counter transition;
 ///   literal segment fixtures observe field order and slot framing.
@@ -383,6 +393,7 @@ fn encode_declaration(
     arena: &TermArena,
     interner: &mut Interner,
     marked: &MarkedDeclaration,
+    remaining: SealExtent,
 )
 {
     out.put_tag(match marked.mark() {
@@ -402,7 +413,7 @@ fn encode_declaration(
 
     let mut segment: Vec<EncodedEntry> = Vec::new();
     let mut data_roots = Vec::new();
-    let roots = match *content {
+    let (root_declared, root_body, root_sealed) = match *content {
         | DeclarationContent::Data {
             kind,
             ref parameters,
@@ -416,28 +427,50 @@ fn encode_declaration(
                     .collect::<Vec<_>>();
                 data_roots.push(roots);
             }
-            (declared, None)
+            (declared, None, None)
         },
         | DeclarationContent::Def { declared, body } => {
             let declared = intern(arena, interner, &mut segment, AnyNode::ValueType(declared));
             let body = intern(arena, interner, &mut segment, AnyNode::Value(body));
-            (declared, Some(body))
+            (declared, Some(body), None)
         },
-        // An abstract type writes exactly like an axiom: one root, its kind,
-        // and no body. That is the shape of "an atom with no unfolding rule" on
-        // the wire — there is no representation field to omit, so none can leak.
-        | DeclarationContent::Axiom { declared }
-        | DeclarationContent::AbstractType { kind: declared } => {
+        | DeclarationContent::Axiom { declared } => {
             let declared = intern(arena, interner, &mut segment, AnyNode::ValueType(declared));
-            (declared, None)
+            (declared, None, None)
+        },
+        // An abstract type writes its kind as its declared root, its
+        // representation as a second value-type root, and its scope's extent.
+        // The representation is on the wire because the kernel re-reads it
+        // inside the minting admission when it replays the artifact; outside
+        // that admission no rule reads it.
+        | DeclarationContent::AbstractType {
+            kind,
+            representation,
+            scope,
+        } => {
+            let declared = intern(arena, interner, &mut segment, AnyNode::ValueType(kind));
+            let representation = intern(
+                arena,
+                interner,
+                &mut segment,
+                AnyNode::ValueType(representation),
+            );
+            let extent = match scope {
+                | SealScope::Open => remaining,
+                | SealScope::Closed(extent) => extent,
+            };
+            (declared, None, Some((representation, extent)))
         },
     };
     out.put_uvarint(WireU64::from(WireUsize::from(segment.len())));
     for entry in &segment {
         out.put_image(entry.0.as_image());
     }
-    let (root_declared, root_body) = roots;
     out.put_uvarint(WireU64::from(u64::from(u32::from(root_declared))));
+    if let Some((representation, extent)) = root_sealed {
+        out.put_uvarint(WireU64::from(u64::from(u32::from(representation))));
+        out.put_uvarint(WireU64::from(WireUsize::from(usize::from(extent))));
+    }
     if let DeclarationContent::Data {
         ref constructors, ..
     } = *(content)
@@ -1881,7 +1914,13 @@ mod tests
         let universe = builder
             .arena()
             .value_type_universe(GroundSort::Value, Level::zero());
-        let atom = builder.abstract_type(LevelSignature::monomorphic(), universe);
+        let integer = builder.arena().value_type_base(BaseType::Integer);
+        let atom = builder.abstract_type(
+            LevelSignature::monomorphic(),
+            universe,
+            integer,
+            super::SealScope::Open,
+        );
         let mut builder = DeclarationBuilder::new(&mut arena);
         let abstract_type = builder
             .arena()
@@ -1900,9 +1939,14 @@ mod tests
             MarkedDeclaration::new(AdmissionMark::UncheckedBypass, definition),
             MarkedDeclaration::new(AdmissionMark::Checked, axiom),
         ];
+        // The atom is open, so it is written closed after the two declarations
+        // that follow it; its segment carries the universe and the integer
+        // representation as entries, then its kind root, its representation
+        // root and that extent.
         let expected = [
-            b'G', b'K', b'X', b'1', 3, 0, 1, 0, 3, 0, 2, 0, 0, 0, 1, 0x02, 0, 0, 0, 1, 0, 2, 1,
-            b'a', 2, 0xc3, 0xa9, 0, 0, 2, 0x17, 0, 0x1c, 1, 0, 2, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
+            b'G', b'K', b'X', b'1', 4, 0, 1, 0, 3, 0, 2, 0, 0, 0, 2, 0x02, 0, 0, 0x00, 0x00, 0, 1,
+            2, 1, 0, 2, 1, b'a', 2, 0xc3, 0xa9, 0, 0, 2, 0x17, 0, 0x1c, 2, 0, 3, 0, 0, 0, 0, 0, 1,
+            0, 0, 0, 0, 2,
         ];
         let bytes = super::encode(&arena, &declarations);
         assert_eq!(bytes.as_image().as_ref(), expected);
@@ -1936,7 +1980,12 @@ mod tests
                 let is_atom = mask.checked_shr(u32::from(position)).unwrap_or(0) & 1 != 0;
                 let declaration = if is_atom {
                     expected.push(usize::from(position));
-                    builder.abstract_type(LevelSignature::monomorphic(), kind)
+                    builder.abstract_type(
+                        LevelSignature::monomorphic(),
+                        kind,
+                        declared,
+                        super::SealScope::Open,
+                    )
                 }
                 else if position.rem_euclid(2) == 0 {
                     builder.axiom(LevelSignature::monomorphic(), declared)

@@ -287,7 +287,11 @@ pub const MAGIC: [u8; 4] = *b"GKX1";
 /// position, and the unit, empty, unit-value and absurd tags `0x01`, `0x28`,
 /// `0x0B` and `0x29` are retired, because the unit is the empty product and
 /// tuple and the empty type the empty sum, eliminated by a case of no
-/// branches. A retired tag is refused as any unassigned byte is.
+/// branches. A retired tag is refused as any unassigned byte is. Version four
+/// gives the [`KIND_ABSTRACT_TYPE`] segment a second root, the representation
+/// the atom was sealed over, and after it the extent of the admission that
+/// minted the atom, so a replay re-checks the sealed members against the
+/// representation and closes the atom where the producer closed it.
 ///
 /// A refusal names the version it met rather than guessing at it, which is
 /// what makes an older reader meeting a newer artifact stop with an accurate
@@ -310,7 +314,7 @@ pub const MAGIC: [u8; 4] = *b"GKX1";
 /// - witness: `sharing_format::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
 /// - witness: `tags::tests::the_frozen_block_keeps_its_order_around_the_retired_tags`
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
-pub const FORMAT_VERSION: FormatVersion = FormatVersion(3);
+pub const FORMAT_VERSION: FormatVersion = FormatVersion(4);
 
 /// Admission mark: admitted through the checked choke point.
 pub const ADMISSION_CHECKED: WireTag = WireTag(0);
