@@ -203,16 +203,18 @@ env.GANDR_RECOVERY_WHOLE = "1"
 run = "cargo nextest run --locked --package gandr-surface-parser --test tests --profile {{ env.NEXTEST_PROFILE | default(value='default') }} -E 'test(=acceptance::dropped_tokens_recover_no_worse_than_the_record)'"
 
 # The enforcing suite, instrumented into target/coverage so it never shares
-# the cached enforcing state. The plain-only parser tests are
-# cfg(not(anodized_panic)), so they are a second instrumented run; a line is
-# covered when either run executed it. llvm-tools already supplies llvm-cov.
+# the cached enforcing state, under the `coverage` nextest profile (the
+# enforcing limits, the editor's corpus sweeps left out — .config/nextest.toml
+# says why). The plain-only parser tests are cfg(not(anodized_panic)), so they
+# are a second instrumented run; a line is covered when either run executed
+# it. llvm-tools already supplies llvm-cov.
 ["ci:coverage"]
 description = "Enforcing line coverage, with the plain-only parser witness merged in, as coverage.lcov"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 root="{{ config_root }}"
-export NEXTEST_PROFILE=ci-enforcing
+export NEXTEST_PROFILE=coverage
 RUSTFLAGS="--cfg anodized_panic" CARGO_TARGET_DIR="$root/target/coverage" \
   cargo llvm-cov nextest --workspace --locked --lcov --output-path "$root/coverage.lcov"
 CARGO_TARGET_DIR="$root/target/coverage-plain" \

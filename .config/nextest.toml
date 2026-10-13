@@ -61,3 +61,16 @@ path = "junit.xml"
 [profile.ci-enforcing]
 inherits = "ci"
 slow-timeout = { period = "60s", terminate-after = 10 }
+
+# The instrumented enforcing run is a report, never a gate, and instrumentation
+# multiplies the specification cost: the editor's whole-corpus scenarios ran
+# 65–549 s and the typing scenario past its 600 s limit on the first hosted
+# measurement (run 38410734551), five tests holding a 4560-test run for a
+# quarter of an hour. They stay in every enforcing lane; coverage leaves them
+# out, because each sweep drives the language server over the corpus through
+# the same paths the per-feature tests execute, and a line is covered when
+# either run reached it. Widen this filter the day a sweep is the only test
+# reaching a line that matters.
+[profile.coverage]
+inherits = "ci-enforcing"
+default-filter = "not test(editor::scenarios::)"
