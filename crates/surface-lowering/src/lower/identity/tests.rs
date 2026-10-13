@@ -1,3 +1,4 @@
+use alloc::format;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -255,6 +256,54 @@ fn a_path_type_and_reflexivity_lower_to_their_formers()
         ),
         "reflexivity takes one point"
     );
+}
+
+#[test]
+fn funext_lowers_to_its_former()
+{
+    let functions = "def id(b: +{Unit, Unit}) -> -F +{Unit, Unit} {\n  return b\n}\ndef again(b: +{Unit, Unit}) -> -F +{Unit, Unit} {\n  return b\n}\n";
+    let mut arena = CoreArena::new();
+    let source = format!(
+        "{functions}def same : Path(+U[ω] (+{{Unit, Unit}} -> -F +{{Unit, Unit}}), id, again);\ndef same = funext(id, again);\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let DeclarationOutcome::Completed { body, .. } = outcome_of(&module, "same".into())
+    else {
+        panic!("the path and its extensionality lower");
+    };
+    let Some(&Value::Funext(left, right)) = arena.value(body)
+    else {
+        panic!("`funext(id, again)` is function extensionality");
+    };
+    assert!(
+        matches!(arena.value(left), Some(&Value::Constant(constant)) if usize::from(constant) == 0)
+            && matches!(arena.value(right), Some(&Value::Constant(constant)) if usize::from(constant) == 1),
+        "both functions are read as values, in order"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+
+    let mut arena = CoreArena::new();
+    let source = format!("{functions}def once = funext(id);\n");
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    assert!(
+        matches!(
+            outcome_of(&module, "once".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Arity(count),
+                ..
+            }) if count == OperandCount::from(1_usize)
+        ),
+        "function extensionality takes two functions"
+    );
+
+    let mut arena = CoreArena::new();
+    let source = "def funext(x: Integer, y: Integer) -> -F Integer {\n  return x\n}\ndef call : +U (-F Integer);\ndef call = thunk { become funext(1, 2) };\n";
+    let module = lowered(SourceText::from(source), &mut arena);
+    let Some(&Computation::Application(..)) =
+        arena.computation(tail_of(&module, &arena, "call".into()))
+    else {
+        panic!("a declaration named `funext` shadows the operation");
+    };
 }
 
 #[test]

@@ -62,7 +62,8 @@
 //! `here(a)` is the surface spelling of element identity, and it is faithful:
 //! the grammar parses the call and the lowering mints the witness. It is not
 //! the native `refl`, which stays approximate. The point is the call's one
-//! argument, so a pair reads `here(#{2, 2})`.
+//! argument, so a pair reads `here(#{2, 2})`. Function extensionality is
+//! `funext(f, g)` by the same reasoning, its two functions in order.
 //!
 //! - **Alternatives.** Writing `?`, the spelling of a node the surface does not
 //!   write, would hide a former the grammar parses.
@@ -276,7 +277,7 @@ enum Kind
         | Former::Literal(_) | Former::Tuple(_) | Former::Record(_) | Former::Injection(..) | Former::Thunk | Former::ValueLift
         | Former::Reify | Former::ListNil | Former::ListCons(..)
         | Former::Quote(_) | Former::QuoteComputation(_) | Former::StaticLambda(_) | Former::StaticApplication(..)
-        | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_)),
+        | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_) | Former::Funext(..)),
     | Kind::Computation => matches!(*former, Former::Computation),
     | Kind::Unknown => matches!(*former, Former::Unreadable),
 })]
@@ -321,7 +322,8 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::QuoteComputation(_)
         | Former::StaticLambda(_)
         | Former::StaticApplication(..)
-        | Former::Here(_) => Kind::Value,
+        | Former::Here(_)
+        | Former::Funext(..) => Kind::Value,
         | Former::Computation => Kind::Computation,
         | Former::Unreadable => Kind::Unknown,
     }
@@ -488,7 +490,7 @@ enum Children<Node>
         Children::Two(Slot { admits: Admits::ValueType, .. }, Slot { admits: Admits::ValueType, .. })),
     | Former::Arrow { .. } | Former::Pi { .. } => matches!(ret,
         Children::Two(Slot { admits: Admits::ValueType, .. }, Slot { admits: Admits::CompType, .. })),
-    | Former::ListCons(..) | Former::PathUniverse(..) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::StaticApplication(..) => matches!(ret,
+    | Former::ListCons(..) | Former::PathUniverse(..) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Funext(..) | Former::StaticApplication(..) => matches!(ret,
         Children::Two(Slot { admits: Admits::Value, .. }, Slot { admits: Admits::Value, .. })),
     | Former::ThunkType(_) | Former::QuoteComputation(_) => matches!(ret,
         Children::One(Slot { admits: Admits::CompType, .. })),
@@ -541,6 +543,7 @@ where
         ),
         | Former::PathUniverse(first, second)
         | Former::PathProduct(first, second)
+        | Former::Funext(first, second)
         | Former::PathEquiv(first, second)
         | Former::ListCons(first, second)
         | Former::StaticApplication(first, second) => {
@@ -717,6 +720,8 @@ enum Bracket
     PathUniverse,
     /// Element identity, `here(a)`.
     Here,
+    /// Function extensionality, `funext(f, g)`.
+    Funext,
     /// Native reflexivity.
     PathRefl,
     /// A native equivalence's maps.
@@ -1739,6 +1744,7 @@ impl Walk<'_, '_, '_>
                 Some(Join::Bracket(Bracket::PathRefl))
             },
             | Former::Here(_) => Some(Join::Bracket(Bracket::Here)),
+            | Former::Funext(..) => Some(Join::Bracket(Bracket::Funext)),
             | Former::PathEquiv(..) => {
                 self.fidelity = Fidelity::Approximate;
                 Some(Join::Bracket(Bracket::PathEquiv))
@@ -2023,7 +2029,7 @@ impl Walk<'_, '_, '_>
             Join::Prefix(_) | Join::EffectReturner(_) | Join::StaticLambda | Join::Bracket(Bracket::PathRefl | Bracket::Here) => Some(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Positional, .. } => Some(count),
             Join::Braced { arity: Arity(count), entries: Entries::Labelled(_), .. } => count.checked_mul(2_usize),
-            Join::Arrow | Join::Pi | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct) => Some(2_usize),
+            Join::Arrow | Join::Pi | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext) => Some(2_usize),
             Join::Apply(Arity(arguments)) => arguments.checked_add(1_usize),
         }],
         ensures: |ref ret| match *ret {
@@ -2147,6 +2153,7 @@ impl Walk<'_, '_, '_>
                     | Bracket::Stack
                     | Bracket::PathEquiv
                     | Bracket::PathProduct
+                    | Bracket::Funext
                     | Bracket::ListCons => {
                         let second = self.pop()?;
                         let first = self.pop()?;
@@ -2155,6 +2162,7 @@ impl Walk<'_, '_, '_>
                             | Bracket::PathUniverse => "Path_U(",
                             | Bracket::PathEquiv => "equiv(",
                             | Bracket::PathProduct => "pathProduct(",
+                            | Bracket::Funext => "funext(",
                             | Bracket::ListCons => "cons(",
                             | Bracket::PathRefl => "refl(",
                             | Bracket::Here => "here(",

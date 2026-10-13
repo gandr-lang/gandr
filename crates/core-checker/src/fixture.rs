@@ -1,4 +1,5 @@
-//! Test fixtures: literals, dangling ids, a seeded signature table, and the
+//! Test fixtures: literals, dangling ids, a seeded signature table, the
+//! boolean functions function extensionality is witnessed on, and the
 //! recipes the property witnesses generate types and terms from.
 //!
 //! A recipe is a flat list of steps, each naming earlier entries by position,
@@ -144,6 +145,75 @@ pub fn seed(
         let formed = form_value_type(context, declared).expect("a seeded type is formed");
         context.admit(constant).expect("seeded constants ascend");
         context.record(constant, formed);
+    }
+}
+
+/// The binary sum of units and three functions on it, each a closed thunk of
+/// a λ, meant to be declared at positions zero, one and two.
+#[derive(Clone, Copy, Debug)]
+pub struct Booleans
+{
+    /// `+{(), ()}`.
+    pub ty: ValueTypeId,
+    /// `U (+{(), ()} → F +{(), ()})`.
+    pub function: ValueTypeId,
+    /// Negation, by a case on its argument.
+    pub not: ValueId,
+    /// Negation twice, through the constant at position zero.
+    pub not_not: ValueId,
+    /// The identity.
+    pub same: ValueId,
+}
+
+/// [`Booleans`], minted in `arena`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the three functions inhabit `function`; `not_not` forces the
+///   constant at position zero twice, so it computes only when negation is
+///   declared there.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — negation twice and the identity relate pointwise,
+///   negation and the identity do not.
+/// - witness: `funext::tests::pointwise_equal_functions_relate_by_computation`
+/// - witness: `bridge::tests::a_funext_crosses_as_a_higher_evaluation`
+#[spec(ensures: |ret| arena.value_type(ret.ty).is_some()
+    && arena.value_type(ret.function).is_some()
+    && [ret.not, ret.not_not, ret.same].iter().all(|&function| arena.value(function).is_some()))]
+pub fn booleans(arena: &mut CoreArena) -> Booleans
+{
+    let unit_type = arena.value_type_unit();
+    let ty = arena.value_type_sum(&[unit_type, unit_type]);
+    let returns = arena.comp_type_returner(ty);
+    let arrow = arena.comp_type_arrow(ty, returns);
+    let function = arena.value_type_thunk(arrow);
+    let unit = arena.value_unit();
+    let [truth, falsity] = [0_usize, 1_usize].map(|summand| {
+        let injected = arena.value_injection(summand.into(), unit);
+        arena.computation_return(injected)
+    });
+    let argument = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let case = arena.computation_case(argument, &[falsity, truth]);
+    let negate = arena.computation_lambda(case);
+    let not = arena.value_thunk(negate);
+    let negation = arena.value_constant(ConstantIndex::from(0_usize));
+    let forced = arena.computation_force(negation);
+    let first = arena.computation_application(forced, argument);
+    let second = arena.computation_application(forced, argument);
+    let twice = arena.computation_bind(first, second);
+    let twice = arena.computation_lambda(twice);
+    let not_not = arena.value_thunk(twice);
+    let returned = arena.computation_return(argument);
+    let identity = arena.computation_lambda(returned);
+    let same = arena.value_thunk(identity);
+    Booleans {
+        ty,
+        function,
+        not,
+        not_not,
+        same,
     }
 }
 

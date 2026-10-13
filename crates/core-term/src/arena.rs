@@ -1812,6 +1812,20 @@ impl CoreArena
         self.alloc_value(Value::Here(point))
     }
 
+    /// Mint function extensionality `funext(f, g)`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_funext(
+        &mut self,
+        left: ValueId,
+        right: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Funext(left, right))
+    }
+
     /// Mint the value a pure computation returns, standing as a value.
     ///
     /// # Specification

@@ -226,6 +226,19 @@ pub enum Refusal
         /// The type its computation synthesised.
         synthesised: TypeContent,
     },
+    /// A function extensionality the rule does not decide: open functions, a
+    /// classifier that is no thunk of a pure non-dependent arrow, or a domain
+    /// or result outside the first-order fragment.
+    FunextUnsupported
+    {
+        /// The function extensionality.
+        at: Site,
+        /// The type its first function synthesised.
+        classifier: TypeContent,
+    },
+    /// A function extensionality whose functions do not both return one
+    /// value at some covering input.
+    PointwiseDistinct(Site),
     /// A synthesised type did not convert to the expected one.
     TypeMismatch
     {
@@ -655,6 +668,8 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
  else if let CheckRefusal::PathCode(at) = matched_left_value && let Refusal::PathCode(projected) = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::EndpointMismatch { at, left, right } = matched_left_value && let Refusal::EndpointMismatch { at: projected, left: projected_left, right: projected_right } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && projected_left == self.site(ArenaNode::Value(left)) && projected_right == self.site(ArenaNode::Value(right)) }
  else if let CheckRefusal::CompoundEndpoint { at, .. } = matched_left_value && let Refusal::CompoundEndpoint { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
+ else if let CheckRefusal::FunextUnsupported { at, .. } = matched_left_value && let Refusal::FunextUnsupported { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
+ else if let (CheckRefusal::PointwiseDistinct { at }, &Refusal::PointwiseDistinct(projected)) = (matched_left_value, matched_right_value) { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::TypeMismatch(Mismatch::Value { at, .. }) = matched_left_value && let Refusal::TypeMismatch { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::SortMismatch { at, .. } = matched_left_value && let Refusal::SortMismatch { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::LevelMismatch { at, .. } = matched_left_value && let Refusal::LevelMismatch { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
@@ -825,6 +840,13 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
             | CheckRefusal::CompoundEndpoint { at, synthesised } => Refusal::CompoundEndpoint {
                 at: self.site(ArenaNode::Value(at)),
                 synthesised: self.type_node(TypeNode::Computation(synthesised)),
+            },
+            | CheckRefusal::FunextUnsupported { at, classifier } => Refusal::FunextUnsupported {
+                at: self.site(ArenaNode::Value(at)),
+                classifier: self.type_node(TypeNode::Value(classifier)),
+            },
+            | CheckRefusal::PointwiseDistinct { at } => {
+                Refusal::PointwiseDistinct(self.site(ArenaNode::Value(at)))
             },
             | CheckRefusal::TypeMismatch(Mismatch::Value {
                 at,

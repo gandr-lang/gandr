@@ -51,6 +51,17 @@
 //! endpoint, and its declaration stays on the checker's side. The choice
 //! reverses when the kernel reads a returned value as the value it returns.
 //!
+//! A function extensionality erases to the kernel's higher evaluation, which
+//! has no core counterpart: per input of the coverage the judgement recorded,
+//! the values the two functions return, the diagonal evidence that they
+//! agree, and the machine's two traces with their anchors forgotten. The
+//! functions themselves do not cross in it; the kernel regenerates the
+//! coverage from the path type and replays every trace with the admitted
+//! definitions unfoldable, so a recorded component the kernel would not
+//! derive is refused there. The alternative, a kernel `funext` node over the
+//! two functions, would have the kernel search the domain itself, which its
+//! identity at a function type does not ask of it.
+//!
 //! The bridge builds the position map from the admissions themselves, the only
 //! map that cannot disagree with the environment it indexes. The alternative to
 //! remapping was keeping module positions verbatim and admitting a placeholder
@@ -342,10 +353,13 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Declaration as KernelDeclaration;
 use gandr_kernel_term::EncodedArtifact;
+use gandr_kernel_term::EvaluationComponent;
+use gandr_kernel_term::EvaluationDialogues;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::LevelSignature;
 use gandr_kernel_term::MarkedDeclaration;
 use gandr_kernel_term::StructuredName;
+use gandr_kernel_term::Summand;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::encode;
 use quenchant_shape::shape::Maybe;
@@ -357,6 +371,7 @@ use crate::code::Unfolded;
 use crate::code::loose_reach;
 use crate::code::unfolding;
 use crate::declaration::OriginToken;
+use crate::funext::Funext;
 use crate::module::ModuleReport;
 use crate::module::Verdict;
 use crate::refusal::CheckRefusal;
@@ -1086,6 +1101,7 @@ where
     let mut readmitted = Vec::with_capacity(report.judged().len());
     let source = Source {
         lifts: report.lifts(),
+        funexts: report.funexts(),
         definitions: report.definitions(),
     };
     for judged in report.judged() {
@@ -1174,12 +1190,15 @@ where
 }
 
 /// What every erasure reads besides the arena and the positions: the lifts
-/// the judgement recorded and the bodies it defined its constants as.
+/// and function extensionalities the judgement recorded and the bodies it
+/// defined its constants as.
 #[derive(Clone, Copy, Debug)]
 struct Source<'source>
 {
     /// The codes the judgement checked above their own universe, by node.
     lifts: &'source BTreeMap<ValueId, Lift>,
+    /// The function extensionalities the judgement decided, by node.
+    funexts: &'source BTreeMap<ValueId, Funext>,
     /// The body each accepted declaration defines its constant as, elaborated
     /// to the universe it was declared at.
     definitions: &'source BTreeMap<ConstantIndex, ValueId>,
@@ -1616,7 +1635,7 @@ impl Positions
         decision: ConversionDecision<TraceNode>,
     ) -> ConversionDecision<ReplayNode>
     {
-        let node = |node: TraceNode| match node {
+        decision.map(|node: TraceNode| match node {
             | TraceNode::Constant(constant) => match self.admitted.get(&constant) {
                 | Some(&position) => ReplayNode::Constant(position),
                 | None => match operators.get(&Unfolded::Definition(constant)) {
@@ -1625,47 +1644,7 @@ impl Positions
                 },
             },
             | TraceNode::Value(_) | TraceNode::Computation(_) => ReplayNode::Other,
-        };
-        match decision {
-            | ConversionDecision::ReduceLeft { redex } => {
-                ConversionDecision::ReduceLeft { redex: node(redex) }
-            },
-            | ConversionDecision::ReduceRight { redex } => {
-                ConversionDecision::ReduceRight { redex: node(redex) }
-            },
-            | ConversionDecision::ConstShortcut { constant } => ConversionDecision::ConstShortcut {
-                constant: node(constant),
-            },
-            | ConversionDecision::Unfold { constant } => ConversionDecision::Unfold {
-                constant: node(constant),
-            },
-            | ConversionDecision::Postpone { constant } => ConversionDecision::Postpone {
-                constant: node(constant),
-            },
-            | ConversionDecision::Freeze { constant, side } => ConversionDecision::Freeze {
-                constant: node(constant),
-                side,
-            },
-            | ConversionDecision::EtaExpand { side, variable } => ConversionDecision::EtaExpand {
-                side,
-                variable: node(variable),
-            },
-            | ConversionDecision::ReturnEta { side } => ConversionDecision::ReturnEta { side },
-            | ConversionDecision::Reassociate { side } => ConversionDecision::Reassociate { side },
-            | ConversionDecision::Force { thunk } => {
-                ConversionDecision::Force { thunk: node(thunk) }
-            },
-            | ConversionDecision::ComparedShared { left, right } => {
-                ConversionDecision::ComparedShared {
-                    left: node(left),
-                    right: node(right),
-                }
-            },
-            | ConversionDecision::NegativeSubgoal { position } => {
-                ConversionDecision::NegativeSubgoal { position }
-            },
-            | ConversionDecision::Decompose => ConversionDecision::Decompose,
-        }
+        })
     }
 }
 
@@ -3156,6 +3135,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             },
             | Value::Hole(hole) => return Err(Refusal::Hole { at: node, hole }),
             | Value::Here(point) => (Frame::Here { at }, CoreNode::Term(TermNode::Value(point))),
+            | Value::Funext(..) => return self.funext(target, at),
             | Value::Returned(_) => return Err(Refusal::CompoundEndpoint { at }),
             | Value::Mark { body, .. } => (
                 Frame::UnmarkedValue { at },
@@ -3178,6 +3158,208 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         self.memo().values.insert(at, Image::Open);
         self.frames.push(frame);
         Ok(Step::Descend(child))
+    }
+
+    /// Erase the function extensionality `at` into the kernel's higher
+    /// evaluation: per component the value each function returns at the
+    /// input, the diagonal evidence that the two agree, and the machine's two
+    /// traces with their anchors forgotten.
+    ///
+    /// # Specification
+    /// - requires: the judgement accepted `at` as a function extensionality.
+    /// - ensures: one kernel component per recorded component, in order, each
+    ///   carrying the images of the two returned values and the diagonal of the
+    ///   first — the unit value at the unit type, a base atom and a sum's
+    ///   absent payload, a pair at a pair, an injection's payload's diagonal at
+    ///   an injection — and one dialogue pair per component, the machine's
+    ///   decisions with every anchor erased. The two functions are not erased:
+    ///   the kernel reads them from the identity type it checks the evaluation
+    ///   at.
+    /// - provides: the evidence the kernel's higher evaluation replays, the
+    ///   core's decision recomputed rather than trusted.
+    /// - fails: [`Refusal::MachineInvariant`] when the judgement recorded no
+    ///   components at `at` or a returned value is not first order;
+    ///   [`Refusal::Hole`] at a hole a returned value holds; a constant's own
+    ///   refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`Refusal`] — as above.
+    ///
+    /// # Termination
+    /// - reason: a `for` loop over the recorded components and, per value, a
+    ///   `while let` worklist over its finite tree, not recursion.
+    /// - measure: the components left, then the nodes left to visit.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `funext(not ∘ not, id)` over a binary sum of units
+    ///   crosses and the kernel replays it; a dropped component or a swapped
+    ///   trace is refused by the kernel.
+    /// - witness: `bridge::tests::a_funext_crosses_as_a_higher_evaluation`
+    #[spec(ensures: |ret| ret.is_err() || self.reached().values.contains_key(&at))]
+    fn funext(
+        &mut self,
+        target: &mut TermArena,
+        at: ValueId,
+    ) -> Result<Step, Refusal>
+    {
+        let source = self.source;
+        let Some(record) = source.funexts.get(&at)
+        else {
+            return Err(Refusal::MachineInvariant);
+        };
+        let mut dialogues = Vec::with_capacity(record.components().len());
+        let mut components = Vec::with_capacity(record.components().len());
+        for component in record.components() {
+            let (left, evidence) = self.returned(target, component.left().returned())?;
+            let (right, _) = self.returned(target, component.right().returned())?;
+            dialogues.push(EvaluationDialogues {
+                left: component
+                    .left()
+                    .decisions()
+                    .iter()
+                    .map(|decision| decision.map(|_| ()))
+                    .collect(),
+                right: component
+                    .right()
+                    .decisions()
+                    .iter()
+                    .map(|decision| decision.map(|_| ()))
+                    .collect(),
+            });
+            components.push(EvaluationComponent {
+                left,
+                right,
+                evidence,
+            });
+        }
+        let image = target.value_higher_evaluation(
+            alloc::sync::Arc::from(dialogues),
+            components.into_boxed_slice(),
+        );
+        Ok(self.erased_value(at, image))
+    }
+
+    /// The kernel image of `value`, a first-order value a function returned,
+    /// beside its diagonal evidence at the identity of its type.
+    ///
+    /// # Specification
+    /// - requires: `value` is a normal form of a type built from the unit type,
+    ///   the base atoms and binary sums and products.
+    /// - ensures: the image, with tuples, injections, intuitionistic variables,
+    ///   literals and constants rebuilt as they stand and marks read through;
+    ///   the evidence as [`Self::funext`] states it.
+    /// - fails: [`Refusal::Hole`] at a hole; [`Refusal::MachineInvariant`] at
+    ///   any other former; a constant's own refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`Refusal`] — as above.
+    ///
+    /// # Termination
+    /// - reason: a `while let` worklist over the value's finite tree, not
+    ///   recursion.
+    /// - measure: the nodes left to visit, each replaced by its children.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — both injections of a binary sum of units cross with
+    ///   unit evidence, and the kernel accepts the evidence at their fibre.
+    /// - witness: `bridge::tests::a_funext_crosses_as_a_higher_evaluation`
+    #[spec(ensures: |ret| ret.is_err() || ret.is_ok_and(|(image, evidence)| target.value(image).is_some() && target.value(evidence).is_some()))]
+    fn returned(
+        &mut self,
+        target: &mut TermArena,
+        value: ValueId,
+    ) -> Result<(gandr_kernel_term::ValueId, gandr_kernel_term::ValueId), Refusal>
+    {
+        /// One step of the walk.
+        #[derive(Clone, Copy)]
+        enum Task
+        {
+            /// Rebuild the node.
+            Visit(ValueId),
+            /// Pair the two images on top.
+            Pair,
+            /// Inject the image on top.
+            Inject(Summand),
+        }
+        let mut tasks = Vec::from([Task::Visit(value)]);
+        let mut built: Vec<(gandr_kernel_term::ValueId, gandr_kernel_term::ValueId)> = Vec::new();
+        while let Some(task) = tasks.pop() {
+            match task {
+                | Task::Visit(node) => {
+                    let Some(former) = self.arena.value(node)
+                    else {
+                        return Err(Refusal::DanglingNode {
+                            node: CoreNode::Term(TermNode::Value(node)),
+                        });
+                    };
+                    let image = match *former {
+                        | Value::Tuple(ref parts) => match **parts {
+                            | [] => target.value_unit(),
+                            | [first, second] => {
+                                tasks.extend([Task::Pair, Task::Visit(second), Task::Visit(first)]);
+                                continue;
+                            },
+                            | _ => return Err(Refusal::MachineInvariant),
+                        },
+                        | Value::Injection(summand, body) => {
+                            tasks.extend([Task::Inject(summand), Task::Visit(body)]);
+                            continue;
+                        },
+                        | Value::Mark { body, .. } => {
+                            tasks.push(Task::Visit(body));
+                            continue;
+                        },
+                        | Value::Variable {
+                            zone: Zone::Intuitionistic,
+                            index,
+                        } => target.value_variable(index),
+                        | Value::Literal(ref literal)
+                            if matches!(
+                                literal.base_type(),
+                                BaseType::Integer | BaseType::String
+                            ) =>
+                        {
+                            target.value_literal(literal.clone())
+                        },
+                        | Value::Constant(constant) => {
+                            let position = self.constant_position(node, constant)?;
+                            target.value_constant(position)
+                        },
+                        | Value::Hole(hole) => {
+                            return Err(Refusal::Hole {
+                                at: CoreNode::Term(TermNode::Value(node)),
+                                hole,
+                            });
+                        },
+                        | _ => return Err(Refusal::MachineInvariant),
+                    };
+                    let unit = target.value_unit();
+                    built.push((image, unit));
+                },
+                | Task::Pair => {
+                    let (Some(second), Some(first)) = (built.pop(), built.pop())
+                    else {
+                        return Err(Refusal::MachineInvariant);
+                    };
+                    let image = target.value_tuple(&[first.0, second.0]);
+                    let evidence = target.value_tuple(&[first.1, second.1]);
+                    built.push((image, evidence));
+                },
+                | Task::Inject(summand) => {
+                    let Some((payload, evidence)) = built.pop()
+                    else {
+                        return Err(Refusal::MachineInvariant);
+                    };
+                    built.push((target.value_injection(summand, payload), evidence));
+                },
+            }
+        }
+        match (built.pop(), built.is_empty()) {
+            | (Some(image), true) => Ok(image),
+            | _ => Err(Refusal::MachineInvariant),
+        }
     }
 
     /// The static operator the static lambda `at` is numbered at, read
@@ -3693,6 +3875,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 | (
                     Value::PathRefl(_)
                     | Value::Here(_)
+                    | Value::Funext(..)
                     | Value::Returned(_)
                     | Value::Constructor { .. }
                     | Value::Record(_)
@@ -4667,6 +4850,7 @@ mod tests
         let mut target = TermArena::new();
         let source = Source {
             lifts: &lifts,
+            funexts: &BTreeMap::new(),
             definitions: &definitions,
         };
         let image = Erasure::new(arena, source, &positions, ConstantIndex::from(0_usize))
@@ -6004,6 +6188,72 @@ mod tests
     }
 
     #[test]
+    fn a_funext_crosses_as_a_higher_evaluation()
+    {
+        // def not, not_not, same : U (+{(), ()} -> F +{(), ()}) ;
+        // def twice : Path(U (…), not_not, same) = funext(not_not, same) ;
+        let mut arena = CoreArena::new();
+        let functions = crate::fixture::booleans(&mut arena);
+        let [not_not, same] =
+            [1_usize, 2_usize].map(|at| arena.value_constant(ConstantIndex::from(at)));
+        let path = arena.value_type_path(functions.function, not_not, same);
+        let funext = arena.value_funext(not_not, same);
+        let declared = Maybe::Present(functions.function);
+        let (_, readmission) = judge_and_readmit(&mut arena, &[
+            declaration(At(0), declared, Maybe::Present(functions.not)),
+            declaration(At(1), declared, Maybe::Present(functions.not_not)),
+            declaration(At(2), declared, Maybe::Present(functions.same)),
+            declaration(At(3), Maybe::Present(path), Maybe::Present(funext)),
+        ]);
+        assert!(
+            readmission
+                .readmitted()
+                .iter()
+                .all(|entry| matches!(entry.outcome(), Outcome::Defined { .. })),
+            "the kernel replays both functions' evaluations at every input: {:?}",
+            readmission.readmitted()
+        );
+        let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+        let Some(&DeclarationContent::Def { body, .. }) = artifact
+            .declarations()
+            .last()
+            .map(|marked| marked.declaration().content())
+        else {
+            panic!("the extensionality is the last definition");
+        };
+        let Some(KernelValue::HigherEvaluation {
+            dialogues,
+            components,
+        }) = artifact.arena().value(body).cloned()
+        else {
+            panic!("a funext crosses as the kernel's higher evaluation");
+        };
+        assert_eq!((dialogues.len(), components.len()), (2, 2));
+        assert!(
+            dialogues
+                .iter()
+                .all(|component| !component.left.is_empty() && !component.right.is_empty()),
+            "every component carries both functions' traces"
+        );
+        let arena = artifact.arena();
+        let digest = |value| content_digest(arena, AnyNode::Value(value));
+        assert!(
+            components.iter().enumerate().all(|(summand, component)| {
+                digest(component.left) == digest(component.right)
+                    && arena
+                        .value(component.evidence)
+                        .and_then(KernelValue::components)
+                        == Some(&[])
+                    && matches!(
+                        arena.value(component.left),
+                        Some(&KernelValue::Injection(found, _)) if usize::from(found) == summand
+                    )
+            }),
+            "each input returns itself on both sides, with the unit as its identity"
+        );
+    }
+
+    #[test]
     fn marks_and_holes_are_refused_beside_their_positive_controls()
     {
         let mut arena = CoreArena::new();
@@ -6413,6 +6663,7 @@ mod tests
         let returned = arena.computation_return(linear);
         let source = Source {
             lifts: &lifts,
+            funexts: &BTreeMap::new(),
             definitions: &definitions,
         };
         assert_eq!(
@@ -7112,6 +7363,7 @@ mod tests
         let definitions = alloc::collections::BTreeMap::new();
         let source = Source {
             lifts: &lifts,
+            funexts: &BTreeMap::new(),
             definitions: &definitions,
         };
         let base = ConstantIndex::from(3_usize);

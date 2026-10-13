@@ -177,6 +177,7 @@ use crate::path_universe::Reduction;
 use crate::path_universe::anchor;
 use crate::replay::KernelVerdict;
 use crate::replay::ReplayBudget;
+use crate::replay::Unfoldings;
 use crate::rewrite::BinderDepth;
 use crate::rewrite::RewriteOutcome;
 use crate::rewrite::RewriteSupport;
@@ -631,9 +632,11 @@ fn higher_id(position: LayerPosition) -> Result<HigherId, KernelError>
 /// The goals a persisted higher evaluation owes, grouped by component.
 ///
 /// # Specification
-/// - requires: `expected` is the identity the evaluation is checked against.
+/// - requires: `expected` is the identity the evaluation is checked against;
+///   every body `unfoldings` holds is closed and admitted before it.
 /// - ensures: one obligation per kernel-generated coverage pattern, after every
-///   component's two dialogues replayed positively.
+///   component's two dialogues replayed positively, unfolding only what
+///   `unfoldings` defines.
 /// - provides: the checking machine's reading of a higher evaluation, with no
 ///   nested check.
 /// - fails: a shape mismatch when `expected` is not an identity; a neutral
@@ -646,11 +649,14 @@ fn higher_id(position: LayerPosition) -> Result<HigherId, KernelError>
 ///
 /// # Adequacy
 /// - hypothesis: L1/L3 — `not ∘ not` and the identity on Bool relate through
-///   both branches; a wrong component count refuses as coverage.
+///   both branches; a wrong component count refuses as coverage; a composition
+///   of admitted definitions replays by their bodies.
 /// - witness: `element_identity::tests::a_higher_evaluation_proves_function_extensionality`
+/// - witness: `element_identity::tests::a_higher_evaluation_unfolds_what_the_environment_admitted`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |owed| owed.len() == components.len()))]
 pub(crate) fn evaluation_obligations(
     arena: &mut TermArena,
+    unfoldings: &Unfoldings,
     expected: ValueTypeId,
     dialogues: &[EvaluationDialogues],
     components: &[EvaluationComponent],
@@ -689,7 +695,7 @@ pub(crate) fn evaluation_obligations(
                 arena,
                 (left, right),
                 &HigherEvaluation(pointwise),
-                ReplayBudget::DEFAULT,
+                (unfoldings, ReplayBudget::DEFAULT),
             )
         })
         .map_err(|error| relation_refusal(arena, error))

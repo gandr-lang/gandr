@@ -119,6 +119,7 @@ impl Source for ContentSource<'_>
         (Some(&ContentNode::Stack { input: a, output: b }), Former::Stack(c, d))
         | (Some(&ContentNode::WithType(a, b)), Former::With(c, d)) | (Some(&ContentNode::PathUniverse(a, b)), Former::PathUniverse(c, d))
         | (Some(&ContentNode::PathProduct(a, b)), Former::PathProduct(c, d))
+        | (Some(&ContentNode::Funext(a, b)), Former::Funext(c, d))
         | (Some(&ContentNode::PathEquiv { forward: a, backward: b, .. }), Former::PathEquiv(c, d))
         | (Some(&ContentNode::ListCons(a, b)), Former::ListCons(c, d))
         | (Some(&ContentNode::StaticApplication(a, b)), Former::StaticApplication(c, d))
@@ -203,6 +204,7 @@ impl Source for ContentSource<'_>
             | ContentNode::Case { .. }
             | ContentNode::Fixpoint { .. } => Former::Computation,
             | ContentNode::PathUniverse(source, target) => Former::PathUniverse(source, target),
+            | ContentNode::Funext(left, right) => Former::Funext(left, right),
             | ContentNode::PathRefl(code) => Former::PathRefl(code),
             | ContentNode::Here(point) => Former::Here(point),
             | ContentNode::PathProduct(first, second) => Former::PathProduct(first, second),
@@ -262,7 +264,7 @@ impl Source for ContentSource<'_>
             // Data has no printer reader. A hole or a mark is displayed by
             // the session. `Path` carries three children, more than a bracket
             // join holds, and a compound endpoint has no former of its own.
-            // Element identity is `here`.
+            // Element identity is `here`, function extensionality `funext`.
             | ContentNode::Data { .. }
             | ContentNode::Constructor { .. }
             | ContentNode::Unresolved(_)
@@ -784,3 +786,5 @@ mod tests
         assert_eq!(spelled(&cycle), approximate("?".into()));
     }
 }
+// weave: run 'weave explain crates/surface-pretty/src/content_source.rs' for
+// per-hunk detail, 'weave check' to verify your resolution

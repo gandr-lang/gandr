@@ -136,6 +136,8 @@ impl<'arena> CoreSource<'arena>
         | (Some(&Value::Primitive { primitive, .. }), Former::Constant(name)) => name.as_ref() == primitive.name().as_ref(),
         | (Some(&Value::PathRefl(code)), Former::PathRefl(actual)) => actual == CoreNode::Value(code),
         | (Some(&Value::Here(point)), Former::Here(actual)) => actual == CoreNode::Value(point),
+        | (Some(&Value::Funext(left, right)), Former::Funext(actual_left, actual_right)) =>
+            actual_left == CoreNode::Value(left) && actual_right == CoreNode::Value(right),
         | (Some(&Value::PathEquiv { forward, backward, .. }), Former::PathEquiv(actual_forward, actual_backward)) => actual_forward == CoreNode::Value(forward) && actual_backward == CoreNode::Value(backward),
         | (Some(&Value::Variable { zone, index }), Former::Variable { zone: actual_zone, index: actual_index }) =>
             zone == actual_zone && index == actual_index,
@@ -176,12 +178,16 @@ Former::Unreadable) | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::Li
             // The source grammar has no native data reader. A hole or a mark
             // is displayed by the session, not spelled here, a compound
             // endpoint has no former of its own, and the surface writes no
-            // empty record: `#{}` is the unit. Element identity is `here`.
+            // empty record: `#{}` is the unit. Element identity is `here`
+            // and function extensionality `funext`.
             | Value::Constructor { .. }
             | Value::Hole(_)
             | Value::Mark { .. }
             | Value::Returned(_) => Former::Unreadable,
             | Value::Here(point) => Former::Here(CoreNode::Value(point)),
+            | Value::Funext(left, right) => {
+                Former::Funext(CoreNode::Value(left), CoreNode::Value(right))
+            },
             | Value::Record(ref fields) if fields.is_empty() => Former::Unreadable,
             | Value::Record(ref fields) => Former::Record(Arity::from(fields.len())),
             | Value::Reify(_) => Former::Reify,
@@ -419,7 +425,7 @@ impl Source for CoreSource<'_>
             | Former::Literal(_) | Former::Tuple(_) | Former::Record(_) | Former::Injection(..) | Former::Thunk
             | Former::ValueLift | Former::Reify | Former::ListNil | Former::ListCons(..)
             | Former::Quote(_) | Former::QuoteComputation(_) | Former::StaticLambda(_) | Former::StaticApplication(..)
-            | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_) | Former::Unreadable),
+            | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_) | Former::Funext(..) | Former::Unreadable),
         | CoreNode::ValueType(_) => matches!(ret, Former::BaseType(_) | Former::Product(_) | Former::RecordType(_)
             | Former::Stack(..) | Former::List(_)
             | Former::Sum(_) | Former::ThunkType(_) | Former::Universe { .. } | Former::TypeLift
@@ -834,3 +840,5 @@ mod tests
         ));
     }
 }
+// weave: run 'weave explain crates/surface-pretty/src/core_source.rs' for
+// per-hunk detail, 'weave check' to verify your resolution

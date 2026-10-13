@@ -1257,6 +1257,24 @@ mod tests
         }
     }
 
+    /// Function extensionality spells `funext(f, g)`, its functions in the
+    /// order the core holds them, and is faithful: the grammar parses it.
+    #[test]
+    fn funext_spells_its_functions_in_order()
+    {
+        let mut core = CoreArena::new();
+        let twice = core.value_constant(ConstantIndex::from(0_usize));
+        let same = core.value_constant(ConstantIndex::from(1_usize));
+        let witness = core.value_funext(twice, same);
+        let names = [Name::from("twice"), Name::from("same")];
+        let source = CoreSource::new(&core, &names);
+        assert_eq!(
+            spelled(&source, Root::Value(CoreNode::Value(witness))),
+            faithful(Written("funext(twice, same)")),
+            "the first function is the path's source"
+        );
+    }
+
     /// Native introductions retain endpoint and map order but cannot claim
     /// surface round-trip fidelity, because the parser has no path syntax.
     #[test]

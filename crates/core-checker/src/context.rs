@@ -247,6 +247,9 @@ pub struct CheckingContext<'arena>
     definitions: CodeDefinitions,
     /// The codes checked at a universe above their own, by node.
     lifts: BTreeMap<ValueId, Lift>,
+    /// The function extensionalities the judgement decided, by node, with
+    /// the evaluations each component replays.
+    funexts: BTreeMap<ValueId, crate::funext::Funext>,
     /// The allowance each judgement starts with.
     budget: CheckBudget,
     /// The answers the running supported judgement consulted, when one runs.
@@ -311,6 +314,7 @@ impl<'arena> CheckingContext<'arena>
             atoms,
             definitions: CodeDefinitions::new(),
             lifts: BTreeMap::new(),
+            funexts: BTreeMap::new(),
             budget,
             support: SupportLog::Off,
             forming: Maybe::Absent(forming::Absent::Idle),
@@ -817,6 +821,66 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         self.lifts.insert(at, lift);
     }
 
+    /// The function extensionalities the judgement decided, by node.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn funexts(&self) -> &BTreeMap<ValueId, crate::funext::Funext>
+    {
+        &self.funexts
+    }
+
+    /// Record the components the judgement decided the `funext` at `at` by.
+    ///
+    /// # Specification
+    /// - requires: `funext` is what [`crate::funext`] decided at `at`.
+    /// - ensures: `at` has `funext` as its record, replacing an earlier one.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a decided funext crosses with exactly its recorded
+    ///   components.
+    /// - witness: `bridge::tests::a_funext_crosses_as_a_higher_evaluation`
+    #[spec(ensures: self.funexts.contains_key(&at))]
+    pub(crate) fn record_funext(
+        &mut self,
+        at: ValueId,
+        funext: crate::funext::Funext,
+    )
+    {
+        self.funexts.insert(at, funext);
+    }
+
+    /// Evaluate the closed claim `claim` as [`CodeDefinitions::evaluate_claim`]
+    /// does, over the definitions this context holds.
+    ///
+    /// # Specification
+    /// - requires: as [`CodeDefinitions::evaluate_claim`].
+    /// - ensures: as [`CodeDefinitions::evaluate_claim`], over this context's
+    ///   arena and definitions.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`CodeDefinitions::evaluate_claim`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`CodeDefinitions::evaluate_claim`].
+    /// - witness: `funext::tests::pointwise_equal_functions_relate_by_computation`
+    #[spec(ensures: |ret| match ret {
+        | Ok(Maybe::Present(ref evaluation)) => self.arena().value(evaluation.returned()).is_some()
+            && self.arena().value(evaluation.normal()).is_some(),
+        | Ok(Maybe::Absent(_)) | Err(_) => true,
+    })]
+    pub(crate) fn evaluate_claim(
+        &mut self,
+        claim: ValueId,
+    ) -> Result<Maybe<crate::code::Evaluation, crate::code::evaluated::Absent>, CheckRefusal>
+    {
+        self.definitions.evaluate_claim(self.arena, claim)
+    }
+
     /// The value type `value_type` stands for at its head: a decode of a code
     /// constant with a body read as the type the body denotes, until the head
     /// is anything else.
@@ -1072,6 +1136,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
             },
             | Value::PathRefl(_)
             | Value::Here(_)
+            | Value::Funext(..)
             | Value::Returned(_)
             | Value::Constructor { .. }
             | Value::Record(_)

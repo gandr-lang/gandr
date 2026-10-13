@@ -577,6 +577,8 @@ fn checking_row(
         | CheckRefusal::PathCode(_)
         | CheckRefusal::EndpointMismatch { .. }
         | CheckRefusal::CompoundEndpoint { .. }
+        | CheckRefusal::FunextUnsupported { .. }
+        | CheckRefusal::PointwiseDistinct { .. }
         | CheckRefusal::EffectSignatureConflict { .. }
         | CheckRefusal::UnknownOperation { .. }
         | CheckRefusal::HandlerCoverage { .. }
@@ -778,6 +780,7 @@ fn formers(
                 | Some(&Value::Thunk(suspended)) => worklist.push(Node::Computation(suspended)),
                 | Some(
                     &(Value::PathProduct(first, second)
+                    | Value::Funext(first, second)
                     | Value::PathEquiv {
                         forward: first,
                         backward: second,

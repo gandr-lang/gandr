@@ -497,6 +497,7 @@ fn worst(
                 },
                 | Some(
                     &(Value::PathProduct(first, second)
+                    | Value::Funext(first, second)
                     | Value::ListCons(first, second)
                     | Value::StaticApplication(first, second)),
                 ) => {

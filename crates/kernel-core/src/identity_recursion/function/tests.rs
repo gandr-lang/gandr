@@ -324,35 +324,10 @@ fn translate(
 /// trivial.
 fn decision(step: ConversionDecision<TraceNode>) -> ConversionDecision<ReplayNode>
 {
-    match step {
-        | ConversionDecision::ComparedShared { .. } => ConversionDecision::ComparedShared {
-            left: ReplayNode::Other,
-            right: ReplayNode::Other,
-        },
-        | ConversionDecision::Force { .. } => ConversionDecision::Force {
-            thunk: ReplayNode::Other,
-        },
-        | ConversionDecision::EtaExpand { side, .. } => ConversionDecision::EtaExpand {
-            side,
-            variable: ReplayNode::Other,
-        },
-        | ConversionDecision::ReturnEta { side } => ConversionDecision::ReturnEta { side },
-        | ConversionDecision::Reassociate { side } => ConversionDecision::Reassociate { side },
-        | ConversionDecision::NegativeSubgoal { position } => {
-            ConversionDecision::NegativeSubgoal { position }
-        },
-        | ConversionDecision::Decompose => ConversionDecision::Decompose,
-        | ConversionDecision::ReduceLeft { .. } => ConversionDecision::ReduceLeft {
-            redex: ReplayNode::Other,
-        },
-        | ConversionDecision::ReduceRight { .. } => ConversionDecision::ReduceRight {
-            redex: ReplayNode::Other,
-        },
-        | ConversionDecision::ConstShortcut { .. }
-        | ConversionDecision::Unfold { .. }
-        | ConversionDecision::Postpone { .. }
-        | ConversionDecision::Freeze { .. } => panic!("fixtures contain no constants"),
-    }
+    step.map(|node| match node {
+        | TraceNode::Constant(_) => panic!("fixtures contain no constants"),
+        | TraceNode::Value(_) | TraceNode::Computation(_) => ReplayNode::Other,
+    })
 }
 
 /// Obtain the real engine's verdict and complete trace on a returned-value

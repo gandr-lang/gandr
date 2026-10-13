@@ -496,7 +496,13 @@ impl Relation
             (EvaluationSide::Right, right, right_result),
         ] {
             check_value(arena, context, evaluation.value, result_type)?;
-            let verdict = replay_evaluation(arena, context, computation, evaluation, budget);
+            let verdict = replay_evaluation(
+                arena,
+                context,
+                computation,
+                evaluation,
+                (&Unfoldings::default(), budget),
+            );
             if verdict != KernelVerdict::Convertible {
                 return Err(RelationError::Evaluation(component, side, verdict));
             }
@@ -595,12 +601,14 @@ impl Relation
     /// - requires: the functions are closed and the caller discharges every
     ///   returned obligation, in its component's telescope, before trusting the
     ///   evaluation; the replays here do not depend on those checks for
-    ///   soundness, only for the typing of the values they certify.
+    ///   soundness, only for the typing of the values they certify. Every body
+    ///   `unfoldings` holds is closed and was admitted before the evaluation.
     /// - ensures: one obligation per generated related-input pattern, in
     ///   coverage order. Each owes the pattern's premise evidence at the
     ///   argument fibre, both returned values at the result type, and the
     ///   output evidence at the result fibre of those values; both of its
-    ///   dialogues replayed `force f v = return value` positively.
+    ///   dialogues replayed `force f v = return value` positively, unfolding
+    ///   only what `unfoldings` defines.
     /// - provides: the checking machine's reading of a persisted higher
     ///   evaluation, sharing coverage and replay with [`Self::check_higher`].
     /// - fails: Coverage on cardinality; `NeutralFiber` for suspended evidence;
@@ -612,17 +620,20 @@ impl Relation
     ///
     /// # Adequacy
     /// - hypothesis: L1/L3 — the persisted not-not and identity functions on
-    ///   Bool relate through both branches; a wrong component refuses.
+    ///   Bool relate through both branches; a wrong component refuses; a
+    ///   composition naming admitted constants replays only with their bodies.
     /// - witness: `element_identity::tests::a_higher_evaluation_proves_function_extensionality`
+    /// - witness: `element_identity::tests::a_higher_evaluation_unfolds_what_the_environment_admitted`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |owed| owed.len() == evidence.0.len()))]
     pub(crate) fn evaluation_obligations(
         &self,
         arena: &mut TermArena,
         functions: (ValueId, ValueId),
         evidence: &HigherEvaluation,
-        budget: ReplayBudget,
+        replay: (&Unfoldings, ReplayBudget),
     ) -> Result<Vec<ComponentObligation>, RelationError>
     {
+        let (unfoldings, budget) = replay;
         let (argument, result) = self.function()?;
         let result_type = self.node(result)?.source;
         let patterns = self.related_patterns(arena, budget)?;
@@ -652,8 +663,13 @@ impl Relation
                 ),
             ] {
                 let computation = apply(arena, function, input);
-                let verdict =
-                    replay_evaluation(arena, &pattern.context, computation, evaluation, budget);
+                let verdict = replay_evaluation(
+                    arena,
+                    &pattern.context,
+                    computation,
+                    evaluation,
+                    (unfoldings, budget),
+                );
                 if verdict != KernelVerdict::Convertible {
                     return Err(RelationError::Evaluation(
                         Component(position),
@@ -833,23 +849,28 @@ fn apply(
 /// Replay one claimed evaluation, closed over its component's telescope.
 ///
 /// # Specification
+/// - requires: every body `replay.0` holds is closed.
 /// - ensures: the verdict of replaying `computation = return value` under one
-///   lambda per telescope entry, with no unfoldable constants.
+///   lambda per telescope entry, unfolding exactly the constants `replay.0`
+///   defines.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L1 — swapping components cannot change the replay goal.
+/// - hypothesis: L1 — swapping components cannot change the replay goal; L3 — a
+///   constant's body unfolds only when the caller supplies it.
 /// - witness: `identity_recursion::function::tests::funext_computes_and_refuses_wrong_components`
+/// - witness: `element_identity::tests::a_higher_evaluation_unfolds_what_the_environment_admitted`
 #[spec(ensures: |ret| ret != KernelVerdict::NotConvertible
-    && (ret != KernelVerdict::Convertible || u64::from(budget) > 0))]
+    && (ret != KernelVerdict::Convertible || u64::from(replay.1) > 0))]
 fn replay_evaluation(
     arena: &mut TermArena,
     context: &[ValueTypeId],
     computation: ComputationId,
     evaluation: &Evaluation,
-    budget: ReplayBudget,
+    replay: (&Unfoldings, ReplayBudget),
 ) -> KernelVerdict
 {
+    let (unfoldings, budget) = replay;
     let mut returned = arena.computation_return(evaluation.value);
     let mut computation = computation;
     for _ in context {
@@ -860,7 +881,7 @@ fn replay_evaluation(
     let returned = arena.value_thunk(returned);
     crate::replay::replay(
         arena,
-        &Unfoldings::new(Vec::new()),
+        unfoldings,
         ReplaySides::Values(computation, returned),
         EngineClaim::Convertible,
         evaluation.dialogue.0.iter().copied(),

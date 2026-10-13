@@ -273,3 +273,183 @@ pub enum ConversionDecision<Id>
         position: SubgoalPosition,
     },
 }
+
+impl<Id> ConversionDecision<Id>
+{
+    /// The same decision, each identifier it carries passed through
+    /// `anchor`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the variant, side and subgoal position of `self`, each
+    ///   identifier replaced by `anchor` of it, in field order; `anchor` runs
+    ///   once per identifier and never otherwise.
+    /// - provides: re-anchoring a trace in another consumer's identifiers, and
+    ///   erasing them for evidence that names no arena.
+    /// - panics: whenever `anchor` does.
+    /// - executable: none — the call consumes `anchor`, so no predicate can run
+    ///   it again to state the image, and `Id` carries no bound a captured copy
+    ///   of `self` would need.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every variant, re-anchored, keeps its kind, side and
+    ///   position and carries the mapped identifiers in field order; erasing to
+    ///   `()` keeps the branch vocabulary.
+    /// - witness: `decision::tests::reanchoring_keeps_every_branch`
+    #[inline]
+    #[must_use]
+    pub fn map<Other, Anchor>(
+        self,
+        mut anchor: Anchor,
+    ) -> ConversionDecision<Other>
+    where
+        Anchor: FnMut(Id) -> Other,
+    {
+        match self {
+            | Self::ReduceLeft { redex } => ConversionDecision::ReduceLeft {
+                redex: anchor(redex),
+            },
+            | Self::ReduceRight { redex } => ConversionDecision::ReduceRight {
+                redex: anchor(redex),
+            },
+            | Self::ConstShortcut { constant } => ConversionDecision::ConstShortcut {
+                constant: anchor(constant),
+            },
+            | Self::Unfold { constant } => ConversionDecision::Unfold {
+                constant: anchor(constant),
+            },
+            | Self::Postpone { constant } => ConversionDecision::Postpone {
+                constant: anchor(constant),
+            },
+            | Self::Freeze { constant, side } => ConversionDecision::Freeze {
+                constant: anchor(constant),
+                side,
+            },
+            | Self::EtaExpand { side, variable } => ConversionDecision::EtaExpand {
+                side,
+                variable: anchor(variable),
+            },
+            | Self::ReturnEta { side } => ConversionDecision::ReturnEta { side },
+            | Self::Reassociate { side } => ConversionDecision::Reassociate { side },
+            | Self::Force { thunk } => ConversionDecision::Force {
+                thunk: anchor(thunk),
+            },
+            | Self::ComparedShared { left, right } => {
+                let left = anchor(left);
+                ConversionDecision::ComparedShared {
+                    left,
+                    right: anchor(right),
+                }
+            },
+            | Self::Decompose => ConversionDecision::Decompose,
+            | Self::NegativeSubgoal { position } => {
+                ConversionDecision::NegativeSubgoal { position }
+            },
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::vec::Vec;
+
+    use super::ConversionDecision;
+    use super::ConversionSide;
+    use super::SubgoalPosition;
+
+    #[test]
+    fn reanchoring_keeps_every_branch()
+    {
+        let trace = [
+            ConversionDecision::ReduceLeft { redex: 1_u8 },
+            ConversionDecision::ReduceRight { redex: 2 },
+            ConversionDecision::ConstShortcut { constant: 3 },
+            ConversionDecision::Unfold { constant: 4 },
+            ConversionDecision::Postpone { constant: 5 },
+            ConversionDecision::Freeze {
+                constant: 6,
+                side: ConversionSide::Right,
+            },
+            ConversionDecision::EtaExpand {
+                side: ConversionSide::Left,
+                variable: 7,
+            },
+            ConversionDecision::ReturnEta {
+                side: ConversionSide::Right,
+            },
+            ConversionDecision::Reassociate {
+                side: ConversionSide::Left,
+            },
+            ConversionDecision::Force { thunk: 8 },
+            ConversionDecision::ComparedShared { left: 9, right: 10 },
+            ConversionDecision::Decompose,
+            ConversionDecision::NegativeSubgoal {
+                position: SubgoalPosition::from(11),
+            },
+        ];
+        let mut seen = Vec::new();
+        let shifted: Vec<_> = trace
+            .into_iter()
+            .map(|decision| {
+                decision.map(|anchor| {
+                    seen.push(anchor);
+                    u16::from(anchor) + 100
+                })
+            })
+            .collect();
+        assert_eq!(
+            seen,
+            Vec::from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]),
+            "every identifier is mapped once, in field order"
+        );
+        let expected = [
+            ConversionDecision::ReduceLeft { redex: 101_u16 },
+            ConversionDecision::ReduceRight { redex: 102 },
+            ConversionDecision::ConstShortcut { constant: 103 },
+            ConversionDecision::Unfold { constant: 104 },
+            ConversionDecision::Postpone { constant: 105 },
+            ConversionDecision::Freeze {
+                constant: 106,
+                side: ConversionSide::Right,
+            },
+            ConversionDecision::EtaExpand {
+                side: ConversionSide::Left,
+                variable: 107,
+            },
+            ConversionDecision::ReturnEta {
+                side: ConversionSide::Right,
+            },
+            ConversionDecision::Reassociate {
+                side: ConversionSide::Left,
+            },
+            ConversionDecision::Force { thunk: 108 },
+            ConversionDecision::ComparedShared {
+                left: 109,
+                right: 110,
+            },
+            ConversionDecision::Decompose,
+            ConversionDecision::NegativeSubgoal {
+                position: SubgoalPosition::from(11),
+            },
+        ];
+        assert_eq!(
+            shifted.as_slice(),
+            expected.as_slice(),
+            "kind, side and position survive"
+        );
+        let erased: Vec<_> = trace
+            .into_iter()
+            .map(|decision| decision.map(|_| ()))
+            .collect();
+        assert_eq!(
+            erased.get(5),
+            Some(&ConversionDecision::Freeze {
+                constant: (),
+                side: ConversionSide::Right,
+            }),
+            "erasing the anchors keeps the branch"
+        );
+        assert_eq!(erased.len(), trace.len());
+    }
+}

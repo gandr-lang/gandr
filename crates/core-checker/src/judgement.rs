@@ -284,8 +284,9 @@
 //! `bridge::tests::native_path_module_round_trips` exports all five forms,
 //! persists and imports four declarations, then replays imported product
 //! transport. The surface has no notation for these forms. The bridge mode,
-//! higher fields, funext, `Flow_U` and guarded List inhabitants stay at their
-//! kernel rule-language boundaries.
+//! higher fields, `Flow_U` and guarded List inhabitants stay at their kernel
+//! rule-language boundaries; function extensionality is the element-identity
+//! rule below.
 //!
 //! **Choice.** Preserve untrusted native evidence across the export boundary
 //! instead of treating successful frontend checking as certification.
@@ -337,6 +338,14 @@
 //! abstract carrier unstatable, and refusing it at readmission alone, which
 //! let a reflexivity inside a body reach the kernel. Reversal: a recursion
 //! clause for type variables computes the fibre this leaves neutral.
+//!
+//! **Function extensionality is decided by computation.** `funext(f, g)`
+//! synthesises `Path(U (A → F B), f, g)` for closed functions over a
+//! first-order domain and result when, at every input of the domain's
+//! coverage, both return one value with every admitted definition unfolded
+//! ([`crate::funext`] states the rule, its fragment and its refusals). The
+//! decision is recorded per input with the machine's traces, and the bridge
+//! hands them to the kernel as a higher evaluation, which replays them.
 //!
 //! K is not derivable: no rule matches a path against reflexivity, and the
 //! lowering refuses a `here` pattern before a term reaches the judgement, as
@@ -1145,6 +1154,30 @@ enum Frame
         left: ValueId,
         /// The path type's right endpoint.
         right: ValueId,
+    },
+    /// Await the type `funext`'s first function synthesises: the classifier
+    /// its second function checks against.
+    FunextLeft
+    {
+        /// The `funext`.
+        at: ValueId,
+        /// Its first function.
+        left: ValueId,
+        /// Its second function.
+        right: ValueId,
+    },
+    /// Await the check of `funext`'s second function against the classifier,
+    /// then decide the two functions pointwise.
+    FunextRight
+    {
+        /// The `funext`.
+        at: ValueId,
+        /// Its first function.
+        left: ValueId,
+        /// Its second function.
+        right: ValueId,
+        /// The type the first function synthesised.
+        classifier: ValueTypeId,
     },
     /// Await the type a compound endpoint's computation synthesises, which
     /// must be a pure returner.
@@ -2349,6 +2382,17 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
+            | Value::Funext(left, right) => {
+                self.frames.push(Frame::FunextLeft {
+                    at: term,
+                    left,
+                    right,
+                });
+                Ok(Step::Descend(Goal::Value {
+                    term: left,
+                    direction: Direction::Synthesise,
+                }))
+            },
             | Value::Returned(computation) => {
                 self.frames.push(Frame::ReturnedEndpoint { at: term });
                 Ok(Step::Descend(Goal::Computation {
@@ -2523,6 +2567,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             },
             | Value::PathRefl(_)
             | Value::Returned(_)
+            | Value::Funext(..)
             | Value::Constructor { .. }
             | Value::PathProduct(..)
             | Value::PathEquiv { .. }
@@ -2674,6 +2719,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             },
             | Value::PathRefl(_)
             | Value::Here(_)
+            | Value::Funext(..)
             | Value::Returned(_)
             | Value::Constructor { .. }
             | Value::Record(_)
@@ -4201,6 +4247,35 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 self.reaches(at, point, left, right)?;
                 Ok(Step::Ascend(Produced::Checked))
             },
+            | (Frame::FunextLeft { at, left, right }, Produced::ValueType(classifier)) => {
+                self.frames.push(Frame::FunextRight {
+                    at,
+                    left,
+                    right,
+                    classifier,
+                });
+                Ok(Step::Descend(Goal::Value {
+                    term: right,
+                    direction: Direction::Check(classifier),
+                }))
+            },
+            | (
+                Frame::FunextRight {
+                    at,
+                    left,
+                    right,
+                    classifier,
+                },
+                Produced::Checked,
+            ) => {
+                let funext = crate::funext::decide(self.context, at, (left, right), classifier)?;
+                self.context.record_funext(at, funext);
+                let path = self
+                    .context
+                    .arena_mut()
+                    .value_type_path(classifier, left, right);
+                Ok(Step::Ascend(Produced::ValueType(path)))
+            },
             | (Frame::ReturnedEndpoint { at }, Produced::CompType(synthesised)) => {
                 let head = self.context.whnf_comp_type(synthesised)?;
                 match comp_type_view(self.context.arena(), head)? {
@@ -4588,6 +4663,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::PathProductSecond { .. }
                 | Frame::TransportPath { .. }
                 | Frame::HereSynthesised { .. }
+                | Frame::FunextLeft { .. }
                 | Frame::ElementTransportPath { .. }
                 | Frame::CaseScrutinee { .. }
                 | Frame::SplitScrutinee { .. }
@@ -4623,6 +4699,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::ListFold { .. }
                 | Frame::TransportOperand { .. }
                 | Frame::HereEndpoints { .. }
+                | Frame::FunextRight { .. }
                 | Frame::ElementTransportMotive { .. }
                 | Frame::CaseBranch { .. }
                 | Frame::SplitBody(_)
@@ -7903,7 +7980,7 @@ mod tests
                             "a synthesising value checks exactly as it synthesises, then crosses the value bridge"
                         );
                     },
-                    | Value::PathRefl(_) | Value::Here(_) | Value::Returned(_)
+                    | Value::PathRefl(_) | Value::Here(_) | Value::Funext(..) | Value::Returned(_)
                     | Value::Constructor { .. } | Value::Record(_)
                     | Value::Reify(_)
                     | Value::PathProduct(..)

@@ -391,6 +391,13 @@ fn checked(
         | CheckRefusal::CompoundEndpoint { .. } => {
             f.write_str("a path endpoint must compute a value without effects")
         },
+        | CheckRefusal::FunextUnsupported { .. } => f.write_str(
+            "`funext` needs two closed pure functions between types built from units, \
+             integers, strings, pairs and two-way sums",
+        ),
+        | CheckRefusal::PointwiseDistinct { .. } => {
+            f.write_str("`funext` needs both functions to return the same value at every input")
+        },
         | CheckRefusal::TypeMismatch(_) => f.write_str("mismatched types"),
         | CheckRefusal::ShapeMismatch { wanted, .. } => write!(f, "expected {}", Shape(wanted)),
         | CheckRefusal::NotSynthesisable { form } => write!(
@@ -779,6 +786,11 @@ mod tests
                 at: value,
                 synthesised: comp_type,
             },
+            CheckRefusal::FunextUnsupported {
+                at: value,
+                classifier: value_type,
+            },
+            CheckRefusal::PointwiseDistinct { at: value },
         ]
         .map(Refusal::Checking);
         let corpus = Refusal::Corpus(CorpusRefusal::ExpectationOutsideFixtureRoot {

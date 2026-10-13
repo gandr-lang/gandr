@@ -200,35 +200,8 @@ fn translate(
 /// # Specification
 /// trivial.
 pub(super) fn portable<Node>(decision: ConversionDecision<Node>) -> ConversionDecision<()>
-where
-    Node: Copy,
 {
-    match decision {
-        | ConversionDecision::ReduceLeft { .. } => ConversionDecision::ReduceLeft { redex: () },
-        | ConversionDecision::ReduceRight { .. } => ConversionDecision::ReduceRight { redex: () },
-        | ConversionDecision::ConstShortcut { .. } => {
-            ConversionDecision::ConstShortcut { constant: () }
-        },
-        | ConversionDecision::Unfold { .. } => ConversionDecision::Unfold { constant: () },
-        | ConversionDecision::Postpone { .. } => ConversionDecision::Postpone { constant: () },
-        | ConversionDecision::Freeze { side, .. } => {
-            ConversionDecision::Freeze { constant: (), side }
-        },
-        | ConversionDecision::EtaExpand { side, .. } => {
-            ConversionDecision::EtaExpand { variable: (), side }
-        },
-        | ConversionDecision::ReturnEta { side } => ConversionDecision::ReturnEta { side },
-        | ConversionDecision::Reassociate { side } => ConversionDecision::Reassociate { side },
-        | ConversionDecision::Force { .. } => ConversionDecision::Force { thunk: () },
-        | ConversionDecision::ComparedShared { .. } => ConversionDecision::ComparedShared {
-            left: (),
-            right: (),
-        },
-        | ConversionDecision::Decompose => ConversionDecision::Decompose,
-        | ConversionDecision::NegativeSubgoal { position } => {
-            ConversionDecision::NegativeSubgoal { position }
-        },
-    }
+    decision.map(|_| ())
 }
 
 /// Run the untrusted engine and retain its complete decision sequence.
@@ -306,33 +279,8 @@ pub(super) fn engine(
 /// trivial.
 fn decision(step: ConversionDecision<TraceNode>) -> ConversionDecision<ReplayNode>
 {
-    match step {
-        | ConversionDecision::ComparedShared { .. } => ConversionDecision::ComparedShared {
-            left: ReplayNode::Other,
-            right: ReplayNode::Other,
-        },
-        | ConversionDecision::Force { .. } => ConversionDecision::Force {
-            thunk: ReplayNode::Other,
-        },
-        | ConversionDecision::EtaExpand { side, .. } => ConversionDecision::EtaExpand {
-            side,
-            variable: ReplayNode::Other,
-        },
-        | ConversionDecision::ReturnEta { side } => ConversionDecision::ReturnEta { side },
-        | ConversionDecision::Reassociate { side } => ConversionDecision::Reassociate { side },
-        | ConversionDecision::NegativeSubgoal { position } => {
-            ConversionDecision::NegativeSubgoal { position }
-        },
-        | ConversionDecision::Decompose => ConversionDecision::Decompose,
-        | ConversionDecision::ReduceLeft { .. } => ConversionDecision::ReduceLeft {
-            redex: ReplayNode::Other,
-        },
-        | ConversionDecision::ReduceRight { .. } => ConversionDecision::ReduceRight {
-            redex: ReplayNode::Other,
-        },
-        | ConversionDecision::ConstShortcut { .. }
-        | ConversionDecision::Unfold { .. }
-        | ConversionDecision::Postpone { .. }
-        | ConversionDecision::Freeze { .. } => panic!("closed fixture contains no constants"),
-    }
+    step.map(|node| match node {
+        | TraceNode::Constant(_) => panic!("closed fixture contains no constants"),
+        | TraceNode::Value(_) | TraceNode::Computation(_) => ReplayNode::Other,
+    })
 }
