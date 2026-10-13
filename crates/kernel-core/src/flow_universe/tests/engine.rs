@@ -74,6 +74,8 @@ fn children(
             | Computation::Transport(..)
             | Computation::PathTransport { .. }
             | Computation::TelescopeTransport { .. }
+            | Computation::Ride { .. }
+            | Computation::TelescopeRide { .. }
             | Computation::RelatedApplication { .. }
             | Computation::DataCase { .. }
             | Computation::RecordProjection(..)
@@ -174,6 +176,8 @@ fn translate(
                     | Computation::Transport(..)
                     | Computation::PathTransport { .. }
                     | Computation::TelescopeTransport { .. }
+                    | Computation::Ride { .. }
+                    | Computation::TelescopeRide { .. }
                     | Computation::RelatedApplication { .. }
                     | Computation::DataCase { .. }
                     | Computation::RecordProjection(..)

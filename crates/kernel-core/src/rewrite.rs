@@ -1261,6 +1261,10 @@ fn carried_occurrence(
         | Value::SessionFlow { .. }
         | Value::PathEquiv { .. }
         | Value::Here { .. }
+        | Value::Stay { .. }
+        | Value::ForwardFlow { .. }
+        | Value::FunctionFlow { .. }
+        | Value::Then { .. }
         | Value::Returned(_)
         | Value::Higher { .. }
         | Value::HigherEvaluation { .. }
@@ -1333,9 +1337,9 @@ const fn outcome_of(node: AnyNode) -> RewriteOutcome
 /// - witness: `rewrite::tests::session_rewrites_preserve_graph_evidence_and_native_children`
 #[spec(captures: before = tasks.len(),
     ensures: tasks.get(before ..).is_some_and(|added| added.len() == match node {
-    AnyNode::Value(id) => arena.value(id).map_or(0, |source| match *source { Value::Constructor { ref fields, .. } => fields.len().saturating_add(1), Value::Record(ref fields) => fields.len(), Value::Tuple(ref components) => components.len(), Value::Higher { ref evidence, .. } => evidence.len(), Value::HigherEvaluation { ref components, .. } => components.len().saturating_mul(3), Value::QuantifiedEvaluation { ref children, .. } => children.len(), Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => 0, Value::PathEquiv { .. } => 3, Value::ListCons(..) | Value::SessionPath { .. } | Value::SessionFlow { .. } | Value::PathProduct(..) | Value::StaticApplication(..) => 2, _ => 1 }),
-    AnyNode::Computation(id) => arena.computation(id).map_or(0, |source| match *source { Computation::ListFold { .. } | Computation::RelatedApplication { .. } | Computation::TelescopeTransport { .. } => 5, Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2), Computation::Case { ref branches, .. } => branches.len().saturating_add(1), Computation::PathTransport { .. } => 3, Computation::Transport(..) | Computation::Application(..) | Computation::Bind(..) | Computation::With(..) => 2, _ => 1 }),
-    AnyNode::ValueType(id) => arena.value_type(id).map_or(0, |source| match *source { ValueType::Data { ref arguments, .. } => arguments.len(), ValueType::Record(ref fields) => fields.len(), ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.len(), ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => 0, ValueType::Path { .. } => 3, ValueType::PathUniverse(..) | ValueType::FlowUniverse(..) | ValueType::StaticPi { .. } => 2, _ => 1 }),
+    AnyNode::Value(id) => arena.value(id).map_or(0, |source| match *source { Value::Constructor { ref fields, .. } => fields.len().saturating_add(1), Value::Record(ref fields) => fields.len(), Value::Tuple(ref components) => components.len(), Value::Higher { ref evidence, .. } => evidence.len(), Value::HigherEvaluation { ref components, .. } => components.len().saturating_mul(3), Value::QuantifiedEvaluation { ref children, .. } => children.len(), Value::ForwardFlow { ref outputs, .. } => outputs.len().saturating_add(2), Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => 0, Value::PathEquiv { .. } | Value::FunctionFlow { .. } => 3, Value::ListCons(..) | Value::SessionPath { .. } | Value::SessionFlow { .. } | Value::PathProduct(..) | Value::StaticApplication(..) | Value::Then { .. } => 2, _ => 1 }),
+    AnyNode::Computation(id) => arena.computation(id).map_or(0, |source| match *source { Computation::ListFold { .. } | Computation::RelatedApplication { .. } | Computation::TelescopeTransport { .. } | Computation::TelescopeRide { .. } => 5, Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2), Computation::Case { ref branches, .. } => branches.len().saturating_add(1), Computation::PathTransport { .. } | Computation::Ride { .. } => 3, Computation::Transport(..) | Computation::Application(..) | Computation::Bind(..) | Computation::With(..) => 2, _ => 1 }),
+    AnyNode::ValueType(id) => arena.value_type(id).map_or(0, |source| match *source { ValueType::Data { ref arguments, .. } => arguments.len(), ValueType::Record(ref fields) => fields.len(), ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.len(), ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => 0, ValueType::Path { .. } | ValueType::Flow { .. } => 3, ValueType::PathUniverse(..) | ValueType::FlowUniverse(..) | ValueType::StaticPi { .. } => 2, _ => 1 }),
     AnyNode::CompType(id) => arena.comp_type(id).map_or(0, |source| match *source { CompType::Arrow { .. } | CompType::Pi { .. } | CompType::With(..) => 2, _ => 1 }),
 }
         && added.iter().all(|task| matches!(*task, RewriteTask::Open(_, child_depth, step)
@@ -1414,7 +1418,11 @@ fn push_rewrite_children(
                     rewrite,
                 ));
             },
-            | Some(&Value::PathRefl(code) | &Value::Here { point: code, .. }) => {
+            | Some(
+                &Value::PathRefl(code)
+                | &Value::Here { point: code, .. }
+                | &Value::Stay { point: code, .. },
+            ) => {
                 tasks.push(RewriteTask::Open(AnyNode::Value(code), depth, rewrite));
             },
             | Some(
@@ -1438,10 +1446,47 @@ fn push_rewrite_children(
                         .map(|id| RewriteTask::Open(AnyNode::Value(id), depth, rewrite))
                 }));
             },
+            | Some(&Value::ForwardFlow {
+                flow_type,
+                translator,
+                ref outputs,
+                ..
+            }) => {
+                tasks.extend(
+                    outputs
+                        .iter()
+                        .rev()
+                        .map(|id| RewriteTask::Open(AnyNode::Value(*id), depth, rewrite)),
+                );
+                tasks.push(RewriteTask::Open(
+                    AnyNode::Value(translator),
+                    depth,
+                    rewrite,
+                ));
+                tasks.push(RewriteTask::Open(
+                    AnyNode::ValueType(flow_type),
+                    depth,
+                    rewrite,
+                ));
+            },
+            | Some(&Value::FunctionFlow {
+                flow_type,
+                domain,
+                codomain,
+            }) => {
+                tasks.push(RewriteTask::Open(AnyNode::Value(codomain), depth, rewrite));
+                tasks.push(RewriteTask::Open(AnyNode::Value(domain), depth, rewrite));
+                tasks.push(RewriteTask::Open(
+                    AnyNode::ValueType(flow_type),
+                    depth,
+                    rewrite,
+                ));
+            },
             | Some(
                 &Value::PathProduct(first, second)
                 | &Value::ListCons(first, second)
-                | &Value::StaticApplication(first, second),
+                | &Value::StaticApplication(first, second)
+                | &Value::Then { first, second, .. },
             ) => {
                 tasks.push(RewriteTask::Open(AnyNode::Value(second), depth, rewrite));
                 tasks.push(RewriteTask::Open(AnyNode::Value(first), depth, rewrite));
@@ -1534,13 +1579,20 @@ fn push_rewrite_children(
                 tasks.push(RewriteTask::Open(AnyNode::Value(value), depth, rewrite));
                 tasks.push(RewriteTask::Open(AnyNode::Value(path), depth, rewrite));
             },
-            // The motive binds the endpoint; the path and the input stand
-            // outside it.
-            | Some(&Computation::PathTransport {
-                motive,
-                path,
-                value,
-            }) => {
+            // The motive binds the endpoint; the path or flow and the input
+            // stand outside it.
+            | Some(
+                &Computation::PathTransport {
+                    motive,
+                    path,
+                    value,
+                }
+                | &Computation::Ride {
+                    motive,
+                    flow: path,
+                    value,
+                },
+            ) => {
                 tasks.push(RewriteTask::Open(AnyNode::Value(value), depth, rewrite));
                 tasks.push(RewriteTask::Open(AnyNode::Value(path), depth, rewrite));
                 tasks.push(RewriteTask::Open(
@@ -1551,13 +1603,22 @@ fn push_rewrite_children(
             },
             // The motive's own arrows bind the telescope; every other child
             // stands outside it.
-            | Some(&Computation::TelescopeTransport {
-                motive,
-                path,
-                start,
-                over,
-                value,
-            }) => {
+            | Some(
+                &Computation::TelescopeTransport {
+                    motive,
+                    path,
+                    start,
+                    over,
+                    value,
+                }
+                | &Computation::TelescopeRide {
+                    motive,
+                    flow: path,
+                    start,
+                    over,
+                    value,
+                },
+            ) => {
                 for id in [value, over, start, path] {
                     tasks.push(RewriteTask::Open(AnyNode::Value(id), depth, rewrite));
                 }
@@ -1679,11 +1740,18 @@ fn push_rewrite_children(
                 tasks.push(RewriteTask::Open(AnyNode::Value(target), depth, rewrite));
                 tasks.push(RewriteTask::Open(AnyNode::Value(source), depth, rewrite));
             },
-            | Some(&ValueType::Path {
-                domain,
-                left,
-                right,
-            }) => {
+            | Some(
+                &ValueType::Path {
+                    domain,
+                    left,
+                    right,
+                }
+                | &ValueType::Flow {
+                    domain,
+                    source: left,
+                    target: right,
+                },
+            ) => {
                 tasks.push(RewriteTask::Open(AnyNode::Value(right), depth, rewrite));
                 tasks.push(RewriteTask::Open(AnyNode::Value(left), depth, rewrite));
                 tasks.push(RewriteTask::Open(
@@ -1866,13 +1934,14 @@ fn popped(
     captures: [before = results.len(), arity = arena.value(id).map_or(0, |matched_native_node| match *matched_native_node {
 Value::Constructor { ref fields, .. } => fields.len().saturating_add(1),
 Value::Record(ref fields) => fields.len(),
-Value::PathEquiv { .. } => 3,
+Value::PathEquiv { .. } | Value::FunctionFlow { .. } => 3,
+Value::ForwardFlow { ref outputs, .. } => outputs.len().saturating_add(2),
 Value::Tuple(ref components) => components.len(),
 Value::Higher { ref evidence, .. } => evidence.len(),
 Value::HigherEvaluation { ref components, .. } => components.len().saturating_mul(3),
 Value::QuantifiedEvaluation { ref children, .. } => children.len(),
-Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::SessionPath { .. } | Value::SessionFlow { .. } => 2,
-Value::Injection(..) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::PathRefl(_) | Value::Here { .. } | Value::Returned(_) => 1,
+Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::SessionPath { .. } | Value::SessionFlow { .. } | Value::Then { .. } => 2,
+Value::Injection(..) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::PathRefl(_) | Value::Here { .. } | Value::Stay { .. } | Value::Returned(_) => 1,
 _ => 0,
 })],
     ensures: |ret| results.len() == before.saturating_sub(arity) && match arena.value(id) {
@@ -1988,6 +2057,77 @@ fn close_value(
             }
             else {
                 arena.value_here_relating(rewritten, alloc::sync::Arc::clone(dialogues))
+            }
+        },
+        | Value::Stay {
+            point,
+            ref dialogues,
+        } => {
+            let rewritten = popped(results, AnyNode::Value(point)).value_or(point);
+            if rewritten == point {
+                id
+            }
+            else {
+                arena.value_stay_relating(rewritten, alloc::sync::Arc::clone(dialogues))
+            }
+        },
+        | Value::ForwardFlow {
+            flow_type,
+            translator,
+            ref outputs,
+            ref dialogues,
+        } => {
+            let mut rewritten = None;
+            for (index, original) in outputs.iter().copied().enumerate().rev() {
+                let result = popped(results, AnyNode::Value(original)).value_or(original);
+                if result != original
+                    && let Some(slot) = rewritten
+                        .get_or_insert_with(|| outputs.clone())
+                        .get_mut(index)
+                {
+                    *slot = result;
+                }
+            }
+            let map = popped(results, AnyNode::Value(translator)).value_or(translator);
+            let classifier =
+                popped(results, AnyNode::ValueType(flow_type)).value_type_or(flow_type);
+            if rewritten.is_none() && map == translator && classifier == flow_type {
+                id
+            }
+            else {
+                let dialogues = alloc::sync::Arc::clone(dialogues);
+                let outputs = rewritten.unwrap_or_else(|| outputs.clone());
+                arena.value_forward_flow(classifier, map, outputs, dialogues)
+            }
+        },
+        | Value::FunctionFlow {
+            flow_type,
+            domain,
+            codomain,
+        } => {
+            let after = popped(results, AnyNode::Value(codomain)).value_or(codomain);
+            let before = popped(results, AnyNode::Value(domain)).value_or(domain);
+            let classifier =
+                popped(results, AnyNode::ValueType(flow_type)).value_type_or(flow_type);
+            if after == codomain && before == domain && classifier == flow_type {
+                id
+            }
+            else {
+                arena.value_function_flow(classifier, before, after)
+            }
+        },
+        | Value::Then {
+            first,
+            second,
+            seam,
+        } => {
+            let later = popped(results, AnyNode::Value(second)).value_or(second);
+            let earlier = popped(results, AnyNode::Value(first)).value_or(first);
+            if later == second && earlier == first {
+                id
+            }
+            else {
+                arena.value_then(earlier, later, seam)
             }
         },
         | Value::Returned(computation) => {
@@ -2319,8 +2459,8 @@ fn rewrite_variable(
 /// - witness: `rewrite::tests::a_closed_type_shifts_to_itself`
 #[spec(
     captures: [before = results.len(), arity = arena.computation(id).map_or(0, |matched_native_node| match *matched_native_node {
-Computation::ListFold { .. } | Computation::RelatedApplication { .. } | Computation::TelescopeTransport { .. } => 5,
-Computation::PathTransport { .. } => 3,
+Computation::ListFold { .. } | Computation::RelatedApplication { .. } | Computation::TelescopeTransport { .. } | Computation::TelescopeRide { .. } => 5,
+Computation::PathTransport { .. } | Computation::Ride { .. } => 3,
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
 Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
 Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) | Computation::With(..) => 2,
@@ -2437,6 +2577,22 @@ fn close_computation(
                 arena.computation_path_transport(rewritten_motive, rewritten_path, rewritten_value)
             }
         },
+        | Computation::Ride {
+            motive,
+            flow,
+            value,
+        } => {
+            let rewritten_value = popped(results, AnyNode::Value(value)).value_or(value);
+            let rewritten_flow = popped(results, AnyNode::Value(flow)).value_or(flow);
+            let rewritten_motive =
+                popped(results, AnyNode::ValueType(motive)).value_type_or(motive);
+            if rewritten_value == value && rewritten_flow == flow && rewritten_motive == motive {
+                id
+            }
+            else {
+                arena.computation_ride(rewritten_motive, rewritten_flow, rewritten_value)
+            }
+        },
         | Computation::TelescopeTransport {
             motive,
             path,
@@ -2460,6 +2616,32 @@ fn close_computation(
             else {
                 arena.computation_telescope_transport(
                     new_motive, new_path, new_start, new_over, new_value,
+                )
+            }
+        },
+        | Computation::TelescopeRide {
+            motive,
+            flow,
+            start,
+            over,
+            value,
+        } => {
+            let new_value = popped(results, AnyNode::Value(value)).value_or(value);
+            let new_over = popped(results, AnyNode::Value(over)).value_or(over);
+            let new_start = popped(results, AnyNode::Value(start)).value_or(start);
+            let new_flow = popped(results, AnyNode::Value(flow)).value_or(flow);
+            let new_motive = popped(results, AnyNode::CompType(motive)).comp_type_or(motive);
+            if new_value == value
+                && new_over == over
+                && new_start == start
+                && new_flow == flow
+                && new_motive == motive
+            {
+                id
+            }
+            else {
+                arena.computation_telescope_ride(
+                    new_motive, new_flow, new_start, new_over, new_value,
                 )
             }
         },
@@ -2622,7 +2804,7 @@ fn close_computation(
 ValueType::Data { ref arguments, .. } => arguments.len(),
 ValueType::Record(ref fields) => fields.len(),
 ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.len(),
-ValueType::Path { .. } => 3,
+ValueType::Path { .. } | ValueType::Flow { .. } => 3,
 ValueType::StaticPi { .. } | ValueType::PathUniverse(..) | ValueType::FlowUniverse(..) => 2,
 ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::List(_) | ValueType::Session { .. } => 1,
 _ => 0,
@@ -2715,6 +2897,25 @@ fn close_value_type(
             }
             else {
                 arena.value_type_path(rewritten_domain, rewritten_left, rewritten_right)
+            }
+        },
+        | ValueType::Flow {
+            domain,
+            source,
+            target,
+        } => {
+            let rewritten_target = popped(results, AnyNode::Value(target)).value_or(target);
+            let rewritten_source = popped(results, AnyNode::Value(source)).value_or(source);
+            let rewritten_domain =
+                popped(results, AnyNode::ValueType(domain)).value_type_or(domain);
+            if rewritten_domain == domain
+                && rewritten_source == source
+                && rewritten_target == target
+            {
+                id
+            }
+            else {
+                arena.value_type_flow(rewritten_domain, rewritten_source, rewritten_target)
             }
         },
         | ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => id,

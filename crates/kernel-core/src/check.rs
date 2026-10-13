@@ -963,7 +963,7 @@ where
                                 id,
                                 crate::replay::ReplayBudget::DEFAULT,
                             )
-                            .map_err(crate::flow_universe::classifier_refusal)?;
+                            .map_err(KernelError::Flow)?;
                             frames.push(TypeLevelFrame::MaxSecondValue(endpoints.target));
                             goal = TypeLevelGoal::Value(endpoints.source);
                             continue 'expand;
@@ -972,10 +972,18 @@ where
                         // closed: at an open domain it is its own neutral
                         // fibre. Its endpoints are terms, so their checks are
                         // owed to the checking machine like a decode's code.
+                        // A directed identity forms alike: direction is in
+                        // its introductions and its elimination, not in its
+                        // formation.
                         | ValueType::Path {
                             domain,
                             left,
                             right,
+                        }
+                        | ValueType::Flow {
+                            domain,
+                            source: left,
+                            target: right,
                         } => {
                             owed.push(CodeObligation::Endpoints {
                                 domain,
@@ -1232,6 +1240,7 @@ fn abstract_atom_level(
         | ValueType::Element { .. }
         | ValueType::Abstract(_)
         | ValueType::Path { .. }
+        | ValueType::Flow { .. }
         | ValueType::StaticPi { .. } => Err(KernelError::AbstractTypeKindNotUniverse {
             actual: value_type_witness(arena, kind),
         }),
@@ -1283,7 +1292,8 @@ fn static_classifier(
         | ValueType::Lift { .. }
         | ValueType::Element { .. }
         | ValueType::Abstract(_)
-        | ValueType::Path { .. } => Err(KernelError::StaticClassifierExpected {
+        | ValueType::Path { .. }
+        | ValueType::Flow { .. } => Err(KernelError::StaticClassifierExpected {
             actual: value_type_witness(arena, classifier),
         }),
     }
@@ -1533,9 +1543,9 @@ enum Frame
     /// A returned endpoint's synthesis: its computation is synthesizing, and
     /// must synthesize a returner.
     SynthReturned,
-    /// A `here` check: the point checked at the domain; it must convert with
-    /// both held endpoints, by the forced conversion or the dialogue it
-    /// carries for each.
+    /// A `here` or `stay` check: the point checked at the domain; it must
+    /// convert with both held endpoints, by the forced conversion or the
+    /// dialogue it carries for each.
     CheckHere
     {
         /// The reflexivity's point.
@@ -1575,6 +1585,60 @@ enum Frame
         /// The transport.
         transport: ComputationId,
         /// The path's source and target.
+        ends: (ValueId, ValueId),
+    },
+    /// A `stay` synthesis: the point's type is synthesized; the flow is its
+    /// diagonal.
+    SynthStay(ValueId),
+    /// Replay a forward flow's images after its translator checked in the
+    /// empty context.
+    FlowForward
+    {
+        /// The forward flow.
+        flow: ValueId,
+        /// Its validated first-order endpoint types.
+        endpoints: crate::flow_universe::FlowType,
+        /// The enclosing context, restored after the replay.
+        context: Vec<ValueTypeId>,
+    },
+    /// A function flow: the boundary at `position` is synthesized; orient it.
+    FlowBoundary
+    {
+        /// The function flow.
+        flow: ValueId,
+        /// The boundary whose classifier is synthesized.
+        position: crate::flow_universe::Boundary,
+    },
+    /// A composition: its first flow's classifier is synthesized.
+    ThenFirst(ValueId),
+    /// A composition: its second flow's classifier is synthesized; the first's
+    /// is held.
+    ThenSecond
+    {
+        /// The composition.
+        then: ValueId,
+        /// The first flow's classifier.
+        first: ValueTypeId,
+    },
+    /// A ride: its flow's classifier is synthesized.
+    Ride(ComputationId),
+    /// A telescope ride: its flow's classifier is synthesized.
+    TelescopeRideFlow(ComputationId),
+    /// A telescope ride: its start checked at the family's fibre over the
+    /// flow's source; synthesize the flow over the flow.
+    TelescopeRideStart
+    {
+        /// The ride.
+        ride: ComputationId,
+        /// The flow's source and target.
+        ends: (ValueId, ValueId),
+    },
+    /// A telescope ride: the flow over the flow is synthesized.
+    TelescopeRideOver
+    {
+        /// The ride.
+        ride: ComputationId,
+        /// The flow's source and target.
         ends: (ValueId, ValueId),
     },
     /// A related application: its function identity's classifier is
@@ -2216,7 +2280,7 @@ where
                             flow_type,
                             crate::ReplayBudget::DEFAULT,
                         )
-                        .map_err(crate::flow_universe::classifier_refusal)?;
+                        .map_err(KernelError::Flow)?;
                         let expected = crate::session::obligations(
                             arena,
                             endpoints.source,
@@ -2230,6 +2294,84 @@ where
                             context: core::mem::take(&mut context),
                         });
                         goal = Goal::CheckValue(payload_paths, expected);
+                        continue 'expand;
+                    },
+                    // `stay(c)` synthesizes the directed diagonal at the type
+                    // `c` synthesizes.
+                    | Value::Stay { point, .. } => {
+                        frames.push(Frame::SynthStay(point));
+                        goal = Goal::SynthValue(point);
+                        continue 'expand;
+                    },
+                    // A forward flow's translator checks in the empty context,
+                    // as an equivalence's maps do; its images replay after.
+                    | Value::ForwardFlow {
+                        flow_type,
+                        translator,
+                        ..
+                    } => {
+                        let _level = type_level(
+                            arena,
+                            judgement,
+                            TypeLevelGoal::Value(flow_type),
+                            Vec::new(),
+                            Recording {
+                                memo,
+                                session,
+                                census,
+                                owed,
+                            },
+                        )?;
+                        let endpoints = crate::flow_universe::forward_type(
+                            arena,
+                            flow_type,
+                            crate::ReplayBudget::DEFAULT,
+                        )
+                        .map_err(KernelError::Flow)?;
+                        let result = arena.comp_type_returner(endpoints.target);
+                        let function = arena.comp_type_arrow(endpoints.source, result);
+                        let expected = arena.value_type_thunk(function);
+                        frames.push(Frame::FlowForward {
+                            flow: id,
+                            endpoints,
+                            context: core::mem::take(&mut context),
+                        });
+                        goal = Goal::CheckValue(translator, expected);
+                        continue 'expand;
+                    },
+                    // A function flow's boundaries synthesize in turn, each
+                    // oriented by the variance its position fixes.
+                    | Value::FunctionFlow {
+                        flow_type, domain, ..
+                    } => {
+                        let _level = type_level(
+                            arena,
+                            judgement,
+                            TypeLevelGoal::Value(flow_type),
+                            Vec::new(),
+                            Recording {
+                                memo,
+                                session,
+                                census,
+                                owed,
+                            },
+                        )?;
+                        let _arrows = crate::flow_universe::function_type(
+                            arena,
+                            flow_type,
+                            crate::ReplayBudget::DEFAULT,
+                        )
+                        .map_err(KernelError::Flow)?;
+                        frames.push(Frame::FlowBoundary {
+                            flow: id,
+                            position: crate::flow_universe::Boundary::Domain,
+                        });
+                        goal = Goal::SynthValue(domain);
+                        continue 'expand;
+                    },
+                    | Value::Then { first, .. } => {
+                        frames.push(Frame::ThenFirst(id));
+                        goal = Goal::SynthValue(first);
                         continue 'expand;
                     },
                     | Value::PathRefl(code) => {
@@ -2569,6 +2711,25 @@ where
                         goal = Goal::CheckValue(point, domain);
                         continue 'expand;
                     },
+                    // `stay(c)` checks at a flow, at either reading, by the
+                    // point at the carrier and the endpoint conversions a
+                    // `here` owes.
+                    | Value::Stay {
+                        point,
+                        ref dialogues,
+                    } => {
+                        let dialogues = alloc::sync::Arc::clone(dialogues);
+                        let ends = crate::flow_universe::ends(arena, expected)
+                            .map_err(KernelError::Flow)?;
+                        frames.push(Frame::CheckHere {
+                            point,
+                            left: ends.source,
+                            right: ends.target,
+                            dialogues,
+                        });
+                        goal = Goal::CheckValue(point, ends.carrier);
+                        continue 'expand;
+                    },
                     // A higher field owes one check per guard, each at the
                     // fibre its walk computes; none re-enters the machine.
                     | Value::Higher {
@@ -2645,6 +2806,9 @@ where
                     | Value::PathProduct(..)
                     | Value::SessionPath { .. }
                     | Value::SessionFlow { .. }
+                    | Value::ForwardFlow { .. }
+                    | Value::FunctionFlow { .. }
+                    | Value::Then { .. }
                     | Value::PathEquiv { .. }
                     | Value::Variable(_)
                     | Value::Constant(_)
@@ -2716,6 +2880,16 @@ where
                     | Computation::TelescopeTransport { path, .. } => {
                         frames.push(Frame::TelescopePath(id));
                         goal = Goal::SynthValue(path);
+                        continue 'expand;
+                    },
+                    | Computation::Ride { flow, .. } => {
+                        frames.push(Frame::Ride(id));
+                        goal = Goal::SynthValue(flow);
+                        continue 'expand;
+                    },
+                    | Computation::TelescopeRide { flow, .. } => {
+                        frames.push(Frame::TelescopeRideFlow(id));
+                        goal = Goal::SynthValue(flow);
                         continue 'expand;
                     },
                     | Computation::RelatedApplication { path, .. } => {
@@ -2884,6 +3058,8 @@ where
                     | Computation::Transport(..)
                     | Computation::PathTransport { .. }
                     | Computation::TelescopeTransport { .. }
+                    | Computation::Ride { .. }
+                    | Computation::TelescopeRide { .. }
                     | Computation::RelatedApplication { .. }
                     | Computation::ListFold { .. }
                     | Computation::Application(..)
@@ -3357,6 +3533,307 @@ where
                     goal = Goal::CheckValue(value, source);
                     continue 'expand;
                 },
+                | Frame::SynthStay(point) => {
+                    let domain = produced.value_type()?;
+                    produced = Produced::ValueType(arena.value_type_flow(domain, point, point));
+                },
+                // A forward flow's translator checked; each image opens to a
+                // leaf-natural target shape and its dialogue replays, unfolding
+                // only what the environment admitted before it.
+                | Frame::FlowForward {
+                    flow,
+                    endpoints,
+                    context: outer,
+                } => {
+                    let (flow_type, translator, images, dialogues) = match *read_value(arena, flow)?
+                    {
+                        | Value::ForwardFlow {
+                            flow_type,
+                            translator,
+                            ref outputs,
+                            ref dialogues,
+                        } => (
+                            flow_type,
+                            translator,
+                            outputs.clone(),
+                            alloc::sync::Arc::clone(dialogues),
+                        ),
+                        | _ => return Err(KernelError::ArenaFault),
+                    };
+                    let unfoldings = admitted_unfoldings(judgement.entries);
+                    let watermark = arena.watermark();
+                    let result = crate::flow_universe::forward(
+                        arena,
+                        &unfoldings,
+                        endpoints,
+                        translator,
+                        (&images, &dialogues),
+                        crate::replay::ReplayBudget::DEFAULT,
+                    );
+                    arena.truncate_to(watermark);
+                    result.map_err(KernelError::Flow)?;
+                    context = outer;
+                    produced = Produced::ValueType(flow_type);
+                },
+                // A function flow's boundary must run the way the arrow's
+                // variance fixes at its position: the domain from the target's
+                // argument to the source's, the codomain from the source's
+                // result to the target's.
+                | Frame::FlowBoundary { flow, position } => {
+                    let classifier = produced.value_type()?;
+                    let Value::FunctionFlow {
+                        flow_type,
+                        codomain,
+                        ..
+                    } = *read_value(arena, flow)?
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let arrows = crate::flow_universe::function_type(
+                        arena,
+                        flow_type,
+                        crate::replay::ReplayBudget::DEFAULT,
+                    )
+                    .map_err(KernelError::Flow)?;
+                    crate::flow_universe::oriented(
+                        arena,
+                        position,
+                        arrows,
+                        classifier,
+                        crate::replay::ReplayBudget::DEFAULT,
+                    )
+                    .map_err(KernelError::Flow)?;
+                    match position {
+                        | crate::flow_universe::Boundary::Domain => {
+                            frames.push(Frame::FlowBoundary {
+                                flow,
+                                position: crate::flow_universe::Boundary::Codomain,
+                            });
+                            goal = Goal::SynthValue(codomain);
+                            continue 'expand;
+                        },
+                        | crate::flow_universe::Boundary::Codomain => {
+                            produced = Produced::ValueType(flow_type);
+                        },
+                    }
+                },
+                | Frame::ThenFirst(then) => {
+                    let first = produced.value_type()?;
+                    let Value::Then { second, .. } = *read_value(arena, then)?
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    frames.push(Frame::ThenSecond { then, first });
+                    goal = Goal::SynthValue(second);
+                    continue 'expand;
+                },
+                // **The seam gate.** The carriers agree and the first flow's
+                // target meets the second's source; a feedback seam is a
+                // cycle and is refused by name.
+                | Frame::ThenSecond { then, first } => {
+                    let second_type = produced.value_type()?;
+                    let Value::Then {
+                        first: earlier,
+                        second,
+                        seam,
+                    } = *read_value(arena, then)?
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let composite = crate::flow_universe::compose(
+                        arena,
+                        (first, second_type),
+                        seam,
+                        (earlier, second),
+                    )
+                    .map_err(KernelError::Flow)?;
+                    produced = Produced::ValueType(composite);
+                },
+                // A ride forms its motive over the flow's carrier, passes the
+                // covariance gate, checks its value at the motive's source
+                // instance and returns at its target instance.
+                | Frame::Ride(ride) => {
+                    let flow_type = produced.value_type()?;
+                    let Some(&Computation::Ride { motive, value, .. }) = arena.computation(ride)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let ends =
+                        crate::flow_universe::ends(arena, flow_type).map_err(KernelError::Flow)?;
+                    let mut scoped = context.clone();
+                    scoped.push(ends.carrier);
+                    let _level = type_level(
+                        arena,
+                        judgement,
+                        TypeLevelGoal::Value(motive),
+                        scoped,
+                        Recording {
+                            memo,
+                            session,
+                            census,
+                            owed,
+                        },
+                    )?;
+                    crate::flow_universe::check_motive(
+                        arena,
+                        motive,
+                        gandr_kernel_term::DeBruijnIndex::from(0_u32),
+                        crate::replay::ReplayBudget::DEFAULT,
+                    )
+                    .map_err(KernelError::Flow)?;
+                    let (table, rewrites) = session.rewrite_parts();
+                    let source = substitute_value_type(arena, table, rewrites, motive, ends.source);
+                    let target = substitute_value_type(arena, table, rewrites, motive, ends.target);
+                    frames.push(Frame::ProduceComp(arena.comp_type_returner(target)));
+                    goal = Goal::CheckValue(value, source);
+                    continue 'expand;
+                },
+                // A telescope ride forms its motive, reads the flow's carrier
+                // as the motive's first entry, passes the gate in both entries,
+                // and checks the start in the family's fibre over the flow's
+                // source.
+                | Frame::TelescopeRideFlow(ride) => {
+                    let flow_type = produced.value_type()?;
+                    let Some(&Computation::TelescopeRide { motive, start, .. }) =
+                        arena.computation(ride)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let Maybe::Present(crate::element_identity::Telescope {
+                        carrier,
+                        family,
+                        body,
+                    }) = crate::element_identity::telescope(arena, motive)?
+                    else {
+                        return Err(comp_shape_mismatch(
+                            arena,
+                            ExpectedComputationShape::Telescope,
+                            motive,
+                        ));
+                    };
+                    let _level = type_level(
+                        arena,
+                        judgement,
+                        TypeLevelGoal::Comp(motive),
+                        context.clone(),
+                        Recording {
+                            memo,
+                            session,
+                            census,
+                            owed,
+                        },
+                    )?;
+                    let ends =
+                        crate::flow_universe::ends(arena, flow_type).map_err(KernelError::Flow)?;
+                    if let Err(mismatch) = former::assignable(arena, carrier, ends.carrier) {
+                        let reading = read_returned(
+                            arena,
+                            judgement,
+                            ConversionGoal::ValueType(carrier, ends.carrier),
+                        )?;
+                        if reading != EndpointReading::Converts {
+                            return Err(mismatch);
+                        }
+                    }
+                    for (entry, binder) in [(family, 0_u32), (body, 0_u32), (body, 1_u32)] {
+                        crate::flow_universe::check_motive(
+                            arena,
+                            entry,
+                            gandr_kernel_term::DeBruijnIndex::from(binder),
+                            crate::replay::ReplayBudget::DEFAULT,
+                        )
+                        .map_err(KernelError::Flow)?;
+                    }
+                    let (table, rewrites) = session.rewrite_parts();
+                    let source_fibre =
+                        substitute_value_type(arena, table, rewrites, family, ends.source);
+                    frames.push(Frame::TelescopeRideStart {
+                        ride,
+                        ends: (ends.source, ends.target),
+                    });
+                    goal = Goal::CheckValue(start, source_fibre);
+                    continue 'expand;
+                },
+                | Frame::TelescopeRideStart { ride, ends } => {
+                    let Some(&Computation::TelescopeRide { over, .. }) = arena.computation(ride)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    frames.push(Frame::TelescopeRideOver { ride, ends });
+                    goal = Goal::SynthValue(over);
+                    continue 'expand;
+                },
+                // **The dependency is respected or refused by name.** The
+                // second flow lies over the first: it runs, in the fibre at
+                // the flow's target, from the start ridden along the flow to
+                // some element. The value then checks at the body instantiated
+                // at the source pair and returns at the target pair.
+                | Frame::TelescopeRideOver {
+                    ride,
+                    ends: (left, right),
+                } => {
+                    let over_type = produced.value_type()?;
+                    let Some(&Computation::TelescopeRide {
+                        motive,
+                        flow,
+                        start,
+                        value,
+                        ..
+                    }) = arena.computation(ride)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let Maybe::Present(crate::element_identity::Telescope { family, body, .. }) =
+                        crate::element_identity::telescope(arena, motive)?
+                    else {
+                        return Err(comp_shape_mismatch(
+                            arena,
+                            ExpectedComputationShape::Telescope,
+                            motive,
+                        ));
+                    };
+                    let finish = crate::flow_universe::ends(arena, over_type)
+                        .map_err(KernelError::Flow)?
+                        .target;
+                    let (table, rewrites) = session.rewrite_parts();
+                    let target_fibre = substitute_value_type(arena, table, rewrites, family, right);
+                    let carried = arena.computation_ride(family, flow, start);
+                    let carried = arena.value_returned(carried);
+                    let lies_over = arena.value_type_flow(target_fibre, carried, finish);
+                    if former::assignable(arena, lies_over, over_type).is_err() {
+                        let reading = read_returned(
+                            arena,
+                            judgement,
+                            ConversionGoal::ValueType(lies_over, over_type),
+                        )?;
+                        if reading != EndpointReading::Converts {
+                            return Err(KernelError::Identity(
+                                crate::element_identity::IdentityError::NotOver {
+                                    expected: value_type_witness(arena, lies_over),
+                                    actual: value_type_witness(arena, over_type),
+                                },
+                            ));
+                        }
+                    }
+                    let (table, rewrites) = session.rewrite_parts();
+                    let source = crate::element_identity::telescope_instance(
+                        arena,
+                        table,
+                        rewrites,
+                        body,
+                        (left, start),
+                    );
+                    let target = crate::element_identity::telescope_instance(
+                        arena,
+                        table,
+                        rewrites,
+                        body,
+                        (right, finish),
+                    );
+                    frames.push(Frame::ProduceComp(arena.comp_type_returner(target)));
+                    goal = Goal::CheckValue(value, source);
+                    continue 'expand;
+                },
                 // A related application reads its function identity's domain
                 // as a pure arrow, checks both arguments and their evidence,
                 // then synthesizes its body under both results and their
@@ -3487,6 +3964,9 @@ where
                     goal = Goal::CheckValue(second, second_type);
                     continue 'expand;
                 },
+                // At the level-zero universe `Flow(U₀, x, y)` and `Flow_U(x,
+                // y)` are two readings of one classifier: a flow synthesizing
+                // either checks at the other.
                 | Frame::ConvertValue(expected) => {
                     let synthesized = produced.value_type()?;
                     if let Err(mismatch) = former::assignable(arena, expected, synthesized) {
@@ -3495,7 +3975,10 @@ where
                             judgement,
                             ConversionGoal::ValueType(expected, synthesized),
                         )?;
-                        if reading != EndpointReading::Converts {
+                        if reading != EndpointReading::Converts
+                            && crate::flow_universe::agree(arena, synthesized, expected)
+                                == crate::flow_universe::Agreement::Differ
+                        {
                             return Err(mismatch);
                         }
                     }
@@ -4118,6 +4601,7 @@ where
                 | ValueType::Element { .. }
                 | ValueType::Abstract(_)
                 | ValueType::Path { .. }
+                | ValueType::Flow { .. }
                 | ValueType::StaticPi { .. } => {
                     return Err(KernelError::AbstractTypeKindNotUniverse {
                         actual: value_type_witness(arena, kind),

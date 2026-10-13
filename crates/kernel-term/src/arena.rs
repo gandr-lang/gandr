@@ -864,9 +864,11 @@ impl TermArena
         requires: match value {
             Value::Constructor { datatype, ref fields, .. } => self.value_type(datatype).is_some() && fields.iter().all(|field| self.value(*field).is_some()),
             Value::Record(ref fields) => fields.values().all(|field| self.value(*field).is_some()),
-            Value::ListCons(first, second) | Value::StaticApplication(first, second) | Value::PathProduct(first, second) => self.value(first).is_some() && self.value(second).is_some(),
+            Value::ListCons(first, second) | Value::StaticApplication(first, second) | Value::PathProduct(first, second) | Value::Then { first, second, .. } => self.value(first).is_some() && self.value(second).is_some(),
             Value::Tuple(ref components) => components.iter().all(|component| self.value(*component).is_some()),
-            Value::Injection(_, body) | Value::Lift { body, .. } | Value::PathRefl(body) | Value::Here { point: body, .. } => self.value(body).is_some(),
+            Value::Injection(_, body) | Value::Lift { body, .. } | Value::PathRefl(body) | Value::Here { point: body, .. } | Value::Stay { point: body, .. } => self.value(body).is_some(),
+            Value::ForwardFlow { flow_type, translator, ref outputs, .. } => self.value_type(flow_type).is_some() && self.value(translator).is_some() && outputs.iter().all(|output| self.value(*output).is_some()),
+            Value::FunctionFlow { flow_type, domain, codomain } => self.value_type(flow_type).is_some() && self.value(domain).is_some() && self.value(codomain).is_some(),
             Value::Higher { ref evidence, .. } => evidence.iter().all(|item| self.value(*item).is_some()),
             Value::HigherEvaluation { ref components, .. } => components.iter().all(|component| self.value(component.left).is_some() && self.value(component.right).is_some() && self.value(component.evidence).is_some()),
             Value::QuantifiedEvaluation { ref children, .. } => children.iter().all(|item| self.value(*item).is_some()),
@@ -923,8 +925,8 @@ impl TermArena
             Computation::Application(head, argument) => self.computation(head).is_some() && self.value(argument).is_some(),
             Computation::Return(value) | Computation::Force(value) => self.value(value).is_some(),
             Computation::Transport(path, value) => self.value(path).is_some() && self.value(value).is_some(),
-            Computation::PathTransport { motive, path, value } => self.value_type(motive).is_some() && self.value(path).is_some() && self.value(value).is_some(),
-            Computation::TelescopeTransport { motive, path, start, over, value } => self.comp_type(motive).is_some() && self.value(path).is_some() && self.value(start).is_some() && self.value(over).is_some() && self.value(value).is_some(),
+            Computation::PathTransport { motive, path, value } | Computation::Ride { motive, flow: path, value } => self.value_type(motive).is_some() && self.value(path).is_some() && self.value(value).is_some(),
+            Computation::TelescopeTransport { motive, path, start, over, value } | Computation::TelescopeRide { motive, flow: path, start, over, value } => self.comp_type(motive).is_some() && self.value(path).is_some() && self.value(start).is_some() && self.value(over).is_some() && self.value(value).is_some(),
             Computation::RelatedApplication { path, left, right, evidence, body } => self.value(path).is_some() && self.value(left).is_some() && self.value(right).is_some() && self.value(evidence).is_some() && self.computation(body).is_some(),
             Computation::Bind(bound, body) | Computation::With(bound, body) => self.computation(bound).is_some() && self.computation(body).is_some(),
             Computation::Project(_, pair) => self.computation(pair).is_some(),
@@ -976,7 +978,7 @@ impl TermArena
             ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.iter().all(|part| self.value_type(*part).is_some()),
             ValueType::StaticPi { domain: first, codomain: second } => self.value_type(first).is_some() && self.value_type(second).is_some(),
             ValueType::PathUniverse(first, second) | ValueType::FlowUniverse(first, second) => self.value(first).is_some() && self.value(second).is_some(),
-            ValueType::Path { domain, left, right } => self.value_type(domain).is_some() && self.value(left).is_some() && self.value(right).is_some(),
+            ValueType::Path { domain, left, right } | ValueType::Flow { domain, source: left, target: right } => self.value_type(domain).is_some() && self.value(left).is_some() && self.value(right).is_some(),
             ValueType::Thunk(body) => self.comp_type(body).is_some(),
             ValueType::Session { payloads, .. } => self.value_type(payloads).is_some(),
             ValueType::Lift { inner, .. } | ValueType::List(inner) => self.value_type(inner).is_some(),
@@ -2531,6 +2533,172 @@ impl TermArena
         self.alloc_value(Value::Here { point, dialogues })
     }
 
+    /// Mint `Flow(A, x, y)` without claiming that it forms.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_flow(
+        &mut self,
+        domain: ValueTypeId,
+        source: ValueId,
+        target: ValueId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Flow {
+            domain,
+            source,
+            target,
+        })
+    }
+
+    /// Mint directed reflexivity `stay(a)` with no endpoint dialogue, without
+    /// claiming that it checks.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: appends a `stay` over `point` whose two dialogues are empty,
+    ///   sharing the arena's one empty payload.
+    /// - provides: the reflexivity the kernel mints itself, and any whose point
+    ///   is its endpoints as written.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a minted `stay` holds its point and no dialogue, and
+    ///   decoding a `stay` whose dialogues are empty mints it, where one
+    ///   carrying a decision keeps that decision on its side.
+    /// - witness: `decode::tests::flow_nodes_round_trip_and_refuse_their_malformed_sites`
+    #[spec(ensures: |ret| matches!(self.value(ret), Some(Value::Stay { point: held, dialogues })
+        if *held == point && dialogues.left.is_empty() && dialogues.right.is_empty()))]
+    #[inline]
+    pub fn value_stay(
+        &mut self,
+        point: ValueId,
+    ) -> ValueId
+    {
+        let dialogues = alloc::sync::Arc::clone(&self.unrelated);
+        self.alloc_value(Value::Stay { point, dialogues })
+    }
+
+    /// Mint `stay(a)` with the dialogues relating its point to each endpoint,
+    /// without claiming that it checks.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_stay_relating(
+        &mut self,
+        point: ValueId,
+        dialogues: alloc::sync::Arc<crate::EndpointDialogues>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Stay { point, dialogues })
+    }
+
+    /// Mint an untrusted forward flow: one image and one dialogue per source
+    /// pattern.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_forward_flow(
+        &mut self,
+        flow_type: ValueTypeId,
+        translator: ValueId,
+        outputs: alloc::boxed::Box<[ValueId]>,
+        dialogues: alloc::sync::Arc<[crate::Dialogue]>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::ForwardFlow {
+            flow_type,
+            translator,
+            outputs,
+            dialogues,
+        })
+    }
+
+    /// Mint an untrusted function flow over two boundary flows.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_function_flow(
+        &mut self,
+        flow_type: ValueTypeId,
+        domain: ValueId,
+        codomain: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::FunctionFlow {
+            flow_type,
+            domain,
+            codomain,
+        })
+    }
+
+    /// Mint the composition `then(first, second)` over a seam, without
+    /// claiming that it checks.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_then(
+        &mut self,
+        first: ValueId,
+        second: ValueId,
+        seam: crate::Seam,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Then {
+            first,
+            second,
+            seam,
+        })
+    }
+
+    /// Mint the directed transport `ride` without claiming that it checks.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_ride(
+        &mut self,
+        motive: ValueTypeId,
+        flow: ValueId,
+        value: ValueId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Ride {
+            motive,
+            flow,
+            value,
+        })
+    }
+
+    /// Mint the directed transport over a two-entry telescope without
+    /// claiming that it checks.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_telescope_ride(
+        &mut self,
+        motive: CompTypeId,
+        flow: ValueId,
+        start: ValueId,
+        over: ValueId,
+        value: ValueId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::TelescopeRide {
+            motive,
+            flow,
+            start,
+            over,
+            value,
+        })
+    }
+
     /// Mint a returned endpoint over an already-allocated computation, without
     /// claiming that it returns.
     ///
@@ -2710,11 +2878,13 @@ Value::Tuple(ref components) => ret.iter().copied().eq(components.iter().copied(
 Value::PathEquiv { path_type, forward, backward, .. } =>
                 ret.as_slice() == [AnyNode::ValueType(path_type), AnyNode::Value(forward), AnyNode::Value(backward)],
 Value::SessionPath { path_type: classifier, payload_paths, .. } | Value::SessionFlow { flow_type: classifier, payload_paths, .. } => ret.as_slice() == [AnyNode::ValueType(classifier), AnyNode::Value(payload_paths)],
-Value::PathRefl(code) | Value::Here { point: code, .. } => ret.as_slice() == [AnyNode::Value(code)],
+Value::PathRefl(code) | Value::Here { point: code, .. } | Value::Stay { point: code, .. } => ret.as_slice() == [AnyNode::Value(code)],
+Value::ForwardFlow { flow_type, translator, ref outputs, .. } => ret.iter().copied().eq([AnyNode::ValueType(flow_type), AnyNode::Value(translator)].into_iter().chain(outputs.iter().copied().map(AnyNode::Value))),
+Value::FunctionFlow { flow_type, domain, codomain } => ret.as_slice() == [AnyNode::ValueType(flow_type), AnyNode::Value(domain), AnyNode::Value(codomain)],
 Value::Higher { ref evidence, .. } => ret.iter().copied().eq(evidence.iter().copied().map(AnyNode::Value)),
 Value::HigherEvaluation { ref components, .. } => ret.iter().copied().eq(components.iter().flat_map(|component| [AnyNode::Value(component.left), AnyNode::Value(component.right), AnyNode::Value(component.evidence)])),
 Value::QuantifiedEvaluation { ref children, .. } => ret.iter().copied().eq(children.iter().copied().map(AnyNode::Value)),
-Value::ListCons(first, second) | Value::PathProduct(first, second) | Value::StaticApplication(first, second) =>
+Value::ListCons(first, second) | Value::PathProduct(first, second) | Value::StaticApplication(first, second) | Value::Then { first, second, .. } =>
                 ret.as_slice() == [AnyNode::Value(first), AnyNode::Value(second)],
 Value::Injection(_, body) | Value::Lift { body, .. } =>
                 ret.as_slice() == [AnyNode::Value(body)],
@@ -2728,8 +2898,8 @@ Value::QuoteComputation(quoted) => ret.as_slice() == [AnyNode::CompType(quoted)]
             None => ret.is_empty(),
             Some(&Computation::ListFold { element, result, list, on_nil, on_cons }) => ret.as_slice() == [AnyNode::ValueType(element), AnyNode::ValueType(result), AnyNode::Value(list), AnyNode::Computation(on_nil), AnyNode::Computation(on_cons)],
             Some(&Computation::Transport(path, value)) => ret.as_slice() == [AnyNode::Value(path), AnyNode::Value(value)],
-            Some(&Computation::PathTransport { motive, path, value }) => ret.as_slice() == [AnyNode::ValueType(motive), AnyNode::Value(path), AnyNode::Value(value)],
-            Some(&Computation::TelescopeTransport { motive, path, start, over, value }) => ret.as_slice() == [AnyNode::CompType(motive), AnyNode::Value(path), AnyNode::Value(start), AnyNode::Value(over), AnyNode::Value(value)],
+            Some(&(Computation::PathTransport { motive, path, value } | Computation::Ride { motive, flow: path, value })) => ret.as_slice() == [AnyNode::ValueType(motive), AnyNode::Value(path), AnyNode::Value(value)],
+            Some(&(Computation::TelescopeTransport { motive, path, start, over, value } | Computation::TelescopeRide { motive, flow: path, start, over, value })) => ret.as_slice() == [AnyNode::CompType(motive), AnyNode::Value(path), AnyNode::Value(start), AnyNode::Value(over), AnyNode::Value(value)],
             Some(&Computation::RelatedApplication { path, left, right, evidence, body }) => ret.as_slice() == [AnyNode::Value(path), AnyNode::Value(left), AnyNode::Value(right), AnyNode::Value(evidence), AnyNode::Computation(body)],
             Some(&Computation::Lambda(body) | &Computation::Fixpoint { body, .. }) => ret.as_slice() == [AnyNode::Computation(body)],
             Some(&Computation::Application(head, argument)) =>
@@ -2751,7 +2921,7 @@ ValueType::StaticPi { domain: first, codomain: second } =>
                 ret.as_slice() == [AnyNode::ValueType(first), AnyNode::ValueType(second)],
 ValueType::Session { payloads, .. } => ret.as_slice() == [AnyNode::ValueType(payloads)],
 ValueType::PathUniverse(source, target) | ValueType::FlowUniverse(source, target) => ret.as_slice() == [AnyNode::Value(source), AnyNode::Value(target)],
-ValueType::Path { domain, left, right } => ret.as_slice() == [AnyNode::ValueType(domain), AnyNode::Value(left), AnyNode::Value(right)],
+ValueType::Path { domain, left, right } | ValueType::Flow { domain, source: left, target: right } => ret.as_slice() == [AnyNode::ValueType(domain), AnyNode::Value(left), AnyNode::Value(right)],
 ValueType::Thunk(body) => ret.as_slice() == [AnyNode::CompType(body)],
 ValueType::Lift { inner, .. } | ValueType::List(inner) => ret.as_slice() == [AnyNode::ValueType(inner)],
 ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
@@ -2819,8 +2989,31 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                     children.push(AnyNode::ValueType(path_type));
                     children.push(AnyNode::Value(payload_paths));
                 },
-                | Some(&Value::PathRefl(code) | &Value::Here { point: code, .. }) => {
+                | Some(
+                    &Value::PathRefl(code)
+                    | &Value::Here { point: code, .. }
+                    | &Value::Stay { point: code, .. },
+                ) => {
                     children.push(AnyNode::Value(code));
+                },
+                | Some(&Value::ForwardFlow {
+                    flow_type,
+                    translator,
+                    ref outputs,
+                    ..
+                }) => {
+                    children.push(AnyNode::ValueType(flow_type));
+                    children.push(AnyNode::Value(translator));
+                    children.extend(outputs.iter().copied().map(AnyNode::Value));
+                },
+                | Some(&Value::FunctionFlow {
+                    flow_type,
+                    domain,
+                    codomain,
+                }) => {
+                    children.push(AnyNode::ValueType(flow_type));
+                    children.push(AnyNode::Value(domain));
+                    children.push(AnyNode::Value(codomain));
                 },
                 | Some(
                     &Value::Higher {
@@ -2846,7 +3039,8 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                 | Some(
                     &Value::PathProduct(first, second)
                     | &Value::ListCons(first, second)
-                    | &Value::StaticApplication(first, second),
+                    | &Value::StaticApplication(first, second)
+                    | &Value::Then { first, second, .. },
                 ) => {
                     children.push(AnyNode::Value(first));
                     children.push(AnyNode::Value(second));
@@ -2897,24 +3091,40 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                     children.push(AnyNode::Value(path));
                     children.push(AnyNode::Value(value));
                 },
-                | Some(&Computation::PathTransport {
-                    motive,
-                    path,
-                    value,
-                }) => {
+                | Some(
+                    &Computation::PathTransport {
+                        motive,
+                        path,
+                        value,
+                    }
+                    | &Computation::Ride {
+                        motive,
+                        flow: path,
+                        value,
+                    },
+                ) => {
                     children.extend([
                         AnyNode::ValueType(motive),
                         AnyNode::Value(path),
                         AnyNode::Value(value),
                     ]);
                 },
-                | Some(&Computation::TelescopeTransport {
-                    motive,
-                    path,
-                    start,
-                    over,
-                    value,
-                }) => {
+                | Some(
+                    &Computation::TelescopeTransport {
+                        motive,
+                        path,
+                        start,
+                        over,
+                        value,
+                    }
+                    | &Computation::TelescopeRide {
+                        motive,
+                        flow: path,
+                        start,
+                        over,
+                        value,
+                    },
+                ) => {
                     children.extend([
                         AnyNode::CompType(motive),
                         AnyNode::Value(path),
@@ -2995,11 +3205,18 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                     children.push(AnyNode::Value(source));
                     children.push(AnyNode::Value(target));
                 },
-                | Some(&ValueType::Path {
-                    domain,
-                    left,
-                    right,
-                }) => {
+                | Some(
+                    &ValueType::Path {
+                        domain,
+                        left,
+                        right,
+                    }
+                    | &ValueType::Flow {
+                        domain,
+                        source: left,
+                        target: right,
+                    },
+                ) => {
                     children.extend([
                         AnyNode::ValueType(domain),
                         AnyNode::Value(left),

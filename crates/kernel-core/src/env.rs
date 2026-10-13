@@ -1861,7 +1861,11 @@ fn collect_reachable(
                     pending.push(AnyNode::ValueType(path_type));
                     pending.push(AnyNode::Value(payload_paths));
                 },
-                | Some(&Value::PathRefl(code) | &Value::Here { point: code, .. }) => {
+                | Some(
+                    &Value::PathRefl(code)
+                    | &Value::Here { point: code, .. }
+                    | &Value::Stay { point: code, .. },
+                ) => {
                     pending.push(AnyNode::Value(code));
                 },
                 | Some(
@@ -1882,10 +1886,30 @@ fn collect_reachable(
                         .flat_map(|component| [component.left, component.right, component.evidence])
                         .map(AnyNode::Value),
                 ),
+                | Some(&Value::ForwardFlow {
+                    flow_type,
+                    translator,
+                    ref outputs,
+                    ..
+                }) => {
+                    pending.push(AnyNode::ValueType(flow_type));
+                    pending.push(AnyNode::Value(translator));
+                    pending.extend(outputs.iter().copied().map(AnyNode::Value));
+                },
+                | Some(&Value::FunctionFlow {
+                    flow_type,
+                    domain,
+                    codomain,
+                }) => {
+                    pending.push(AnyNode::ValueType(flow_type));
+                    pending.push(AnyNode::Value(domain));
+                    pending.push(AnyNode::Value(codomain));
+                },
                 | Some(
                     &Value::PathProduct(first, second)
                     | &Value::ListCons(first, second)
-                    | &Value::StaticApplication(first, second),
+                    | &Value::StaticApplication(first, second)
+                    | &Value::Then { first, second, .. },
                 ) => {
                     pending.push(AnyNode::Value(first));
                     pending.push(AnyNode::Value(second));
@@ -1937,22 +1961,38 @@ fn collect_reachable(
                     pending.push(AnyNode::Value(path));
                     pending.push(AnyNode::Value(value));
                 },
-                | Some(&Computation::PathTransport {
-                    motive,
-                    path,
-                    value,
-                }) => {
+                | Some(
+                    &Computation::PathTransport {
+                        motive,
+                        path,
+                        value,
+                    }
+                    | &Computation::Ride {
+                        motive,
+                        flow: path,
+                        value,
+                    },
+                ) => {
                     pending.push(AnyNode::ValueType(motive));
                     pending.push(AnyNode::Value(path));
                     pending.push(AnyNode::Value(value));
                 },
-                | Some(&Computation::TelescopeTransport {
-                    motive,
-                    path,
-                    start,
-                    over,
-                    value,
-                }) => {
+                | Some(
+                    &Computation::TelescopeTransport {
+                        motive,
+                        path,
+                        start,
+                        over,
+                        value,
+                    }
+                    | &Computation::TelescopeRide {
+                        motive,
+                        flow: path,
+                        start,
+                        over,
+                        value,
+                    },
+                ) => {
                     pending.extend([
                         AnyNode::CompType(motive),
                         AnyNode::Value(path),
@@ -2027,11 +2067,18 @@ fn collect_reachable(
                 },
                 // The domain is a type; the endpoints cross into the term
                 // language and follow only where codes do.
-                | Some(&ValueType::Path {
-                    domain,
-                    left,
-                    right,
-                }) => {
+                | Some(
+                    &ValueType::Path {
+                        domain,
+                        left,
+                        right,
+                    }
+                    | &ValueType::Flow {
+                        domain,
+                        source: left,
+                        target: right,
+                    },
+                ) => {
                     pending.push(AnyNode::ValueType(domain));
                     if follow {
                         pending.push(AnyNode::Value(left));

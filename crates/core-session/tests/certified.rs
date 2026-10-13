@@ -27,11 +27,7 @@ use gandr_kernel_core::Environment;
 use gandr_kernel_core::KernelError;
 use gandr_kernel_core::ReplayBudget;
 use gandr_kernel_core::convertible_value_types;
-use gandr_kernel_core::flow_universe::Certificate;
 use gandr_kernel_core::flow_universe::Family;
-use gandr_kernel_core::flow_universe::Flow;
-use gandr_kernel_core::flow_universe::FlowError;
-use gandr_kernel_core::flow_universe::Flows;
 use gandr_kernel_core::flow_universe::form_certificate;
 use gandr_kernel_core::session::SessionError;
 use gandr_kernel_term::BaseType;
@@ -136,21 +132,19 @@ fn assert_admission(
     assert_eq!(&environment.add_decl(staged).map(|_| ()), expected);
 }
 
-/// Push a candidate simulation as a native `Flow_U` introduction.
+/// Mint a candidate simulation as a native `Flow_U` introduction.
 ///
 /// # Specification
 /// trivial.
 fn native_flow(
     arena: &mut TermArena,
-    flows: &mut Flows,
     codes: (gandr_kernel_term::ValueId, gandr_kernel_term::ValueId),
     evidence: Evidence,
-) -> gandr_kernel_core::flow_universe::FlowId
+) -> gandr_kernel_term::ValueId
 {
     let classifier = arena.value_type_flow_universe(codes.0, codes.1);
     let proofs = arena.value_unit();
-    let value = arena.value_session_flow(classifier, Arc::new(evidence), proofs);
-    flows.push(Flow::Session(value)).expect("raw simulation")
+    arena.value_session_flow(classifier, Arc::new(evidence), proofs)
 }
 
 #[test]
@@ -214,16 +208,13 @@ fn seat_and_generator_identity_witnesses()
     let gen_code = encode(&mut arena, &generator, &payloads).expect("generator code");
     let twice = peer.dual();
     let peer_code = encode(&mut arena, &twice, &payloads).expect("dual peer code");
-    let mut flows = Flows::new();
     let forward = native_flow(
         &mut arena,
-        &mut flows,
         (gen_code, peer_code),
         evidence(&generator, &twice, Relation::Subtype),
     );
     let backward = native_flow(
         &mut arena,
-        &mut flows,
         (peer_code, gen_code),
         evidence(&twice, &generator, Relation::Subtype),
     );
@@ -245,8 +236,7 @@ fn seat_and_generator_identity_witnesses()
     ];
     let out = transport(
         &mut arena,
-        &flows,
-        Certificate::Flow(forward),
+        forward,
         (gen_protocol, peer_protocol),
         &run,
         ReplayBudget::DEFAULT,
@@ -254,8 +244,7 @@ fn seat_and_generator_identity_witnesses()
     .expect("forward generator run");
     let back = transport(
         &mut arena,
-        &flows,
-        Certificate::Flow(backward),
+        backward,
         (peer_protocol, gen_protocol),
         &out,
         ReplayBudget::DEFAULT,
@@ -284,13 +273,7 @@ fn recorded_runs_transport_only_forward()
         payloads: &payloads,
     };
     let evidence = evidence(&old, &wide, Relation::Subtype);
-    let mut flows = Flows::new();
-    let flow = native_flow(
-        &mut arena,
-        &mut flows,
-        (old_code, wide_code),
-        evidence.clone(),
-    );
+    let flow = native_flow(&mut arena, (old_code, wide_code), evidence.clone());
     let runs = [
         vec![
             Move::Receive(payload(DISPATCH)),
@@ -319,8 +302,7 @@ fn recorded_runs_transport_only_forward()
         let before = arena.watermark();
         let out = transport(
             &mut arena,
-            &flows,
-            Certificate::Flow(flow),
+            flow,
             (old_protocol, wide_protocol),
             run,
             ReplayBudget::DEFAULT,
@@ -342,8 +324,7 @@ fn recorded_runs_transport_only_forward()
     assert!(matches!(
         transport(
             &mut arena,
-            &flows,
-            Certificate::Flow(flow),
+            flow,
             (wide_protocol, old_protocol),
             &pause,
             ReplayBudget::DEFAULT
@@ -361,17 +342,16 @@ fn recorded_runs_transport_only_forward()
             .collect(),
         payloads: Vec::new(),
     };
-    let reverse = native_flow(&mut arena, &mut flows, (wide_code, old_code), inverse);
+    let reverse = native_flow(&mut arena, (wide_code, old_code), inverse);
     assert!(matches!(
         transport(
             &mut arena,
-            &flows,
-            Certificate::Flow(reverse),
+            reverse,
             (wide_protocol, old_protocol),
             &pause,
             ReplayBudget::DEFAULT
         ),
-        Err(TransportError::Flow(FlowError::Session(
+        Err(TransportError::Flow(KernelError::Session(
             SessionError::WrongLabels(StatePair {
                 source: State(2),
                 target: State(2)
@@ -393,8 +373,7 @@ fn recorded_runs_transport_only_forward()
     assert!(matches!(
         transport(
             &mut arena,
-            &flows,
-            Certificate::Flow(flow),
+            flow,
             (wrong, wide_protocol),
             &runs[0],
             ReplayBudget::DEFAULT
@@ -409,8 +388,7 @@ fn recorded_runs_transport_only_forward()
     assert!(matches!(
         transport(
             &mut arena,
-            &flows,
-            Certificate::Flow(flow),
+            flow,
             (wrong, wide_protocol),
             &runs[0],
             ReplayBudget::DEFAULT
@@ -431,7 +409,7 @@ fn recorded_runs_transport_only_forward()
     let source_code = encode(&mut arena, &source, &payloads).expect("offers source");
     let target_code = encode(&mut arena, &target, &payloads).expect("offers target");
     let relation = self::evidence(&source, &target, Relation::Subtype);
-    let flow = native_flow(&mut arena, &mut flows, (source_code, target_code), relation);
+    let flow = native_flow(&mut arena, (source_code, target_code), relation);
     let protocols = (
         Protocol {
             session: &source,
@@ -446,8 +424,7 @@ fn recorded_runs_transport_only_forward()
     );
     let accepted = transport(
         &mut arena,
-        &flows,
-        Certificate::Flow(flow),
+        flow,
         protocols,
         &[Move::Offer("keep".into()), Move::End],
         ReplayBudget::DEFAULT,
@@ -457,8 +434,7 @@ fn recorded_runs_transport_only_forward()
     assert!(matches!(
         transport(
             &mut arena,
-            &flows,
-            Certificate::Flow(flow),
+            flow,
             protocols,
             &[Move::Offer("removed".into()), Move::End],
             ReplayBudget::DEFAULT
@@ -468,14 +444,8 @@ fn recorded_runs_transport_only_forward()
             reason: Refusal::WrongLabel
         })
     ));
-    let classifier = form_certificate(
-        &mut arena,
-        &flows,
-        Certificate::Flow(flow),
-        Family::Flow,
-        ReplayBudget::DEFAULT,
-    )
-    .expect("offer flow remains formed");
+    let classifier = form_certificate(&mut arena, flow, Family::Flow, ReplayBudget::DEFAULT)
+        .expect("offer flow remains formed");
     let gandr_kernel_core::flow_universe::CertificateType::Flow(classifier) = classifier
     else {
         panic!("flow family")

@@ -696,6 +696,8 @@ fn converge(
                         stack.push(ConversionGoal::Value(a, c));
                         stack.push(ConversionGoal::Value(b, d));
                     },
+                    // Path and Flow never convert to each other: each pair
+                    // below names one family on both sides.
                     | (
                         &ValueType::Path {
                             domain: one_domain,
@@ -706,6 +708,18 @@ fn converge(
                             domain: other_domain,
                             left: other_left,
                             right: other_right,
+                        },
+                    )
+                    | (
+                        &ValueType::Flow {
+                            domain: one_domain,
+                            source: one_left,
+                            target: one_right,
+                        },
+                        &ValueType::Flow {
+                            domain: other_domain,
+                            source: other_left,
+                            target: other_right,
                         },
                     ) => {
                         stack.push(ConversionGoal::ValueType(one_domain, other_domain));
@@ -828,6 +842,7 @@ fn converge(
                         | &ValueType::PathUniverse(..)
                         | &ValueType::FlowUniverse(..)
                         | &ValueType::Path { .. }
+                        | &ValueType::Flow { .. }
                         | &ValueType::Base(_)
                         | &ValueType::Product(..)
                         | &ValueType::Sum(..)
@@ -962,7 +977,8 @@ fn converge(
                     // relating a point to its endpoints are evidence about the
                     // term, not part of what it means.
                     | (&Value::PathRefl(one), &Value::PathRefl(other))
-                    | (&Value::Here { point: one, .. }, &Value::Here { point: other, .. }) => {
+                    | (&Value::Here { point: one, .. }, &Value::Here { point: other, .. })
+                    | (&Value::Stay { point: one, .. }, &Value::Stay { point: other, .. }) => {
                         stack.push(ConversionGoal::Value(one, other));
                     },
                     // Two returned endpoints compare by their computations, as
@@ -1006,6 +1022,32 @@ fn converge(
                         stack.push(ConversionGoal::ValueType(one_type, other_type));
                         stack.push(ConversionGoal::Value(one_forward, other_forward));
                         stack.push(ConversionGoal::Value(one_backward, other_backward));
+                    },
+                    // A forward flow is its classifier and translator; the
+                    // replayed images are certificate evidence the translator
+                    // determines, and are erased as round-trip evidence is.
+                    | (
+                        &Value::ForwardFlow { flow_type: one_type, translator: one_map, .. },
+                        &Value::ForwardFlow { flow_type: other_type, translator: other_map, .. },
+                    ) => {
+                        stack.push(ConversionGoal::ValueType(one_type, other_type));
+                        stack.push(ConversionGoal::Value(one_map, other_map));
+                    },
+                    | (
+                        &Value::FunctionFlow { flow_type: one_type, domain: one_domain, codomain: one_codomain },
+                        &Value::FunctionFlow { flow_type: other_type, domain: other_domain, codomain: other_codomain },
+                    ) => {
+                        stack.push(ConversionGoal::ValueType(one_type, other_type));
+                        stack.push(ConversionGoal::Value(one_domain, other_domain));
+                        stack.push(ConversionGoal::Value(one_codomain, other_codomain));
+                    },
+                    | (
+                        &Value::Then { first: one_first, second: one_second, seam: one_seam },
+                        &Value::Then { first: other_first, second: other_second, seam: other_seam },
+                    ) => {
+                        if one_seam != other_seam { return Convertibility::Distinct; }
+                        stack.push(ConversionGoal::Value(one_first, other_first));
+                        stack.push(ConversionGoal::Value(one_second, other_second));
                     },
                     | (&Value::Variable(one), &Value::Variable(other)) => {
                         if one != other {
@@ -1094,7 +1136,8 @@ fn converge(
                     },
                     | (
                         &Value::Constructor { .. } | &Value::Record(_) | &Value::SessionPath { .. } | &Value::SessionFlow { .. } | &Value::PathRefl(_) | &Value::PathProduct(..) | &Value::PathEquiv { .. }
-                        | &Value::Here { .. } | &Value::Returned(_) | &Value::Higher { .. } | &Value::HigherEvaluation { .. } | &Value::QuantifiedEvaluation { .. }
+                        | &Value::Here { .. } | &Value::Stay { .. } | &Value::ForwardFlow { .. } | &Value::FunctionFlow { .. } | &Value::Then { .. }
+                        | &Value::Returned(_) | &Value::Higher { .. } | &Value::HigherEvaluation { .. } | &Value::QuantifiedEvaluation { .. }
                         | &Value::Variable(_)
                         | &Value::Constant(_)
                         | &Value::ListNil | &Value::ListCons(..)
@@ -1202,6 +1245,18 @@ fn converge(
                             path: other_path,
                             value: other_value,
                         },
+                    )
+                    | (
+                        &Computation::Ride {
+                            motive: one_motive,
+                            flow: one_path,
+                            value: one_value,
+                        },
+                        &Computation::Ride {
+                            motive: other_motive,
+                            flow: other_path,
+                            value: other_value,
+                        },
                     ) => {
                         stack.push(ConversionGoal::ValueType(one_motive, other_motive));
                         stack.push(ConversionGoal::Value(one_path, other_path));
@@ -1218,6 +1273,22 @@ fn converge(
                         &Computation::TelescopeTransport {
                             motive: other_motive,
                             path: other_path,
+                            start: other_start,
+                            over: other_over,
+                            value: other_value,
+                        },
+                    )
+                    | (
+                        &Computation::TelescopeRide {
+                            motive: one_motive,
+                            flow: one_path,
+                            start: one_start,
+                            over: one_over,
+                            value: one_value,
+                        },
+                        &Computation::TelescopeRide {
+                            motive: other_motive,
+                            flow: other_path,
                             start: other_start,
                             over: other_over,
                             value: other_value,
@@ -1321,6 +1392,8 @@ fn converge(
                         | &Computation::Transport(..)
                         | &Computation::PathTransport { .. }
                         | &Computation::TelescopeTransport { .. }
+                        | &Computation::Ride { .. }
+                        | &Computation::TelescopeRide { .. }
                         | &Computation::RelatedApplication { .. }
                         | &Computation::Lambda(_)
                         | &Computation::Fixpoint { .. }

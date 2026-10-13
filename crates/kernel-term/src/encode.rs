@@ -774,6 +774,7 @@ ensures: |ret| ret.0.as_image().as_ref().first().copied()
             Some(&ValueType::PathUniverse(..)) => tags::NODE_VT_PATH_UNIVERSE,
             Some(&ValueType::FlowUniverse(..)) => tags::NODE_VT_FLOW_UNIVERSE,
             Some(&ValueType::Path { .. }) => tags::NODE_VT_PATH,
+            Some(&ValueType::Flow { .. }) => tags::NODE_VT_FLOW,
             Some(&ValueType::Base(_)) => tags::NODE_VT_BASE,
             Some(&ValueType::Universe { sort: GroundSort::Value, .. }) => tags::NODE_VT_UNIVERSE,
             Some(&ValueType::Universe { sort: GroundSort::Computation, .. }) => {
@@ -801,6 +802,10 @@ ensures: |ret| ret.0.as_image().as_ref().first().copied()
             Some(&Value::Record(_)) => tags::NODE_V_RECORD,
             Some(&Value::SessionPath { .. }) => tags::NODE_V_SESSION_PATH,
             Some(&Value::SessionFlow { .. }) => tags::NODE_V_SESSION_FLOW,
+            Some(&Value::Stay { .. }) => tags::NODE_V_STAY,
+            Some(&Value::ForwardFlow { .. }) => tags::NODE_V_FORWARD_FLOW,
+            Some(&Value::FunctionFlow { .. }) => tags::NODE_V_FUNCTION_FLOW,
+            Some(&Value::Then { .. }) => tags::NODE_V_THEN,
             Some(&Value::PathRefl(_)) => tags::NODE_V_PATH_REFL,
             Some(&Value::PathProduct(..)) => tags::NODE_V_PATH_PRODUCT,
             Some(&Value::PathEquiv { .. }) => tags::NODE_V_PATH_EQUIV,
@@ -829,6 +834,8 @@ ensures: |ret| ret.0.as_image().as_ref().first().copied()
             Some(&Computation::Transport(..)) => tags::NODE_C_TRANSPORT,
             Some(&Computation::PathTransport { .. }) => tags::NODE_C_PATH_TRANSPORT,
             Some(&Computation::TelescopeTransport { .. }) => tags::NODE_C_TELESCOPE_TRANSPORT,
+            Some(&Computation::Ride { .. }) => tags::NODE_C_RIDE,
+            Some(&Computation::TelescopeRide { .. }) => tags::NODE_C_TELESCOPE_RIDE,
             Some(&Computation::RelatedApplication { .. }) => tags::NODE_C_RELATED_APPLICATION,
             None | Some(&Computation::Return(_)) => tags::NODE_C_RETURN,
             Some(&Computation::Lambda(_)) => tags::NODE_C_LAMBDA,
@@ -878,6 +885,7 @@ fn encode_entry(
                 | ValueType::PathUniverse(..) => out.put_tag(tags::NODE_VT_PATH_UNIVERSE),
                 | ValueType::FlowUniverse(..) => out.put_tag(tags::NODE_VT_FLOW_UNIVERSE),
                 | ValueType::Path { .. } => out.put_tag(tags::NODE_VT_PATH),
+                | ValueType::Flow { .. } => out.put_tag(tags::NODE_VT_FLOW),
                 | ValueType::Universe {
                     sort: GroundSort::Value,
                     ref level,
@@ -967,6 +975,23 @@ fn encode_entry(
                     out.put_tag(tags::NODE_V_SESSION_FLOW);
                     evidence.write(|word| out.put_uvarint(WireU64::from(word.0)));
                 },
+                | Value::Stay { ref dialogues, .. } => {
+                    out.put_tag(tags::NODE_V_STAY);
+                    for word in crate::identity::endpoint_words(dialogues) {
+                        out.put_uvarint(WireU64::from(word.0));
+                    }
+                },
+                | Value::ForwardFlow { ref dialogues, .. } => {
+                    out.put_tag(tags::NODE_V_FORWARD_FLOW);
+                    for word in crate::identity::forward_words(dialogues) {
+                        out.put_uvarint(WireU64::from(word.0));
+                    }
+                },
+                | Value::FunctionFlow { .. } => out.put_tag(tags::NODE_V_FUNCTION_FLOW),
+                | Value::Then { seam, .. } => {
+                    out.put_tag(tags::NODE_V_THEN);
+                    out.put_tag(seam_tag(seam));
+                },
                 | Value::PathRefl(_) => out.put_tag(tags::NODE_V_PATH_REFL),
                 | Value::PathProduct(..) => out.put_tag(tags::NODE_V_PATH_PRODUCT),
                 | Value::PathEquiv { ref evidence, .. } => {
@@ -1043,6 +1068,10 @@ fn encode_entry(
             },
             | Some(&Computation::TelescopeTransport { .. }) => {
                 out.put_tag(tags::NODE_C_TELESCOPE_TRANSPORT);
+            },
+            | Some(&Computation::Ride { .. }) => out.put_tag(tags::NODE_C_RIDE),
+            | Some(&Computation::TelescopeRide { .. }) => {
+                out.put_tag(tags::NODE_C_TELESCOPE_RIDE);
             },
             | Some(&Computation::RelatedApplication { .. }) => {
                 out.put_tag(tags::NODE_C_RELATED_APPLICATION);
@@ -1429,6 +1458,34 @@ fn side_tag(side: crate::Side) -> WireTag
     match side {
         | crate::Side::Left => tags::SIDE_LEFT,
         | crate::Side::Right => tags::SIDE_RIGHT,
+    }
+}
+
+/// The wire tag of a composition's seam.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: maps each seam to its frozen tag.
+/// - provides: the total seam-to-tag map, so a seam's byte is decided in one
+///   place rather than at each write site.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes the literal entry bytes of a composition under
+///   each seam; a swapped or dropped seam byte changes the golden.
+/// - witness: `encode::tests::entry_goldens_pin_every_former_and_child_position`
+#[spec(
+    ensures: |ret| ret == match seam {
+        crate::Seam::Sequence => tags::SEAM_SEQUENCE,
+        crate::Seam::Feedback => tags::SEAM_FEEDBACK,
+    },
+)]
+#[inline]
+fn seam_tag(seam: crate::Seam) -> WireTag
+{
+    match seam {
+        | crate::Seam::Sequence => tags::SEAM_SEQUENCE,
+        | crate::Seam::Feedback => tags::SEAM_FEEDBACK,
     }
 }
 
@@ -1846,6 +1903,49 @@ mod tests
                 AnyNode::Computation(arena.computation_project(crate::Side::Right, c0)),
                 &[second],
                 &[0x67, 1, 0x81, 1],
+            ),
+            (
+                AnyNode::ValueType(arena.value_type_flow(t0, v0, v1)),
+                &[first, second, third],
+                &[0x4A, 3, 0x81, 1, 0x80, 0x80, 1],
+            ),
+            (AnyNode::Value(arena.value_stay(v0)), &[first], &[
+                0x4B, 0, 0, 3,
+            ]),
+            (
+                AnyNode::Value(arena.value_forward_flow(
+                    t0,
+                    v0,
+                    [v1].into(),
+                    alloc::sync::Arc::from([Vec::new()]),
+                )),
+                &[first, second, third],
+                &[0x4C, 1, 0, 3, 0x81, 1, 0x80, 0x80, 1],
+            ),
+            (
+                AnyNode::Value(arena.value_function_flow(t0, v0, v1)),
+                &[first, second, third],
+                &[0x4D, 3, 0x81, 1, 0x80, 0x80, 1],
+            ),
+            (
+                AnyNode::Value(arena.value_then(v0, v1, crate::Seam::Sequence)),
+                &[first, second],
+                &[0x4E, 0, 3, 0x81, 1],
+            ),
+            (
+                AnyNode::Value(arena.value_then(v0, v1, crate::Seam::Feedback)),
+                &[first, second],
+                &[0x4E, 1, 3, 0x81, 1],
+            ),
+            (
+                AnyNode::Computation(arena.computation_ride(t0, v0, v1)),
+                &[first, second, third],
+                &[0x4F, 3, 0x81, 1, 0x80, 0x80, 1],
+            ),
+            (
+                AnyNode::Computation(arena.computation_telescope_ride(k0, v0, v1, v0, v1)),
+                &[first, second, third, first, second],
+                &[0x68, 3, 0x81, 1, 0x80, 0x80, 1, 3, 0x81, 1],
             ),
         ];
         for &(node, children, expected) in cases {

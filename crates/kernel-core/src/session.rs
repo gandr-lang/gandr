@@ -42,8 +42,9 @@
 //! consumer rechecks formation, simulation and payload proofs. This is
 //! forward-only evidence with no inverse or Path coercion: a session flow at a
 //! `Path_U` boundary, or a session path at a `Flow_U` one, refuses as
-//! `FamilyMismatch`. CBPV lowering refuses it as `RecordedRunRequired`; the
-//! recorded-run consumer in `gandr-core-session` supplies finite skeleton
+//! `FamilyMismatch`. A ride along it has no endpoint-value action, and
+//! `replay_ride` refuses one as `RecordedRunRequired`; the recorded-run
+//! consumer in `gandr-core-session` supplies finite skeleton
 //! transport. Relation replay terminates over finite supplied data, not an
 //! observation budget that could declare an unfinished relation valid.
 //!

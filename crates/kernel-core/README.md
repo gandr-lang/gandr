@@ -27,8 +27,8 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 - **Type formation.** An iterative walk computing a type's universe level, gating lift strictness, level scope, a sealed atom's kind, and the code a decode of either family owes.
 - **Conversion.** `convert_value_type`, `convert_comp_type` and their `convertible_*` forms: structural comparison of two types, descending into the terms they carry, over `Convertibility`.
 - **Conversion replay.** `replay`: a conversion trace replayed against an engine's `EngineClaim` for two `ReplaySides`, answering a `KernelVerdict` — certified convertible, certified not convertible, or declined with a `ReplayDecline`.
-- **Native formers.** Nominal data and structural records, recursive data with the structural fixpoint, the native List former, universe paths, session codes, and element and function identity (`element_identity`), all through ordinary admission.
-- **Rule languages beside admission.** Universe flows (`flow_universe`), identity and bridge recursion (`identity_recursion`), guarded higher fields (`higher_field`), the experimental stage universe (`stage`) and guarded admission of staging-equation families (`admission`); none of them admits a declaration on its own authority.
+- **Native formers.** Nominal data and structural records, recursive data with the structural fixpoint, the native List former, universe paths, session codes, element and function identity (`element_identity`), and the directed family (`flow_universe`: `Flow`, `stay`, `then`, `ride` and its telescope form, with forward, function and session certificates replayed on readmission), all through ordinary admission.
+- **Rule languages beside admission.** Identity and bridge recursion (`identity_recursion`), guarded higher fields (`higher_field`), the experimental stage universe (`stage`) and guarded admission of staging-equation families (`admission`); none of them admits a declaration on its own authority.
 - **The content key.** `ContentTable`, `encode_support`, `content_digest`, `NodeSupport` and `SupportContext`: content ids, canonical support encodings and their digests.
 - **The rewrites.** `shift_value_type` and `substitute_comp_type`, de Bruijn shifting and substitution as memoized machines.
 - **Accounting.** `ExpansionCensus`: goal expansions and memo recalls per plane, the observation every measurement here is asserted through.
@@ -102,7 +102,7 @@ Mechanism, rule tables, decisions and specification detail live in the rustdoc b
 | The content key, the digest and the binder slice | [`src/encoding.rs`](src/encoding.rs), [`src/support.rs`](src/support.rs) |
 | Shifting and substitution | [`src/rewrite.rs`](src/rewrite.rs) |
 | Universe paths | [`src/path_universe.rs`](src/path_universe.rs) |
-| Universe flows | [`src/flow_universe.rs`](src/flow_universe.rs) |
+| The directed family: formation, `stay`, `then`, `ride` and its telescope form, the covariance gate, certificate admission and the permanent refusals | [`src/flow_universe.rs`](src/flow_universe.rs) |
 | Element and function identity: formation, `here`, transport and its telescope over a dependent motive, higher fields, higher and quantified evaluation | [`src/element_identity.rs`](src/element_identity.rs) |
 | Identity and bridge recursion, function identity | [`src/identity_recursion.rs`](src/identity_recursion.rs), [`src/identity_recursion/recursive.rs`](src/identity_recursion/recursive.rs) |
 | Guarded higher fields | [`src/higher_field.rs`](src/higher_field.rs) |

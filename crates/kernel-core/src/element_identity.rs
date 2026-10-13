@@ -1401,10 +1401,11 @@ where
                 | Some(_) => return Ok(Reduction::Stuck),
                 | None => return Err(KernelError::ArenaFault),
             };
-            Ok(Reduction::Reduced(transport_product(
+            Ok(Reduction::Reduced(componentwise(
                 arena,
                 table,
                 memo,
+                Mover::Transport,
                 (&parts, &components),
                 path,
             )?))
@@ -1419,7 +1420,7 @@ where
             else {
                 return Ok(Reduction::Stuck);
             };
-            let step = arena.computation_path_transport(part, path, payload);
+            let step = Mover::Transport.step(arena, part, path, payload);
             let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
             let injected = arena.value_injection(summand, bound);
             let returned = arena.computation_return(injected);
@@ -1460,10 +1461,11 @@ where
                 | Some(_) => return Ok(Reduction::Stuck),
                 | None => return Err(KernelError::ArenaFault),
             };
-            Ok(Reduction::Reduced(transport_cell(
+            Ok(Reduction::Reduced(cell(
                 arena,
                 table,
                 memo,
+                Mover::Transport,
                 (element, motive),
                 path,
                 (head, tail),
@@ -1664,14 +1666,46 @@ where
     }
 }
 
-/// Transport a tuple componentwise: one bind per component, then the tuple of
-/// the bound results.
+/// The eliminator a componentwise step re-applies at each part.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Mover
+{
+    /// Transport along an identity.
+    Transport,
+    /// Ride along a flow.
+    Ride,
+}
+
+impl Mover
+{
+    /// One step of this eliminator at a motive, along an identity or flow,
+    /// from a value.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn step(
+        self,
+        arena: &mut TermArena,
+        motive: ValueTypeId,
+        along: ValueId,
+        value: ValueId,
+    ) -> ComputationId
+    {
+        match self {
+            | Self::Transport => arena.computation_path_transport(motive, along, value),
+            | Self::Ride => arena.computation_ride(motive, along, value),
+        }
+    }
+}
+
+/// Move a tuple componentwise: one bind per component, then the tuple of the
+/// bound results.
 ///
 /// # Specification
 /// - requires: one component per motive part.
-/// - ensures: `x₀ ← transport(P₀, p, v₀); …; return (x₀, …)`, each step's path
-///   and component shifted past the binds outside it, and each part's outer
-///   variables shifted past them as well.
+/// - ensures: `x₀ ← step(P₀, p, v₀); …; return (x₀, …)` for the `mover`'s step,
+///   each step's identity or flow and component shifted past the binds outside
+///   it, and each part's outer variables shifted past them as well.
 /// - fails: `ArenaFault` for a component count past `u32`.
 /// - panics: none.
 ///
@@ -1680,13 +1714,15 @@ where
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a pair of a Bool and a universe element transports
-///   componentwise.
+///   componentwise, and a pair rides componentwise along a forward flow.
 /// - witness: `element_identity::tests::transport_computes_through_the_fold_clauses`
+/// - witness: `flow_universe::tests::ride_computes_through_the_motive_rows`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&reduct| arena.computation(reduct).is_some()))]
-fn transport_product<M>(
+pub(crate) fn componentwise<M>(
     arena: &mut TermArena,
     table: &mut ContentTable,
     memo: &mut M,
+    mover: Mover,
     (parts, components): (&[ValueTypeId], &[ValueId]),
     path: ValueId,
 ) -> Result<ComputationId, KernelError>
@@ -1705,21 +1741,21 @@ where
         let part = shift_value_type(arena, table, memo, part, BinderDepth::from(1_u32), outside);
         let path = shift_value(arena, table, memo, path, BinderDepth::NONE, outside);
         let component = shift_value(arena, table, memo, component, BinderDepth::NONE, outside);
-        let step = arena.computation_path_transport(part, path, component);
+        let step = mover.step(arena, part, path, component);
         reduct = arena.computation_bind(step, reduct);
     }
     Ok(reduct)
 }
 
-/// Transport one list cell: the head in the element motive, then the tail in
-/// the whole list motive, behind the head's bind.
+/// Move one list cell: the head in the element motive, then the tail in the
+/// whole list motive, behind the head's bind.
 ///
 /// # Specification
 /// - requires: `motive` is the List motive `element` is the element of.
-/// - ensures: `h ← transport(E, p, head); t ← transport(List E, p, tail);
-///   return cons(h, t)`, the tail step's motive, path and tail shifted past the
-///   head's bind. The tail's transport is a computation, reduced only when the
-///   replay reaches it, so one step unfolds one cell.
+/// - ensures: `h ← step(E, p, head); t ← step(List E, p, tail); return cons(h,
+///   t)` for the `mover`'s step, the tail step's motive, identity or flow and
+///   tail shifted past the head's bind. The tail's step is a computation,
+///   reduced only when the replay reaches it, so one step unfolds one cell.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1727,11 +1763,13 @@ where
 ///   list whose cells outrun the replay budget declines, and a variable tail
 ///   leaves the computed head before a stuck tail.
 /// - witness: `path_universe::tests::recursive_transport_tests::negation_moves_a_list_one_cell_at_a_time`
+/// - witness: `flow_universe::tests::ride_computes_through_the_motive_rows`
 #[spec(ensures: |reduct| arena.computation(reduct).is_some())]
-fn transport_cell<M>(
+pub(crate) fn cell<M>(
     arena: &mut TermArena,
     table: &mut ContentTable,
     memo: &mut M,
+    mover: Mover,
     (element, motive): (ValueTypeId, ValueTypeId),
     path: ValueId,
     (head, tail): (ValueId, ValueId),
@@ -1739,12 +1777,12 @@ fn transport_cell<M>(
 where
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
-    let first = arena.computation_path_transport(element, path, head);
+    let first = mover.step(arena, element, path, head);
     let past = BinderDepth::from(1_u32);
     let motive = shift_value_type(arena, table, memo, motive, past, past);
     let path = shift_value(arena, table, memo, path, BinderDepth::NONE, past);
     let tail = shift_value(arena, table, memo, tail, BinderDepth::NONE, past);
-    let rest = arena.computation_path_transport(motive, path, tail);
+    let rest = mover.step(arena, motive, path, tail);
     let moved_head = arena.value_variable(DeBruijnIndex::from(1_u32));
     let moved_tail = arena.value_variable(DeBruijnIndex::from(0_u32));
     let cell = arena.value_list_cons(moved_head, moved_tail);
@@ -1755,7 +1793,7 @@ where
 
 /// A family node whose innermost binder may be read.
 #[derive(Clone, Copy, Debug)]
-enum Family
+pub(crate) enum Family
 {
     /// A value type under the binder.
     Type(ValueTypeId),
@@ -1765,7 +1803,7 @@ enum Family
 
 /// What a family does with its innermost binder.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum BinderUse
+pub(crate) enum BinderUse
 {
     /// The family provably ignores variable zero.
     Ignored,
@@ -1802,7 +1840,7 @@ enum BinderUse
         Family::Value(value) => u32::from(LooseDepths::new().value_reach(arena, value)) == 0,
     },
     ensures: |ret| !closed || ret == BinderUse::Ignored)]
-fn binder_use<M>(
+pub(crate) fn binder_use<M>(
     arena: &mut TermArena,
     table: &mut ContentTable,
     memo: &mut M,

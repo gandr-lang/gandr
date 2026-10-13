@@ -204,6 +204,8 @@ pub enum TagSite
     HigherLayer,
     /// A lazy projection's side, outside the left and right alphabet.
     ProjectionSide,
+    /// A composition's seam, outside the sequence and feedback alphabet.
+    Seam,
 }
 
 impl fmt::Display for TagSite
@@ -247,6 +249,7 @@ impl fmt::Display for TagSite
             | Self::FixpointEvidence => "a fixpoint evidence claim",
             | Self::HigherLayer => "a higher-field layer kind",
             | Self::ProjectionSide => "a lazy projection side",
+            | Self::Seam => "a composition seam",
         })
     }
 }
@@ -284,6 +287,14 @@ pub enum MalformedSite
     /// A motive child of a telescope transport was not a computation type, so
     /// it was not the dependent arrow over the telescope.
     TelescopeMotive,
+    /// An endpoint child of an element `Flow` was not a value.
+    FlowEndpoint,
+    /// A motive child of a directed transport was not a value type, so it was
+    /// not a type-level function of the moving endpoint.
+    RideMotive,
+    /// A motive child of a telescope ride was not a computation type, so it
+    /// was not the dependent arrow over the telescope.
+    TelescopeRideMotive,
     /// A higher-field program named a layer position it does not hold.
     HigherLayer,
     /// The magic did not match a gandr kernel export.
@@ -366,6 +377,9 @@ impl fmt::Display for MalformedSite
             | Self::PathEndpoint => "a path endpoint was not a value",
             | Self::TransportMotive => "a transport motive was not a value type",
             | Self::TelescopeMotive => "a telescope transport motive was not a computation type",
+            | Self::FlowEndpoint => "a flow endpoint was not a value",
+            | Self::RideMotive => "a ride motive was not a value type",
+            | Self::TelescopeRideMotive => "a telescope ride motive was not a computation type",
             | Self::HigherLayer => "a higher-field layer position was out of range",
             | Self::Header => "the artifact magic did not match",
             | Self::Varint => "a varint was overlong or out of range",
@@ -578,6 +592,7 @@ mod tests
             TagSite::Sign,
             TagSite::LiteralKind,
             TagSite::ConstraintRelation,
+            TagSite::Seam,
         ] {
             names.push(format!("{site}"));
             check_sink(&site);
@@ -610,6 +625,9 @@ mod tests
             MalformedSite::ArtifactExpandedWork,
             MalformedSite::NonCanonical,
             MalformedSite::TrailingBytes,
+            MalformedSite::FlowEndpoint,
+            MalformedSite::RideMotive,
+            MalformedSite::TelescopeRideMotive,
         ] {
             names.push(format!("{site}"));
             check_sink(&site);

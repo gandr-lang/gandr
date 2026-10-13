@@ -23,12 +23,8 @@ use crate::KernelError;
 use crate::ReplayBudget;
 use crate::check::check_closed_value;
 use crate::check::synth_closed_value;
-use crate::flow_universe::Certificate;
-use crate::flow_universe::ClassifierError;
 use crate::flow_universe::Family;
-use crate::flow_universe::Flow;
 use crate::flow_universe::FlowError;
-use crate::flow_universe::Flows;
 use crate::flow_universe::form_certificate;
 
 /// Quote one graph with one payload-code field.
@@ -338,55 +334,26 @@ fn session_relations_replay_without_search()
         ))))
     );
     let (_, simulation) = flow(&mut arena, (narrow, wide), evidence.clone(), proofs);
-    let mut flows = Flows::new();
-    let flow_id = flows.push(Flow::Session(simulation)).expect("raw flow");
-    form_certificate(
-        &mut arena,
-        &flows,
-        Certificate::Flow(flow_id),
-        Family::Flow,
-        ReplayBudget::DEFAULT,
-    )
-    .expect("one-way width");
+    form_certificate(&mut arena, simulation, Family::Flow, ReplayBudget::DEFAULT)
+        .expect("one-way width");
     assert!(matches!(
-        form_certificate(
-            &mut arena,
-            &flows,
-            Certificate::Flow(flow_id),
-            Family::Path,
-            ReplayBudget::DEFAULT
-        ),
-        Err(FlowError::FamilyMismatch {
+        form_certificate(&mut arena, simulation, Family::Path, ReplayBudget::DEFAULT),
+        Err(KernelError::Flow(FlowError::FamilyMismatch {
             expected: Family::Path,
             actual: Family::Flow
-        })
+        }))
     ));
     assert!(matches!(
-        form_certificate(
-            &mut arena,
-            &flows,
-            Certificate::Path(value),
-            Family::Flow,
-            ReplayBudget::DEFAULT
-        ),
-        Err(FlowError::FamilyMismatch {
+        form_certificate(&mut arena, value, Family::Flow, ReplayBudget::DEFAULT),
+        Err(KernelError::Flow(FlowError::FamilyMismatch {
             expected: Family::Flow,
             actual: Family::Path
-        })
+        }))
     ));
     let (_, reverse) = flow(&mut arena, (wide, narrow), evidence, proofs);
-    let backward = flows
-        .push(Flow::Session(reverse))
-        .expect("raw reverse request");
     assert!(matches!(
-        form_certificate(
-            &mut arena,
-            &flows,
-            Certificate::Flow(backward),
-            Family::Flow,
-            ReplayBudget::DEFAULT
-        ),
-        Err(FlowError::Session(SessionError::WrongLabels(StatePair {
+        form_certificate(&mut arena, reverse, Family::Flow, ReplayBudget::DEFAULT),
+        Err(KernelError::Session(SessionError::WrongLabels(StatePair {
             source: State(0),
             target: State(0)
         })))
@@ -546,7 +513,7 @@ fn session_flows_persist_and_refuse_by_family()
     };
     assert_eq!(check_closed_value(&mut arena, body, declared), Ok(()));
 
-    // Neither family coerces: by tag, by native classifier, or by node.
+    // Neither family coerces: by native classifier, or by node.
     let mut arena = TermArena::new();
     let payload = arena.value_type_unit();
     let narrow = code(&mut arena, vec![select(&["old"]), Node::End], payload);
@@ -566,39 +533,46 @@ fn session_flows_persist_and_refuse_by_family()
         },
         proofs,
     );
-    let mut flows = Flows::new();
-    let mistagged = flows.push(Flow::Session(bisimulation)).expect("raw flow");
     assert_eq!(
         form_certificate(
             &mut arena,
-            &flows,
-            Certificate::Flow(mistagged),
+            bisimulation,
             Family::Flow,
             ReplayBudget::DEFAULT
         ),
-        Err(FlowError::FamilyMismatch {
+        Err(KernelError::Flow(FlowError::FamilyMismatch {
             expected: Family::Flow,
             actual: Family::Path
-        })
+        }))
     );
     assert_eq!(
-        form_certificate(
-            &mut arena,
-            &flows,
-            Certificate::Path(simulation),
-            Family::Path,
-            ReplayBudget::DEFAULT
-        ),
-        Err(FlowError::FamilyMismatch {
+        form_certificate(&mut arena, simulation, Family::Path, ReplayBudget::DEFAULT),
+        Err(KernelError::Flow(FlowError::FamilyMismatch {
             expected: Family::Path,
             actual: Family::Flow
-        })
+        }))
+    );
+    // A session simulation relates recorded runs, not endpoint values: a ride
+    // along one checks, and its replay refuses by name.
+    let constant = arena.value_type_unit();
+    let ride = arena.computation_ride(constant, simulation, proofs);
+    let expected = arena.computation_return(proofs);
+    assert_eq!(
+        crate::flow_universe::replay_ride(
+            &mut arena,
+            ride,
+            expected,
+            crate::replay::EngineClaim::Convertible,
+            &crate::path_universe::Dialogue::default(),
+            ReplayBudget::DEFAULT
+        ),
+        Err(KernelError::Flow(FlowError::RecordedRunRequired))
     );
     let path_classifier = arena.value_type_path_universe(narrow, wide);
     let forged = arena.value_session_flow(path_classifier, Arc::new(widening()), proofs);
     assert_eq!(
         synth_closed_value(&mut arena, forged),
-        Err(KernelError::Flow(ClassifierError::FamilyMismatch {
+        Err(KernelError::Flow(FlowError::FamilyMismatch {
             expected: Family::Flow,
             actual: Family::Path
         }))
@@ -610,7 +584,7 @@ fn session_flows_persist_and_refuse_by_family()
     let (_, outside) = flow(&mut arena, (list, list), widening(), proofs);
     assert!(matches!(
         synth_closed_value(&mut arena, outside),
-        Err(KernelError::Flow(ClassifierError::UnsupportedType(_)))
+        Err(KernelError::Flow(FlowError::UnsupportedType(_)))
     ));
 }
 

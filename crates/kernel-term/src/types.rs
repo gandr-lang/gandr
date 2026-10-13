@@ -326,6 +326,20 @@ pub enum ValueType
         /// The target endpoint.
         right: ValueId,
     },
+    /// Directed element identity `Flow(A, x, y)`: `x` transports into `y`,
+    /// with no inverse. Formation checks both endpoints at the domain, as for
+    /// `Path`; at the closed level-zero value universe it and `Flow_U(x, y)`
+    /// are two readings of one classifier, and elsewhere `stay`, composition
+    /// and neutrals inhabit it.
+    Flow
+    {
+        /// The value type the endpoints inhabit.
+        domain: ValueTypeId,
+        /// The source endpoint, consumed contravariantly.
+        source: ValueId,
+        /// The target endpoint, produced covariantly.
+        target: ValueId,
+    },
     /// A rigid base-type atom.
     Base(BaseType),
     /// The product of its components, in order: `Product([])` is the unit

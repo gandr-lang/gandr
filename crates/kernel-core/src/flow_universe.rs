@@ -1,86 +1,92 @@
-//! Forward-only certificates over closed first-order, function and session
-//! codes.
+//! The directed family: `Flow_U`, `Flow(A, x, y)`, their introductions,
+//! composition and `ride`, as native kernel syntax.
 //!
-//! Formation checks a closed translator and replays its action on every
-//! constructor pattern with rigid Base leaves. Output patterns may rearrange,
-//! duplicate or discard those leaves, but cannot manufacture or inspect them.
-//! At a function code, formation orients two boundary flows by the variance
-//! the arrow fixes and assembles the translator from them. `ride` replays the
-//! forward action; `stay` returns its argument in one step. A session
-//! introduction is a native `Value::SessionFlow` at a native `Flow_U`
-//! classifier; it replays a finite simulation and has a recorded-run consumer
-//! rather than a CBPV endpoint-value action. The other introductions are an
-//! in-memory rule language, separate from native terms and from universe
-//! paths. The rule syntax carries no admission receipt or reusable verdict.
+//! `Flow(A, x, y)` says only that `x` transports into `y`; `Flow_U(a, b)` is
+//! its native classifier at the level-zero value universe, over quoted
+//! first-order, function and session codes. Every introduction is a value
+//! node and every eliminator a computation node in `gandr-kernel-term`'s
+//! table, so a declaration stating a flow persists it in an artifact and
+//! readmits it by replaying what this module decides. No stored node or
+//! classifier is an admission receipt: each admission rechecks.
 //!
 //! # The family
 //!
-//! This module defines the `Flow_U a b` family, separate from `Path_U`, over
-//! quoted Base codes, products of any arity (the unit among them), sums of at
-//! least one summand, function codes `U (A → F B)` whose argument and result
-//! are among those, and finite session codes, which only a session simulation
-//! relates. The empty sum is outside the vocabulary. A forward
-//! certificate stores one closed CBPV translator and one proposed
-//! image/dialogue per source constructor pattern. It carries neither an
-//! inverse nor round-trip evidence. Every consuming formation checks the
-//! translator in a fresh closed checker session, validates the images, and
-//! replays kernel-built positive claims. No stored node or classifier is an
-//! admission receipt.
+//! The vocabulary is quoted Base codes, products of any arity (the unit among
+//! them), sums of at least one summand, function codes `U (A → F B)` whose
+//! argument and result are among those, and finite session codes, which only a
+//! session simulation relates. The empty sum is outside it. Path and Flow are
+//! independent families: no rule coerces one into the other.
 //!
-//! | Boundary | Rule or refusal |
-//! | -------- | --------------- |
-//! | Forward formation | Exhaustive symbolic source patterns; each target Base position selects a same-typed source leaf. |
-//! | Directed computation | `ride e v` exposes the checked forward application for ordinary conversion replay. |
-//! | Directed reflexivity | `ride (stay a) v` returns `v` in one step, without allocating or evaluating an identity translator. |
-//! | Motive formation | Moving endpoints occur only covariantly; arrow domains and Flow sources reverse variance. |
-//! | Symmetry | `Flow(Moving, Fixed)` returns `NonCovariantMotive`, including when nested beneath positive formers. |
-//! | Family separation | A valid equivalence at a Flow boundary, or a Flow at a Path boundary, returns `FamilyMismatch`. |
-//! | Sequential composition | `Compose { seam: Sequence, .. }` checks the intermediate type and lowers in order to CBPV bind. |
-//! | Feedback | Connecting the second output back into the first input returns `Cycle` with both occurrences. |
-//! | Function formation | `Function` forms `Flow_U (U (A → F B)) (U (A' → F B'))` from `Flow_U A' A` at the contravariant domain and `Flow_U B B'` at the covariant codomain; a boundary flow running the other way returns `Boundary`. |
-//! | Function computation | `ride` runs the domain translator, then the function, then the codomain translator; `stay` at a function code returns its function in one step. |
-//! | Function stock | `Forward` refuses function endpoints with `UnsupportedType`: a function has no constructor pattern to cover. |
+//! | Node | Byte | Classifier | Admission replays |
+//! | ---- | ---- | ---------- | ----------------- |
+//! | `ValueType::FlowUniverse(a, b)` | `0x48` | — | both endpoints in the vocabulary ([`endpoints`]) |
+//! | `Value::SessionFlow` | `0x49` | `Flow_U(a, b)` at session codes | the supplied simulation and its payload paths |
+//! | `ValueType::Flow { domain, source, target }` | `0x4A` | — | both endpoints at the domain |
+//! | `Value::Stay { point, dialogues }` | `0x4B` | `Flow(A, c, c)`; checks at `Flow(A, x, y)` and `Flow_U(x, y)` | the point converts with both endpoints, or each side's dialogue replays |
+//! | `Value::ForwardFlow { flow_type, translator, outputs, dialogues }` | `0x4C` | `Flow_U(a, b)` at first-order codes | the closed translator checks; one image per source pattern, leaf-natural, its dialogue replayed |
+//! | `Value::FunctionFlow { flow_type, domain, codomain }` | `0x4D` | `Flow_U(f, g)` at function codes | each boundary flow runs the way its variance fixes |
+//! | `Value::Then { first, second, seam }` | `0x4E` | `Flow(A, x, z)`, or `Flow_U(x, z)` when either side is | the carriers agree, the seam's endpoints meet, the seam is a sequence |
+//! | `Computation::Ride { motive, flow, value }` | `0x4F` | `F P[y]` | the motive passes [`check_motive`]; the value checks at `P[x]` |
+//! | `Computation::TelescopeRide { motive, flow, start, over, value }` | `0x68` | `F C[b, end]` | both entries pass the gate; `over` lies over `flow` |
 //!
-//! **Native family boundary.** `Certificate::Path` carries a native value id.
-//! `form_certificate` synthesizes that value through the ordinary closed
-//! checker and decodes its checked `Path_U` endpoints; there is no auxiliary
-//! path arena or trusted classifier shortcut. Missing round-trip evidence and
-//! non-path classifiers refuse. `Flow::Session` likewise carries a native
-//! value id: formation synthesizes it, and [`endpoints`] decodes its checked
-//! `Flow_U` classifier. Matching Path and Flow families retain separate
-//! formation judgements, and both cross-family directions refuse before
-//! elimination, whether the family is named by the certificate tag or by the
-//! native classifier.
+//! At the level-zero value universe `Flow(U₀, x, y)` and `Flow_U(x, y)` are
+//! two readings of one classifier: a flow synthesizing either checks at the
+//! other, and a flow is consumed — by `ride`, by `then`, by a function flow's
+//! boundary — under either. Elsewhere `stay`, composition and neutrals inhabit
+//! `Flow(A, x, y)`.
 //!
-//! **Native persistence.** `Flow_U` and the session simulation are native
-//! formers with wire tags `0x48` and `0x49` in `gandr-kernel-term`'s table;
-//! [`endpoints`] admits the whole `Flow_U` vocabulary at `0x48` — first-order,
-//! function and session codes — so later persisted introductions share the
-//! classifier. Directed reflexivity, forward translators, the arrow's action
-//! and composition remain rule syntax, and `0x4A`–`0x4F` stay reserved. The
-//! kernel error carries a classifier refusal as the flat [`ClassifierError`]:
-//! a [`FlowError`] owns the kernel error of a translator's typing, so the
-//! kernel error owning it back would make the two types own each other.
+//! # Computation
+//!
+//! The replay reads a ride by the first row of [`reduce`]'s table that
+//! applies: `stay` returns the value; a sequential composition rides its first
+//! flow, then its second; a motive that ignores its binder returns the value;
+//! products, sums and lists ride constructorwise; at `El(x)` a forward flow
+//! applies its translator and a function flow wraps the function in its
+//! boundaries; at a singleton motive `Flow(D, l, x)` a `stay` value returns the
+//! flow and any other value composes with it. A session simulation relates
+//! recorded runs, not endpoint values: a ride along one is stuck, and
+//! [`replay_ride`] refuses it as `RecordedRunRequired`. A telescope ride along
+//! `stay` in its carrier rides in the fibre; along `stay` in both entries it
+//! returns the value. That row is directed J's computation rule.
+//!
+//! # Refusals
+//!
+//! | Refusal | Raised when |
+//! | ------- | ----------- |
+//! | `NonCovariantMotive` | the moving binder occurs at a contravariant or invariant position of a ride's motive: the symmetry motive `Flow_U(x, a)` among them |
+//! | `NonNatural` | a forward image is not a canonical target shape over correctly typed source leaves: a constant literal at an infinite Base leaf among them |
+//! | `Coverage` | a forward flow carries more or fewer images than its source has constructor patterns |
+//! | `ForwardReplay` | a forward image's dialogue does not replay to convertible |
+//! | `UnsupportedCode`, `UnsupportedType` | an endpoint leaves the vocabulary a certificate covers |
+//! | `EndpointMismatch` | a composition's carriers or seam endpoints differ |
+//! | `Cycle` | a composition requests a feedback seam |
+//! | `Boundary` | a function flow's boundary runs against its variance |
+//! | `FamilyMismatch`, `ExpectedFlow` | a certificate of the other family, or of neither, stands where a flow is consumed |
+//! | `RecordedRunRequired` | a ride along a session simulation reaches [`replay_ride`] |
+//!
+//! No node reverses a flow. A flow checked at its reversed classifier, a value
+//! ridden from the target, and a composition of a flow with itself the wrong
+//! way round each refuse by the names above: `back` has no directed reading.
 //!
 //! **Leaf naturality.** Each source Base position is a distinct rigid
-//! variable, including equal-typed positions in a product. Proposed output
-//! syntax contains only canonical constructors and those correctly typed
-//! variables. The kernel replays the translator on these symbolic inputs; a
-//! trace generated at a literal sample has no authority over that obligation.
-//! Literals nested beneath sums or products, fresh variables, wrong-typed
-//! selections, and sample-only constant maps refuse. The witnesses cover
-//! diagonals, both injections, codiagonals, product identity and terminal
-//! projection to Unit. The native CBPV vocabulary has no general product
-//! eliminator, so these witnesses do not establish generation of every
-//! projection or fullness of the one-way alphabet.
+//! variable, including equal-typed positions in a product. An image is
+//! `thunk(λ…λ. return o)`, one binder per leaf, so the proposed output `o`
+//! names leaves by index and stays closed under every rewrite; it contains
+//! only canonical constructors and correctly typed leaf variables. The kernel
+//! replays the translator on these symbolic inputs; a trace generated at a
+//! literal sample has no authority over that obligation. Literals nested
+//! beneath sums or products, fresh variables, wrong-typed selections and
+//! sample-only constant maps refuse. The witnesses cover diagonals, both
+//! injections, codiagonals, product identity and terminal projection to Unit.
+//! The native CBPV vocabulary has no general product eliminator, so these
+//! witnesses do not establish generation of every projection or fullness of
+//! the one-way alphabet.
 //!
 //! **The gate reads wiring.** Sequence has one edge between two occurrences;
 //! feedback adds the reverse edge and closes a cycle. Equal endpoint codes do
-//! not identify occurrences. In particular, injection followed by fold forms
-//! and replays as identity, and terminal followed by injection forms a
-//! constant Bool endomap. Neither composite grants inverse evidence. This
-//! closed-code gate handles explicit two-occurrence seams, not a general
-//! reflected cell-support graph or invertible-core comparison.
+//! not identify occurrences. Injection followed by fold forms and rides as
+//! identity, and terminal followed by injection forms a constant Bool endomap.
+//! Neither composite grants inverse evidence.
 //!
 //! # Directed funext
 //!
@@ -88,229 +94,126 @@
 //! forward flow of results over a forward flow of arguments, the argument flow
 //! running from the target's domain to the source's. Variance is data:
 //! [`Boundary::variance`] is all the formation rule reads to orient a
-//! boundary, and it is the reversal [`Motive::Arrow`] applies to a motive. No
-//! modality, polarity-annotated context or internal hom object enters. The
-//! statement binds no variable, since its boundaries are closed certificates,
-//! so the divariant variable that keeps directed function extensionality out
-//! of a polarity calculus does not arise (Jacob Neumann, *A Generalized
-//! Algebraic Theory of Directed Equality*, doctoral thesis, University of
-//! Nottingham, 2025, §0.2 and §4.4). Riding a flow through a function's
-//! argument is the motive `Arrow(El(Moving), El(Fixed))`, which
+//! boundary, and it is the reversal [`check_motive`] applies at an arrow's
+//! domain. No modality, polarity-annotated context or internal hom object
+//! enters. The statement binds no variable, since its boundaries are flows of
+//! codes, so the divariant variable that keeps directed function
+//! extensionality out of a polarity calculus does not arise (Jacob Neumann, *A
+//! Generalized Algebraic Theory of Directed Equality*, doctoral thesis,
+//! University of Nottingham, 2025, §0.2 and §4.4). Riding a flow through a
+//! function's argument is the motive `U (El x → F El a)`, which
 //! [`check_motive`] refuses as it refuses symmetry: the argument boundary is
 //! consumed only contravariantly, by this clause.
 //!
 //! **Leaves at a function code.** Both boundary flows are leaf-natural
-//! certificates and the assembled translator only composes them with its
-//! argument, so the translator manufactures no leaf: a constant result
-//! boundary refuses as `NonNatural` before the function flow forms. The arrow
-//! of two `stay`s rides a function to itself by conversion replay.
+//! certificates and the ride only composes them with its argument, so it
+//! manufactures no leaf: a constant result boundary refuses as `NonNatural`
+//! before the function flow forms. The arrow of two `stay`s rides a function
+//! to itself by conversion replay.
 //!
 //! **What the clause does not state.** A flow between two functions of one
-//! first-order function code would relate their outputs pointwise over
-//! related inputs. First-order elements carry only identities, so that
-//! relation is element identity at the thunk code, which
-//! [`crate::identity_recursion`] computes; this module adds nothing there. A
-//! natural transformation between code-valued functions, where an argument
-//! would occur at both variances, is outside the clause.
+//! first-order function code would relate their outputs pointwise over related
+//! inputs. First-order elements carry only identities, so that relation is
+//! element identity at the thunk code, which [`crate::identity_recursion`]
+//! computes; this module adds nothing there. A natural transformation between
+//! code-valued functions, where an argument would occur at both variances, is
+//! outside the clause.
 //!
 //! # Decision
 //!
-//! **Choice.** The rule arena reuses native closed checking and conversion
-//! replay. Flat, constructor-ordered ids and bounded iterative walks avoid
-//! recursive ownership; formation and lowering tables live only for one call.
-//! The function clause is structural: the kernel assembles its translator
-//! from formed boundary flows, and it carries both endpoint codes so a
-//! misdirected boundary refuses by name. Session simulations are native
-//! persisted formers: the recorded reversal — declaration admission must
-//! consume Flow syntax — fired on its stated trigger when session subtyping
-//! became a declared `Flow_U` statement of the surface language, which must
-//! admit, persist in an artifact and readmit by replay. The classifier is
-//! generic over the `Flow_U` vocabulary so the next persisted introduction
-//! reuses it, and the session introduction's frame is the session path's, so
-//! the two certificates encode and replay alike. `FORMAT_VERSION` holds: both
-//! bytes were reserved and unassigned, and an older reader refuses them by
-//! name.
-//! **Alternatives.** A second evaluator; host-language translators, which
-//! would bypass the obligation; deciding session subtyping in the checker
-//! alone, which would leave a declared `Flow_U` statement unpersisted and the
-//! kernel out of its trust path; a session-specific classifier, which every
-//! later introduction would have to duplicate. At function codes: forward
-//! translators covered symbolically, which have no constructor pattern to
-//! replay and would need leaf-naturality redefined for exponentials; a
-//! classifier derived from the boundary flows alone, under which no direction
-//! can be refused; and a polarity modality on contexts.
-//! **Reversal.** The remaining introductions become native formers when a
-//! declaration consumes them: at that point each takes a byte of the
-//! reservation under the shared classifier. Motive checking is the
-//! term-structural covariance side condition over El, Flow, Arrow, Sum and
-//! Product; value transport uses `El(Moving)`. General dependent directed
-//! elimination and the reflected variance calculus remain outside this rule
-//! language. The function clause is revisited when an argument code is itself
-//! a function or universe code, where an argument variable would occur at both
-//! variances, or when a translator at function codes that is not the arrow of
-//! two boundary flows must be certified.
+//! **Choice.** The directed family is native kernel syntax at parity with the
+//! groupoidal one: two classifiers, five introductions and two eliminators,
+//! admitted by the ordinary checking machine and computed by the ordinary
+//! replay. Each certificate's obligation is the one the rule language decided:
+//! exhaustive symbolic images for a forward translator, the seam gate for
+//! composition, variance order for the arrow's action, reflexivity for
+//! `stay`, simulation replay for a session. `ride` subsumes universe
+//! transport: a flow at `Flow_U` rides with its binder at the level-zero
+//! universe, so one eliminator serves both readings, and one `stay` and one
+//! `then` serve both. The covariance gate walks the native motive with a sign,
+//! so the condition the rule language stated over its own motive syntax now
+//! binds every motive a declaration writes. `FORMAT_VERSION` holds: every byte
+//! was reserved and unassigned, and an older reader refuses each by name.
+//! **Alternatives.** An in-memory rule language beside native terms, which no
+//! declaration could state or persist; a separate universe transport for
+//! `Flow_U`, which would duplicate `ride`'s table; images as open values,
+//! whose leaf variables a rewrite under an enclosing binder would capture; a
+//! second evaluator; host-language translators, which would bypass the
+//! obligation; deciding session subtyping in the checker alone. At function
+//! codes: forward translators covered symbolically, which have no constructor
+//! pattern to replay; a classifier derived from the boundary flows alone,
+//! under which no direction can be refused; a polarity modality on contexts.
+//! **The rule, and where it fired.** An introduction becomes a native former
+//! when a declaration consumes it. It fired twice: when session subtyping
+//! became a declared `Flow_U` statement of the surface language (the
+//! classifier and the session simulation, `0x48` and `0x49`), and when the
+//! surface family's `Flow`, `stay`, `then` and `ride` became statements a
+//! declaration makes (`0x4A`–`0x4F` and `0x68`). The function clause is
+//! revisited when an argument code is itself a function or universe code,
+//! where an argument variable would occur at both variances, or when a
+//! translator at function codes that is not the arrow of two boundary flows
+//! must be certified.
+//!
+//! # What a producer may assume
+//!
+//! The node shapes and bytes in the table above; for each certificate, the
+//! checking machine's admission as its replay entry, and [`form_certificate`]
+//! as the entry that synthesizes a closed certificate and names its family;
+//! [`replay_ride`] as the entry that checks a closed ride and replays a
+//! claimed result. Both entries answer [`crate::KernelError`], as the path
+//! entries do: a flow refusal arrives as `KernelError::Flow` under the names
+//! in the table above, never as a panic on tampered evidence.
 //!
 //! # Witnesses
 //!
-//! The eleven witnesses in this module's tests use the independent conversion
-//! engine and exact expected outputs. The public replay boundary restores its
-//! arena watermark on success and failure. Its memo discipline is the memo's
-//! six-condition discipline: no caller-supplied checker memo, persistent
-//! verdict, storage policy or authority-bearing hit. A standalone mutation
-//! campaign belongs over leaf aliasing and type confusion, manufactured
-//! constants, omitted source coverage, forged dialogues, reversed
-//! composition, missed feedback, motive sign propagation, family coercion,
-//! Stay reduction, boundary orientation and boundary order in lowering; no
-//! campaign or score is claimed.
-use alloc::boxed::Box;
-use alloc::vec::Vec;
+//! The witnesses in this module's tests use an independent conversion engine
+//! and exact expected outputs; the readmission witnesses in
+//! `tests/flow_readmission.rs` persist a module of every certificate kind,
+//! decode and replay it, and tamper with an image, a seam and a boundary. The
+//! public replay boundary restores its arena watermark on success and
+//! failure, and supplies no checker memo.
 use core::fmt;
 
 use anodized::spec;
-use gandr_kernel_term::ComputationId;
+use gandr_kernel_strata::Level;
+use gandr_kernel_term::AnyNode;
+use gandr_kernel_term::GroundSort;
+use gandr_kernel_term::Seam;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueType;
 use gandr_kernel_term::ValueTypeId;
 
-use crate::error::KernelError;
-use crate::path_universe::Dialogue;
+use crate::conv::Convertibility;
+use crate::conv::convert_values;
+use crate::conv::convertible_value_types;
 use crate::replay::KernelVerdict;
 use crate::replay::ReplayBudget;
 
 mod coverage;
 mod motive;
+pub(crate) mod reduce;
 mod rules;
 #[cfg(test)]
 mod tests;
 
-pub use motive::Endpoint;
-pub use motive::Motive;
-pub use motive::MotiveId;
-pub use motive::Motives;
+use coverage::Arrow;
+pub(crate) use coverage::forward;
 pub use motive::check_motive;
 pub use rules::CertificateType;
-pub use rules::beta;
-pub use rules::elaborate;
-pub use rules::form;
 pub use rules::form_certificate;
+pub(crate) use rules::oriented;
 pub use rules::replay_ride;
 
-/// One source constructor's proposed leaf-natural output and replay dialogue.
-///
-/// # Specification
-/// - provides: untrusted syntax; output variables refer to source leaves in
-///   left-to-right telescope order, with the last leaf at de Bruijn zero.
-/// - panics: none.
-/// - executable: none — raw evidence has no callable boundary; formation
-///   validates its output leaves and replay dialogue.
-/// # Adequacy
-/// - hypothesis: L3 — literal outputs and forged leaf selections refuse.
-/// - witness: `flow_universe::tests::constant_leaf_and_forged_evidence_refuse`
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Image
-{
-    /// Canonical target pattern, using only variables at Base positions.
-    pub output: ValueId,
-    /// Evidence for applying the translator to the kernel's source pattern.
-    pub dialogue: Dialogue,
-}
-
-/// A raw flow node's position in its append-only arena.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct FlowId(usize);
-
-/// The connection requested between two forward certificate occurrences.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Seam
-{
-    /// Feed the first output into the second input: one directed edge.
-    Sequence,
-    /// Also feed the second output back into the first input: a two-edge cycle.
-    Feedback,
-}
-
-/// Forward introductions and explicitly connected composition requests.
-///
-/// # Specification
-/// - provides: raw rule syntax with no backward translator or round trip. Only
-///   formation certifies the forward action and the composition gate.
-/// - panics: none.
-/// - executable: none — this syntax does not execute; formation checks each
-///   translator and the requested seam.
-/// # Adequacy
-/// - hypothesis: L3 — a terminal map forms without an inverse; feedback
-///   refuses; a function flow forms from two boundary flows.
-/// - witness: `flow_universe::tests::terminal_ride_and_stay_compute`
-/// - witness: `flow_universe::tests::composition_preserves_direction_and_refuses_feedback`
-/// - witness: `flow_universe::tests::function::directed_funext_forms_and_rides_in_variance_order`
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Flow
-{
-    /// A finite session simulation: a native [`Value::SessionFlow`], checked
-    /// afresh at its ordinary `Flow_U` classifier.
-    Session(ValueId),
-    /// Directed reflexivity at a quoted closed first-order or function code.
-    Stay(ValueId),
-    /// A leaf-natural forward translator with exhaustive symbolic replay.
-    Forward
-    {
-        /// Quoted source code.
-        source: ValueId,
-        /// Quoted target code.
-        target: ValueId,
-        /// Closed thunk of `El source -> F (El target)`.
-        translator: ValueId,
-        /// One output and dialogue per source constructor pattern.
-        images: Vec<Image>,
-    },
-    /// The arrow's action at a function code `U (A → F B)` over first-order
-    /// codes: a forward flow of results over a forward flow of arguments,
-    /// each boundary running in the direction its variance fixes.
-    Function
-    {
-        /// Quoted source function code `U (A → F B)`.
-        source: ValueId,
-        /// Quoted target function code `U (A' → F B')`.
-        target: ValueId,
-        /// The contravariant argument boundary, `Flow_U A' A`.
-        domain: FlowId,
-        /// The covariant result boundary, `Flow_U B B'`.
-        codomain: FlowId,
-    },
-    /// Connect two certificate occurrences; formation checks the requested
-    /// seam.
-    Compose
-    {
-        /// First forward occurrence.
-        first: FlowId,
-        /// Second forward occurrence.
-        second: FlowId,
-        /// Explicit wiring, rather than endpoint equality as a cycle proxy.
-        seam: Seam,
-    },
-}
-
-/// The separate certificate families at the rule-language typing boundary.
+/// The separate certificate families at a consuming boundary.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Family
 {
-    /// Invertible universe identity.
+    /// Invertible identity.
     Path,
-    /// Forward-only universe transport.
+    /// Forward-only transport.
     Flow,
-}
-
-/// A family-tagged raw certificate; neither tag coerces to the other.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Certificate
-{
-    /// A native universe-path value, checked afresh at its ordinary classifier.
-    Path(ValueId),
-    /// A universe-flow introduction.
-    Flow(FlowId),
 }
 
 /// Endpoint and boundary variance in the directed classifier.
@@ -329,7 +232,7 @@ pub enum Variance
 /// - provides: the boundary's position; [`Boundary::variance`] is the only
 ///   source of the direction a boundary flow must run.
 /// - panics: none.
-/// - executable: none — a position carries no behavior; formation reads its
+/// - executable: none — a position carries no behavior; admission reads its
 ///   variance when it orients a boundary flow.
 /// # Adequacy
 /// - hypothesis: L3 — a domain flow supplied covariantly and a codomain flow
@@ -346,8 +249,8 @@ pub enum Boundary
 
 impl Boundary
 {
-    /// The variance the arrow fixes at this boundary, as [`Motive::Arrow`]
-    /// reads it.
+    /// The variance the arrow fixes at this boundary, as [`check_motive`]
+    /// reads an arrow.
     ///
     /// # Specification
     /// trivial.
@@ -382,11 +285,11 @@ impl Variance
 /// # Specification
 /// - provides: endpoint types only; this classifier grants no authority.
 /// - panics: none.
-/// - executable: none — endpoint fields alone certify no translator; the
-///   formation function checks their relation to the raw syntax.
+/// - executable: none — endpoint fields alone certify no translator; admission
+///   checks their relation to the certificate.
 /// # Adequacy
 /// - hypothesis: L3 — formation retains the direction of the terminal map.
-/// - witness: `flow_universe::tests::terminal_ride_and_stay_compute`
+/// - witness: `flow_universe::tests::stay_and_forward_admit_and_ride`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FlowType
 {
@@ -394,102 +297,6 @@ pub struct FlowType
     pub source: ValueTypeId,
     /// Produced endpoint.
     pub target: ValueTypeId,
-}
-
-/// Append-only raw certificate syntax, with no cached formation results.
-#[repr(transparent)]
-#[derive(Clone, Debug, Default)]
-pub struct Flows(Vec<Flow>);
-
-impl Flows
-{
-    /// Create an empty rule arena.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub const fn new() -> Self
-    {
-        Self(Vec::new())
-    }
-
-    /// Append raw syntax, validating only that composition children exist.
-    ///
-    /// # Specification
-    /// - ensures: children precede their parent; no formation verdict is
-    ///   stored.
-    /// - fails: `UnknownFlow` for a missing child, without insertion.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// `FlowError::UnknownFlow`.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — composition and function introductions resolve each
-    ///   child and retain their order.
-    /// - witness: `flow_universe::tests::composition_preserves_direction_and_refuses_feedback`
-    /// - witness: `flow_universe::tests::function::directed_funext_forms_and_rides_in_variance_order`
-    #[spec(
-        captures: before = self.0.len(),
-        ensures: |ret| match ret {
-            Ok(id) => id.0 == before && self.0.len() == before.saturating_add(1)
-                && match self.0.get(id.0) {
-                    Some(&Flow::Compose { first: a, second: b, .. } | &Flow::Function { domain: a, codomain: b, .. }) => a.0 < id.0 && b.0 < id.0,
-                    Some(_) => true,
-                    None => false,
-                },
-            Err(FlowError::UnknownFlow(id)) => self.0.len() == before && id.0 >= before,
-            Err(_) => false,
-        },
-    )]
-    #[inline]
-    pub fn push(
-        &mut self,
-        flow: Flow,
-    ) -> Result<FlowId, FlowError>
-    {
-        if let Flow::Compose { first, second, .. }
-        | Flow::Function {
-            domain: first,
-            codomain: second,
-            ..
-        } = flow
-        {
-            self.get(first)?;
-            self.get(second)?;
-        }
-        let id = FlowId(self.0.len());
-        self.0.push(flow);
-        Ok(id)
-    }
-
-    /// Resolve raw syntax, without certifying it.
-    ///
-    /// # Specification
-    /// - ensures: returns the exact stored node.
-    /// - fails: `UnknownFlow` for an out-of-range id.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// `FlowError::UnknownFlow`.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — invalid ids cannot reach replay.
-    /// - witness: `flow_universe::tests::formation_boundaries_refuse`
-    #[spec(ensures: |ret| match ret {
-        Ok(node) => self.0.get(id.0).is_some_and(|stored| core::ptr::eq(core::ptr::from_ref(node), core::ptr::from_ref(stored))),
-        Err(FlowError::UnknownFlow(named)) => named == id && id.0 >= self.0.len(),
-        Err(_) => false,
-    })]
-    #[inline]
-    pub fn get(
-        &self,
-        id: FlowId,
-    ) -> Result<&Flow, FlowError>
-    {
-        self.0.get(id.0).ok_or(FlowError::UnknownFlow(id))
-    }
 }
 
 /// Inspect and decode both endpoints of a native `Flow_U` classifier.
@@ -508,9 +315,9 @@ impl Flows
 /// `Path` for a malformed session code, `Arena` or `Budget`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — session endpoints decode; a session flow tagged as a path
-///   and a session path tagged as a flow each refuse as `FamilyMismatch`; a
-///   List endpoint refuses.
+/// - hypothesis: L3 — session endpoints decode; a session flow given as a path
+///   and a session path given as a flow each refuse as `FamilyMismatch`; a List
+///   endpoint refuses.
 /// - witness: `session::tests::session_flows_persist_and_refuse_by_family`
 #[spec(ensures: |ret| match ret {
     Ok(flow) => matches!(arena.value_type(classifier), Some(&ValueType::FlowUniverse(source, target))
@@ -527,40 +334,337 @@ pub fn endpoints(
     budget: ReplayBudget,
 ) -> Result<FlowType, FlowError>
 {
-    let (source, target) = match arena.value_type(classifier) {
-        | Some(&ValueType::FlowUniverse(source, target)) => (source, target),
-        | Some(&ValueType::PathUniverse(..)) => {
-            return Err(FlowError::FamilyMismatch {
-                expected: Family::Flow,
-                actual: Family::Path,
-            });
-        },
-        | _ => return Err(FlowError::ExpectedFlow(classifier)),
-    };
+    let (source, target) = universe_codes(arena, classifier)?;
     let mut allowance = Allowance(u64::from(budget));
     let source = coverage::vocabulary(arena, source, &mut allowance, budget)?;
     let target = coverage::vocabulary(arena, target, &mut allowance, budget)?;
     Ok(FlowType { source, target })
 }
 
-/// Raw directed elimination, carrying the family tag checked by elaboration.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Ride
+/// The two codes of a `Flow_U` classifier, refusing every other classifier by
+/// family.
+///
+/// # Specification
+/// - ensures: the classifier's source and target codes, undecoded.
+/// - fails: `FamilyMismatch` for a `Path_U` classifier, `ExpectedFlow`
+///   otherwise.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a session path given as a flow refuses by family.
+/// - witness: `session::tests::session_flows_persist_and_refuse_by_family`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&(source, target)| arena.value_type(classifier) == Some(&ValueType::FlowUniverse(source, target))))]
+fn universe_codes(
+    arena: &TermArena,
+    classifier: ValueTypeId,
+) -> Result<(ValueId, ValueId), FlowError>
 {
-    /// Only a Flow certificate is admissible here.
-    pub certificate: Certificate,
-    /// Input value at the certificate's source.
-    pub value: ValueId,
+    match arena.value_type(classifier) {
+        | Some(&ValueType::FlowUniverse(source, target)) => Ok((source, target)),
+        | Some(&ValueType::PathUniverse(..)) => Err(FlowError::FamilyMismatch {
+            expected: Family::Flow,
+            actual: Family::Path,
+        }),
+        | _ => Err(FlowError::ExpectedFlow(classifier)),
+    }
 }
 
-/// One directed beta step, before ordinary CBPV evaluation.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Reduct
+/// Decode a forward flow's classifier: `Flow_U` between two first-order codes.
+///
+/// # Specification
+/// - ensures: both quoted types pass the first-order walk.
+/// - fails: as [`endpoints`] for the classifier; `UnsupportedType` for a
+///   function or session endpoint, which has no constructor pattern to cover.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a forward flow at a function code refuses as
+///   `UnsupportedType`.
+/// - witness: `flow_universe::tests::formation_boundaries_refuse`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |flow| matches!(arena.value_type(classifier), Some(&ValueType::FlowUniverse(..))) && arena.value_type(flow.source).is_some()))]
+pub(crate) fn forward_type(
+    arena: &TermArena,
+    classifier: ValueTypeId,
+    budget: ReplayBudget,
+) -> Result<FlowType, FlowError>
 {
-    /// `ride (stay a) v` is `return v`, without evaluating a translator.
-    Return(ValueId),
-    /// Forward action as an ordinary computation, including sequential bind.
-    Compute(ComputationId),
+    let (source, target) = universe_codes(arena, classifier)?;
+    let mut allowance = Allowance(u64::from(budget));
+    let source = coverage::code(arena, source, &mut allowance)?;
+    let target = coverage::code(arena, target, &mut allowance)?;
+    Ok(FlowType { source, target })
+}
+
+/// Decode a function flow's classifier: `Flow_U` between two function codes
+/// over first-order codes.
+///
+/// # Specification
+/// - ensures: both endpoints decode as function codes, source first.
+/// - fails: as [`endpoints`] for the classifier; `UnsupportedCode` or
+///   `UnsupportedType` for an endpoint that is no such function code.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a function flow between first-order codes refuses.
+/// - witness: `flow_universe::tests::function::constant_map_refusal_holds_at_a_thunk_code`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&(source, target)| arena.value_type(source.code).is_some() && arena.value_type(target.code).is_some()))]
+pub(crate) fn function_type(
+    arena: &TermArena,
+    classifier: ValueTypeId,
+    budget: ReplayBudget,
+) -> Result<(Arrow, Arrow), FlowError>
+{
+    let (source, target) = universe_codes(arena, classifier)?;
+    let mut allowance = Allowance(u64::from(budget));
+    let source = coverage::function(arena, source, &mut allowance)?;
+    let target = coverage::function(arena, target, &mut allowance)?;
+    Ok((source, target))
+}
+
+/// Which classifier a flow was read from.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Reading
+{
+    /// `Flow(A, x, y)`.
+    Element,
+    /// `Flow_U(x, y)`, whose carrier is the level-zero value universe.
+    Universe,
+}
+
+/// A flow classifier's carrier and endpoints.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct Ends
+{
+    /// The type both endpoints inhabit.
+    pub carrier: ValueTypeId,
+    /// The source endpoint.
+    pub source: ValueId,
+    /// The target endpoint.
+    pub target: ValueId,
+    /// The classifier the ends were read from.
+    pub reading: Reading,
+}
+
+/// Whether a type is the level-zero value universe.
+///
+/// # Specification
+/// trivial.
+pub(crate) fn level_zero_universe(
+    arena: &TermArena,
+    ty: ValueTypeId,
+) -> Reading
+{
+    match arena.value_type(ty) {
+        | Some(&ValueType::Universe {
+            sort: GroundSort::Value,
+            ref level,
+        }) if *level == Level::zero() => Reading::Universe,
+        | _ => Reading::Element,
+    }
+}
+
+/// Read a flow classifier's carrier and endpoints.
+///
+/// # Specification
+/// - ensures: `Flow(A, x, y)` reads as its parts; `Flow_U(x, y)` reads with the
+///   level-zero value universe as its carrier.
+/// - fails: `FamilyMismatch` for an identity classifier, `ExpectedFlow` for any
+///   other.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a ride along a universe path refuses by family.
+/// - witness: `flow_universe::tests::path_and_flow_never_coerce`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |ends| arena.value_type(ends.carrier).is_some()))]
+pub(crate) fn ends(
+    arena: &mut TermArena,
+    classifier: ValueTypeId,
+) -> Result<Ends, FlowError>
+{
+    match arena.value_type(classifier) {
+        | Some(&ValueType::Flow {
+            domain,
+            source,
+            target,
+        }) => Ok(Ends {
+            carrier: domain,
+            source,
+            target,
+            reading: Reading::Element,
+        }),
+        | Some(&ValueType::FlowUniverse(source, target)) => Ok(Ends {
+            carrier: arena.value_type_universe(GroundSort::Value, Level::zero()),
+            source,
+            target,
+            reading: Reading::Universe,
+        }),
+        | Some(&(ValueType::Path { .. } | ValueType::PathUniverse(..))) => {
+            Err(FlowError::FamilyMismatch {
+                expected: Family::Flow,
+                actual: Family::Path,
+            })
+        },
+        | _ => Err(FlowError::ExpectedFlow(classifier)),
+    }
+}
+
+/// Read a flow classifier as a universe flow and decode its endpoints.
+///
+/// # Specification
+/// - ensures: `Flow_U(x, y)` decodes as [`endpoints`]; `Flow(U₀, x, y)` at the
+///   level-zero value universe decodes as `Flow_U(x, y)`.
+/// - fails: `ExpectedFlow` for a flow at any other carrier, otherwise as
+///   [`ends`] and [`endpoints`].
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a `stay` at a code serves as a function flow's boundary.
+/// - witness: `flow_universe::tests::function::stay_at_a_thunk_code_collapses`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |flow| arena.value_type(flow.source).is_some() && arena.value_type(flow.target).is_some()))]
+pub(crate) fn universe_reading(
+    arena: &mut TermArena,
+    classifier: ValueTypeId,
+    budget: ReplayBudget,
+) -> Result<FlowType, FlowError>
+{
+    let read = ends(arena, classifier)?;
+    let universe = match read.reading {
+        | Reading::Universe => classifier,
+        | Reading::Element => match level_zero_universe(arena, read.carrier) {
+            | Reading::Universe => arena.value_type_flow_universe(read.source, read.target),
+            | Reading::Element => return Err(FlowError::ExpectedFlow(classifier)),
+        },
+    };
+    endpoints(arena, universe, budget)
+}
+
+/// Whether two flow classifiers agree as the two readings of one classifier.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Agreement
+{
+    /// One is `Flow(U₀, x, y)` at the level-zero value universe, the other
+    /// `Flow_U(x, y)`, between convertible endpoints.
+    Agree,
+    /// Anything else, which ordinary conversion decides.
+    Differ,
+}
+
+/// Decide whether a synthesized flow classifier checks at an expected one by
+/// the level-zero universe's two readings.
+///
+/// # Specification
+/// - ensures: [`Agreement::Agree`] exactly when the two classifiers are read
+///   from different formers, their carriers convert — so the element reading's
+///   carrier is the level-zero value universe — and their endpoints convert
+///   pairwise.
+/// - provides: the checking machine's mode switch for flows; a flow consumed or
+///   produced under one reading checks under the other, so the singleton row's
+///   composition and a `Flow_U` certificate stated at `Flow(U₀, x, y)` keep
+///   their types.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a forward flow checks at `Flow(U₀, a, b)` and a `stay`
+///   composite at `Flow_U(a, a)`, and a flow at the reversed endpoints still
+///   refuses.
+/// - witness: `flow_universe::tests::stay_and_forward_admit_and_ride`
+/// - witness: `flow_universe::tests::back_has_no_directed_reading`
+#[spec(ensures: |ret| ret == Agreement::Differ || actual != expected)]
+pub(crate) fn agree(
+    arena: &mut TermArena,
+    actual: ValueTypeId,
+    expected: ValueTypeId,
+) -> Agreement
+{
+    let (Ok(synthesized), Ok(wanted)) = (ends(arena, actual), ends(arena, expected))
+    else {
+        return Agreement::Differ;
+    };
+    let agrees = synthesized.reading != wanted.reading
+        && convertible_value_types(arena, synthesized.carrier, wanted.carrier)
+            == Convertibility::Convertible
+        && convert_values(arena, synthesized.source, wanted.source) == Convertibility::Convertible
+        && convert_values(arena, synthesized.target, wanted.target) == Convertibility::Convertible;
+    if agrees {
+        Agreement::Agree
+    }
+    else {
+        Agreement::Differ
+    }
+}
+
+/// Compose two flows' classifiers over a seam.
+///
+/// # Specification
+/// - ensures: the carriers agree and the first flow's target converts with the
+///   second's source; the composite runs from the first's source to the
+///   second's target, as `Flow_U` when either side is read from `Flow_U` and as
+///   `Flow` at the shared carrier otherwise.
+/// - fails: `EndpointMismatch` for differing carriers or seam endpoints;
+///   `Cycle` naming both occurrences for a feedback seam whose closing
+///   endpoints also meet, `EndpointMismatch` for one whose closing endpoints do
+///   not; as [`ends`] for a classifier that is no flow.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — injection then fold composes to an endomap, a reversed
+///   seam and a feedback seam each refuse by name.
+/// - witness: `flow_universe::tests::composition_preserves_direction_and_refuses_feedback`
+#[spec(ensures: |ret| match ret {
+    Ok(composite) => arena.value_type(composite).is_some(),
+    Err(FlowError::Cycle { first, second }) => (first, second) == occurrences && seam == Seam::Feedback,
+    Err(_) => true,
+})]
+pub(crate) fn compose(
+    arena: &mut TermArena,
+    (first, second): (ValueTypeId, ValueTypeId),
+    seam: Seam,
+    occurrences: (ValueId, ValueId),
+) -> Result<ValueTypeId, FlowError>
+{
+    let left = ends(arena, first)?;
+    let right = ends(arena, second)?;
+    if convertible_value_types(arena, left.carrier, right.carrier) != Convertibility::Convertible
+        || convert_values(arena, left.target, right.source) != Convertibility::Convertible
+    {
+        return Err(FlowError::EndpointMismatch);
+    }
+    if seam == Seam::Feedback {
+        if convert_values(arena, right.target, left.source) != Convertibility::Convertible {
+            return Err(FlowError::EndpointMismatch);
+        }
+        return Err(FlowError::Cycle {
+            first: occurrences.0,
+            second: occurrences.1,
+        });
+    }
+    Ok(
+        if left.reading == Reading::Universe || right.reading == Reading::Universe {
+            arena.value_type_flow_universe(left.source, right.target)
+        }
+        else {
+            arena.value_type_flow(left.carrier, left.source, right.target)
+        },
+    )
 }
 
 /// A constructor-pattern position in left-first, lexicographic order.
@@ -568,29 +672,24 @@ pub enum Reduct
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PatternPosition(pub usize);
 
-/// A named refusal at formation, motive elaboration or replay.
+/// A named refusal at admission, the covariance gate or replay.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FlowError
 {
-    /// A finite session simulation failed replay.
-    Session(crate::session::SessionError),
     /// Session codes transport recorded runs, not native endpoint values.
     RecordedRunRequired,
-    /// A native classifier is not `Flow_U`.
+    /// A classifier is neither `Flow` nor `Flow_U` where a flow is consumed,
+    /// or a `Flow` whose carrier is no universe where a code flow is.
     ExpectedFlow(ValueTypeId),
-    /// Missing raw certificate.
-    UnknownFlow(FlowId),
     /// Missing term or impossible internal assembly state.
     Arena,
-    /// Endpoint is not a quoted first-order code.
+    /// Endpoint is not a quoted code.
     UnsupportedCode(ValueId),
-    /// A code contains a former outside Unit, Base, Sum and Product.
+    /// A code contains a former outside the vocabulary its certificate covers.
     UnsupportedType(ValueTypeId),
-    /// Ordinary closed checking refused the translator, input or output.
-    Typing(Box<KernelError>),
     /// Missing or extra constructor images.
     Coverage,
-    /// Output is not a canonical shape with correctly typed source leaves.
+    /// An image is not a canonical shape with correctly typed source leaves.
     NonNatural(ValueId),
     /// A symbolic forward obligation did not replay positively.
     ForwardReplay
@@ -600,15 +699,15 @@ pub enum FlowError
         /// Exact kernel verdict.
         verdict: KernelVerdict,
     },
-    /// Composition endpoints do not match structurally.
+    /// Composition carriers or seam endpoints do not match.
     EndpointMismatch,
-    /// Explicit feedback closes a cycle between these occurrences.
+    /// An explicit feedback seam closes a cycle between these occurrences.
     Cycle
     {
         /// First occurrence, emitting to the second.
-        first: FlowId,
+        first: ValueId,
         /// Second occurrence, emitting back to the first.
-        second: FlowId,
+        second: ValueId,
     },
     /// No coercion crosses the family boundary.
     FamilyMismatch
@@ -618,22 +717,21 @@ pub enum FlowError
         /// Supplied certificate family.
         actual: Family,
     },
-    /// Moving endpoint occurs contravariantly in the motive.
-    NonCovariantMotive(MotiveId),
+    /// The moving binder occurs at a position other than a covariant one,
+    /// inside the named former of the motive.
+    NonCovariantMotive(AnyNode),
     /// A function code's boundary flow does not run in the direction its
     /// variance fixes.
     Boundary(Boundary),
-    /// Missing motive syntax.
-    UnknownMotive(MotiveId),
     /// Construction or traversal allowance exhausted.
     Budget,
-    /// Formation of a correctly tagged Path failed.
+    /// A universe-path certificate's formation failed.
     Path(crate::path_universe::PathError),
 }
 
 impl fmt::Display for FlowError
 {
-    /// Display the named refusal, preserving nested checker diagnostics.
+    /// Display the named refusal.
     ///
     /// # Specification
     /// trivial.
@@ -644,27 +742,20 @@ impl fmt::Display for FlowError
     ) -> fmt::Result
     {
         match self {
-            | &Self::UnknownFlow(id) => write!(f, "unknown universe flow {}", id.0),
-            | &Self::Session(ref error) => error.fmt(f),
             | &Self::RecordedRunRequired => {
                 f.write_str("session transport requires a recorded run")
             },
-            | &Self::ExpectedFlow(_) => f.write_str("expected a universe-flow classifier"),
+            | &Self::ExpectedFlow(_) => f.write_str("expected a flow classifier"),
             | &Self::Arena => f.write_str("unresolved term arena reference"),
             | &Self::UnsupportedCode(_) => f.write_str("unsupported universe-flow code"),
             | &Self::UnsupportedType(_) => f.write_str("unsupported universe-flow type"),
-            | &Self::Typing(ref error) => write!(f, "universe-flow typing: {error}"),
             | &Self::Coverage => f.write_str("forward image coverage mismatch"),
             | &Self::NonNatural(_) => f.write_str("non-natural forward image"),
             | &Self::ForwardReplay { pattern, .. } => {
                 write!(f, "forward replay refused at pattern {}", pattern.0)
             },
             | &Self::EndpointMismatch => f.write_str("composition endpoint mismatch"),
-            | &Self::Cycle { first, second } => write!(
-                f,
-                "feedback cycle: {} -> {} -> {}",
-                first.0, second.0, first.0
-            ),
+            | &Self::Cycle { .. } => f.write_str("a feedback seam closes a cycle"),
             | &Self::FamilyMismatch {
                 expected: Family::Flow,
                 ..
@@ -680,7 +771,6 @@ impl fmt::Display for FlowError
             | &Self::Boundary(Boundary::Codomain) => {
                 f.write_str("the codomain boundary flow must run covariantly")
             },
-            | &Self::UnknownMotive(_) => f.write_str("unknown directed motive"),
             | &Self::Budget => f.write_str("universe-flow budget exhausted"),
             | &Self::Path(ref error) => write!(f, "universe-path formation: {error}"),
         }
@@ -689,108 +779,6 @@ impl fmt::Display for FlowError
 
 impl core::error::Error for FlowError
 {
-}
-
-/// A native `Flow_U` classifier's refusal, as the kernel's own error carries
-/// it.
-///
-/// A [`FlowError`] owns the [`KernelError`] of a translator's typing, so the
-/// kernel error owns this flat projection instead: a typing, path or session
-/// refusal keeps the kernel's own name, and the classifier's names stay here.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ClassifierError
-{
-    /// No coercion crosses the family boundary.
-    FamilyMismatch
-    {
-        /// Required classifier family.
-        expected: Family,
-        /// Supplied classifier family.
-        actual: Family,
-    },
-    /// A native classifier is not `Flow_U`.
-    ExpectedFlow(ValueTypeId),
-    /// An endpoint is not a quoted code of the `Flow_U` vocabulary.
-    UnsupportedCode(ValueId),
-    /// A code contains a former outside the `Flow_U` vocabulary.
-    UnsupportedType(ValueTypeId),
-    /// The code walk's allowance ran out.
-    Budget,
-}
-
-impl fmt::Display for ClassifierError
-{
-    /// Display the named refusal as [`FlowError`] spells it.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn fmt(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result
-    {
-        match *self {
-            | Self::FamilyMismatch {
-                expected: Family::Flow,
-                ..
-            } => f.write_str("expected Flow, found Path"),
-            | Self::FamilyMismatch {
-                expected: Family::Path,
-                ..
-            } => f.write_str("expected Path, found Flow"),
-            | Self::ExpectedFlow(_) => f.write_str("expected a universe-flow classifier"),
-            | Self::UnsupportedCode(_) => f.write_str("unsupported universe-flow code"),
-            | Self::UnsupportedType(_) => f.write_str("unsupported universe-flow type"),
-            | Self::Budget => f.write_str("universe-flow budget exhausted"),
-        }
-    }
-}
-
-impl core::error::Error for ClassifierError
-{
-}
-
-/// The kernel's refusal for a `Flow_U` classifier [`endpoints`] refused.
-///
-/// # Specification
-/// - ensures: a classifier refusal keeps its name under `KernelError::Flow`; a
-///   typing, path or session refusal is the kernel's own; every other flow
-///   refusal, which [`endpoints`] never returns, is `ArenaFault`.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a session flow forged at a `Path_U` classifier and a List
-///   endpoint each keep their classifier refusal's name.
-/// - witness: `session::tests::session_flows_persist_and_refuse_by_family`
-#[spec(captures: family = matches!(error, FlowError::FamilyMismatch { .. }),
-    ensures: |ret| !family || matches!(ret, KernelError::Flow(ClassifierError::FamilyMismatch { .. })))]
-pub(crate) fn classifier_refusal(error: FlowError) -> KernelError
-{
-    let refusal = match error {
-        | FlowError::FamilyMismatch { expected, actual } => {
-            ClassifierError::FamilyMismatch { expected, actual }
-        },
-        | FlowError::ExpectedFlow(classifier) => ClassifierError::ExpectedFlow(classifier),
-        | FlowError::UnsupportedCode(code) => ClassifierError::UnsupportedCode(code),
-        | FlowError::UnsupportedType(ty) => ClassifierError::UnsupportedType(ty),
-        | FlowError::Budget => ClassifierError::Budget,
-        | FlowError::Typing(error) => return *error,
-        | FlowError::Path(error) => return KernelError::Path(error),
-        | FlowError::Session(error) => return KernelError::Session(error),
-        | FlowError::RecordedRunRequired
-        | FlowError::UnknownFlow(_)
-        | FlowError::Arena
-        | FlowError::Coverage
-        | FlowError::NonNatural(_)
-        | FlowError::ForwardReplay { .. }
-        | FlowError::EndpointMismatch
-        | FlowError::Cycle { .. }
-        | FlowError::NonCovariantMotive(_)
-        | FlowError::Boundary(_)
-        | FlowError::UnknownMotive(_) => return KernelError::ArenaFault,
-    };
-    KernelError::Flow(refusal)
 }
 
 /// Finite allowance for syntax, code and symbolic-output traversal.
