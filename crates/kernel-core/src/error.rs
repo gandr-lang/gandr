@@ -1033,6 +1033,11 @@ mod tests
                 verdict: KernelVerdict::NotConvertible,
             }),
             KernelError::Identity(IdentityError::OpenFunctions),
+            KernelError::Identity(IdentityError::ReturnedNonReturner(unit_returner)),
+            KernelError::Identity(IdentityError::EndpointsUnreplayed {
+                left: ContentDigest::default(),
+                right: ContentDigest::default(),
+            }),
         ];
         let descriptions = cases.each_ref().map(ToString::to_string);
         for (position, description) in descriptions.iter().enumerate() {

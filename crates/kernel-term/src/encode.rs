@@ -776,6 +776,7 @@ ensures: |ret| ret.0.as_image().as_ref().first().copied()
             Some(&Value::PathProduct(..)) => tags::NODE_V_PATH_PRODUCT,
             Some(&Value::PathEquiv { .. }) => tags::NODE_V_PATH_EQUIV,
             Some(&Value::Here(_)) => tags::NODE_V_HERE,
+            Some(&Value::Returned(_)) => tags::NODE_V_RETURNED,
             Some(&Value::Higher { .. }) => tags::NODE_V_HIGHER,
             Some(&Value::HigherEvaluation { .. }) => tags::NODE_V_HIGHER_EVALUATION,
             Some(&Value::Variable(_)) => tags::NODE_V_VARIABLE,
@@ -939,6 +940,7 @@ fn encode_entry(
                     }
                 },
                 | Value::Here(_) => out.put_tag(tags::NODE_V_HERE),
+                | Value::Returned(_) => out.put_tag(tags::NODE_V_RETURNED),
                 | Value::Higher { ref program, .. } => {
                     out.put_tag(tags::NODE_V_HIGHER);
                     for word in program.words() {

@@ -1,6 +1,8 @@
-//! Element identity as kernel syntax: the identity type `Path(A, a, b)`, its
-//! reflexivity `here(a)`, transport in a dependent motive, the guarded higher
-//! field, higher evaluation and related application.
+//! Element identity as kernel syntax.
+//!
+//! The identity type `Path(A, a, b)`, its reflexivity `here(a)`, the returned
+//! endpoint, transport in a dependent motive, the guarded higher field, higher
+//! evaluation and related application.
 //!
 //! Every judgement here reads the one identity fold in
 //! [`crate::identity_recursion`]; this module adds no clause of its own. It
@@ -62,6 +64,33 @@
 //! - reversal: a fold clause for type variables (parametricity), or the
 //!   interface a sealed atom declares, computes the fibre where this leaves it
 //!   neutral; neither removes a rule stated here.
+//!
+//! **A returned endpoint stands for what its computation returns.** An
+//! endpoint like `mul(neutral, x)` is a call, not a value former: the returned
+//! endpoint over a computation `c` synthesizes `A` when `c` synthesizes the
+//! returner `F A`. Every returner is pure, since no computation type here
+//! carries an effect row; a computation of any other type has no value to
+//! stand for and is refused as [`IdentityError::ReturnedNonReturner`], "a
+//! returned endpoint over a non-returner". An impure endpoint is not
+//! representable: the producer refuses it before it would reach the kernel.
+//! Two returned endpoints convert by their computations, a stuck one
+//! structurally. Where the conversion leaves a returned endpoint against
+//! another value — reflexivity at `Path(M, mul(neutral, x), x)`, a mode
+//! switch whose types hold one — the kernel reads it: normalizes it by its own
+//! evaluator and converts the normal form by the one conversion
+//! ([`mod@crate::replay`] § The returned endpoint). A reading that reaches a
+//! different value, or none, keeps the refusal it would have had, with one
+//! exception: at reflexivity, a reading that stops at a thunk over a definition
+//! is declined as [`IdentityError::EndpointsUnreplayed`], since only a δ-step
+//! under the thunk could relate it.
+//!
+//! - alternatives: an effect row on the kernel returner, which nothing in the
+//!   kernel would read; endpoints restricted to value formers, which strands
+//!   every law whose sides are calls; δ-normalizing under binders in the
+//!   kernel, a second equality beside the replayed one.
+//! - reversal: an effectful kernel computation type would need its own refusal
+//!   beside the non-returner one; replaying the engine's conversion trace at a
+//!   `here` endpoint retires the decline.
 //!
 //! **The checking machine never re-enters itself.** Every value the fold would
 //! check, a guard's evidence or a higher evaluation's returned values and
@@ -150,6 +179,7 @@ use crate::conv::Convertibility;
 use crate::conv::equal_values;
 use crate::encoding::ContentTable;
 use crate::encoding::content_digest;
+use crate::error::CompTypeWitness;
 use crate::error::ExpectedValueShape;
 use crate::error::KernelError;
 use crate::error::ValueTypeWitness;
@@ -206,6 +236,19 @@ pub enum IdentityError
         /// The target endpoint's content digest.
         right: ContentDigest,
     },
+    /// A reflexivity's point reaches an endpoint only by unfolding a
+    /// definition the endpoint's reading leaves under a thunk: a δ-step the
+    /// trace-free conversion does not take and the reading does not reach.
+    /// The kernel declines rather than refutes; the decline retires when the
+    /// kernel replays the engine's conversion trace at the endpoint
+    /// (<https://github.com/gandr-lang/gandr/issues/249>).
+    EndpointsUnreplayed
+    {
+        /// The source endpoint's content digest.
+        left: ContentDigest,
+        /// The target endpoint's content digest.
+        right: ContentDigest,
+    },
     /// The fibre is neutral: the domain is open, or the endpoints are not
     /// canonical, so no introduction but `here` inhabits it.
     NeutralFibre,
@@ -247,6 +290,8 @@ pub enum IdentityError
     },
     /// A higher evaluation relates functions that mention bound variables.
     OpenFunctions,
+    /// A returned endpoint's computation synthesizes no returner.
+    ReturnedNonReturner(CompTypeWitness),
 }
 
 impl fmt::Display for IdentityError
@@ -265,6 +310,9 @@ impl fmt::Display for IdentityError
             | Self::OutsideFold(_) => f.write_str("identity at a type outside the identity fold"),
             | Self::EndpointsDiffer { .. } => {
                 f.write_str("reflexivity between differing endpoints")
+            },
+            | Self::EndpointsUnreplayed { .. } => {
+                f.write_str("reflexivity whose endpoints relate only by unfolding under a thunk")
             },
             | Self::NeutralFibre => f.write_str("an identity fibre is neutral"),
             | Self::EmptyFibre => f.write_str("an identity fibre is empty"),
@@ -296,6 +344,9 @@ impl fmt::Display for IdentityError
                 f.write_str("a higher evaluation's dialogue did not replay")
             },
             | Self::OpenFunctions => f.write_str("a higher evaluation relates open functions"),
+            | Self::ReturnedNonReturner(_) => {
+                f.write_str("a returned endpoint over a non-returner")
+            },
         }
     }
 }
@@ -356,6 +407,24 @@ pub(crate) fn endpoints_differ(
 ) -> KernelError
 {
     KernelError::Identity(IdentityError::EndpointsDiffer {
+        left: content_digest(arena, AnyNode::Value(left)),
+        right: content_digest(arena, AnyNode::Value(right)),
+    })
+}
+
+/// The decline for a reflexivity whose endpoint relates to its point only by
+/// unfolding a definition its reading leaves under a thunk.
+///
+/// # Specification
+/// trivial.
+#[must_use]
+pub(crate) fn endpoints_unreplayed(
+    arena: &TermArena,
+    left: ValueId,
+    right: ValueId,
+) -> KernelError
+{
+    KernelError::Identity(IdentityError::EndpointsUnreplayed {
         left: content_digest(arena, AnyNode::Value(left)),
         right: content_digest(arena, AnyNode::Value(right)),
     })

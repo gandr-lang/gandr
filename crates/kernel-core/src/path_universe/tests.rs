@@ -128,7 +128,10 @@ fn children(
             | Value::ListNil | Value::ListCons(..) | Value::SessionPath { .. } => {
                 panic!("session evidence has a separate finite producer")
             },
-            | Value::Here(_) | Value::Higher { .. } | Value::HigherEvaluation { .. } => {
+            | Value::Here(_)
+            | Value::Returned(_)
+            | Value::Higher { .. }
+            | Value::HigherEvaluation { .. } => {
                 panic!("element identity is outside the universe-path fixture fragment")
             },
             | Value::PathEquiv {
@@ -416,7 +419,10 @@ fn translate(
                     | Value::ListNil | Value::ListCons(..) | Value::SessionPath { .. } => {
                         panic!("session evidence has a separate finite producer")
                     },
-                    | Value::Here(_) | Value::Higher { .. } | Value::HigherEvaluation { .. } => {
+                    | Value::Here(_)
+                    | Value::Returned(_)
+                    | Value::Higher { .. }
+                    | Value::HigherEvaluation { .. } => {
                         panic!("element identity is outside the universe-path fixture fragment")
                     },
                     | Value::PathRefl(code) => core.value_path_refl(values[&code]),

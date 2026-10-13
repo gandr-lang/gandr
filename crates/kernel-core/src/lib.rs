@@ -171,13 +171,14 @@
 //! Element identity is persisted kernel syntax over the one identity fold.
 //! [`element_identity`] forms `Path(A, a, b)` at any `A`, the identity at an
 //! open type a neutral fibre; an introduction checks at the fold's native
-//! fibre, `here` by the kernel's own conversion, transport at its motive
-//! instantiated by substitution, a higher field through its stated depth and a
-//! higher evaluation by replaying every component over kernel-generated
-//! coverage. The checking machine owes every nested check as a goal on its own
-//! stack, and the replay computes transport and related application by the
-//! fold's clauses. Each decision, with its alternatives and reversal, is stated
-//! in that module; the fold's bridge reading has no persisted node.
+//! fibre, `here` by the kernel's own conversion, a returned endpoint at the
+//! returner its computation synthesizes, transport at its motive instantiated
+//! by substitution, a higher field through its stated depth and a higher
+//! evaluation by replaying every component over kernel-generated coverage. The
+//! checking machine owes every nested check as a goal on its own stack, and
+//! the replay computes transport and related application by the fold's
+//! clauses. Each decision, with its alternatives and reversal, is stated in
+//! that module; the fold's bridge reading has no persisted node.
 //!
 //! # The trusted equality reflexivity reads
 //!
@@ -186,10 +187,11 @@
 //! first of all, is `conv::convert_values`: α-equality, then
 //! [`replay::convert`], the replay's own loop run with no trace. That loop
 //! fires only the rules the shapes force — weak head reduction, forcing, the η
-//! laws, the two commuting conversions of `F` and decomposition — unfolds no
-//! constant and certifies no refutation, so `EndpointsDiffer` is reported only
-//! after it fails to relate the endpoints. A judgement that needs another term
-//! equality, the compound endpoint's among them, enters at the same function.
+//! laws, the two commuting conversions of `F`, a returned endpoint taken as its
+//! computation, and decomposition — unfolds no constant and certifies no
+//! refutation, so `EndpointsDiffer` is reported only after it fails to relate
+//! the endpoints. A judgement that needs another term equality, the compound
+//! endpoint's among them, enters at the same function.
 //!
 //! **Choice.** One conversion, the replay's, so the kernel admits every
 //! reflexivity the engine's normalizer admits by those laws: the core admits
@@ -200,6 +202,21 @@
 //! constant's body take an engine trace through [`replay()`] rather than a δ
 //! rule in the forced loop. The witness is
 //! `element_identity::tests::reflexivity_converts_its_endpoints_by_the_laws_of_bind`.
+//!
+//! A returned endpoint is read, not compared. Where the conversion leaves one
+//! apart, at reflexivity or at a mode switch, the kernel normalizes it by its
+//! own evaluator — weak head reduction, and the δ-step a stuck head naming a
+//! definition admits — and the normal forms enter `conv::convert_values` like
+//! any endpoint. The forced loop stays δ-free and there is no second equality:
+//! one computation's reduction to its value chooses nothing, so the δ-step is
+//! evaluation, not a conversion rule. The witness is
+//! `element_identity::tests::a_certificate_with_a_returned_endpoint_decodes_checks_and_replays`.
+//!
+//! A reflexivity whose endpoint reads to a thunk over a definition is declined
+//! by name, [`IdentityError::EndpointsUnreplayed`], not refuted: relating it
+//! would take a δ-step under the thunk, which only a replayed engine trace may
+//! take. The witness is
+//! `element_identity::tests::an_endpoint_owing_an_unfolding_under_a_thunk_is_declined_by_name`.
 //!
 //! # Contract boundaries
 //!
@@ -212,7 +229,7 @@
 //! | Admission, staging and audit | [Environment](crate::env): committed prefixes, rollback, registration ownership, provenance ordering, ordered dependency reasons and reachability boundaries. |
 //! | Guarded local admission | [Admission](crate::admission): schema inheritance, rule-discrimination transparency, guarded substitution and exact instance-side agreement by same-arena identity. |
 //! | Checking and conversion | [Checker](crate::check), [conversion](crate::conv) and `witness`: level precedence, refusal subjects, readable identities, mode transitions and witness projections. |
-//! | Element identity | [Element identity](crate::element_identity): the neutral fibre at an open type, fibre redirection, reflexivity by conversion, guarded higher fields, coverage-replayed higher evaluation and transport by substitution. |
+//! | Element identity | [Element identity](crate::element_identity): the neutral fibre at an open type, fibre redirection, reflexivity by conversion, the returned endpoint read by its reduction, guarded higher fields, coverage-replayed higher evaluation and transport by substitution. |
 //! | Encoding and support | [Encoding](crate::encoding) and [support]: byte-exact frames and hashes, ordered children, content-id reuse, cache observations and binder reach. |
 //! | Replay and rewrite | [Replay](mod@crate::replay) and [rewrite]: arena restoration, trace consumption, ordered premises, freezing, rule priority and unchanged-subject reuse. |
 //! | Fixture observations | `acceptance`, `adversarial_depth`, `flow_universe::tests` and `path_universe::tests`: differential verdicts, closed-form counts, small-stack teardown and fixed syntax seams. |

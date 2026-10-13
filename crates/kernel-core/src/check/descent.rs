@@ -398,7 +398,7 @@ fn walk(
                             .map(|child| (AnyNode::Value(child), depth, results))
                     }));
                 },
-                | Some(&Value::Thunk(body)) => {
+                | Some(&(Value::Thunk(body) | Value::Returned(body))) => {
                     pending.push((AnyNode::Computation(body), depth, results));
                 },
                 | Some(&Value::Quote(quoted)) => {

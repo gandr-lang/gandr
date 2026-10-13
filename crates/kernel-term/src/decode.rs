@@ -1966,6 +1966,13 @@ fn decode_entry(
                 Family::Value,
             )
         },
+        | tags::NODE_V_RETURNED => {
+            let computation = read_computation(reader, table, this, &mut children)?;
+            (
+                DecodedNode::Value(table.arena.value_returned(computation)),
+                Family::Value,
+            )
+        },
         | tags::NODE_C_PATH_TRANSPORT => {
             let motive = read_value_type(reader, table, this, &mut children)
                 .map_err(|error| named_polarity(error, MalformedSite::TransportMotive))?;
@@ -4793,6 +4800,7 @@ mod tests
                 &[5],
             ),
             (&[0x0f, 7], crate::term::Value::Thunk(c1), &[7]),
+            (&[0x34, 7], crate::term::Value::Returned(c1), &[7]),
             (
                 &[0x10, 7, 0, 5],
                 crate::term::Value::Lift {
@@ -5219,6 +5227,7 @@ mod tests
                 super::DecodedNode::Value(v1),
                 &[5],
             ),
+            (&[0x34, 7], super::DecodedNode::Value(v1), &[7]),
             (
                 &[0x38, 1, 1, 11, 0, 5, 1, 5],
                 super::DecodedNode::Value(v1),
@@ -5241,6 +5250,7 @@ mod tests
                 program: alloc::sync::Arc::new(program),
                 evidence: [v1].into(),
             },
+            Value::Returned(c1),
             Value::HigherEvaluation {
                 dialogues,
                 components: [component].into(),
@@ -5336,6 +5346,12 @@ mod tests
             (&[0x38, 1, 1, 0x11, 0, 5, 1, 5], DecodeError::Malformed {
                 site: MalformedSite::PathEvidence,
             }),
+            (&[0x34, 5], DecodeError::Malformed {
+                site: MalformedSite::Polarity,
+            }),
+            (&[0x34, 6], DecodeError::Malformed {
+                site: MalformedSite::Polarity,
+            }),
         ];
         for &(bytes, ref expected) in refusals {
             let before = table.arena.watermark();
@@ -5386,8 +5402,10 @@ mod tests
             .into(),
         );
         let returned = arena.computation_return(field);
+        let endpoint = arena.value_returned(returned);
         let transport = arena.computation_path_transport(identity, here, evaluation);
-        let related = arena.computation_related_application(here, (unit, unit), field, returned);
+        let related =
+            arena.computation_related_application(here, (unit, endpoint), field, returned);
         let sequenced = arena.computation_bind(transport, related);
         let body = arena.value_thunk(sequenced);
         let returns = arena.comp_type_returner(identity);

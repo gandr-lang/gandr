@@ -237,6 +237,7 @@ pub use crate::tags::NODE_V_QUANTIFIED_EVALUATION;
 pub use crate::tags::NODE_V_QUOTE;
 pub use crate::tags::NODE_V_QUOTE_COMPUTATION;
 pub use crate::tags::NODE_V_RECORD;
+pub use crate::tags::NODE_V_RETURNED;
 pub use crate::tags::NODE_V_STATIC_APPLICATION;
 pub use crate::tags::NODE_V_THUNK;
 pub use crate::tags::NODE_V_TUPLE;

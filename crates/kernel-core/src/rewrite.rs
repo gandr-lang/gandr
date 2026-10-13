@@ -1218,6 +1218,7 @@ fn carried_occurrence(
         | Value::SessionPath { .. }
         | Value::PathEquiv { .. }
         | Value::Here(_)
+        | Value::Returned(_)
         | Value::Higher { .. }
         | Value::HigherEvaluation { .. }
         | Value::Variable(_)
@@ -1394,7 +1395,7 @@ fn push_rewrite_children(
             | Some(&Value::Injection(_, body) | &Value::Lift { body, .. }) => {
                 tasks.push(RewriteTask::Open(AnyNode::Value(body), depth, rewrite));
             },
-            | Some(&Value::Thunk(body)) => {
+            | Some(&(Value::Thunk(body) | Value::Returned(body))) => {
                 tasks.push(RewriteTask::Open(
                     AnyNode::Computation(body),
                     depth,
@@ -1794,7 +1795,7 @@ Value::Tuple(ref components) => components.len(),
 Value::Higher { ref evidence, .. } => evidence.len(),
 Value::HigherEvaluation { ref components, .. } => components.len().saturating_mul(3),
 Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::SessionPath { .. } => 2,
-Value::Injection(..) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::PathRefl(_) | Value::Here(_) => 1,
+Value::Injection(..) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::PathRefl(_) | Value::Here(_) | Value::Returned(_) => 1,
 _ => 0,
 })],
     ensures: |ret| results.len() == before.saturating_sub(arity) && match arena.value(id) {
@@ -1892,6 +1893,16 @@ fn close_value(
             }
             else {
                 arena.value_here(rewritten)
+            }
+        },
+        | Value::Returned(computation) => {
+            let rewritten =
+                popped(results, AnyNode::Computation(computation)).computation_or(computation);
+            if rewritten == computation {
+                id
+            }
+            else {
+                arena.value_returned(rewritten)
             }
         },
         | Value::Higher {

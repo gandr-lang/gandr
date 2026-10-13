@@ -283,10 +283,12 @@ use quenchant_shape::shape::Maybe;
 
 use crate::census::ExpansionCensus;
 use crate::census::ExpansionKind;
+use crate::conv::ConversionGoal;
 use crate::conv::Convertibility;
 use crate::conv::case_branch_mismatch;
 use crate::conv::convert_comp_type;
 use crate::conv::convertible_comp_types;
+use crate::conv::pending_endpoints;
 use crate::encoding::SupportGoal;
 use crate::env::AdmittedDeclaration;
 use crate::env::projected_atoms;
@@ -296,8 +298,11 @@ use crate::error::KernelError;
 use crate::error::NonInferableForm;
 use crate::error::RegisterFault;
 use crate::levels::LevelContext;
+use crate::replay::EndpointReading;
+use crate::replay::ReplayBudget;
 use crate::replay::Unfoldable;
 use crate::replay::Unfoldings;
+use crate::replay::read_endpoints;
 use crate::rewrite::BinderDepth;
 use crate::rewrite::shift_comp_type;
 use crate::rewrite::shift_value_type;
@@ -453,6 +458,59 @@ fn comp_shape_mismatch(
         expected,
         actual: comp_type_witness(arena, actual),
     }
+}
+
+/// What `goal` comes to once the returned endpoints its structure leaves open
+/// are read: normalized with the admitted definitions in `entries` unfolding,
+/// and the normal forms converted by the one conversion.
+///
+/// # Specification
+/// - requires: `goal`'s roots live in `arena`.
+/// - ensures: [`EndpointReading::Apart`] when the structural walk diverges;
+///   [`EndpointReading::Converts`] when it converges setting nothing aside;
+///   otherwise what [`read_endpoints`] makes of the set-aside pairs at the
+///   unfoldings of `entries`' definitions, every other entry opaque. `arena`
+///   holds what it held on entry.
+/// - provides: the one place the checker reads a returned endpoint, shared by
+///   reflexivity and both mode switches; the unfoldings are built only when a
+///   pair is set aside.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a path type whose endpoint returns its value through a
+///   definition converts at a mode switch, and one returning a different value
+///   does not; reflexivity at a returned endpoint reads it, and one that reads
+///   to a thunk over a definition owes a trace.
+/// - witness: `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`
+/// - witness: `element_identity::tests::a_certificate_with_a_returned_endpoint_decodes_checks_and_replays`
+/// - witness: `element_identity::tests::an_endpoint_owing_an_unfolding_under_a_thunk_is_declined_by_name`
+#[spec(captures: before = arena.watermark(), ensures: arena.watermark() == before)]
+fn read_returned(
+    arena: &mut TermArena,
+    entries: &[AdmittedDeclaration],
+    goal: ConversionGoal,
+) -> EndpointReading
+{
+    let mut pending = Vec::new();
+    if pending_endpoints(arena, goal, &mut pending) == Convertibility::Distinct {
+        return EndpointReading::Apart;
+    }
+    if pending.is_empty() {
+        return EndpointReading::Converts;
+    }
+    let unfoldings = Unfoldings::new(
+        entries
+            .iter()
+            .map(|entry| match *entry.content() {
+                | DeclarationContent::Def { body, .. } => Unfoldable::Body(body),
+                | DeclarationContent::Data { .. }
+                | DeclarationContent::Axiom { .. }
+                | DeclarationContent::AbstractType { .. } => Unfoldable::Opaque,
+            })
+            .collect(),
+    );
+    read_endpoints(arena, &unfoldings, &pending, ReplayBudget::DEFAULT)
 }
 
 /// The read-only inputs every judgement of one declaration stands on.
@@ -1414,6 +1472,9 @@ enum Frame
     /// A `here` synthesis: the point's type is synthesized; the identity is
     /// its diagonal.
     SynthHere(ValueId),
+    /// A returned endpoint's synthesis: its computation is synthesizing, and
+    /// must synthesize a returner.
+    SynthReturned,
     /// A `here` check: the point checked at the domain; it must convert with
     /// both held endpoints.
     CheckHere
@@ -2211,6 +2272,13 @@ where
                         goal = Goal::SynthValue(point);
                         continue 'expand;
                     },
+                    // A returned endpoint synthesizes the value type its
+                    // computation returns.
+                    | Value::Returned(computation) => {
+                        frames.push(Frame::SynthReturned);
+                        goal = Goal::SynthComp(computation);
+                        continue 'expand;
+                    },
                     | Value::Higher { .. } => {
                         return Err(KernelError::NotInferable {
                             form: NonInferableForm::HigherField,
@@ -2417,6 +2485,7 @@ where
                         Produced::Checked
                     },
                     | Value::Constructor { .. }
+                    | Value::Returned(_)
                     | Value::PathRefl(_)
                     | Value::PathProduct(..)
                     | Value::SessionPath { .. }
@@ -2899,18 +2968,47 @@ where
                     let domain = produced.value_type()?;
                     produced = Produced::ValueType(arena.value_type_path(domain, point, point));
                 },
+                | Frame::SynthReturned => {
+                    let synthesized = produced.comp_type()?;
+                    let Some(&CompType::Returner(result)) = arena.comp_type(synthesized)
+                    else {
+                        return Err(KernelError::Identity(
+                            crate::element_identity::IdentityError::ReturnedNonReturner(
+                                comp_type_witness(arena, synthesized),
+                            ),
+                        ));
+                    };
+                    produced = Produced::ValueType(result);
+                },
                 // Reflexivity is decided by the kernel's term conversion:
                 // α-equality first, then the rules a conversion is forced to
-                // fire, the laws of bind among them.
+                // fire, the laws of bind among them; a returned endpoint they
+                // leave apart is read by its own reduction. One that reads to a
+                // thunk over a definition is declined, not refuted.
                 | Frame::CheckHere { point, left, right } => {
-                    if crate::conv::convert_values(arena, point, left)
-                        != Convertibility::Convertible
-                        || crate::conv::convert_values(arena, point, right)
-                            != Convertibility::Convertible
-                    {
-                        return Err(crate::element_identity::endpoints_differ(
-                            arena, left, right,
-                        ));
+                    for endpoint in [left, right] {
+                        if crate::conv::convert_values(arena, point, endpoint)
+                            == Convertibility::Convertible
+                        {
+                            continue;
+                        }
+                        match read_returned(
+                            arena,
+                            judgement.entries,
+                            ConversionGoal::Value(point, endpoint),
+                        ) {
+                            | EndpointReading::Converts => {},
+                            | EndpointReading::Apart => {
+                                return Err(crate::element_identity::endpoints_differ(
+                                    arena, left, right,
+                                ));
+                            },
+                            | EndpointReading::OwesTrace => {
+                                return Err(crate::element_identity::endpoints_unreplayed(
+                                    arena, left, right,
+                                ));
+                            },
+                        }
                     }
                     produced = Produced::Checked;
                 },
@@ -3102,7 +3200,15 @@ where
                 },
                 | Frame::ConvertValue(expected) => {
                     let synthesized = produced.value_type()?;
-                    former::assignable(arena, expected, synthesized)?;
+                    if let Err(mismatch) = former::assignable(arena, expected, synthesized)
+                        && read_returned(
+                            arena,
+                            judgement.entries,
+                            ConversionGoal::ValueType(expected, synthesized),
+                        ) != EndpointReading::Converts
+                    {
+                        return Err(mismatch);
+                    }
                     produced = Produced::Checked;
                 },
                 | Frame::SynthApply(argument) => {
@@ -3290,7 +3396,15 @@ where
                 },
                 | Frame::ConvertComp(expected) => {
                     let synthesized = produced.comp_type()?;
-                    convert_comp_type(arena, expected, synthesized)?;
+                    if let Err(mismatch) = convert_comp_type(arena, expected, synthesized)
+                        && read_returned(
+                            arena,
+                            judgement.entries,
+                            ConversionGoal::CompType(expected, synthesized),
+                        ) != EndpointReading::Converts
+                    {
+                        return Err(mismatch);
+                    }
                     produced = Produced::Checked;
                 },
                 | Frame::CheckBind(body, expected) => {

@@ -847,7 +847,9 @@ impl LooseDepths
                         | Value::Injection(_, body) | Value::Lift { body, .. } => {
                             tasks.push(ReachTask::OpenValue(body));
                         },
-                        | Value::Thunk(body) => tasks.push(ReachTask::OpenComp(body)),
+                        | Value::Thunk(body) | Value::Returned(body) => {
+                            tasks.push(ReachTask::OpenComp(body));
+                        },
                         | Value::Quote(quoted) => tasks.push(ReachTask::OpenValueType(quoted)),
                         | Value::QuoteComputation(quoted) => {
                             tasks.push(ReachTask::OpenCompType(quoted));
@@ -1346,7 +1348,7 @@ Value::PathRefl(body) | Value::Here(body) | Value::Injection(_, body) | Value::L
 Value::Higher { ref evidence, .. } => evidence.iter().fold(LooseDepth(0), |depth, id| depth.join(self.cached_value(*id))),
 Value::HigherEvaluation { ref components, .. } => components.iter().fold(LooseDepth(0), |depth, component| depth.join(self.cached_value(component.left)).join(self.cached_value(component.right)).join(self.cached_value(component.evidence))),
 Value::ListCons(a, b) | Value::PathProduct(a, b) | Value::StaticApplication(a, b) => self.cached_value(a).join(self.cached_value(b)),
-Value::Thunk(body) => self.cached_comp(body),
+Value::Thunk(body) | Value::Returned(body) => self.cached_comp(body),
 Value::Quote(ty) => self.cached_value_type(ty),
 Value::QuoteComputation(ty) => self.cached_comp_type(ty),
 }))]
@@ -1420,7 +1422,7 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
                 self.cached_value(first).join(self.cached_value(second))
             },
             | Value::Injection(_, body) | Value::Lift { body, .. } => self.cached_value(body),
-            | Value::Thunk(body) => self.cached_comp(body),
+            | Value::Thunk(body) | Value::Returned(body) => self.cached_comp(body),
             | Value::Quote(quoted) => self.cached_value_type(quoted),
             | Value::QuoteComputation(quoted) => self.cached_comp_type(quoted),
         }
