@@ -359,6 +359,8 @@ where
         | ConversionDecision::EtaExpand { side, .. } => {
             ConversionDecision::EtaExpand { variable: (), side }
         },
+        | ConversionDecision::ReturnEta { side } => ConversionDecision::ReturnEta { side },
+        | ConversionDecision::Reassociate { side } => ConversionDecision::Reassociate { side },
         | ConversionDecision::Force { .. } => ConversionDecision::Force { thunk: () },
         | ConversionDecision::ComparedShared { .. } => ConversionDecision::ComparedShared {
             left: (),
@@ -629,7 +631,7 @@ fn translate(
     ConversionDecision::EtaExpand { variable, .. } => variable == ReplayNode::Other,
     ConversionDecision::Force { thunk } => thunk == ReplayNode::Other,
     ConversionDecision::ComparedShared { left, right } => left == ReplayNode::Other && right == ReplayNode::Other,
-    ConversionDecision::Decompose | ConversionDecision::NegativeSubgoal { .. } => true,
+    ConversionDecision::Decompose | ConversionDecision::NegativeSubgoal { .. } | ConversionDecision::ReturnEta { .. } | ConversionDecision::Reassociate { .. } => true,
 }))]
 fn engine(
     arena: &TermArena,

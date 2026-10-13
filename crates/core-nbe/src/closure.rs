@@ -47,6 +47,7 @@ use gandr_core_term::ValueId;
 use gandr_core_term::Zone;
 use gandr_kernel_term::DeBruijnIndex;
 
+use crate::arena::CompClosureId;
 use crate::arena::DomainValueId;
 
 /// The offset of one entry within a zone of the environment.
@@ -396,7 +397,7 @@ impl ValueClosure
     }
 }
 
-/// A suspended body, either source syntax or a native transport continuation.
+/// A suspended body, either source syntax or a native continuation.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum CompBody
 {
@@ -412,6 +413,20 @@ pub enum CompBody
     },
     /// Return a pair of the held first component and the newly bound second.
     Pair(DomainValueId),
+    /// Return the bound value: the continuation `x. return x` that F-η binds a
+    /// computation one bind short into.
+    Returned,
+    /// Enter `first` at the bound value and bind its result into `then`: the
+    /// continuation `x. (N to y. P)` associativity makes two binds in a row
+    /// into, built from the two closures as they stand.
+    Then
+    {
+        /// The inner continuation, `x. N`.
+        first: CompClosureId,
+        /// The outer continuation, `y. P`, still closed over its own
+        /// environment.
+        then: CompClosureId,
+    },
 }
 
 /// A suspended **computation** body with the environment its free variables

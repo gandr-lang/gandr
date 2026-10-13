@@ -579,7 +579,7 @@ impl TryFrom<EvidenceWord> for gandr_kernel_conversion_trace::ConversionDecision
     /// - witness: `term::tests::evidence_words_reject_unknown_and_oversized_premises`
     #[inline]
     #[spec(ensures: |ret| {
-        ret.is_ok() == (word.0 <= 0x0B_u64 ||
+        ret.is_ok() == (word.0 <= 0x0B_u64 || (0x0D_u64 ..= 0x10_u64).contains(&word.0) ||
             (word.0 & 0xFF_u64 == 0x0C_u64 && u32::try_from(word.0 >> 8_u32).is_ok()))
     })]
     fn try_from(word: EvidenceWord) -> Result<Self, Self::Error>
@@ -619,6 +619,18 @@ impl TryFrom<EvidenceWord> for gandr_kernel_conversion_trace::ConversionDecision
                 Self::NegativeSubgoal {
                     position: position.into(),
                 }
+            },
+            | 0x0D => Self::ReturnEta {
+                side: ConversionSide::Left,
+            },
+            | 0x0E => Self::ReturnEta {
+                side: ConversionSide::Right,
+            },
+            | 0x0F => Self::Reassociate {
+                side: ConversionSide::Left,
+            },
+            | 0x10 => Self::Reassociate {
+                side: ConversionSide::Right,
             },
             | _ => return Err(invalid),
         })
@@ -710,6 +722,18 @@ pub fn decision_word(
         | ConversionDecision::NegativeSubgoal { position } => {
             (u64::from(u32::from(position)) << 8_u32) | 0x0C_u64
         },
+        | ConversionDecision::ReturnEta {
+            side: ConversionSide::Left,
+        } => 0x0D,
+        | ConversionDecision::ReturnEta {
+            side: ConversionSide::Right,
+        } => 0x0E,
+        | ConversionDecision::Reassociate {
+            side: ConversionSide::Left,
+        } => 0x0F,
+        | ConversionDecision::Reassociate {
+            side: ConversionSide::Right,
+        } => 0x10,
     })
 }
 
@@ -717,6 +741,7 @@ pub fn decision_word(
 mod tests
 {
     use gandr_kernel_conversion_trace::ConversionDecision;
+    use gandr_kernel_conversion_trace::ConversionSide;
 
     use super::EvidenceWord;
 
@@ -732,8 +757,20 @@ mod tests
                 ConversionDecision::try_from(word)
             );
         }
+        for side in [ConversionSide::Left, ConversionSide::Right] {
+            for decision in [
+                ConversionDecision::ReturnEta { side },
+                ConversionDecision::Reassociate { side },
+            ] {
+                assert_eq!(
+                    Ok(decision),
+                    ConversionDecision::try_from(super::decision_word(decision)),
+                    "each bind law keeps its side across the wire"
+                );
+            }
+        }
         for word in [
-            0x0D_u64,
+            0x11_u64,
             0xFF_u64,
             0x100_u64,
             0x0100_0000_000C_u64,

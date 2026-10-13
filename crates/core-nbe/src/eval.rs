@@ -2602,6 +2602,13 @@ fn run(
                 && machine.values.len() == entry_values.saturating_add(2) && machine.values.ends_with(&[path, value])
                 && machine.tasks.len() == entry_tasks.saturating_add(2)
                 && matches!(machine.tasks.get(entry_tasks..), Some([Task::BindClosure(_), Task::Transport])),
+            Task::Body { body: crate::closure::CompBody::Returned, env } => machine.values.len() == entry_values
+                && machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps.saturating_add(1)
+                && matches!(machine.comps.last().and_then(|&id| domain.computation(id)), Some(&DomainComp::Return { value, .. })
+                    if machine.env(env).is_ok_and(|environment| environment.lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32)) == Some(value))),
+            Task::Body { body: crate::closure::CompBody::Then { then, .. }, .. } => machine.values.len() == entry_values
+                && machine.comps.len() == entry_comps && machine.tasks.len() == entry_tasks.saturating_add(2)
+                && matches!(machine.tasks.get(entry_tasks..), Some([Task::BindClosure(held), Task::Body { .. }]) if *held == then),
             Task::PathProduct(_) => machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps
                 && entry_values.checked_sub(1) == Some(machine.values.len())
                 && matches!(machine.values.last().and_then(|&id| domain.value(id)), Some(&DomainValue::PathProduct { first, second, .. })
@@ -2712,10 +2719,31 @@ fn step(
                 },
                 | crate::closure::CompBody::TransportPair { path, value } => {
                     let continuation =
-                        domain.transport_continuation(crate::closure::CompBody::Pair(bound));
+                        domain.native_continuation(crate::closure::CompBody::Pair(bound));
                     machine.tasks.push(Task::BindClosure(continuation));
                     machine.tasks.push(Task::Transport);
                     machine.values.extend([path, value]);
+                    Ok(())
+                },
+                | crate::closure::CompBody::Returned => {
+                    machine
+                        .comps
+                        .push(domain.comp_return(bound, CompTermFace::Reduced));
+                    Ok(())
+                },
+                // `x. (N to y. P)`: the inner continuation runs at the bound
+                // value under its own environment, and its result binds into
+                // the outer one as it stands.
+                | crate::closure::CompBody::Then { first, then } => {
+                    let held = domain
+                        .comp_closure(first)
+                        .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+                    let body = held.body();
+                    let mut environment = held.environment().clone();
+                    environment.extend(Zone::Intuitionistic, bound);
+                    let env = machine.hold_env(environment);
+                    machine.tasks.push(Task::BindClosure(then));
+                    machine.tasks.push(Task::Body { body, env });
                     Ok(())
                 },
             }
@@ -4260,7 +4288,7 @@ fn step_transport(
                         return Err(EvalFault::TransportedNonPath);
                     };
                     let continuation =
-                        domain.transport_continuation(crate::closure::CompBody::TransportPair {
+                        domain.native_continuation(crate::closure::CompBody::TransportPair {
                             path: second,
                             value: right,
                         });

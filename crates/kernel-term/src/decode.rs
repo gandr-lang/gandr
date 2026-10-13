@@ -5271,7 +5271,7 @@ mod tests
                     site: MalformedSite::IndexRange,
                 },
             ),
-            (&[0x38, 1, 1, 0x0D, 0, 5, 1, 5], DecodeError::Malformed {
+            (&[0x38, 1, 1, 0x11, 0, 5, 1, 5], DecodeError::Malformed {
                 site: MalformedSite::PathEvidence,
             }),
         ];

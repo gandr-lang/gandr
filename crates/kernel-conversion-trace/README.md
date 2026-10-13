@@ -29,7 +29,7 @@ The conversion-decision seam between an untrusted convertibility engine and the 
 
 ## Provided features
 
-- `ConversionDecision<Id>`: the vocabulary — `ReduceLeft`, `ReduceRight`, `ConstShortcut`, `Unfold`, `Postpone`, `Freeze`, `EtaExpand`, `Force`, `ComparedShared`, `Decompose`, `NegativeSubgoal`.
+- `ConversionDecision<Id>`: the vocabulary — `ReduceLeft`, `ReduceRight`, `ConstShortcut`, `Unfold`, `Postpone`, `Freeze`, `EtaExpand`, `ReturnEta`, `Reassociate`, `Force`, `ComparedShared`, `Decompose`, `NegativeSubgoal`.
 - `SubgoalPosition`: which premise of a decomposition a refutation names, counted in an order both consumers derive from the terms.
 - `ConversionSide`: which leg of the comparison a one-sided decision acts on.
 - `TraceSink<Id>`: the emit seam, with an associated `SinkActivity` constant.

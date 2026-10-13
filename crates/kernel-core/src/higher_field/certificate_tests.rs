@@ -64,7 +64,7 @@ fn higher(unit: ValueId) -> Codata
     ConversionDecision::EtaExpand { variable, .. } => variable == ReplayNode::Other,
     ConversionDecision::Force { thunk } => thunk == ReplayNode::Other,
     ConversionDecision::ComparedShared { left, right } => left == ReplayNode::Other && right == ReplayNode::Other,
-    ConversionDecision::Decompose | ConversionDecision::NegativeSubgoal { .. } => true,
+    ConversionDecision::Decompose | ConversionDecision::NegativeSubgoal { .. } | ConversionDecision::ReturnEta { .. } | ConversionDecision::Reassociate { .. } => true,
 }))]
 fn reduction(
     arena: &mut TermArena,
@@ -98,7 +98,7 @@ fn reduction(
     ConversionDecision::EtaExpand { variable, .. } => variable == ReplayNode::Other,
     ConversionDecision::Force { thunk } => thunk == ReplayNode::Other,
     ConversionDecision::ComparedShared { left, right } => left == ReplayNode::Other && right == ReplayNode::Other,
-    ConversionDecision::Decompose | ConversionDecision::NegativeSubgoal { .. } => true,
+    ConversionDecision::Decompose | ConversionDecision::NegativeSubgoal { .. } | ConversionDecision::ReturnEta { .. } | ConversionDecision::Reassociate { .. } => true,
 }))]
 fn round_trip(
     arena: &mut TermArena,

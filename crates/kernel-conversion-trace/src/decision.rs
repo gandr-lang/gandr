@@ -6,8 +6,9 @@
 //! `NegativeSubgoal` add the side of every reduction, the branch taken at
 //! every choice point and the premise every refutation of a decomposition
 //! rests on, which a search-free replay needs. `Unfold` and `Postpone` are the
-//! two outcomes of one unfolding choice. The variants are those of
-//! [`ConversionDecision`].
+//! two outcomes of one unfolding choice. `ReturnEta` and `Reassociate` are the
+//! two commuting conversions of `F`, each acting on one side. The variants are
+//! those of [`ConversionDecision`].
 //!
 //! # The refuted premise
 //!
@@ -35,11 +36,24 @@
 //! refuses the decision at leaves and at goals requiring unfolding, force or
 //! eta.
 //!
-//! [`ConversionSide`] is a type. `Freeze` records which side froze and
-//! `EtaExpand` which side was applied to the fresh variable; `ReduceLeft` and
-//! `ReduceRight` carry the side structurally. A trace whose side is implicit
-//! cannot be replayed without searching for it, and search-free replay is what
-//! the seam exists to deliver.
+//! [`ConversionSide`] is a type. `Freeze` records which side froze,
+//! `EtaExpand` which side was applied to the fresh variable, and `ReturnEta`
+//! and `Reassociate` which side was rewritten; `ReduceLeft` and `ReduceRight`
+//! carry the side structurally. A trace whose side is implicit cannot be
+//! replayed without searching for it, and search-free replay is what the seam
+//! exists to deliver.
+//!
+//! # The commuting conversions of `F`
+//!
+//! Two neutral computations over one head can differ only in how their binds
+//! sit: `M` against `M to x. return x`, the η-rule of `F`, and
+//! `(M to x. N) to y. P` against `M to x. (N to y. P)`, the associativity of
+//! bind. `Reassociate` names the side whose spine carries two binds in a row
+//! and rewrites the pair nearest the head into one; `ReturnEta` names the
+//! side whose spine stops where the other's continues by one bind, and reads
+//! it as its bind into `return`. Applied until neither fires, the two spines
+//! carry no two binds in a row and end at one length, so the decomposition
+//! that follows compares continuations position by position.
 
 /// Which of the two compared terms a one-sided decision acted on.
 ///
@@ -217,6 +231,20 @@ pub enum ConversionDecision<Id>
         side: ConversionSide,
         /// The consumer's identifier for the fresh variable.
         variable: Id,
+    },
+    /// The η-rule of `F`: the computation on one side was read as its bind
+    /// into `return`, `M ≡ M to x. return x`.
+    ReturnEta
+    {
+        /// Which side was expanded.
+        side: ConversionSide,
+    },
+    /// Bind associativity: on one side the two binds nearest the head became
+    /// one, `(M to x. N) to y. P ≡ M to x. (N to y. P)`.
+    Reassociate
+    {
+        /// Which side was reassociated.
+        side: ConversionSide,
     },
     /// A suspended computation or thunk was forced for the comparison.
     Force

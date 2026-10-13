@@ -287,7 +287,6 @@ use crate::conv::Convertibility;
 use crate::conv::case_branch_mismatch;
 use crate::conv::convert_comp_type;
 use crate::conv::convertible_comp_types;
-use crate::conv::equal_values;
 use crate::encoding::SupportGoal;
 use crate::env::AdmittedDeclaration;
 use crate::env::projected_atoms;
@@ -2826,11 +2825,14 @@ where
                     let domain = produced.value_type()?;
                     produced = Produced::ValueType(arena.value_type_path(domain, point, point));
                 },
-                // Reflexivity is decided by the kernel's own conversion, the
-                // same structural comparison type assignability uses.
+                // Reflexivity is decided by the kernel's term conversion:
+                // α-equality first, then the rules a conversion is forced to
+                // fire, the laws of bind among them.
                 | Frame::CheckHere { point, left, right } => {
-                    if equal_values(arena, point, left) != Convertibility::Convertible
-                        || equal_values(arena, point, right) != Convertibility::Convertible
+                    if crate::conv::convert_values(arena, point, left)
+                        != Convertibility::Convertible
+                        || crate::conv::convert_values(arena, point, right)
+                            != Convertibility::Convertible
                     {
                         return Err(crate::element_identity::endpoints_differ(
                             arena, left, right,

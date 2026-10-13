@@ -1962,6 +1962,18 @@ mod sharing_format
                         right: (),
                     },
                     Decision::Decompose,
+                    Decision::ReturnEta {
+                        side: ConversionSide::Left,
+                    },
+                    Decision::ReturnEta {
+                        side: ConversionSide::Right,
+                    },
+                    Decision::Reassociate {
+                        side: ConversionSide::Left,
+                    },
+                    Decision::Reassociate {
+                        side: ConversionSide::Right,
+                    },
                 ],
                 vec![],
             ],
@@ -1970,9 +1982,9 @@ mod sharing_format
             }]],
         };
         // Inline evidence precedes classifier #2, forward #6 and backward #6.
-        // Two source dialogues (twelve decisions and empty), one target.
-        let mut certificate = Bytes(vec![0x2C, 2, 12]);
-        for word in 0_u8 .. 12_u8 {
+        // Two source dialogues (sixteen decisions and empty), one target.
+        let mut certificate = Bytes(vec![0x2C, 2, 16]);
+        for word in (0_u8 .. 12_u8).chain(13_u8 ..= 16_u8) {
             certificate.byte(RawByte(word));
         }
         certificate.0.extend_from_slice(&[0, 1, 1]);
@@ -2015,7 +2027,7 @@ mod sharing_format
                 decode(ArtifactImage::from(&bytes.0[.. end])).err()
             );
         }
-        for invalid in [0x0D_u64, 0x0100_0000_000C_u64] {
+        for invalid in [0x11_u64, 0x0100_0000_000C_u64] {
             let entry = declaration.entries.last_mut().expect("certificate entry");
             entry.0.truncate(premise_offset);
             entry.varint(WireValue(invalid));

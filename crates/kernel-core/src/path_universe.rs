@@ -558,7 +558,9 @@ fn replay_checked(
 /// - witness: `path_universe::tests::a_non_equivalence_is_refused`
 #[spec(ensures: |ret| match (decision, ret) {
     (ConversionDecision::Freeze { side: first, .. }, ConversionDecision::Freeze { side: second, .. })
-    | (ConversionDecision::EtaExpand { side: first, .. }, ConversionDecision::EtaExpand { side: second, .. }) => first == second,
+    | (ConversionDecision::EtaExpand { side: first, .. }, ConversionDecision::EtaExpand { side: second, .. })
+    | (ConversionDecision::ReturnEta { side: first }, ConversionDecision::ReturnEta { side: second })
+    | (ConversionDecision::Reassociate { side: first }, ConversionDecision::Reassociate { side: second }) => first == second,
     (ConversionDecision::NegativeSubgoal { position: first }, ConversionDecision::NegativeSubgoal { position: second }) => first == second,
     (ConversionDecision::ReduceLeft { .. }, ConversionDecision::ReduceLeft { .. })
     | (ConversionDecision::ReduceRight { .. }, ConversionDecision::ReduceRight { .. })
@@ -589,6 +591,8 @@ pub(crate) fn anchor(decision: ConversionDecision<()>) -> ConversionDecision<Rep
             variable: node,
             side,
         },
+        | ConversionDecision::ReturnEta { side } => ConversionDecision::ReturnEta { side },
+        | ConversionDecision::Reassociate { side } => ConversionDecision::Reassociate { side },
         | ConversionDecision::Force { .. } => ConversionDecision::Force { thunk: node },
         | ConversionDecision::ComparedShared { .. } => ConversionDecision::ComparedShared {
             left: node,

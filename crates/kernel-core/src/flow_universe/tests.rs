@@ -119,7 +119,7 @@ fn apply(
     ConversionDecision::EtaExpand { variable, .. } => variable == ReplayNode::Other,
     ConversionDecision::Force { thunk } => thunk == ReplayNode::Other,
     ConversionDecision::ComparedShared { left, right } => left == ReplayNode::Other && right == ReplayNode::Other,
-    ConversionDecision::Decompose | ConversionDecision::NegativeSubgoal { .. } => true,
+    ConversionDecision::Decompose | ConversionDecision::NegativeSubgoal { .. } | ConversionDecision::ReturnEta { .. } | ConversionDecision::Reassociate { .. } => true,
 }))]
 fn image(
     arena: &mut TermArena,
