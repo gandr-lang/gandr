@@ -826,7 +826,9 @@ impl LooseDepths
                             tasks.push(ReachTask::OpenValueType(path_type));
                             tasks.push(ReachTask::OpenValue(payload_paths));
                         },
-                        | Value::PathRefl(code) | Value::Here { point: code, .. } => {
+                        | Value::PathRefl(code)
+                        | Value::Here { point: code, .. }
+                        | Value::Stay { point: code, .. } => {
                             tasks.push(ReachTask::OpenValue(code));
                         },
                         | Value::Higher {
@@ -847,9 +849,29 @@ impl LooseDepths
                                 })
                                 .map(ReachTask::OpenValue),
                         ),
+                        | Value::ForwardFlow {
+                            flow_type,
+                            translator,
+                            ref outputs,
+                            ..
+                        } => {
+                            tasks.push(ReachTask::OpenValueType(flow_type));
+                            tasks.push(ReachTask::OpenValue(translator));
+                            tasks.extend(outputs.iter().copied().map(ReachTask::OpenValue));
+                        },
+                        | Value::FunctionFlow {
+                            flow_type,
+                            domain,
+                            codomain,
+                        } => {
+                            tasks.push(ReachTask::OpenValueType(flow_type));
+                            tasks.push(ReachTask::OpenValue(domain));
+                            tasks.push(ReachTask::OpenValue(codomain));
+                        },
                         | Value::PathProduct(first, second)
                         | Value::ListCons(first, second)
-                        | Value::StaticApplication(first, second) => {
+                        | Value::StaticApplication(first, second)
+                        | Value::Then { first, second, .. } => {
                             tasks.push(ReachTask::OpenValue(first));
                             tasks.push(ReachTask::OpenValue(second));
                         },
@@ -919,6 +941,11 @@ impl LooseDepths
                             motive,
                             path,
                             value,
+                        }
+                        | Computation::Ride {
+                            motive,
+                            flow: path,
+                            value,
                         } => {
                             tasks.push(ReachTask::OpenValueType(motive));
                             tasks.push(ReachTask::OpenValue(path));
@@ -927,6 +954,13 @@ impl LooseDepths
                         | Computation::TelescopeTransport {
                             motive,
                             path,
+                            start,
+                            over,
+                            value,
+                        }
+                        | Computation::TelescopeRide {
+                            motive,
+                            flow: path,
                             start,
                             over,
                             value,
@@ -1022,6 +1056,11 @@ impl LooseDepths
                             domain,
                             left,
                             right,
+                        }
+                        | ValueType::Flow {
+                            domain,
+                            source: left,
+                            target: right,
                         } => {
                             tasks.push(ReachTask::OpenValueType(domain));
                             tasks.push(ReachTask::OpenValue(left));
@@ -1222,7 +1261,7 @@ ValueType::Data { ref arguments, .. } => arguments.iter().fold(LooseDepth(0), |d
 ValueType::Record(ref fields) => fields.values().fold(LooseDepth(0), |depth, id| depth.join(self.cached_value_type(*id))),
 ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => LooseDepth(0),
 ValueType::PathUniverse(a, b) | ValueType::FlowUniverse(a, b) => self.cached_value(a).join(self.cached_value(b)),
-ValueType::Path { domain, left, right } => self.cached_value_type(domain).join(self.cached_value(left)).join(self.cached_value(right)),
+ValueType::Path { domain, left, right } | ValueType::Flow { domain, source: left, target: right } => self.cached_value_type(domain).join(self.cached_value(left)).join(self.cached_value(right)),
 ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.iter().fold(LooseDepth(0), |depth, id| depth.join(self.cached_value_type(*id))),
 ValueType::StaticPi { domain: a, codomain: b } => self.cached_value_type(a).join(self.cached_value_type(b)),
 ValueType::Session { payloads: inner, .. } | ValueType::Lift { inner, .. } | ValueType::List(inner) => self.cached_value_type(inner),
@@ -1255,6 +1294,11 @@ ValueType::Element { code, .. } => self.cached_value(code),
                 domain,
                 left,
                 right,
+            }
+            | ValueType::Flow {
+                domain,
+                source: left,
+                target: right,
             } => self
                 .cached_value_type(domain)
                 .join(self.cached_value(left))
@@ -1372,10 +1416,12 @@ Value::ListNil | Value::Constant(_) | Value::Literal(_) => LooseDepth(0),
 Value::Tuple(ref components) => components.iter().fold(LooseDepth(0), |depth, id| depth.join(self.cached_value(*id))),
 Value::PathEquiv { path_type, forward, backward, .. } => self.cached_value_type(path_type).join(self.cached_value(forward)).join(self.cached_value(backward)),
 Value::SessionPath { path_type: classifier, payload_paths, .. } | Value::SessionFlow { flow_type: classifier, payload_paths, .. } => self.cached_value_type(classifier).join(self.cached_value(payload_paths)),
-Value::PathRefl(body) | Value::Here { point: body, .. } | Value::Injection(_, body) | Value::Lift { body, .. } => self.cached_value(body),
+Value::PathRefl(body) | Value::Here { point: body, .. } | Value::Stay { point: body, .. } | Value::Injection(_, body) | Value::Lift { body, .. } => self.cached_value(body),
+Value::ForwardFlow { flow_type, translator, ref outputs, .. } => outputs.iter().fold(self.cached_value_type(flow_type).join(self.cached_value(translator)), |depth, id| depth.join(self.cached_value(*id))),
+Value::FunctionFlow { flow_type, domain, codomain } => self.cached_value_type(flow_type).join(self.cached_value(domain)).join(self.cached_value(codomain)),
 Value::Higher { evidence: ref values, .. } | Value::QuantifiedEvaluation { children: ref values, .. } => values.iter().fold(LooseDepth(0), |depth, id| depth.join(self.cached_value(*id))),
 Value::HigherEvaluation { ref components, .. } => components.iter().fold(LooseDepth(0), |depth, component| depth.join(self.cached_value(component.left)).join(self.cached_value(component.right)).join(self.cached_value(component.evidence))),
-Value::ListCons(a, b) | Value::PathProduct(a, b) | Value::StaticApplication(a, b) => self.cached_value(a).join(self.cached_value(b)),
+Value::ListCons(a, b) | Value::PathProduct(a, b) | Value::StaticApplication(a, b) | Value::Then { first: a, second: b, .. } => self.cached_value(a).join(self.cached_value(b)),
 Value::Thunk(body) | Value::Returned(body) => self.cached_comp(body),
 Value::Quote(ty) => self.cached_value_type(ty),
 Value::QuoteComputation(ty) => self.cached_comp_type(ty),
@@ -1435,7 +1481,27 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
             } => self
                 .cached_value_type(path_type)
                 .join(self.cached_value(payload_paths)),
-            | Value::PathRefl(code) | Value::Here { point: code, .. } => self.cached_value(code),
+            | Value::PathRefl(code)
+            | Value::Here { point: code, .. }
+            | Value::Stay { point: code, .. } => self.cached_value(code),
+            | Value::ForwardFlow {
+                flow_type,
+                translator,
+                ref outputs,
+                ..
+            } => outputs.iter().fold(
+                self.cached_value_type(flow_type)
+                    .join(self.cached_value(translator)),
+                |depth, id| depth.join(self.cached_value(*id)),
+            ),
+            | Value::FunctionFlow {
+                flow_type,
+                domain,
+                codomain,
+            } => self
+                .cached_value_type(flow_type)
+                .join(self.cached_value(domain))
+                .join(self.cached_value(codomain)),
             | Value::Higher {
                 evidence: ref values,
                 ..
@@ -1456,7 +1522,8 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
             },
             | Value::PathProduct(first, second)
             | Value::ListCons(first, second)
-            | Value::StaticApplication(first, second) => {
+            | Value::StaticApplication(first, second)
+            | Value::Then { first, second, .. } => {
                 self.cached_value(first).join(self.cached_value(second))
             },
             | Value::Injection(_, body) | Value::Lift { body, .. } => self.cached_value(body),
@@ -1500,8 +1567,8 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
         None => LooseDepth::WIDEST,
         Some(&Computation::ListFold { element, result, list, on_nil, on_cons }) => self.cached_value_type(element).join(self.cached_value_type(result)).join(self.cached_value(list)).join(self.cached_comp(on_nil)).join(self.cached_comp(on_cons).under_binder().under_binder()),
         Some(&Computation::Transport(path, value)) => self.cached_value(path).join(self.cached_value(value)),
-        Some(&Computation::PathTransport { motive, path, value }) => self.cached_value_type(motive).under_binder().join(self.cached_value(path)).join(self.cached_value(value)),
-        Some(&Computation::TelescopeTransport { motive, path, start, over, value }) => self.cached_comp_type(motive).join(self.cached_value(path)).join(self.cached_value(start)).join(self.cached_value(over)).join(self.cached_value(value)),
+        Some(&(Computation::PathTransport { motive, path, value } | Computation::Ride { motive, flow: path, value })) => self.cached_value_type(motive).under_binder().join(self.cached_value(path)).join(self.cached_value(value)),
+        Some(&(Computation::TelescopeTransport { motive, path, start, over, value } | Computation::TelescopeRide { motive, flow: path, start, over, value })) => self.cached_comp_type(motive).join(self.cached_value(path)).join(self.cached_value(start)).join(self.cached_value(over)).join(self.cached_value(value)),
         Some(&Computation::RelatedApplication { path, left, right, evidence, body }) => self.cached_value(path).join(self.cached_value(left)).join(self.cached_value(right)).join(self.cached_value(evidence)).join(self.cached_comp(body).under_binder().under_binder().under_binder()),
         Some(&Computation::Lambda(body) | &Computation::Fixpoint { body, .. }) => self.cached_comp(body).under_binder(),
         Some(&Computation::Application(head, argument)) => self.cached_comp(head).join(self.cached_value(argument)),
@@ -1552,11 +1619,23 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
                 motive,
                 path,
                 value,
+            }
+            | Computation::Ride {
+                motive,
+                flow: path,
+                value,
             } => self
                 .cached_value_type(motive)
                 .under_binder()
                 .join(self.cached_value(path))
                 .join(self.cached_value(value)),
+            | Computation::TelescopeRide {
+                motive,
+                flow: path,
+                start,
+                over,
+                value,
+            }
             | Computation::TelescopeTransport {
                 motive,
                 path,

@@ -197,6 +197,17 @@ pub enum Side
     Right,
 }
 
+/// The wiring a composition requests between its two flows.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Seam
+{
+    /// The first output feeds the second input: one directed edge.
+    Sequence,
+    /// The second output also feeds back into the first input: a two-edge
+    /// cycle, which composition refuses.
+    Feedback,
+}
+
 /// A value: the positive fragment of the term vocabulary.
 ///
 /// Values are the total, thunkable half of the polarity split. No value
@@ -259,6 +270,53 @@ pub enum Value
         /// Native payload-path tuple, one path per payload obligation, in
         /// order.
         payload_paths: ValueId,
+    },
+    /// Directed reflexivity `stay(a)`: inhabits `Flow(A, a, a)`, `Flow_U(a,
+    /// a)` at a code, and every flow whose endpoints convert with `a`.
+    Stay
+    {
+        /// The point `a`.
+        point: ValueId,
+        /// The dialogue relating the point to each endpoint, untrusted.
+        dialogues: alloc::sync::Arc<crate::EndpointDialogues>,
+    },
+    /// A leaf-natural forward translator inhabiting its `Flow_U` classifier,
+    /// with one proposed image per source constructor pattern and no inverse.
+    ForwardFlow
+    {
+        /// The native universe-flow classifier over first-order codes.
+        flow_type: ValueTypeId,
+        /// The closed translator `U (source → F target)`.
+        translator: ValueId,
+        /// One proposed image per kernel-generated source pattern, in
+        /// pattern order: `thunk(λ…λ. return o)`, one binder per pattern
+        /// leaf in leaf order, so the output `o` names leaves by de Bruijn
+        /// index and stays closed under every rewrite.
+        outputs: alloc::boxed::Box<[ValueId]>,
+        /// One replay dialogue per output, untrusted.
+        dialogues: alloc::sync::Arc<[crate::Dialogue]>,
+    },
+    /// The arrow's action at function codes: a flow of results over a flow
+    /// of arguments, each boundary running the way its variance fixes.
+    FunctionFlow
+    {
+        /// The native universe-flow classifier over two function codes.
+        flow_type: ValueTypeId,
+        /// The contravariant argument boundary, `Flow_U(A', A)`.
+        domain: ValueId,
+        /// The covariant result boundary, `Flow_U(B, B')`.
+        codomain: ValueId,
+    },
+    /// Composition `then(p, q)`: `p` from `x` to `y` and `q` from `y` to `z`
+    /// compose to a flow from `x` to `z`, over an explicit seam.
+    Then
+    {
+        /// The first flow, whose output feeds the second.
+        first: ValueId,
+        /// The second flow.
+        second: ValueId,
+        /// The requested wiring; only a sequence admits.
+        seam: Seam,
     },
     /// Reflexivity at a quoted closed first-order or session code.
     PathRefl(ValueId),
@@ -514,6 +572,37 @@ pub enum Computation
         /// The second entry's source point, in `B[a]`.
         start: ValueId,
         /// The path over `path` in the second entry.
+        over: ValueId,
+        /// The value at the source point of the telescope.
+        value: ValueId,
+    },
+    /// Directed transport `ride`: given `flow` from `x` to `y` — a `Flow(A,
+    /// x, y)`, or a `Flow_U(x, y)` over the level-zero universe — and `value :
+    /// P[x]` for a motive `P` covariant in its binder, computes `F P[y]`.
+    Ride
+    {
+        /// The family `P`, a value type under one value binder: the moving
+        /// endpoint.
+        motive: ValueTypeId,
+        /// The flow ridden along.
+        flow: ValueId,
+        /// The value at the source endpoint.
+        value: ValueId,
+    },
+    /// Directed transport over a two-entry telescope: given the motive `Π (y :
+    /// A). Π (z : B). F C`, `flow` from `a` to `b` in `A`, `start : B[a]`,
+    /// `over` a flow from `start` ridden along `flow` in `B` to some `end :
+    /// B[b]`, and `value : C[a, start]`, computes `F C[b, end]`.
+    TelescopeRide
+    {
+        /// The motive, the dependent arrow over the telescope `(y : A, z :
+        /// B)` returning the family `C`, covariant in both entries.
+        motive: CompTypeId,
+        /// The flow in the telescope's first entry.
+        flow: ValueId,
+        /// The second entry's source point, in `B[a]`.
+        start: ValueId,
+        /// The flow over `flow` in the second entry.
         over: ValueId,
         /// The value at the source point of the telescope.
         value: ValueId,

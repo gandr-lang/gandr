@@ -2061,6 +2061,80 @@ fn decode_entry(
                 .computation_telescope_transport(motive, path, start, over, value);
             (DecodedNode::Computation(id), Family::Computation)
         },
+        | tags::NODE_VT_FLOW => {
+            let domain = read_value_type(reader, table, this, &mut children)?;
+            let source = read_value(reader, table, this, &mut children)
+                .map_err(|error| named_polarity(error, MalformedSite::FlowEndpoint))?;
+            let target = read_value(reader, table, this, &mut children)
+                .map_err(|error| named_polarity(error, MalformedSite::FlowEndpoint))?;
+            let id = table.arena.value_type_flow(domain, source, target);
+            (DecodedNode::ValueType(id), Family::ValueType)
+        },
+        | tags::NODE_V_STAY => {
+            let left = decode_dialogue(reader)?;
+            let right = decode_dialogue(reader)?;
+            let point = read_value(reader, table, this, &mut children)?;
+            let id = if left.is_empty() && right.is_empty() {
+                table.arena.value_stay(point)
+            }
+            else {
+                table.arena.value_stay_relating(
+                    point,
+                    alloc::sync::Arc::new(crate::EndpointDialogues { left, right }),
+                )
+            };
+            (DecodedNode::Value(id), Family::Value)
+        },
+        | tags::NODE_V_FORWARD_FLOW => {
+            let dialogues = decode_dialogues(reader)?;
+            let flow_type = read_value_type(reader, table, this, &mut children)?;
+            let translator = read_value(reader, table, this, &mut children)?;
+            let mut outputs = Vec::with_capacity(dialogues.len());
+            for _ in &dialogues {
+                outputs.push(read_value(reader, table, this, &mut children)?);
+            }
+            let id = table.arena.value_forward_flow(
+                flow_type,
+                translator,
+                outputs.into_boxed_slice(),
+                alloc::sync::Arc::from(dialogues),
+            );
+            (DecodedNode::Value(id), Family::Value)
+        },
+        | tags::NODE_V_FUNCTION_FLOW => {
+            let flow_type = read_value_type(reader, table, this, &mut children)?;
+            let domain = read_value(reader, table, this, &mut children)?;
+            let codomain = read_value(reader, table, this, &mut children)?;
+            let id = table.arena.value_function_flow(flow_type, domain, codomain);
+            (DecodedNode::Value(id), Family::Value)
+        },
+        | tags::NODE_V_THEN => {
+            let seam = decode_seam(reader)?;
+            let first = read_value(reader, table, this, &mut children)?;
+            let second = read_value(reader, table, this, &mut children)?;
+            let id = table.arena.value_then(first, second, seam);
+            (DecodedNode::Value(id), Family::Value)
+        },
+        | tags::NODE_C_RIDE => {
+            let motive = read_value_type(reader, table, this, &mut children)
+                .map_err(|error| named_polarity(error, MalformedSite::RideMotive))?;
+            let flow = read_value(reader, table, this, &mut children)?;
+            let value = read_value(reader, table, this, &mut children)?;
+            let id = table.arena.computation_ride(motive, flow, value);
+            (DecodedNode::Computation(id), Family::Computation)
+        },
+        | tags::NODE_C_TELESCOPE_RIDE => {
+            let motive = read_comp_type(reader, table, this, &mut children)
+                .map_err(|error| named_polarity(error, MalformedSite::TelescopeRideMotive))?;
+            let flow = read_value(reader, table, this, &mut children)?;
+            let start = read_value(reader, table, this, &mut children)?;
+            let over = read_value(reader, table, this, &mut children)?;
+            let value = read_value(reader, table, this, &mut children)?;
+            let id = table
+                .arena
+                .computation_telescope_ride(motive, flow, start, over, value);
+            (DecodedNode::Computation(id), Family::Computation)
+        },
         | tags::NODE_V_HIGHER => {
             let program = decode_higher_program(reader)?;
             let mut evidence = Vec::new();
@@ -3473,6 +3547,41 @@ fn decode_side(reader: &mut ByteReader<'_>) -> Result<crate::Side, DecodeError>
     }
 }
 
+/// Decode a composition's seam byte.
+///
+/// # Specification
+/// - requires: the cursor is positioned at a composition's seam byte.
+/// - ensures: on `Ok`, returns the seam the tag named and advances past it.
+/// - provides: the seam alphabet's one interpretation site.
+/// - fails: [`DecodeError::Truncated`] at the end of the image;
+///   [`DecodeError::UnknownTag`] at the seam site on any other byte.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 partitions every byte of each closed tag alphabet into its
+///   exact value or named refusal, with empty-input truncation and
+///   consumed-offset checks.
+/// - witness: `decode::tests::tag_alphabets_partition_every_byte`
+#[spec(
+    captures: start = reader.position,
+    ensures: |ret| { let byte = reader.image.byte_at(start).map(u8::from);
+        reader.position.0 == start.0.saturating_add(usize::from(byte.is_some()))
+            && match byte { Some(0) => ret.as_ref() == Ok(&crate::Seam::Sequence), Some(1) => ret.as_ref() == Ok(&crate::Seam::Feedback), Some(other) => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::Seam, tag: WireTag::from(other) }), None => ret.as_ref() == Err(&DecodeError::Truncated) } },
+)]
+#[inline]
+fn decode_seam(reader: &mut ByteReader<'_>) -> Result<crate::Seam, DecodeError>
+{
+    let tag = reader.next_tag()?;
+    match tag {
+        | tags::SEAM_SEQUENCE => Ok(crate::Seam::Sequence),
+        | tags::SEAM_FEEDBACK => Ok(crate::Seam::Feedback),
+        | other => Err(DecodeError::UnknownTag {
+            site: TagSite::Seam,
+            tag: other,
+        }),
+    }
+}
+
 /// Decode a literal, rebuilt through the base-type smart constructors.
 ///
 /// # Specification
@@ -3884,6 +3993,14 @@ mod tests
                 | _ => Err(unknown(super::TagSite::ProjectionSide)),
             };
             assert_eq!(super::decode_side(&mut reader), side);
+            assert_eq!(reader.position.0, 1);
+            let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
+            let seam = match byte {
+                | 0 => Ok(crate::Seam::Sequence),
+                | 1 => Ok(crate::Seam::Feedback),
+                | _ => Err(unknown(super::TagSite::Seam)),
+            };
+            assert_eq!(super::decode_seam(&mut reader), seam);
             assert_eq!(reader.position.0, 1);
             let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
             let sign = match byte {
@@ -5724,6 +5841,249 @@ mod tests
         )];
         let bytes = crate::encode(&arena, &declarations);
         let decoded = crate::decode(bytes.as_image()).expect("lazy product artifact decodes");
+        assert_eq!(
+            crate::encode(decoded.arena(), decoded.declarations()),
+            bytes
+        );
+    }
+
+    #[test]
+    fn flow_nodes_round_trip_and_refuse_their_malformed_sites()
+    {
+        use gandr_kernel_conversion_trace::ConversionDecision;
+
+        use crate::Computation;
+        use crate::EndpointDialogues;
+        use crate::Seam;
+        use crate::Value;
+        use crate::error::TagSite;
+        use crate::types::ValueType;
+
+        let mut table = four_family_table();
+        let &[
+            _,
+            super::DecodedNode::Value(v0),
+            _,
+            _,
+            super::DecodedNode::ValueType(vt1),
+            super::DecodedNode::Value(v1),
+            super::DecodedNode::CompType(ct1),
+            super::DecodedNode::Computation(c1),
+        ] = table.nodes.as_slice()
+        else {
+            panic!("four-family seed");
+        };
+        let value_family = super::DecodedNode::Value(v1);
+        let computation_family = super::DecodedNode::Computation(c1);
+        // Each entry, the node it decodes to, and its ordered child edges.
+        let entries: &[(&[u8], super::DecodedNode, &[u32])] = &[
+            (&[0x4A, 4, 5, 1], super::DecodedNode::ValueType(vt1), &[
+                4, 5, 1,
+            ]),
+            (&[0x4B, 0, 0, 5], value_family, &[5]),
+            (&[0x4B, 0, 1, 11, 5], value_family, &[5]),
+            (&[0x4C, 2, 0, 1, 11, 4, 5, 1, 5], value_family, &[
+                4, 5, 1, 5,
+            ]),
+            (&[0x4D, 4, 5, 1], value_family, &[4, 5, 1]),
+            (&[0x4E, 0, 5, 1], value_family, &[5, 1]),
+            (&[0x4E, 1, 1, 5], value_family, &[1, 5]),
+            (&[0x4F, 4, 5, 1], computation_family, &[4, 5, 1]),
+            (&[0x68, 6, 5, 1, 5, 1], computation_family, &[6, 5, 1, 5, 1]),
+        ];
+        let decompose = || vec![ConversionDecision::Decompose];
+        let expected_value_types = [ValueType::Flow {
+            domain: vt1,
+            source: v1,
+            target: v0,
+        }];
+        let expected_values = [
+            Value::Stay {
+                point: v1,
+                dialogues: alloc::sync::Arc::new(EndpointDialogues::default()),
+            },
+            Value::Stay {
+                point: v1,
+                dialogues: alloc::sync::Arc::new(EndpointDialogues {
+                    left: vec![],
+                    right: decompose(),
+                }),
+            },
+            Value::ForwardFlow {
+                flow_type: vt1,
+                translator: v1,
+                outputs: [v0, v1].into(),
+                dialogues: alloc::sync::Arc::from([vec![], decompose()]),
+            },
+            Value::FunctionFlow {
+                flow_type: vt1,
+                domain: v1,
+                codomain: v0,
+            },
+            Value::Then {
+                first: v1,
+                second: v0,
+                seam: Seam::Sequence,
+            },
+            Value::Then {
+                first: v0,
+                second: v1,
+                seam: Seam::Feedback,
+            },
+        ];
+        let expected_computations = [
+            Computation::Ride {
+                motive: vt1,
+                flow: v1,
+                value: v0,
+            },
+            Computation::TelescopeRide {
+                motive: ct1,
+                flow: v1,
+                start: v0,
+                over: v1,
+                value: v0,
+            },
+        ];
+        let (mut value_types, mut values, mut computations) = (
+            expected_value_types.iter(),
+            expected_values.iter(),
+            expected_computations.iter(),
+        );
+        for &(bytes, family, children) in entries {
+            let before = table.arena.watermark();
+            let count = table.nodes.len();
+            for end in 0 .. bytes.len() {
+                let prefix = bytes.get(.. end).expect("proper prefix");
+                let mut reader = ByteReader::new(ArtifactImage::from(prefix));
+                assert_eq!(
+                    super::decode_entry(&mut reader, &mut table),
+                    Err(DecodeError::Truncated)
+                );
+                assert_eq!(table.arena.watermark(), before);
+                assert_eq!(table.nodes.len(), count);
+            }
+            let mut reader = ByteReader::new(ArtifactImage::from(bytes));
+            super::decode_entry(&mut reader, &mut table).expect("literal flow entry");
+            assert_eq!(reader.position.0, bytes.len());
+            let decoded = table.nodes.last().copied().expect("appended row");
+            match (family, decoded) {
+                | (super::DecodedNode::ValueType(_), super::DecodedNode::ValueType(id)) => {
+                    assert_eq!(table.arena.value_type(id), value_types.next());
+                },
+                | (super::DecodedNode::Value(_), super::DecodedNode::Value(id)) => {
+                    assert_eq!(table.arena.value(id), values.next());
+                },
+                | (super::DecodedNode::Computation(_), super::DecodedNode::Computation(id)) => {
+                    assert_eq!(table.arena.computation(id), computations.next());
+                },
+                | _ => panic!("wrong node family"),
+            }
+            assert!(
+                table
+                    .children
+                    .last()
+                    .expect("ordered edges")
+                    .iter()
+                    .copied()
+                    .map(u32::from)
+                    .eq(children.iter().copied())
+            );
+        }
+        assert_eq!(
+            (value_types.next(), values.next(), computations.next()),
+            (None, None, None)
+        );
+
+        // Each structural invariant refuses at its own site, minting nothing.
+        let malformed = |site| DecodeError::Malformed { site };
+        let refusals: &[(&[u8], DecodeError)] = &[
+            (&[0x4A, 4, 3, 1], malformed(MalformedSite::FlowEndpoint)),
+            (&[0x4A, 4, 5, 2], malformed(MalformedSite::FlowEndpoint)),
+            (&[0x4A, 5, 5, 1], malformed(MalformedSite::Polarity)),
+            (&[0x4F, 5, 5, 1], malformed(MalformedSite::RideMotive)),
+            (&[0x4F, 4, 3, 1], malformed(MalformedSite::Polarity)),
+            (
+                &[0x68, 4, 5, 1, 5, 1],
+                malformed(MalformedSite::TelescopeRideMotive),
+            ),
+            (&[0x4B, 0, 0, 6], malformed(MalformedSite::Polarity)),
+            (
+                &[0x4B, 0, 1, 0x11, 5],
+                malformed(MalformedSite::PathEvidence),
+            ),
+            (
+                &[0x4C, 1, 1, 0x11, 4, 5, 5],
+                malformed(MalformedSite::PathEvidence),
+            ),
+            (&[0x4C, 1, 0, 5, 5, 5], malformed(MalformedSite::Polarity)),
+            (&[0x4C, 1, 0, 4, 5, 6], malformed(MalformedSite::Polarity)),
+            (&[0x4D, 5, 5, 1], malformed(MalformedSite::Polarity)),
+            (&[0x4D, 4, 5, 7], malformed(MalformedSite::Polarity)),
+            (&[0x4E, 0, 5, 7], malformed(MalformedSite::Polarity)),
+            (&[0x4E, 2, 5, 1], DecodeError::UnknownTag {
+                site: TagSite::Seam,
+                tag: super::WireTag::from(2_u8),
+            }),
+        ];
+        for &(bytes, ref expected) in refusals {
+            let before = table.arena.watermark();
+            let count = table.nodes.len();
+            let mut reader = ByteReader::new(ArtifactImage::from(bytes));
+            assert_eq!(
+                super::decode_entry(&mut reader, &mut table).as_ref(),
+                Err(expected),
+                "{bytes:?}"
+            );
+            assert_eq!(table.arena.watermark(), before);
+            assert_eq!(table.nodes.len(), count);
+        }
+
+        // A whole artifact carrying every flow node re-encodes byte for byte.
+        let mut arena = crate::TermArena::new();
+        let unit_type = arena.value_type_unit();
+        let unit = arena.value_unit();
+        let code = arena.value_quote(unit_type);
+        let element_flow = arena.value_type_flow(unit_type, unit, unit);
+        let universe_flow = arena.value_type_flow_universe(code, code);
+        let stay = arena.value_stay_relating(
+            unit,
+            alloc::sync::Arc::new(EndpointDialogues {
+                left: decompose(),
+                right: vec![],
+            }),
+        );
+        let point = arena.value_variable(crate::DeBruijnIndex::from(0_u32));
+        let image = arena.computation_return(point);
+        let image = arena.computation_lambda(image);
+        let translator = arena.value_thunk(image);
+        let forward = arena.value_forward_flow(
+            universe_flow,
+            translator,
+            [unit].into(),
+            alloc::sync::Arc::from([decompose()]),
+        );
+        let function = arena.value_function_flow(universe_flow, forward, stay);
+        let then = arena.value_then(forward, function, Seam::Feedback);
+        let ride = arena.computation_ride(unit_type, then, unit);
+        let returns = arena.comp_type_returner(unit_type);
+        let family = arena.comp_type_pi(element_flow, returns);
+        let telescope = arena.comp_type_pi(unit_type, family);
+        let carried = arena.computation_telescope_ride(telescope, stay, unit, stay, unit);
+        let sequenced = arena.computation_bind(ride, carried);
+        let body = arena.value_thunk(sequenced);
+        let declared = arena.value_type_thunk(returns);
+        let declaration = crate::DeclarationBuilder::new(&mut arena).def(
+            crate::LevelSignature::monomorphic(),
+            declared,
+            body,
+        );
+        let declarations = [crate::MarkedDeclaration::new(
+            crate::AdmissionMark::Checked,
+            declaration,
+        )];
+        let bytes = crate::encode(&arena, &declarations);
+        let decoded = crate::decode(bytes.as_image()).expect("flow artifact decodes");
         assert_eq!(
             crate::encode(decoded.arena(), decoded.declarations()),
             bytes

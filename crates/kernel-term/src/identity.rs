@@ -320,3 +320,34 @@ pub fn endpoint_words(
             .chain(dialogue.iter().copied().map(crate::term::decision_word))
         })
 }
+
+/// Stream a forward flow's canonical inline payload without allocating an
+/// image.
+///
+/// # Specification
+/// - requires: nothing; the dialogues are still untrusted.
+/// - ensures: the image count, then per image its dialogue as a decision count
+///   followed by the decision words of the universe-path evidence alphabet.
+/// - provides: identical payload content for the wire and memo encoders.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — framing is a law of subsequent iterator consumption;
+///   checking the opaque iterator here would consume it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the round trip retains image boundaries, an empty
+///   dialogue beside a non-empty one, and every decision.
+/// - witness: `decode::tests::flow_nodes_round_trip_and_refuse_their_malformed_sites`
+#[inline]
+pub fn forward_words(dialogues: &[Dialogue]) -> impl Iterator<Item = crate::EvidenceWord> + '_
+{
+    let count = |length: usize| {
+        crate::EvidenceWord(u64::from(crate::wire::WireU64::from(
+            crate::wire::WireUsize::from(length),
+        )))
+    };
+    core::iter::once(count(dialogues.len())).chain(dialogues.iter().flat_map(move |dialogue| {
+        core::iter::once(count(dialogue.len()))
+            .chain(dialogue.iter().copied().map(crate::term::decision_word))
+    }))
+}

@@ -135,6 +135,10 @@ fn children(
                 panic!("session evidence has a separate finite producer")
             },
             | Value::Here { .. }
+            | Value::Stay { .. }
+            | Value::ForwardFlow { .. }
+            | Value::FunctionFlow { .. }
+            | Value::Then { .. }
             | Value::Returned(_)
             | Value::Higher { .. }
             | Value::HigherEvaluation { .. }
@@ -175,6 +179,8 @@ fn children(
             },
             | Computation::PathTransport { .. }
             | Computation::TelescopeTransport { .. }
+            | Computation::Ride { .. }
+            | Computation::TelescopeRide { .. }
             | Computation::RelatedApplication { .. } => {
                 panic!("element identity is outside the universe-path fixture fragment")
             },
@@ -199,6 +205,7 @@ fn children(
             | ValueType::List(_)
             | ValueType::Session { .. }
             | ValueType::Path { .. }
+            | ValueType::Flow { .. }
             | ValueType::FlowUniverse(..) => {
                 panic!("recursive inhabitants stay outside the first-order path producer")
             },
@@ -440,6 +447,10 @@ fn translate(
                         panic!("session evidence has a separate finite producer")
                     },
                     | Value::Here { .. }
+                    | Value::Stay { .. }
+                    | Value::ForwardFlow { .. }
+                    | Value::FunctionFlow { .. }
+                    | Value::Then { .. }
                     | Value::Returned(_)
                     | Value::Higher { .. }
                     | Value::HigherEvaluation { .. }
@@ -509,6 +520,8 @@ fn translate(
                     },
                     | Computation::PathTransport { .. }
                     | Computation::TelescopeTransport { .. }
+                    | Computation::Ride { .. }
+                    | Computation::TelescopeRide { .. }
                     | Computation::RelatedApplication { .. } => {
                         panic!("element identity is outside the universe-path fixture fragment")
                     },
@@ -564,6 +577,7 @@ fn translate(
                     | ValueType::List(_)
                     | ValueType::Session { .. }
                     | ValueType::Path { .. }
+                    | ValueType::Flow { .. }
                     | ValueType::FlowUniverse(..) => {
                         panic!("recursive inhabitants stay outside the first-order path producer")
                     },

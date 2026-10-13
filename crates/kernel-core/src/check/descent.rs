@@ -369,10 +369,34 @@ fn walk(
                     pending.push((AnyNode::Value(forward), depth, results));
                     pending.push((AnyNode::Value(backward), depth, results));
                 },
+                | Some(&Value::ForwardFlow {
+                    flow_type,
+                    translator,
+                    ref outputs,
+                    ..
+                }) => {
+                    pending.push((AnyNode::ValueType(flow_type), depth, results));
+                    pending.push((AnyNode::Value(translator), depth, results));
+                    pending.extend(
+                        outputs
+                            .iter()
+                            .map(|&output| (AnyNode::Value(output), depth, results)),
+                    );
+                },
+                | Some(&Value::FunctionFlow {
+                    flow_type,
+                    domain,
+                    codomain,
+                }) => {
+                    pending.push((AnyNode::ValueType(flow_type), depth, results));
+                    pending.push((AnyNode::Value(domain), depth, results));
+                    pending.push((AnyNode::Value(codomain), depth, results));
+                },
                 | Some(
                     &(Value::PathProduct(first, second)
                     | Value::ListCons(first, second)
-                    | Value::StaticApplication(first, second)),
+                    | Value::StaticApplication(first, second)
+                    | Value::Then { first, second, .. }),
                 ) => {
                     pending.push((AnyNode::Value(first), depth, results));
                     pending.push((AnyNode::Value(second), depth, results));
@@ -387,6 +411,7 @@ fn walk(
                 | Some(
                     &(Value::PathRefl(body)
                     | Value::Here { point: body, .. }
+                    | Value::Stay { point: body, .. }
                     | Value::Injection(_, body)
                     | Value::Lift { body, .. }),
                 ) => {
@@ -504,23 +529,39 @@ fn walk(
                     pending.push((AnyNode::Value(path), depth, results));
                     pending.push((AnyNode::Value(value), depth, results));
                 },
-                | Some(&Computation::PathTransport {
-                    motive,
-                    path,
-                    value,
-                }) => {
+                | Some(
+                    &(Computation::PathTransport {
+                        motive,
+                        path,
+                        value,
+                    }
+                    | Computation::Ride {
+                        motive,
+                        flow: path,
+                        value,
+                    }),
+                ) => {
                     pending.push((AnyNode::ValueType(motive), deeper, results));
                     pending.push((AnyNode::Value(path), depth, results));
                     pending.push((AnyNode::Value(value), depth, results));
                 },
                 // The motive's arrows bind the telescope themselves.
-                | Some(&Computation::TelescopeTransport {
-                    motive,
-                    path,
-                    start,
-                    over,
-                    value,
-                }) => {
+                | Some(
+                    &(Computation::TelescopeTransport {
+                        motive,
+                        path,
+                        start,
+                        over,
+                        value,
+                    }
+                    | Computation::TelescopeRide {
+                        motive,
+                        flow: path,
+                        start,
+                        over,
+                        value,
+                    }),
+                ) => {
                     pending.push((AnyNode::CompType(motive), depth, results));
                     pending.extend(
                         [path, start, over, value]
@@ -595,11 +636,18 @@ fn walk(
                     pending.push((AnyNode::Value(source), depth, results));
                     pending.push((AnyNode::Value(target), depth, results));
                 },
-                | Some(&ValueType::Path {
-                    domain,
-                    left,
-                    right,
-                }) => {
+                | Some(
+                    &(ValueType::Path {
+                        domain,
+                        left,
+                        right,
+                    }
+                    | ValueType::Flow {
+                        domain,
+                        source: left,
+                        target: right,
+                    }),
+                ) => {
                     pending.push((AnyNode::ValueType(domain), depth, results));
                     pending.push((AnyNode::Value(left), depth, results));
                     pending.push((AnyNode::Value(right), depth, results));

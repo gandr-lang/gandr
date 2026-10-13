@@ -53,6 +53,8 @@ pub enum ValueTypeHead
     FlowUniverse,
     /// An identity type between two elements.
     Path,
+    /// A directed identity type between two elements.
+    Flow,
     /// A rigid base-type atom.
     Base,
     /// A product, the unit type among them.
@@ -93,6 +95,7 @@ impl ValueTypeHead
             | ValueType::PathUniverse(..) => Self::PathUniverse,
             | ValueType::FlowUniverse(..) => Self::FlowUniverse,
             | ValueType::Path { .. } => Self::Path,
+            | ValueType::Flow { .. } => Self::Flow,
             | ValueType::Base(_) => Self::Base,
             | ValueType::Element { .. } => Self::Element,
             | ValueType::Product(..) => Self::Product,
@@ -554,9 +557,8 @@ pub enum KernelError
     Session(crate::session::SessionError),
     /// A native universe-path formation or replay obligation failed.
     Path(crate::path_universe::PathError),
-    /// A native universe-flow classifier refused; a session simulation's
-    /// replay refuses as [`KernelError::Session`].
-    Flow(crate::flow_universe::ClassifierError),
+    /// A native universe-flow classifier or session simulation failed.
+    Flow(crate::flow_universe::FlowError),
     /// An element-identity formation, introduction or elimination failed.
     Identity(crate::element_identity::IdentityError),
     /// A value variable's de Bruijn index escaped the typing context.

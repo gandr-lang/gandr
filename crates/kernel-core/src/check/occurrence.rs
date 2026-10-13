@@ -339,12 +339,20 @@ fn worst(
                     pending.push((AnyNode::Value(target), term(reach)));
                 },
                 // An identity over the declaration being formed is no strictly
-                // positive field: every part of a path type is a term position.
-                | Some(&ValueType::Path {
-                    domain,
-                    left,
-                    right,
-                }) => {
+                // positive field: every part of a path or flow type is a term
+                // position.
+                | Some(
+                    &(ValueType::Path {
+                        domain,
+                        left,
+                        right,
+                    }
+                    | ValueType::Flow {
+                        domain,
+                        source: left,
+                        target: right,
+                    }),
+                ) => {
                     pending.push((AnyNode::ValueType(domain), term(reach)));
                     pending.push((AnyNode::Value(left), term(reach)));
                     pending.push((AnyNode::Value(right), term(reach)));
@@ -461,10 +469,34 @@ fn worst(
                     pending.push((AnyNode::Value(forward), reach));
                     pending.push((AnyNode::Value(backward), reach));
                 },
+                | Some(&Value::ForwardFlow {
+                    flow_type,
+                    translator,
+                    ref outputs,
+                    ..
+                }) => {
+                    pending.push((AnyNode::ValueType(flow_type), reach));
+                    pending.push((AnyNode::Value(translator), reach));
+                    pending.extend(
+                        outputs
+                            .iter()
+                            .map(|&output| (AnyNode::Value(output), reach)),
+                    );
+                },
+                | Some(&Value::FunctionFlow {
+                    flow_type,
+                    domain,
+                    codomain,
+                }) => {
+                    pending.push((AnyNode::ValueType(flow_type), reach));
+                    pending.push((AnyNode::Value(domain), reach));
+                    pending.push((AnyNode::Value(codomain), reach));
+                },
                 | Some(
                     &(Value::PathProduct(first, second)
                     | Value::ListCons(first, second)
-                    | Value::StaticApplication(first, second)),
+                    | Value::StaticApplication(first, second)
+                    | Value::Then { first, second, .. }),
                 ) => {
                     pending.push((AnyNode::Value(first), reach));
                     pending.push((AnyNode::Value(second), reach));
@@ -479,6 +511,7 @@ fn worst(
                 | Some(
                     &(Value::PathRefl(body)
                     | Value::Here { point: body, .. }
+                    | Value::Stay { point: body, .. }
                     | Value::Injection(_, body)
                     | Value::Lift { body, .. }),
                 ) => {
@@ -563,22 +596,38 @@ fn worst(
                     pending.push((AnyNode::Value(path), reach));
                     pending.push((AnyNode::Value(value), reach));
                 },
-                | Some(&Computation::PathTransport {
-                    motive,
-                    path,
-                    value,
-                }) => {
+                | Some(
+                    &(Computation::PathTransport {
+                        motive,
+                        path,
+                        value,
+                    }
+                    | Computation::Ride {
+                        motive,
+                        flow: path,
+                        value,
+                    }),
+                ) => {
                     pending.push((AnyNode::ValueType(motive), reach));
                     pending.push((AnyNode::Value(path), reach));
                     pending.push((AnyNode::Value(value), reach));
                 },
-                | Some(&Computation::TelescopeTransport {
-                    motive,
-                    path,
-                    start,
-                    over,
-                    value,
-                }) => {
+                | Some(
+                    &(Computation::TelescopeTransport {
+                        motive,
+                        path,
+                        start,
+                        over,
+                        value,
+                    }
+                    | Computation::TelescopeRide {
+                        motive,
+                        flow: path,
+                        start,
+                        over,
+                        value,
+                    }),
+                ) => {
                     pending.push((AnyNode::CompType(motive), reach));
                     pending.extend(
                         [path, start, over, value].map(|child| (AnyNode::Value(child), reach)),

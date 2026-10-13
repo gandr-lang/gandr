@@ -10,14 +10,11 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_kernel_core::Convertibility;
+use gandr_kernel_core::KernelError;
 use gandr_kernel_core::ReplayBudget;
 use gandr_kernel_core::convertible_value_types;
-use gandr_kernel_core::flow_universe::Certificate;
 use gandr_kernel_core::flow_universe::CertificateType;
 use gandr_kernel_core::flow_universe::Family;
-use gandr_kernel_core::flow_universe::Flow;
-use gandr_kernel_core::flow_universe::FlowError;
-use gandr_kernel_core::flow_universe::Flows;
 use gandr_kernel_core::flow_universe::form_certificate;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
@@ -73,8 +70,9 @@ pub enum TransportError
     Direction,
     /// A recorded run requires a direct session simulation introduction.
     ExpectedSessionFlow,
-    /// Kernel certificate formation refused.
-    Flow(FlowError),
+    /// Kernel certificate formation refused: a flow, session or typing
+    /// refusal by its kernel name.
+    Flow(KernelError),
     /// A monitor type invariant failed.
     Type(TypeError),
     /// Kernel graph inspection refused.
@@ -318,15 +316,14 @@ fn binding(
 #[inline]
 pub fn transport(
     arena: &mut TermArena,
-    flows: &Flows,
-    certificate: Certificate,
+    certificate: ValueId,
     protocols: (Protocol<'_>, Protocol<'_>),
     moves: &[Move],
     budget: ReplayBudget,
 ) -> Result<Vec<Move>, TransportError>
 {
     let watermark = arena.watermark();
-    let result = checked_transport(arena, flows, certificate, protocols, moves, budget);
+    let result = checked_transport(arena, certificate, protocols, moves, budget);
     arena.truncate_to(watermark);
     result
 }
@@ -350,28 +347,19 @@ pub fn transport(
     && replay(protocols.1.session, output) == Ok(crate::Completion)))]
 fn checked_transport(
     arena: &mut TermArena,
-    flows: &Flows,
-    certificate: Certificate,
+    certificate: ValueId,
     protocols: (Protocol<'_>, Protocol<'_>),
     moves: &[Move],
     budget: ReplayBudget,
 ) -> Result<Vec<Move>, TransportError>
 {
-    let classifier = form_certificate(arena, flows, certificate, Family::Flow, budget)
-        .map_err(TransportError::Flow)?;
+    let classifier =
+        form_certificate(arena, certificate, Family::Flow, budget).map_err(TransportError::Flow)?;
     let CertificateType::Flow(classifier) = classifier
     else {
         return Err(TransportError::ExpectedSessionFlow);
     };
-    let Certificate::Flow(id) = certificate
-    else {
-        return Err(TransportError::ExpectedSessionFlow);
-    };
-    let Flow::Session(simulation) = *flows.get(id).map_err(TransportError::Flow)?
-    else {
-        return Err(TransportError::ExpectedSessionFlow);
-    };
-    let Some(node) = arena.value(simulation)
+    let Some(node) = arena.value(certificate)
     else {
         return Err(TransportError::ExpectedSessionFlow);
     };

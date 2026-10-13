@@ -68,7 +68,12 @@
 //! | `0x3C–0x47` | Held function-identity growth | Refused |
 //! | `0x48` | `Flow_U`, two value-code children | Admitted |
 //! | `0x49` | Session simulation evidence, classifier and payload-proof children | Admitted |
-//! | `0x4A–0x4F` | `Flow_U` reservation | Refused |
+//! | `0x4A` | Element `Flow`, value-type child and source and target value children | Admitted |
+//! | `0x4B` | `stay`, inline endpoint dialogues, one point value child | Admitted |
+//! | `0x4C` | Forward flow, inline image dialogues, classifier, translator and one output child per image | Admitted |
+//! | `0x4D` | Function flow, classifier and domain and codomain flow children | Admitted |
+//! | `0x4E` | `then`, inline seam byte and two flow children | Admitted |
+//! | `0x4F` | `ride`, motive (value type under one binder), flow and input children | Admitted |
 //! | `0x50` | List code, one element-type child | Admitted |
 //! | `0x51` | Native List nil, no children | Admitted |
 //! | `0x52` | Session code, inline finite graph and one payload-type child | Admitted |
@@ -87,10 +92,11 @@
 //! | `0x65` | Lazy product type, two computation-type children | Admitted |
 //! | `0x66` | Lazy pairing, two computation children | Admitted |
 //! | `0x67` | Lazy projection, inline side byte and one computation child | Admitted |
-//! | `0x68–0xFF` | Unassigned | Refused |
+//! | `0x68` | Telescope ride, motive (the dependent arrow over a two-entry telescope), flow, source point, flow over it and input children | Admitted |
+//! | `0x69–0xFF` | Unassigned | Refused |
 //!
 //! The admitted domain is sparse: the greatest assigned native byte is
-//! `0x67`, not a promise to accept every smaller byte. Boundary witnesses
+//! `0x68`, not a promise to accept every smaller byte. Boundary witnesses
 //! admit assigned native tags, refuse inline opcodes and retired bytes as
 //! native nodes, and retain the frozen block. The unit and the empty type are
 //! zero-count products and sums, and List nil is a zero-child leaf; all three
@@ -272,20 +278,32 @@
 //! endpoint-value language requires its own formation and elimination rules.
 //! These tags encode protocol types and identity evidence, not live channels.
 //!
-//! # Universe flows
+//! # Flows
 //!
 //! [`NODE_VT_FLOW_UNIVERSE`] is `Flow_U`, the forward-only twin of
 //! [`NODE_VT_PATH_UNIVERSE`], with the same two value-code children: source
-//! then target. The classifier names no certificate kind, so every forward
-//! introduction the `Flow_U` family grows shares it. [`NODE_V_SESSION_FLOW`]
-//! is the one persisted introduction: a Gay–Hole simulation between two
-//! session codes, framed exactly as [`NODE_V_SESSION_PATH`] — inline evidence,
-//! then the classifier and one tuple of native payload-path values. The other
-//! forward introductions (directed reflexivity, leaf-natural translators, the
-//! arrow's action, composition) stay in-memory rule syntax and keep the
-//! remaining bytes of the reservation. Both bytes hold [`FORMAT_VERSION`]: a
-//! reader that predates them refuses each by name as an unassigned byte, so no
-//! artifact means anything else by them.
+//! then target. [`NODE_VT_FLOW`] is the element family `Flow(A, x, y)`, framed
+//! as [`NODE_VT_PATH`]: the carrier, then source and target. Neither
+//! classifier names a certificate kind, so every forward introduction shares
+//! them. The introductions:
+//!
+//! | Node | Inline | Children |
+//! | ---- | ------ | -------- |
+//! | [`NODE_V_STAY`] | endpoint dialogues, as [`NODE_V_HERE`] | the point |
+//! | [`NODE_V_FORWARD_FLOW`] | an image count, then one dialogue per image | classifier, translator, one output per image |
+//! | [`NODE_V_FUNCTION_FLOW`] | none | classifier, domain flow, codomain flow |
+//! | [`NODE_V_THEN`] | the seam byte, [`SEAM_SEQUENCE`] or [`SEAM_FEEDBACK`] | first flow, second flow |
+//! | [`NODE_V_SESSION_FLOW`] | simulation evidence, as [`NODE_V_SESSION_PATH`] | classifier, payload-path tuple |
+//!
+//! A forward flow's image dialogues and outputs are the replayed translator
+//! images in pattern order, so readmission compares each recorded output
+//! against a fresh run rather than trusting it. [`NODE_C_RIDE`] is directed
+//! transport, framed as [`NODE_C_PATH_TRANSPORT`]; [`NODE_C_TELESCOPE_RIDE`]
+//! is its telescope form, framed as [`NODE_C_TELESCOPE_TRANSPORT`]. A seam
+//! byte outside its two-letter alphabet is refused at the seam site. Every
+//! flow byte holds [`FORMAT_VERSION`]: a reader that predates them refuses
+//! each by name as an unassigned byte, so no artifact means anything else by
+//! them.
 
 use anodized::spec;
 
@@ -639,6 +657,29 @@ pub const NODE_VT_FLOW_UNIVERSE: WireTag = WireTag(0x48);
 /// Node tag: finite session simulation, classifier and payload-proof tuple.
 pub const NODE_V_SESSION_FLOW: WireTag = WireTag(0x49);
 
+/// Node tag: directed element identity `Flow(A, x, y)`, over a value type and
+/// two endpoint values.
+pub const NODE_VT_FLOW: WireTag = WireTag(0x4A);
+
+/// Node tag: directed reflexivity `stay`, inline endpoint dialogues and one
+/// point value.
+pub const NODE_V_STAY: WireTag = WireTag(0x4B);
+
+/// Node tag: a leaf-natural forward flow, inline image dialogues, then its
+/// classifier, translator and one output per image.
+pub const NODE_V_FORWARD_FLOW: WireTag = WireTag(0x4C);
+
+/// Node tag: the arrow's action at function codes, over its classifier and the
+/// domain and codomain boundary flows.
+pub const NODE_V_FUNCTION_FLOW: WireTag = WireTag(0x4D);
+
+/// Node tag: composition `then`, an inline seam byte and two flows.
+pub const NODE_V_THEN: WireTag = WireTag(0x4E);
+
+/// Node tag: directed transport `ride`, over a motive under one value binder,
+/// a flow and the input value.
+pub const NODE_C_RIDE: WireTag = WireTag(0x4F);
+
 /// Node tag: the strictly positive list code, over one element type.
 pub const NODE_VT_LIST: WireTag = WireTag(0x50);
 
@@ -697,6 +738,13 @@ pub const NODE_C_PROJECT: WireTag = WireTag(0x67);
 pub const SIDE_LEFT: WireTag = WireTag(0);
 /// Projection side: the right component of a lazy pairing.
 pub const SIDE_RIGHT: WireTag = WireTag(1);
+/// Node tag: directed transport over a two-entry telescope, over its motive,
+/// flow, start point, flow over it and input value.
+pub const NODE_C_TELESCOPE_RIDE: WireTag = WireTag(0x68);
+/// Composition seam: the first output feeds the second input.
+pub const SEAM_SEQUENCE: WireTag = WireTag(0);
+/// Composition seam: the second output also feeds back into the first input.
+pub const SEAM_FEEDBACK: WireTag = WireTag(1);
 /// The number of subterm-table child references an entry carries after its
 /// inline payload.
 ///
@@ -879,7 +927,7 @@ pub struct NodeTagDescription
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
+    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_FLOW | NODE_V_STAY | NODE_V_FORWARD_FLOW | NODE_V_FUNCTION_FLOW | NODE_V_THEN | NODE_C_RIDE | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD | NODE_C_TELESCOPE_RIDE) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
             && match max_token_bound { Some(bound) => bound.0 >= 1, None => true },
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -931,7 +979,7 @@ const fn row(
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
+    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_FLOW | NODE_V_STAY | NODE_V_FORWARD_FLOW | NODE_V_FUNCTION_FLOW | NODE_V_THEN | NODE_C_RIDE | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD | NODE_C_TELESCOPE_RIDE) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
             && !matches!(tag, NODE_VT_BASE | NODE_V_VARIABLE | NODE_V_CONSTANT | NODE_VT_ABSTRACT | NODE_V_LIST_NIL),
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -1031,7 +1079,7 @@ const fn bounded_alias(
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
-pub const NODE_TAG_TABLE: [NodeTagDescription; 63] = [
+pub const NODE_TAG_TABLE: [NodeTagDescription; 70] = [
     row(
         NODE_VT_BASE,
         ChildArity::Fixed(0),
@@ -1084,6 +1132,12 @@ pub const NODE_TAG_TABLE: [NodeTagDescription; 63] = [
     unbounded(NODE_V_QUANTIFIED_EVALUATION, ChildArity::Counted(0)),
     unbounded(NODE_VT_FLOW_UNIVERSE, ChildArity::Fixed(2)),
     unbounded(NODE_V_SESSION_FLOW, ChildArity::Fixed(2)),
+    unbounded(NODE_VT_FLOW, ChildArity::Fixed(3)),
+    unbounded(NODE_V_STAY, ChildArity::Fixed(1)),
+    unbounded(NODE_V_FORWARD_FLOW, ChildArity::Counted(2)),
+    unbounded(NODE_V_FUNCTION_FLOW, ChildArity::Fixed(3)),
+    unbounded(NODE_V_THEN, ChildArity::Fixed(2)),
+    unbounded(NODE_C_RIDE, ChildArity::Fixed(3)),
     unbounded(NODE_VT_LIST, ChildArity::Fixed(1)),
     bounded_alias(NODE_V_LIST_NIL, TokenCount(1)),
     unbounded(NODE_VT_SESSION, ChildArity::Fixed(1)),
@@ -1101,6 +1155,7 @@ pub const NODE_TAG_TABLE: [NodeTagDescription; 63] = [
     unbounded(NODE_CT_WITH, ChildArity::Fixed(2)),
     unbounded(NODE_C_WITH, ChildArity::Fixed(2)),
     unbounded(NODE_C_PROJECT, ChildArity::Fixed(1)),
+    unbounded(NODE_C_TELESCOPE_RIDE, ChildArity::Fixed(5)),
 ];
 
 #[cfg(test)]
@@ -1172,6 +1227,10 @@ mod tests
                         Some(&crate::Value::QuantifiedEvaluation { .. }) => row.tag == super::NODE_V_QUANTIFIED_EVALUATION,
                         Some(&crate::Value::SessionPath { .. }) => row.tag == super::NODE_V_SESSION_PATH,
                         Some(&crate::Value::SessionFlow { .. }) => row.tag == super::NODE_V_SESSION_FLOW,
+                        Some(&crate::Value::Stay { .. }) => row.tag == super::NODE_V_STAY,
+                        Some(&crate::Value::ForwardFlow { .. }) => row.tag == super::NODE_V_FORWARD_FLOW,
+                        Some(&crate::Value::FunctionFlow { .. }) => row.tag == super::NODE_V_FUNCTION_FLOW,
+                        Some(&crate::Value::Then { .. }) => row.tag == super::NODE_V_THEN,
                         Some(&crate::Value::ListNil) => row.tag == super::NODE_V_LIST_NIL,
                         Some(&crate::Value::ListCons(..)) => row.tag == super::NODE_V_LIST_CONS,
                         None => false,
@@ -1190,6 +1249,8 @@ mod tests
                         Some(&crate::Computation::Transport(_, _)) => row.tag == super::NODE_C_TRANSPORT,
                         Some(&crate::Computation::PathTransport { .. }) => row.tag == super::NODE_C_PATH_TRANSPORT,
                         Some(&crate::Computation::TelescopeTransport { .. }) => row.tag == super::NODE_C_TELESCOPE_TRANSPORT,
+                        Some(&crate::Computation::Ride { .. }) => row.tag == super::NODE_C_RIDE,
+                        Some(&crate::Computation::TelescopeRide { .. }) => row.tag == super::NODE_C_TELESCOPE_RIDE,
                         Some(&crate::Computation::RelatedApplication { .. }) => row.tag == super::NODE_C_RELATED_APPLICATION,
                         Some(&crate::Computation::ListFold { .. }) => row.tag == super::NODE_C_LIST_FOLD,
                         Some(&crate::Computation::With(_, _)) => row.tag == super::NODE_C_WITH,
@@ -1212,6 +1273,7 @@ mod tests
                         Some(&crate::ValueType::PathUniverse(_, _)) => row.tag == super::NODE_VT_PATH_UNIVERSE,
                         Some(&crate::ValueType::FlowUniverse(_, _)) => row.tag == super::NODE_VT_FLOW_UNIVERSE,
                         Some(&crate::ValueType::Path { .. }) => row.tag == super::NODE_VT_PATH,
+                        Some(&crate::ValueType::Flow { .. }) => row.tag == super::NODE_VT_FLOW,
                         Some(&crate::ValueType::List(_)) => row.tag == super::NODE_VT_LIST,
                         Some(&crate::ValueType::Session { .. }) => row.tag == super::NODE_VT_SESSION,
                         None => false,
@@ -1321,6 +1383,17 @@ mod tests
         let session_path = arena.value_session_path(path_type, alloc::sync::Arc::default(), unit);
         let flow_type = arena.value_type_flow_universe(quote, quote);
         let session_flow = arena.value_session_flow(flow_type, alloc::sync::Arc::default(), unit);
+        let element_flow = arena.value_type_flow(unit_type, unit, literal);
+        let stay = arena.value_stay(unit);
+        let forward_flow = arena.value_forward_flow(
+            flow_type,
+            map,
+            alloc::boxed::Box::from([unit, literal]),
+            alloc::sync::Arc::from([crate::Dialogue::new(), crate::Dialogue::new()]),
+        );
+        let function_flow = arena.value_function_flow(flow_type, stay, forward_flow);
+        let then = arena.value_then(stay, forward_flow, crate::Seam::Sequence);
+        let ride = arena.computation_ride(unit_type, stay, literal);
         let datatype = arena.value_type_data(ConstantIndex::from(0), alloc::vec![quote]);
         let label = crate::FieldLabel::from(alloc::string::String::from("field"));
         let record_type = arena.value_type_record(alloc::collections::BTreeMap::from([(
@@ -1342,6 +1415,8 @@ mod tests
         let lazy_type = arena.comp_type_with(returner, arrow);
         let lazy_pair = arena.computation_with(ret, lambda);
         let lazy_projection = arena.computation_project(crate::Side::Right, lazy_pair);
+        let telescope_ride =
+            arena.computation_telescope_ride(telescope, stay, unit, returned, literal);
         let nodes = alloc::vec![
             AnyNode::ValueType(base),
             AnyNode::ValueType(universe),
@@ -1389,6 +1464,12 @@ mod tests
             AnyNode::Value(quantified),
             AnyNode::ValueType(flow_type),
             AnyNode::Value(session_flow),
+            AnyNode::ValueType(element_flow),
+            AnyNode::Value(stay),
+            AnyNode::Value(forward_flow),
+            AnyNode::Value(function_flow),
+            AnyNode::Value(then),
+            AnyNode::Computation(ride),
             AnyNode::ValueType(arena.value_type_list(unit_type)),
             AnyNode::Value(nil),
             AnyNode::ValueType(session),
@@ -1406,6 +1487,7 @@ mod tests
             AnyNode::CompType(lazy_type),
             AnyNode::Computation(lazy_pair),
             AnyNode::Computation(lazy_projection),
+            AnyNode::Computation(telescope_ride),
         ];
         (arena, nodes)
     }
@@ -1432,6 +1514,7 @@ mod tests
                             components.len().saturating_mul(3)
                         },
                         | crate::Value::QuantifiedEvaluation { ref children, .. } => children.len(),
+                        | crate::Value::ForwardFlow { ref outputs, .. } => outputs.len(),
                         | _ => 0,
                     },
                     | None => 0,
@@ -1482,7 +1565,7 @@ mod tests
             );
             assert!(
                 (0x53 ..= 0x59).contains(&tag),
-                "List and reserved flow bytes remain untouched"
+                "List and flow bytes remain untouched"
             );
         }
         for row in &NODE_TAG_TABLE {
@@ -1495,22 +1578,28 @@ mod tests
                 !reserved.contains(&tag),
                 "an assigned former cannot consume a reserved sharing byte"
             );
-            let identity = matches!(tag, 0x30 ..= 0x35 | 0x38 ..= 0x3A | 0x48 ..= 0x49);
+            let identity = matches!(tag, 0x30 ..= 0x35 | 0x38 ..= 0x3A | 0x48 ..= 0x4F);
             assert!(
                 identity || !(0x30_u8 .. 0x50).contains(&tag),
                 "only the assigned identity and flow bytes leave the identity, funext and flow ranges"
             );
         }
-        for unassigned in (0x36_u8 ..= 0x37).chain(0x3B ..= 0x47).chain(0x4A ..= 0x4F) {
+        for unassigned in (0x36_u8 ..= 0x37).chain(0x3B ..= 0x47) {
             assert!(
                 !assigned[usize::from(unassigned)],
-                "the unassigned identity growth and the rest of the flow reservation name no former: {unassigned:#04x}"
+                "the unassigned identity growth names no former: {unassigned:#04x}"
             );
         }
-        for unassigned in 0x68_u8 ..= u8::MAX {
+        for assigned_flow in 0x48_u8 ..= 0x4F {
+            assert!(
+                assigned[usize::from(assigned_flow)],
+                "the flow reservation is spent: {assigned_flow:#04x}"
+            );
+        }
+        for unassigned in 0x69_u8 ..= u8::MAX {
             assert!(
                 !assigned[usize::from(unassigned)],
-                "every byte above the lazy projection is unassigned: {unassigned:#04x}"
+                "every byte above the telescope ride is unassigned: {unassigned:#04x}"
             );
         }
     }
@@ -1541,9 +1630,9 @@ mod tests
             .filter(|tag| !matches!(tag, 0x01 | 0x0B))
             .chain(0x2a ..= 0x2e)
             .chain([0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x38, 0x39, 0x3A])
-            .chain([0x48, 0x49])
+            .chain(0x48 ..= 0x4F)
             .chain([0x50, 0x51, 0x52, 0x5a, 0x5b, 0x5c])
-            .chain(0x5d ..= 0x67)
+            .chain(0x5d ..= 0x68)
             .collect();
         let actual: Vec<_> = NODE_TAG_TABLE.iter().map(|row| u8::from(row.tag)).collect();
         assert_eq!(actual, expected);

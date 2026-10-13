@@ -1,6 +1,5 @@
 //! Symbolic container patterns and their leaf-natural forward obligations.
 
-use alloc::boxed::Box;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
@@ -8,7 +7,9 @@ use anodized::spec;
 use gandr_kernel_check_memo::NullMemo;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::CompType;
+use gandr_kernel_term::Computation;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::Dialogue;
 use gandr_kernel_term::Summand;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
@@ -18,10 +19,10 @@ use gandr_kernel_term::ValueTypeId;
 
 use super::Allowance;
 use super::FlowError;
-use super::Image;
+use super::FlowType;
 use super::PatternPosition;
-use crate::check::check_closed_value;
 use crate::encoding::ContentTable;
+use crate::path_universe::anchor;
 use crate::replay::EngineClaim;
 use crate::replay::KernelVerdict;
 use crate::replay::ReplayBudget;
@@ -85,7 +86,7 @@ pub(super) fn code(
 /// - hypothesis: L3 — a function code refuses at a forward endpoint and beneath
 ///   a function code's argument; Bool and Unit pass.
 /// - witness: `flow_universe::tests::function::constant_map_refusal_holds_at_a_thunk_code`
-/// - witness: `flow_universe::tests::terminal_ride_and_stay_compute`
+/// - witness: `flow_universe::tests::stay_and_forward_admit_and_ride`
 #[spec(
     captures: before = allowance.0,
     ensures: |ret| allowance.0 <= before && match ret {
@@ -125,7 +126,7 @@ fn first_order(
 
 /// A validated function code `U (A → F B)` over closed first-order codes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct Arrow
+pub struct Arrow
 {
     /// The thunk type itself.
     pub code: ValueTypeId,
@@ -163,7 +164,7 @@ pub(super) struct Arrow
         Err(_) => false,
     },
 )]
-pub(super) fn function(
+pub fn function(
     arena: &TermArena,
     code: ValueId,
     allowance: &mut Allowance,
@@ -215,7 +216,7 @@ pub(super) fn function(
     captures: before = allowance.0,
     ensures: |ret| allowance.0 <= before && ret.as_ref().map_or(true, |&root| allowance.0 < before && matches!(arena.value(code), Some(&Value::Quote(ty)) if ty == root)),
 )]
-pub(super) fn endpoint(
+pub fn endpoint(
     arena: &TermArena,
     code: ValueId,
     allowance: &mut Allowance,
@@ -263,35 +264,6 @@ pub(super) fn vocabulary(
         return crate::path_universe::code(arena, code, budget).map_err(FlowError::Path);
     }
     endpoint(arena, code, allowance)
-}
-
-/// Check a closed forward translator in a fresh checker session.
-///
-/// # Specification
-/// - requires: endpoints have passed closed-code validation.
-/// - ensures: `function : U (source -> F target)` in the empty context.
-/// - fails: `Typing` with the ordinary kernel diagnostic.
-/// - panics: none.
-///
-/// # Errors
-/// `FlowError::Typing`.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a nonfunction cannot certify a forward map.
-/// - witness: `flow_universe::tests::formation_boundaries_refuse`
-#[spec(ensures: |ret| matches!(ret, Ok(()) | Err(FlowError::Typing(_))))]
-pub(super) fn translator(
-    arena: &mut TermArena,
-    function: ValueId,
-    source: ValueTypeId,
-    target: ValueTypeId,
-) -> Result<(), FlowError>
-{
-    let returned = arena.comp_type_returner(target);
-    let arrow = arena.comp_type_arrow(source, returned);
-    let expected = arena.value_type_thunk(arrow);
-    check_closed_value(arena, function, expected)
-        .map_err(|error| FlowError::Typing(Box::new(error)))
 }
 
 /// One canonical source shape, with independent typed leaves.
@@ -450,8 +422,10 @@ fn patterns(
 /// As `fails`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — literals cannot hide beneath sums or products, and typed
-///   leaf selection rejects fresh variables and differently typed leaves.
+/// - hypothesis: L3 — literals cannot hide beneath sums or products, typed leaf
+///   selection rejects fresh variables and differently typed leaves, and a
+///   constant literal at a String leaf, a type of infinitely many values, is
+///   refused naming that literal.
 /// - witness: `flow_universe::tests::constant_leaf_and_forged_evidence_refuse`
 #[spec(
     captures: before = allowance.0,
@@ -504,12 +478,65 @@ fn natural(
     Ok(())
 }
 
+/// Open one image `thunk(λ…λ. return o)` binding one lambda per pattern leaf.
+///
+/// # Specification
+/// - ensures: the output `o` beneath exactly one lambda per leaf; its variables
+///   name the pattern's leaves, the last at de Bruijn zero.
+/// - fails: `NonNatural` naming the image for any other shape, a different
+///   binder count among them; `Budget` on exhausted traversal.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an image binding one leaf too few refuses by name.
+/// - witness: `flow_universe::tests::constant_leaf_and_forged_evidence_refuse`
+#[spec(
+    captures: before = allowance.0,
+    ensures: |ret| allowance.0 <= before && match ret {
+        Ok(_) => matches!(arena.value(image), Some(&Value::Thunk(_))),
+        Err(FlowError::NonNatural(named)) => named == image,
+        Err(FlowError::Budget) => true,
+        Err(_) => false,
+    },
+)]
+fn peel(
+    arena: &TermArena,
+    image: ValueId,
+    leaves: &[BaseType],
+    allowance: &mut Allowance,
+) -> Result<ValueId, FlowError>
+{
+    let Some(&Value::Thunk(mut body)) = arena.value(image)
+    else {
+        return Err(FlowError::NonNatural(image));
+    };
+    for _leaf in leaves {
+        allowance.charge()?;
+        let Some(&Computation::Lambda(inner)) = arena.computation(body)
+        else {
+            return Err(FlowError::NonNatural(image));
+        };
+        body = inner;
+    }
+    match arena.computation(body) {
+        | Some(&Computation::Return(output)) => Ok(output),
+        | _ => Err(FlowError::NonNatural(image)),
+    }
+}
+
 /// Replay the translator against exhaustive, validated symbolic images.
 ///
 /// # Specification
-/// - requires: endpoints and translator have been checked.
-/// - ensures: each source shape maps to a leaf-natural target shape by ordinary
-///   kernel replay; the kernel chooses the source, action and positive claim.
+/// - requires: the endpoints are first-order codes and the translator checked
+///   at `U (source → F target)` in the empty context.
+/// - ensures: one image and one dialogue per source shape; each image opens to
+///   a leaf-natural target shape, and the translator applied to the shape
+///   converts with its return by ordinary kernel replay of the dialogue,
+///   unfolding only what `unfoldings` admits. The kernel chooses the source,
+///   the action and the positive claim.
 /// - fails: `Coverage`, `NonNatural`, `ForwardReplay`, or construction errors.
 /// - panics: none.
 ///
@@ -518,40 +545,43 @@ fn natural(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — omitted constructors, constant Base maps and false traces
-///   cannot certify a forward action.
+///   cannot certify a forward action, and a tampered image refuses by name at
+///   readmission.
 /// - witness: `flow_universe::tests::constant_leaf_and_forged_evidence_refuse`
 /// - witness: `flow_universe::tests::formation_boundaries_refuse`
 #[spec(ensures: |ret| match ret {
-    Ok(()) => u64::from(budget) > 0 && !images.is_empty() && match arena.value_type(source) { Some(&ValueType::Base(_)) => images.len() == 1, Some(held) if held.product_parts() == Some(&[]) => images.len() == 1, _ => true },
+    Ok(()) => u64::from(budget) > 0 && !images.is_empty() && images.len() == dialogues.len(),
     Err(FlowError::ForwardReplay { pattern, verdict }) => pattern.0 < images.len() && verdict != KernelVerdict::Convertible,
     Err(_) => true,
 })]
-pub(super) fn forward(
+pub fn forward(
     arena: &mut TermArena,
-    source: ValueTypeId,
-    target: ValueTypeId,
-    function: ValueId,
-    images: &[Image],
+    unfoldings: &Unfoldings,
+    flow: FlowType,
+    translator: ValueId,
+    (images, dialogues): (&[ValueId], &[Dialogue]),
     budget: ReplayBudget,
 ) -> Result<(), FlowError>
 {
     let mut allowance = Allowance(u64::from(budget));
-    let patterns = patterns(arena, source, &mut allowance)?;
-    if images.len() != patterns.len() {
+    let patterns = patterns(arena, flow.source, &mut allowance)?;
+    if images.len() != patterns.len() || dialogues.len() != patterns.len() {
         return Err(FlowError::Coverage);
     }
-    let unfoldings = Unfoldings::new(Vec::new());
-    for (position, (pattern, image)) in patterns.into_iter().zip(images).enumerate() {
-        natural(arena, image.output, target, &pattern.leaves, &mut allowance)?;
-        let force = arena.computation_force(function);
+    for (position, ((pattern, &image), dialogue)) in
+        patterns.into_iter().zip(images).zip(dialogues).enumerate()
+    {
+        let output = peel(arena, image, &pattern.leaves, &mut allowance)?;
+        natural(arena, output, flow.target, &pattern.leaves, &mut allowance)?;
+        let force = arena.computation_force(translator);
         let application = arena.computation_application(force, pattern.value);
-        let expected = arena.computation_return(image.output);
+        let expected = arena.computation_return(output);
         let verdict = crate::replay::replay(
             arena,
-            &unfoldings,
+            unfoldings,
             ReplaySides::Computations(application, expected),
             EngineClaim::Convertible,
-            image.dialogue.0.iter().copied(),
+            dialogue.iter().copied().map(anchor),
             budget,
         );
         if verdict != KernelVerdict::Convertible {

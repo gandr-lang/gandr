@@ -152,11 +152,13 @@
 //! certificate evidence. Transport is computation whose claims the kernel
 //! replays. Identity on elements and the bridge mode share a code fold;
 //! element identity, its guarded higher field and higher evaluation are
-//! persisted syntax, while the bridge mode and forward-only `Flow_U` are
-//! bounded in-memory rule languages. List has a finite native code and
-//! guarded, borrowed inhabitants observed only to a supplied budget. Session
-//! codes and their identity evidence are native; their directional flows
-//! transport recorded runs, not kernel endpoint values.
+//! persisted syntax, as is the directed family: `Flow(A, x, y)`, `stay`,
+//! sequential `then` and `ride` under a covariant motive, with forward,
+//! function and session certificates at `Flow_U`. The bridge mode is a bounded
+//! in-memory rule language. List has a finite native code and guarded,
+//! borrowed inhabitants observed only to a supplied budget. Session codes and
+//! their identity evidence are native; their directional flows relate
+//! recorded runs, not kernel endpoint values, so a ride along one refuses.
 //!
 //! The decisions and exhaustion semantics are in [`path_universe`],
 //! [`flow_universe`], [`identity_recursion`], [`element_identity`],
