@@ -1020,6 +1020,7 @@ impl AsRef<[u8]> for ByteChunk<'_>
         self.0
     }
 }
+
 /// A tile that has already been assigned a mold, ready to push.
 ///
 /// The molder produces these from labeled tokens; a caller driving the melder
@@ -2963,18 +2964,24 @@ impl<'pbg> MeldState<'pbg>
     /// content is collapsed to operands (its hole-fills), the frontier advances
     /// to `mold`, and a form-end reduces the whole run into a meld. When no
     /// open frontier accepts `mold`, a stray end flags a ghost opener
-    /// ([`Oblig::MissingTile`]) and a stray mid opens a fresh partial form.
+    /// ([`Oblig::MissingTile`]) and a stray mid opens a fresh partial form;
+    /// a mid that cannot begin its form flags its missing head the same way,
+    /// so a token standing where its form's earlier tiles are absent is never
+    /// read as complete.
     ///
     /// # Specification
     /// - ensures: advances a matching frontier and closes an end tile; an
     ///   unmatched end records a missing opener, while a mid starts a partial
-    ///   form.
+    ///   form and records a missing head unless it can be its form's first
+    ///   tile.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — matched brackets, a stray closer and nested complete
-    ///   holes expose exact structure and repair classes. Closing the wrong
-    ///   frontier, dropping the closer or inventing source text changes them.
+    /// - hypothesis: L3 — matched brackets, a stray closer, a stray mid whose
+    ///   form's head is absent and nested complete holes expose exact structure
+    ///   and repair classes. Closing the wrong frontier, dropping the closer,
+    ///   reading the headless mid as clean or inventing source text changes
+    ///   them.
     /// - witness: `meld::tests::brackets_close_on_the_matching_delimiter`
     /// - witness: `meld::tests::completable_hole_does_not_absorb_enclosing_closer`
     /// - witness: `tests::acceptance::malformed_programs_repair_predictably`
@@ -3029,6 +3036,14 @@ impl<'pbg> MeldState<'pbg>
         }
         else {
             // A form-mid with no matching frontier: open a fresh partial form.
+            // Unless the mid can begin its form, the tiles before it are
+            // absent, as an unmatched end's opener is.
+            if !bool::from(FormTable::is_form_first(self.pbg, mold)) {
+                self.flag(
+                    Oblig::MissingTile,
+                    SourceSpan::new(SourceOffset::from(cell.start), SourceOffset::from(cell.end)),
+                );
+            }
             self.push_cell(Cell {
                 role: Role::FormTile {
                     mold,
@@ -7826,6 +7841,7 @@ fn read_cell(reader: &mut Reader<'_>) -> Result<Cell, CheckpointError>
         role,
     })
 }
+
 /// Read a grammar sort tag.
 ///
 /// # Specification
@@ -7875,6 +7891,7 @@ fn write_obligation(
     writer.u32(WireU32::from(start));
     writer.u32(WireU32::from(end));
 }
+
 /// Write an obligation class tag.
 ///
 /// # Specification
@@ -7933,6 +7950,7 @@ fn read_obligation(reader: &mut Reader<'_>) -> Result<ObligationInstance, Checkp
         .map_err(|_error| CheckpointError::Malformed)?;
     Ok(ObligationInstance::new(class, span))
 }
+
 /// Read an obligation class tag.
 ///
 /// # Specification
@@ -8045,6 +8063,7 @@ fn write_sort(
 {
     writer.u16(WireU16::from(u16::from(sort.grout_sort())));
 }
+
 /// Write an operator shape tag.
 ///
 /// # Specification

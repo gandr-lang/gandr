@@ -821,6 +821,7 @@ dependencies = [
 name = "gandr-surface-parser"
 version = "0.0.0"
 dependencies = [
+ "blake3",
  "gandr-surface-grammar",
  "gandr-surface-syntax",
  "gandr-theory-graphs",

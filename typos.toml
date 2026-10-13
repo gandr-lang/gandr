@@ -3,8 +3,9 @@
 
 [files]
 # treefmt.toml: formatter names and glob fragments read as typos to the checker.
-# Runtime/build output and resolver-owned lockfiles are not authored prose.
-extend-exclude = ["target/", "treefmt.toml", "mise.lock", "Cargo.lock"]
+# Runtime/build output, resolver-owned lockfiles and the parser's recovery
+# records (hex digests) are not authored prose.
+extend-exclude = ["target/", "treefmt.toml", "mise.lock", "Cargo.lock", "crates/surface-parser/tests/recovery/"]
 
 [default]
 
