@@ -21,9 +21,6 @@ def takes_unknown : ? -> -F Unit;
 @[ refuses("OutOfFragment") ]
 def parenthesized : Integer -> (?);
 
-@[ refuses("OutOfFragment") ]
-def session_receive : ? Integer . end;
-
 @[ checks ]
 def term_hole = ?;
 @[ checks ]

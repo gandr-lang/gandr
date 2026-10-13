@@ -149,6 +149,8 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
             | FragmentBoundary::NotInTail => "not on a path through a body",
             | FragmentBoundary::JoinsBlock => "an answer the arms do not give",
             | FragmentBoundary::EmptyList => "an empty list, not the unit",
+            | FragmentBoundary::Endpoint => "not an endpoint a fork binds",
+            | FragmentBoundary::NonContractive => "recurses before any action",
         },
         | LoweringRefusal::GradedBridge { .. } => "a grade other than `ω`",
         | LoweringRefusal::MalformedLiteral { .. } => "not this literal's lexeme",

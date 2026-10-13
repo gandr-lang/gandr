@@ -28,6 +28,3 @@ def unthunked : -F Integer & -F Integer ;
 
 @[ refuses("OutOfFragment") ]
 def menu : +U &{get : ! Integer . end, put : ? Integer . end} ;
-
-@[ refuses("OutOfFragment") ]
-def choose : +{ok : ! Integer . end, done : end} ;

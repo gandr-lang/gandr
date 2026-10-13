@@ -13,6 +13,7 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::session::Step;
 use gandr_surface_grammar::NamedKind;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
@@ -665,22 +666,29 @@ fn a_session_entry_reads_the_select_and_the_offer()
         ["+1", "Integer"],
         "over value types the braces are the sum"
     );
-    let source = "def choose : +{ok : ! Integer . end} ;";
-    assert!(
-        matches!(
-            refused(source),
-            LoweringRefusal::OutOfFragment { form, .. } if form == FormName::SELECT_SESSION_TYPE
-        ),
-        "over session types they are the select, declined by its name"
+    let module = lowered(
+        "def choose : +{ok : ! Integer . end} ;\ndef menu : &{get : ! Integer . end, put : ? Integer . end} ;\ndef nested : +{ok : &{go : end}} ;",
+        &mut arena,
     );
-    let source = "def menu : +U &{get : ! Integer . end, put : ? Integer . end} ;";
-    assert!(
-        matches!(
-            refused(source),
-            LoweringRefusal::OutOfFragment { form, .. } if form == FormName::OFFER_SESSION_TYPE
-        ),
-        "and the lazy record over session types is the offer"
-    );
+    for (name, select) in [("choose", true), ("menu", false), ("nested", true)] {
+        let DeclarationOutcome::Uncompleted { declared_type } = outcome(&module, name)
+        else {
+            panic!("`{name}` lowers its signature");
+        };
+        let Some(held) = arena.value_type(declared_type)
+        else {
+            panic!("`{name}`'s signature is in the arena");
+        };
+        let ValueType::Session(ref session) = *held
+        else {
+            panic!("`{name}` is a session type: {held:?}");
+        };
+        assert_eq!(
+            session.step().map(|step| matches!(step, Step::Select(_))),
+            Ok(select),
+            "`{name}`: over session types the sum is the select and the lazy record the offer"
+        );
+    }
     let source = "def mixed : +{ok : Integer, done : end} ;";
     assert_eq!(
         refused(source),

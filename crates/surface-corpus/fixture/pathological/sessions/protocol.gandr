@@ -1,0 +1,20 @@
+@[ refuses("SessionMismatch") ]
+def desk_receives_first() -> -F Unit {
+  fork (seat : ?String. end) { recv(seat) as task; close(seat) } as desk;
+  recv(desk) as task;
+  close(desk)
+}
+
+@[ refuses("UnofferedLabel") ]
+def desk_selects_no_offered_label() -> -F Unit {
+  fork (seat : &{ next : end }) { offer(seat) { next => close(seat) } } as desk;
+  select(desk, retire);
+  close(desk)
+}
+
+@[ refuses("OfferArms") ]
+def seat_arms_one_label_of_two() -> -F Unit {
+  fork (seat : &{ next : end, retire : end }) { offer(seat) { next => close(seat) } } as desk;
+  select(desk, next);
+  close(desk)
+}

@@ -71,11 +71,14 @@
 //!
 //! # A session entry reads the select and the offer
 //!
-//! The sum and the lazy record over labels whose entries are session types
+//! The sum and the lazy record over labels whose entries are session forms
 //! are the session select and offer, one former read in the zone its type is
-//! written in. Sessions are not lowered yet, so a sum or lazy record of
-//! session types is refused by the select's or the offer's name, and one
-//! mixing session types with other entries as a misplaced entry.
+//! written in: braces at a type's root whose every entry is a session form —
+//! `!A. S`, `?A. S`, `end`, `mu t. S`, or braces of session forms — are read
+//! whole as a session type (the `lower::session` module), and braces mixing
+//! session forms with other types are refused as a misplaced entry. Inside a
+//! protocol the braces are the select and the offer whatever their entries,
+//! so a branch continuing at a recursion variable reads there.
 //!
 //! # A telescope Π binds an entry a later type names
 //!
@@ -177,18 +180,6 @@ pub(super) const fn clause_body(clause: NodeIndex) -> Block
         last: clause,
     }
 }
-
-/// The session-type forms whose entries make a sum the select and a lazy
-/// record the offer.
-///
-/// # Specification
-/// trivial.
-const SESSION_TYPES: [&str; 4] = [
-    "send_session_type",
-    "receive_session_type",
-    "end_session_type",
-    "mu_session_type",
-];
 
 /// How an entry of an arity-shaped form is labelled.
 ///
@@ -298,6 +289,26 @@ pub(super) enum Arranged<'source>
     Positional(Vec<Entry<'source>>),
     /// Entries labelled by name, in written order.
     Labelled(Vec<Entry<'source>>),
+}
+
+/// The zone a type form is read in: a protocol's, or every other type's.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: one variant per zone.
+/// - executable: none — a fieldless tag.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the same braces over value types, over session types,
+///   over braces of session types, and mixed.
+/// - witness: `lower::arity::tests::a_session_entry_reads_the_select_and_the_offer`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum TypeZone
+{
+    /// A session form: a protocol's state.
+    Session,
+    /// Any other type form.
+    Ordinary,
 }
 
 /// The entry an observation selects of a lazy record: its index among
@@ -879,51 +890,124 @@ impl<'source> Lowerer<'_, 'source>
         )
     }
 
-    /// Refuse a sum or lazy record over session types by the session form
-    /// `session` it reads as.
+    /// The zone braces at a type's root are read in over `entries`: the session
+    /// select or offer when every entry is a session form.
     ///
     /// # Specification
     /// - requires: `entries` are the type entries of the form at `site`.
-    /// - ensures: nothing when no entry is a session type.
-    /// - fails: the unadmitted refusal named `session` when every entry is a
-    ///   session type; a misplaced tile at the first session entry of a form
-    ///   mixing them with other types.
+    /// - ensures: the session zone when there is an entry and every one is a
+    ///   session form, as [`Self::type_zone`] reads one; the ordinary zone when
+    ///   none is.
+    /// - fails: a misplaced tile at the first session entry of a form mixing
+    ///   them with other types; a nested form's own refusal.
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LoweringRefusal::OutOfFragment`] and
-    /// [`LoweringRefusal::MalformedForm`].
+    /// [`LoweringRefusal::MalformedForm`], [`LoweringRefusal::UnknownMold`]
+    /// and [`LoweringRefusal::BudgetExceeded`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the same braces over value types and over session
-    ///   types, and mixed.
+    /// - hypothesis: L3 — the same braces over value types, over session types,
+    ///   over braces of session types, and mixed.
     /// - witness: `lower::arity::tests::a_session_entry_reads_the_select_and_the_offer`
-    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::OutOfFragment { .. } | LoweringRefusal::MalformedForm { .. } | LoweringRefusal::UnknownMold { .. })))]
+    #[spec(ensures: |ret| !matches!(ret, Ok(TypeZone::Session)) || !entries.is_empty())]
     fn zoned(
-        &self,
+        &mut self,
         site: Site,
         entries: &[Entry<'source>],
-        session: FormName,
-    ) -> Result<(), LoweringRefusal<'source>>
+    ) -> Result<TypeZone, LoweringRefusal<'source>>
     {
         let mut first = None;
         let mut sessions = 0_usize;
         for entry in entries {
             let at = entry.held.at();
-            if let Some((name, _)) = self.form_at(at)?
-                && SESSION_TYPES.contains(&name.as_ref())
-            {
+            if self.type_zone(at)? == TypeZone::Session {
                 sessions = sessions.saturating_add(1);
                 first = first.or(Some(at));
             }
         }
         match first {
-            | None => Ok(()),
-            | Some(_) if sessions == entries.len() => {
-                Err(site.folded(session, FragmentBoundary::Unadmitted))
-            },
+            | None => Ok(TypeZone::Ordinary),
+            | Some(_) if sessions == entries.len() => Ok(TypeZone::Session),
             | Some(at) => Err(site.fault(at.span, FormFault::MisplacedTile)),
         }
+    }
+
+    /// The zone the type at `at` is read in: the session zone for `!A. S`,
+    /// `?A. S`, `end` or `mu t. S`, a parenthesised session form, or braces
+    /// holding at least one entry, each a session form.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the session zone exactly for the forms above; the ordinary
+    ///   zone for every other form, empty parentheses and empty braces
+    ///   included.
+    /// - fails: a nested brace's own malformed pieces; an unknown mold; the
+    ///   allowance, one step per form visited.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::MalformedForm`], [`LoweringRefusal::UnknownMold`]
+    /// and [`LoweringRefusal::BudgetExceeded`].
+    ///
+    /// # Termination
+    /// - reason: the `while let` pops one form per round and pushes only the
+    ///   entries of that form, each a strict subtree of it.
+    /// - measure: the forms under `at`, each visited once.
+    /// - input recursion: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::zoned`].
+    /// - witness: `lower::arity::tests::a_session_entry_reads_the_select_and_the_offer`
+    #[spec(captures: before = self.fuel.remaining, ensures: |_| self.fuel.remaining <= before)]
+    fn type_zone(
+        &mut self,
+        at: Placed,
+    ) -> Result<TypeZone, LoweringRefusal<'source>>
+    {
+        let mut pending = Vec::from([at]);
+        let mut pieces = Pieces::new();
+        while let Some(next) = pending.pop() {
+            self.fuel.spend()?;
+            let Some((name, former)) = self.form_at(next)?
+            else {
+                return Ok(TypeZone::Ordinary);
+            };
+            let opener = match former {
+                | Former::SessionType => continue,
+                | Former::ParenthesizedType => TileName::PAREN_OPEN,
+                | Former::LabelledSumType => TileName::PLUS,
+                | Former::LazyRecordType => TileName::AMPERSAND,
+                | _ => return Ok(TypeZone::Ordinary),
+            };
+            read_pieces(self.pbg, self.tree, next.node, &mut pieces)?;
+            if let Maybe::Present(repaired) = pieces.repair {
+                return Err(repaired.refusal(name));
+            }
+            let nested = Site {
+                at: next,
+                name,
+                reading: Reading::ValueType(Frame::Outermost),
+            };
+            let mut cursor = Cursor::new(&pieces.pieces, next.span);
+            closed(nested, &mut cursor, opener)?;
+            if opener == TileName::PAREN_OPEN {
+                let Run::One(inner) = cursor.operands()
+                else {
+                    return Ok(TypeZone::Ordinary);
+                };
+                pending.push(inner);
+                continue;
+            }
+            closed(nested, &mut cursor, TileName::BRACE_OPEN)?;
+            let entries = self.type_entries(nested, &mut cursor, TileName::BRACE_CLOSE)?;
+            if entries.is_empty() {
+                return Ok(TypeZone::Ordinary);
+            }
+            pending.extend(entries.iter().map(|entry| entry.held.at()));
+        }
+
+        Ok(TypeZone::Session)
     }
 
     /// Push the entries' operands onto the operand store, in order.
@@ -1033,11 +1117,13 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: `site` is a sum over labels in type position.
-    /// - ensures: the sum of its entries' types in written order, the labels
-    ///   erased, each read as a value type under the form's frame.
-    /// - fails: the wrong-sort refusal where no value type is read; the
-    ///   select's refusal for session entries; the entries' and the labels' own
-    ///   refusals.
+    /// - ensures: braces whose every entry is a session form are the select,
+    ///   read whole as a session type; otherwise the sum of its entries' types
+    ///   in written order, the labels erased, each read as a value type under
+    ///   the form's frame.
+    /// - fails: the wrong-sort refusal where no value type is read; a misplaced
+    ///   entry where session forms and other types mix; the entries' and the
+    ///   labels' own refusals.
     /// - panics: none.
     ///
     /// # Errors
@@ -1047,18 +1133,23 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — the empty sum, a positional and a labelled sum.
     /// - witness: `lower::arity::tests::a_sum_over_labels_lowers_to_the_sum_of_its_entries`
     /// - witness: `lower::arity::tests::a_session_entry_reads_the_select_and_the_offer`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Sum(_))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&(Plan::Sum(_) | Plan::Session(..)))))]
     pub(super) fn labelled_sum_type(
         &mut self,
         site: Site,
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let frame = self.require(site, Produced::ValueType)?;
         closed(site, &mut cursor, TileName::PLUS)?;
         closed(site, &mut cursor, TileName::BRACE_OPEN)?;
         let entries = self.type_entries(site, &mut cursor, TileName::BRACE_CLOSE)?;
-        self.zoned(site, &entries, FormName::SELECT_SESSION_TYPE)?;
+        if self.zoned(site, &entries)? == TypeZone::Session {
+            return self.session_type(Site {
+                name: FormName::SELECT_SESSION_TYPE,
+                ..site
+            });
+        }
+        let frame = self.require(site, Produced::ValueType)?;
         let (Arranged::Positional(entries) | Arranged::Labelled(entries)) = arrange(site, entries)?;
         let summands = self.stored(&entries);
         for entry in &entries {
@@ -1073,11 +1164,14 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: `site` is a lazy record over labels in type position.
-    /// - ensures: the binary lazy product of its entries nested to the right,
-    ///   each read as a computation type under the form's frame.
-    /// - fails: the wrong-sort refusal where no computation type is read; the
-    ///   offer's refusal for session entries; the arity refusal for fewer than
-    ///   two entries; the entries' and the labels' own refusals.
+    /// - ensures: braces whose every entry is a session form are the offer,
+    ///   read whole as a session type; otherwise the binary lazy product of its
+    ///   entries nested to the right, each read as a computation type under the
+    ///   form's frame.
+    /// - fails: the wrong-sort refusal where no computation type is read; a
+    ///   misplaced entry where session forms and other types mix; the arity
+    ///   refusal for fewer than two entries; the entries' and the labels' own
+    ///   refusals.
     /// - panics: none.
     ///
     /// # Errors
@@ -1086,18 +1180,24 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — two and three entries, and none and one.
     /// - witness: `lower::arity::tests::a_lazy_record_lowers_to_nested_with`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::With(entries)) if entries.end.saturating_sub(entries.start) >= 2_usize))]
+    /// - witness: `lower::arity::tests::a_session_entry_reads_the_select_and_the_offer`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Session(..))) || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::With(entries)) if entries.end.saturating_sub(entries.start) >= 2_usize))]
     pub(super) fn lazy_record_type(
         &mut self,
         site: Site,
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let frame = self.require(site, Produced::CompType)?;
         closed(site, &mut cursor, TileName::AMPERSAND)?;
         closed(site, &mut cursor, TileName::BRACE_OPEN)?;
         let entries = self.type_entries(site, &mut cursor, TileName::BRACE_CLOSE)?;
-        self.zoned(site, &entries, FormName::OFFER_SESSION_TYPE)?;
+        if self.zoned(site, &entries)? == TypeZone::Session {
+            return self.session_type(Site {
+                name: FormName::OFFER_SESSION_TYPE,
+                ..site
+            });
+        }
+        let frame = self.require(site, Produced::CompType)?;
         if entries.len() < 2_usize {
             return Err(site.out(FragmentBoundary::Arity(OperandCount::from(entries.len()))));
         }

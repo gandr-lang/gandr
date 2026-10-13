@@ -223,6 +223,14 @@ fn lowered(
                     "`()` is an empty list, never the unit; write the unit value as `unit` and \
                      its type as `Unit`",
                 ),
+                | FragmentBoundary::Endpoint => f.write_str(
+                    "a session action acts on an endpoint: a name a `fork` binds as one of its \
+                     ends",
+                ),
+                | FragmentBoundary::NonContractive => f.write_str(
+                    "this recursive session type recurses before any action; put a send, a \
+                     receive or a choice under its `mu`",
+                ),
             }
         },
         | LoweringRefusal::GradedBridge { grade, .. } => write!(

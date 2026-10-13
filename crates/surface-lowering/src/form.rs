@@ -369,7 +369,7 @@ impl TileName
     pub const BACKSLASH: Self = Self("\\");
     /// The attribute-block opener `@[`.
     pub const ATTRIBUTES: Self = Self("@[");
-    /// The bang `!` marking a shared fork.
+    /// The bang `!` marking a shared fork, and the send session type's lead.
     pub const BANG: Self = Self("!");
     /// The bar `|` that may lead a case arm.
     pub const BAR: Self = Self("|");
@@ -501,6 +501,20 @@ impl TileName
     pub const TRUE: Self = Self("true");
     /// The view keyword `with` of a match.
     pub const WITH: Self = Self("with");
+    /// The session keyword `close`.
+    pub const CLOSE: Self = Self("close");
+    /// The closed session type `end`.
+    pub const END: Self = Self("end");
+    /// The recursive session type's binder keyword `mu`.
+    pub const MU: Self = Self("mu");
+    /// The session keyword `offer`.
+    pub const OFFER: Self = Self("offer");
+    /// The receive session type's lead `?`.
+    pub const QUESTION: Self = Self("?");
+    /// The session keyword `select`.
+    pub const SELECT: Self = Self("select");
+    /// The session keyword `send`.
+    pub const SEND: Self = Self("send");
 
     /// The three tiles that can name a parameter: an identifier, a type
     /// variable and a type identifier, the spellings the parameter list parses.
@@ -676,6 +690,18 @@ pub enum Former
     /// The instantiation `e[i, …]`: a recursive definition's descent claim
     /// `f[<]` at the head of its own call, and nothing else.
     Instantiation,
+    /// A session type's own forms, `!A. S`, `?A. S`, `end` and `mu t. S`:
+    /// the outermost form of a protocol, read whole down its continuations.
+    SessionType,
+    /// An action on an endpoint returning the unit: `send(c, v)`,
+    /// `select(c, l)` or `close(c)`.
+    Action,
+    /// The offer `offer(c) { l => t, … }`: the arm of the label the peer
+    /// chose.
+    Offer,
+    /// A form parsed so it is declined by name until the engine has it:
+    /// `dup`, which waits on shared sessions.
+    Reserved,
     /// Every other kind: a form the fragment does not admit.
     Unadmitted,
 }
@@ -698,7 +724,7 @@ impl Former
     ///   of successful table outcomes plus the miss outcome. The evidence is
     ///   bounded to the current closed enum and table.
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 48_usize] = [
+    pub const ALL: [Self; 52_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Hole,
@@ -746,6 +772,10 @@ impl Former
         Self::Module,
         Self::Data,
         Self::Instantiation,
+        Self::SessionType,
+        Self::Action,
+        Self::Offer,
+        Self::Reserved,
         Self::Unadmitted,
     ];
 }
@@ -769,7 +799,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 49_usize] = [
+pub const FORMERS: [(&str, Former); 58_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -819,6 +849,15 @@ pub const FORMERS: [(&str, Former); 49_usize] = [
     ("module_declaration", Former::Module),
     ("data_declaration", Former::Data),
     ("instantiation_expression", Former::Instantiation),
+    ("send_session_type", Former::SessionType),
+    ("receive_session_type", Former::SessionType),
+    ("end_session_type", Former::SessionType),
+    ("mu_session_type", Former::SessionType),
+    ("send_expression", Former::Action),
+    ("select_expression", Former::Action),
+    ("close_expression", Former::Action),
+    ("offer_expression", Former::Offer),
+    ("dup_expression", Former::Reserved),
 ];
 
 /// The former a form of named kind `kind` is read as.

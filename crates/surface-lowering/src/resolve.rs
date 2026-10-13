@@ -86,11 +86,26 @@
 //! lowerer, keyed by frame, which is a second copy of the frame's identity;
 //! the frame is where the binder already lives. Witness:
 //! `tests::a_frame_keeps_its_binder_s_span`.
+//!
+//! # A linear binder counts apart
+//!
+//! A fork's two ends bind into the core's linear zone, whose indices count
+//! linear binders only, while every other binder binds into the
+//! intuitionistic zone and counts intuitionistic binders only. One chain
+//! holds both, each frame tagged with its zone, so shadowing and lookup stay
+//! one walk: a name resolves to its innermost binder of either zone, and its
+//! index counts the frames of that binder's zone between the use and the
+//! binder. A telescope never binds linearly, so its counts pass linear frames
+//! by. The alternative was a second chain for endpoints, which duplicates
+//! shadowing between the two; the reversal is a core context whose zones
+//! share one index space. Witness:
+//! `tests::a_linear_binder_counts_apart_from_intuitionistic_ones`.
 
 use alloc::vec::Vec;
 use core::fmt;
 
 use anodized::spec;
+use gandr_core_term::Zone;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
@@ -538,6 +553,8 @@ struct ScopeFrame<'source>
     mentioned: Mentioned,
     /// Where the binder was written, when the source names it.
     site: Maybe<ByteSpan, binder_site::Absent>,
+    /// The zone the binder binds into.
+    zone: Zone,
 }
 
 /// Whether a type position names a binder, which makes a typed parameter's
@@ -560,12 +577,13 @@ impl From<Mentioned> for bool
 }
 
 /// A binder a name resolved to: its de Bruijn index at the use site, the
-/// frame it introduced, and the type it was written with.
+/// frame it introduced, the type it was written with and its zone.
 ///
 /// # Specification
 /// - requires: the producing scope and use-site frame accompany the answer.
-/// - ensures: index counts frames to the innermost matching binder, saturating
-///   at the index width; its coordinate and written type are retained.
+/// - ensures: index counts the frames of the binder's zone strictly between the
+///   use and the innermost matching binder, saturating at the index width; its
+///   coordinate, written type and zone are retained.
 /// - provides: lexical resolution with enough data for dependent type decoding.
 /// - executable: none — the answer holds neither the producing scope nor the
 ///   use-site chain; resolve checks their correspondence.
@@ -575,6 +593,7 @@ impl From<Mentioned> for bool
 ///   indices, coordinates and optional syntax types.
 /// - witness: `resolve::tests::an_inner_binder_shadows_an_outer_one`
 /// - witness: `resolve::tests::a_typed_binder_resolves_with_its_written_type`
+/// - witness: `resolve::tests::a_linear_binder_counts_apart_from_intuitionistic_ones`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Bound
 {
@@ -584,6 +603,8 @@ pub struct Bound
     pub binder: ScopeId,
     /// The syntax node of the binder's written type, when it has one.
     pub declared: Maybe<NodeIndex, binder_type::Absent>,
+    /// The zone the binder binds into, which the index counts within.
+    pub zone: Zone,
 }
 
 /// Every binder frame one lowering minted, as a persistent chain.
@@ -683,6 +704,7 @@ impl<'source> Scope<'source>
             name,
             Maybe::Absent(binder_type::Absent::Untyped),
             site,
+            Zone::Intuitionistic,
         )
     }
 
@@ -730,16 +752,75 @@ impl<'source> Scope<'source>
         site: Maybe<ByteSpan, binder_site::Absent>,
     ) -> ScopeId
     {
-        self.push(parent, name, Maybe::Present(declared), site)
+        self.push(
+            parent,
+            name,
+            Maybe::Present(declared),
+            site,
+            Zone::Intuitionistic,
+        )
+    }
+
+    /// The frame that extends `parent` with a linear binder for `name`,
+    /// written at `site`: one end of a fork.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::extend`].
+    /// - ensures: as [`Self::extend`], the new frame in the linear zone, so a
+    ///   name resolving to it counts only the linear frames between.
+    /// - provides: the endpoint binder of a fork's child and of the rest of its
+    ///   block.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a linear binder under and over intuitionistic ones,
+    ///   each resolved at its own zone's index.
+    /// - witness: `resolve::tests::a_linear_binder_counts_apart_from_intuitionistic_ones`
+    #[spec(
+        requires: match parent {
+            | Frame::Outermost => true,
+            | Frame::Inner(id) => id.0 < self.frames.len(),
+        },
+        captures: before = self.frames.len(),
+        ensures: |ret| {
+            ret.0 == before
+                && self.frames.len() == before.saturating_add(1)
+                && self.frames.get(ret.0).is_some_and(|entry| {
+                    entry.parent == parent
+                        && entry.name == name
+                        && entry.declared == Maybe::Absent(binder_type::Absent::Untyped)
+                        && entry.site == site
+                        && entry.zone == Zone::Linear
+                })
+        },
+    )]
+    #[inline]
+    pub fn extend_linear(
+        &mut self,
+        parent: Frame,
+        name: SurfaceName<'source>,
+        site: Maybe<ByteSpan, binder_site::Absent>,
+    ) -> ScopeId
+    {
+        self.push(
+            parent,
+            name,
+            Maybe::Absent(binder_type::Absent::Untyped),
+            site,
+            Zone::Linear,
+        )
     }
 
     /// Push one binder frame over `parent`.
     ///
     /// # Specification
     /// - requires: parent is outermost or names an existing frame position.
-    /// - ensures: the new last frame retains parent, name, written type and
-    ///   site, starts unmentioned and leaves earlier frame positions intact.
-    /// - provides: the append boundary shared by typed and untyped extension.
+    /// - ensures: the new last frame retains parent, name, written type, site
+    ///   and zone, starts unmentioned and leaves earlier frame positions
+    ///   intact.
+    /// - provides: the append boundary shared by typed, untyped and linear
+    ///   extension.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — siblings stay independent, shadowing stops at the
@@ -763,6 +844,7 @@ impl<'source> Scope<'source>
                         && entry.declared == declared
                         && entry.site == site
                         && !entry.mentioned.0
+                        && entry.zone == zone
                 })
         },
     )]
@@ -772,6 +854,7 @@ impl<'source> Scope<'source>
         name: SurfaceName<'source>,
         declared: Maybe<NodeIndex, binder_type::Absent>,
         site: Maybe<ByteSpan, binder_site::Absent>,
+        zone: Zone,
     ) -> ScopeId
     {
         let minted = ScopeId(self.frames.len());
@@ -781,6 +864,7 @@ impl<'source> Scope<'source>
             declared,
             mentioned: Mentioned(false),
             site,
+            zone,
         });
 
         minted
@@ -811,6 +895,32 @@ impl<'source> Scope<'source>
             .map_or(Maybe::Absent(binder_site::Absent::Unwritten), |entry| {
                 entry.site
             })
+    }
+
+    /// The zone the binder that introduced `binder` binds into.
+    ///
+    /// # Specification
+    /// - requires: nothing — an out-of-range coordinate is admissible.
+    /// - ensures: a stored frame answers the zone it was extended into; an
+    ///   out-of-range coordinate answers the intuitionistic zone, the zone of
+    ///   every binder but a fork's ends.
+    /// - provides: the zone a minted variable is read in.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a linear and an intuitionistic frame of one chain
+    ///   answer their own zones.
+    /// - witness: `resolve::tests::a_linear_binder_counts_apart_from_intuitionistic_ones`
+    #[spec(ensures: |ret| ret == self.frames.get(binder.0).map_or(Zone::Intuitionistic, |entry| entry.zone))]
+    #[inline]
+    #[must_use]
+    pub fn zone(
+        &self,
+        binder: ScopeId,
+    ) -> Zone
+    {
+        self.frames
+            .get(binder.0)
+            .map_or(Zone::Intuitionistic, |entry| entry.zone)
     }
 
     /// The de Bruijn index `name` has in the chain rooted at `frame`.
@@ -868,11 +978,12 @@ impl<'source> Scope<'source>
     /// # Specification
     /// - requires: `frame` is outermost or an existing frame position in the
     ///   intended scope; `fuel` holds the remaining allowance.
-    /// - ensures: on a hit, the number of binders strictly between the use site
-    ///   and the innermost binder of `name` — zero at the innermost binder, so
-    ///   an inner binder shadows an outer one of the same name — with the type
-    ///   that binder was written with; the unbound absence when no binder in
-    ///   the chain carries the name.
+    /// - ensures: on a hit, the number of binders of the hit's zone strictly
+    ///   between the use site and the innermost binder of `name` — zero at the
+    ///   innermost such binder, so an inner binder shadows an outer one of the
+    ///   same name whatever their zones — with the type that binder was written
+    ///   with and its zone; the unbound absence when no binder in the chain
+    ///   carries the name.
     /// - provides: the only place a surface name becomes a de Bruijn index.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] when the chain walk outruns
     ///   the lowering's allowance, which is what bounds an otherwise quadratic
@@ -900,27 +1011,37 @@ impl<'source> Scope<'source>
         ensures: |ret| match ret {
             | Ok(answer) => {
                 let mut current = frame;
-                let mut depth = 0_usize;
+                let mut walked = 0_usize;
+                let mut linear = 0_usize;
+                let mut intuitionistic = 0_usize;
                 let expected = loop {
                     let Frame::Inner(id) = current
                     else {
                         break Maybe::Absent(binder::Absent::Unbound);
                     };
-                    if depth >= self.frames.len() {
+                    if walked >= self.frames.len() {
                         return false;
                     }
                     let Some(entry) = self.frames.get(id.0)
                     else {
                         return false;
                     };
+                    let depth = if entry.zone == Zone::Linear { linear } else { intuitionistic };
                     if entry.name == name {
                         break Maybe::Present(Bound {
                             index: DeBruijnIndex::from(u32::try_from(depth).unwrap_or(u32::MAX)),
                             binder: id,
                             declared: entry.declared,
+                            zone: entry.zone,
                         });
                     }
-                    depth = depth.saturating_add(1);
+                    walked = walked.saturating_add(1);
+                    if entry.zone == Zone::Linear {
+                        linear = linear.saturating_add(1);
+                    }
+                    else {
+                        intuitionistic = intuitionistic.saturating_add(1);
+                    }
                     current = entry.parent;
                 };
                 answer == expected
@@ -939,23 +1060,29 @@ impl<'source> Scope<'source>
     {
         let spelled: &str = name.as_ref();
         let mut current = frame;
-        let mut depth = 0_usize;
+        let mut linear = 0_usize;
+        let mut intuitionistic = 0_usize;
         while let Frame::Inner(ScopeId(position)) = current {
             fuel.spend()?;
             let Some(entry) = self.frames.get(position)
             else {
                 break;
             };
+            let depth = match entry.zone {
+                | Zone::Linear => &mut linear,
+                | Zone::Intuitionistic => &mut intuitionistic,
+            };
             if entry.name.as_ref() == spelled {
-                let index = u32::try_from(depth).unwrap_or(u32::MAX);
+                let index = u32::try_from(*depth).unwrap_or(u32::MAX);
 
                 return Ok(Maybe::Present(Bound {
                     index: DeBruijnIndex::from(index),
                     binder: ScopeId(position),
                     declared: entry.declared,
+                    zone: entry.zone,
                 }));
             }
-            depth = depth.saturating_add(1_usize);
+            *depth = depth.saturating_add(1_usize);
             current = entry.parent;
         }
 
@@ -1041,9 +1168,10 @@ impl<'source> Scope<'source>
     /// - requires: `from` is outermost or an existing frame position in the
     ///   intended scope; every mention has been recorded.
     /// - ensures: counts from `from` up to but excluding `binder`, including
-    ///   each untyped or mentioned frame. If the target is not on the chain,
-    ///   counts to its end; an unmentioned typed frame contributes nothing. The
-    ///   count saturates at the index width.
+    ///   each untyped or mentioned intuitionistic frame. If the target is not
+    ///   on the chain, counts to its end; an unmentioned typed frame and a
+    ///   linear frame contribute nothing. The count saturates at the index
+    ///   width.
     /// - provides: the index a decode in a function tail's signature carries.
     /// - fails: never; a chain that never reaches `binder` counts to its end.
     /// - panics: none. The walk follows parent links, which always name an
@@ -1075,7 +1203,7 @@ impl<'source> Scope<'source>
                 else {
                     return false;
                 };
-                if matches!(entry.declared, Maybe::Absent(_)) || entry.mentioned.0 {
+                if entry.zone == Zone::Intuitionistic && (matches!(entry.declared, Maybe::Absent(_)) || entry.mentioned.0) {
                     count = count.saturating_add(1);
                 }
                 visited = visited.saturating_add(1);
@@ -1102,6 +1230,7 @@ impl<'source> Scope<'source>
                 break;
             };
             let binds = match entry.declared {
+                | _ if entry.zone == Zone::Linear => false,
                 | Maybe::Present(_) => entry.mentioned.0,
                 | Maybe::Absent(_) => true,
             };
@@ -1121,9 +1250,10 @@ impl<'source> Scope<'source>
     /// # Specification
     /// - requires: `from` is outermost or an existing frame position; every
     ///   mention has been recorded.
-    /// - ensures: one answer per frame from `from` to the outermost, in that
-    ///   order, each the rule [`Self::telescope_index`] counts by; nothing for
-    ///   the outermost frame.
+    /// - ensures: one answer per intuitionistic frame from `from` to the
+    ///   outermost, in that order, each the rule [`Self::telescope_index`]
+    ///   counts by; nothing for a linear frame, which no type names, and
+    ///   nothing for the outermost frame.
     /// - provides: the difference between a type's telescope indices and the
     ///   term indices of the same chain, which relocating a type into a term
     ///   reads.
@@ -1136,8 +1266,10 @@ impl<'source> Scope<'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a mentioned typed frame, an unmentioned one and an
-    ///   untyped one, each reported in chain order.
+    ///   untyped one, each reported in chain order, and a linear frame between
+    ///   them reported not at all.
     /// - witness: `resolve::tests::a_chain_reports_which_frames_bind_in_a_telescope`
+    /// - witness: `resolve::tests::a_linear_binder_counts_apart_from_intuitionistic_ones`
     #[inline]
     pub fn telescope_binders(
         &self,
@@ -1152,13 +1284,13 @@ impl<'source> Scope<'source>
             | Frame::Inner(parent) => Some(parent),
             | Frame::Outermost => None,
         })
-        .map(|id| {
-            self.frames
-                .get(id.0)
-                .is_none_or(|entry| match entry.declared {
-                    | Maybe::Present(_) => entry.mentioned.0,
-                    | Maybe::Absent(_) => true,
-                })
+        .filter_map(|id| match self.frames.get(id.0) {
+            | Some(entry) if entry.zone == Zone::Linear => None,
+            | Some(entry) => Some(match entry.declared {
+                | Maybe::Present(_) => entry.mentioned.0,
+                | Maybe::Absent(_) => true,
+            }),
+            | None => Some(true),
         })
     }
 }
@@ -1166,6 +1298,7 @@ impl<'source> Scope<'source>
 #[cfg(test)]
 mod tests
 {
+    use gandr_core_term::Zone;
     use gandr_kernel_term::DeBruijnIndex;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::ByteSpan;
@@ -1532,6 +1665,7 @@ mod tests
                 index: DeBruijnIndex::from(1_u32),
                 binder: typed,
                 declared: Maybe::Present(NodeIndex::from(7_usize)),
+                zone: Zone::Intuitionistic,
             })),
             "a typed binder answers the node its type was written at"
         );
@@ -1541,6 +1675,7 @@ mod tests
                 index: DeBruijnIndex::from(0_u32),
                 binder: untyped,
                 declared: Maybe::Absent(binder_type::Absent::Untyped),
+                zone: Zone::Intuitionistic,
             })),
             "an untyped binder answers no written type"
         );
@@ -1616,6 +1751,59 @@ mod tests
             scope.telescope_binders(Frame::Outermost).count(),
             0,
             "the outermost frame binds nothing"
+        );
+    }
+
+    #[test]
+    fn a_linear_binder_counts_apart_from_intuitionistic_ones()
+    {
+        use alloc::vec::Vec;
+
+        let mut scope = Scope::new();
+        let a = scope.extend(Frame::Outermost, SurfaceName::from("a"), UNWRITTEN);
+        let c = scope.extend_linear(Frame::Inner(a), SurfaceName::from("c"), UNWRITTEN);
+        let x = scope.extend(Frame::Inner(c), SurfaceName::from("x"), UNWRITTEN);
+        let shadow = scope.extend_linear(Frame::Inner(x), SurfaceName::from("x"), UNWRITTEN);
+        let y = scope.extend(Frame::Inner(shadow), SurfaceName::from("y"), UNWRITTEN);
+        let at = |scope: &Scope<'static>, name: &'static str| {
+            scope.resolve(Frame::Inner(y), SurfaceName::from(name), &mut tank())
+        };
+        let bound = |index: u32, binder, zone| {
+            Ok(Maybe::Present(Bound {
+                index: DeBruijnIndex::from(index),
+                binder,
+                declared: Maybe::Absent(binder_type::Absent::Untyped),
+                zone,
+            }))
+        };
+
+        assert_eq!(
+            at(&scope, "a"),
+            bound(2, a, Zone::Intuitionistic),
+            "an intuitionistic index passes the linear frames by"
+        );
+        assert_eq!(
+            at(&scope, "c"),
+            bound(1, c, Zone::Linear),
+            "a linear index passes the intuitionistic frames by"
+        );
+        assert_eq!(
+            at(&scope, "x"),
+            bound(0, shadow, Zone::Linear),
+            "the innermost binder shadows whatever its zone"
+        );
+        assert_eq!(
+            (scope.zone(c), scope.zone(x)),
+            (Zone::Linear, Zone::Intuitionistic)
+        );
+        assert_eq!(
+            scope.telescope_binders(Frame::Inner(y)).collect::<Vec<_>>(),
+            Vec::from([true, true, true]),
+            "a telescope reports the intuitionistic frames alone"
+        );
+        assert_eq!(
+            scope.telescope_index(Frame::Inner(y), a),
+            DeBruijnIndex::from(2_u32)
         );
     }
 }

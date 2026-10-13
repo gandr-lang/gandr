@@ -38,6 +38,7 @@ use gandr_core_term::Binders;
 use gandr_core_term::Carried;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
+use gandr_core_term::session::SessionAction;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
@@ -382,21 +383,20 @@ impl<'source> Lowerer<'_, 'source>
             | Former::Module => Leaves::Never,
             | _ if held == Leaves::Never => Leaves::Never,
             | Former::Block | Former::Parenthesized => held,
-            | Former::Case => self.arms_leave(position, pieces),
+            | Former::Case | Former::Offer => self.arms_leave(position, pieces),
             | _ => Leaves::Sometimes,
         }
     }
 
-    /// What the paths of the match at `position`, which holds an exit, do:
-    /// always leave when every arm always does.
+    /// What the paths of the match or the offer at `position`, which holds an
+    /// exit, do: always leave when every arm always does.
     ///
     /// # Specification
-    /// - requires: every arm body of the match is surveyed, and one of its
-    ///   children holds an exit.
-    /// - ensures: always when the match has an arm and every arm body always
-    ///   leaves; sometimes otherwise, a match whose pieces do not read
-    ///   included.
-    /// - provides: the match half of [`Self::leaves_of`].
+    /// - requires: every arm body of the match or the offer is surveyed, and
+    ///   one of its children holds an exit.
+    /// - ensures: always when the form has an arm and every arm body always
+    ///   leaves; sometimes otherwise, a form whose pieces do not read included.
+    /// - provides: the match and offer half of [`Self::leaves_of`].
     /// - fails: never.
     /// - panics: none.
     ///
@@ -773,12 +773,14 @@ pub(super) fn mark_copies(
 ///   replaced by `N'[v/x]`, the beta step of the returner, so no producer the
 ///   checker cannot synthesise is bound; any other end `e` by `x ← e; N'`. A
 ///   local end is a node the walk through binds' rests, case branches, a data
-///   case's field functions and a split's body reaches that is none of those
-///   and no exit; an exit resets the rests it continues to none, so it stays
-///   where it stands. The rest is copied once per depth it is carried to. Every
-///   rebuilt node takes its original's origin and match record, every bind of a
-///   rest its statement's origin, and every copied node its source's; `body`
-///   itself when nothing was distributed in it.
+///   case's field functions, a split's body, an offer's arms and a fork's
+///   parent reaches that is none of those and no exit; an exit resets the rests
+///   it continues to none, so it stays where it stands. An offer's arm and a
+///   fork's parent bind no intuitionistic variable, so the rest reaches them at
+///   the depth it reaches the form. The rest is copied once per depth it is
+///   carried to. Every rebuilt node takes its original's origin and match
+///   record, every bind of a rest its statement's origin, and every copied node
+///   its source's; `body` itself when nothing was distributed in it.
 /// - provides: the mint half of early exits: every exit focuses as the cut of
 ///   its value against the body's own return continuation.
 /// - fails: never.
@@ -865,6 +867,16 @@ pub(super) fn commute(
                     | Some(Computation::Lambda(under)) => {
                         steps.push(Step::Close(node));
                         steps.push(Step::Open(under, rests, depth.deeper()));
+                    },
+                    | Some(Computation::Session(SessionAction::Offer { ref arms, .. })) => {
+                        steps.push(Step::Close(node));
+                        for &arm in arms.values().rev() {
+                            steps.push(Step::Open(arm, rests, depth));
+                        }
+                    },
+                    | Some(Computation::Session(SessionAction::Fork { parent, .. })) => {
+                        steps.push(Step::Close(node));
+                        steps.push(Step::Open(parent, rests, depth));
                     },
                     | _ => match rests {
                         | Maybe::Absent(_) => results.push(node),
@@ -1114,8 +1126,9 @@ pub(super) fn record_copies(
 /// Rebuild `node` over its children's commuted forms, the last of `results`.
 ///
 /// # Specification
-/// - requires: `node` is a bind, a case, a data case, a split or a lambda whose
-///   every commuted child stands on top of `results`, in order.
+/// - requires: `node` is a bind, a case, a data case, a split, a lambda, an
+///   offer or a fork whose every commuted child — a fork's parent alone —
+///   stands on top of `results`, in order.
 /// - ensures: those results popped; `node` itself when each is the child it
 ///   stands for; else a node of the same former over them, recorded at `node`'s
 ///   origin, or `fallback`, and its match record.
@@ -1141,7 +1154,11 @@ fn rebuild(
     let count = match held {
         | Computation::Case { ref branches, .. } => branches.len(),
         | Computation::DataCase { ref branches, .. } => branches.len(),
-        | Computation::Bind(..) | Computation::Split { .. } | Computation::Lambda(_) => 1_usize,
+        | Computation::Session(SessionAction::Offer { ref arms, .. }) => arms.len(),
+        | Computation::Bind(..)
+        | Computation::Split { .. }
+        | Computation::Lambda(_)
+        | Computation::Session(SessionAction::Fork { .. }) => 1_usize,
         | _ => 0_usize,
     };
     let commuted = results.split_off(results.len().saturating_sub(count));
@@ -1178,6 +1195,25 @@ fn rebuild(
             sink.arena
                 .computation_data_case(scrutinee, motive, branched.to_vec())
         },
+        | (Computation::Session(SessionAction::Offer { endpoint, ref arms }), branched)
+            if !arms.values().copied().eq(branched.iter().copied()) =>
+        {
+            let arms = arms.keys().cloned().zip(branched.iter().copied()).collect();
+            sink.arena
+                .computation_session(SessionAction::Offer { endpoint, arms })
+        },
+        | (
+            Computation::Session(SessionAction::Fork {
+                protocol,
+                child,
+                parent,
+            }),
+            &[commuted],
+        ) if commuted != parent => sink.arena.computation_session(SessionAction::Fork {
+            protocol,
+            child,
+            parent: commuted,
+        }),
         | _ => return node,
     };
     let origin = found_or(sink.origins.computation(node), fallback);
