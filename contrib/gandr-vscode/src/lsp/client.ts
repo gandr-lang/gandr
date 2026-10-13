@@ -64,16 +64,15 @@ export class GandrLanguageClient extends LanguageClient {
     return client;
   }
 
-  public override async start(): Promise<void> {
-    await super.start();
-    await this.pushConfiguration();
-  }
-
   public override dispose(timeout?: number): Promise<void> {
     this.configurationListener.dispose();
     return super.dispose(timeout);
   }
 
+  // Never called from `start()`: `sendNotification` ensures a connection by
+  // awaiting `start()` itself, so a push from an override of `start()`
+  // recurses without bound and the extension host dies. The startup value
+  // travels in the initialization options.
   private pushConfiguration(): Promise<void> {
     if (!this.isRunning()) {
       return Promise.resolve();
