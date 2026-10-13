@@ -32,13 +32,13 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 - `Declaration`, `DeclarationContent` and `OriginToken`: name-free value/data input. Values retain optional signature/body halves; data retain a `DataSignature`.
 - `check_declaration`, `check_module`, `Verdict`, `Judged` and `ModuleReport`: one verdict per declaration, retaining accepted value definitions, native data signatures and recorded lifts.
 - `Nesting`, `NestedElaboration` and `ModuleReport::nested_elaborations`: each computation written where a value is read, run or suspended by the type expected there, and the body rebuilt with every run bound.
-- `Funext`, `FunextStep`, `Evaluation`, `Reading`, `Stalled`, `evaluated::Absent`, `ModuleReport::funexts`, `Equivalence`, `ModuleReport::equivalences`, `Reflexivity`, `converted::Absent` and `ModuleReport::reflexivities`: function extensionality, `equiv(f, g)` and reflexivity decided by computation, each with the traces the kernel replays; `ua::derive` lifts `equiv(f, g)` to `ua_n` at every stratum the site certifies, its telescope one unit per degree above one; `ModuleReport::universals`: what `ua[n, k]` derives.
+- `Funext`, `FunextStep`, `Evaluation`, `Reading`, `Stalled`, `evaluated::Absent`, `ModuleReport::funexts`, `Equivalence`, `ModuleReport::equivalences`, `Reflexivity`, `converted::Absent`, `ModuleReport::reflexivities`, `EndpointRelation` and `ModuleReport::relations`: function extensionality, `equiv(f, g)`, reflexivity and the path endpoints a type conversion relates decided by computation, each with the traces the kernel replays; `ua::derive` lifts `equiv(f, g)` to `ua_n` at every stratum the site certifies; `ModuleReport::universals`: what `ua[n, k]` derives.
 - `check_declaration_supported`, `Supported`, `Support`, `Consulted` and `CheckingContext::adopt`: query-specific value/data answers and adoption into the new prefix.
 - `CheckingContext`, `CheckBudget` and `signature_table::Absent`: context, admission tables and judgment allowance.
 - `Absence`, `ObligationEntry`, `ObligationLedger` and `ObligationCount`: the absence-only ledger.
 - `CheckRefusal`, `Mismatch`, `CheckingForm`, `ExpectedShape`, `UnadmittedFormer`, `TermNode`, `TypeNode` and `CoreNode`: named refusals and responsible nodes.
 - `StaticArity`, `ArgumentPosition` and family refusals preserve the failing argument or arity.
-- `CheckRefusal::classify` assigns producer-failure classes; actual judgments, rather than a duplicate variant-to-class table, witness their refusals.
+- `CheckRefusal::classify` assigns producer-failure classes ([`refusal`](src/refusal.rs)).
 - `CheckRefusal::compared`, `Compared` and `compared::Absent`: the types a refusal sets against each other, the one its rule expected and the one it found, as nodes a face spells.
 - `Failure`, `Obligation`, `FrameRole`, `FoldPremise`, `Pursuit`, `Stage`, `judged` and `ModuleReport::failures`: what the checking machine held when it refused, kept per refused body by position ([`failure`](src/failure.rs)).
 - `bridge::readmit` and `bridge::Readmission`: independent admission of accepted declarations into a fresh kernel environment.

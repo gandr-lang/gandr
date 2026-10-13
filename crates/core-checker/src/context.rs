@@ -293,6 +293,12 @@ pub struct CheckingContext<'arena>
     /// How the judgement decided each computation written where a value is
     /// read, by node, since the declaration under way began.
     nesting: BTreeMap<ValueId, crate::nested::Nesting>,
+    /// The path endpoint pairs the judgement's type conversions related since
+    /// the declaration under way began, by pair, with each derivation.
+    relating: BTreeMap<(ValueId, ValueId), crate::code::EndpointRelation>,
+    /// The path endpoint pairs each accepted declaration's type conversions
+    /// related, by position.
+    relations: BTreeMap<ConstantIndex, Vec<crate::code::EndpointRelation>>,
     /// The path each univalence statement the judgement decided derives, by
     /// node.
     universals: BTreeMap<ValueId, ValueId>,
@@ -373,6 +379,8 @@ impl<'arena> CheckingContext<'arena>
             reflexivities: BTreeMap::new(),
             universals: BTreeMap::new(),
             nesting: BTreeMap::new(),
+            relating: BTreeMap::new(),
+            relations: BTreeMap::new(),
             sealed: BTreeMap::new(),
             seals: SealTable::new(),
             budget,
@@ -1242,6 +1250,92 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     pub(crate) fn take_nesting(&mut self) -> BTreeMap<ValueId, crate::nested::Nesting>
     {
         core::mem::take(&mut self.nesting)
+    }
+
+    /// Record the derivation the judgement related the path endpoints `left`
+    /// and `right` by, where a type conversion met them.
+    ///
+    /// # Specification
+    /// - requires: `decisions` is the machine's convertible trace from `left`
+    ///   to `right`.
+    /// - ensures: the pair has `decisions` as its derivation, replacing an
+    ///   earlier one, until the next take.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an ascription relating compound endpoints through a
+    ///   definition's body keeps the pair and its derivation for the accepted
+    ///   declaration.
+    /// - witness: `module::tests::an_ascription_keeps_the_endpoints_it_related`
+    #[spec(ensures: self.relating.contains_key(&(left, right)))]
+    pub(crate) fn record_relation(
+        &mut self,
+        left: ValueId,
+        right: ValueId,
+        decisions: Vec<
+            gandr_kernel_conversion_trace::ConversionDecision<gandr_core_nbe::TraceNode>,
+        >,
+    )
+    {
+        self.relating.insert(
+            (left, right),
+            crate::code::EndpointRelation::new(left, right, decisions),
+        );
+    }
+
+    /// Take every endpoint pair recorded since the last take, leaving none.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the pairs recorded since the last take, ascending by pair;
+    ///   none remain.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`CheckingContext::record_relation`]; a second
+    ///   declaration keeps only the pairs its own judgement related.
+    /// - witness: `module::tests::an_ascription_keeps_the_endpoints_it_related`
+    #[spec(ensures: self.relating.is_empty())]
+    pub(crate) fn take_relating(&mut self) -> Vec<crate::code::EndpointRelation>
+    {
+        core::mem::take(&mut self.relating).into_values().collect()
+    }
+
+    /// Keep `relations` as the endpoint pairs the accepted declaration at
+    /// `constant` related.
+    ///
+    /// # Specification
+    /// - requires: `relations` is what [`CheckingContext::take_relating`] took
+    ///   after the judgement at `constant` accepted.
+    /// - ensures: `constant` has `relations` as its pairs, replacing earlier
+    ///   ones, when any was related; otherwise nothing changes.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`CheckingContext::record_relation`].
+    /// - witness: `module::tests::an_ascription_keeps_the_endpoints_it_related`
+    #[spec(captures: entry = relations.len(), ensures: entry == 0 || self.relations.get(&constant).map(Vec::len) == Some(entry))]
+    pub(crate) fn keep_relations(
+        &mut self,
+        constant: ConstantIndex,
+        relations: Vec<crate::code::EndpointRelation>,
+    )
+    {
+        if !relations.is_empty() {
+            self.relations.insert(constant, relations);
+        }
+    }
+
+    /// The path endpoint pairs each accepted declaration's type conversions
+    /// related, by position, with each derivation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn relations(&self) -> &BTreeMap<ConstantIndex, Vec<crate::code::EndpointRelation>>
+    {
+        &self.relations
     }
 
     /// The path each univalence statement the judgement decided derives, by

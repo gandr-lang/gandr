@@ -16,6 +16,11 @@
 //! binds no payload, so a classification cannot vary with a node id and a
 //! refusal added without a class does not compile.
 //!
+//! Actual judgements witness each refusal's class. The alternative, a
+//! variant-to-class table in the tests, would restate the match rather than
+//! observe it; it reverses if a class ever depends on a payload no judgement
+//! reaches.
+//!
 //! A type mismatch, a shape mismatch, a checking form in synthesis position, an
 //! unknown constant, a universe of the wrong sort or level, a bind whose type
 //! mentions its binder, a static application past its head's arity or at an

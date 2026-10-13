@@ -529,6 +529,79 @@ impl Reflexivity
     }
 }
 
+/// The normaliser's reading of one pair of path endpoints a type conversion
+/// met: the derivation relating the left endpoint to the right.
+///
+/// The dialogue is the machine's convertible trace between the two, recorded
+/// as a reflexivity's is, with returned endpoints held at the definitions they
+/// call, so every δ-step the pair needs is one of its decisions. The kernel
+/// replays it where its own forced reading leaves the two types apart.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct EndpointRelation
+{
+    /// The endpoint the derivation starts from.
+    left: ValueId,
+    /// The endpoint the derivation ends at.
+    right: ValueId,
+    /// The derivation from `left` to `right`, in order.
+    decisions: Vec<ConversionDecision<TraceNode>>,
+}
+
+impl EndpointRelation
+{
+    /// The reading relating `left` to `right` by `decisions`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) const fn new(
+        left: ValueId,
+        right: ValueId,
+        decisions: Vec<ConversionDecision<TraceNode>>,
+    ) -> Self
+    {
+        Self {
+            left,
+            right,
+            decisions,
+        }
+    }
+
+    /// The endpoint the derivation starts from.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn left(&self) -> ValueId
+    {
+        self.left
+    }
+
+    /// The endpoint the derivation ends at.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn right(&self) -> ValueId
+    {
+        self.right
+    }
+
+    /// The derivation from the left endpoint to the right.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn decisions(&self) -> &[ConversionDecision<TraceNode>]
+    {
+        &self.decisions
+    }
+}
+
 impl CodeDefinitions
 {
     /// No definition: every constant is rigid.

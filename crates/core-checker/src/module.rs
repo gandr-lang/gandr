@@ -102,6 +102,7 @@ use gandr_core_term::ValueId;
 use gandr_kernel_term::ConstantIndex;
 use quenchant_shape::shape::Maybe;
 
+use crate::code::EndpointRelation;
 use crate::code::Lift;
 use crate::code::Reflexivity;
 use crate::context::CheckingContext;
@@ -236,6 +237,9 @@ pub struct ModuleReport
     equivalences: BTreeMap<ValueId, Equivalence>,
     /// The reflexivities the run checked, by node.
     reflexivities: BTreeMap<ValueId, Reflexivity>,
+    /// The path endpoint pairs each accepted declaration's type conversions
+    /// related, by position, with each derivation.
+    relations: BTreeMap<ConstantIndex, Vec<EndpointRelation>>,
     /// The path each univalence statement the run decided derives, by node.
     universals: BTreeMap<ValueId, ValueId>,
     /// The body each accepted declaration defines its constant as, elaborated
@@ -360,6 +364,19 @@ impl ModuleReport
     pub const fn reflexivities(&self) -> &BTreeMap<ValueId, Reflexivity>
     {
         &self.reflexivities
+    }
+
+    /// The path endpoint pairs each accepted declaration's type conversions
+    /// related, by position, with the derivation relating each pair: what the
+    /// declaration crosses to the kernel carrying.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn relations(&self) -> &BTreeMap<ConstantIndex, Vec<EndpointRelation>>
+    {
+        &self.relations
     }
 
     /// The path each univalence statement the run decided derives, by node:
@@ -559,7 +576,9 @@ struct Decision
 ///   did, the verdict then being the second run's over the elaborated body;
 ///   and, when `run` is [`Run::Typed`] and the body was run, what
 ///   [`type_value`] keeps for the body as written, read before the
-///   declaration's own type entered the table.
+///   declaration's own type entered the table. An accepted value keeps, under
+///   its position, the path endpoint pairs the run its verdict is from related,
+///   and nothing an earlier declaration or another run related.
 /// - fails: never; a refusal is the verdict [`Verdict::Refused`].
 /// - panics: none.
 ///
@@ -572,6 +591,7 @@ struct Decision
 /// - witness: `module::tests::a_typed_module_keeps_each_judged_body_s_term_types`
 /// - witness: `module::tests::a_nested_run_elaborates_into_a_bind_before_its_region`
 /// - witness: `module::tests::a_run_in_a_definition_s_own_value_is_unenclosed`
+/// - witness: `module::tests::an_ascription_keeps_the_endpoints_it_related`
 #[spec(ensures: |ret| (run == Run::Typed || matches!(ret.typings, Maybe::Absent(typed::Absent::Unasked)))
     && match (&ret.verdict, &ret.failure) {
     | (&Verdict::Refused(refusal), &Maybe::Present(ref failure)) => failure.refusal() == refusal,
@@ -596,6 +616,9 @@ fn decide(
         elaboration: Maybe::Absent(elaborated::Absent::Unnested),
     };
     let constant = declaration.constant();
+    // The pairs a declaration's conversions relate are its own: whatever an
+    // earlier declaration's typing pass left is dropped.
+    let _earlier = context.take_relating();
     if let Err(refusal) = context.admit(constant) {
         return unrun(refusal);
     }
@@ -643,6 +666,7 @@ fn decide(
     };
     let mut typings = Maybe::Absent(untyped);
     let mut elaboration = Maybe::Absent(elaborated::Absent::Unnested);
+    let mut relating = Vec::new();
     let (verdict, failure) = match body {
         | Maybe::Present(body) => {
             let _stale = context.take_nesting();
@@ -653,6 +677,9 @@ fn decide(
                     match crate::nested::elaborate(context.arena_mut(), body, &decisions) {
                         | Ok((elaborated, done)) => {
                             elaboration = Maybe::Present(done);
+                            // The verdict is the second run's, and so are the
+                            // pairs it relates.
+                            let _first = context.take_relating();
                             judge(context, elaborated, direction)
                         },
                         | Err(unenclosed) => Err(unenclosed_failure(unenclosed.run())),
@@ -665,6 +692,7 @@ fn decide(
                     first
                 },
             };
+            relating = context.take_relating();
             if run == Run::Typed {
                 typings = Maybe::Present(type_value(context, body, direction));
                 let _typed = context.take_nesting();
@@ -696,6 +724,7 @@ fn decide(
             // Native declarations return before the value judgment.
             context.record(constant, declared);
             context.define(constant, declared, body);
+            context.keep_relations(constant, relating);
         },
         | (
             Direction::Check(declared),
@@ -704,6 +733,7 @@ fn decide(
         | (Direction::Synthesise, Verdict::Synthesised { synthesised, body }) => {
             context.record(constant, synthesised.produced());
             context.define(constant, synthesised.produced(), body);
+            context.keep_relations(constant, relating);
         },
         | (
             Direction::Synthesise,
@@ -829,11 +859,12 @@ pub fn check_declaration_supported(
 ///   the verdict [`check_declaration`] gives at that point of the run; the
 ///   ledger holds exactly the owed verdicts' entries, in order; the lifts are
 ///   every lift the context's value bridges recorded by the run's end, the
-///   function extensionalities every one it decided, and the definitions every
-///   body the context defines a constant as; each body run and refused keeps
-///   its failure under its position, and no other declaration has one; each
-///   body the first run accepted holding a computation written where a value is
-///   read keeps its elaboration under its position.
+///   function extensionalities every one it decided, the endpoint relations
+///   every pair an accepted declaration's conversions related, and the
+///   definitions every body the context defines a constant as; each body run
+///   and refused keeps its failure under its position, and no other declaration
+///   has one; each body the first run accepted holding a computation written
+///   where a value is read keeps its elaboration under its position.
 /// - provides: total marking — a refused declaration does not stop the run.
 /// - fails: never.
 /// - panics: none.
@@ -865,6 +896,7 @@ pub fn check_declaration_supported(
     && &ret.funexts == context.funexts()
     && &ret.equivalences == context.equivalences()
     && &ret.reflexivities == context.reflexivities()
+    && &ret.relations == context.relations()
     && &ret.universals == context.universals()
     && ret.definitions.iter().map(|(&constant, &body)| (constant, body))
         .eq(context.definitions().definitions())
@@ -906,6 +938,7 @@ pub fn check_module(
         funexts: context.funexts().clone(),
         equivalences: context.equivalences().clone(),
         reflexivities: context.reflexivities().clone(),
+        relations: context.relations().clone(),
         universals: context.universals().clone(),
         definitions: context.definitions().definitions().collect(),
         data_signatures: context.data_signatures().clone(),
@@ -1330,6 +1363,78 @@ mod tests
                 .map(crate::formation::FormedValueType::id),
             Maybe::Present(integer),
             "the table holds the owed declaration's type"
+        );
+    }
+
+    #[test]
+    fn an_ascription_keeps_the_endpoints_it_related()
+    {
+        // def k : U (Integer -> F Integer) = thunk { \x. return x } ;
+        // def j : U (Integer -> F Integer) = k ;
+        // def given : Path(U (…), thunk { force j }, k) = here(k) ;
+        // def law : Path(U (…), k, k) = given ;
+        // def again : Path(U (…), thunk { force j }, k) = given ;
+        // `law`'s ascription relates `thunk { force j }` to `k`, unfolding `j`
+        // under the thunk; `again`'s endpoints are the same syntax.
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let returns = arena.comp_type_returner(integer);
+        let arrow = arena.comp_type_arrow(integer, returns);
+        let function = arena.value_type_thunk(arrow);
+        let bound = arena.value_variable(
+            gandr_core_term::Zone::Intuitionistic,
+            DeBruijnIndex::from(0_u32),
+        );
+        let returned = arena.computation_return(bound);
+        let lambda = arena.computation_lambda(returned);
+        let identity = arena.value_thunk(lambda);
+        let [k, j, given] = [0_usize, 1, 2].map(|at| arena.value_constant(ConstantIndex::from(at)));
+        let forced = arena.computation_force(j);
+        let delayed = arena.value_thunk(forced);
+        let stated = arena.value_type_path(function, delayed, k);
+        let diagonal = arena.value_type_path(function, k, k);
+        let here = arena.value_here(k);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let module = [
+            declaration(At(0), Maybe::Present(function), Maybe::Present(identity)),
+            declaration(At(1), Maybe::Present(function), Maybe::Present(k)),
+            declaration(At(2), Maybe::Present(stated), Maybe::Present(here)),
+            declaration(At(3), Maybe::Present(diagonal), Maybe::Present(given)),
+            declaration(At(4), Maybe::Present(stated), Maybe::Present(given)),
+        ];
+        let report = check_module(&mut context, &module);
+        assert!(
+            report
+                .judged()
+                .iter()
+                .all(|judged| matches!(judged.verdict(), Verdict::Checked { .. })),
+            "every declaration checks: {:?}",
+            report.judged()
+        );
+        assert_eq!(
+            report.relations().keys().copied().collect::<Vec<_>>(),
+            [ConstantIndex::from(3_usize)],
+            "only the ascription whose endpoints differ keeps a pair"
+        );
+        let relations = report
+            .relations()
+            .get(&ConstantIndex::from(3_usize))
+            .expect("the law's pairs");
+        let [ref relation] = *relations.as_slice()
+        else {
+            panic!("one pair of endpoints differs: {relations:?}");
+        };
+        assert_eq!(
+            (relation.left(), relation.right()),
+            (delayed, k),
+            "the pair is the synthesised endpoint against the declared one"
+        );
+        assert!(
+            relation.decisions().iter().any(|decision| matches!(
+                decision,
+                gandr_kernel_conversion_trace::ConversionDecision::Unfold { .. }
+            )),
+            "the derivation names the unfoldings the kernel replays"
         );
     }
 
