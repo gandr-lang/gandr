@@ -878,11 +878,23 @@ fn an_opaque_footprint_is_never_adopted()
     );
 }
 
+/// What the sealed counter's abstract type stands for.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Represented
+{
+    /// `Integer`, its seed `7`.
+    Integer,
+    /// `Unit`, its seed `()`.
+    Unit,
+}
+
 /// `module Counter :> #{ type T, seed : T } { type T = R ; def seed = r ; }`
 /// as the lowering admits it — the atom, the body member, the witness
 /// exporting it at the atom — then a client at the atom, a leak at the
-/// representation and a bystander. `unit` seals `Unit` over `()` instead of
-/// `Integer` over `7`.
+/// representation and a bystander, the atom standing for `represented`.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -893,7 +905,8 @@ fn an_opaque_footprint_is_never_adopted()
 /// - hypothesis: L3 — an unedited and a re-represented seal separate adoption
 ///   of the atom from re-judging its readers.
 /// - witness: `tests::incremental::a_sealed_module_is_adopted_and_its_seal_still_holds`
-fn sealed_counter(unit: bool) -> Program
+#[spec(ensures: |ret| ret.items().len() == 6)]
+fn sealed_counter(represented: Represented) -> Program
 {
     use gandr_core_checker::AbstractType;
     use gandr_core_checker::ComponentOrdinal;
@@ -905,14 +918,12 @@ fn sealed_counter(unit: bool) -> Program
     use gandr_kernel_term::SealExtent;
     let mut arena = CoreArena::new();
     let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
-    let (representation, seed) = if unit {
-        (arena.value_type_unit(), arena.value_unit())
-    }
-    else {
-        (
+    let (representation, seed) = match represented {
+        | Represented::Unit => (arena.value_type_unit(), arena.value_unit()),
+        | Represented::Integer => (
             arena.value_type_base(gandr_kernel_term::BaseType::Integer),
             arena.value_literal(integer(Natural(7))),
-        )
+        ),
     };
     let integer_type = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
     let atom = arena.value_type_abstract(ConstantIndex::from(0_usize));
@@ -954,7 +965,11 @@ fn sealed_counter(unit: bool) -> Program
 fn a_sealed_module_is_adopted_and_its_seal_still_holds()
 {
     let base = || {
-        check_program(&mut sealed_counter(false), CheckBudget::DEFAULT).expect("the order builds")
+        check_program(
+            &mut sealed_counter(Represented::Integer),
+            CheckBudget::DEFAULT,
+        )
+        .expect("the order builds")
     };
     let typings: Vec<Typing> = base().typings().cloned().collect();
     assert!(
@@ -968,7 +983,7 @@ fn a_sealed_module_is_adopted_and_its_seal_still_holds()
         ]),
         "the witness checks inside the seal, the client at the atom, and the leak is refused: {typings:?}"
     );
-    let mut unedited = sealed_counter(false);
+    let mut unedited = sealed_counter(Represented::Integer);
     let expected = batch(&unedited);
     let resumed = resume(base(), &mut unedited).expect("the order builds");
     assert_eq!(
@@ -981,7 +996,7 @@ fn a_sealed_module_is_adopted_and_its_seal_still_holds()
         expected,
         "and the adopted atom keeps the leak refused"
     );
-    let mut represented = sealed_counter(true);
+    let mut represented = sealed_counter(Represented::Unit);
     let expected = batch(&represented);
     let resumed = resume(base(), &mut represented).expect("the order builds");
     assert_eq!(

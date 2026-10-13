@@ -1111,6 +1111,7 @@ fn root_knowledge(
 #[cfg(test)]
 mod tests
 {
+    use anodized::spec;
     use gandr_core_term::CompTypeId;
     use gandr_core_term::CoreArena;
     use gandr_core_term::Sort;
@@ -1750,6 +1751,8 @@ mod tests
     ///   representation.
     /// - witness: `conversion::tests::a_sealed_atom_relates_to_no_representation`
     /// - witness: `conversion::tests::sealed_atoms_relate_by_identity_alone`
+    #[spec(ensures: |ret| matches!(ret, [first, second, integer, unit]
+        if first != second && integer != unit))]
     fn sealed_pair(context: &mut CheckingContext<'_>) -> [gandr_core_term::ValueTypeId; 4]
     {
         use crate::declaration::AbstractType;

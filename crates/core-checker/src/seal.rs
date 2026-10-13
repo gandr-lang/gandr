@@ -317,19 +317,7 @@ impl fmt::Display for SealError
     /// Writes the refused claim with its site, serial or counts.
     ///
     /// # Specification
-    /// - requires: nothing.
-    /// - ensures: each variant writes its own sentence with its payload.
-    /// - fails: the sink's refusal.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// [`fmt::Error`] when the sink refuses.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — one value of each variant renders apart.
-    /// - witness: `seal::tests::a_repeated_site_is_refused`
-    /// - witness: `seal::tests::a_reordered_record_is_refused`
-    /// - witness: `seal::tests::a_truncated_record_is_refused`
+    /// trivial.
     #[inline]
     fn fmt(
         &self,
@@ -556,14 +544,11 @@ mod tests
     /// # Specification
     /// trivial.
     fn site(
-        sealing: usize,
-        component: usize,
+        sealing: SealingSite,
+        component: ComponentOrdinal,
     ) -> SealSite
     {
-        SealSite::new(
-            SealingSite::from(sealing),
-            ComponentOrdinal::from(component),
-        )
+        SealSite::new(sealing, component)
     }
 
     /// A two-component sealing: one ascription sealing its first two
@@ -573,7 +558,10 @@ mod tests
     /// trivial.
     fn counter_sites() -> [SealSite; 2]
     {
-        [site(0, 0), site(0, 1)]
+        [
+            site(0_usize.into(), 0_usize.into()),
+            site(0_usize.into(), 1_usize.into()),
+        ]
     }
 
     #[test]
@@ -599,7 +587,10 @@ mod tests
                 Maybe::Present(first),
                 Maybe::Absent(minted_site::Absent::Unminted)
             ),
-            (table.lookup(first_site), table.lookup(site(1, 0))),
+            (
+                table.lookup(first_site),
+                table.lookup(site(1_usize.into(), 0_usize.into()))
+            ),
             "a minted site finds its atom and an unminted one finds none"
         );
     }
@@ -609,7 +600,7 @@ mod tests
     fn a_repeated_site_is_refused()
     {
         let mut table = SealTable::new();
-        let repeated = site(0, 0);
+        let repeated = site(0_usize.into(), 0_usize.into());
         let _first = table.mint(repeated).unwrap();
         let refused = table.mint(repeated);
         assert_eq!(
@@ -634,8 +625,8 @@ mod tests
     fn two_declarations_sealing_one_component_name_stay_distinct()
     {
         let mut table = SealTable::new();
-        let first = table.mint(site(0, 0)).unwrap();
-        let second = table.mint(site(1, 0)).unwrap();
+        let first = table.mint(site(0_usize.into(), 0_usize.into())).unwrap();
+        let second = table.mint(site(1_usize.into(), 0_usize.into())).unwrap();
         assert_ne!(
             first, second,
             "structurally identical sealings in two ascriptions do not interchange"

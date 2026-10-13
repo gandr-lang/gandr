@@ -1700,8 +1700,8 @@ mod tests
         position: At,
         kind: ValueTypeId,
         representation: ValueTypeId,
-        extent: usize,
-        component: usize,
+        extent: SealExtent,
+        component: ComponentOrdinal,
     ) -> Declaration
     {
         Declaration::abstract_type(
@@ -1709,11 +1709,8 @@ mod tests
             AbstractType::new(
                 kind,
                 representation,
-                SealExtent::from(extent),
-                SealSite::new(
-                    SealingSite::from(0_usize),
-                    ComponentOrdinal::from(component),
-                ),
+                extent,
+                SealSite::new(SealingSite::from(0_usize), component),
             ),
             OriginToken::from(position.0.checked_add(100).unwrap()),
         )
@@ -1726,9 +1723,9 @@ mod tests
         let integer = arena.value_type_base(BaseType::Integer);
         let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
         let module = [
-            sealed(At(0), small, integer, 0, 0),
-            sealed(At(1), integer, integer, 0, 1),
-            sealed(At(2), small, small, 0, 2),
+            sealed(At(0), small, integer, 0_usize.into(), 0_usize.into()),
+            sealed(At(1), integer, integer, 0_usize.into(), 1_usize.into()),
+            sealed(At(2), small, small, 0_usize.into(), 2_usize.into()),
         ];
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
         let report = check_module(&mut context, &module);
@@ -1772,8 +1769,8 @@ mod tests
         let integer = arena.value_type_base(BaseType::Integer);
         let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
         let module = [
-            sealed(At(0), small, integer, 0, 0),
-            sealed(At(1), small, integer, 0, 0),
+            sealed(At(0), small, integer, 0_usize.into(), 0_usize.into()),
+            sealed(At(1), small, integer, 0_usize.into(), 0_usize.into()),
         ];
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
         let report = check_module(&mut context, &module);
@@ -1825,7 +1822,7 @@ mod tests
         let member = arena.value_constant(ConstantIndex::from(1_usize));
         let export = arena.value_constant(ConstantIndex::from(2_usize));
         let module = [
-            sealed(At(0), small, integer, 2, 0),
+            sealed(At(0), small, integer, 2_usize.into(), 0_usize.into()),
             declaration(At(1), Maybe::Present(integer), Maybe::Present(seven)),
             declaration(At(2), Maybe::Present(atom), Maybe::Present(member)),
             declaration(At(3), Maybe::Present(atom), Maybe::Present(export)),

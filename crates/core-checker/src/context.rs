@@ -573,19 +573,21 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// - requires: identifiers are read in this context; no cached formation
     ///   claim is trusted across arenas.
     /// - ensures: the fresh position holds the abstract type, its site minted;
-    ///   on refusal nothing is admitted, minted or retained.
+    ///   on refusal no atom is minted and no abstract type retained, though a
+    ///   repeated site leaves the position admitted, as a judged refusal does.
     /// - fails: the formation refusal, a repeated site, or admission out of
     ///   source order.
     /// - panics: none.
     ///
     /// # Errors
-    /// Returns a formation refusal or the ordinary admission-order refusal.
+    /// Returns a formation refusal, [`CheckRefusal::SealSiteRepeated`] or the
+    /// ordinary admission-order refusal.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — reusing a sealed module's checkpoint must mint the
-    ///   atom again, so its members check at the representation and a client
-    ///   past the seal is refused exactly as in a fresh judgement.
-    /// - witness: `tests::incremental::a_sealed_module_is_adopted_and_its_seal_still_holds`
+    ///   atom again, answering its level as a judgement would, and a second
+    ///   adoption at the same site is refused with nothing retained.
+    /// - witness: `context::tests::an_adopted_abstract_type_mints_its_site_again`
     #[spec(ensures: |ret| ret.is_err() || self.sealed.contains_key(&constant))]
     #[inline]
     pub fn adopt_abstract(
@@ -1736,6 +1738,52 @@ mod tests
             Ok(quenchant_shape::shape::Maybe::Absent(
                 crate::unfolding::Absent::Rigid
             ))
+        );
+    }
+
+    #[test]
+    fn an_adopted_abstract_type_mints_its_site_again()
+    {
+        use crate::CheckRefusal;
+        use crate::declaration::AbstractType;
+        use crate::seal::ComponentOrdinal;
+        use crate::seal::SealSite;
+        use crate::seal::SealingSite;
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let site = SealSite::new(SealingSite::from(0_usize), ComponentOrdinal::from(0_usize));
+        let declared = AbstractType::new(
+            small,
+            integer,
+            gandr_kernel_term::SealExtent::from(1_usize),
+            site,
+        );
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        assert_eq!(
+            context.adopt_abstract(ConstantIndex::from(0_usize), declared),
+            Ok(()),
+            "a reused abstract type is formed and admitted again"
+        );
+        assert_eq!(
+            context.seal_table().sites(),
+            [site],
+            "adoption mints the atom's site as a judgement would"
+        );
+        assert_eq!(
+            context.abstract_level(ConstantIndex::from(0_usize)),
+            Ok(Level::zero()),
+            "the adopted atom answers the level of its kind"
+        );
+        assert_eq!(
+            context.adopt_abstract(ConstantIndex::from(1_usize), declared),
+            Err(CheckRefusal::SealSiteRepeated(site)),
+            "a second adoption at the same site is refused by name"
+        );
+        assert_eq!(
+            context.abstract_types().count(),
+            1,
+            "the refused adoption retains no abstract type"
         );
     }
 }
