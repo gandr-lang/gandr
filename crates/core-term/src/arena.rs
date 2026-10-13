@@ -1907,6 +1907,33 @@ impl CoreArena
         self.alloc_value(Value::Then(first, second))
     }
 
+    /// Mint the forward flow `forward(f)`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_forward(
+        &mut self,
+        translator: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Forward(translator))
+    }
+
+    /// Mint the function flow `arrow(d, c)` over a domain and a codomain flow.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_function_flow(
+        &mut self,
+        domain: ValueId,
+        codomain: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::FunctionFlow(domain, codomain))
+    }
+
     /// Mint the recorded run of `moves`.
     ///
     /// # Specification

@@ -540,6 +540,7 @@ fn worst(
                     | Value::Funext(first, second)
                     | Value::Equiv(first, second)
                     | Value::Then(first, second)
+                    | Value::FunctionFlow(first, second)
                     | Value::SessionRelated {
                         source: first,
                         target: second,
@@ -573,6 +574,7 @@ fn worst(
                     &(Value::PathRefl(body)
                     | Value::Here(body)
                     | Value::Stay(body)
+                    | Value::Forward(body)
                     | Value::Injection(_, body)
                     | Value::Lift { body, .. }
                     | Value::StaticLambda(body)

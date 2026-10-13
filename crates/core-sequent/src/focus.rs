@@ -138,9 +138,12 @@
 //! functions without the obligations that certify it. **Reversal.** A
 //! command-level image must specify its types, eliminations and certified
 //! readback before focusing admits it. The in-memory bridge mode, higher
-//! fields, funext, `Flow_U` and guarded List observations likewise remain
-//! outside this IL.
+//! fields, funext and guarded List observations likewise remain outside this
+//! IL. A flow is the exception: it carries no evidence the machine needs, and
+//! runs as its translator ([`crate::flow`]).
 
+use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 use core::fmt;
 
@@ -340,10 +343,10 @@ pub enum FocusRefusal
     UniverseTransport(ComputationId),
     /// Element transport has no command-IL destructor.
     ElementTransport(ComputationId),
-    /// An identity introduction — reflexivity, an extensionality or
-    /// equivalence statement, a session statement, a stay, a composite — or a
-    /// compound endpoint: the command IL carries no paths or flows, so none
-    /// has a producer to become.
+    /// A path introduction — reflexivity, an extensionality or equivalence
+    /// statement, a session equivalence — or a compound endpoint: the command
+    /// IL carries no paths, so none has a producer to become. A flow is not
+    /// refused: it runs as its translator.
     ElementPath(ValueId),
     /// A core value id names no node of the core arena.
     DanglingValue(ValueId),
@@ -481,14 +484,22 @@ pub fn focus_computation(
 ) -> Result<CommandId, FocusRefusal>
 {
     transactional(arena, provenance, |arena, provenance| {
-        let top = arena.mint_consumer(ConsumerNode::Top)?;
-        let mut run = Focusing::new(core, arena, provenance);
-        run.tasks.push(Task::Computation {
-            computation,
-            continuation: top,
-        });
-        run.drive()?;
-        run.single_command()
+        with_combinators(
+            core,
+            arena,
+            provenance,
+            (
+                |run: &mut Focusing<'_>| {
+                    let top = run.arena.mint_consumer(ConsumerNode::Top)?;
+                    run.tasks.push(Task::Computation {
+                        computation,
+                        continuation: top,
+                    });
+                    Ok(())
+                },
+                |run: Focusing<'_>| run.single_command(),
+            ),
+        )
     })
 }
 
@@ -526,10 +537,18 @@ pub fn focus_value(
 ) -> Result<ProducerId, FocusRefusal>
 {
     transactional(arena, provenance, |arena, provenance| {
-        let mut run = Focusing::new(core, arena, provenance);
-        run.tasks.push(Task::Value(value));
-        run.drive()?;
-        run.single_producer()
+        with_combinators(
+            core,
+            arena,
+            provenance,
+            (
+                |run: &mut Focusing<'_>| {
+                    run.tasks.push(Task::Value(value));
+                    Ok(())
+                },
+                |run: Focusing<'_>| run.single_producer(),
+            ),
+        )
     })
 }
 
@@ -570,16 +589,24 @@ pub fn focus_top_value(
 ) -> Result<CommandId, FocusRefusal>
 {
     transactional(arena, provenance, |arena, provenance| {
-        let top = arena.mint_consumer(ConsumerNode::Top)?;
-        let mut run = Focusing::new(core, arena, provenance);
-        run.tasks.push(Task::Cut {
-            origin: FocusOrigin::TopValue,
-            polarity: Polarity::Positive,
-            consumer: top,
-        });
-        run.tasks.push(Task::Value(value));
-        run.drive()?;
-        run.single_command()
+        with_combinators(
+            core,
+            arena,
+            provenance,
+            (
+                |run: &mut Focusing<'_>| {
+                    let top = run.arena.mint_consumer(ConsumerNode::Top)?;
+                    run.tasks.push(Task::Cut {
+                        origin: FocusOrigin::TopValue,
+                        polarity: Polarity::Positive,
+                        consumer: top,
+                    });
+                    run.tasks.push(Task::Value(value));
+                    Ok(())
+                },
+                |run: Focusing<'_>| run.single_command(),
+            ),
+        )
     })
 }
 
@@ -625,6 +652,79 @@ where
         provenance.truncate_to(provenance_mark);
     }
     answer
+}
+
+/// Focus the work `seed` sets up, every flow combinator it meets focused once
+/// beforehand.
+///
+/// # Specification
+/// - requires: `seed` only mints and pushes tasks; `finish` reads the run's one
+///   result.
+/// - ensures: a first run over `core` records the combinators its flows and
+///   rides apply; when it met none its result is the answer. Otherwise the
+///   arena and provenance return to their marks, each wanted combinator is
+///   built closed in a scratch arena and focused by a run of its own, and a
+///   second run with those producers prepared gives the answer.
+/// - provides: closed combinators without a run nested in a run, and with no
+///   cost to a term that holds no flow.
+/// - fails: `seed`'s, a run's or `finish`'s refusal;
+///   [`FocusRefusal::TranslationInvariant`] when the second run still wants a
+///   combinator.
+/// - panics: none.
+/// - executable: none — the answer's type is the caller's, and what the runs
+///   minted is observed by the entry points' own specifications.
+///
+/// # Errors
+/// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 — rides and a function flow run to the kernel rows' values,
+///   which the first run's placeholders would not compute.
+/// - witness: `machine::tests::rides_run_by_the_motives_action`
+/// - witness: `machine::tests::a_function_flow_runs_in_variance_order`
+fn with_combinators<Answer, Seed, Finish>(
+    core: &CoreArena,
+    arena: &mut CommandArena,
+    provenance: &mut Provenance,
+    (seed, finish): (Seed, Finish),
+) -> Result<Answer, FocusRefusal>
+where
+    Seed: Fn(&mut Focusing<'_>) -> Result<(), FocusRefusal>,
+    Finish: Fn(Focusing<'_>) -> Result<Answer, FocusRefusal>,
+{
+    let arena_mark = arena.watermark();
+    let provenance_mark = provenance.len();
+    let wanted = {
+        let mut run = Focusing::new(core, arena, provenance);
+        seed(&mut run)?;
+        run.drive()?;
+        if run.wanted.is_empty() {
+            return finish(run);
+        }
+        core::mem::take(&mut run.wanted)
+    };
+    arena.truncate_to(arena_mark);
+    provenance.truncate_to(provenance_mark);
+    let mut prepared = BTreeMap::new();
+    for combinator in wanted {
+        let mut scratch = CoreArena::new();
+        let root = crate::flow::build(core, combinator, &mut scratch)?;
+        let mut closed = Focusing::new(&scratch, arena, provenance);
+        closed.tasks.push(Task::Value(root));
+        closed.drive()?;
+        if !closed.wanted.is_empty() {
+            return Err(FocusRefusal::TranslationInvariant);
+        }
+        let _replaced = prepared.insert(combinator, closed.single_producer()?);
+    }
+    let mut run = Focusing::new(core, arena, provenance);
+    run.prepared = prepared;
+    seed(&mut run)?;
+    run.drive()?;
+    if !run.wanted.is_empty() {
+        return Err(FocusRefusal::TranslationInvariant);
+    }
+    finish(run)
 }
 
 /// One unit of pending translation work.
@@ -759,6 +859,16 @@ enum Task
         /// The named continuation.
         continuation: ConsumerId,
     },
+    /// Pop the second, then the first producer, and mint `⟨combinator |+
+    /// force(apply(first; apply(second; continuation)))⟩` over the closed
+    /// combinator's producer.
+    Combinator
+    {
+        /// The closed program applied.
+        combinator: crate::flow::Combinator,
+        /// The continuation its answer is sent to.
+        continuation: ConsumerId,
+    },
 }
 
 /// The state of one translation.
@@ -776,6 +886,10 @@ struct Focusing<'run>
     producers: Vec<ProducerId>,
     /// Translated commands awaiting their parent.
     commands: Vec<CommandId>,
+    /// The flow combinators focused before this run, by combinator.
+    prepared: BTreeMap<crate::flow::Combinator, ProducerId>,
+    /// The flow combinators this run met that were not prepared.
+    wanted: BTreeSet<crate::flow::Combinator>,
 }
 
 impl<'run> Focusing<'run>
@@ -797,6 +911,8 @@ impl<'run> Focusing<'run>
             tasks: Vec::new(),
             producers: Vec::new(),
             commands: Vec::new(),
+            prepared: BTreeMap::new(),
+            wanted: BTreeSet::new(),
         }
     }
 
@@ -869,7 +985,7 @@ impl<'run> Focusing<'run>
                 _ => true,
             }),
             | &Task::Primitive { arguments, .. } => self.producers.len() >= arguments.len(),
-            | &Task::ListCons => self.producers.len() >= 2,
+            | &Task::ListCons | &Task::Combinator { .. } => self.producers.len() >= 2,
             | &Task::Injection(_) | &Task::Lift(_) | &Task::Cut { .. } | &Task::Apply { .. } => !self.producers.is_empty(),
             | &Task::Thunk | &Task::Fixpoint(_) | &Task::Lambda { .. } | &Task::Bind { .. } | &Task::Name { .. } => !self.commands.is_empty(),
             | &Task::ListFold { .. } => !self.producers.is_empty() && self.commands.len() >= 2,
@@ -1026,6 +1142,30 @@ impl<'run> Focusing<'run>
                     continuation: frame,
                 });
                 Ok(())
+            },
+            | Task::Combinator {
+                combinator,
+                continuation,
+            } => {
+                let second = self.pop_producer()?;
+                let first = self.pop_producer()?;
+                let inner = self.arena.mint_consumer(ConsumerNode::Destructor {
+                    tag: DestructorTag::Apply,
+                    producers: alloc::boxed::Box::from([second]),
+                    consumers: alloc::boxed::Box::from([continuation]),
+                })?;
+                let outer = self.arena.mint_consumer(ConsumerNode::Destructor {
+                    tag: DestructorTag::Apply,
+                    producers: alloc::boxed::Box::from([first]),
+                    consumers: alloc::boxed::Box::from([inner]),
+                })?;
+                let frame = self.arena.mint_consumer(ConsumerNode::Destructor {
+                    tag: DestructorTag::Force,
+                    producers: alloc::boxed::Box::from([]),
+                    consumers: alloc::boxed::Box::from([outer]),
+                })?;
+                let closed = self.combinator(combinator)?;
+                self.cut(FocusOrigin::Force, Polarity::Positive, closed, frame)
             },
             | Task::Lambda { continuation } => {
                 let body = self.pop_command()?;
@@ -1472,13 +1612,42 @@ impl<'run> Focusing<'run>
             | Value::QuoteComputation(_)
             | Value::StaticLambda(_)
             | Value::StaticApplication(..) => return Err(FocusRefusal::Code(id)),
+            // A flow runs as its translator.
+            | Value::Forward(translator) => {
+                self.tasks.push(Task::Value(translator));
+                return Ok(());
+            },
+            | Value::Stay(_)
+            | Value::SessionRelated {
+                relation: gandr_core_term::session::SessionRelation::Subtyping,
+                ..
+            } => {
+                let identity = self.combinator(crate::flow::Combinator::Identity)?;
+                self.producers.push(identity);
+                return Ok(());
+            },
+            | Value::Then(first, second) | Value::FunctionFlow(first, second) => {
+                let combinator = if matches!(*node, Value::Then(..)) {
+                    crate::flow::Combinator::Compose
+                }
+                else {
+                    crate::flow::Combinator::Wrap
+                };
+                let return_point = self.innermost_covariable()?;
+                self.tasks.push(Task::Thunk);
+                self.tasks.push(Task::Combinator {
+                    combinator,
+                    continuation: return_point,
+                });
+                self.tasks.push(Task::Value(second));
+                self.tasks.push(Task::Value(first));
+                return Ok(());
+            },
             | Value::Here(_)
             | Value::Funext(..)
             | Value::Equiv(..)
             | Value::Ua { .. }
             | Value::SessionRelated { .. }
-            | Value::Stay(_)
-            | Value::Then(..)
             | Value::Returned(_) => {
                 return Err(FocusRefusal::ElementPath(id));
             },
@@ -1744,9 +1913,21 @@ impl<'run> Focusing<'run>
                     continuation: return_point,
                 });
             },
-            // A ride the checker admitted leaves its value unchanged: it runs
-            // as the return of the value it rides.
-            | Computation::Return(value) | Computation::Ride { value, .. } => {
+            // A ride runs as its motive's action applied to the flow's
+            // translator and the ridden value.
+            | Computation::Ride {
+                motive,
+                flow,
+                value,
+            } => {
+                self.tasks.push(Task::Combinator {
+                    combinator: crate::flow::Combinator::Act(motive),
+                    continuation,
+                });
+                self.tasks.push(Task::Value(value));
+                self.tasks.push(Task::Value(flow));
+            },
+            | Computation::Return(value) => {
                 self.tasks.push(Task::Cut {
                     origin: FocusOrigin::Return,
                     polarity: Polarity::Positive,
@@ -1944,6 +2125,41 @@ impl<'run> Focusing<'run>
         Ok(self
             .arena
             .mint_consumer(ConsumerNode::Covariable(CovariableIndex::from(0_u32)))?)
+    }
+
+    /// The producer of a closed flow combinator this run applies.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the producer [`with_combinators`] focused for `combinator`
+    ///   before this run; for one it did not, `combinator` is recorded as
+    ///   wanted and a placeholder stands in, which the rerun replaces.
+    /// - provides: the closed programs a flow's image applies to its parts,
+    ///   without a nested run.
+    /// - fails: a refused mint.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a composite and a ride focused and run reach the
+    ///   values the kernel's rows compute, which a placeholder left in place
+    ///   would not.
+    /// - witness: `machine::tests::rides_run_by_the_motives_action`
+    #[spec(ensures: |ret| ret.is_err() || self.prepared.contains_key(&combinator) || self.wanted.contains(&combinator))]
+    fn combinator(
+        &mut self,
+        combinator: crate::flow::Combinator,
+    ) -> Result<ProducerId, FocusRefusal>
+    {
+        if let Some(&producer) = self.prepared.get(&combinator) {
+            return Ok(producer);
+        }
+        let _first = self.wanted.insert(combinator);
+        Ok(self.arena.mint_producer(ProducerNode::Constant(
+            gandr_kernel_term::ConstantIndex::from(0_usize),
+        ))?)
     }
 
     /// Mint a constructor over producer fields and push it.

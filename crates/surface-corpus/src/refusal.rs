@@ -364,6 +364,10 @@ pub enum RefusalName
     RideUnsupported,
     /// A recorded run the protocol does not admit.
     RunNotAdmitted,
+    /// A `forward` whose translator the rule cannot image.
+    ForwardUnsupported,
+    /// A function flow's boundary that runs against its variance.
+    Boundary,
     /// Univalence at a degree no shape of the catalogue reaches.
     UncertifiedDegree,
     /// Univalence over a catalogue whose site fails the corolla or the Segal
@@ -534,7 +538,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 119_usize] = [
+    pub const VOCABULARY: [Self; 121_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -587,6 +591,8 @@ impl RefusalName
         Self::NonCovariantMotive,
         Self::RideUnsupported,
         Self::RunNotAdmitted,
+        Self::ForwardUnsupported,
+        Self::Boundary,
         Self::UnresolvedName,
         Self::UnresolvedDocLink,
         Self::UnresolvedTypeHead,
@@ -780,6 +786,8 @@ impl RefusalName
         | (Self::NonCovariantMotive, b"NonCovariantMotive")
         | (Self::RideUnsupported, b"RideUnsupported")
         | (Self::RunNotAdmitted, b"RunNotAdmitted")
+        | (Self::ForwardUnsupported, b"ForwardUnsupported")
+        | (Self::Boundary, b"Boundary")
     )
 },
     )]
@@ -863,6 +871,8 @@ impl RefusalName
             | Self::NonCovariantMotive => "NonCovariantMotive",
             | Self::RideUnsupported => "RideUnsupported",
             | Self::RunNotAdmitted => "RunNotAdmitted",
+            | Self::ForwardUnsupported => "ForwardUnsupported",
+            | Self::Boundary => "Boundary",
             | Self::ShadowedBuiltin => "ShadowedBuiltin",
             | Self::OutOfFragment => "OutOfFragment",
             | Self::GradedBridge => "GradedBridge",
@@ -1161,6 +1171,8 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::NonCovariantMotive { .. }), RefusalName::NonCovariantMotive)
         | (Self::Checking(CheckRefusal::RideUnsupported { .. }), RefusalName::RideUnsupported)
         | (Self::Checking(CheckRefusal::RunNotAdmitted { .. }), RefusalName::RunNotAdmitted)
+        | (Self::Checking(CheckRefusal::ForwardUnsupported { .. }), RefusalName::ForwardUnsupported)
+        | (Self::Checking(CheckRefusal::Boundary { .. }), RefusalName::Boundary)
     )
 },
     )]
@@ -1413,6 +1425,8 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::NonCovariantMotive { .. }, RefusalName::NonCovariantMotive)
         | (CheckRefusal::RideUnsupported { .. }, RefusalName::RideUnsupported)
         | (CheckRefusal::RunNotAdmitted { .. }, RefusalName::RunNotAdmitted)
+        | (CheckRefusal::ForwardUnsupported { .. }, RefusalName::ForwardUnsupported)
+        | (CheckRefusal::Boundary { .. }, RefusalName::Boundary)
     )
 },
 )]
@@ -1492,6 +1506,8 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
         | CheckRefusal::NonCovariantMotive { .. } => RefusalName::NonCovariantMotive,
         | CheckRefusal::RideUnsupported { .. } => RefusalName::RideUnsupported,
         | CheckRefusal::RunNotAdmitted { .. } => RefusalName::RunNotAdmitted,
+        | CheckRefusal::ForwardUnsupported { .. } => RefusalName::ForwardUnsupported,
+        | CheckRefusal::Boundary { .. } => RefusalName::Boundary,
         | CheckRefusal::TypeMismatch(_) => RefusalName::TypeMismatch,
         | CheckRefusal::ShapeMismatch { .. } => RefusalName::ShapeMismatch,
         | CheckRefusal::NotSynthesisable { .. } => RefusalName::NotSynthesisable,

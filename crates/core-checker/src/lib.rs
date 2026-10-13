@@ -130,6 +130,21 @@
 //! their equivalence as a `Path`. The rules, the decisions and their
 //! alternatives are in the `flow` module.
 //!
+//! # Forward flows
+//!
+//! `forward(f)` states that the closed translator `f : U (A → F B)` migrates
+//! the first-order code `A` into `B`, at `Flow(Type, A, B)`: the judgement
+//! runs `f` at every pattern of `A`'s coverage, checks each image
+//! leaf-natural, and records the images with the machine's dialogues; the
+//! kernel regenerates the coverage, checks naturality and replays every
+//! dialogue, trusting nothing the judgement decided. `arrow(d, c)` is the
+//! arrow's action on a domain flow running against it and a codomain flow
+//! running with it; `stay`, `then` and `ride` introduce, compose and
+//! eliminate every flow, `ride` under the covariance condition and the
+//! directed computation table. Nothing reverses a flow: `back` along one is
+//! the symmetry ride, refused by its motive. The rules, the decisions and
+//! what a consumer may assume are in the `forward` and `flow` modules.
+//!
 //! # Example
 //!
 //! ```
@@ -325,6 +340,7 @@ mod flow;
 pub mod fork;
 mod formation;
 mod former;
+mod forward;
 mod funext;
 mod judgement;
 mod ledger;
@@ -388,6 +404,8 @@ pub use crate::formation::classify_value_type;
 pub use crate::formation::form_comp_type;
 pub use crate::formation::form_value_type;
 pub use crate::formation::level_of;
+pub use crate::forward::Directed;
+pub use crate::forward::Forward;
 pub use crate::funext::Funext;
 pub use crate::funext::Step as FunextStep;
 pub use crate::judgement::Checked;

@@ -1,0 +1,28 @@
+module Schema {
+  type Old = #{String, Integer};
+  type New = #{Integer, String};
+  type Count = Integer;
+  @[ checks ]
+  def toNew(old : Old) -> -F New {
+    case old {
+      #{name, age} => return #{age, name}
+    }
+  }
+  @[ checks ]
+  def upgrade : Flow(Type, Old, New) ;
+  def upgrade = forward(toNew) ;
+  @[ refuses("NonCovariantMotive") ]
+  def reversed() -> -F Flow(Type, New, Old) {
+    become ride(\X. Flow(Type, X, Old), upgrade, stay(Old))
+  }
+  @[ checks ]
+  def age(record : Old) -> -F Count {
+    case record {
+      #{name, years} => return years
+    }
+  }
+  @[ refuses("NonCovariantMotive") ]
+  def reader() -> -F +U (New -> -F Count) {
+    become ride(\X. +U (X -> -F Count), upgrade, age)
+  }
+}

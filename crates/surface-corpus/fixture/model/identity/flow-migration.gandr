@@ -1,0 +1,27 @@
+module Schema {
+  type Old = #{String, Integer};
+  type New = #{Integer, String, +{Unit, Unit}};
+  @[ checks ]
+  def toNew(old : Old) -> -F New {
+    case old {
+      #{name, age} => return #{age, name, +{.0 = unit}}
+    }
+  }
+  @[ checks ]
+  def upgrade : Flow(Type, Old, New) ;
+  def upgrade = forward(toNew) ;
+  @[ checks ]
+  def moved(old : Old) -> -F New {
+    become ride(\X. X, upgrade, old)
+  }
+  @[ checks ]
+  def everyone(olds : List(Old)) -> -F List(New) {
+    become ride(\X. List(X), upgrade, olds)
+  }
+  @[ runs("#{30, \"ada\", +{.0 = unit}}") ]
+  def one : +U (-F New) ;
+  def one = thunk { become moved(#{"ada", 30}) } ;
+  @[ runs("cons(#{30, \"ada\", +{.0 = unit}}, cons(#{41, \"grace\", +{.0 = unit}}, nil))") ]
+  def many : +U (-F List(New)) ;
+  def many = thunk { become everyone(cons(#{"ada", 30}, cons(#{"grace", 41}, nil))) } ;
+}

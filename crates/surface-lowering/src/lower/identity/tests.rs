@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_checker::CheckBudget;
+use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::Declaration;
 use gandr_core_checker::ModuleReport;
@@ -835,15 +836,29 @@ fn session_statements_lower_to_their_formers()
         "{PROTOCOLS}  def sub : Flow(Type, Old, New);\n  def sub = sim(Old, New);\n  def flip() -> -F Flow(Type, New, Old) {{\n    become back(sub)\n  }}\n  def half = sim(Old);\n}}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let Some(&Computation::Ride {
+        motive,
+        flow,
+        value,
+    }) = arena.computation(tail_of(&module, &arena, "flip".into()))
+    else {
+        panic!("`back` at a flow answer lowers to the symmetry ride");
+    };
     assert!(
         matches!(
-            outcome_of(&module, "flip".into()),
-            DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
-                boundary: FragmentBoundary::Unannotated,
-                ..
-            })
-        ),
-        "a flow has no reversal for `back` to derive"
+            arena.value_type(motive),
+            Some(&ValueType::Flow { source, .. }) if arena.value(source) == Some(&variable(0_u32.into()))
+        ) && matches!(arena.value(flow), Some(&Value::Constant(_)))
+            && matches!(arena.value(value), Some(&Value::Stay(_))),
+        "the motive moves the source; the flow and the stay follow"
+    );
+    let report = judged(&module, &mut arena);
+    assert!(
+        report.judged().iter().any(|judged| matches!(
+            judged.verdict(),
+            Verdict::Refused(CheckRefusal::NonCovariantMotive { .. })
+        )),
+        "the checker refuses the symmetry by its motive: {report:?}"
     );
     assert!(
         matches!(
@@ -913,6 +928,71 @@ fn a_run_rides_a_flow_between_sessions()
         ) && matches!(arena.value(flow), Some(&Value::Constant(_)))
             && arena.value(value) == Some(&variable(0_u32.into())),
         "the motive is the abstraction's body; the flow and the run follow in order"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
+fn directed_statements_lower_to_their_formers()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "module Schema {\n",
+            "  type Old = #{String, Integer};\n",
+            "  type New = #{Integer, String};\n",
+            "  type ReadNew = +U (New -> -F Integer);\n",
+            "  type ReadOld = +U (Old -> -F Integer);\n",
+            "  def toNew(old: Old) -> -F New {\n    case old { #{name, age} => return #{age, name} }\n  }\n",
+            "  def same(n: Integer) -> -F Integer {\n    return n\n  }\n",
+            "  def upgrade : Flow(Type, Old, New);\n",
+            "  def upgrade = forward(toNew);\n",
+            "  def kept : Flow(Type, Integer, Integer);\n",
+            "  def kept = forward(same);\n",
+            "  def reader : Flow(Type, ReadNew, ReadOld);\n",
+            "  def reader = arrow(upgrade, kept);\n",
+            "  def both = forward(toNew, same);\n",
+            "}\n",
+        )),
+        &mut arena,
+    );
+    let DeclarationOutcome::Completed { body, .. } = outcome_of(&module, "upgrade".into())
+    else {
+        panic!("the forward flow lowers");
+    };
+    assert!(
+        matches!(arena.value(body), Some(&Value::Forward(translator)) if matches!(arena.value(translator), Some(&Value::Constant(_)))),
+        "`forward` reads its translator as a value"
+    );
+    let DeclarationOutcome::Completed { body, .. } = outcome_of(&module, "reader".into())
+    else {
+        panic!("the function flow lowers");
+    };
+    let Some(&Value::FunctionFlow(domain, codomain)) = arena.value(body)
+    else {
+        panic!("`arrow` is the function flow");
+    };
+    let named = |at, name: &str| {
+        matches!(
+            arena.value(at),
+            Some(&Value::Constant(constant)) if module.declarations().iter().any(|declaration| {
+                declaration.name() == SurfaceName::from(name) && declaration.constant() == constant
+            })
+        )
+    };
+    assert!(
+        named(domain, "upgrade") && named(codomain, "kept"),
+        "the domain flow is written first, the codomain flow second"
+    );
+    assert!(
+        matches!(
+            outcome_of(&module, "both".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Arity(count),
+                ..
+            }) if count == OperandCount::from(2_usize)
+        ),
+        "a forward flow has one translator"
     );
     assert_accepted(&judged(&module, &mut arena));
 }

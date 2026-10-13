@@ -202,8 +202,10 @@
 //! **Choice.** Native syntax in the ordinary arena, rather than a second path
 //! arena with different traversal and ownership rules. Core syntax itself
 //! grants no admission authority: the checker validates the closed endpoint
-//! fragment and the kernel replays candidates. Element-identity, higher-field,
-//! bridge-mode and `Flow_U` programs remain separate kernel APIs. **Reversal.**
+//! fragment and the kernel replays candidates. Element-identity, higher-field
+//! and bridge-mode programs remain separate kernel APIs; the directed family's
+//! statements are core values the checker decides and the bridge erases.
+//! **Reversal.**
 //! Extending the code fragment requires corresponding formation, admission and
 //! replay rules, not a syntax-only permission.
 //!
@@ -376,6 +378,19 @@ pub enum Value
     /// Directed composition `then(f, g)`: given `f : Flow(A, a, b)` and `g :
     /// Flow(A, b, c)`, an element of `Flow(A, a, c)`.
     Then(ValueId, ValueId),
+    /// A forward flow `forward(f)`: an element of `Flow(Type, a, b)` for a
+    /// closed translator `f : U (A → F B)` between first-order codes, `a` and
+    /// `b` the quotes of `A` and `B`, whose output at every pattern of `A`'s
+    /// coverage is leaf-natural. No inverse is asked. The checker decides it by
+    /// computation and the kernel replays it as its forward certificate; it is
+    /// inert, as a native certificate is.
+    Forward(ValueId),
+    /// The arrow's action on two boundary flows, `arrow(d, c)`: an element of
+    /// `Flow(Type, ⌜U (A → F B)⌝, ⌜U (A' → F B')⌝)` from a domain flow `d :
+    /// Flow(Type, A', A)`, which runs against the arrow, and a codomain flow
+    /// `c : Flow(Type, B, B')`, which runs with it. The kernel replays it as
+    /// its function certificate; it is inert, as a native certificate is.
+    FunctionFlow(ValueId, ValueId),
     /// A recorded run `recorded(m₁, …, mₙ)`: one endpoint's complete trace,
     /// each payload a value. It checks against `Run(s)` by replay of its
     /// moves through the session monitor and of its payloads at the types
@@ -1204,7 +1219,8 @@ fn equal_syntax(
                         pending.push(V(a, b));
                     }
                     else if let (&Value::Here(a), &Value::Here(b))
-                    | (&Value::Stay(a), &Value::Stay(b)) =
+                    | (&Value::Stay(a), &Value::Stay(b))
+                    | (&Value::Forward(a), &Value::Forward(b)) =
                         (matched_left_value, matched_right_value)
                     {
                         pending.push(V(a, b));
@@ -1234,7 +1250,8 @@ fn equal_syntax(
                     }
                     else if let (&Value::Funext(a, b), &Value::Funext(c, d))
                     | (&Value::Equiv(a, b), &Value::Equiv(c, d))
-                    | (&Value::Then(a, b), &Value::Then(c, d)) =
+                    | (&Value::Then(a, b), &Value::Then(c, d))
+                    | (&Value::FunctionFlow(a, b), &Value::FunctionFlow(c, d)) =
                         (matched_left_value, matched_right_value)
                     {
                         pending.extend([V(a, c), V(b, d)]);

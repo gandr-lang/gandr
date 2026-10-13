@@ -665,6 +665,10 @@ pub enum Refusal
         /// How it failed.
         fault: gandr_core_checker::RunFault,
     },
+    /// A `forward` whose translator the rule cannot image.
+    ForwardUnsupported(Site),
+    /// A function flow's boundary that runs against its variance.
+    Boundary(Site),
 }
 
 /// An item's typing: its verdict, projected.
@@ -1115,7 +1119,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
  else if let CheckRefusal::CapabilityEscaped { at, found } = matched_left_value && let Refusal::CapabilityEscaped { at: projected, found: ref stored } = *matched_right_value { projected == self.term_site(at) && *stored == self.type_node(found) }
  else if let (CheckRefusal::CapabilityConsumable(at), &Refusal::CapabilityConsumable(projected)) = (matched_left_value, matched_right_value) { projected == self.site(ArenaNode::ValueType(at)) }
  else if let CheckRefusal::CapabilityUngranted { declared, .. } = matched_left_value && let Refusal::CapabilityUngranted(projected) = *matched_right_value { projected == self.site(ArenaNode::ValueType(declared)) }
- else if let (CheckRefusal::SessionNotEquivalent { at }, &Refusal::SessionNotEquivalent(projected)) | (CheckRefusal::SessionNotSubtype { at }, &Refusal::SessionNotSubtype(projected)) | (CheckRefusal::SessionCodeExpected { at }, &Refusal::SessionCodeExpected(projected)) = (matched_left_value, matched_right_value) { projected == self.site(ArenaNode::Value(at)) }
+ else if let (CheckRefusal::SessionNotEquivalent { at }, &Refusal::SessionNotEquivalent(projected)) | (CheckRefusal::SessionNotSubtype { at }, &Refusal::SessionNotSubtype(projected)) | (CheckRefusal::SessionCodeExpected { at }, &Refusal::SessionCodeExpected(projected)) | (CheckRefusal::ForwardUnsupported { at }, &Refusal::ForwardUnsupported(projected)) | (CheckRefusal::Boundary { at }, &Refusal::Boundary(projected)) = (matched_left_value, matched_right_value) { projected == self.site(ArenaNode::Value(at)) }
  else if let (CheckRefusal::NonCovariantMotive { at }, &Refusal::NonCovariantMotive(projected)) | (CheckRefusal::RideUnsupported { at }, &Refusal::RideUnsupported(projected)) = (matched_left_value, matched_right_value) { projected == self.site(ArenaNode::Computation(at)) }
  else if let CheckRefusal::RunNotAdmitted { at, fault } = matched_left_value && let Refusal::RunNotAdmitted { at: projected, fault: stored } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && stored == fault }
  else { false }
@@ -1462,6 +1466,10 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                 at: self.site(ArenaNode::Value(at)),
                 fault,
             },
+            | CheckRefusal::ForwardUnsupported { at } => {
+                Refusal::ForwardUnsupported(self.site(ArenaNode::Value(at)))
+            },
+            | CheckRefusal::Boundary { at } => Refusal::Boundary(self.site(ArenaNode::Value(at))),
         }
     }
 }

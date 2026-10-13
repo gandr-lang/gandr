@@ -154,12 +154,33 @@ impl Equivalence
 
 /// One pattern of a code's coverage, standing under its own binders.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Pattern
+pub struct Pattern
 {
     /// How many pattern binders the pattern stands under.
     binders: u32,
     /// The pattern.
     value: ValueId,
+}
+
+impl Pattern
+{
+    /// How many pattern binders the pattern stands under.
+    ///
+    /// # Specification
+    /// trivial.
+    pub const fn binders(self) -> OpenBinders
+    {
+        OpenBinders(self.binders)
+    }
+
+    /// The pattern, standing under its binders.
+    ///
+    /// # Specification
+    /// trivial.
+    pub const fn value(self) -> ValueId
+    {
+        self.value
+    }
 }
 
 /// A coverage task: a type to cover, or a former whose part coverages are
@@ -408,7 +429,7 @@ fn round_trips(
     | Err(CheckRefusal::UncertifiedStratum { at: site, .. }) => site == at,
     | Ok(Maybe::Absent(_)) | Err(_) => true,
 })]
-fn coverage(
+pub fn coverage(
     context: &mut CheckingContext<'_>,
     at: ValueId,
     code: ValueTypeId,

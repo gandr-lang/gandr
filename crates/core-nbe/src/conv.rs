@@ -1052,6 +1052,38 @@ impl<'run> Walk<'run>
                 Ok(Local::Agree)
             },
             | (
+                DomainValue::Flow {
+                    former: left_former,
+                    parts: left_parts,
+                    ..
+                },
+                DomainValue::Flow {
+                    former: right_former,
+                    parts: right_parts,
+                    ..
+                },
+            ) => {
+                let left_parts = self
+                    .domain
+                    .fields(left_parts)
+                    .map_err(ConversionFault::Domain)?;
+                let right_parts = self
+                    .domain
+                    .fields(right_parts)
+                    .map_err(ConversionFault::Domain)?;
+                if left_former != right_former || left_parts.len() != right_parts.len() {
+                    return Ok(Local::Disagree);
+                }
+                self.goals.extend(
+                    left_parts
+                        .iter()
+                        .zip(right_parts)
+                        .rev()
+                        .map(|(a, b)| Goal::Values(*a, *b, context)),
+                );
+                Ok(Local::Agree)
+            },
+            | (
                 DomainValue::Literal { literal: first, .. },
                 DomainValue::Literal {
                     literal: second, ..
@@ -1227,6 +1259,7 @@ impl<'run> Walk<'run>
                 | DomainValue::Record { .. }
                 | DomainValue::PathProduct { .. }
                 | DomainValue::Here { .. }
+                | DomainValue::Flow { .. }
                 | DomainValue::Tuple { .. }
                 | DomainValue::Literal { .. }
                 | DomainValue::ListNil { .. }
@@ -1510,6 +1543,16 @@ impl<'run> Walk<'run>
                         motive: right_motive,
                         value: right_value,
                     },
+                )
+                | (
+                    Elimination::Ride {
+                        motive: left_motive,
+                        value: left_value,
+                    },
+                    Elimination::Ride {
+                        motive: right_motive,
+                        value: right_value,
+                    },
                 ) => match crate::identity::motives(self.domain, left_motive, right_motive)
                     .map_err(ConversionFault::Domain)?
                 {
@@ -1617,6 +1660,7 @@ impl<'run> Walk<'run>
                     | Elimination::Projection(_)
                     | Elimination::ProductTransport(_)
                     | Elimination::PathTransport { .. }
+                    | Elimination::Ride { .. }
                     | Elimination::TelescopeTransport { .. }
                     | Elimination::Apply(_)
                     | Elimination::Force

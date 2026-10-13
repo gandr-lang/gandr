@@ -5319,4 +5319,212 @@ mod tests
             machine.unfoldings.as_slice()
         );
     }
+
+    /// `thunk (λx. return o)`, `o` built over the bound variable by `body`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn translator(
+        core: &mut CoreArena,
+        body: fn(&mut CoreArena, ValueId) -> ValueId,
+    ) -> ValueId
+    {
+        let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let built = body(core, bound);
+        let returned = core.computation_return(built);
+        let lambda = core.computation_lambda(returned);
+        core.value_thunk(lambda)
+    }
+
+    /// `x ↦ (x, unit)`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn paired(
+        core: &mut CoreArena,
+        bound: ValueId,
+    ) -> ValueId
+    {
+        let unit = core.value_unit();
+        core.value_tuple(&[bound, unit])
+    }
+
+    /// `x ↦ inl(x)`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn injected_left(
+        core: &mut CoreArena,
+        bound: ValueId,
+    ) -> ValueId
+    {
+        core.value_injection(Side::Left.into(), bound)
+    }
+
+    /// `x ↦ inr(x)`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn injected_right(
+        core: &mut CoreArena,
+        bound: ValueId,
+    ) -> ValueId
+    {
+        core.value_injection(Side::Right.into(), bound)
+    }
+
+    /// The motive `y. El y`: the decode of the moving code.
+    ///
+    /// # Specification
+    /// trivial.
+    fn decoded(core: &mut CoreArena) -> gandr_core_term::ValueTypeId
+    {
+        let code = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        core.value_type_element(code, gandr_kernel_strata::Level::zero())
+    }
+
+    /// What `return value` runs to, for comparison with a ride's result.
+    ///
+    /// # Specification
+    /// trivial.
+    fn returned(
+        core: &mut CoreArena,
+        value: ValueId,
+    ) -> String
+    {
+        let computation = core.computation_return(value);
+        evaluated(core, computation)
+    }
+
+    /// A ride runs as the motive's action on the flow's translator: `stay`
+    /// as the identity, a forward flow as its translator at the decode, a
+    /// composite as its legs in order, and product, sum and list motives
+    /// constructorwise.
+    #[test]
+    fn rides_run_by_the_motives_action()
+    {
+        let mut core = CoreArena::new();
+        let five = integer(&mut core, Digits("5"));
+        let six = integer(&mut core, Digits("6"));
+        let unit = core.value_unit();
+        let integer_type = core.value_type_base(gandr_kernel_term::BaseType::Integer);
+        let unit_type = core.value_type_unit();
+        let identity = decoded(&mut core);
+        let pairing = translator(&mut core, paired);
+        let injecting = translator(&mut core, injected_left);
+        let forward = core.value_forward(pairing);
+        let other = core.value_forward(injecting);
+        let code = core.value_quote(integer_type);
+        let kept = core.value_stay(code);
+
+        let rode = core.computation_ride(identity, kept, five);
+        let expected = returned(&mut core, five);
+        assert_eq!(
+            evaluated(&mut core, rode),
+            expected,
+            "stay runs as the identity"
+        );
+        let rode = core.computation_ride(integer_type, forward, five);
+        assert_eq!(
+            evaluated(&mut core, rode),
+            expected,
+            "a constant motive keeps the value"
+        );
+
+        let rode = core.computation_ride(identity, forward, five);
+        let image = core.value_tuple(&[five, unit]);
+        assert_eq!(
+            evaluated(&mut core, rode),
+            returned(&mut core, image),
+            "a forward flow runs its translator at the decode"
+        );
+
+        let composite = core.value_then(forward, other);
+        let rode = core.computation_ride(identity, composite, five);
+        let image = core.value_tuple(&[five, unit]);
+        let image = core.value_injection(Side::Left.into(), image);
+        assert_eq!(
+            evaluated(&mut core, rode),
+            returned(&mut core, image),
+            "a composite runs its first leg, then its second"
+        );
+
+        let product = core.value_type_product(&[identity, integer_type]);
+        let pair = core.value_tuple(&[five, six]);
+        let rode = core.computation_ride(product, other, pair);
+        let moved = core.value_injection(Side::Left.into(), five);
+        let image = core.value_tuple(&[moved, six]);
+        assert_eq!(
+            evaluated(&mut core, rode),
+            returned(&mut core, image),
+            "a product motive acts componentwise"
+        );
+
+        let sum = core.value_type_sum(&[unit_type, identity]);
+        let injected = core.value_injection(Side::Right.into(), five);
+        let rode = core.computation_ride(sum, other, injected);
+        let inner = core.value_injection(Side::Left.into(), five);
+        let image = core.value_injection(Side::Right.into(), inner);
+        assert_eq!(
+            evaluated(&mut core, rode),
+            returned(&mut core, image),
+            "a sum motive acts on the payload of its own summand"
+        );
+
+        let list = core.value_type_list(identity);
+        let nil = core.value_list_nil();
+        let tail = core.value_list_cons(six, nil);
+        let cell = core.value_list_cons(five, tail);
+        let rode = core.computation_ride(list, other, cell);
+        let first = core.value_injection(Side::Left.into(), five);
+        let second = core.value_injection(Side::Left.into(), six);
+        let tail = core.value_list_cons(second, nil);
+        let image = core.value_list_cons(first, tail);
+        assert_eq!(
+            evaluated(&mut core, rode),
+            returned(&mut core, image),
+            "a list motive acts on every cell in order"
+        );
+    }
+
+    /// A function ridden along a function flow runs its argument along the
+    /// domain flow, then itself, then its result along the codomain flow.
+    #[test]
+    fn a_function_flow_runs_in_variance_order()
+    {
+        let mut core = CoreArena::new();
+        let five = integer(&mut core, Digits("5"));
+        let unit = core.value_unit();
+        let identity = decoded(&mut core);
+        let pairing = translator(&mut core, paired);
+        let lefting = translator(&mut core, injected_left);
+        let righting = translator(&mut core, injected_right);
+        let domain_flow = core.value_forward(pairing);
+        let codomain_flow = core.value_forward(righting);
+        let applied = |core: &mut CoreArena, flow: ValueId| {
+            let rode = core.computation_ride(identity, flow, lefting);
+            let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+            let forced = core.computation_force(bound);
+            let applied = core.computation_application(forced, five);
+            core.computation_bind(rode, applied)
+        };
+        let function = core.value_function_flow(domain_flow, codomain_flow);
+        let ran = applied(&mut core, function);
+        let argument = core.value_tuple(&[five, unit]);
+        let result = core.value_injection(Side::Left.into(), argument);
+        let image = core.value_injection(Side::Right.into(), result);
+        let expected = returned(&mut core, image);
+        assert_eq!(
+            evaluated(&mut core, ran),
+            expected,
+            "the argument rides the domain flow, the function runs, the result rides the codomain flow"
+        );
+        let swapped = core.value_function_flow(codomain_flow, domain_flow);
+        let ran = applied(&mut core, swapped);
+        assert_ne!(
+            evaluated(&mut core, ran),
+            expected,
+            "swapping the boundaries is another function"
+        );
+    }
 }

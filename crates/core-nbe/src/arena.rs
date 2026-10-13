@@ -775,7 +775,7 @@ impl DomainArena
         (!matches!(unfolding, Unfolding::Rigid) || matches!(head, NeutralHead::Hole { .. } | NeutralHead::Mark { .. } | NeutralHead::Returned(_)) || spine.iter().any(|elimination| match *elimination {
             Elimination::Apply(argument) | Elimination::StaticApply(argument) =>
                 !matches!(self.value_guard(argument), Ok(Guard::Rigid(_))),
-            Elimination::ListFold { .. } | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::TelescopeTransport { .. } | Elimination::Bind(_) | Elimination::Case { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Fixpoint(_) => true,
+            Elimination::ListFold { .. } | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::Ride { .. } | Elimination::TelescopeTransport { .. } | Elimination::Bind(_) | Elimination::Case { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Fixpoint(_) => true,
             Elimination::Force => false,
         })))]
     fn neutral_word(
@@ -822,6 +822,7 @@ impl DomainArena
                 | Elimination::Projection(_)
                 | Elimination::ProductTransport(_)
                 | Elimination::PathTransport { .. }
+                | Elimination::Ride { .. }
                 | Elimination::TelescopeTransport { .. }
                 | Elimination::Bind(_)
                 | Elimination::ListFold { .. }
@@ -1373,6 +1374,55 @@ impl DomainArena
     {
         let guard = Guard::compose(GuardTag::Here, &(), &[self.folded_value_guard(point)]);
         self.alloc_value(DomainValue::Here { point, face }, guard)
+    }
+
+    /// Mint a flow introduction over its already-allocated parts, in written
+    /// order.
+    ///
+    /// # Specification
+    /// - requires: every part names a live value node of this arena, as many as
+    ///   `former` holds.
+    /// - ensures: a fresh value node carrying `former`, a field span holding
+    ///   exactly the parts in order, and `face`, guarded by the parts' words
+    ///   under the flow tag and the former.
+    /// - provides: the domain form `stay`, `forward`, `then` and `arrow`
+    ///   evaluate to, which a ride reads row by row.
+    /// - fails: never — a part that dangles surfaces at readback, not here.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a stay and a composite read back as their own former
+    ///   over their parts, and two flows of one former compare by their parts.
+    /// - witness: `identity::tests::flows_read_back_and_compare_by_their_parts`
+    #[inline]
+    #[spec(captures: start = self.fields.len(), ensures: |ret| matches!(self.value(ret), Some(&DomainValue::Flow { former: held, parts, .. }) if held == former && self.fields(parts).is_ok_and(|kept| kept.len() == self.fields.len().saturating_sub(start))))]
+    pub fn value_flow<Parts>(
+        &mut self,
+        former: crate::domain::FlowFormer,
+        parts: Parts,
+        face: TermFace,
+    ) -> DomainValueId
+    where
+        Parts: IntoIterator<Item = DomainValueId>,
+    {
+        let parts = self.hold_fields(parts);
+        let held = self
+            .fields
+            .get(parts.start .. parts.end)
+            .unwrap_or_default();
+        let guard = Guard::compose(
+            GuardTag::Flow,
+            &former,
+            held.iter().map(|&id| self.folded_value_guard(id)),
+        );
+        self.alloc_value(
+            DomainValue::Flow {
+                former,
+                parts,
+                face,
+            },
+            guard,
+        )
     }
 
     /// Mint a thunk over an already-allocated computation closure.

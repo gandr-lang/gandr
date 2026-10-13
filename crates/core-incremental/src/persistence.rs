@@ -1778,6 +1778,8 @@ mod tests
             | Typing::Refused(Refusal::NonCovariantMotive(_)) => "non-covariant-motive",
             | Typing::Refused(Refusal::RideUnsupported(_)) => "ride-unsupported",
             | Typing::Refused(Refusal::RunNotAdmitted { .. }) => "run-not-admitted",
+            | Typing::Refused(Refusal::ForwardUnsupported(_)) => "forward-unsupported",
+            | Typing::Refused(Refusal::Boundary(_)) => "boundary",
             | Typing::Refused(Refusal::EffectSignatureConflict { .. }) => {
                 "effect-signature-conflict"
             },

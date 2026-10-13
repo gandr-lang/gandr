@@ -440,9 +440,11 @@ impl<'arena> CoreSource<'arena>
         | (Some(&Value::Primitive { primitive, .. }), Former::Constant(name)) => name.as_ref() == primitive.name().as_ref(),
         | (Some(&Value::PathRefl(code)), Former::PathRefl(actual)) => actual == CoreNode::Value(code),
         | (Some(&Value::Here(point)), Former::Here(actual))
-        | (Some(&Value::Stay(point)), Former::Stay(actual)) => actual == CoreNode::Value(point),
+        | (Some(&Value::Stay(point)), Former::Stay(actual))
+        | (Some(&Value::Forward(point)), Former::Forward(actual)) => actual == CoreNode::Value(point),
         | (Some(&Value::Funext(left, right)), Former::Funext(actual_left, actual_right))
-        | (Some(&Value::Then(left, right)), Former::Then(actual_left, actual_right)) =>
+        | (Some(&Value::Then(left, right)), Former::Then(actual_left, actual_right))
+        | (Some(&Value::FunctionFlow(left, right)), Former::FunctionFlow(actual_left, actual_right)) =>
             actual_left == CoreNode::Value(left) && actual_right == CoreNode::Value(right),
         | (Some(&Value::Equiv(forward, backward)), Former::Equiv(actual_forward, actual_backward))
         | (Some(&Value::PathEquiv { forward, backward, .. }), Former::PathEquiv(actual_forward, actual_backward)) =>
@@ -531,6 +533,10 @@ impl<'arena> CoreSource<'arena>
             | Value::Stay(point) => Former::Stay(CoreNode::Value(point)),
             | Value::Then(first, second) => {
                 Former::Then(CoreNode::Value(first), CoreNode::Value(second))
+            },
+            | Value::Forward(translator) => Former::Forward(CoreNode::Value(translator)),
+            | Value::FunctionFlow(domain, codomain) => {
+                Former::FunctionFlow(CoreNode::Value(domain), CoreNode::Value(codomain))
             },
             | Value::Here(point) => Former::Here(CoreNode::Value(point)),
             | Value::Nested(body) => Former::Nested(CoreNode::Computation(body)),
@@ -1210,6 +1216,8 @@ impl Source for CoreSource<'_>
                 | Value::SessionRelated { .. }
                 | Value::Stay(_)
                 | Value::Then(..)
+                | Value::Forward(_)
+                | Value::FunctionFlow(..)
                 | Value::Primitive { .. }
                 | Value::PathRefl(_)
                 | Value::PathProduct(..)
@@ -1389,7 +1397,9 @@ impl Source for CoreSource<'_>
                 | Value::Recorded(_)
                 | Value::SessionRelated { .. }
                 | Value::Stay(_)
-                | Value::Then(..) => None,
+                | Value::Then(..)
+                | Value::Forward(_)
+                | Value::FunctionFlow(..) => None,
             },
             | CoreNode::Computation(id) => match *self.arena.computation(id)? {
                 | Computation::Handle { ref clauses, .. }

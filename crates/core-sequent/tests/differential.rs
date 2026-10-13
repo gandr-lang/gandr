@@ -391,6 +391,7 @@ fn normaliser_stop(fault: EvalFault) -> Stop
         | EvalFault::AbsentTupleComponent => Stop::UnprojectedField,
         | EvalFault::TransportedNonPath
         | EvalFault::TransportedUnderived
+        | EvalFault::RodeUncomputed
         | EvalFault::SplitNonTuple
         | EvalFault::SplitArity
         | EvalFault::RuntimeControl(_)

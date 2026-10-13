@@ -1258,6 +1258,8 @@ fn convert(
                                         | Value::Here(_)
                                         | Value::Stay(_)
                                         | Value::Then(..)
+                                        | Value::Forward(_)
+                                        | Value::FunctionFlow(..)
                                         | Value::SessionRelated { .. }
                                         | Value::Recorded(_)
                                         | Value::Funext(..)

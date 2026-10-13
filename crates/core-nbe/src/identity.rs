@@ -34,6 +34,14 @@
 //! reflexivity checks at it by endpoint conversion, and transport along it is
 //! stuck except on reflexivity, where it reduces whatever the carrier.
 //!
+//! # Flows
+//!
+//! A flow evaluates to its former over its evaluated parts and reads back as
+//! itself, and two flows convert when their formers agree and their parts
+//! convert in order. A ride along one computes by the kernel's directed table
+//! row for row, so a ride the checker admits computes the same here, in the
+//! kernel and at runtime; along a stuck flow it stacks on the flow's spine.
+//!
 //! # Decisions
 //!
 //! - **The recursion classifies; it does not rewrite.** `Path(A, a, b)` stays a
@@ -506,29 +514,31 @@ pub fn motives(
     Ok(Motives::Alike(bindings))
 }
 
-/// How a one-binder transport's family reads at a reflexive operand.
+/// How a one-binder transport's or ride's family reads at its operand.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum TransportFamily
 {
-    /// The singleton `y. Path(D, l, y)`: its right endpoint is the binder,
-    /// and its carrier and left endpoint never read it.
+    /// The singleton `y. Path(D, l, y)` or `y. Flow(D, l, y)`: its right
+    /// endpoint is the binder, and its carrier and left endpoint never read
+    /// it.
     Singleton,
     /// Any other family.
     Other,
 }
 
-/// Read a one-binder transport's family as the singleton or not.
+/// Read a one-binder transport's or ride's family as the singleton or not.
 ///
 /// # Specification
-/// - requires: `family` is a transport motive's value type, read under its one
-///   binder.
-/// - ensures: [`TransportFamily::Singleton`] exactly when `family` is a path
-///   type whose right endpoint is the binder and whose carrier and left
+/// - requires: `family` is a transport or ride motive's value type, read under
+///   its one binder.
+/// - ensures: [`TransportFamily::Singleton`] exactly when `family` is a path or
+///   flow type whose right endpoint is the binder and whose carrier and left
 ///   endpoint read no index the binder binds; [`TransportFamily::Other`]
 ///   otherwise.
 /// - provides: the guard of the singleton row, the kernel's own clause:
 ///   transport in `y. Path(D, l, y)` carries `here(l)` to the path itself,
-///   which is what lets `J` check its identity over the path.
+///   which is what lets `J` check its identity over the path, and a ride in `y.
+///   Flow(D, l, y)` composes the ridden flow with the flow it rides along.
 /// - fails: the free-index walk's fault for a dangling node.
 /// - panics: none.
 ///
@@ -536,12 +546,14 @@ pub(crate) enum TransportFamily
 /// A [`FreeFault`], as above.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the singleton returns the path, and a family whose left
-///   endpoint is the binder keeps the transport stuck.
+/// - hypothesis: L3 — the singleton returns the path, a ride in the flow
+///   singleton composes, and a family whose left endpoint is the binder keeps
+///   the transport stuck.
 /// - witness: `identity::tests::transport_in_the_singleton_returns_the_path`
+/// - witness: `identity::tests::rides_compute_by_the_kernels_rows`
 #[spec(ensures: |ret| !matches!(ret, Ok(TransportFamily::Singleton)) || matches!(
     core.value_type(family),
-    Some(&ValueType::Path { right, .. })
+    Some(&(ValueType::Path { right, .. } | ValueType::Flow { target: right, .. }))
         if matches!(core.value(right), Some(&Value::Variable { zone: Zone::Intuitionistic, index }) if u32::from(index) == 0_u32)
 ))]
 pub(crate) fn transport_family(
@@ -549,11 +561,18 @@ pub(crate) fn transport_family(
     family: ValueTypeId,
 ) -> Result<TransportFamily, FreeFault>
 {
-    let Some(&ValueType::Path {
-        carrier,
-        left,
-        right,
-    }) = core.value_type(family)
+    let Some(
+        &(ValueType::Path {
+            carrier,
+            left,
+            right,
+        }
+        | ValueType::Flow {
+            carrier,
+            source: left,
+            target: right,
+        }),
+    ) = core.value_type(family)
     else {
         return Ok(TransportFamily::Other);
     };
@@ -582,6 +601,39 @@ pub(crate) fn transport_family(
             | Membership::Absent => TransportFamily::Singleton,
         },
     )
+}
+
+/// Whether a one-binder motive never reads its binder: the constant motive,
+/// along which every ride returns its value unchanged.
+///
+/// # Specification
+/// - requires: `family` is a ride motive's value type, read under its one
+///   binder.
+/// - ensures: [`Membership::Absent`] exactly when no node of `family` reads the
+///   index its binder binds.
+/// - provides: the guard of the kernel's constant-motive row.
+/// - fails: the free-index walk's fault for a dangling node.
+/// - panics: none.
+/// - executable: none — the free-index walk is the only reading of the clause,
+///   so a predicate would restate the body.
+///
+/// # Errors
+/// A [`FreeFault`], as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a ride along a stuck flow in a constant motive returns
+///   its value, and in the identity motive stays stuck.
+/// - witness: `identity::tests::rides_compute_by_the_kernels_rows`
+pub(crate) fn binder_read(
+    core: &CoreArena,
+    family: ValueTypeId,
+) -> Result<Membership, FreeFault>
+{
+    let mut free = FreeIndices::default();
+    Ok(free
+        .of_type(core, family)?
+        .intuitionistic()
+        .holds(DeBruijnIndex::from(0_u32)))
 }
 
 #[cfg(test)]
@@ -1495,5 +1547,302 @@ mod tests
         let mut domain = DomainArena::new();
         let [head] = evaluated(&core, &mut domain, [head]);
         assert_eq!(fibre(&core, &domain, atom, head, head), Ok(Fibre::Open));
+    }
+
+    /// `thunk (λx. return o)`, `o` built over the bound variable by `body`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn translator(
+        core: &mut CoreArena,
+        body: fn(&mut CoreArena, ValueId) -> ValueId,
+    ) -> ValueId
+    {
+        let bound = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+        let built = body(core, bound);
+        let returned = core.computation_return(built);
+        let lambda = core.computation_lambda(returned);
+        core.value_thunk(lambda)
+    }
+
+    /// `x ↦ (x, unit)`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn paired(
+        core: &mut CoreArena,
+        bound: ValueId,
+    ) -> ValueId
+    {
+        let unit = core.value_unit();
+        core.value_tuple(&[bound, unit])
+    }
+
+    /// `x ↦ inl(x)`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn injected_left(
+        core: &mut CoreArena,
+        bound: ValueId,
+    ) -> ValueId
+    {
+        core.value_injection(Side::Left.into(), bound)
+    }
+
+    /// `x ↦ inr(x)`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn injected_right(
+        core: &mut CoreArena,
+        bound: ValueId,
+    ) -> ValueId
+    {
+        core.value_injection(Side::Right.into(), bound)
+    }
+
+    /// The motive `y. El y`: the decode of the moving code.
+    ///
+    /// # Specification
+    /// trivial.
+    fn decoded(core: &mut CoreArena) -> ValueTypeId
+    {
+        let code = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+        core.value_type_element(code, Level::zero())
+    }
+
+    #[test]
+    fn flows_read_back_and_compare_by_their_parts()
+    {
+        let mut core = CoreArena::new();
+        let five = literal(&mut core, Word::Five);
+        let again = literal(&mut core, Word::Five);
+        let six = literal(&mut core, Word::Six);
+        let pairing = translator(&mut core, paired);
+        let injecting = translator(&mut core, injected_left);
+        let kept = core.value_stay(five);
+        let kept_again = core.value_stay(again);
+        let kept_apart = core.value_stay(six);
+        let forward = core.value_forward(pairing);
+        let other = core.value_forward(injecting);
+        let composite = core.value_then(forward, other);
+        let composite_again = core.value_then(forward, other);
+        let reversed = core.value_then(other, forward);
+        let function = core.value_function_flow(forward, other);
+        let swapped = core.value_function_flow(other, forward);
+        for flow in [kept, forward, composite, function] {
+            let returned = core.computation_return(flow);
+            assert_eq!(
+                normalises_to(&mut core, returned, returned),
+                CertificateEquality::Equal,
+                "a flow reads back as its former over its parts"
+            );
+        }
+        let mut domain = DomainArena::new();
+        let [
+            kept,
+            kept_again,
+            kept_apart,
+            forward,
+            other,
+            composite,
+            composite_again,
+            reversed,
+            function,
+            swapped,
+        ] = evaluated(&core, &mut domain, [
+            kept,
+            kept_again,
+            kept_apart,
+            forward,
+            other,
+            composite,
+            composite_again,
+            reversed,
+            function,
+            swapped,
+        ]);
+        let chain = LoweredChain::new();
+        let environment = DefinitionalEnvironment::new();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let mut decided = |left, right| {
+            decide::<NullSink, NullMemo>(
+                &core,
+                &mut domain,
+                definitions,
+                MachineSettings::default(),
+                Problem::values(left, right),
+                &mut NullSink,
+            )
+            .expect("the machine answers")
+            .verdict()
+        };
+        assert_eq!(decided(kept, kept_again), MachineVerdict::Convertible);
+        assert_eq!(decided(kept, kept_apart), MachineVerdict::NotConvertible);
+        assert_eq!(decided(forward, other), MachineVerdict::NotConvertible);
+        assert_eq!(decided(forward, kept), MachineVerdict::NotConvertible);
+        assert_eq!(
+            decided(composite, composite_again),
+            MachineVerdict::Convertible
+        );
+        assert_eq!(decided(composite, reversed), MachineVerdict::NotConvertible);
+        assert_eq!(decided(function, swapped), MachineVerdict::NotConvertible);
+    }
+
+    #[test]
+    fn rides_compute_by_the_kernels_rows()
+    {
+        let mut core = CoreArena::new();
+        let five = literal(&mut core, Word::Five);
+        let six = literal(&mut core, Word::Six);
+        let unit = core.value_unit();
+        let text = text_type(&mut core);
+        let unit_type = core.value_type_unit();
+        let identity = decoded(&mut core);
+        let pairing = translator(&mut core, paired);
+        let injecting = translator(&mut core, injected_left);
+        let forward = core.value_forward(pairing);
+        let other = core.value_forward(injecting);
+        let flow = stuck(&mut core, ConstantIndex::from(0_usize));
+        let code = core.value_quote(text);
+        let kept = core.value_stay(code);
+
+        let rode = core.computation_ride(identity, kept, five);
+        let expected = core.computation_return(five);
+        assert_eq!(
+            normalises_to(&mut core, rode, expected),
+            CertificateEquality::Equal,
+            "stay returns the value"
+        );
+
+        let rode = core.computation_ride(text, flow, five);
+        assert_eq!(
+            normalises_to(&mut core, rode, expected),
+            CertificateEquality::Equal,
+            "a motive that ignores its binder returns the value, even along a stuck flow"
+        );
+
+        let rode = core.computation_ride(identity, forward, five);
+        let image = core.value_tuple(&[five, unit]);
+        let expected = core.computation_return(image);
+        assert_eq!(
+            normalises_to(&mut core, rode, expected),
+            CertificateEquality::Equal,
+            "a forward flow at the decode applies its translator"
+        );
+
+        let composite = core.value_then(forward, other);
+        let rode = core.computation_ride(identity, composite, five);
+        let image = core.value_tuple(&[five, unit]);
+        let image = core.value_injection(Side::Left.into(), image);
+        let expected = core.computation_return(image);
+        assert_eq!(
+            normalises_to(&mut core, rode, expected),
+            CertificateEquality::Equal,
+            "a composite rides its first leg, then its second"
+        );
+
+        let product = core.value_type_product(&[identity, text]);
+        let pair = core.value_tuple(&[five, six]);
+        let rode = core.computation_ride(product, other, pair);
+        let moved = core.value_injection(Side::Left.into(), five);
+        let image = core.value_tuple(&[moved, six]);
+        let expected = core.computation_return(image);
+        assert_eq!(
+            normalises_to(&mut core, rode, expected),
+            CertificateEquality::Equal,
+            "a product motive rides componentwise"
+        );
+
+        let sum = core.value_type_sum(&[identity, unit_type]);
+        let injected = core.value_injection(Side::Left.into(), five);
+        let rode = core.computation_ride(sum, other, injected);
+        let inner = core.value_injection(Side::Left.into(), five);
+        let image = core.value_injection(Side::Left.into(), inner);
+        let expected = core.computation_return(image);
+        assert_eq!(
+            normalises_to(&mut core, rode, expected),
+            CertificateEquality::Equal,
+            "a sum motive rides the injected payload"
+        );
+
+        let list = core.value_type_list(identity);
+        let nil = core.value_list_nil();
+        let cell = core.value_list_cons(five, nil);
+        let rode = core.computation_ride(list, other, cell);
+        let moved = core.value_injection(Side::Left.into(), five);
+        let image = core.value_list_cons(moved, nil);
+        let expected = core.computation_return(image);
+        assert_eq!(
+            normalises_to(&mut core, rode, expected),
+            CertificateEquality::Equal,
+            "a list motive rides every cell"
+        );
+
+        let moving = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+        let singleton = core.value_type_flow(text, five, moving);
+        let start = core.value_stay(five);
+        let rode = core.computation_ride(singleton, flow, start);
+        let expected = core.computation_return(flow);
+        assert_eq!(
+            normalises_to(&mut core, rode, expected),
+            CertificateEquality::Equal,
+            "stay ridden in the singleton is the flow itself"
+        );
+        let rode = core.computation_ride(singleton, flow, forward);
+        let joined = core.value_then(forward, flow);
+        let expected = core.computation_return(joined);
+        assert_eq!(
+            normalises_to(&mut core, rode, expected),
+            CertificateEquality::Equal,
+            "any other value ridden in the singleton composes with the flow"
+        );
+
+        let rode = core.computation_ride(identity, flow, five);
+        assert_eq!(
+            normalises_to(&mut core, rode, rode),
+            CertificateEquality::Equal,
+            "a ride along a stuck flow at the decode reads back as itself"
+        );
+    }
+
+    #[test]
+    fn a_function_flow_rides_in_variance_order()
+    {
+        let mut core = CoreArena::new();
+        let five = literal(&mut core, Word::Five);
+        let unit = core.value_unit();
+        let identity = decoded(&mut core);
+        let pairing = translator(&mut core, paired);
+        let lefting = translator(&mut core, injected_left);
+        let righting = translator(&mut core, injected_right);
+        let domain_flow = core.value_forward(pairing);
+        let codomain_flow = core.value_forward(righting);
+        let applied = |core: &mut CoreArena, flow: ValueId| {
+            let rode = core.computation_ride(identity, flow, lefting);
+            let bound = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+            let forced = core.computation_force(bound);
+            let applied = core.computation_application(forced, five);
+            core.computation_bind(rode, applied)
+        };
+        let function = core.value_function_flow(domain_flow, codomain_flow);
+        let ran = applied(&mut core, function);
+        let argument = core.value_tuple(&[five, unit]);
+        let result = core.value_injection(Side::Left.into(), argument);
+        let image = core.value_injection(Side::Right.into(), result);
+        let expected = core.computation_return(image);
+        assert_eq!(
+            normalises_to(&mut core, ran, expected),
+            CertificateEquality::Equal,
+            "the argument rides the domain flow, the function runs, the result rides the codomain flow"
+        );
+        let swapped = core.value_function_flow(codomain_flow, domain_flow);
+        let ran = applied(&mut core, swapped);
+        assert_eq!(
+            normalises_to(&mut core, ran, expected),
+            CertificateEquality::Different,
+            "swapping the boundaries is another function"
+        );
     }
 }

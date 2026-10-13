@@ -993,13 +993,15 @@ Err(_) => false,
                         None,
                         None,
                     ],
-                    | Value::PathRefl(code) | Value::Here(code) | Value::Stay(code) => {
-                        one(value(code), Lowering::NONE)
-                    },
+                    | Value::PathRefl(code)
+                    | Value::Here(code)
+                    | Value::Stay(code)
+                    | Value::Forward(code) => one(value(code), Lowering::NONE),
                     | Value::PathProduct(first, second)
                     | Value::Funext(first, second)
                     | Value::Equiv(first, second)
                     | Value::Then(first, second)
+                    | Value::FunctionFlow(first, second)
                     | Value::SessionRelated {
                         source: first,
                         target: second,

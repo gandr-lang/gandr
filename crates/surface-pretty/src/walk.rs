@@ -333,7 +333,7 @@ enum Kind
         | Former::Quote(_) | Former::QuoteComputation(_) | Former::StaticLambda(_) | Former::StaticApplication(..)
         | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_) | Former::Funext(..) | Former::Equiv(..)
         | Former::Ua { .. } | Former::Nested(_) | Former::Run(_) | Former::Constructor { .. } | Former::Returned(_)
-        | Former::SessionRelated(..) | Former::Stay(_) | Former::Then(..) | Former::Recorded { .. }),
+        | Former::SessionRelated(..) | Former::Stay(_) | Former::Then(..) | Former::Forward(_) | Former::FunctionFlow(..) | Former::Recorded { .. }),
     | Kind::Computation => matches!(*former, Former::Return(_) | Former::Bind(..) | Former::Force(_)
         | Former::Application(..) | Former::Lambda(_) | Former::Primitive { .. } | Former::Transport(..)
         | Former::PathTransport { .. } | Former::Ride { .. } | Former::TelescopeTransport { .. } | Former::Fixpoint(_) | Former::Case { .. }
@@ -395,6 +395,8 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::SessionRelated(..)
         | Former::Stay(_)
         | Former::Then(..)
+        | Former::Forward(_)
+        | Former::FunctionFlow(..)
         | Former::Ua { .. }
         | Former::Nested(_)
         | Former::Run(_)
@@ -860,6 +862,7 @@ where
         | Former::Equiv(first, second)
         | Former::SessionRelated(_, first, second)
         | Former::Then(first, second)
+        | Former::FunctionFlow(first, second)
         | Former::Ua {
             forward: first,
             backward: second,
@@ -891,6 +894,7 @@ where
         | Former::ComputationElement(child)
         | Former::Here(child)
         | Former::Stay(child)
+        | Former::Forward(child)
         | Former::RunType(child)
         | Former::Return(child)
         | Former::Force(child)
@@ -1385,6 +1389,10 @@ enum Bracket
     Stay,
     /// Directed composition, `then(f, g)`.
     Then,
+    /// A forward flow, `forward(f)`.
+    Forward,
+    /// A function flow, `arrow(d, c)`.
+    Arrow,
     /// The recorded runs of a session code, `Run(s)`.
     Run,
 }
@@ -1411,6 +1419,8 @@ impl Bracket
             | Self::Sim => "sim(",
             | Self::Stay => "stay(",
             | Self::Then => "then(",
+            | Self::Forward => "forward(",
+            | Self::Arrow => "arrow(",
             | Self::Run => "Run(",
         })
     }
@@ -2912,6 +2922,8 @@ impl Walk<'_, '_>
             },
             | Former::Stay(_) => Some(Join::Bracket(Bracket::Stay)),
             | Former::Then(..) => Some(Join::Bracket(Bracket::Then)),
+            | Former::Forward(_) => Some(Join::Bracket(Bracket::Forward)),
+            | Former::FunctionFlow(..) => Some(Join::Bracket(Bracket::Arrow)),
             | Former::RunType(_) => Some(Join::Bracket(Bracket::Run)),
             | Former::Ua {
                 stratum,
@@ -3699,6 +3711,8 @@ impl Walk<'_, '_>
             | Former::SessionRelated(..)
             | Former::Stay(_)
             | Former::Then(..)
+            | Former::Forward(_)
+            | Former::FunctionFlow(..)
             | Former::RunType(_)
             | Former::Return(_)
             | Former::Bind(..)
@@ -3765,11 +3779,11 @@ impl Walk<'_, '_>
     #[spec(
         captures: [entry = self.pieces.len(), taken = match join {
             Join::Prefix(_) | Join::EffectReturner(_) | Join::StaticLambda | Join::Lambda | Join::Thunk
-                | Join::Bracket(Bracket::PathRefl | Bracket::Here | Bracket::List | Bracket::Stay | Bracket::Run) => Some(1_usize),
+                | Join::Bracket(Bracket::PathRefl | Bracket::Here | Bracket::List | Bracket::Stay | Bracket::Forward | Bracket::Run) => Some(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Positional, .. } | Join::Session { payloads: Arity(count), .. }
                 | Join::Form { pieces: Arity(count), .. } => Some(count),
             Join::Braced { arity: Arity(count), entries: Entries::Labelled(_), .. } => count.checked_mul(2_usize),
-            Join::Arrow | Join::Pi | Join::Sequence | Join::Ua(_) | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::Then) => Some(2_usize),
+            Join::Arrow | Join::Pi | Join::Sequence | Join::Ua(_) | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::Then | Bracket::Arrow) => Some(2_usize),
             Join::Apply(Arity(arguments)) => arguments.checked_add(1_usize),
         }],
         ensures: |ref ret| match *ret {
@@ -3955,7 +3969,8 @@ impl Walk<'_, '_>
                     | Bracket::ListCons
                     | Bracket::Bisim
                     | Bracket::Sim
-                    | Bracket::Then => {
+                    | Bracket::Then
+                    | Bracket::Arrow => {
                         let second = self.pop()?;
                         let first = self.pop()?;
                         let opener = self.leaf(bracket.opener())?;
@@ -3967,6 +3982,7 @@ impl Walk<'_, '_>
                     | Bracket::PathRefl
                     | Bracket::List
                     | Bracket::Stay
+                    | Bracket::Forward
                     | Bracket::Run => {
                         let body = self.pop()?;
                         let opener = self.leaf(bracket.opener())?;

@@ -59,9 +59,10 @@
 //! **Choice.** Preserve native classifiers, maps and candidate evidence as
 //! content instead of caching a certificate verdict. Structural path conversion
 //! may erase evidence, but checkpoint identity must not. **Reversal.**
-//! Persisting `Flow_U`, the bridge mode, higher fields or guarded List
-//! inhabitants requires its own versioned content vocabulary and validated
-//! dependency support; none is inferred from a native path entry.
+//! Persisting the bridge mode, higher fields or guarded List inhabitants
+//! requires its own versioned content vocabulary and validated dependency
+//! support; none is inferred from a native path entry. The directed family
+//! persists under its own tags, below.
 //!
 //! # Native declaration content and support
 //!
@@ -170,6 +171,8 @@
 //! | `0x66` | Ride |
 //! | `0x67` | Flow classifier |
 //! | `0x68` | Run classifier |
+//! | `0x69` | Forward flow, `forward(f)` |
+//! | `0x6A` | Function flow, `arrow(d, c)` |
 //!
 //! A statement keeps its relation, so `bisim(a, b)` and `sim(a, b)` never
 //! share an address; the decided simulation is checker output and is not
@@ -558,6 +561,10 @@ pub enum ContentNode
     Stay(NodeIndex),
     /// Two flows composed, the first first.
     Then(NodeIndex, NodeIndex),
+    /// The forward flow of a translator, `forward(f)`.
+    Forward(NodeIndex),
+    /// The arrow's action on a domain and a codomain flow, `arrow(d, c)`.
+    FunctionFlow(NodeIndex, NodeIndex),
     /// A recorded run, its moves in order, each payload an edge.
     Recorded(alloc::sync::Arc<[gandr_core_term::session::RecordedMove<NodeIndex>]>),
     /// Transport of a value along a flow in a motive under one binder.
@@ -982,6 +989,8 @@ impl ContentNode
         | Self::SessionRelated { .. }
         | Self::Stay(_)
         | Self::Then(..)
+        | Self::Forward(_)
+        | Self::FunctionFlow(..)
         | Self::Recorded(_)
         | Self::PrimitiveValue(_)
         | Self::PathProduct(..)
@@ -1081,6 +1090,8 @@ impl ContentNode
             | Self::SessionRelated { .. }
             | Self::Stay(_)
             | Self::Then(..)
+            | Self::Forward(_)
+            | Self::FunctionFlow(..)
             | Self::Recorded(_)
             | Self::PrimitiveValue(_)
             | Self::PathProduct(..)
@@ -1221,7 +1232,7 @@ impl ContentNode
             | Self::UnknownComputationType => ret.count == 0,
             | Self::Tuple(ref components) => ret.iter().eq(components.iter().map(|&component| (component, V))),
             | Self::ListFold { element, result, list, on_nil, on_cons } => actual == Some(&[(element, A), (result, A), (list, V), (on_nil, M), (on_cons, M)][..]),
-            | Self::ListCons(a, b) | Self::StaticApplication(a, b) | Self::PathUniverse(a, b) | Self::PathProduct(a, b) | Self::Funext(a, b) | Self::Equiv(a, b) | Self::Ua { forward: a, backward: b, .. } | Self::Transport(a, b) | Self::SessionRelated { source: a, target: b, .. } | Self::Then(a, b) => {
+            | Self::ListCons(a, b) | Self::StaticApplication(a, b) | Self::PathUniverse(a, b) | Self::PathProduct(a, b) | Self::Funext(a, b) | Self::Equiv(a, b) | Self::Ua { forward: a, backward: b, .. } | Self::Transport(a, b) | Self::SessionRelated { source: a, target: b, .. } | Self::Then(a, b) | Self::FunctionFlow(a, b) => {
                 actual == Some(&[(a, V), (b, V)][..])
             },
             | Self::PathEquiv { path_type, forward, backward, .. } => actual == Some(&[(path_type, A), (forward, V), (backward, V)][..]),
@@ -1233,6 +1244,7 @@ impl ContentNode
             | Self::PathRefl(a)
             | Self::Here(a)
             | Self::Stay(a)
+            | Self::Forward(a)
             | Self::RunType(a)
             | Self::StaticLambda(a)
             | Self::Injection(_, a)
@@ -1434,11 +1446,13 @@ impl ContentNode
                 ..
             }
             | Self::Then(first, second)
+            | Self::FunctionFlow(first, second)
             | Self::ListCons(first, second)
             | Self::StaticApplication(first, second) => Children::of(&[(first, V), (second, V)]),
             | Self::PathRefl(body)
             | Self::Here(body)
             | Self::Stay(body)
+            | Self::Forward(body)
             | Self::RunType(body)
             | Self::StaticLambda(body)
             | Self::Injection(_, body)
@@ -1564,6 +1578,8 @@ impl ContentNode
             | Self::SessionRelated { .. }
             | Self::Stay(_)
             | Self::Then(..)
+            | Self::Forward(_)
+            | Self::FunctionFlow(..)
             | Self::Recorded(_)
             | Self::Ride { .. }
             | Self::ElementTransport { .. }
@@ -2578,6 +2594,13 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 let first = self.discover(ArenaNode::Value(first));
                 ContentNode::Then(first, self.discover(ArenaNode::Value(second)))
             },
+            | Value::Forward(translator) => {
+                ContentNode::Forward(self.discover(ArenaNode::Value(translator)))
+            },
+            | Value::FunctionFlow(domain, codomain) => {
+                let domain = self.discover(ArenaNode::Value(domain));
+                ContentNode::FunctionFlow(domain, self.discover(ArenaNode::Value(codomain)))
+            },
             | Value::Recorded(ref moves) => ContentNode::Recorded(
                 moves
                     .iter()
@@ -3455,6 +3478,11 @@ where
             let first = image(first);
             ContentNode::Then(first, image(second))
         },
+        | ContentNode::Forward(translator) => ContentNode::Forward(image(translator)),
+        | ContentNode::FunctionFlow(domain, codomain) => {
+            let domain = image(domain);
+            ContentNode::FunctionFlow(domain, image(codomain))
+        },
         | ContentNode::Recorded(ref moves) => ContentNode::Recorded(
             moves
                 .iter()
@@ -4107,6 +4135,8 @@ fn mint_node(
         | ContentNode::SessionRelated { .. }
         | ContentNode::Stay(_)
         | ContentNode::Then(..)
+        | ContentNode::Forward(_)
+        | ContentNode::FunctionFlow(..)
         | ContentNode::Recorded(_)
         | ContentNode::Ride { .. }
         | ContentNode::Here(_)

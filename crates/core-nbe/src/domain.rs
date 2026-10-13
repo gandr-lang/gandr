@@ -296,6 +296,16 @@ pub enum Elimination
         /// The transported value.
         value: DomainValueId,
     },
+    /// A ride along a neutral flow: the motive, a value type under one binder
+    /// closed over the environment it reads, and the value ridden.
+    Ride
+    {
+        /// The motive, closed over its environment; its own binder is not in
+        /// the capture.
+        motive: ValueClosureId,
+        /// The ridden value.
+        value: DomainValueId,
+    },
     /// Transport over a two-entry telescope along a neutral path: the motive,
     /// a computation type whose own arrows bind the telescope, closed over the
     /// environment it reads, and the start, the identity over the path and
@@ -583,6 +593,17 @@ pub enum DomainValue
         /// The term face.
         face: TermFace,
     },
+    /// A flow introduction at its evaluated parts: `stay(a)` and `forward(f)`
+    /// hold one, `f then g` and `arrow(d, c)` two, in written order.
+    Flow
+    {
+        /// The introduction.
+        former: FlowFormer,
+        /// The parts, stored once in the arena's flat field table.
+        parts: crate::arena::FieldSpan,
+        /// The term face.
+        face: TermFace,
+    },
     /// A base-type literal.
     ///
     /// The payload stays in the core arena rather than being copied here, so
@@ -719,6 +740,7 @@ impl DomainValue
         | Self::Record { face, .. }
         | Self::PathProduct { face, .. }
         | Self::Here { face, .. }
+        | Self::Flow { face, .. }
         | Self::Literal { face, .. }
         | Self::Tuple { face, .. }
         | Self::ListNil { face } | Self::ListCons { face, .. }
@@ -737,6 +759,7 @@ impl DomainValue
             | Self::Record { face, .. }
             | Self::PathProduct { face, .. }
             | Self::Here { face, .. }
+            | Self::Flow { face, .. }
             | Self::Literal { face, .. }
             | Self::Tuple { face, .. }
             | Self::ListNil { face }
@@ -749,6 +772,20 @@ impl DomainValue
             | Self::StaticLambda { face, .. } => face,
         }
     }
+}
+
+/// The flow introduction a [`DomainValue::Flow`] holds.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum FlowFormer
+{
+    /// `stay(a)`: one part, the point.
+    Stay,
+    /// `forward(f)`: one part, the translator.
+    Forward,
+    /// `f then g`: two parts, the first flow and then the second.
+    Then,
+    /// `arrow(d, c)`: two parts, the domain flow and then the codomain flow.
+    Function,
 }
 
 /// The target level of a lift, held by id so a [`DomainValue`] stays `Copy`.

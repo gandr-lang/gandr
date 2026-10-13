@@ -54,6 +54,13 @@
 //!   [`Value::Returned`] over `force f y`, so the image of the moving endpoint
 //!   is compared by what `f` computes. A first-order map is all it needs; a
 //!   function of a function is the same construction one level up.
+//! - **`back` along a flow is the symmetry ride.** [`back_flow`] is `back`'s
+//!   derivation in the flow family: [`Computation::Ride`] of `stay(a)` along `f
+//!   : Flow(A, a, b)` in `y. Flow(A, y, a)`. Its motive reads the moving
+//!   endpoint as a source, contravariantly, and the checker refuses every such
+//!   ride, so a flow has no inverse by the rule that lets it ride at all. The
+//!   alternative, refusing `back` in the lowering when its answer is a flow,
+//!   names no rule. Reversal: none while a flow runs one way.
 
 use anodized::spec;
 use gandr_kernel_term::DeBruijnIndex;
@@ -158,6 +165,46 @@ pub fn then(
     let endpoint = moving(arena);
     let motive = arena.value_type_path(lifted_carrier, lifted_start, endpoint);
     arena.computation_path_transport(motive, second, first)
+}
+
+/// `back(f)` for `f : Flow(A, a, b)`: the ride of `stay(a)` along `f` in the
+/// family `y. Flow(A, y, a)`, the symmetry a flow does not have.
+///
+/// # Specification
+/// - requires: `carrier` and `fixed` are read in the context the result stands
+///   in, `fixed` being the flow's source, which is the reversed flow's target.
+/// - ensures: the ride `ride(y. Flow(A↑, y, a↑), flow, stay(a))`, the carrier
+///   and the endpoint shifted past the motive's binder.
+/// - provides: `back` spelled along a flow, which the checker refuses: the
+///   motive reads its moving endpoint as a source, contravariantly.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — over a carrier and an endpoint that read an outer
+///   variable, the motive reads them one binder further out and its own binder
+///   as the source; moving the target instead changes the built term.
+/// - witness: `identity::tests::back_along_a_flow_rides_stay_into_the_reversed_family`
+#[spec(ensures: |ret| matches!(arena.computation(ret), Some(&crate::syntax::Computation::Ride { motive, flow: along, value })
+    if along == flow
+        && arena.value(value) == Some(&crate::syntax::Value::Stay(fixed))
+        && matches!(arena.value_type(motive), Some(&crate::syntax::ValueType::Flow { source, .. })
+            if arena.value(source) == Some(&crate::syntax::Value::Variable { zone: Zone::Intuitionistic, index: DeBruijnIndex::from(0_u32) }))))]
+#[inline]
+#[must_use]
+pub fn back_flow(
+    arena: &mut CoreArena,
+    carrier: ValueTypeId,
+    fixed: ValueId,
+    flow: ValueId,
+) -> ComputationId
+{
+    let lifted_carrier = shift_value_type(arena, carrier, Binders::ONE);
+    let lifted_fixed = shift_value(arena, fixed, Binders::ONE);
+    let endpoint = moving(arena);
+    let motive = arena.value_type_flow(lifted_carrier, endpoint, lifted_fixed);
+    let base = arena.value_stay(fixed);
+    arena.computation_ride(motive, flow, base)
 }
 
 /// `cong(f, p) : Path(B, f a, f b)` for `f : U(A → F B)` and `p : Path(A, a,
@@ -289,6 +336,36 @@ mod tests
             compared(&arena, built, capturing),
             CertificateEquality::Different,
             "an unshifted motive captures the outer variables"
+        );
+    }
+
+    #[test]
+    fn back_along_a_flow_rides_stay_into_the_reversed_family()
+    {
+        let mut arena = CoreArena::new();
+        let carrier = open_carrier(&mut arena, 1_u32.into());
+        let fixed = variable(&mut arena, 0_u32.into());
+        let flow = variable(&mut arena, 2_u32.into());
+        let built = super::back_flow(&mut arena, carrier, fixed, flow);
+
+        let lifted_carrier = open_carrier(&mut arena, 2_u32.into());
+        let moving = variable(&mut arena, 0_u32.into());
+        let lifted_fixed = variable(&mut arena, 1_u32.into());
+        let motive = arena.value_type_flow(lifted_carrier, moving, lifted_fixed);
+        let base = arena.value_stay(fixed);
+        let expected = arena.computation_ride(motive, flow, base);
+        assert_eq!(
+            compared(&arena, built, expected),
+            CertificateEquality::Equal,
+            "back along a flow moves the source past one binder"
+        );
+
+        let covariant = arena.value_type_flow(lifted_carrier, lifted_fixed, moving);
+        let covariant = arena.computation_ride(covariant, flow, base);
+        assert_eq!(
+            compared(&arena, built, covariant),
+            CertificateEquality::Different,
+            "the reversed family moves the source, not the target"
         );
     }
 

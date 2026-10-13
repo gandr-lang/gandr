@@ -633,11 +633,16 @@ enum Task
     /// Assemble element-path transport beneath a neutral path, from its
     /// motive and operand.
     PathTransport,
+    /// Assemble a ride beneath a neutral flow, from its motive and operand.
+    Ride,
     /// Assemble a telescope transport beneath a neutral path, from its motive,
     /// start, identity over the path and operand.
     TelescopeTransport,
     /// Assemble reflexivity over the value term on the stack.
     Here,
+    /// Assemble a flow introduction of this former over the value terms on
+    /// the stack, as many as it holds.
+    Flow(crate::domain::FlowFormer),
     /// Assemble a compound endpoint over the computation term on the stack.
     Returned,
     /// Assemble an element identity from its carrier and two endpoints.
@@ -2011,6 +2016,12 @@ fn run(
             && entry_comps.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comps.len())
             && entry_value_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.value_types.len())
             && entry_comp_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comp_types.len()),
+        | Task::Flow(_) => machine.tasks.len() == entry_tasks
+            && machine.values.len() < entry_values.saturating_add(1_usize)
+            && machine.values.last().is_some_and(|id| core.value(*id).is_some())
+            && entry_comps == machine.comps.len()
+            && entry_value_types == machine.value_types.len()
+            && entry_comp_types == machine.comp_types.len(),
         | Task::Inject { .. } | Task::Lift { .. } | Task::StaticLambda | Task::Here => machine.tasks.len() == entry_tasks
             && entry_values.checked_sub(1_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.values.len())
             && machine.values.last().is_some_and(|id| core.value(*id).is_some())
@@ -2034,7 +2045,7 @@ fn run(
             && machine.comps.len() == entry_comps.saturating_add(1)
             && machine.comps.last().is_some_and(|&id| core.computation(id).is_some())
             && machine.value_types.len() == entry_value_types && machine.comp_types.len() == entry_comp_types,
-        | Task::PathTransport => machine.tasks.len() == entry_tasks
+        | Task::PathTransport | Task::Ride => machine.tasks.len() == entry_tasks
             && entry_values.checked_sub(2) == Some(machine.values.len())
             && entry_value_types.checked_sub(1) == Some(machine.value_types.len())
             && machine.comps.len() == entry_comps.saturating_add(1)
@@ -2410,6 +2421,15 @@ fn step(
                 .push(core.computation_path_transport(motive, path, value));
             Ok(())
         },
+        | Task::Ride => {
+            let value = machine.pop_value()?;
+            let flow = machine.pop_value()?;
+            let motive = machine.pop_value_type()?;
+            machine
+                .comps
+                .push(core.computation_ride(motive, flow, value));
+            Ok(())
+        },
         | Task::TelescopeTransport => {
             let value = machine.pop_value()?;
             let over = machine.pop_value()?;
@@ -2424,6 +2444,30 @@ fn step(
         | Task::Here => {
             let point = machine.pop_value()?;
             machine.values.push(core.value_here(point));
+            Ok(())
+        },
+        | Task::Flow(former) => {
+            let flow = match former {
+                | crate::domain::FlowFormer::Stay => {
+                    let point = machine.pop_value()?;
+                    core.value_stay(point)
+                },
+                | crate::domain::FlowFormer::Forward => {
+                    let translator = machine.pop_value()?;
+                    core.value_forward(translator)
+                },
+                | crate::domain::FlowFormer::Then => {
+                    let second = machine.pop_value()?;
+                    let first = machine.pop_value()?;
+                    core.value_then(first, second)
+                },
+                | crate::domain::FlowFormer::Function => {
+                    let codomain = machine.pop_value()?;
+                    let domain = machine.pop_value()?;
+                    core.value_function_flow(domain, codomain)
+                },
+            };
+            machine.values.push(flow);
             Ok(())
         },
         | Task::Returned => {
@@ -3425,6 +3469,14 @@ fn step_value(
             });
             Ok(())
         },
+        | DomainValue::Flow { former, parts, .. } => {
+            let parts = domain.fields(parts).map_err(ReadbackFault::Domain)?;
+            machine.tasks.push(Task::Flow(former));
+            for &value in parts.iter().rev() {
+                machine.tasks.push(Task::Value { value, binders });
+            }
+            Ok(())
+        },
         | DomainValue::Literal { literal, .. } => {
             // The payload was never copied into the domain: the node names the
             // core value that holds it, and that id is valid whatever the face
@@ -3788,6 +3840,7 @@ fn step_neutral(
                         | Elimination::Transport(_)
                         | Elimination::ProductTransport(_)
                         | Elimination::PathTransport { .. }
+                        | Elimination::Ride { .. }
                         | Elimination::TelescopeTransport { .. }
                         | Elimination::Apply(_)
                         | Elimination::Force
@@ -4139,7 +4192,13 @@ fn step_spine(
         },
         // The motive reads its own binder past the capture, so it is read
         // back under a fresh variable, as a nominal case's motive is.
-        | Elimination::PathTransport { motive, value } => {
+        | Elimination::PathTransport { motive, value } | Elimination::Ride { motive, value } => {
+            let assemble = if matches!(elimination, Elimination::Ride { .. }) {
+                Task::Ride
+            }
+            else {
+                Task::PathTransport
+            };
             expect_polarity(spine.polarity, Polarity::Value, neutral)?;
             let held = domain
                 .value_closure(motive)
@@ -4169,7 +4228,7 @@ fn step_spine(
             environment.extend(zone, bound);
             let frame = machine.hold_frame(environment);
             machine.tasks.push(onward);
-            machine.tasks.push(Task::PathTransport);
+            machine.tasks.push(assemble);
             machine.tasks.push(Task::Value { value, binders });
             machine.tasks.push(Task::QuotedValueType {
                 quoted: family,

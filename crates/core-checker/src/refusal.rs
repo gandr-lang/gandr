@@ -250,10 +250,9 @@ pub enum UnadmittedFormer
     /// consumer, and the kernel's lowering of a session flow refuses to run
     /// one.
     Run,
-    /// A flow over a carrier other than the value universe, or between codes
-    /// that are no sessions: the kernel's native flows are session
-    /// simulations.
-    ElementFlow,
+    /// A flow at a universe above level zero: the kernel's flows between codes
+    /// are classified at the level-zero value universe.
+    HigherFlow,
 }
 
 /// A count of static arguments: how many a static application passes, or how
@@ -894,9 +893,11 @@ pub enum CheckRefusal
         /// The ride.
         at: ComputationId,
     },
-    /// A ride along a flow between distinct session codes whose motive is no
-    /// run over the code: the recorded-run consumer moves runs, and nothing
-    /// else crosses a session flow.
+    /// A ride the checker cannot move: along a flow between distinct session
+    /// codes, a motive that is no run over the code — the recorded-run
+    /// consumer moves runs, and nothing else crosses a session flow; along a
+    /// flow at the value universe, a motive no row of the directed computation
+    /// table moves, so no translator computes it.
     RideUnsupported
     {
         /// The ride.
@@ -911,6 +912,26 @@ pub enum CheckRefusal
         at: ValueId,
         /// What the session refuses.
         fault: RunFault,
+    },
+    /// A `forward` the rule does not decide: its translator is open, its
+    /// classifier is no thunk of a pure non-dependent arrow, a code is outside
+    /// the unit type, the base atoms, sums of at least one summand and
+    /// products, or an image the translator computes at a covering input is
+    /// not leaf-natural — a literal, a fresh value or a leaf of another type
+    /// where the target's shape names a source leaf.
+    ForwardUnsupported
+    {
+        /// The `forward`.
+        at: ValueId,
+    },
+    /// A function flow's boundary that runs against the variance its position
+    /// fixes: the domain flow must run from the target's argument code to the
+    /// source's, the codomain flow from the source's result code to the
+    /// target's.
+    Boundary
+    {
+        /// The boundary flow.
+        at: ValueId,
     },
 }
 
@@ -938,9 +959,10 @@ impl CheckRefusal
     ///   escaping, consumable or ungranted capability or one exercised outside
     ///   its authority, sessions that are not bisimilar or not related by
     ///   subtyping, an operand that is no session code, a ride whose motive is
-    ///   not covariant and a run its session does not admit are malformed
-    ///   source; a former outside the fragment, a stratum the checker does not
-    ///   certify and a ride the recorded-run consumer does not perform are
+    ///   not covariant, a run its session does not admit and a function flow's
+    ///   boundary against its variance are malformed source; a former outside
+    ///   the fragment, a stratum the checker does not certify, a ride the
+    ///   checker does not move and a translator `forward` cannot image are
     ///   unrepresentable; an unbound index, an exhausted allowance, a dangling
     ///   id, an admission out of order, a repeated sealing site, a machine
     ///   invariant and an undecided unfolding are engine faults; nothing is a
@@ -955,7 +977,7 @@ impl CheckRefusal
     ///   than turning the rejection into an obligation.
     /// - witness: `judgement::tests::a_mismatched_literal_is_refused_with_both_types`
     #[spec(ensures: |ret| match *self {
-        | Self::OutOfFragment { .. } | Self::FunextUnsupported { .. } | Self::EquivUnsupported { .. } | Self::UncertifiedStratum { .. } | Self::UaUncertified { .. } | Self::RideUnsupported { .. } => matches!(ret, FailureClass::Unrepresentable),
+        | Self::OutOfFragment { .. } | Self::FunextUnsupported { .. } | Self::EquivUnsupported { .. } | Self::UncertifiedStratum { .. } | Self::UaUncertified { .. } | Self::RideUnsupported { .. } | Self::ForwardUnsupported { .. } => matches!(ret, FailureClass::Unrepresentable),
         | Self::UnboundIndex { .. }
         | Self::BudgetExceeded { .. }
         | Self::DanglingNode { .. }
@@ -982,7 +1004,7 @@ impl CheckRefusal
         | Self::NegativeOccurrence(_) | Self::NestedOccurrence(_) | Self::IndexOccurrence(_) | Self::NonUniformOccurrence(_) | Self::CrossBlockReference { .. } | Self::DescentNotReplayed { .. } | Self::UnenclosedRun { .. }
         | Self::SessionMismatch { .. } | Self::Linearity { .. }
         | Self::CapabilityForged { .. } | Self::CapabilityAmplified(_) | Self::CapabilityOutsideAuthority { .. } | Self::CapabilityEscaped { .. } | Self::CapabilityConsumable(_) | Self::CapabilityUngranted { .. }
-        | Self::SessionNotEquivalent { .. } | Self::SessionNotSubtype { .. } | Self::SessionCodeExpected { .. } | Self::NonCovariantMotive { .. } | Self::RunNotAdmitted { .. } => matches!(ret, FailureClass::MalformedSource),
+        | Self::SessionNotEquivalent { .. } | Self::SessionNotSubtype { .. } | Self::SessionCodeExpected { .. } | Self::NonCovariantMotive { .. } | Self::RunNotAdmitted { .. } | Self::Boundary { .. } => matches!(ret, FailureClass::MalformedSource),
     })]
     #[inline]
     #[must_use]
@@ -1044,13 +1066,15 @@ impl CheckRefusal
             | Self::SessionNotSubtype { .. }
             | Self::SessionCodeExpected { .. }
             | Self::NonCovariantMotive { .. }
-            | Self::RunNotAdmitted { .. } => FailureClass::MalformedSource,
+            | Self::RunNotAdmitted { .. }
+            | Self::Boundary { .. } => FailureClass::MalformedSource,
             | Self::OutOfFragment { .. }
             | Self::FunextUnsupported { .. }
             | Self::EquivUnsupported { .. }
             | Self::UncertifiedStratum { .. }
             | Self::UaUncertified { .. }
-            | Self::RideUnsupported { .. } => FailureClass::Unrepresentable,
+            | Self::RideUnsupported { .. }
+            | Self::ForwardUnsupported { .. } => FailureClass::Unrepresentable,
             | Self::UnboundIndex { .. }
             | Self::BudgetExceeded { .. }
             | Self::DanglingNode { .. }
@@ -1238,7 +1262,9 @@ impl CheckRefusal
             | Self::SessionCodeExpected { .. }
             | Self::NonCovariantMotive { .. }
             | Self::RideUnsupported { .. }
-            | Self::RunNotAdmitted { .. } => (UNNAMED, UNNAMED),
+            | Self::RunNotAdmitted { .. }
+            | Self::ForwardUnsupported { .. }
+            | Self::Boundary { .. } => (UNNAMED, UNNAMED),
         };
         Compared { expected, found }
     }

@@ -800,7 +800,9 @@ fn checked(
         | CheckRefusal::SessionNotEquivalent { at }
         | CheckRefusal::SessionNotSubtype { at }
         | CheckRefusal::SessionCodeExpected { at }
-        | CheckRefusal::RunNotAdmitted { at, .. } => (spanned(origins.value(at)), UNNAMED),
+        | CheckRefusal::RunNotAdmitted { at, .. }
+        | CheckRefusal::ForwardUnsupported { at }
+        | CheckRefusal::Boundary { at } => (spanned(origins.value(at)), UNNAMED),
         | CheckRefusal::StaticClassifierExpected { found, .. } => {
             (spanned(origins.value_type(found)), UNNAMED)
         },
@@ -1330,7 +1332,7 @@ impl fmt::Display for Checked
                 "a flow runs one way, so a ride's motive may use its moving endpoint only covariantly",
             ),
             | CheckRefusal::RideUnsupported { .. } => f.write_str(
-                "a ride moves a constant motive, a run of the moving endpoint, or a value whose type relates its two endpoints",
+                "a ride moves a constant motive, a run of the moving endpoint, a value whose type relates its two endpoints, or a decode of the moving code inside products, sums, lists and flows into it",
             ),
             | CheckRefusal::RunNotAdmitted { fault, .. } => match fault {
                 | RunFault::WrongDirection(step) => write!(
@@ -1357,6 +1359,12 @@ impl fmt::Display for Checked
                     "a run that is not a literal may take any offer its protocol makes, and the flow's target drops one",
                 ),
             },
+            | CheckRefusal::ForwardUnsupported { .. } => f.write_str(
+                "a forward flow's translator is closed, maps between first-order codes, and sends every source leaf to a target position of its own type",
+            ),
+            | CheckRefusal::Boundary { .. } => f.write_str(
+                "an arrow's domain flow runs from the target's argument to the source's, and its codomain flow from the source's result to the target's",
+            ),
         }
     }
 }
@@ -1546,7 +1554,7 @@ impl fmt::Display for Former
             | UnadmittedFormer::Run => {
                 "a recorded run or a ride at the pure kernel boundary, moved by the recorded-run consumer"
             },
-            | UnadmittedFormer::ElementFlow => "a flow between elements of a type other than a universe",
+            | UnadmittedFormer::HigherFlow => "a flow at a universe above level zero",
         })
     }
 }

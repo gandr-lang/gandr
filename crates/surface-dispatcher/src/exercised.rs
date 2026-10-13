@@ -639,7 +639,9 @@ fn checking_row(
         | CheckRefusal::SessionCodeExpected { .. }
         | CheckRefusal::NonCovariantMotive { .. }
         | CheckRefusal::RideUnsupported { .. }
-        | CheckRefusal::RunNotAdmitted { .. } => {},
+        | CheckRefusal::RunNotAdmitted { .. }
+        | CheckRefusal::ForwardUnsupported { .. }
+        | CheckRefusal::Boundary { .. } => {},
     }
 }
 
@@ -840,7 +842,8 @@ fn formers(
                         target: second,
                         ..
                     }
-                    | Value::Then(first, second)),
+                    | Value::Then(first, second)
+                    | Value::FunctionFlow(first, second)),
                 ) => {
                     worklist.push(Node::Value(first));
                     worklist.push(Node::Value(second));
@@ -852,6 +855,7 @@ fn formers(
                     &(Value::PathRefl(injected)
                     | Value::Here(injected)
                     | Value::Stay(injected)
+                    | Value::Forward(injected)
                     | Value::Injection(_, injected)),
                 ) => {
                     worklist.push(Node::Value(injected));
