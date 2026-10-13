@@ -11,39 +11,72 @@ use anodized::spec;
 use gandr_core_incremental::ContentNode;
 use gandr_core_incremental::NodeIndex;
 use gandr_core_incremental::Reference;
+use gandr_core_term::session::SessionAction;
+use gandr_kernel_term::Side;
+use quenchant_shape::shape::Maybe;
 
+use crate::Constructors;
 use crate::Name;
 use crate::Source;
 use crate::former::Arity;
 use crate::former::Component;
 use crate::former::Former;
+use crate::former::Unreadable;
 
-/// A checkpoint's content table, read by the presentation printer.
-#[repr(transparent)]
+/// A checkpoint's content table, read by the presentation printer, its
+/// constructors named from a table.
 #[derive(Clone, Copy, Debug)]
-pub struct ContentSource<'nodes>(&'nodes [ContentNode]);
+pub struct ContentSource<'nodes>
+{
+    /// The table.
+    nodes: &'nodes [ContentNode],
+    /// The constructors' names, by family.
+    constructors: Option<&'nodes Constructors<'nodes>>,
+}
 
 impl<'nodes> From<&'nodes [ContentNode]> for ContentSource<'nodes>
 {
-    /// The source reading `nodes`.
+    /// The source reading `nodes`, naming no constructor.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     fn from(nodes: &'nodes [ContentNode]) -> Self
     {
-        Self(nodes)
+        Self {
+            nodes,
+            constructors: None,
+        }
     }
 }
 
-/// The name `reference` carries, wrapped as `wrap` says.
+impl<'nodes> ContentSource<'nodes>
+{
+    /// This source, naming constructors from `constructors`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn naming(
+        self,
+        constructors: &'nodes Constructors<'nodes>,
+    ) -> Self
+    {
+        Self {
+            constructors: Some(constructors),
+            ..self
+        }
+    }
+}
+
+/// The name `reference` carries.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: `wrap` over the item key's text when the reference names an item
-///   whose key is UTF-8; [`Former::Unreadable`] for an unoccupied position and
-///   for a key that is not text.
-/// - provides: the constant and abstract-type readings.
+/// - ensures: the item key's text when the reference names an item whose key is
+///   UTF-8; none for an unoccupied position and for a key that is not text.
+/// - provides: the constant, abstract-type and family readings.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -53,21 +86,16 @@ impl<'nodes> From<&'nodes [ContentNode]> for ContentSource<'nodes>
 /// - witness: `content_source::tests::value_ty_covers_every_reachable_former`
 /// - witness: `content_source::tests::fidelity_tracks_unsupported_nodes_not_user_punctuation`
 #[spec(ensures: |ret| match *reference {
-    Reference::Unoccupied => matches!(ret, Former::Unreadable),
-    Reference::Item { ref key, .. } => core::str::from_utf8(key.as_ref()).is_ok()
-        || matches!(ret, Former::Unreadable),
+    Reference::Unoccupied => ret.is_none(),
+    Reference::Item { ref key, .. } => ret == core::str::from_utf8(key.as_ref()).ok().map(Name::from),
 })]
-fn named<'nodes>(
-    reference: &'nodes Reference,
-    wrap: fn(Name<'nodes>) -> Former<'nodes, NodeIndex>,
-) -> Former<'nodes, NodeIndex>
+fn key(reference: &Reference) -> Option<Name<'_>>
 {
     match *reference {
-        | Reference::Item { ref key, .. } => match core::str::from_utf8(key.as_ref()) {
-            | Ok(name) => wrap(Name::from(name)),
-            | Err(_) => Former::Unreadable,
+        | Reference::Item { ref key, .. } => {
+            core::str::from_utf8(key.as_ref()).ok().map(Name::from)
         },
-        | Reference::Unoccupied => Former::Unreadable,
+        | Reference::Unoccupied => None,
     }
 }
 
@@ -80,12 +108,11 @@ impl Source for ContentSource<'_>
     /// # Specification
     /// - requires: nothing; any index is admissible.
     /// - ensures: each core former read as its [`Former`], over the same
-    ///   indices; a return, a bind, a force, an application and a lambda as
-    ///   their own formers, every other computation former as
-    ///   [`Former::Computation`]; an unresolved node, a hole, a mark, the
-    ///   unknown type, an empty record, and an index past the table, as
-    ///   [`Former::Unreadable`]. Native data syntax is outside this source
-    ///   adapter's fragment.
+    ///   indices; a family by its key, a constructor by the name the
+    ///   constructor table gives its family's tag; the honest set's members — a
+    ///   hole, a mark, the unknown type, a lift — as unreadable, an unresolved
+    ///   node and an index past the table as dangling, and a name the table
+    ///   cannot spell as unnamed.
     /// - provides: the printer's input over checkpoint tables.
     /// - fails: never.
     /// - panics: none.
@@ -99,90 +126,22 @@ impl Source for ContentSource<'_>
     /// - witness: `content_source::tests::comp_ty_covers_every_reachable_former`
     /// - witness: `content_source::tests::ty_dispatches_on_polarity`
     /// - witness: `content_source::tests::a_malformed_table_spells_unknown`
-    #[spec(ensures: |ret| match (self.0.get(usize::from(node)), ret) {
-        (Some(&ContentNode::PrimitiveValue(primitive)), Former::Constant(name)) => name.as_ref() == primitive.name().as_ref(),
-        (Some(&ContentNode::Data { .. } |
-&ContentNode::Constructor { .. } |
-&ContentNode::Unresolved(_) | &ContentNode::Hole(_) | &ContentNode::ValueMark { .. } |
-&ContentNode::ComputationHole(_) | &ContentNode::ComputationMark { .. } |
-&ContentNode::UnknownType | &ContentNode::UnknownComputationType |
-&ContentNode::PathType { .. } | &ContentNode::Returned(_)) | None, Former::Unreadable) |
-(Some(&ContentNode::Reify(_)), Former::Reify) |
-(Some(&ContentNode::DataCase { .. } | &ContentNode::RecordProjection(..) | &ContentNode::TupleProjection(..) |
-&ContentNode::Primitive(..) | &ContentNode::Transport(..) | &ContentNode::ElementTransport { .. } | &ContentNode::TelescopeTransport { .. } |
-&ContentNode::Perform { .. } | &ContentNode::Handle { .. } | &ContentNode::Exercise { .. } | &ContentNode::Scope { .. } | &ContentNode::Resume(..) | &ContentNode::Split(..) | &ContentNode::Reset(_) | &ContentNode::Shift(_) | &ContentNode::With(..) | &ContentNode::Project(..) | &ContentNode::ListFold { .. } |
-&ContentNode::Case { .. } | &ContentNode::Fixpoint { .. } | &ContentNode::Session(_)), Former::Computation) |
-(Some(&ContentNode::ListNil), Former::ListNil) |
-(Some(&ContentNode::ValueLift { .. }), Former::ValueLift) |
-(Some(&ContentNode::TypeLift { .. }), Former::TypeLift) => true,
-        (Some(&ContentNode::Stack { input: a, output: b }), Former::Stack(c, d))
-        | (Some(&ContentNode::WithType(a, b)), Former::With(c, d)) | (Some(&ContentNode::PathUniverse(a, b)), Former::PathUniverse(c, d))
-        | (Some(&ContentNode::PathProduct(a, b)), Former::PathProduct(c, d))
-        | (Some(&ContentNode::Funext(a, b)), Former::Funext(c, d))
-        | (Some(&ContentNode::Equiv(a, b)), Former::Equiv(c, d))
-        | (Some(&ContentNode::Then(a, b)), Former::Then(c, d))
-        | (Some(&ContentNode::PathEquiv { forward: a, backward: b, .. }), Former::PathEquiv(c, d))
-        | (Some(&ContentNode::ListCons(a, b)), Former::ListCons(c, d))
-        | (Some(&ContentNode::StaticApplication(a, b)), Former::StaticApplication(c, d))
-        | (Some(&ContentNode::Application(a, b)), Former::Application(c, d))
-        | (Some(&ContentNode::Bind(a, b)), Former::Bind(c, d))
-        | (Some(&ContentNode::Arrow { domain: a, codomain: b }), Former::Arrow { domain: c, codomain: d })
-        | (Some(&ContentNode::Pi { domain: a, codomain: b }), Former::Pi { domain: c, codomain: d })
-        | (Some(&ContentNode::StaticPi { domain: a, codomain: b }), Former::StaticPi { domain: c, codomain: d }) => a == c && b == d,
-        (Some(&ContentNode::Ua { stratum, ref sides, forward, backward }), Former::Ua { stratum: actual_stratum, source, target, forward: actual_forward, backward: actual_backward }) =>
-            stratum == actual_stratum && source.as_ref() == sides.source.name.as_ref() && target.as_ref() == sides.target.name.as_ref()
-                && forward == actual_forward && backward == actual_backward,
-        (Some(&ContentNode::Variable { zone, index }), Former::Variable { zone: actual_zone, index: actual_index }) =>
-            zone == actual_zone && index == actual_index,
-        (Some(&ContentNode::Constant(Reference::Item { ref key, .. })), Former::Constant(name))
-        | (Some(&ContentNode::Abstract(Reference::Item { ref key, .. })), Former::Abstract(name)) =>
-            name.as_ref().as_bytes() == key.as_ref(),
-        (Some(content), Former::Literal(actual)) =>
-            matches!(*content, ContentNode::Literal(ref literal) if literal == actual),
-        (Some(&ContentNode::Injection(summand, body)), Former::Injection(actual_summand, actual_body)) =>
-            usize::from(summand) == usize::from(actual_summand) && body == actual_body,
-        (Some(&ContentNode::RecordType(ref fields) | &ContentNode::Record(ref fields)), Former::Unreadable) => fields.is_empty(),
-        (Some(&ContentNode::RecordType(ref fields)), Former::RecordType(arity))
-        | (Some(&ContentNode::Record(ref fields)), Former::Record(arity)) => !fields.is_empty() && usize::from(arity) == fields.len(),
-        (Some(held), Former::Unit) => matches!(*held, ContentNode::Tuple(ref components) if components.is_empty()),
-        (Some(held), Former::Tuple(arity)) => matches!(*held, ContentNode::Tuple(ref components) if !components.is_empty() && components.len() == usize::from(arity)),
-        (Some(&ContentNode::PathRefl(a)), Former::PathRefl(b))
-        | (Some(&ContentNode::Here(a)), Former::Here(b))
-        | (Some(&ContentNode::Stay(a)), Former::Stay(b))
-        | (Some(&ContentNode::RunType(a)), Former::RunType(b))
-        | (Some(&ContentNode::Quote(a)), Former::Quote(b))
-        | (Some(&ContentNode::QuoteComputation(a)), Former::QuoteComputation(b))
-        | (Some(&ContentNode::List(a)), Former::List(b))
-        | (Some(&ContentNode::ThunkType(a)), Former::ThunkType(b))
-        | (Some(&ContentNode::Element { code: a, .. }), Former::Element(b))
-        | (Some(&ContentNode::ComputationElement { code: a, .. }), Former::ComputationElement(b))
-        | (Some(&ContentNode::Thunk(a)), Former::Thunk(b))
-        | (Some(&ContentNode::Nested(a)), Former::Nested(b))
-        | (Some(&ContentNode::Run(a)), Former::Run(b))
-        | (Some(&ContentNode::Lambda(a)), Former::Lambda(b))
-        | (Some(&ContentNode::Return(a)), Former::Return(b))
-        | (Some(&ContentNode::Force(a)), Former::Force(b))
-        | (Some(&ContentNode::StaticLambda(a)), Former::StaticLambda(b)) => a == b,
-        (Some(&ContentNode::Returner { result, ref effects }), Former::Returner(actual)) => result == actual && effects.signatures().len() == 0,
-        (Some(&ContentNode::Returner { result, ref effects }), Former::EffectfulReturner { result: actual, .. }) => result == actual && effects.signatures().len() != 0,
-        (Some(&ContentNode::Base(a)), Former::BaseType(b)) => a == b,
-        (Some(&ContentNode::Product(ref parts)), Former::Product(arity)) | (Some(&ContentNode::Sum(ref parts)), Former::Sum(arity)) =>
-            usize::from(arity) == parts.len(),
-        (Some(&ContentNode::Universe { sort, ref level }), Former::Universe { sort: actual_sort, level: actual_level }) =>
-            sort == actual_sort && level == actual_level,
-        (Some(found), Former::Session { protocol, state, payloads }) => matches!(*found, ContentNode::SessionType(ref session)
-            if core::ptr::eq(core::ptr::from_ref(protocol), core::ptr::from_ref(session.protocol())) && state == session.state() && usize::from(payloads) == session.payloads().len()),
-        (Some(&ContentNode::Capability { grade, region, .. }), Former::Capability { grade: actual_grade, region: actual_region, .. }) =>
-            grade == actual_grade && region == actual_region,
-        (Some(&ContentNode::SessionRelated { relation, source, target }), Former::SessionRelated(actual, a, b)) =>
-            relation == actual && source == a && target == b,
-
-        (Some(&ContentNode::Constant(ref reference) | &ContentNode::Abstract(ref reference)), Former::Unreadable) =>
-            match *reference {
-                Reference::Unoccupied => true,
-                Reference::Item { ref key, .. } => core::str::from_utf8(key.as_ref()).is_err(),
-            },
-        _ => false,
+    #[spec(ensures: |ret| match (self.nodes.get(usize::from(node)), ret) {
+        (None, Former::Unreadable(reason)) => reason == Unreadable::Dangling,
+        (None, _) => false,
+        (Some(content), Former::Unreadable(reason)) => match *content {
+            ContentNode::Unresolved(_) => reason == Unreadable::Dangling,
+            ContentNode::Hole(_) | ContentNode::ComputationHole(_) => reason == Unreadable::Hole,
+            ContentNode::ValueMark { .. } | ContentNode::ComputationMark { .. } => reason == Unreadable::Mark,
+            ContentNode::UnknownType | ContentNode::UnknownComputationType => reason == Unreadable::UnknownType,
+            ContentNode::ValueLift { .. } | ContentNode::TypeLift { .. } => reason == Unreadable::Lift,
+            ContentNode::Constant(ref reference) | ContentNode::Abstract(ref reference) => reason == Unreadable::Unnamed && key(reference).is_none(),
+            _ => false,
+        },
+        (Some(&(ContentNode::Constant(ref reference) | ContentNode::Abstract(ref reference))), Former::Constant(name) | Former::Abstract(name)) => key(reference) == Some(name),
+        (Some(content), Former::Data { name, .. }) =>
+            matches!(*content, ContentNode::Data { ref declaration, .. } if key(declaration) == name),
+        (Some(_), _) => true,
     })]
     #[inline]
     fn read(
@@ -190,10 +149,11 @@ impl Source for ContentSource<'_>
         node: NodeIndex,
     ) -> Former<'_, NodeIndex>
     {
-        let Some(content) = self.0.get(usize::from(node))
+        let Some(content) = self.nodes.get(usize::from(node))
         else {
-            return Former::Unreadable;
+            return Former::Unreadable(Unreadable::Dangling);
         };
+        let unnamed = Former::Unreadable(Unreadable::Unnamed);
         match *content {
             | ContentNode::Reify(_) => Former::Reify,
             | ContentNode::Stack { input, output } => Former::Stack(input, output),
@@ -201,28 +161,182 @@ impl Source for ContentSource<'_>
             | ContentNode::PrimitiveValue(primitive) => {
                 Former::Constant(Name::from(<&'static str>::from(primitive.name())))
             },
-            | ContentNode::DataCase { .. }
-            | ContentNode::RecordProjection(..)
-            | ContentNode::TupleProjection(..)
-            | ContentNode::Primitive(..)
-            | ContentNode::Perform { .. }
-            | ContentNode::Handle { .. }
-            | ContentNode::Exercise { .. }
-            | ContentNode::Scope { .. }
-            | ContentNode::Resume(..)
-            | ContentNode::Split(..)
-            | ContentNode::Reset(_)
-            | ContentNode::Shift(_)
-            | ContentNode::With(..)
-            | ContentNode::Project(..)
-            | ContentNode::Transport(..)
-            | ContentNode::ElementTransport { .. }
-            | ContentNode::TelescopeTransport { .. }
-            | ContentNode::Ride { .. }
-            | ContentNode::ListFold { .. }
-            | ContentNode::Case { .. }
-            | ContentNode::Session(_)
-            | ContentNode::Fixpoint { .. } => Former::Computation,
+            | ContentNode::Data {
+                ref declaration,
+                ref arguments,
+            } => Former::Data {
+                name: key(declaration),
+                arity: Arity::from(arguments.len()),
+            },
+            | ContentNode::Constructor {
+                datatype,
+                tag,
+                ref fields,
+            } => Former::Constructor {
+                name: self
+                    .nodes
+                    .get(usize::from(datatype))
+                    .and_then(|family| match *family {
+                        | ContentNode::Data {
+                            ref declaration, ..
+                        } => key(declaration),
+                        | _ => None,
+                    })
+                    .zip(self.constructors)
+                    .and_then(|(family, constructors)| {
+                        constructors.constructor(family, Component::from(usize::from(tag)))
+                    })
+                    .map(|(name, _)| name),
+                arity: Arity::from(fields.len()),
+            },
+            | ContentNode::DataCase {
+                scrutinee,
+                ref branches,
+                ..
+            } => Former::DataCase {
+                scrutinee,
+                arity: Arity::from(branches.len()),
+            },
+            | ContentNode::RecordProjection(record, ref label) => {
+                Former::RecordProjection(record, Name::from(label.as_ref()))
+            },
+            | ContentNode::TupleProjection(tuple, component) => {
+                Former::TupleProjection(tuple, Component::from(usize::from(component)))
+            },
+            | ContentNode::Primitive(primitive, ref arguments) => Former::Primitive {
+                name: Name::from(<&'static str>::from(primitive.name())),
+                arity: Arity::from(arguments.len()),
+            },
+            | ContentNode::Perform {
+                ref operation,
+                payload,
+                ..
+            } => Former::Perform {
+                operation: Name::from(operation.as_ref()),
+                payload,
+            },
+            | ContentNode::Handle {
+                subject,
+                on_return,
+                ref clauses,
+                ..
+            } => Former::Handle {
+                subject,
+                on_return,
+                clauses: Arity::from(clauses.len()),
+            },
+            | ContentNode::Exercise {
+                capability,
+                ref operation,
+                payload,
+                ..
+            } => Former::Exercise {
+                capability,
+                operation: Name::from(operation.as_ref()),
+                payload,
+            },
+            | ContentNode::Scope {
+                ref signature,
+                subject,
+                on_return,
+                ref clauses,
+            } => Former::Scope {
+                interface: Name::from(signature.name().as_ref()),
+                subject,
+                on_return,
+                clauses: Arity::from(clauses.len()),
+            },
+            | ContentNode::Resume(stack, resumed) => Former::Resume(stack, resumed),
+            | ContentNode::Split(scrutinee, arity, body) => Former::Split {
+                scrutinee,
+                arity: Arity::from(usize::from(arity)),
+                body,
+            },
+            | ContentNode::Reset(body) => Former::Reset(body),
+            | ContentNode::Shift(body) => Former::Shift(body),
+            | ContentNode::With(first, second) => Former::Lazy(first, second),
+            | ContentNode::Project(side, observed) => Former::Project(
+                Component::from(match side {
+                    | Side::Left => 0_usize,
+                    | Side::Right => 1_usize,
+                }),
+                observed,
+            ),
+            | ContentNode::Transport(path, transported) => Former::Transport(path, transported),
+            | ContentNode::ElementTransport {
+                motive,
+                path,
+                value,
+            } => Former::PathTransport {
+                motive,
+                path,
+                value,
+            },
+            | ContentNode::TelescopeTransport {
+                motive,
+                path,
+                start,
+                over,
+                value,
+            } => Former::TelescopeTransport {
+                motive,
+                path,
+                start,
+                over,
+                value,
+            },
+            | ContentNode::ListFold {
+                list,
+                on_nil,
+                on_cons,
+                ..
+            } => Former::ListFold {
+                list,
+                nil: on_nil,
+                cons: on_cons,
+            },
+            | ContentNode::Case {
+                scrutinee,
+                ref branches,
+            } => Former::Case {
+                scrutinee,
+                arity: Arity::from(branches.len()),
+            },
+            | ContentNode::Session(ref action) => match *action {
+                | SessionAction::Send { endpoint, payload } => Former::Send { endpoint, payload },
+                | SessionAction::Receive { endpoint } => Former::Receive(endpoint),
+                | SessionAction::Select {
+                    endpoint,
+                    ref label,
+                } => Former::Select {
+                    endpoint,
+                    label: Name::from(label.as_ref()),
+                },
+                | SessionAction::Offer { endpoint, ref arms } => Former::Offer {
+                    endpoint,
+                    arms: Arity::from(arms.len()),
+                },
+                | SessionAction::Close { endpoint } => Former::Close(endpoint),
+                | SessionAction::Fork {
+                    protocol,
+                    child,
+                    parent,
+                } => Former::Fork {
+                    protocol,
+                    child,
+                    parent,
+                },
+            },
+            | ContentNode::Fixpoint { body, .. } => Former::Fixpoint(body),
+            | ContentNode::Ride {
+                motive,
+                flow,
+                value,
+            } => Former::Ride {
+                motive,
+                flow,
+                value,
+            },
             | ContentNode::Lambda(body) => Former::Lambda(body),
             | ContentNode::Application(function, argument) => {
                 Former::Application(function, argument)
@@ -259,8 +373,20 @@ impl Source for ContentSource<'_>
             | ContentNode::PathEquiv {
                 forward, backward, ..
             } => Former::PathEquiv(forward, backward),
+            | ContentNode::PathType {
+                carrier,
+                left,
+                right,
+            } => Former::Path {
+                carrier,
+                left,
+                right,
+            },
+            | ContentNode::Returned(body) => Former::Returned(body),
             | ContentNode::Variable { zone, index } => Former::Variable { zone, index },
-            | ContentNode::Constant(ref reference) => named(reference, Former::Constant),
+            | ContentNode::Constant(ref reference) => {
+                key(reference).map_or(unnamed, Former::Constant)
+            },
             | ContentNode::ListNil => Former::ListNil,
             | ContentNode::ListCons(head, tail) => Former::ListCons(head, tail),
             | ContentNode::Literal(ref literal) => Former::Literal(literal),
@@ -272,16 +398,16 @@ impl Source for ContentSource<'_>
             | ContentNode::Thunk(body) => Former::Thunk(body),
             | ContentNode::Nested(body) => Former::Nested(body),
             | ContentNode::Run(body) => Former::Run(body),
-            | ContentNode::ValueLift { .. } => Former::ValueLift,
+            | ContentNode::ValueLift { .. } | ContentNode::TypeLift { .. } => {
+                Former::Unreadable(Unreadable::Lift)
+            },
             | ContentNode::Quote(quoted) => Former::Quote(quoted),
             | ContentNode::QuoteComputation(quoted) => Former::QuoteComputation(quoted),
             | ContentNode::Base(base) => Former::BaseType(base),
-            // The surface writes no empty record: `#{}` is the unit.
-            | ContentNode::RecordType(ref fields) | ContentNode::Record(ref fields)
-                if fields.is_empty() =>
-            {
-                Former::Unreadable
+            | ContentNode::RecordType(ref fields) if fields.is_empty() => {
+                Former::Product(Arity::from(0_usize))
             },
+            | ContentNode::Record(ref fields) if fields.is_empty() => Former::Unit,
             | ContentNode::RecordType(ref fields) => Former::RecordType(Arity::from(fields.len())),
             | ContentNode::Record(ref fields) => Former::Record(Arity::from(fields.len())),
             | ContentNode::Product(ref parts) => Former::Product(Arity::from(parts.len())),
@@ -289,9 +415,10 @@ impl Source for ContentSource<'_>
             | ContentNode::List(element) => Former::List(element),
             | ContentNode::ThunkType(body) => Former::ThunkType(body),
             | ContentNode::Universe { sort, ref level } => Former::Universe { sort, level },
-            | ContentNode::TypeLift { .. } => Former::TypeLift,
             | ContentNode::Element { code, .. } => Former::Element(code),
-            | ContentNode::Abstract(ref reference) => named(reference, Former::Abstract),
+            | ContentNode::Abstract(ref reference) => {
+                key(reference).map_or(unnamed, Former::Abstract)
+            },
             | ContentNode::Returner {
                 result,
                 ref effects,
@@ -325,37 +452,47 @@ impl Source for ContentSource<'_>
                 grade,
                 region,
             },
-            // Data has no printer reader. A hole or a mark is displayed by
-            // the session. `Path` and `Flow` carry three children, more than
-            // a bracket join holds, a recorded run is a trace the printer
-            // does not spell, and a compound endpoint has no former of its
-            // own. Element identity is `here`, function extensionality
-            // `funext` and universe equivalence `equiv`.
-            | ContentNode::Data { .. }
-            | ContentNode::Constructor { .. }
-            | ContentNode::Unresolved(_)
-            | ContentNode::Hole(_)
-            | ContentNode::ValueMark { .. }
-            | ContentNode::ComputationHole(_)
-            | ContentNode::ComputationMark { .. }
-            | ContentNode::UnknownType
-            | ContentNode::UnknownComputationType
-            | ContentNode::PathType { .. }
-            | ContentNode::FlowType { .. }
-            | ContentNode::Recorded(_)
-            | ContentNode::Returned(_) => Former::Unreadable,
+            | ContentNode::FlowType {
+                carrier,
+                source,
+                target,
+            } => Former::Flow {
+                carrier,
+                left: source,
+                right: target,
+            },
+            | ContentNode::Recorded(ref moves) => Former::Recorded {
+                moves,
+                payloads: Arity::from(
+                    moves
+                        .iter()
+                        .filter(|step| matches!(step.payload(), Maybe::Present(_)))
+                        .count(),
+                ),
+            },
+            | ContentNode::Unresolved(_) => Former::Unreadable(Unreadable::Dangling),
+            | ContentNode::Hole(_) | ContentNode::ComputationHole(_) => {
+                Former::Unreadable(Unreadable::Hole)
+            },
+            | ContentNode::ValueMark { .. } | ContentNode::ComputationMark { .. } => {
+                Former::Unreadable(Unreadable::Mark)
+            },
+            | ContentNode::UnknownType | ContentNode::UnknownComputationType => {
+                Former::Unreadable(Unreadable::UnknownType)
+            },
         }
     }
 
-    /// The index of component `index` of the product, the sum, the tuple, the
-    /// record, the record type or the session type at `node`.
+    /// The index of component `index` of the n-ary former at `node`.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the index at `index` among a product's, a sum's or a tuple's
-    ///   components, a record's or a record type's fields in label order, or a
-    ///   session type's payloads in slot order; none past them, for another
-    ///   node, or past the table.
+    ///   components, a record's or a record type's fields in label order, a
+    ///   session type's payloads in slot order, a family's arguments, a
+    ///   constructor's fields, a primitive's arguments, a case's or a data
+    ///   case's branches, a handler's clauses or an offer's arms; none past
+    ///   them, for another node, or past the table.
     /// - provides: the printer's reading of an n-ary former.
     /// - fails: never.
     /// - panics: none.
@@ -368,12 +505,7 @@ impl Source for ContentSource<'_>
     ///   fields read every component in order and nothing past them; a base
     ///   type reads none.
     /// - witness: `content_source::tests::value_ty_covers_every_reachable_former`
-    #[spec(ensures: |ret| ret == match self.0.get(usize::from(node)) {
-        | Some(&(ContentNode::Product(ref parts) | ContentNode::Sum(ref parts) | ContentNode::Tuple(ref parts))) => parts.get(usize::from(index)).copied(),
-        | Some(&(ContentNode::RecordType(ref fields) | ContentNode::Record(ref fields))) => fields.values().nth(usize::from(index)).copied(),
-        | Some(&ContentNode::SessionType(ref session)) => session.payloads().get(usize::from(index)).copied(),
-        | _ => None,
-    })]
+    #[spec(ensures: |ret| ret.is_none() || self.nodes.get(usize::from(node)).is_some())]
     #[inline]
     fn component(
         &self,
@@ -381,27 +513,50 @@ impl Source for ContentSource<'_>
         index: Component,
     ) -> Option<NodeIndex>
     {
-        match *self.0.get(usize::from(node))? {
+        let at = usize::from(index);
+        match *self.nodes.get(usize::from(node))? {
             | ContentNode::Product(ref parts)
             | ContentNode::Sum(ref parts)
-            | ContentNode::Tuple(ref parts) => parts.get(usize::from(index)).copied(),
+            | ContentNode::Tuple(ref parts)
+            | ContentNode::Data {
+                arguments: ref parts,
+                ..
+            }
+            | ContentNode::Constructor {
+                fields: ref parts, ..
+            }
+            | ContentNode::DataCase {
+                branches: ref parts,
+                ..
+            }
+            | ContentNode::Case {
+                branches: ref parts,
+                ..
+            } => parts.get(at).copied(),
+            | ContentNode::Primitive(_, ref arguments) => arguments.get(at).copied(),
             | ContentNode::RecordType(ref fields) | ContentNode::Record(ref fields) => {
-                fields.values().nth(usize::from(index)).copied()
+                fields.values().nth(at).copied()
             },
-            | ContentNode::SessionType(ref session) => {
-                session.payloads().get(usize::from(index)).copied()
+            | ContentNode::SessionType(ref session) => session.payloads().get(at).copied(),
+            | ContentNode::Handle { ref clauses, .. } | ContentNode::Scope { ref clauses, .. } => {
+                clauses.get(at).map(|clause| clause.body)
+            },
+            | ContentNode::Session(SessionAction::Offer { ref arms, .. }) => {
+                arms.values().nth(at).copied()
             },
             | _ => None,
         }
     }
 
-    /// The label of field `index` of the record or the record type at `node`.
+    /// The label of entry `index` of the record, the record type, the
+    /// handler or the offer at `node`.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the label at `index` among a record's or a record type's
-    ///   fields, in label order; none past them, for another node, or past the
-    ///   table.
+    ///   fields and an offer's arms, in label order, and the operation a
+    ///   handler's clause answers; none past them, for another node, or past
+    ///   the table.
     /// - provides: the printer's reading of a record's labels.
     /// - fails: never.
     /// - panics: none.
@@ -411,10 +566,7 @@ impl Source for ContentSource<'_>
     /// - hypothesis: L3 — the table fixture's record type of two fields spells
     ///   each field under its own label, in label order.
     /// - witness: `content_source::tests::value_ty_covers_every_reachable_former`
-    #[spec(ensures: |ret| ret.as_ref().map(|name| -> &str { name.as_ref() }) == match self.0.get(usize::from(node)) {
-        | Some(&(ContentNode::RecordType(ref fields) | ContentNode::Record(ref fields))) => fields.keys().nth(usize::from(index)).map(AsRef::as_ref),
-        | _ => None,
-    })]
+    #[spec(ensures: |ret| ret.is_none() || self.nodes.get(usize::from(node)).is_some())]
     #[inline]
     fn label(
         &self,
@@ -422,13 +574,20 @@ impl Source for ContentSource<'_>
         index: Component,
     ) -> Option<Name<'_>>
     {
-        match *self.0.get(usize::from(node))? {
-            | ContentNode::RecordType(ref fields) | ContentNode::Record(ref fields) => fields
-                .keys()
-                .nth(usize::from(index))
-                .map(|label| Name::from(label.as_ref())),
+        let at = usize::from(index);
+        let label: &str = match *self.nodes.get(usize::from(node))? {
+            | ContentNode::RecordType(ref fields) | ContentNode::Record(ref fields) => {
+                fields.keys().nth(at).map(AsRef::as_ref)
+            },
+            | ContentNode::Handle { ref clauses, .. } | ContentNode::Scope { ref clauses, .. } => {
+                clauses.get(at).map(|clause| clause.operation.as_ref())
+            },
+            | ContentNode::Session(SessionAction::Offer { ref arms, .. }) => {
+                arms.keys().nth(at).map(AsRef::as_ref)
+            },
             | _ => None,
-        }
+        }?;
+        Some(Name::from(label))
     }
 }
 
@@ -628,11 +787,33 @@ mod tests
             ]),
             faithful("#{n : Integer, v : String}".into())
         );
-        // The surface writes no empty record type, `#{}` being `Unit`; a
-        // component the table does not hold spells `?`.
+        // The empty record type is the unit type; a family spells applied to
+        // its arguments, a path type over its carrier and endpoints.
         assert_eq!(
             spelled(&[ContentNode::RecordType(BTreeMap::new())]),
-            approximate("?".into())
+            faithful("Unit".into())
+        );
+        let item = |key: &str| Reference::Item {
+            key: ItemKey::from(key),
+            occurrence: Occurrence::from(0),
+        };
+        assert_eq!(
+            spelled(&[
+                ContentNode::PathType {
+                    carrier: n1,
+                    left: n2,
+                    right: n3,
+                },
+                ContentNode::Data {
+                    declaration: item("List"),
+                    arguments: Vec::from([n4]),
+                },
+                ContentNode::Constant(item("nil")),
+                ContentNode::Constant(item("empty")),
+                ContentNode::Quote(NodeIndex::from(5)),
+                ContentNode::Base(BaseType::Integer),
+            ]),
+            faithful("Path(List(Integer), nil, empty)".into())
         );
         assert_eq!(
             spelled(&[

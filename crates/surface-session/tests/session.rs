@@ -940,7 +940,7 @@ fn comparison_operators_type_check_and_evaluate()
     )]);
     let answer = constant_of(submission.composed(), SurfaceName::from("answer"));
     assert!(
-        matches!(submission.evaluate(answer), Maybe::Present(Evaluation::Value(ref value)) if value.as_ref() == "inl(unit)")
+        matches!(submission.evaluate(answer), Maybe::Present(Evaluation::Value(ref value)) if value.as_ref() == "+{.0 = unit}")
     );
 }
 

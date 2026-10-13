@@ -121,6 +121,7 @@ use crate::formation::form_value_type;
 use crate::funext::Funext;
 use crate::judgement::Checked;
 use crate::judgement::Direction;
+use crate::judgement::Kept;
 use crate::judgement::Synthesised;
 use crate::judgement::Typings;
 use crate::judgement::check_value_with_failure;
@@ -636,33 +637,43 @@ fn decide(
     if let Err(refusal) = context.admit(constant) {
         return unrun(refusal);
     }
+    let outer = (run == Run::Typed).then(|| context.start_typings());
+    let finish = |context: &mut CheckingContext<'_>, outer: Option<Option<Kept>>| {
+        outer.map(|outer| context.finish_typings(outer))
+    };
+    let kept = |signed: Option<Kept>| match signed {
+        | Some(signed) if !(signed.typings.is_empty() && signed.formed.is_empty()) => {
+            Maybe::Present(Typings::after(signed, Typings::default()))
+        },
+        | Some(_) | None => Maybe::Absent(untyped),
+    };
+    let formed = |verdict: Result<(), CheckRefusal>, typings| match verdict {
+        | Ok(()) => Decision {
+            verdict: Verdict::Data,
+            failure: Maybe::Absent(kept::Absent::Accepted),
+            typings,
+            elaboration: Maybe::Absent(elaborated::Absent::Unnested),
+        },
+        | Err(refusal) => Decision {
+            typings,
+            ..unrun(refusal)
+        },
+    };
     let (signature, body) = match *(declaration.content()) {
         | crate::DeclarationContent::Data(ref signature) => {
-            return match crate::former::form_signature(context, constant, signature) {
-                | Ok(()) => {
-                    context.record_data(constant, alloc::sync::Arc::clone(signature));
-                    Decision {
-                        verdict: Verdict::Data,
-                        failure: Maybe::Absent(kept::Absent::Accepted),
-                        typings: Maybe::Absent(untyped),
-                        elaboration: Maybe::Absent(elaborated::Absent::Unnested),
-                    }
-                },
-                | Err(refusal) => unrun(refusal),
-            };
+            let verdict = crate::former::form_signature(context, constant, signature);
+            if verdict.is_ok() {
+                context.record_data(constant, alloc::sync::Arc::clone(signature));
+            }
+            let signed = finish(context, outer);
+            return formed(verdict, kept(signed));
         },
         | crate::DeclarationContent::Abstract(declared) => {
-            let sealed = crate::former::form_abstract(context, declared)
-                .and_then(|level| context.seal_abstract(constant, declared, level));
-            return match sealed {
-                | Ok(_atom) => Decision {
-                    verdict: Verdict::Data,
-                    failure: Maybe::Absent(kept::Absent::Accepted),
-                    typings: Maybe::Absent(untyped),
-                    elaboration: Maybe::Absent(elaborated::Absent::Unnested),
-                },
-                | Err(refusal) => unrun(refusal),
-            };
+            let verdict = crate::former::form_abstract(context, declared)
+                .and_then(|level| context.seal_abstract(constant, declared, level))
+                .map(|_atom| ());
+            let signed = finish(context, outer);
+            return formed(verdict, kept(signed));
         },
         | crate::DeclarationContent::Value {
             ref signature,
@@ -670,13 +681,20 @@ fn decide(
         } => (*signature, *body),
     };
     let direction = match signature {
-        | Maybe::Present(declared) => match form_value_type(context, declared)
+        | Maybe::Present(declared) => form_value_type(context, declared)
             .and_then(|formed| crate::session::unrestricted(context, formed.id()).map(|()| formed))
-        {
-            | Ok(formed) => Direction::Check(formed),
-            | Err(refusal) => return unrun(refusal),
+            .map(Direction::Check),
+        | Maybe::Absent(signature::Absent::Unsigned) => Ok(Direction::Synthesise),
+    };
+    let mut signed = finish(context, outer);
+    let direction = match direction {
+        | Ok(direction) => direction,
+        | Err(refusal) => {
+            return Decision {
+                typings: kept(signed),
+                ..unrun(refusal)
+            };
         },
-        | Maybe::Absent(signature::Absent::Unsigned) => Direction::Synthesise,
     };
     let mut typings = Maybe::Absent(untyped);
     let mut elaboration = Maybe::Absent(elaborated::Absent::Unnested);
@@ -707,8 +725,9 @@ fn decide(
                 },
             };
             relating = context.take_relating();
-            if run == Run::Typed {
-                typings = Maybe::Present(type_value(context, body, direction));
+            if let Some(signed) = signed.take() {
+                typings =
+                    Maybe::Present(Typings::after(signed, type_value(context, body, direction)));
                 let _typed = context.take_nesting();
             }
             match judged {
@@ -733,6 +752,9 @@ fn decide(
             }
         },
     };
+    if signed.is_some() {
+        typings = kept(signed);
+    }
     match (direction, verdict) {
         | (Direction::Check(declared), Verdict::Checked { body, .. }) => {
             // Native declarations return before the value judgment.
@@ -1065,6 +1087,7 @@ mod tests
     use crate::context::Atom;
     use crate::context::CheckBudget;
     use crate::context::CheckingContext;
+    use crate::context::Formations;
     use crate::conversion::ConversionCount;
     use crate::declaration::AbstractType;
     use crate::declaration::Declaration;
@@ -1705,8 +1728,21 @@ mod tests
         let typed = type_module(&mut context, &module);
         assert_eq!(
             typed.keys().copied().collect::<Vec<_>>(),
-            [ConstantIndex::from(0_usize), ConstantIndex::from(1_usize)],
-            "both judged bodies are typed; the hole is not"
+            [
+                ConstantIndex::from(0_usize),
+                ConstantIndex::from(1_usize),
+                ConstantIndex::from(2_usize)
+            ],
+            "both judged bodies are typed, and the hole's signature"
+        );
+        let owed = &typed[&ConstantIndex::from(2_usize)];
+        assert!(
+            owed.typings().is_empty()
+                && owed
+                    .formed()
+                    .iter()
+                    .any(|formed| formed.ty == TypeNode::Value(integer)),
+            "the hole judges no term; its signature is formed: {owed:?}"
         );
         let accepted = typed[&ConstantIndex::from(0_usize)].typings();
         assert_eq!(
@@ -1734,6 +1770,64 @@ mod tests
             refused.marks().len(),
             1_usize,
             "the text component is the one mark"
+        );
+    }
+
+    #[test]
+    fn a_typed_module_keeps_the_terms_its_signature_judges()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let zero = arena.value_literal(integer_literal());
+        let one = arena.value_literal(integer_literal());
+        let path = arena.value_type_path(integer, zero, one);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let module = [declaration(At(0), Maybe::Present(path), HOLE)];
+        let judged = type_module(&mut context, &module);
+        let Some(owed) = judged.get(&ConstantIndex::from(0_usize))
+        else {
+            panic!("the signature's formation is kept");
+        };
+        for endpoint in [zero, one] {
+            assert!(
+                owed.typings()
+                    .iter()
+                    .any(|typing| typing.term == TermNode::Value(endpoint)
+                        && typing.ty == TypeNode::Value(integer)),
+                "each endpoint is kept at the carrier: {owed:?}"
+            );
+        }
+        assert!(
+            [path, integer].iter().all(|&ty| owed
+                .formed()
+                .iter()
+                .any(|formed| formed.ty == TypeNode::Value(ty))),
+            "the path type and its carrier are kept at their levels: {owed:?}"
+        );
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let zero = arena.value_literal(integer_literal());
+        let one = arena.value_literal(integer_literal());
+        let path = arena.value_type_path(integer, zero, one);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        context.keep_formations(Formations::Firsts(Vec::from([TypeNode::Value(path)])));
+        let module = [
+            declaration(At(0), Maybe::Present(path), HOLE),
+            declaration(At(1), Maybe::Present(path), HOLE),
+        ];
+        let judged = type_module(&mut context, &module);
+        let formed = |at: usize| {
+            judged.get(&ConstantIndex::from(at)).map(|owed| {
+                owed.formed()
+                    .iter()
+                    .map(|formed| formed.ty)
+                    .collect::<Vec<_>>()
+            })
+        };
+        assert_eq!(
+            (formed(0_usize), formed(1_usize)),
+            (Some(Vec::from([TypeNode::Value(path)])), Some(Vec::new())),
+            "asked for the path type's first formation, the first signature keeps it and no other, and the second, forming it again, keeps nothing"
         );
     }
 

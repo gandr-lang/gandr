@@ -178,75 +178,75 @@ def rec map_nat_run(f : Nat => Nat, xs : List(Nat)) -> -F List(Nat) {
   }
 }
 
-@[ runs("ctor[1](ctor[1](ctor[0]()))") ]
+@[ runs("Succ(Succ(Zero))") ]
 def two : Nat ;
 def two = Succ(Succ(Zero)) ;
 
-@[ runs("ctor[1](ctor[1](ctor[1](ctor[0]())))") ]
+@[ runs("Succ(Succ(Succ(Zero)))") ]
 def three : Nat ;
 def three = Succ(two) ;
 
-@[ runs("ctor[1](ctor[1](ctor[1](ctor[1](ctor[1](ctor[0]())))))") ]
+@[ runs("Succ(Succ(Succ(Succ(Succ(Zero)))))") ]
 def five : +U (-F Nat) ;
 def five = thunk { become plus(two, three) } ;
 
-@[ runs("ctor[1](ctor[1](ctor[1](ctor[1](ctor[1](ctor[0]())))))") ]
+@[ runs("Succ(Succ(Succ(Succ(Succ(Zero)))))") ]
 def five_elided : +U (-F Nat) ;
 def five_elided = thunk { plus_elided(two, three) } ;
 
-@[ runs("ctor[1](ctor[1](ctor[1](ctor[1](ctor[1](ctor[0]())))))") ]
+@[ runs("Succ(Succ(Succ(Succ(Succ(Zero)))))") ]
 def five_nested : +U (-F Nat) ;
 def five_nested = thunk { plus_nested(two, three) } ;
 
-@[ runs("ctor[1](ctor[1](ctor[1](ctor[1](ctor[1](ctor[0]())))))") ]
+@[ runs("Succ(Succ(Succ(Succ(Succ(Zero)))))") ]
 def five_run : +U (-F Nat) ;
 def five_run = thunk { plus_run(two, three) } ;
 
-@[ runs("ctor[1](ctor[1](ctor[1](ctor[1](ctor[1](ctor[1](ctor[0]()))))))") ]
+@[ runs("Succ(Succ(Succ(Succ(Succ(Succ(Zero))))))") ]
 def six : +U (-F Nat) ;
 def six = thunk { Succ(plus_nested(two, three)) } ;
 
-@[ runs("ctor[1](ctor[1](ctor[1](ctor[0]())), ctor[1](ctor[0](), ctor[0]()))") ]
+@[ runs("Cons(Succ(Succ(Zero)), Cons(Zero, Nil))") ]
 def small : List(Nat) ;
 def small = (Cons(two, (Cons(Zero, (Nil : List(Nat))) : List(Nat))) : List(Nat)) ;
 
-@[ runs("<fun>") ]
+@[ runs("fn (a) { Succ(a) }") ]
 def bump : Nat => Nat ;
 def bump = thunk { fn (n) { return Succ(n) } } ;
 
-@[ runs("<fun>") ]
+@[ runs("fn (a) { Succ(a) }") ]
 def bump_elided : Nat => Nat ;
 def bump_elided = thunk { fn (n) { Succ(n) } } ;
 
-@[ runs("ctor[1](ctor[1](ctor[0]()))") ]
+@[ runs("Succ(Succ(Zero))") ]
 def counted : +U (-F Nat) ;
 def counted = thunk { become length_nat(small) } ;
 
-@[ runs("ctor[1](ctor[1](ctor[0]()))") ]
+@[ runs("Succ(Succ(Zero))") ]
 def counted_elided : +U (-F Nat) ;
 def counted_elided = thunk { length_nat_elided(small) } ;
 
-@[ runs("ctor[1](ctor[1](ctor[1](ctor[1](ctor[0]()))), ctor[1](ctor[1](ctor[1](ctor[0]())), ctor[1](ctor[0](), ctor[0]())))") ]
+@[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Succ(Zero)), Cons(Zero, Nil)))") ]
 def joined : +U (-F List(Nat)) ;
 def joined = thunk { become append_nat(small, (Cons(three, (Nil : List(Nat))) : List(Nat))) } ;
 
-@[ runs("ctor[1](ctor[1](ctor[1](ctor[1](ctor[0]()))), ctor[1](ctor[1](ctor[1](ctor[0]())), ctor[1](ctor[0](), ctor[0]())))") ]
+@[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Succ(Zero)), Cons(Zero, Nil)))") ]
 def joined_elided : +U (-F List(Nat)) ;
 def joined_elided = thunk { append_nat_elided(small, (Cons(three, (Nil : List(Nat))) : List(Nat))) } ;
 
-@[ runs("ctor[1](ctor[1](ctor[1](ctor[1](ctor[0]()))), ctor[1](ctor[1](ctor[0]()), ctor[0]()))") ]
+@[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Zero), Nil))") ]
 def bumped : +U (-F List(Nat)) ;
 def bumped = thunk { become map_nat(bump, small) } ;
 
-@[ runs("ctor[1](ctor[1](ctor[1](ctor[1](ctor[0]()))), ctor[1](ctor[1](ctor[0]()), ctor[0]()))") ]
+@[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Zero), Nil))") ]
 def bumped_elided : +U (-F List(Nat)) ;
 def bumped_elided = thunk { map_nat_elided(bump_elided, small) } ;
 
-@[ runs("ctor[1](ctor[1](ctor[1](ctor[1](ctor[0]()))), ctor[1](ctor[1](ctor[0]()), ctor[0]()))") ]
+@[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Zero), Nil))") ]
 def bumped_nested : +U (-F List(Nat)) ;
 def bumped_nested = thunk { map_nat_nested(bump, small) } ;
 
-@[ runs("ctor[1](ctor[1](ctor[1](ctor[1](ctor[0]()))), ctor[1](ctor[1](ctor[0]()), ctor[0]()))") ]
+@[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Zero), Nil))") ]
 def bumped_run : +U (-F List(Nat)) ;
 def bumped_run = thunk { map_nat_run(bump, small) } ;
 

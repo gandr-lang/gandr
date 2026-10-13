@@ -141,6 +141,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_term::Binders;
+use gandr_core_term::Carried;
 use gandr_core_term::CompType;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::CoreArena;
@@ -164,6 +165,7 @@ use super::Site;
 use super::arguments;
 use super::closed;
 use super::exhausted;
+use super::exits::record_copies;
 use super::lowered;
 use super::native::Answer;
 use super::native::record_since;
@@ -1192,7 +1194,7 @@ impl<'source> Lowerer<'_, 'source>
             .count()
             .saturating_sub(self.scope.telescope_binders(derived.answer.frame).count());
         let lift = Binders::from(u32::try_from(gap).unwrap_or(u32::MAX));
-        let answered = self.relocate(sink.arena, written, derived.answer.frame, lift);
+        let answered = self.relocate(sink.arena, written, derived.answer.frame, lift, None);
         let path = match sink.arena.comp_type(answered) {
             | Some(&CompType::Returner { result, .. }) => match sink.arena.value_type(result) {
                 | Some(&ValueType::Path {
@@ -1239,9 +1241,12 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: the transport of the value along the path in the decode of
     ///   the motive's body at the fuss-free level — the quoted type itself when
     ///   the body quotes one, so `\X. List(X)` is `y. List(El y)`. The
-    ///   transport carries the written origin and the family the inserted
-    ///   identity origin. Nothing when an operand did not lower or the motive
-    ///   minted as no static abstraction.
+    ///   transport carries the written origin, every other node minted for it
+    ///   the inserted identity origin, and the motive's written origin is
+    ///   recorded against the transport, so a face answers each written motive
+    ///   at its family's universe even where two motives denote one family.
+    ///   Nothing when an operand did not lower or the motive minted as no
+    ///   static abstraction.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -1281,9 +1286,12 @@ impl<'source> Lowerer<'_, 'source>
         };
         let mark = sink.arena.watermark();
         let family = sink.arena.value_type_element(body, Level::zero());
-        let root = sink.arena.computation_path_transport(family, path, value);
         let inserted = origin.inserted(Insertion::Identity);
+        let root = sink.arena.computation_path_transport(family, path, value);
         record_since(sink, mark, inserted, Maybe::Present((root, origin)));
+        if let Maybe::Present(written) = sink.origins.value(motive) {
+            sink.origins.record_motive(root, written);
+        }
 
         Maybe::Present(Lowered::Computation(root))
     }
@@ -1296,9 +1304,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: the ride of the value along the flow in the decode of the
     ///   motive's body at the fuss-free level — the quoted type itself when the
     ///   body quotes one, so `\X. Run(X)` is `y. Run(y)`. The ride carries the
-    ///   written origin and the family the inserted identity origin. Nothing
-    ///   when an operand did not lower or the motive minted as no static
-    ///   abstraction.
+    ///   written origin and the family the inserted identity origin, and the
+    ///   motive's written origin is recorded against the ride, as a transport's
+    ///   is. Nothing when an operand did not lower or the motive minted as no
+    ///   static abstraction.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -1342,6 +1351,9 @@ impl<'source> Lowerer<'_, 'source>
         let root = sink.arena.computation_ride(family, flow, value);
         let inserted = origin.inserted(Insertion::Identity);
         record_since(sink, mark, inserted, Maybe::Present((root, origin)));
+        if let Maybe::Present(written) = sink.origins.value(motive) {
+            sink.origins.record_motive(root, written);
+        }
 
         Maybe::Present(Lowered::Computation(root))
     }
@@ -1501,31 +1513,37 @@ impl<'source> Lowerer<'_, 'source>
             | Some(&ValueType::Thunk(computation)) => computation,
             | _ => sink.arena.comp_type_returner(motive),
         };
-        let dependent = telescope(sink.arena, written);
-        let carried = self.relocate(sink.arena, dependent, transported.frame, Binders::NONE);
+        let inserted = origin.inserted(Insertion::Identity);
+        let mut copies = Vec::new();
+        let dependent = telescope(sink.arena, written, &mut copies);
+        let carried = self.relocate(
+            sink.arena,
+            dependent,
+            transported.frame,
+            Binders::NONE,
+            Some(&mut copies),
+        );
+        record_copies(sink, mark, &copies, inserted);
+        let mark = sink.arena.watermark();
         let root = sink
             .arena
             .computation_telescope_transport(carried, path, start, over, value);
-        record_since(
-            sink,
-            mark,
-            origin.inserted(Insertion::Identity),
-            Maybe::Present((root, origin)),
-        );
+        record_since(sink, mark, inserted, Maybe::Present((root, origin)));
 
         Maybe::Present(Lowered::Computation(root))
     }
 }
 
 /// `written`, a motive's computation type, with both entries of a two-entry
-/// telescope dependent.
+/// telescope dependent, each node a shift rewrote reported into `copies`.
 ///
 /// # Specification
 /// - requires: `written` names a computation type of `arena`.
 /// - ensures: for `A ⋆ (B ⋆ C)`, each `⋆` an arrow or a dependent arrow, the
 ///   two-entry telescope `Π (y : A). Π (z : B). C` with every arrow's codomain
 ///   shifted under the binder it now stands under; `written` itself when both
-///   entries are already dependent or it is no two-entry telescope.
+///   entries are already dependent or it is no two-entry telescope. `copies`
+///   gains each shifted node beside its source.
 /// - provides: the one reading of the telescope alias as a dependent
 ///   transport's motive.
 /// - fails: never.
@@ -1539,6 +1557,7 @@ impl<'source> Lowerer<'_, 'source>
 fn telescope(
     arena: &mut CoreArena,
     written: CompTypeId,
+    copies: &mut Vec<Carried>,
 ) -> CompTypeId
 {
     let (outer, rest, outer_arrow) = match arena.comp_type(written) {
@@ -1547,7 +1566,13 @@ fn telescope(
         | _ => return written,
     };
     let rest = if outer_arrow {
-        gandr_core_term::shift_comp_type(arena, rest, Binders::ONE)
+        gandr_core_term::shift_comp_type_under_traced(
+            arena,
+            rest,
+            Binders::NONE,
+            Binders::ONE,
+            copies,
+        )
     }
     else {
         rest
@@ -1561,7 +1586,13 @@ fn telescope(
         return written;
     }
     let body = if inner_arrow {
-        gandr_core_term::shift_comp_type(arena, body, Binders::ONE)
+        gandr_core_term::shift_comp_type_under_traced(
+            arena,
+            body,
+            Binders::NONE,
+            Binders::ONE,
+            copies,
+        )
     }
     else {
         body

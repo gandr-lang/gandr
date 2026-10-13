@@ -4259,6 +4259,50 @@ pub fn shift_computation_under_traced(
     }
 }
 
+/// [`shift_comp_type_under`], reporting every node it rewrote beside the node
+/// it rewrote it from.
+///
+/// # Specification
+/// - requires: `subject` is live in `arena`.
+/// - ensures: `subject` with every free index counting past its innermost
+///   `scope` binders raised by `amount` and every index below kept; `carried`
+///   gains one pair per node the shift changed, as
+///   [`substitute_environment_traced`] reports them; `subject` itself, nothing
+///   minted and nothing reported when `amount` is none.
+/// - provides: carrying a written type under binders, for a caller that keeps a
+///   table beside the arena and answers each copy where its source was written.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a path type between an index inside the scope and one
+///   past it raises only the second endpoint, and reports it, the path and the
+///   returner; no amount mints and reports nothing.
+/// - witness: `rewrite::tests::a_traced_type_shift_reports_each_copy`
+#[spec(captures: entry = (arena.watermark(), carried.len()), ensures: |ret| carried.len() >= entry.1
+    && (amount != Binders::NONE || (ret == subject && arena.watermark() == entry.0 && carried.len() == entry.1)))]
+#[inline]
+#[must_use]
+pub fn shift_comp_type_under_traced(
+    arena: &mut CoreArena,
+    subject: CompTypeId,
+    scope: Binders,
+    amount: Binders,
+    carried: &mut Vec<Carried>,
+) -> CompTypeId
+{
+    if amount == Binders::NONE {
+        return subject;
+    }
+    let mut engine = Engine::new(arena);
+    let shifted = engine.run(Node::CompType(subject), scope, Rewrite::Shift(amount));
+    report(&engine.memo, carried);
+    match shifted {
+        | Node::CompType(id) => id,
+        | Node::Value(_) | Node::ValueType(_) | Node::Computation(_) => subject,
+    }
+}
+
 /// Instantiate the binder of `body` at `argument`, reporting every node it
 /// rewrote beside the node it rewrote it from.
 ///
@@ -6711,6 +6755,68 @@ mod tests
                 &mut none
             ),
             lambda
+        );
+        assert!(
+            none.is_empty() && mark == arena.watermark(),
+            "no amount mints and reports nothing"
+        );
+    }
+
+    #[test]
+    fn a_traced_type_shift_reports_each_copy()
+    {
+        let mut arena = CoreArena::new();
+        let [kept, past] = [0_u32, 1].map(|index| variable(&mut arena, DeBruijnIndex::from(index)));
+        let carrier = arena.value_type_unit();
+        let path = arena.value_type_path(carrier, kept, past);
+        let returner = arena.comp_type_returner(path);
+        let mut carried = Vec::new();
+        let shifted = super::shift_comp_type_under_traced(
+            &mut arena,
+            returner,
+            Binders::ONE,
+            Binders::ONE,
+            &mut carried,
+        );
+        let Some(&CompType::Returner { result, .. }) = arena.comp_type(shifted)
+        else {
+            panic!("a shifted returner");
+        };
+        let Some(&ValueType::Path { left, right, .. }) = arena.value_type(result)
+        else {
+            panic!("a shifted path type");
+        };
+        assert_eq!(left, kept, "the endpoint inside the scope stands");
+        assert_eq!(
+            arena.value(right),
+            Some(&Value::Variable {
+                zone: Zone::Intuitionistic,
+                index: DeBruijnIndex::from(2_u32),
+            }),
+            "the endpoint past the scope is raised"
+        );
+        carried.sort_unstable();
+        let mut expected = vec![
+            Carried::Value(past, right),
+            Carried::ValueType(path, result),
+            Carried::CompType(returner, shifted),
+        ];
+        expected.sort_unstable();
+        assert_eq!(
+            carried, expected,
+            "exactly the rewritten nodes are reported"
+        );
+        let mark = arena.watermark();
+        let mut none = Vec::new();
+        assert_eq!(
+            super::shift_comp_type_under_traced(
+                &mut arena,
+                returner,
+                Binders::ONE,
+                Binders::NONE,
+                &mut none
+            ),
+            returner
         );
         assert!(
             none.is_empty() && mark == arena.watermark(),

@@ -323,6 +323,60 @@ pub struct CheckingContext<'arena>
     >,
     /// The authority the host grants the module's held capabilities.
     grants: crate::capability::Grants,
+    /// The term judgements and type formations a typed run finished, in the
+    /// order finished, when one is recording.
+    typings: Option<crate::judgement::Kept>,
+    /// The types whose formations a recording keeps, and which of them it
+    /// has kept.
+    formations: Wanted,
+}
+
+/// Whether a typed run is recording the judgements it holds as they finish.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Recording
+{
+    /// No typed run is under way: nothing is kept.
+    Off,
+    /// A typed run is under way: every judgement keeps what it finished.
+    On,
+}
+
+/// The types whose formations a typed run keeps with their levels.
+///
+/// A formation's level is read under the binders it was formed under, so it
+/// is read when the formation finishes; reading it for every formation a run
+/// makes is the larger part of what recording costs, and a caller answering
+/// written types needs only the first formation of each. Reversal: a caller
+/// that answers every formed type, or every formation of one.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub enum Formations
+{
+    /// Every formation.
+    #[default]
+    All,
+    /// Only the first formation of each of these types, ascending and
+    /// unique.
+    Firsts(Vec<crate::refusal::TypeNode>),
+}
+
+/// [`Formations`] as a recording consumes it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Wanted
+{
+    /// Every formation.
+    All,
+    /// The first formation of each type, with whether it was kept.
+    Firsts(Vec<(crate::refusal::TypeNode, First)>),
+}
+
+/// Whether a wanted type's first formation was kept.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum First
+{
+    /// Not formed yet.
+    Pending,
+    /// Formed and kept.
+    Kept,
 }
 
 impl<'arena> CheckingContext<'arena>
@@ -391,7 +445,223 @@ impl<'arena> CheckingContext<'arena>
             support: SupportLog::Off,
             forming: Maybe::Absent(forming::Absent::Idle),
             grants: crate::capability::Grants::Unbounded,
+            typings: None,
+            formations: Wanted::All,
         }
+    }
+
+    /// Keep `typing`, when a typed run is recording: the one point every
+    /// finished term judgement passes, whatever former judged it and in
+    /// whichever run, so a former that judges its sub-terms records them
+    /// without knowing the record exists.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a recording log's typings grow by `typing` at their end;
+    ///   nothing changes otherwise.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a typed run's term and a strict judgement nested in a
+    ///   typed run separate recording from not.
+    /// - witness: `judgement::elaboration::tests::a_typed_run_keeps_the_type_of_every_term_it_judged`
+    /// - witness: `module::tests::a_typed_module_keeps_each_judged_body_s_term_types`
+    #[spec(
+        captures: before = self.typings.as_ref().map(|log| log.typings.len()),
+        ensures: self.typings.as_ref().map(|log| log.typings.len()) == before.map(|count| count.saturating_add(1))
+            && self.typings.as_ref().is_none_or(|log| log.typings.last() == Some(&typing)),
+    )]
+    pub(crate) fn keep_typing(
+        &mut self,
+        typing: crate::judgement::Typing,
+    )
+    {
+        if let Some(ref mut log) = self.typings {
+            log.typings.push(typing);
+        }
+    }
+
+    /// Keep the formation of `ty`, when a typed run is recording, at the
+    /// level it forms at under the binders it was formed under: the one point
+    /// every finished formation passes, as [`Self::keep_typing`] is for
+    /// terms.
+    ///
+    /// # Specification
+    /// - requires: `ty` was formed under the context's binders.
+    /// - ensures: a recording log's formations grow by `ty` at its level when
+    ///   the context keeps `ty`'s formations ([`Self::keep_formations`]) and
+    ///   the level reads, and the context marks a wanted type's first formation
+    ///   kept; nothing changes otherwise.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a transport's motive, formed under its binder, and a
+    ///   written signature separate an open type's level from a closed one's.
+    /// - witness: `module::tests::a_typed_module_keeps_the_terms_its_signature_judges`
+    #[spec(
+        captures: before = self.typings.as_ref().map(|log| log.formed.len()),
+        ensures: self.typings.as_ref().map(|log| log.formed.len()).is_none_or(|count|
+            before.is_some_and(|prior| count == prior || count == prior.saturating_add(1))),
+    )]
+    pub(crate) fn keep_formed(
+        &mut self,
+        ty: crate::refusal::TypeNode,
+    )
+    {
+        if self.typings.is_none() {
+            return;
+        }
+        let wanted = match self.formations {
+            | Wanted::All => None,
+            | Wanted::Firsts(ref types) => match types.binary_search_by_key(&ty, |&(held, _)| held)
+            {
+                | Ok(at)
+                    if types
+                        .get(at)
+                        .is_some_and(|&(_, first)| first == First::Pending) =>
+                {
+                    Some(at)
+                },
+                | Ok(_) | Err(_) => return,
+            },
+        };
+        let Ok(level) = crate::formation::level_of(self, ty)
+        else {
+            return;
+        };
+        if let Wanted::Firsts(ref mut types) = self.formations
+            && let Some(&mut (_, ref mut first)) = wanted.and_then(|at| types.get_mut(at))
+        {
+            *first = First::Kept;
+        }
+        if let Some(ref mut log) = self.typings {
+            log.formed.push(crate::judgement::Formed { ty, level });
+        }
+    }
+
+    /// Keep only `formations` from here on: a typed run's log keeps a
+    /// formation, with its level, only where `formations` asks for it.
+    ///
+    /// # Specification
+    /// - requires: a [`Formations::Firsts`] list is ascending and unique.
+    /// - ensures: the context keeps every formation for [`Formations::All`],
+    ///   and for [`Formations::Firsts`] the first formation of each listed
+    ///   type, none kept yet.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a typed module asked for its signature's type alone
+    ///   keeps that formation once and none of the others it formed, though a
+    ///   second run forms it again.
+    /// - witness: `module::tests::a_typed_module_keeps_the_terms_its_signature_judges`
+    #[spec(
+        requires: match formations { Formations::All => true, Formations::Firsts(ref types) => types.is_sorted_by(|left, right| left < right) },
+        captures: expected = formations.clone(),
+        ensures: match (&self.formations, &expected) {
+            | (&Wanted::All, &Formations::All) => true,
+            | (&Wanted::Firsts(ref held), &Formations::Firsts(ref types)) => held.len() == types.len()
+                && held.iter().zip(types).all(|(&(ty, first), &listed)| ty == listed && first == First::Pending),
+            | (&Wanted::All, &Formations::Firsts(_)) | (&Wanted::Firsts(_), &Formations::All) => false,
+        },
+    )]
+    #[inline]
+    pub fn keep_formations(
+        &mut self,
+        formations: Formations,
+    )
+    {
+        self.formations = match formations {
+            | Formations::All => Wanted::All,
+            | Formations::Firsts(types) => {
+                Wanted::Firsts(types.into_iter().map(|ty| (ty, First::Pending)).collect())
+            },
+        };
+    }
+
+    /// Whether a typed run is recording.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn recording(&self) -> Recording
+    {
+        if self.typings.is_some() {
+            Recording::On
+        }
+        else {
+            Recording::Off
+        }
+    }
+
+    /// Whether a typed run is recording a formation of `ty`: it records and
+    /// keeps every formation, or `ty` is a wanted type not yet formed.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn forming(
+        &self,
+        ty: crate::refusal::TypeNode,
+    ) -> Recording
+    {
+        let forming = self.typings.is_some()
+            && match self.formations {
+                | Wanted::All => true,
+                | Wanted::Firsts(ref types) => types
+                    .binary_search_by_key(&ty, |&(held, _)| held)
+                    .ok()
+                    .and_then(|at| types.get(at))
+                    .is_some_and(|&(_, first)| first == First::Pending),
+            };
+        if forming {
+            Recording::On
+        }
+        else {
+            Recording::Off
+        }
+    }
+
+    /// Record every term judgement and type formation from here on, until
+    /// [`Self::finish_typings`]; the log a recording already under way kept is
+    /// set aside and handed back.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the context records into an empty log; the result is the log
+    ///   it recorded into before, or `None` when it recorded nothing.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a typed run inside a declaration whose signature was
+    ///   recorded keeps the two logs apart and joins them in order.
+    /// - witness: `module::tests::a_typed_module_keeps_each_judged_body_s_term_types`
+    #[spec(ensures: self.typings.as_ref().is_some_and(|log| log.typings.is_empty() && log.formed.is_empty()))]
+    pub(crate) fn start_typings(&mut self) -> Option<crate::judgement::Kept>
+    {
+        self.typings.replace(crate::judgement::Kept::default())
+    }
+
+    /// Stop recording: the log kept since [`Self::start_typings`], the
+    /// recording `outer` was restored to.
+    ///
+    /// # Specification
+    /// - requires: `outer` is what the matching [`Self::start_typings`]
+    ///   returned.
+    /// - ensures: the context records into `outer` again; the result is
+    ///   everything kept since the matching start, in the order kept.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::start_typings`].
+    /// - witness: `module::tests::a_typed_module_keeps_each_judged_body_s_term_types`
+    #[spec(
+        captures: restored = outer.is_some(),
+        ensures: self.typings.is_some() == restored,
+    )]
+    pub(crate) fn finish_typings(
+        &mut self,
+        outer: Option<crate::judgement::Kept>,
+    ) -> crate::judgement::Kept
+    {
+        core::mem::replace(&mut self.typings, outer).unwrap_or_default()
     }
 
     /// Bound the module's held capabilities by `grants`: the authority the

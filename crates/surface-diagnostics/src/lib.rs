@@ -143,6 +143,7 @@ pub use crate::report::report_note;
 pub use crate::report::report_span;
 pub use crate::report::upstream;
 pub use crate::spelled::Failures;
+pub use crate::spelled::Families;
 pub use crate::spelled::Spellings;
 pub use crate::spelled::constant_names;
 pub use crate::spelled::kept;

@@ -170,6 +170,7 @@ pub use crate::rewrite::rename_value_traced;
 pub use crate::rewrite::rename_value_type_traced;
 pub use crate::rewrite::shift_comp_type;
 pub use crate::rewrite::shift_comp_type_under;
+pub use crate::rewrite::shift_comp_type_under_traced;
 pub use crate::rewrite::shift_computation_under_traced;
 pub use crate::rewrite::shift_value;
 pub use crate::rewrite::shift_value_type;

@@ -157,8 +157,8 @@ mod tests
             last(
                 "def identity : +U (Integer -> -F Integer) ; def identity = thunk { fn (x) { return x } } ;"
             ),
-            Some((OutKind::Value, String::from("<fun>"))),
-            "a function terminal renders opaquely"
+            Some((OutKind::Value, String::from("fn (a) { a }"))),
+            "a function terminal renders as its `fn`"
         );
         let _goal = last("def later : Integer ;");
         assert!(matches!(

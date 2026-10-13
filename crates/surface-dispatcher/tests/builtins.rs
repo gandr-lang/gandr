@@ -61,7 +61,7 @@ mod tests
             ),
             (
                 "def answer : +U (-F Bool) ; def answer = thunk { become 19 < 7 } ;",
-                "inr(unit)",
+                "+{.1 = unit}",
             ),
             (
                 "def answer : +U (-F Integer) ; def answer = thunk { become -7 } ;",

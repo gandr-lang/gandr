@@ -218,6 +218,7 @@ use gandr_core_term::ua::Description;
 use gandr_core_term::ua::Sides;
 use gandr_core_term::ua::Stratum;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FieldLabel;
 use gandr_theory_sites::Bijection;
 use gandr_theory_sites::Catalogue;
 use gandr_theory_sites::Defect;
@@ -981,27 +982,34 @@ fn labelled(
     Ok(labelled)
 }
 
-/// The premises of the `ua` at `at`: each translator its two records give,
-/// with the function type between its corolla's two [`code`]s it is checked
-/// against, the forward record first, each in label order.
+/// The premises of the `ua` at `at`: each of its two records, with the record
+/// type it is checked against — one field per label it writes, at the
+/// function type between the two [`code`]s of the corolla the label names —
+/// the forward record first.
 ///
 /// # Specification
-/// - ensures: one premise per field of the two records; a forward translator at
-///   a generator of profile `P` is checked at `U(⌜a(P)⌝ → F ⌜b(P)⌝)`, a
-///   backward one at `U(⌜b(P)⌝ → F ⌜a(P)⌝)`.
-/// - fails: as [`labelled`] does.
+/// - ensures: two premises, the forward record's then the backward one's; each
+///   record type has one field per field of its record, a forward translator at
+///   a generator of profile `P` at `U(⌜a(P)⌝ → F ⌜b(P)⌝)`, a backward one at
+///   `U(⌜b(P)⌝ → F ⌜a(P)⌝)`, and a field naming no generator at the unknown
+///   type, so the record is judged whole and [`decide`] refuses the label by
+///   name once it is.
+/// - provides: the record judged whole, through the one judgement every record
+///   passes, so the record and each translator in it are judged where they were
+///   written.
+/// - fails: as [`labelled`] does, for a record that is no record.
 /// - panics: none.
 ///
 /// # Errors
 /// [`CheckRefusal::UaInequivalent`] with [`UaDefect::UnknownGenerator`] for a
-/// record that is no record or names no generator.
+/// record that is no record.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the swap and the constant's identity are checked at their
 ///   corollas' function types and a translator at the wrong code is refused as
 ///   a mismatch.
 /// - witness: `ua::tests::a_written_statement_derives_the_path_at_its_stratum`
-#[spec(ensures: |ret| ret.is_err() || matches!(context.arena().value(at), Some(Value::Ua { .. })))]
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |premises| premises.len() == 2_usize))]
 pub(crate) fn premises(
     context: &mut CheckingContext<'_>,
     at: ValueId,
@@ -1027,14 +1035,37 @@ pub(crate) fn premises(
             (&species.1, &species.0),
         ),
     ];
-    let mut premises = Vec::new();
+    let mut premises = Vec::with_capacity(2);
     for (way, record, description, (from, to)) in ways {
-        for (profile, translator) in labelled(context.arena(), at, (way, record), description)? {
-            let source = code(context.arena_mut(), from, profile);
-            let target = code(context.arena_mut(), to, profile);
-            let expected = crate::equiv::translator(context, (source, target));
-            premises.push((translator, expected));
+        let named: Vec<(FieldLabel, Option<Profile>)> = match context.arena().value(record) {
+            | Some(&Value::Record(ref fields)) => fields
+                .keys()
+                .map(|label| {
+                    let profile = match description.generator(label) {
+                        | Maybe::Present(generator) => Some(generator.profile),
+                        | Maybe::Absent(_) => None,
+                    };
+                    (label.clone(), profile)
+                })
+                .collect(),
+            | _ => {
+                let _refused = labelled(context.arena(), at, (way, record), description)?;
+                Vec::new()
+            },
+        };
+        let mut fields = BTreeMap::new();
+        for (label, profile) in named {
+            let expected = match profile {
+                | Some(profile) => {
+                    let source = code(context.arena_mut(), from, profile);
+                    let target = code(context.arena_mut(), to, profile);
+                    crate::equiv::translator(context, (source, target))
+                },
+                | None => context.arena_mut().value_type_unknown(),
+            };
+            let _prior = fields.insert(label, expected);
         }
+        premises.push((record, context.arena_mut().value_type_record(fields)));
     }
     Ok(premises)
 }

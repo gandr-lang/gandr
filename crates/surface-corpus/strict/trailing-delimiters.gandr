@@ -33,7 +33,7 @@ def cool(c : Color) -> -F Integer {
   case c { Red | Green => return 0, | Blue => return 1, }
 }
 
-@[ runs("<fun>") ]
+@[ runs("fn (a) { fn (b) { a } }") ]
 def first : +U (Integer -> Integer -> -F Integer) ;
 def first = thunk { fn (x) { fn (y) { return x } } } ;
 

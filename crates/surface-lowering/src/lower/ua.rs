@@ -71,6 +71,7 @@ use crate::form::Shape;
 use crate::form::TileName;
 use crate::form::read_pieces;
 use crate::form::shape_of;
+use crate::origin::Origin;
 use crate::resolve::OperandCount;
 
 #[cfg(test)]
@@ -263,11 +264,16 @@ impl<'source> Lowerer<'_, 'source>
             source: self.description(site, source)?,
             target: self.description(site, target)?,
         };
+        let named = [source, target].map(|operand| match self.tree.node(operand) {
+            | Some(node) => Origin::new(operand, node.span()),
+            | None => Origin::new(operand, site.at.span),
+        });
         self.read(forward, Reading::Value(frame));
         self.read(backward, Reading::Value(frame));
         self.plan(site, Plan::Ua {
             stratum,
             sides: Arc::new(sides),
+            named,
             forward,
             backward,
         });

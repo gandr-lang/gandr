@@ -17,7 +17,7 @@ def widened = String ;
 def five : small ;
 def five = 5 ;
 
-@[ runs("<fun>") ]
+@[ runs("fn (a) { fn (b) { b } }") ]
 def id(a : Type, x : a) -> -F a { return x }
 
 def at_integer : +U (-F Integer) ;
@@ -29,7 +29,7 @@ def at_string = thunk { become id(String, "text") } ;
 def at_small : +U (-F small) ;
 def at_small = thunk { become id(small, five) } ;
 
-@[ runs("<fun>") ]
+@[ runs("fn (a) { fn (b) { force b } }") ]
 def perform(c : Type[-], t : +U c) -> c { become force t }
 
 def performed : +U (-F Integer) ;

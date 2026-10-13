@@ -317,7 +317,7 @@ fn a_list_moves_along_a_universe_equivalence()
     let negation = "def not(b: Bool) -> -F Bool {\n  case b {\n    true => return +{.1 = unit},\n    false => return +{.0 = unit}\n  }\n}\ndef negation : Path(Type, Bool, Bool);\ndef negation = equiv(not, not);\n";
     let mut arena = CoreArena::new();
     let source = format!(
-        "{negation}def moved(xs: List(Bool)) -> -F List(Bool) {{\n  become transport(\\X. List(X), negation, xs)\n}}\ndef both : List(Bool);\ndef both = cons(+{{.0 = unit}}, cons(+{{.1 = unit}}, nil));\n"
+        "{negation}def moved(xs: List(Bool)) -> -F List(Bool) {{\n  become transport(\\X. List(X), negation, xs)\n}}\ndef again(xs: List(Bool)) -> -F List(Bool) {{\n  become transport(\\X. List(X), negation, xs)\n}}\ndef both : List(Bool);\ndef both = cons(+{{.0 = unit}}, cons(+{{.1 = unit}}, nil));\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let DeclarationOutcome::Completed { body, .. } = outcome_of(&module, "negation".into())
@@ -353,6 +353,22 @@ fn a_list_moves_along_a_universe_equivalence()
         ) && matches!(arena.value(path), Some(&Value::Constant(constant)) if usize::from(constant) == 1)
             && arena.value(value) == Some(&variable(0_u32.into())),
         "the motive decodes its binder; the path and the value follow in order"
+    );
+    let mut written: Vec<(usize, Provenance)> = module
+        .origins()
+        .motives()
+        .iter()
+        .map(|&(_, origin)| (usize::from(origin.span().start()), origin.provenance()))
+        .collect();
+    written.sort_unstable_by_key(|&(at, _)| at);
+    let expected: Vec<(usize, Provenance)> = source
+        .match_indices("\\X. List(X)")
+        .map(|(at, _)| (at, Provenance::Written))
+        .collect();
+    assert_eq!(
+        (written, expected.len()),
+        (expected, 2_usize),
+        "each written motive is recorded where it is written, though both denote one family"
     );
     let DeclarationOutcome::Completed { body, .. } = outcome_of(&module, "both".into())
     else {
@@ -615,20 +631,18 @@ fn a_derived_operation_needs_a_written_path_answer()
 fn a_dependent_transport_lowers_to_its_telescope()
 {
     let mut arena = CoreArena::new();
-    let module = lowered(
-        SourceText::from(concat!(
-            "def moved(a: Integer, b: Integer, q: Path(Integer, a, b), z0: Path(Integer, a, a), o: Integer, v: Integer) -> -F Integer {\n",
-            "  become transport(+U ((y : Integer) -> (z : Path(Integer, a, y)) -> -F Path(Path(Integer, a, y), z, z)), q, z0, o, v)\n",
-            "}\n",
-            "def plain(n: Integer, q: Path(Integer, 1, 2), v: Integer) -> -F Integer {\n",
-            "  become transport(+U (Integer -> Integer -> -F Path(Integer, n, n)), q, v, v, v)\n",
-            "}\n",
-            "def short(q: Path(Integer, 1, 2), v: Integer) -> -F Integer {\n",
-            "  become transport(+U (Integer -> Integer -> -F Integer), q, v, v)\n",
-            "}\n",
-        )),
-        &mut arena,
+    let source = concat!(
+        "def moved(a: Integer, b: Integer, q: Path(Integer, a, b), z0: Path(Integer, a, a), o: Integer, v: Integer) -> -F Integer {\n",
+        "  become transport(+U ((y : Integer) -> (z : Path(Integer, a, y)) -> -F Path(Path(Integer, a, y), z, z)), q, z0, o, v)\n",
+        "}\n",
+        "def plain(n: Integer, q: Path(Integer, 1, 2), v: Integer) -> -F Integer {\n",
+        "  become transport(+U (Integer -> Integer -> -F Path(Integer, n, n)), q, v, v, v)\n",
+        "}\n",
+        "def short(q: Path(Integer, 1, 2), v: Integer) -> -F Integer {\n",
+        "  become transport(+U (Integer -> Integer -> -F Integer), q, v, v)\n",
+        "}\n",
     );
+    let module = lowered(SourceText::from(source), &mut arena);
     let telescope = |name: &str| {
         let Some(&Computation::TelescopeTransport {
             motive,
@@ -681,13 +695,27 @@ fn a_dependent_transport_lowers_to_its_telescope()
         "the body names the element its second entry binds"
     );
     let (_, _, body, _) = telescope("plain");
-    assert!(
-        matches!(
-            arena.value_type(body),
-            Some(&ValueType::Path { left, .. }) if arena.value(left) == Some(&variable(4_u32.into()))
-        ),
+    let Some(&ValueType::Path { left, .. }) = arena.value_type(body)
+    else {
+        panic!("`plain`'s motive returns a path");
+    };
+    assert_eq!(
+        arena.value(left),
+        Some(&variable(4_u32.into())),
         "an arrow entry becomes dependent, its codomain moved under the binder it now stands \
          under"
+    );
+    let written = source
+        .find("Path(Integer, n, n)")
+        .map(|at| at.saturating_add("Path(Integer, ".len()));
+    assert_eq!(
+        match module.origins().value(left) {
+            | Maybe::Present(origin) =>
+                Some((usize::from(origin.span().start()), origin.provenance())),
+            | Maybe::Absent(_) => None,
+        },
+        written.map(|at| (at, Provenance::Written)),
+        "the moved endpoint answers where it is written"
     );
 
     assert!(

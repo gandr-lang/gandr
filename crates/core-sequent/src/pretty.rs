@@ -832,7 +832,7 @@ fn qualifier(tag: &ConstructorTag) -> Option<Piece<'static>>
     | (&ConstructorTag::Injection(summand), &Piece::Owned(ref text)) =>
         *text == alloc::format!("inj[{}](x) ⇒ ", usize::from(summand)),
     | (&ConstructorTag::Lift(_), &Piece::Text(Token(text))) => text == "lift(x) ⇒ ",
-    | (&ConstructorTag::Data { tag: ordinal, arity }, &Piece::Owned(ref text)) =>
+    | (&ConstructorTag::Data { tag: ordinal, arity, .. }, &Piece::Owned(ref text)) =>
         text.starts_with(&alloc::format!("ctor[{}](", usize::from(ordinal)))
             && text.matches('x').count() == usize::from(arity),
     | (&ConstructorTag::Recorded(ref moves), &Piece::Owned(ref text)) =>
@@ -866,6 +866,7 @@ fn pattern(tag: &ConstructorTag) -> Piece<'static>
         | ConstructorTag::Data {
             tag: ordinal,
             arity,
+            ..
         } => {
             let binders = alloc::vec!["x"; usize::from(arity)].join(", ");
             Piece::Owned(alloc::format!(
@@ -1283,6 +1284,7 @@ mod tests
                 tag: ConstructorTag::Data {
                     tag: gandr_kernel_term::ConstructorTag::from(0_usize),
                     arity: ProducerArity::ZERO,
+                    family: None,
                 },
                 producers: Box::from([]),
                 consumers: Box::from([]),
@@ -1296,6 +1298,7 @@ mod tests
                 tag: ConstructorTag::Data {
                     tag: gandr_kernel_term::ConstructorTag::from(1_usize),
                     arity: ProducerArity::TWO,
+                    family: None,
                 },
                 producers: Box::from([constant, zero]),
                 consumers: Box::from([]),
@@ -1334,6 +1337,7 @@ mod tests
                     constructor: ConstructorTag::Data {
                         tag: gandr_kernel_term::ConstructorTag::from(2_usize),
                         arity: ProducerArity::TWO,
+                        family: None,
                     },
                     body: returned,
                 }]),

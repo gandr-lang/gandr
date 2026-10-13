@@ -12,7 +12,7 @@ def rec down(n : Nat) -> -F Nat {
   }
 }
 
-@[ runs("ctor[0]()") ]
+@[ runs("Zero") ]
 def held : +U (-F Nat) ;
 def held = down(Succ(Zero)) ;
 
@@ -50,10 +50,10 @@ def armed(n : Nat) -> -F Nat {
   }
 }
 
-@[ runs("ctor[1](ctor[0]())") ]
+@[ runs("Succ(Zero)") ]
 def armed_three : +U (-F Nat) ;
 def armed_three = thunk { armed(Succ(Succ(Succ(Zero)))) } ;
 
-@[ runs("ctor[1](ctor[0]())") ]
+@[ runs("Succ(Zero)") ]
 def kept_three : +U (-F Nat) ;
 def kept_three = thunk { run k <- kept(Succ(Succ(Zero))) ; force k } ;

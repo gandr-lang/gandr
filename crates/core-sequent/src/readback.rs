@@ -467,7 +467,7 @@ impl<'run> Reading<'run>
                         if summand == found && self.read.get(&body) == Some(&value)),
                     | (&ConstructorTag::Lift(ref level), &[body]) => matches!(*node, gandr_core_term::Value::Lift { ref target, body: value }
                         if target == level && self.read.get(&body) == Some(&value)),
-                    | (&ConstructorTag::Data { tag, arity }, fields) => fields.len() == usize::from(arity)
+                    | (&ConstructorTag::Data { tag, arity, .. }, fields) => fields.len() == usize::from(arity)
                         && matches!(*node, gandr_core_term::Value::Constructor { tag: found, fields: ref values, .. }
                             if found == tag && fields.iter().map(|field| self.read.get(field)).eq(values.iter().map(Some))),
                     | (&ConstructorTag::Recorded(ref shape), fields) => matches!(*node, gandr_core_term::Value::Recorded(ref read)
@@ -566,14 +566,17 @@ impl<'run> Reading<'run>
                     let body = self.lookup(body)?;
                     Ok(self.core.value_lift(level.clone(), body))
                 },
-                | (&ConstructorTag::Data { tag, arity }, fields)
+                | (&ConstructorTag::Data { tag, arity, family }, fields)
                     if fields.len() == usize::from(arity) =>
                 {
                     let fields = fields
                         .iter()
                         .map(|&field| self.lookup(field))
                         .collect::<Result<Vec<_>, _>>()?;
-                    let datatype = self.core.value_type_unknown();
+                    let datatype = match family {
+                        | Some(declaration) => self.core.value_type_data(declaration, Vec::new()),
+                        | None => self.core.value_type_unknown(),
+                    };
                     Ok(self.core.value_constructor(datatype, tag, fields))
                 },
                 | (&ConstructorTag::Recorded(ref shape), fields)

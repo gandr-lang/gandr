@@ -249,27 +249,27 @@ def pick_elided(n : Nat) -> -F Nat {
   Succ(m)
 }
 
-@[ runs("ctor[0]()") ]
+@[ runs("Zero") ]
 def pick_zero : +U (-F Nat) ;
 def pick_zero = thunk { become pick(Zero) } ;
 
-@[ runs("ctor[0]()") ]
+@[ runs("Zero") ]
 def pick_zero_elided : +U (-F Nat) ;
 def pick_zero_elided = thunk { pick_elided(Zero) } ;
 
-@[ runs("ctor[1](ctor[0]())") ]
+@[ runs("Succ(Zero)") ]
 def pick_one : +U (-F Nat) ;
 def pick_one = thunk { become pick(Succ(Zero)) } ;
 
-@[ runs("ctor[1](ctor[0]())") ]
+@[ runs("Succ(Zero)") ]
 def pick_one_elided : +U (-F Nat) ;
 def pick_one_elided = thunk { pick_elided(Succ(Zero)) } ;
 
-@[ runs("ctor[1](ctor[1](ctor[0]()))") ]
+@[ runs("Succ(Succ(Zero))") ]
 def pick_three : +U (-F Nat) ;
 def pick_three = thunk { become pick(Succ(Succ(Succ(Zero)))) } ;
 
-@[ runs("ctor[1](ctor[1](ctor[0]()))") ]
+@[ runs("Succ(Succ(Zero))") ]
 def pick_three_elided : +U (-F Nat) ;
 def pick_three_elided = thunk { pick_elided(Succ(Succ(Succ(Zero)))) } ;
 
@@ -319,11 +319,11 @@ def rec skim_elided(n : Nat) -> -F Nat {
   }
 }
 
-@[ runs("ctor[0]()") ]
+@[ runs("Zero") ]
 def skimmed : +U (-F Nat) ;
 def skimmed = thunk { become skim(Succ(Succ(Succ(Zero)))) } ;
 
-@[ runs("ctor[0]()") ]
+@[ runs("Zero") ]
 def skimmed_elided : +U (-F Nat) ;
 def skimmed_elided = thunk { skim_elided(Succ(Succ(Succ(Zero)))) } ;
 

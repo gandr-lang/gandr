@@ -20,7 +20,7 @@ def moved(xs : List(Bool)) -> -F List(Bool) {
   become transport(\X. List(X), negation, xs)
 }
 
-@[ runs("cons(inl(unit), cons(inr(unit), nil))") ]
+@[ runs("cons(+{.0 = unit}, cons(+{.1 = unit}, nil))") ]
 def both : List(Bool) ;
 def both = cons(+{.0 = unit}, cons(+{.1 = unit}, nil)) ;
 

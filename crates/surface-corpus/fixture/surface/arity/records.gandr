@@ -20,7 +20,7 @@ def renamed(r : #{n : Integer, s : String}) -> -F Integer {
   }
 }
 
-@[ runs("#{\"n\": 3, \"s\": \"x\"}") ]
+@[ runs("#{.n = 3, .s = \"x\"}") ]
 def whole : #{n : Integer, s : String} ;
 def whole = #{.s = "x", .n = 3} ;
 

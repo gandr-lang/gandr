@@ -463,6 +463,23 @@ mod diagnostics
     }
 
     #[test]
+    fn a_mismatch_spells_the_constructors_its_type_mentions()
+    {
+        let mismatch = only(
+            Path::new("constructed.gandr"),
+            SourceText::from(
+                "data Box : Type {\n  Wrap : (n : Integer) --> Box;\n}\ndef wrapped : Path(Box, \
+                 Wrap(4), Wrap(5)) ;\ndef wrapped = 1 ;\n",
+            ),
+        );
+        assert_eq!(
+            mismatch.detail.compared.expected,
+            Maybe::Present(String::from("Path(Box, Wrap(4), Wrap(5))")),
+            "a constructor value is spelled by the name its declaration writes"
+        );
+    }
+
+    #[test]
     fn a_refusal_keeps_its_failure_and_spells_its_types()
     {
         let text = SourceText::from(MISMATCH);
