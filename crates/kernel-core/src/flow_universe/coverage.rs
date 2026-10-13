@@ -7,6 +7,7 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_kernel_check_memo::NullMemo;
 use gandr_kernel_term::BaseType;
+use gandr_kernel_term::CompType;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Summand;
 use gandr_kernel_term::TermArena;
@@ -65,6 +66,42 @@ pub(super) fn code(
     else {
         return Err(FlowError::UnsupportedCode(code));
     };
+    first_order(arena, root, allowance)?;
+    Ok(root)
+}
+
+/// Validate a type's complete first-order graph.
+///
+/// # Specification
+/// - ensures: every node reachable from `root` is Base, Product or a Sum of at
+///   least one summand; each visit charges `allowance` once.
+/// - fails: `UnsupportedType` naming the first other node, `Arena` or `Budget`.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a function code refuses at a forward endpoint and beneath
+///   a function code's argument; Bool and Unit pass.
+/// - witness: `flow_universe::tests::function::constant_map_refusal_holds_at_a_thunk_code`
+/// - witness: `flow_universe::tests::terminal_ride_and_stay_compute`
+#[spec(
+    captures: before = allowance.0,
+    ensures: |ret| allowance.0 <= before && match ret {
+        Ok(()) => allowance.0 < before,
+        Err(FlowError::UnsupportedType(ty)) => arena.value_type(ty).is_some_and(|node| !matches!(node, &ValueType::Base(_) | &ValueType::Product(..)) && node.summands().is_none_or(<[_]>::is_empty)),
+        Err(FlowError::Budget) => allowance.0 == 0,
+        Err(FlowError::Arena) => true,
+        Err(_) => false,
+    },
+)]
+fn first_order(
+    arena: &TermArena,
+    root: ValueTypeId,
+    allowance: &mut Allowance,
+) -> Result<(), FlowError>
+{
     let mut pending = Vec::from([root]);
     let mut seen = BTreeSet::new();
     while let Some(id) = pending.pop() {
@@ -83,7 +120,114 @@ pub(super) fn code(
             | _ => return Err(FlowError::UnsupportedType(id)),
         }
     }
-    Ok(root)
+    Ok(())
+}
+
+/// A validated function code `U (A → F B)` over closed first-order codes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct Arrow
+{
+    /// The thunk type itself.
+    pub code: ValueTypeId,
+    /// The argument's first-order type `A`.
+    pub domain: ValueTypeId,
+    /// The returned first-order type `B`.
+    pub codomain: ValueTypeId,
+}
+
+/// Validate a quoted function code whose argument and result are first-order.
+///
+/// # Specification
+/// - ensures: the quoted type is `U (A → F B)` with `A` and `B` passing
+///   first-order validation; the returned parts are exactly `A` and `B`.
+/// - fails: `UnsupportedCode` for a non-code; `UnsupportedType` for any other
+///   former at the root, a non-returner codomain, or a higher-order part;
+///   `Arena` or `Budget`.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — Bool and Unit function codes decode with their parts in
+///   place; a first-order code at a function boundary refuses.
+/// - witness: `flow_universe::tests::function::directed_funext_forms_and_rides_in_variance_order`
+/// - witness: `flow_universe::tests::function::constant_map_refusal_holds_at_a_thunk_code`
+#[spec(
+    captures: before = allowance.0,
+    ensures: |ret| allowance.0 <= before && match ret {
+        Ok(arrow) => allowance.0 < before && matches!(arena.value(code), Some(&Value::Quote(ty)) if ty == arrow.code)
+            && matches!(arena.value_type(arrow.code), Some(&ValueType::Thunk(body)) if matches!(arena.comp_type(body), Some(&CompType::Arrow { domain, codomain }) if domain == arrow.domain && arena.comp_type(codomain) == Some(&CompType::Returner(arrow.codomain)))),
+        Err(FlowError::UnsupportedCode(named)) => named == code && !matches!(arena.value(code), Some(&Value::Quote(_))),
+        Err(FlowError::UnsupportedType(_) | FlowError::Budget | FlowError::Arena) => true,
+        Err(_) => false,
+    },
+)]
+pub(super) fn function(
+    arena: &TermArena,
+    code: ValueId,
+    allowance: &mut Allowance,
+) -> Result<Arrow, FlowError>
+{
+    let Some(&Value::Quote(root)) = arena.value(code)
+    else {
+        return Err(FlowError::UnsupportedCode(code));
+    };
+    allowance.charge()?;
+    let &ValueType::Thunk(body) = arena.value_type(root).ok_or(FlowError::Arena)?
+    else {
+        return Err(FlowError::UnsupportedType(root));
+    };
+    let Some(&CompType::Arrow { domain, codomain }) = arena.comp_type(body)
+    else {
+        return Err(FlowError::UnsupportedType(root));
+    };
+    let Some(&CompType::Returner(codomain)) = arena.comp_type(codomain)
+    else {
+        return Err(FlowError::UnsupportedType(root));
+    };
+    first_order(arena, domain, allowance)?;
+    first_order(arena, codomain, allowance)?;
+    Ok(Arrow {
+        code: root,
+        domain,
+        codomain,
+    })
+}
+
+/// Validate a Stay endpoint: a first-order code or a function code over them.
+///
+/// # Specification
+/// - ensures: a quoted thunk validates as a function code; every other quoted
+///   type validates as a first-order code.
+/// - fails: as `function` for a thunk, otherwise as `code`.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — Stay forms at a function code and still refuses a thunk
+///   of a bare returner.
+/// - witness: `flow_universe::tests::function::stay_at_a_thunk_code_collapses`
+/// - witness: `flow_universe::tests::formation_boundaries_refuse`
+#[spec(
+    captures: before = allowance.0,
+    ensures: |ret| allowance.0 <= before && ret.as_ref().map_or(true, |&root| allowance.0 < before && matches!(arena.value(code), Some(&Value::Quote(ty)) if ty == root)),
+)]
+pub(super) fn endpoint(
+    arena: &TermArena,
+    code: ValueId,
+    allowance: &mut Allowance,
+) -> Result<ValueTypeId, FlowError>
+{
+    if let Some(&Value::Quote(root)) = arena.value(code)
+        && matches!(arena.value_type(root), Some(&ValueType::Thunk(_)))
+    {
+        let arrow = function(arena, code, allowance)?;
+        return Ok(arrow.code);
+    }
+    self::code(arena, code, allowance)
 }
 
 /// Check a closed forward translator in a fresh checker session.

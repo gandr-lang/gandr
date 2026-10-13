@@ -23,6 +23,7 @@ use crate::replay::ReplayBudget;
 use crate::replay::ReplayNode;
 
 mod engine;
+mod function;
 use engine::engine;
 use engine::portable;
 
