@@ -1287,13 +1287,16 @@ fn continue_end(
 
 /// Label each written variable a rewrite replaced with the value that stands
 /// for it now, when that value answers at other bytes, and carry every label
-/// naming a replaced variable over to its replacement.
+/// naming a replaced variable over to its replacement; keep each written
+/// value type a rewrite replaced as a stand-in for its replacement.
 ///
 /// # Specification
 /// - requires: every node `carried` reports has its origin recorded.
 /// - ensures: one label per variable `carried` reports replaced whose origin is
 ///   written and whose replacement's origin spans other bytes, naming the
-///   replacement; a label that named a replaced variable names its replacement.
+///   replacement; a label that named a replaced variable names its replacement;
+///   one stand-in per value type `carried` reports replaced whose origin is
+///   written and whose replacement's origin spans other bytes.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -1301,8 +1304,10 @@ fn continue_end(
 /// - hypothesis: L3 — a use of a bound match's binder, instantiated at the
 ///   value an arm passes, answers at that value's type, through a chain of such
 ///   instantiations too; a scrutinee a leaf's copy replaces answers at its
-///   bytes.
+///   bytes; a functor's parameter type, renamed to an argument's, answers where
+///   the template writes it.
 /// - witness: `lower::exits::tests::a_use_a_local_end_replaces_keeps_its_bytes`
+/// - witness: `lower::tests::a_type_head_answers_at_what_it_stands_for`
 #[spec(captures: before = sink.origins.labels().len(), ensures: sink.origins.labels().len() >= before)]
 pub(super) fn label_replaced(
     sink: &mut Sink<'_>,
@@ -1310,24 +1315,37 @@ pub(super) fn label_replaced(
 )
 {
     for pair in carried {
-        let Carried::Value(replaced, standing) = *pair
-        else {
-            continue;
-        };
-        if !matches!(sink.arena.value(replaced), Some(&Value::Variable { .. })) {
-            continue;
-        }
-        sink.origins.relabel(replaced, standing);
-        let (Maybe::Present(written), Maybe::Present(now)) =
-            (sink.origins.value(replaced), sink.origins.value(standing))
-        else {
-            continue;
-        };
-        if written.provenance() == Provenance::Written && now.span() != written.span() {
-            sink.origins.record_label(Label {
-                span: written.span(),
-                labelled: Labelled::Value(standing),
-            });
+        match *pair {
+            | Carried::Value(replaced, standing) => {
+                if !matches!(sink.arena.value(replaced), Some(&Value::Variable { .. })) {
+                    continue;
+                }
+                sink.origins.relabel(replaced, standing);
+                let (Maybe::Present(written), Maybe::Present(now)) =
+                    (sink.origins.value(replaced), sink.origins.value(standing))
+                else {
+                    continue;
+                };
+                if written.provenance() == Provenance::Written && now.span() != written.span() {
+                    sink.origins.record_label(Label {
+                        span: written.span(),
+                        labelled: Labelled::Value(standing),
+                    });
+                }
+            },
+            | Carried::ValueType(replaced, standing) => {
+                let (Maybe::Present(written), Maybe::Present(now)) = (
+                    sink.origins.value_type(replaced),
+                    sink.origins.value_type(standing),
+                )
+                else {
+                    continue;
+                };
+                if written.provenance() == Provenance::Written && now.span() != written.span() {
+                    sink.origins.record_stand_in(standing, written);
+                }
+            },
+            | Carried::Computation(..) | Carried::CompType(..) => {},
         }
     }
 }

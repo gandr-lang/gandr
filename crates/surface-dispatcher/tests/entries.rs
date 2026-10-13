@@ -93,7 +93,7 @@ mod entries
         ("Expression break", Standing::Design(EXIT)),
         ("Expression case", Standing::Owed(0)),
         ("Expression close", Standing::Owed(0)),
-        ("Expression constructor", Standing::Owed(23)),
+        ("Expression constructor", Standing::Owed(0)),
         ("Expression continue", Standing::Owed(0)),
         ("Expression fn", Standing::Owed(0)),
         ("Expression force", Standing::Owed(0)),
@@ -139,7 +139,7 @@ mod entries
         ("Type +U", Standing::Owed(0)),
         ("Type ->", Standing::Owed(0)),
         ("Type -F", Standing::Owed(0)),
-        ("Type .", Standing::Owed(4)),
+        ("Type .", Standing::Owed(0)),
         ("Type =>", Standing::Owed(0)),
         ("Type ?", Standing::Owed(0)),
         ("Type Cap", Standing::Owed(0)),
@@ -153,7 +153,7 @@ mod entries
         ("Type end", Standing::Owed(0)),
         ("Type mu", Standing::Owed(0)),
         ("Type number", Standing::Owed(0)),
-        ("Type type_identifier", Standing::Owed(44)),
+        ("Type type_identifier", Standing::Owed(0)),
         ("Type type_variable", Standing::Owed(0)),
     ];
 
@@ -238,7 +238,8 @@ mod entries
 
     /// Why a node needs no entry of its own by where it stands, whatever its
     /// kind: inside an attribute or documentation, inside a declaration the
-    /// lowering refused, or as the head of a former's call.
+    /// lowering refused, as the head of a former's call, or as the module a
+    /// path qualifies.
     ///
     /// # Specification
     /// trivial.
@@ -253,6 +254,9 @@ mod entries
         /// The head of a constructor's or a primitive former's call, or of an
         /// annotation: the call is the one core node, and answers.
         Head,
+        /// The module a path selects from, `M` in `M.x` or `M.T`: a
+        /// namespace, neither a term nor a type, so the path answers.
+        Qualifier,
     }
 
     /// Every gated node of `tree` with its kind, its span and where it stands.
@@ -267,7 +271,11 @@ mod entries
     {
         let source: &str = tree.source().into();
         let mut gated = Vec::new();
-        let mut stack = vec![(tree.root(), None::<Placed>, None::<(MoldId, &str, bool)>)];
+        let mut stack = vec![(
+            tree.root(),
+            None::<Placed>,
+            None::<(MoldId, &str, bool, bool)>,
+        )];
         while let Some((position, placed, parent)) = stack.pop() {
             let Some(node) = tree.node(position)
             else {
@@ -310,7 +318,8 @@ mod entries
                 let headed = melded
                     && opener == Some(child)
                     && (def.label == "[" || (def.label == "(" && def.sort == Sort::Expression));
-                (child, placed, Some((mold, def.label, headed)))
+                let qualifying = melded && opener == Some(child) && def.label == ".";
+                (child, placed, Some((mold, def.label, headed, qualifying)))
             }));
             if !matches!(def.sort, Sort::Expression | Sort::Type | Sort::Pattern) {
                 continue;
@@ -320,11 +329,16 @@ mod entries
                 .get(usize::from(span.start()) .. usize::from(span.end()))
                 .unwrap_or("");
             let head = !melded
-                && parent.is_some_and(|(_, label, headed)| {
+                && parent.is_some_and(|(_, label, headed, _)| {
                     headed
                         && (label == "[" || def.label == "constructor" || FORMERS.contains(&text))
                 });
-            let placed = placed.or_else(|| head.then_some(Placed::Head));
+            let qualifier = !melded
+                && parent.is_some_and(|(.., qualifying)| qualifying)
+                && (def.label == "constructor" || def.label == "type_identifier");
+            let placed = placed
+                .or_else(|| head.then_some(Placed::Head))
+                .or_else(|| qualifier.then_some(Placed::Qualifier));
             gated.push((kind(grammar, tree, position, *def), span, placed));
         }
         gated

@@ -24,8 +24,12 @@
 //! - **A written type** is spelled at its universe: the level the typed run
 //!   formed it at, under the binders it was formed under, and the level it
 //!   reads closed where no formation reached it. A type the lowering inserted
-//!   takes no entry. A description a `ua` names is no core node; it is spelled
-//!   at the universe its statement's path lies in.
+//!   takes no entry. A head that stands for a type minted elsewhere — a
+//!   manifest component's, a functor instance's, or a functor parameter's
+//!   renamed to an argument's — is spelled at the universe of the type it
+//!   stands for, read through the origin table's stand-ins. A description a
+//!   `ua` names is no core node; it is spelled at the universe its statement's
+//!   path lies in.
 //! - **A declaration** is spelled at its declared type, at the type its body
 //!   synthesised when it states none, and at its universe when it declares
 //!   data; a declaration the lowering refused keeps its refusal instead, since
@@ -665,6 +669,7 @@ impl TypeTable
         let value_types = origins
             .value_types()
             .iter()
+            .chain(origins.stand_ins())
             .map(|&(id, origin)| (TypeNode::Value(id), origin, GroundSort::Value));
         let comp_types = origins
             .comp_types()

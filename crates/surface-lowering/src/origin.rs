@@ -437,6 +437,9 @@ pub struct OriginTable
     /// Each label written against an entry, with what it labels, in the
     /// order lowered.
     labels: Vec<Label>,
+    /// Each written type head standing for a type minted elsewhere, which it
+    /// adopts, with the head's origin, in the order lowered.
+    stand_ins: Vec<(ValueTypeId, Origin)>,
 }
 
 /// Record one family's origin, keeping the vector ascending by id.
@@ -1263,6 +1266,45 @@ impl OriginTable
     pub fn labels(&self) -> &[Label]
     {
         &self.labels
+    }
+
+    /// Record that the type head at `origin` stands for `ty`, a type minted
+    /// elsewhere that the head adopts.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the pair is appended, so [`Self::stand_ins`] holds it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a manifest component named in a later component and
+    ///   an instance's type named past its module each answer at their head.
+    /// - witness: `lower::tests::a_type_head_answers_at_what_it_stands_for`
+    #[spec(
+        captures: before = self.stand_ins.len(),
+        ensures: self.stand_ins.len() == before.saturating_add(1),
+    )]
+    #[inline]
+    pub fn record_stand_in(
+        &mut self,
+        ty: ValueTypeId,
+        origin: Origin,
+    )
+    {
+        self.stand_ins.push((ty, origin));
+    }
+
+    /// Each written type head standing for a type minted elsewhere, with the
+    /// head's origin, in the order lowered.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn stand_ins(&self) -> &[(ValueTypeId, Origin)]
+    {
+        &self.stand_ins
     }
 }
 
