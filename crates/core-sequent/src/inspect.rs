@@ -148,6 +148,8 @@ pub fn origin_histogram(provenance: &Provenance) -> BTreeMap<FocusOrigin, NodeCo
     && ret.starts_with(match provenance.origin(root) {
         | Some(FocusOrigin::Perform) => "root [perform]: ",
         | Some(FocusOrigin::Handle) => "root [handle]: ",
+        | Some(FocusOrigin::Exercise) => "root [exercise]: ",
+        | Some(FocusOrigin::Scope) => "root [scope]: ",
         | Some(FocusOrigin::Resume) => "root [resume]: ",
         | Some(FocusOrigin::Reset) => "root [reset]: ",
         | Some(FocusOrigin::Shift) => "root [shift]: ",
@@ -174,6 +176,8 @@ pub fn dump(
     let origin = match provenance.origin(root) {
         | Some(FocusOrigin::Perform) => "perform",
         | Some(FocusOrigin::Handle) => "handle",
+        | Some(FocusOrigin::Exercise) => "exercise",
+        | Some(FocusOrigin::Scope) => "scope",
         | Some(FocusOrigin::Resume) => "resume",
         | Some(FocusOrigin::Reset) => "reset",
         | Some(FocusOrigin::Shift) => "shift",

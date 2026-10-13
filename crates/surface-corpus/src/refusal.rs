@@ -449,6 +449,9 @@ pub enum RefusalName
     Unreachable,
     /// A `break` or a `continue` on no path through a loop's body.
     OutsideLoop,
+    /// A `become` in a handled subject, or a `break` or a `continue` there
+    /// whose loop holds the scope.
+    AcrossHandler,
     /// A `for` loop, which waits on a case former over the native list.
     ForNeedsListCase,
     /// A path matched against reflexivity, `here`: axiom K.
@@ -538,7 +541,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 121_usize] = [
+    pub const VOCABULARY: [Self; 122_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -621,6 +624,7 @@ impl RefusalName
         Self::UnmarkedSelfReference,
         Self::Unreachable,
         Self::OutsideLoop,
+        Self::AcrossHandler,
         Self::ForNeedsListCase,
         Self::WithoutK,
         Self::BudgetExceeded,
@@ -704,6 +708,7 @@ impl RefusalName
         (Self::UnmarkedSelfReference, b"UnmarkedSelfReference") |
         (Self::Unreachable, b"Unreachable") |
         (Self::OutsideLoop, b"OutsideLoop") |
+        (Self::AcrossHandler, b"AcrossHandler") |
         (Self::ForNeedsListCase, b"ForNeedsListCase") |
         (Self::WithoutK, b"WithoutK") |
         (Self::BudgetExceeded, b"BudgetExceeded") | (Self::GrammarMismatch,
@@ -895,6 +900,7 @@ impl RefusalName
             | Self::UnmarkedSelfReference => "UnmarkedSelfReference",
             | Self::Unreachable => "Unreachable",
             | Self::OutsideLoop => "OutsideLoop",
+            | Self::AcrossHandler => "AcrossHandler",
             | Self::ForNeedsListCase => "ForNeedsListCase",
             | Self::WithoutK => "WithoutK",
             | Self::BudgetExceeded => "BudgetExceeded",
@@ -1089,6 +1095,8 @@ impl Refusal<'_>
         RefusalName::Unreachable) |
         (Self::Lowering(LoweringRefusal::OutsideLoop { .. }),
         RefusalName::OutsideLoop) |
+        (Self::Lowering(LoweringRefusal::AcrossHandler { .. }),
+        RefusalName::AcrossHandler) |
         (Self::Lowering(LoweringRefusal::ForNeedsListCase { .. }),
         RefusalName::ForNeedsListCase) |
         (Self::Lowering(LoweringRefusal::WithoutK { .. }),
@@ -1273,7 +1281,8 @@ impl Refusal<'_>
         RefusalName::NonExhaustiveMatch) | (LoweringRefusal::UnmarkedSelfReference { .. },
         RefusalName::UnmarkedSelfReference) | (LoweringRefusal::Unreachable { .. },
         RefusalName::Unreachable) | (LoweringRefusal::OutsideLoop { .. },
-        RefusalName::OutsideLoop) | (LoweringRefusal::ForNeedsListCase { .. },
+        RefusalName::OutsideLoop) | (LoweringRefusal::AcrossHandler { .. },
+        RefusalName::AcrossHandler) | (LoweringRefusal::ForNeedsListCase { .. },
         RefusalName::ForNeedsListCase) | (LoweringRefusal::WithoutK { .. },
         RefusalName::WithoutK) | (LoweringRefusal::BudgetExceeded { .. },
         RefusalName::BudgetExceeded) | (LoweringRefusal::GrammarMismatch { .. },
@@ -1315,6 +1324,7 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | LoweringRefusal::UnmarkedSelfReference { .. } => RefusalName::UnmarkedSelfReference,
         | LoweringRefusal::Unreachable { .. } => RefusalName::Unreachable,
         | LoweringRefusal::OutsideLoop { .. } => RefusalName::OutsideLoop,
+        | LoweringRefusal::AcrossHandler { .. } => RefusalName::AcrossHandler,
         | LoweringRefusal::ForNeedsListCase { .. } => RefusalName::ForNeedsListCase,
         | LoweringRefusal::WithoutK { .. } => RefusalName::WithoutK,
         | LoweringRefusal::BudgetExceeded { .. } => RefusalName::BudgetExceeded,

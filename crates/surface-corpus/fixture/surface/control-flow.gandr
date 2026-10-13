@@ -91,6 +91,21 @@ def sift(n : Nat) -> -F Nat {
 def sift_zero : +U (-F Nat) ;
 def sift_zero = thunk { become sift(Zero) } ;
 
+@[ checks ]
+def handled(n : Nat) -> -F Nat {
+  handle c : Proc {
+    run m <- loop { break(Succ(n)) } ;
+    pure m
+  } with {
+    pure(x) => pure Succ(x),
+    oper exit(code, k) => k(unit)
+  }
+}
+
+@[ runs("Succ(Succ(Zero))") ]
+def handled_zero : +U (-F Nat) ;
+def handled_zero = thunk { become handled(Zero) } ;
+
 @[ refuses("OutsideLoop") ]
 def stray(n : Nat) -> -F Nat {
   break(n)

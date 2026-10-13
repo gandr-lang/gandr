@@ -110,7 +110,8 @@ impl LoweringRefusal<'_>
             | Self::NonExhaustiveMatch { .. }
             | Self::UnmarkedSelfReference { .. }
             | Self::Unreachable { .. }
-            | Self::OutsideLoop { .. } => {
+            | Self::OutsideLoop { .. }
+            | Self::AcrossHandler { .. } => {
                 matches!(ret, FailureClass::MalformedSource)
             },
         },
@@ -143,7 +144,8 @@ impl LoweringRefusal<'_>
             | Self::NonExhaustiveMatch { .. }
             | Self::UnmarkedSelfReference { .. }
             | Self::Unreachable { .. }
-            | Self::OutsideLoop { .. } => FailureClass::MalformedSource,
+            | Self::OutsideLoop { .. }
+            | Self::AcrossHandler { .. } => FailureClass::MalformedSource,
             | Self::OutOfFragment { .. }
             | Self::GradedBridge { .. }
             | Self::UnreadAscription { .. }
@@ -210,7 +212,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 32_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 33_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -351,6 +353,10 @@ mod tests
                 span: empty,
                 exit: crate::error::LoopExit::Break,
             },
+            LoweringRefusal::AcrossHandler {
+                span: empty,
+                exit: crate::error::CrossedExit::Break,
+            },
             LoweringRefusal::ForNeedsListCase { span: empty },
         ]
     }
@@ -386,6 +392,7 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::Unrepresentable,
             FailureClass::Unrepresentable,
+            FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,

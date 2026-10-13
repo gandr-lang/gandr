@@ -1,0 +1,9 @@
+@[ refuses("UnresolvedName") ]
+def stray() -> -F Unit {
+  handle c : Proc {
+    k(unit)
+  } with {
+    pure(x) => pure x,
+    oper exit(code, k) => k(unit)
+  }
+}

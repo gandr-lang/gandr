@@ -26,6 +26,7 @@ use gandr_kernel_term::DeBruijnIndex;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
+use crate::error::CrossedExit;
 use crate::error::LoweringRefusal;
 use crate::fixture::grammar;
 use crate::fixture::parsed;
@@ -566,5 +567,124 @@ fn a_scoped_capability_cannot_escape()
         ),
         "{:?}",
         verdict_of(&module, &report, "leak".into())
+    );
+}
+
+#[test]
+fn a_return_in_a_subject_leaves_past_the_handler()
+{
+    let mut arena = CoreArena::new();
+    let source = concat!(
+        "def leave(n : Integer) -> -F Integer { handle c : Proc { c.exit(1); return n } with { pure(x) => pure x + 1, oper exit(code, k) => k(unit) } }\n",
+        "def kept() -> -F Integer { handle c : Proc { 1 } with { pure(x) => pure x, oper exit(code, k) => k(unit) } }\n",
+    );
+    let module = lowered(SourceText::from(source), &mut arena);
+    let leave = tail_of(&module, &arena, "leave".into());
+    let Some(&Computation::Reset(delimited)) = arena.computation(leave)
+    else {
+        panic!("a body a subject returns from is delimited");
+    };
+    let Some(&Computation::Scope { subject, .. }) = arena.computation(delimited)
+    else {
+        panic!("the delimiter holds the scope");
+    };
+    let Some(&Computation::Bind(_, discarded)) = arena.computation(subject)
+    else {
+        panic!("the subject binds its statement");
+    };
+    let Some(&Computation::Split { body: rest, .. }) = arena.computation(discarded)
+    else {
+        panic!("and discards its unit");
+    };
+    let Some(&Computation::Shift(unwound)) = arena.computation(rest)
+    else {
+        panic!("the `return` is a capture: {:?}", arena.computation(rest));
+    };
+    let Some(&Computation::Return(returned)) = arena.computation(unwound)
+    else {
+        panic!("whose body returns");
+    };
+    assert_eq!(
+        arena.value(returned),
+        Some(&variable(DeBruijnIndex::from(3_u32))),
+        "the parameter, past the capture's stack, the statement and the capability"
+    );
+    let kept = tail_of(&module, &arena, "kept".into());
+    let Some(&Computation::Scope { subject, .. }) = arena.computation(kept)
+    else {
+        panic!("a body nothing unwinds from is not delimited");
+    };
+    assert!(
+        matches!(arena.computation(subject), Some(&Computation::Return(_))),
+        "a subject's value tail is its result"
+    );
+    let subjects: Vec<core::ops::Range<usize>> = ["{ c.exit(1); return n }", "{ 1 }"]
+        .into_iter()
+        .filter_map(|subject| {
+            source
+                .find(subject)
+                .map(|start| start .. start.saturating_add(subject.len()))
+        })
+        .collect();
+    assert_eq!(subjects.len(), 2, "both subjects are written");
+    assert!(
+        module.inferred_exits().iter().all(|exit| {
+            !subjects
+                .iter()
+                .any(|subject| subject.contains(&usize::from(exit.span.start())))
+        }),
+        "no tail of a subject is an inferred exit: {:?}",
+        module.inferred_exits()
+    );
+    let report = judged(&module, &mut arena);
+    for name in ["leave", "kept"] {
+        assert!(
+            matches!(
+                verdict_of(&module, &report, name.into()),
+                Verdict::Checked { .. }
+            ),
+            "{name}: {:?}",
+            verdict_of(&module, &report, name.into())
+        );
+    }
+}
+
+#[test]
+fn an_exit_that_would_run_in_a_live_frame_is_refused()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "def one() -> -F Integer { 1 }\n",
+            "def became() -> -F Integer { handle c : Proc { become one() } with { pure(x) => pure x, oper exit(code, k) => k(unit) } }\n",
+            "def broke() -> -F Integer { loop { handle c : Proc { break(1) } with { pure(x) => pure x, oper exit(code, k) => k(unit) } } }\n",
+            "def again() -> -F Integer { loop { handle c : Proc { continue } with { pure(x) => pure x, oper exit(code, k) => k(unit) } } }\n",
+            "def inner() -> -F Integer { handle c : Proc { run v <- loop { break(5) } ; pure v } with { pure(x) => pure x, oper exit(code, k) => k(unit) } }\n",
+        )),
+        &mut arena,
+    );
+    for (name, crossed) in [
+        ("became", CrossedExit::Become),
+        ("broke", CrossedExit::Break),
+        ("again", CrossedExit::Continue),
+    ] {
+        assert!(
+            matches!(
+                outcome_of(&module, name.into()),
+                DeclarationOutcome::Refused(LoweringRefusal::AcrossHandler { exit, .. })
+                    if exit == crossed
+            ),
+            "{name}: {:?}",
+            outcome_of(&module, name.into())
+        );
+    }
+    let report = judged(&module, &mut arena);
+    assert!(
+        matches!(
+            verdict_of(&module, &report, "inner".into()),
+            Verdict::Checked { .. }
+        ),
+        "a loop inside the subject leaves only itself: {:?}",
+        verdict_of(&module, &report, "inner".into())
     );
 }

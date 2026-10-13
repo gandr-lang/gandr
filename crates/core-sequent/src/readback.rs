@@ -62,7 +62,8 @@ pub enum ReadbackRefusal
     /// syntax.
     NonLiteralStack(HeapValueId),
     /// The value has none: a suspended `μ`, a copattern object standing as a
-    /// value, or a constructed value whose fields contradict its head.
+    /// value, a handler's capability, which no term introduces, or a
+    /// constructed value whose fields contradict its head.
     Unreadable(HeapValueId),
     /// A value address the store does not hold, or one named by a value
     /// allocated before it.
@@ -410,7 +411,9 @@ impl<'run> Reading<'run>
                 | HeapValue::Fixpoint { environment, .. } => {
                     pending.extend(store.bound_values(environment));
                 },
-                | HeapValue::Closure { .. } => return Err(ReadbackRefusal::Unreadable(id)),
+                | HeapValue::Closure { .. } | HeapValue::Capability => {
+                    return Err(ReadbackRefusal::Unreadable(id));
+                },
             }
         }
         for id in reachable {
@@ -482,7 +485,7 @@ impl<'run> Reading<'run>
                 | HeapValue::Thunk { .. } => matches!(*node, gandr_core_term::Value::Thunk(_)),
                 | HeapValue::Fixpoint { evidence, .. } => matches!(*node, gandr_core_term::Value::Thunk(body)
                     if matches!(self.core.computation(body), Some(&gandr_core_term::Computation::Fixpoint { evidence: claimed, .. }) if claimed == evidence)),
-                | HeapValue::Closure { .. } => false,
+                | HeapValue::Closure { .. } | HeapValue::Capability => false,
             }),
         },
     )]
@@ -637,7 +640,9 @@ impl<'run> Reading<'run>
                     | Decoded::Computation(_) => Err(UnfocusRefusal::DecodeInvariant.into()),
                 }
             },
-            | HeapValue::Closure { .. } => Err(ReadbackRefusal::Unreadable(id)),
+            | HeapValue::Closure { .. } | HeapValue::Capability => {
+                Err(ReadbackRefusal::Unreadable(id))
+            },
         }
     }
 

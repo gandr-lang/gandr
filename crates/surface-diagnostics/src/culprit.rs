@@ -191,6 +191,7 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         | LoweringRefusal::UnmarkedSelfReference { .. } => "recursion without a claim",
         | LoweringRefusal::Unreachable { .. } => "no path reaches this",
         | LoweringRefusal::OutsideLoop { .. } => "no loop to leave",
+        | LoweringRefusal::AcrossHandler { .. } => "an exit across a live handler",
         | LoweringRefusal::ForNeedsListCase { .. } => "a `for` loop",
         | LoweringRefusal::WithoutK { .. } => "a path matched against reflexivity",
         | LoweringRefusal::BudgetExceeded { .. } => "the lowering's allowance ran out",

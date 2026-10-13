@@ -1,0 +1,23 @@
+@[ refuses("AcrossHandler") ]
+def broke() -> -F Integer {
+  loop {
+    handle c : Proc {
+      break(1)
+    } with {
+      pure(x) => pure x,
+      oper exit(code, k) => k(unit)
+    }
+  }
+}
+
+@[ refuses("AcrossHandler") ]
+def again() -> -F Integer {
+  loop {
+    handle c : Proc {
+      continue
+    } with {
+      pure(x) => pure x,
+      oper exit(code, k) => k(unit)
+    }
+  }
+}

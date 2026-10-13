@@ -521,6 +521,7 @@ use crate::attribute::payload_verdict;
 use crate::classify::FailureClass;
 use crate::doc::Documentation;
 use crate::doc::read_doc;
+use crate::error::CrossedExit;
 use crate::error::FormFault;
 use crate::error::FragmentBoundary;
 use crate::error::FragmentSort;
@@ -2547,6 +2548,27 @@ struct Lowerer<'run, 'source>
     /// The conditions of `while` loops, read where a computation is: a value
     /// written there is returned, so the loop binds what it tests.
     tested: BTreeSet<NodeIndex>,
+    /// The computation positions where a path through a handled subject
+    /// ends: the subject's last computation, and what stands in tail position
+    /// of one. A value there is returned to the handler's return clause, as
+    /// the subject's result; neither it nor a computation there is an exit.
+    results: BTreeSet<NodeIndex>,
+    /// The computation positions a path through a handled subject passes: a
+    /// `return` there leaves its body past every handler frame around it, and
+    /// a `become` there is refused.
+    framed: BTreeSet<NodeIndex>,
+    /// The positions of `framed` whose nearest loop stands outside a
+    /// handler's frame: a `break` or a `continue` there is refused.
+    looped_past: BTreeSet<NodeIndex>,
+    /// The body every position a path passes belongs to, by that body's last
+    /// computation.
+    bodies: BTreeMap<NodeIndex, NodeIndex>,
+    /// The `return`s written at a position of `framed`, each minted as a
+    /// capture its body's delimiter discards.
+    crossing: BTreeSet<NodeIndex>,
+    /// The bodies, by their last computation, that hold a `return` of
+    /// `crossing`: each is minted under a delimiter.
+    delimited: BTreeSet<NodeIndex>,
     /// The tails the source wrote without an exit, each exited by the one its
     /// polarity names: a value by an inserted `return`, a computation by
     /// running it in tail position.
@@ -3046,6 +3068,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             breaking: BTreeSet::new(),
             reentered: BTreeMap::new(),
             tested: BTreeSet::new(),
+            results: BTreeSet::new(),
+            framed: BTreeSet::new(),
+            looped_past: BTreeSet::new(),
+            bodies: BTreeMap::new(),
+            crossing: BTreeSet::new(),
+            delimited: BTreeSet::new(),
             inferred: BTreeSet::new(),
             elided: Vec::new(),
             asked: BTreeSet::new(),
@@ -4177,9 +4205,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   sort by a quote, and a computation as the value it returns at an
     ///   endpoint and nested everywhere else; a tail, where a path through a
     ///   body ends, reaches a value by the `return` its polarity names,
-    ///   recorded as inferred and leaving; a `while` loop's condition reaches a
-    ///   value by a `return` the loop binds; the bridge is recorded for the
-    ///   form's node, and every other match records none.
+    ///   recorded as inferred and leaving; a `while` loop's condition, and a
+    ///   tail of a handled subject, which is the subject's result, reach a
+    ///   value by a `return` recorded as no exit; the bridge is recorded for
+    ///   the form's node, and every other match records none.
     /// - provides: the sort check every former takes, and the six insertions
     ///   decided by the sort of a position.
     /// - fails: yields the wrong-sort refusal when the position reads another
@@ -4204,6 +4233,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_lambda_in_value_position_is_nested_and_marked_inserted`
     /// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
     /// - witness: `lower::loops::tests::a_while_tests_its_condition_on_every_pass`
+    /// - witness: `lower::capability::tests::a_return_in_a_subject_leaves_past_the_handler`
     #[spec(
         ensures: |ret| {
             let expected = match (site.reading, produced) {
@@ -4232,7 +4262,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     Some((frame, Bridge::Inserted(Insertion::Nested)))
                 },
                 | (Reading::Computation(frame), Produced::Value)
-                    if self.tested.contains(&site.at.node) =>
+                    if self.tested.contains(&site.at.node) || self.results.contains(&site.at.node) =>
                 {
                     Some((frame, Bridge::Inserted(Insertion::Return)))
                 },
@@ -4252,6 +4282,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             .is_none_or(|held| *held == bridge)
                         && (bridge != Bridge::Inserted(Insertion::Return)
                             || self.tested.contains(&site.at.node)
+                            || self.results.contains(&site.at.node)
                             || (self.inferred.contains(&site.at.node)
                                 && self.leaving.contains(&site.at.node)))
                 },
@@ -4290,7 +4321,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 (frame, Bridge::Inserted(Insertion::Nested))
             },
             | (Reading::Computation(frame), Produced::Value)
-                if self.tested.contains(&site.at.node) =>
+                if self.tested.contains(&site.at.node) || self.results.contains(&site.at.node) =>
             {
                 (frame, Bridge::Inserted(Insertion::Return))
             },
@@ -5719,12 +5750,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   value in its own frame and is planned over it; a return is planned as
     ///   the returner and recorded as an exit, which leaves the function
     ///   because the commuting puts every exit where the function's body ends.
+    ///   A return in a handled subject is recorded as crossing its handlers'
+    ///   frames, and the body around the scope as delimited: it leaves that
+    ///   body past every frame, no return clause run.
     /// - provides: the computation formers over a value, and the exit that
     ///   leaves a function with a value.
     /// - fails: yields the wrong-sort refusal outside computation position, the
     ///   not-in-tail refusal for a return that stands where no path through a
-    ///   function's, a lambda's or a thunk's body passes, and the hole's own
-    ///   refusal.
+    ///   function's, a lambda's or a thunk's body passes, a scope's subject
+    ///   included, and the hole's own refusal.
     /// - panics: none.
     ///
     /// # Errors
@@ -5738,6 +5772,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::force_and_application_lower_over_their_children`
     /// - witness: `lower::tests::an_author_written_force_is_not_marked_inserted`
     /// - witness: `lower::tests::an_exit_lowers_where_a_path_passes_and_nowhere_else`
+    /// - witness: `lower::capability::tests::a_return_in_a_subject_leaves_past_the_handler`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -5750,7 +5785,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         keyword != TileName::FORCE
                             && (keyword != TileName::RETURN
                                 || (self.exitable.contains(&site.at.node)
-                                    && self.leaving.contains(&site.at.node)))
+                                    && self.leaving.contains(&site.at.node)
+                                    && self.framed.contains(&site.at.node)
+                                        == self.crossing.contains(&site.at.node)))
                             && self.reading(operand) == Reading::Value(site.reading.frame())
                     },
                     | _ => false,
@@ -5768,6 +5805,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if keyword == TileName::RETURN {
             if !self.exitable.contains(&site.at.node) {
                 return Err(site.out(FragmentBoundary::NotInTail));
+            }
+            if self.framed.contains(&site.at.node) {
+                let Some(&body) = self.bodies.get(&site.at.node)
+                else {
+                    return Err(site.out(FragmentBoundary::NotInTail));
+                };
+                let _crossing = self.crossing.insert(site.at.node);
+                let _delimited = self.delimited.insert(body);
             }
             let _exit = self.leaving.insert(site.at.node);
         }
@@ -5846,7 +5891,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   inside it leaves the function too.
     /// - provides: the exit that leaves a function by running a computation.
     /// - fails: yields the wrong-sort refusal outside computation position, the
-    ///   not-in-tail refusal for a `become` where no path passes, and the
+    ///   not-in-tail refusal for a `become` where no path passes,
+    ///   [`LoweringRefusal::AcrossHandler`] for one in a handled subject, which
+    ///   would run its operand in place of a live handler's frame, and the
     ///   hole's own refusal.
     /// - panics: none.
     ///
@@ -5858,6 +5905,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   in a bound computation leaves the function, and one in a call's head
     ///   is refused.
     /// - witness: `lower::tests::an_exit_lowers_where_a_path_passes_and_nowhere_else`
+    /// - witness: `lower::capability::tests::an_exit_that_would_run_in_a_live_frame_is_refused`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -5877,6 +5925,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if !self.exitable.contains(&site.at.node) {
             return Err(site.out(FragmentBoundary::NotInTail));
         }
+        if self.framed.contains(&site.at.node) {
+            return Err(LoweringRefusal::AcrossHandler {
+                span: site.at.span,
+                exit: CrossedExit::Become,
+            });
+        }
         let _exit = self.leaving.insert(site.at.node);
         let _keyword = cursor.tile(TileName::BECOME);
         let operand = site.one(cursor.operands())?;
@@ -5886,6 +5940,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             let _passed = self.answers.insert(operand.node, answer);
         }
         let _path = self.exitable.insert(operand.node);
+        if let Some(&body) = self.bodies.get(&site.at.node) {
+            let _owner = self.bodies.insert(operand.node, body);
+        }
         self.plan(site, Plan::Transparent(operand.node));
 
         Ok(())
@@ -8295,10 +8352,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   it and the result kept as the node's lowered core node; a tail whose
     ///   exit was inferred and minted as a computation is recorded with that
     ///   exit, `return` when the bridge is the inserted one and `become`
-    ///   otherwise; a `break`'s returner is recorded as a break; a loop end
-    ///   written without an exit is bound and its loop run again, as
-    ///   [`Self::rerun`] writes it; a node with no plan left, or under a
-    ///   refused declaration outside a payload, is left as it is.
+    ///   otherwise; a `return` crossing a handler's frame is minted as the
+    ///   capture [`Self::unwind`] writes, and that capture recorded as the
+    ///   exit; a `break`'s returner is recorded as a break; a loop end written
+    ///   without an exit is bound and its loop run again, as [`Self::rerun`]
+    ///   writes it; a node with no plan left, or under a refused declaration
+    ///   outside a payload, is left as it is.
     /// - provides: the per-position half of [`Self::mint`].
     /// - fails: never.
     /// - panics: none.
@@ -8362,7 +8421,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             .copied()
             .unwrap_or(Bridge::Bare);
         let minted = self.mint_plan(plan, sink, origin);
-        let bridged = sink.bridge(minted, bridge, origin);
+        let bridged = match sink.bridge(minted, bridge, origin) {
+            | Maybe::Present(Lowered::Computation(returned)) if self.crossing.contains(&position) => {
+                Maybe::Present(Lowered::Computation(Self::unwind(sink, returned, origin)))
+            },
+            | bridged => bridged,
+        };
         if self.leaving.contains(&position)
             && let Maybe::Present(Lowered::Computation(exit)) = bridged
         {
@@ -11535,7 +11599,8 @@ impl Sink<'_>
                 | Insertion::Loop
                 | Insertion::Endpoint
                 | Insertion::Identity
-                | Insertion::Nested,
+                | Insertion::Nested
+                | Insertion::Unwind,
             ) => Maybe::Absent(lowered::Absent::OtherSort),
             | (Maybe::Absent(reason), _) => Maybe::Absent(reason),
         }

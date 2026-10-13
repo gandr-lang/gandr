@@ -159,6 +159,10 @@ pub enum HeapValue
     /// A constant with no body to run: an owed or refused declaration, which
     /// the machine carries as itself.
     Opaque(ConstantIndex),
+    /// A capability a handler introduced: its address is its identity, which
+    /// the handler's frame carries, so an exercise through it reaches that
+    /// frame and no other.
+    Capability,
 }
 
 /// What forcing a recursive thunk writes back.
@@ -364,6 +368,19 @@ impl ObservationArguments
     }
 }
 
+/// The capability a handler frame introduced.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Introduced
+{
+    /// None: the core's anonymous handler.
+    Nothing,
+    /// The capability at this address, bound in the handler's subject.
+    Capability(HeapValueId),
+}
+
 /// A continuation frame.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Frame
@@ -377,6 +394,8 @@ pub enum Frame
         command: CommandId,
         /// The handler's ambient value and covalue bindings.
         environment: Environment,
+        /// The capability the handler introduced, which identifies it.
+        introduced: Introduced,
     },
     /// An update cancelled by control capture or an operation request.
     DeclinedUpdate,

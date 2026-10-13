@@ -92,6 +92,13 @@
 //! naming what it waits on: the list it iterates has a fold and no case
 //! former, in the kernel or the core.
 //!
+//! # Exits across a handler's frame refuse by their own name
+//!
+//! A `become` in a handled subject, and a `break` or a `continue` there whose
+//! loop holds the scope, are [`LoweringRefusal::AcrossHandler`]: each would
+//! run code in place of a live handler's frame, which no tail can do. A
+//! `return` there leaves its body past every frame, and needs no refusal.
+//!
 //! `Unadmitted` and `Arity` exist because the grammar is the whole surface and
 //! the fragment is a small part of it; without them every form the surface has
 //! and the core lacks would be misreported as a sort error.
@@ -464,6 +471,52 @@ impl fmt::Display for LoopExit
     ) -> fmt::Result
     {
         f.write_str(match *self {
+            | Self::Break => "`break`",
+            | Self::Continue => "`continue`",
+        })
+    }
+}
+
+/// An exit refused in a handled subject: the keyword a
+/// [`LoweringRefusal::AcrossHandler`] names.
+///
+/// # Specification
+/// - requires: a producer selects the keyword actually written.
+/// - ensures: one variant per exit a live handler frame refuses.
+/// - provides: which exit would have run code in place of the frame.
+/// - fails: not applicable to the tag itself.
+/// - panics: none.
+/// - executable: none — the tag holds no tree to check the keyword against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a `become`, a `break` and a `continue` in a subject are
+///   each refused with their own keyword.
+/// - witness: `lower::capability::tests::an_exit_that_would_run_in_a_live_frame_is_refused`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CrossedExit
+{
+    /// `become c`, running `c` in the subject's place.
+    Become,
+    /// `break` or `break(v)`, leaving a loop around the scope.
+    Break,
+    /// `continue`, running a loop around the scope again.
+    Continue,
+}
+
+impl fmt::Display for CrossedExit
+{
+    /// Writes the keyword between backticks.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(match *self {
+            | Self::Become => "`become`",
             | Self::Break => "`break`",
             | Self::Continue => "`continue`",
         })
@@ -870,6 +923,18 @@ pub enum LoweringRefusal<'source>
         exit: LoopExit,
     },
 
+    /// A `become` in a handled subject, or a `break` or a `continue` there
+    /// whose loop holds the scope: each would run code in place of a live
+    /// handler's frame, which is no tail. A `return` there leaves its body
+    /// past every frame instead.
+    AcrossHandler
+    {
+        /// The bytes the exit covers.
+        span: ByteSpan,
+        /// Which exit was written.
+        exit: CrossedExit,
+    },
+
     /// A `for` loop: the native list it iterates has a fold and no case
     /// former, and a loop in constant continuation steps through a list by
     /// a case on it.
@@ -1044,6 +1109,11 @@ impl fmt::Display for LoweringRefusal<'_>
                 "{exit} stands on no path through a loop's body; a function, a lambda, a \
                  thunk or a copattern clause inside a loop has a body of its own"
             ),
+            | Self::AcrossHandler { exit, .. } => write!(
+                f,
+                "{exit} would run in place of a live handler's frame; a handled subject \
+                 leaves its body only by `return`, past every frame around it"
+            ),
             | Self::ForNeedsListCase { .. } => f.write_str(
                 "a `for` loop steps through a native list, which has a fold and no case \
                  former in the kernel or the core; loop over it by recursion instead",
@@ -1136,6 +1206,7 @@ impl LoweringRefusal<'_>
             | Self::UnmarkedSelfReference { span, .. }
             | Self::Unreachable { span }
             | Self::OutsideLoop { span, .. }
+            | Self::AcrossHandler { span, .. }
             | Self::ForNeedsListCase { span }
             | Self::WithoutK { span }
             | Self::UnknownMold { span, .. } => Maybe::Present(span),
@@ -1157,6 +1228,7 @@ mod tests
     use quenchant_shape::shape::Maybe;
 
     use super::AscriptionForm;
+    use super::CrossedExit;
     use super::FormFault;
     use super::FragmentBoundary;
     use super::FragmentSort;
@@ -1178,7 +1250,7 @@ mod tests
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the current 31-variant fixture has no repeated variant tag;
+    /// - ensures: the current 32-variant fixture has no repeated variant tag;
     ///   source-bearing variants carry separately observable rejected spans.
     /// - provides: a finite domain for the exact span projection witness.
     /// - fails: never.
@@ -1199,7 +1271,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 31_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 32_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -1344,6 +1416,10 @@ mod tests
                 span: s(55_usize, 56_usize),
                 exit: LoopExit::Continue,
             },
+            LoweringRefusal::AcrossHandler {
+                span: s(59_usize, 60_usize),
+                exit: CrossedExit::Become,
+            },
             LoweringRefusal::ForNeedsListCase {
                 span: s(57_usize, 58_usize),
             },
@@ -1388,6 +1464,7 @@ mod tests
             s(51_usize, 52_usize),
             s(53_usize, 54_usize),
             s(55_usize, 56_usize),
+            s(59_usize, 60_usize),
             s(57_usize, 58_usize),
         ];
 

@@ -789,7 +789,8 @@ impl<'source> Program<'source>
                 | HeapValue::Constructed { .. }
                 | HeapValue::Stack { .. }
                 | HeapValue::Closure { .. }
-                | HeapValue::Opaque(_)),
+                | HeapValue::Opaque(_)
+                | HeapValue::Capability),
             )
             | None => terminal,
         };
@@ -996,7 +997,8 @@ impl<'source> Program<'source>
                         | HeapValue::Stack { .. }
                         | HeapValue::Thunk { .. }
                         | HeapValue::Fixpoint { .. }
-                        | HeapValue::Closure { .. }),
+                        | HeapValue::Closure { .. }
+                        | HeapValue::Capability),
                     )
                     | None => Err(Evaluation::Stuck(stuck)),
                 }
@@ -1023,7 +1025,7 @@ impl<'source> Program<'source>
     #[spec(ensures: |ret| match machine.store().value(value) {
         Some(&HeapValue::Opaque(constant)) => ret == Maybe::Present(constant),
         Some(&HeapValue::Constructed { .. }) => true,
-        Some(&(HeapValue::Stack { .. } | HeapValue::Literal(_) | HeapValue::Thunk { .. } | HeapValue::Fixpoint { .. } | HeapValue::Closure { .. })) | None =>
+        Some(&(HeapValue::Stack { .. } | HeapValue::Literal(_) | HeapValue::Thunk { .. } | HeapValue::Fixpoint { .. } | HeapValue::Closure { .. } | HeapValue::Capability)) | None =>
             matches!(ret, Maybe::Absent(carried::Absent::Carried)),
     })]
     fn opaque_within(
@@ -1043,7 +1045,8 @@ impl<'source> Program<'source>
                     | HeapValue::Literal(_)
                     | HeapValue::Thunk { .. }
                     | HeapValue::Fixpoint { .. }
-                    | HeapValue::Closure { .. }),
+                    | HeapValue::Closure { .. }
+                    | HeapValue::Capability),
                 )
                 | None => {},
             }

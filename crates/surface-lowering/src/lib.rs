@@ -132,9 +132,31 @@
 //! kernel admits no handler. A core control binder with a jump to it was
 //! declined because every consumer of the core and the bridge to the kernel
 //! would learn a new former, and the kernel would still need the commuted
-//! form. Reversal: when the lowering fragment reaches handlers, or the core
-//! and the kernel gain join points, an exit lowers to a jump and the rest is
-//! no longer copied.
+//! form. Reversal: when the core and the kernel gain join points, an exit
+//! lowers to a jump and the rest is no longer copied.
+//!
+//! # A handler's frame is crossed by `return` alone
+//!
+//! A capability scope's subject runs inside its handler's frame, so an exit
+//! written there acts past that frame (#127, #216). A `return v` in the
+//! subject leaves the body around the scope with `v`: every handler frame
+//! between is unwound, and no return clause runs. A `become`, and a `break`
+//! or a `continue` whose loop holds the scope, are refused as
+//! [`LoweringRefusal::AcrossHandler`]: each would run code in place of a live
+//! frame, which is no tail. The subject's own tail is its result, which the
+//! `pure` clause receives, and is no exit; each clause is a body of its own,
+//! so an exit there is the scope's value. A loop inside the subject is a loop
+//! as any other.
+//!
+//! The commuting above stays the mechanism of every other exit, and of a
+//! subject's own statements. The `return` across a frame is the one exit
+//! that leaves by the core's delimited control: it lowers to a shift that
+//! discards what it captures, and the body it leaves is minted under a
+//! reset. The machine's shift captures through handler frames to the nearest
+//! reset, as the checker types it, so no core or kernel former is new and no
+//! clause runs while unwinding. The price is that body's reset frame, under
+//! which its own tail calls no longer run in constant continuation; the
+//! `lower::capability` module docs state the alternatives and the reversal.
 //!
 //! # Loops are partial fixpoints
 //!
@@ -315,6 +337,7 @@ pub use crate::doc::Documentation;
 pub use crate::doc::DocumentationText;
 pub use crate::doc::documentation;
 pub use crate::error::AscriptionForm;
+pub use crate::error::CrossedExit;
 pub use crate::error::FormFault;
 pub use crate::error::FragmentBoundary;
 pub use crate::error::FragmentSort;

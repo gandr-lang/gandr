@@ -80,7 +80,7 @@ mod entries
             Standing::Design("a parenthesised group: the node inside answers"),
         ),
         ("Expression +", Standing::Owed(14)),
-        ("Expression .", Standing::Owed(3)),
+        ("Expression .", Standing::Owed(8)),
         ("Expression >", Standing::Owed(0)),
         ("Expression ?", Standing::Owed(0)),
         (
@@ -97,7 +97,8 @@ mod entries
         ("Expression continue", Standing::Design(EXIT)),
         ("Expression fn", Standing::Owed(0)),
         ("Expression force", Standing::Owed(0)),
-        ("Expression identifier", Standing::Owed(250)),
+        ("Expression handle", Standing::Owed(0)),
+        ("Expression identifier", Standing::Owed(253)),
         ("Expression loop", Standing::Owed(0)),
         ("Expression number", Standing::Owed(1)),
         ("Expression offer", Standing::Owed(0)),
