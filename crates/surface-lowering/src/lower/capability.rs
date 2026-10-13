@@ -114,12 +114,14 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
 use gandr_core_term::control::EffectClause;
 use gandr_core_term::effect::EffectName;
+use gandr_core_term::effect::EffectOp;
 use gandr_core_term::effect::EffectRow;
 use gandr_core_term::effect::EffectSig;
 use gandr_core_term::effect::OperationName;
 use gandr_core_term::effect::capability::CapabilityGrade;
 use gandr_core_term::effect::capability::Region;
 use gandr_core_term::effect::host::HostSignatures;
+use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
 
@@ -152,6 +154,8 @@ use crate::form::Shape;
 use crate::form::TileName;
 use crate::form::read_pieces;
 use crate::form::shape_of;
+use crate::origin::Label;
+use crate::origin::Labelled;
 use crate::origin::Origin;
 use crate::resolve::Frame;
 use crate::resolve::HeadArity;
@@ -211,6 +215,8 @@ pub(super) struct Exercised
     interface: EffectName,
     /// The operation exercised.
     operation: OperationName,
+    /// The bytes of the head `c.op` that selects it.
+    head: ByteSpan,
     /// The payload's values, in the lowerer's operand store.
     payload: Stretch,
 }
@@ -676,6 +682,7 @@ impl<'source> Lowerer<'_, 'source>
                 capability: target.node,
                 interface,
                 operation,
+                head: head.span,
                 payload,
             }),
         );
@@ -1129,13 +1136,17 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: every node the plan names is already minted or absent.
     /// - ensures: the exercise of the operation, under its interface's whole
     ///   signature, of the capability with the payload its arguments make, at
-    ///   `origin`; the first absence among the children.
+    ///   `origin`, and a label at the head naming the operation's type, its
+    ///   payload to the returner of its reply; the first absence among the
+    ///   children.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::exercise`].
+    /// - hypothesis: L3 — as [`Self::exercise`]; the head answers at the
+    ///   operation it selects.
     /// - witness: `lower::capability::tests::an_exercise_is_checked_against_the_authority_it_was_attenuated_to`
+    /// - witness: `lower::capability::tests::an_exercise_s_head_answers_at_its_operation`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(Lowered::Computation(id)) => sink.origins.computation(id) == Maybe::Present(origin),
         | Maybe::Present(_) => false,
@@ -1158,6 +1169,19 @@ impl<'source> Lowerer<'_, 'source>
         };
         sink.signature(&exercised.interface, origin)
             .map(|signature| {
+                if let Maybe::Present(&EffectOp { payload, reply, .. }) =
+                    signature.operation(&exercised.operation)
+                {
+                    let replied = sink.arena.comp_type_returner(reply);
+                    let ty = sink.arena.comp_type_arrow(payload, replied);
+                    sink.origins.record_label(Label {
+                        span: exercised.head,
+                        labelled: Labelled::CompType {
+                            ty,
+                            context: Vec::new(),
+                        },
+                    });
+                }
                 let id = sink.arena.computation_exercise(
                     capability,
                     signature,
