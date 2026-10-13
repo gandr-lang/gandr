@@ -30,6 +30,7 @@ A circuit algebra has two units. The identity wire, a bare wire from an input po
 - `Site`, `identities`, `closure`, `intersection`, `invertibility`, `degree_order`, `direct_core`, `latching`, `factorization`, `rigidity`, `dual_rigidity`, `split_lowering`, `pushouts`, `Outcome`: the generalized Reedy conditions, each answering with its case count and its smallest counter-example. Witnesses: `tests::reedy::the_class_is_a_category_with_two_classes`, `tests::reedy::the_degree_orders_both_classes`, `tests::reedy::the_point_free_core_is_direct`, `tests::reedy::the_latching_category_is_finite`, `tests::reedy::every_map_factors_through_a_point_deletion`, `tests::reedy::both_rigidity_axioms_hold`, `tests::reedy::a_closed_substitution_has_no_pushout_with_a_deletion`, `tests::point_count::the_codegeneracy_is_split`.
 - `core_decomposition`, `grounded_stratum`, `deletion_classes`, `codegeneracies`, `corolla`: the point-count grade. Witnesses: `tests::point_count::every_shape_is_its_core_beside_its_points`, `tests::point_count::grounded_shapes_are_the_zero_stratum`, `tests::point_count::deletions_are_addressed_by_kernels`, `tests::point_count::the_codegeneracy_is_split`, `tests::units::the_point_reaches_each_point_once`.
 - `merge`, `scalars`, `labelled_by_arity`, `unit_property`: the external product and the finite check that the empty diagram is its one weak unit. Witnesses: `tests::units::the_external_product_sets_wirings_side_by_side`, `tests::units::scalars_are_counted_and_labelled`, `tests::units::the_empty_diagram_is_the_only_unit`.
+- `CorollaStratum`, `Uncertified`, `Species`, `Profile`, `Element`, `Labelling`, `Table`, `Bijection`, `Equivalence`, `Natural`, `restrict`, `Defect`: the corolla stratum certified at degree one, graphical species and their terms at every shape, an equivalence of species as the finite certificate natural along the corolla automorphisms, its extension to the free algebras, and the corolla restriction that reflects a natural isomorphism of the free algebras back to the species. Witnesses: `tests::stratum::the_corolla_stratum_is_certified_at_degree_one_alone`, `tests::stratum::an_equivalence_commutes_with_the_corolla_automorphisms`, `tests::stratum::restriction_reflects_a_natural_isomorphism_to_its_species`.
 
 The record of why the objects are stick-free is four tests on raw wirings, read as graphs before admission so that a bare wire can stand as an object: `negatives::sticks_as_objects_admit_no_degree`, `negatives::connected_objects_lose_the_point_deletion`, `negatives::vertex_end_fusions_are_not_closed`, `negatives::contraction_lowering_loses_the_factorization`. Each asserts the one fact that rules its alternative out.
 
@@ -92,6 +93,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | The degree | [`degree`](src/degree.rs) |
 | What a bound proves | [`catalogue`](src/catalogue.rs) |
 | What the checks find at the bound | [`conditions`](src/conditions.rs) |
+| The corolla stratum, its alphabet and range, `ua` and `ua-desc` | [`stratum`](src/stratum.rs) |
 
 ## License
 

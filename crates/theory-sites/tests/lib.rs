@@ -3,6 +3,8 @@
 //! One target rather than one per area, so a witness path names the area it
 //! belongs to (`tests::maps::…`) instead of a file.
 
+extern crate alloc;
+
 /// One wire end: `o` for open, a vertex number otherwise.
 macro_rules! end {
     (o) => {
@@ -50,5 +52,7 @@ mod point_count;
 mod reedy;
 #[cfg(test)]
 mod shapes;
+#[cfg(test)]
+mod stratum;
 #[cfg(test)]
 mod units;

@@ -113,6 +113,16 @@
 //! A circuit algebra substitutes disconnected graphs, so an image may be
 //! disconnected, and a restriction map needs no convex rewrite site.
 //!
+//! # The corolla stratum
+//!
+//! [`CorollaStratum`] certifies the shapes of degree at most one, and the
+//! species over it: generators at each profile, their elements at the
+//! corollas, the labellings of every shape, and an [`Equivalence`] of species
+//! generated on its corollas, with its extension to the free algebras and the
+//! corolla restriction [`restrict`] that reflects a natural isomorphism back.
+//! The `stratum` module states the alphabet and the range each statement
+//! fixes.
+//!
 //! # Boundary wrappers
 //!
 //! Every count and index a signature here crosses is a transparent wrapper
@@ -208,6 +218,7 @@ mod negatives;
 mod outcome;
 mod point_count;
 mod shape;
+mod stratum;
 mod units;
 
 pub use catalogue::Catalogue;
@@ -266,6 +277,25 @@ pub use shape::ShapeSize;
 pub use shape::VertexKind;
 pub use shape::WireKind;
 pub use shape::shapes_up_to;
+pub use stratum::Bijection;
+pub use stratum::Corolla;
+pub use stratum::CorollaStratum;
+pub use stratum::Defect;
+pub use stratum::Element;
+pub use stratum::ElementIndex;
+pub use stratum::Equivalence;
+pub use stratum::GeneratorCount;
+pub use stratum::GeneratorIndex;
+pub use stratum::Labelling;
+pub use stratum::Natural;
+pub use stratum::Port;
+pub use stratum::PortCount;
+pub use stratum::Profile;
+pub use stratum::Species;
+pub use stratum::Table;
+pub use stratum::Uncertified;
+pub use stratum::restrict;
+pub use stratum::stratum_corolla;
 pub use units::GeneratorBound;
 pub use units::UnitOutcomes;
 pub use units::labelled_by_arity;
