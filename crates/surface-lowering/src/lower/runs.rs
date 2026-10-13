@@ -346,6 +346,11 @@ fn operand_of(
         | Former::Thunk
         | Former::Lambda
         | Former::Block
+        | Former::Loop
+        | Former::While
+        | Former::For
+        | Former::Break
+        | Former::Continue
         | Former::Call
         | Former::Case
         | Former::Scope

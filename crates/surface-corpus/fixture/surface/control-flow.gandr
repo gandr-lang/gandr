@@ -1,19 +1,115 @@
-@[ refuses("OutOfFragment") ]
-def for_each() {
-  for x in xs { drop(x); }
+@[ checks ]
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
 }
 
-@[ refuses("OutOfFragment") ]
-def until_done() {
-  while cond { break; }
+@[ checks ]
+def tick(n : Nat) -> -F Unit {
+  return unit
 }
 
-@[ refuses("OutOfFragment") ]
-def spin() {
-  loop { continue; }
+@[ checks ]
+def spin(n : Nat) -> -F Nat {
+  loop { tick(n); }
 }
 
-@[ refuses("OutOfFragment") ]
-def sift() {
-  for x in xs { if p { break; } else { continue; } }
+@[ checks ]
+def first(n : Nat) -> -F Nat {
+  run m <- loop { break(Succ(n)) } ;
+  return Succ(m)
+}
+
+@[ runs("ctor[1](ctor[1](ctor[0]()))") ]
+def first_zero : +U (-F Nat) ;
+def first_zero = thunk { become first(Zero) } ;
+
+@[ checks ]
+def pick(n : Nat) -> -F Nat {
+  run m <- loop {
+    case n {
+      Zero => break(n),
+      Succ(p) => break(p),
+    }
+  } ;
+  return Succ(m)
+}
+
+@[ runs("ctor[1](ctor[1](ctor[0]()))") ]
+def pick_two : +U (-F Nat) ;
+def pick_two = thunk { become pick(Succ(Succ(Zero))) } ;
+
+@[ checks ]
+def leave(n : Nat) -> -F Nat {
+  loop {
+    case n {
+      Zero => continue,
+      Succ(p) => return p,
+    }
+  }
+}
+
+@[ runs("ctor[0]()") ]
+def leave_one : +U (-F Nat) ;
+def leave_one = thunk { become leave(Succ(Zero)) } ;
+
+@[ checks ]
+def hand(n : Nat) -> -F Nat {
+  loop { become leave(Succ(n)) }
+}
+
+@[ runs("ctor[1](ctor[0]())") ]
+def hand_one : +U (-F Nat) ;
+def hand_one = thunk { become hand(Succ(Zero)) } ;
+
+@[ checks ]
+def until_done(n : Integer) -> -F Integer {
+  while n > 0 { return n } ;
+  return 0
+}
+
+@[ runs("3") ]
+def until_three : +U (-F Integer) ;
+def until_three = thunk { become until_done(3) } ;
+
+@[ runs("0") ]
+def until_none : +U (-F Integer) ;
+def until_none = thunk { become until_done(0) } ;
+
+@[ checks ]
+def sift(n : Nat) -> -F Nat {
+  loop {
+    case n {
+      Zero => { break; },
+      Succ(p) => { tick(p); continue; },
+    }
+  } ;
+  return n
+}
+
+@[ runs("ctor[0]()") ]
+def sift_zero : +U (-F Nat) ;
+def sift_zero = thunk { become sift(Zero) } ;
+
+@[ refuses("OutsideLoop") ]
+def stray(n : Nat) -> -F Nat {
+  break(n)
+}
+
+@[ refuses("OutsideLoop") ]
+def skip(n : Nat) -> -F Nat {
+  continue
+}
+
+@[ refuses("OutsideLoop") ]
+def held(n : Nat) -> -F Nat {
+  loop {
+    run t <- pure thunk { break(n) } ;
+    continue
+  }
+}
+
+@[ refuses("ForNeedsListCase") ]
+def for_each(n : Nat) -> -F Unit {
+  for x in n { tick(x); }
 }

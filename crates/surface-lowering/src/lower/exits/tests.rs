@@ -52,7 +52,7 @@ const NAT: &str = "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n";
 /// - hypothesis: L3 — the survey and refusal witnesses locate their forms here.
 /// - witness: `lower::exits::tests::code_no_path_reaches_is_refused`
 #[spec(ensures: |ret| source.as_ref().get(usize::from(ret.start()) .. usize::from(ret.end())) == Some(needle.as_ref()))]
-fn spelled(
+pub(in crate::lower) fn spelled(
     source: SourceText<'_>,
     needle: SourceText<'_>,
 ) -> ByteSpan
@@ -80,7 +80,7 @@ fn spelled(
 ///
 /// # Specification
 /// trivial.
-fn assert_surveyed(
+pub(in crate::lower) fn assert_surveyed(
     source: SourceText<'_>,
     expected: &[(SourceText<'_>, Leaves)],
 )
@@ -112,12 +112,12 @@ fn assert_surveyed(
     }
 }
 
-/// Every computation reachable from `root` through binds, lambdas and
-/// matches.
+/// Every computation reachable from `root` through binds, lambdas, matches,
+/// splits and fixpoints.
 ///
 /// # Specification
 /// trivial.
-fn reachable(
+pub(in crate::lower) fn reachable(
     arena: &CoreArena,
     root: ComputationId,
 ) -> Vec<ComputationId>
@@ -128,7 +128,10 @@ fn reachable(
         seen.push(next);
         match arena.computation(next) {
             | Some(&Computation::Bind(first, second)) => pending.extend([first, second]),
-            | Some(&Computation::Lambda(under)) => pending.push(under),
+            | Some(&Computation::Lambda(under) | &Computation::Split { body: under, .. }) => {
+                pending.push(under);
+            },
+            | Some(&Computation::Fixpoint { body: under, .. }) => pending.push(under),
             | Some(&Computation::DataCase { ref branches, .. }) => {
                 pending.extend(branches.iter().copied());
             },
@@ -146,7 +149,7 @@ fn reachable(
 ///
 /// # Specification
 /// trivial.
-fn assert_same_body(
+pub(in crate::lower) fn assert_same_body(
     module: &crate::module::LoweredModule<'_>,
     arena: &CoreArena,
     (lowered, written): (SurfaceName<'_>, SurfaceName<'_>),

@@ -136,6 +136,26 @@
 //! and the kernel gain join points, an exit lowers to a jump and the rest is
 //! no longer copied.
 //!
+//! # Loops are partial fixpoints
+//!
+//! `loop { b }` lowers to `fix k. b'` and `while c { b }` to `fix k. x ← c;
+//! case x { inl _ => b', inr _ => return () }`, each with partial evidence: a
+//! loop need not end, so it claims no descent. In `b'` every path through the
+//! body that ends without an exit runs the loop again, `x ← e; split x ();
+//! force k`, and `continue` is `force k` where it stands. `break(v)` and a
+//! bare `break` are the loop's local ends, `return v` and `return ()`, which
+//! the commuting above continues with what follows the loop; `return` and
+//! `become` inside a loop leave the function as anywhere else. A `break` or
+//! `continue` on no path through a loop's body, a thunk's or a lambda's inside
+//! one among them, is refused as [`LoweringRefusal::OutsideLoop`]. The
+//! machine unfolds a loop's fixpoint against the continuation that forces it,
+//! so a loop runs in constant continuation however many passes it takes. No
+//! state is carried from pass to pass: each reads the frame the loop was
+//! entered with. `for` is refused as [`LoweringRefusal::ForNeedsListCase`]:
+//! the native list has a fold and no case, and a fold cannot stop where the
+//! body breaks. The `lower::loops` module docs state each reading with its
+//! alternatives and reversal.
+//!
 //! # The fourth bridge is the checker's
 //!
 //! Three sort-directed bridges are the lowering's, each read off the syntax:
@@ -298,6 +318,7 @@ pub use crate::error::AscriptionForm;
 pub use crate::error::FormFault;
 pub use crate::error::FragmentBoundary;
 pub use crate::error::FragmentSort;
+pub use crate::error::LoopExit;
 pub use crate::error::LoweringRefusal;
 pub use crate::error::TelescopeFault;
 pub use crate::form::Ending;

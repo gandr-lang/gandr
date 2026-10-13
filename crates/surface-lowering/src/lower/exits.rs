@@ -1,5 +1,7 @@
 //! Early exits: a `return` or a `become` wherever a path through a body
-//! passes, lowered so that every exit stands where its body ends.
+//! passes, lowered so that every exit stands where its body ends; and a
+//! loop's `break`, `continue` and re-entry, which the same commuting puts where
+//! the loop's body ends.
 //!
 //! # Three passes, one per sweep
 //!
@@ -7,7 +9,10 @@
 //! node's paths do with the body it stands in: never leave it, sometimes, or
 //! always. A function, a lambda, a thunk and a copattern block never do,
 //! since an exit inside one, or inside one of its clauses, leaves it and not
-//! the body around it.
+//! the body around it. A `break` and a `continue` always leave the loop body
+//! they stand in; a loop sometimes leaves where it stands, through a `break`
+//! of its own, and always leaves without one, since its body only runs again
+//! or exits.
 //!
 //! The **classification** reads the survey at each block a path runs through.
 //! A statement whose computation sometimes leaves distributes the rest of the
@@ -21,9 +26,12 @@
 //! or the thunk that owns it is minted: a bind whose rest is distributed
 //! disappears into its computation, whose every local end binds a copy of the
 //! rest, carried under the binders between the statement and the end, and
-//! every exit is left where it stands, which is then where the body ends. A
-//! match leaf's copy of an arm body carries the exits and the distributed
-//! binds of the arm with it.
+//! every exit is left where it stands, which is then where the body ends. The
+//! walk enters a loop's fixpoint: a local end inside it is a `break`, which
+//! continues what the loop's own position continues, or an exit — a
+//! `return`, a `become`, a `continue` or a re-entry — which stays. A match
+//! leaf's copy of an arm body carries the exits, the `break`s, the loops and
+//! the distributed binds of the arm with it.
 //!
 //! The decision, the alternatives and what reverses it are the crate's: see
 //! the crate documentation's section on exits.
@@ -87,6 +95,31 @@ pub(super) enum Leaves
     Sometimes,
     /// Every path leaves.
     Always,
+}
+
+/// Whether a node holds a `break` of the loop around it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the variants are ordered, so the greater of two children's is
+///   what a form holding both holds.
+/// - provides: the half of the survey that tells a loop which a `break` leaves
+///   from apart from one that only runs again or exits.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a loop with a `break`, one without, and a `break` inside
+///   a nested loop, each surveyed exactly.
+/// - witness: `lower::loops::tests::a_loop_leaves_where_it_stands_only_through_its_breaks`
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum Breaks
+{
+    /// No `break` of the loop around the node stands in it.
+    #[default]
+    Never,
+    /// A `break` of the loop around the node stands in it.
+    Held,
 }
 
 /// Where the rest of a block goes after one of its statements.
@@ -244,6 +277,29 @@ quenchant_shape::reason_enum! {
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct RestAt(usize);
 
+/// The rests a computation's local ends continue: an ordinary end's, and a
+/// `break`'s.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: an absent rest leaves its ends where they stand; a `break`'s is
+///   the rest of the position its loop stands at.
+/// - executable: none — the record holds no list of rests to check against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a `break` inside a statement of a loop's body continues
+///   the block after the loop, while the statement's own ends continue the
+///   body's block.
+/// - witness: `lower::loops::tests::a_break_continues_what_follows_its_loop`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Ends
+{
+    /// What an ordinary local end continues.
+    rests: Maybe<RestAt, enclosing::Absent>,
+    /// What a `break` of the nearest loop continues.
+    breaks: Maybe<RestAt, enclosing::Absent>,
+}
+
 /// A distributed rest: what continues each local end of its statement.
 ///
 /// # Specification
@@ -265,9 +321,10 @@ struct Pending
     depth: Binders,
     /// The statement's origin, which every bind of the rest carries.
     origin: Origin,
-    /// The rest the statement's own local end continues, when the statement
-    /// stands at a local end of another.
-    outer: Maybe<RestAt, enclosing::Absent>,
+    /// What the statement's own position continues: the rest of the
+    /// statement it stands at a local end of, and the rest a `break` in it
+    /// continues.
+    outer: Ends,
 }
 
 /// One unit of the commuting's work.
@@ -275,7 +332,7 @@ struct Pending
 enum Step
 {
     /// Commute a computation at a depth, under the rests it continues.
-    Open(ComputationId, Maybe<RestAt, enclosing::Absent>, Binders),
+    Open(ComputationId, Ends, Binders),
     /// Rebuild a computation over its children's commuted forms.
     Close(ComputationId),
     /// Keep the result on top as a rest's commuted form.
@@ -291,11 +348,14 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: nothing; the survey reads the tree alone.
     /// - ensures: every node holds its [`Leaves`], children before parents:
-    ///   `return` and `become` always leave; a function, a lambda, a thunk and
-    ///   a copattern block never do, since an exit inside one leaves it; a form
-    ///   holding no exit outside such a body never does; a block or a grouping
-    ///   does what the child that leaves most does; a match always leaves when
-    ///   every arm does; every other form holding an exit sometimes does.
+    ///   `return`, `become`, `break` and `continue` always leave; a function, a
+    ///   lambda, a thunk and a copattern block never do, since an exit inside
+    ///   one leaves it; a `loop` sometimes does when a `break` of its own
+    ///   stands in it and always does otherwise, and a `while` or a `for`
+    ///   sometimes does; a form holding no exit outside such a body never does;
+    ///   a block or a grouping does what the child that leaves most does; a
+    ///   match always leaves when every arm does; every other form holding an
+    ///   exit sometimes does.
     /// - provides: what the classification of a block reads to decide where the
     ///   rest of the block goes, before any statement in it is classified.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] when the sweep outruns the
@@ -307,9 +367,11 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a computation with no exit, one with an exit in one
-    ///   arm and one with an exit in every arm, each at one and two depths, and
-    ///   an exit inside a thunk, each asserted as its exact survey.
+    ///   arm and one with an exit in every arm, each at one and two depths, an
+    ///   exit inside a thunk, and loops with and without a `break`, each
+    ///   asserted as its exact survey.
     /// - witness: `lower::exits::tests::the_paths_of_a_computation_are_surveyed_through_nesting`
+    /// - witness: `lower::loops::tests::a_loop_leaves_where_it_stands_only_through_its_breaks`
     #[spec(
         captures: before = (self.fuel.remaining, self.leaves.len()),
         ensures: |ret| {
@@ -323,6 +385,8 @@ impl<'source> Lowerer<'_, 'source>
     {
         let mut pieces = core::mem::take(&mut self.pieces);
         let mut remaining = usize::from(self.tree.node_count());
+        let mut breaks = Vec::new();
+        breaks.resize(remaining, Breaks::Never);
         let mut outcome = Ok(());
         while let Some(next) = remaining.checked_sub(1_usize) {
             remaining = next;
@@ -330,9 +394,12 @@ impl<'source> Lowerer<'_, 'source>
                 outcome = Err(refusal);
                 break;
             }
-            let leaves = self.leaves_of(NodeIndex::from(next), &mut pieces);
+            let (leaves, broken) = self.leaves_of(NodeIndex::from(next), &mut pieces, &breaks);
             if let Some(held) = self.leaves.get_mut(next) {
                 *held = leaves;
+            }
+            if let Some(held) = breaks.get_mut(next) {
+                *held = broken;
             }
         }
         self.pieces = pieces;
@@ -340,12 +407,17 @@ impl<'source> Lowerer<'_, 'source>
         outcome
     }
 
-    /// What the paths of the node at `position` do, its children surveyed.
+    /// What the paths of the node at `position` do, and whether it holds a
+    /// `break` of the loop around it, its children surveyed into `breaks` and
+    /// the leaves.
     ///
     /// # Specification
     /// - requires: every child of `position` is surveyed.
     /// - ensures: as [`Self::survey`] states it, for one node; a node that is
-    ///   no form sometimes leaves when a child does and never otherwise.
+    ///   no form sometimes leaves when a child does and never otherwise; a
+    ///   `break` holds one, a loop, a function, a lambda, a thunk and a
+    ///   copattern block hold none, and every other node holds one when a child
+    ///   does; a node holding a `break` leaves at least sometimes.
     /// - provides: the per-node half of [`Self::survey`].
     /// - fails: never.
     /// - panics: none.
@@ -353,38 +425,46 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::survey`].
     /// - witness: `lower::exits::tests::the_paths_of_a_computation_are_surveyed_through_nesting`
-    #[spec(ensures: |ret| ret != Leaves::Sometimes || self.tree.children(position).any(|child| self.leaves_at(child) != Leaves::Never))]
+    /// - witness: `lower::loops::tests::a_loop_leaves_where_it_stands_only_through_its_breaks`
+    #[spec(ensures: |ret| ret.1 == Breaks::Never || ret.0 != Leaves::Never)]
     fn leaves_of(
         &self,
         position: NodeIndex,
         pieces: &mut Pieces,
-    ) -> Leaves
+        breaks: &[Breaks],
+    ) -> (Leaves, Breaks)
     {
-        let held = self
-            .tree
-            .children(position)
-            .map(|child| self.leaves_at(child))
-            .max()
-            .unwrap_or_default();
+        let (held, broken) = self.tree.children(position).fold(
+            (Leaves::Never, Breaks::Never),
+            |(leaves, broken), child| {
+                (
+                    leaves.max(self.leaves_at(child)),
+                    broken.max(breaks.get(usize::from(child)).copied().unwrap_or_default()),
+                )
+            },
+        );
         let Some(node) = self.tree.node(position)
         else {
-            return Leaves::Never;
+            return (Leaves::Never, Breaks::Never);
         };
         let Ok(Shape::Form { former, .. }) = shape_of(self.pbg, node)
         else {
-            return held.min(Leaves::Sometimes);
+            return (held.min(Leaves::Sometimes), broken);
         };
         match former {
-            | Former::Exit | Former::Become => Leaves::Always,
+            | Former::Break => (Leaves::Always, Breaks::Held),
+            | Former::Exit | Former::Become | Former::Continue => (Leaves::Always, Breaks::Never),
             | Former::Thunk
             | Former::Lambda
             | Former::LazyRecord
             | Former::Declaration
-            | Former::Module => Leaves::Never,
-            | _ if held == Leaves::Never => Leaves::Never,
-            | Former::Block | Former::Parenthesized => held,
-            | Former::Case | Former::Offer => self.arms_leave(position, pieces),
-            | _ => Leaves::Sometimes,
+            | Former::Module => (Leaves::Never, Breaks::Never),
+            | Former::Loop if broken == Breaks::Never => (Leaves::Always, Breaks::Never),
+            | Former::Loop | Former::While | Former::For => (Leaves::Sometimes, Breaks::Never),
+            | _ if held == Leaves::Never => (Leaves::Never, Breaks::Never),
+            | Former::Block | Former::Parenthesized => (held, broken),
+            | Former::Case | Former::Offer => (self.arms_leave(position, pieces), broken),
+            | _ => (Leaves::Sometimes, broken),
         }
     }
 
@@ -456,8 +536,9 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Mark `inner`, standing in tail position of `outer`, with the paths
-    /// through `outer`: where a path ends, where an exit may stand, and where a
-    /// local end continues a block.
+    /// through `outer`: where a path ends, where an exit may stand, where a
+    /// local end continues a block, where a path through a loop's body ends,
+    /// and where a `break` or a `continue` may stand.
     ///
     /// # Specification
     /// - requires: `inner` stands in tail position of `outer`: a block's last
@@ -479,10 +560,14 @@ impl<'source> Lowerer<'_, 'source>
             self.exits.contains(&inner) || self.exits.contains(&outer),
             self.exitable.contains(&inner) || self.exitable.contains(&outer),
             self.joined.contains(&inner) || self.joined.contains(&outer),
+            self.iterated.contains(&inner) || self.iterated.contains(&outer),
+            self.looping.contains(&inner) || self.looping.contains(&outer),
         ),
         ensures: self.exits.contains(&inner) == before.0
             && self.exitable.contains(&inner) == before.1
-            && self.joined.contains(&inner) == before.2,
+            && self.joined.contains(&inner) == before.2
+            && self.iterated.contains(&inner) == before.3
+            && self.looping.contains(&inner) == before.4,
     )]
     pub(super) fn pass_paths(
         &mut self,
@@ -490,7 +575,13 @@ impl<'source> Lowerer<'_, 'source>
         inner: NodeIndex,
     )
     {
-        for marks in [&mut self.exits, &mut self.exitable, &mut self.joined] {
+        for marks in [
+            &mut self.exits,
+            &mut self.exitable,
+            &mut self.joined,
+            &mut self.iterated,
+            &mut self.looping,
+        ] {
             if marks.contains(&outer) {
                 let _marked = marks.insert(inner);
             }
@@ -535,10 +626,11 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: `block` is the block just read at `site`, a path passes it,
     ///   and `answer` is the type the block answers, when one is stated.
     /// - ensures: the last computation and every statement's computation are
-    ///   where an exit may stand; a statement whose computation sometimes
-    ///   leaves distributes the rest of the block, its computation joining the
-    ///   block and answering `answer`; a statement whose computation never
-    ///   leaves keeps its rest bound.
+    ///   where an exit may stand, and where a `break` or a `continue` may when
+    ///   the last computation is on a path through a loop's body; a statement
+    ///   whose computation sometimes leaves distributes the rest of the block,
+    ///   its computation joining the block and answering `answer`; a statement
+    ///   whose computation never leaves keeps its rest bound.
     /// - provides: the statement half of the classification of exits.
     /// - fails: [`LoweringRefusal::Unreachable`] for a statement whose
     ///   computation always leaves, at the bytes from the next statement to the
@@ -557,6 +649,7 @@ impl<'source> Lowerer<'_, 'source>
     #[spec(ensures: |ret| ret.is_err() || (self.exitable.contains(&block.last)
         && super::stretch(&self.statements, block.statements).iter().all(|statement| {
             self.exitable.contains(&statement.bound)
+                && (!self.looping.contains(&block.last) || self.looping.contains(&statement.bound))
                 && (statement.rest == Rest::Distributed) == (self.leaves_at(statement.bound) == Leaves::Sometimes)
                 && (statement.rest == Rest::Bound || self.joined.contains(&statement.bound))
         })))]
@@ -568,12 +661,16 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let _last = self.exitable.insert(block.last);
+        let looping = self.looping.contains(&block.last);
         for position in block.statements.start .. block.statements.end {
             let Some(&statement) = self.statements.get(position)
             else {
                 continue;
             };
             let _path = self.exitable.insert(statement.bound);
+            if looping {
+                let _iteration = self.looping.insert(statement.bound);
+            }
             match self.leaves_at(statement.bound) {
                 | Leaves::Never => {},
                 | Leaves::Sometimes => {
@@ -722,23 +819,28 @@ impl<'source> Lowerer<'_, 'source>
     }
 }
 
-/// Record, for every copy a rewrite made of an exit or of a bind whose rest
-/// is distributed, that the copy is one too.
+/// Record, for every copy a rewrite made of an exit, a `break`, a loop or a
+/// bind whose rest is distributed, that the copy is one too.
 ///
 /// # Specification
 /// - requires: `carried` is what one rewrite reported.
-/// - ensures: every computation `carried` maps an exit to is an exit; every one
-///   it maps a distributed bind to is distributed, at the original's origin.
+/// - ensures: every computation `carried` maps an exit, a `break` or a loop to
+///   is one; every one it maps a distributed bind to is distributed, at the
+///   original's origin.
 /// - provides: what keeps a match leaf's copy of an arm body commutable.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — an exit in an arm that binds a field leaves from the
-///   leaf's copy of the arm.
+///   leaf's copy of the arm, and a `break` in an arm continues what follows its
+///   loop from the leaf's copy.
 /// - witness: `lower::exits::tests::an_exit_under_nesting_leaves_its_function`
+/// - witness: `lower::loops::tests::a_break_continues_what_follows_its_loop`
 #[spec(ensures: carried.iter().all(|pair| match *pair {
     Carried::Computation(held, written) => (!sink.exits.contains(&held) || sink.exits.contains(&written))
+        && (!sink.breaks.contains(&held) || sink.breaks.contains(&written))
+        && (!sink.loops.contains(&held) || sink.loops.contains(&written))
         && (!sink.distributed.contains_key(&held) || sink.distributed.contains_key(&written)),
     _ => true,
 }))]
@@ -749,8 +851,10 @@ pub(super) fn mark_copies(
 {
     for pair in carried {
         if let Carried::Computation(held, written) = *pair {
-            if sink.exits.contains(&held) {
-                let _first = sink.exits.insert(written);
+            for marks in [&mut sink.exits, &mut sink.breaks, &mut sink.loops] {
+                if marks.contains(&held) {
+                    let _first = marks.insert(written);
+                }
             }
             if let Some(&origin) = sink.distributed.get(&held) {
                 let _first = sink.distributed.insert(written, origin);
@@ -773,14 +877,18 @@ pub(super) fn mark_copies(
 ///   replaced by `N'[v/x]`, the beta step of the returner, so no producer the
 ///   checker cannot synthesise is bound; any other end `e` by `x ← e; N'`. A
 ///   local end is a node the walk through binds' rests, case branches, a data
-///   case's field functions, a split's body, an offer's arms and a fork's
-///   parent reaches that is none of those and no exit; an exit resets the rests
-///   it continues to none, so it stays where it stands. An offer's arm and a
-///   fork's parent bind no intuitionistic variable, so the rest reaches them at
-///   the depth it reaches the form. The rest is copied once per depth it is
+///   case's field functions, a split's body, an offer's arms, a fork's parent
+///   and a loop's fixpoint reaches that is none of those and no exit; an exit
+///   resets the rests it continues to none, so it stays where it stands. An
+///   offer's arm and a fork's parent bind no intuitionistic variable, so the
+///   rest reaches them at the depth it reaches the form. A loop's fixpoint is
+///   walked with no rest of its own, its `break`s continuing the rest its
+///   position continues, so a `break` is that rest's local end and every other
+///   end in the loop's body stays. The rest is copied once per depth it is
 ///   carried to. Every rebuilt node takes its original's origin and match
-///   record, every bind of a rest its statement's origin, and every copied node
-///   its source's; `body` itself when nothing was distributed in it.
+///   record, and a rebuilt loop stays one, every bind of a rest its statement's
+///   origin, and every copied node its source's; `body` itself when nothing was
+///   distributed in it.
 /// - provides: the mint half of early exits: every exit focuses as the cut of
 ///   its value against the body's own return continuation.
 /// - fails: never.
@@ -813,19 +921,28 @@ pub(super) fn commute(
     let mut copies: BTreeMap<(RestAt, Binders), ComputationId> = BTreeMap::new();
     let mut carried: Vec<Carried> = Vec::new();
     let mut results: Vec<ComputationId> = Vec::new();
-    let mut steps = Vec::from([Step::Open(
-        body,
-        Maybe::Absent(enclosing::Absent::Outermost),
-        Binders::NONE,
-    )]);
+    let outermost = Ends {
+        rests: Maybe::Absent(enclosing::Absent::Outermost),
+        breaks: Maybe::Absent(enclosing::Absent::Outermost),
+    };
+    let mut steps = Vec::from([Step::Open(body, outermost, Binders::NONE)]);
     while let Some(step) = steps.pop() {
         match step {
-            | Step::Open(node, rests, depth) => {
-                let rests = if sink.exits.contains(&node) {
-                    Maybe::Absent(enclosing::Absent::Outermost)
+            | Step::Open(node, ends, depth) => {
+                let ends = if sink.exits.contains(&node) {
+                    Ends {
+                        rests: Maybe::Absent(enclosing::Absent::Outermost),
+                        ..ends
+                    }
+                }
+                else if sink.breaks.contains(&node) {
+                    Ends {
+                        rests: ends.breaks,
+                        ..ends
+                    }
                 }
                 else {
-                    rests
+                    ends
                 };
                 let held = sink.arena.computation(node).cloned();
                 match held {
@@ -836,49 +953,63 @@ pub(super) fn commute(
                                 rest,
                                 depth,
                                 origin,
-                                outer: rests,
+                                outer: ends,
                             });
                             settled.push(Maybe::Absent(settled::Absent::Pending));
-                            steps.push(Step::Open(bound, Maybe::Present(at), depth));
+                            let continued = Ends {
+                                rests: Maybe::Present(at),
+                                ..ends
+                            };
+                            steps.push(Step::Open(bound, continued, depth));
                         }
                         else {
                             steps.push(Step::Close(node));
-                            steps.push(Step::Open(rest, rests, depth.deeper()));
+                            steps.push(Step::Open(rest, ends, depth.deeper()));
                         }
+                    },
+                    | Some(Computation::Fixpoint { body: under, .. })
+                        if sink.loops.contains(&node) =>
+                    {
+                        steps.push(Step::Close(node));
+                        let iterated = Ends {
+                            rests: Maybe::Absent(enclosing::Absent::Outermost),
+                            breaks: ends.rests,
+                        };
+                        steps.push(Step::Open(under, iterated, depth.deeper()));
                     },
                     | Some(Computation::Case { ref branches, .. }) => {
                         steps.push(Step::Close(node));
                         for &branch in branches.iter().rev() {
-                            steps.push(Step::Open(branch, rests, depth.deeper()));
+                            steps.push(Step::Open(branch, ends, depth.deeper()));
                         }
                     },
                     | Some(Computation::DataCase { ref branches, .. }) => {
                         steps.push(Step::Close(node));
                         for &branch in branches.iter().rev() {
-                            steps.push(Step::Open(branch, rests, depth));
+                            steps.push(Step::Open(branch, ends, depth));
                         }
                     },
                     | Some(Computation::Split {
                         arity, body: under, ..
                     }) => {
                         steps.push(Step::Close(node));
-                        steps.push(Step::Open(under, rests, depth.deeper_by(arity)));
+                        steps.push(Step::Open(under, ends, depth.deeper_by(arity)));
                     },
                     | Some(Computation::Lambda(under)) => {
                         steps.push(Step::Close(node));
-                        steps.push(Step::Open(under, rests, depth.deeper()));
+                        steps.push(Step::Open(under, ends, depth.deeper()));
                     },
                     | Some(Computation::Session(SessionAction::Offer { ref arms, .. })) => {
                         steps.push(Step::Close(node));
                         for &arm in arms.values().rev() {
-                            steps.push(Step::Open(arm, rests, depth));
+                            steps.push(Step::Open(arm, ends, depth));
                         }
                     },
                     | Some(Computation::Session(SessionAction::Fork { parent, .. })) => {
                         steps.push(Step::Close(node));
-                        steps.push(Step::Open(parent, rests, depth));
+                        steps.push(Step::Open(parent, ends, depth));
                     },
-                    | _ => match rests {
+                    | _ => match ends.rests {
                         | Maybe::Absent(_) => results.push(node),
                         | Maybe::Present(at) => match settled.get(at.0) {
                             | Some(&Maybe::Present(rest)) => {
@@ -1127,11 +1258,12 @@ pub(super) fn record_copies(
 ///
 /// # Specification
 /// - requires: `node` is a bind, a case, a data case, a split, a lambda, an
-///   offer or a fork whose every commuted child — a fork's parent alone —
-///   stands on top of `results`, in order.
+///   offer, a fork or a loop's fixpoint whose every commuted child — a fork's
+///   parent alone — stands on top of `results`, in order.
 /// - ensures: those results popped; `node` itself when each is the child it
 ///   stands for; else a node of the same former over them, recorded at `node`'s
-///   origin, or `fallback`, and its match record.
+///   origin, or `fallback`, and its match record, a loop's fixpoint keeping its
+///   evidence and staying a loop.
 /// - provides: the close half of [`commute`].
 /// - fails: never.
 /// - panics: none.
@@ -1159,6 +1291,7 @@ fn rebuild(
         | Computation::Split { .. }
         | Computation::Lambda(_)
         | Computation::Session(SessionAction::Fork { .. }) => 1_usize,
+        | Computation::Fixpoint { .. } if sink.loops.contains(&node) => 1_usize,
         | _ => 0_usize,
     };
     let commuted = results.split_off(results.len().saturating_sub(count));
@@ -1214,6 +1347,11 @@ fn rebuild(
             child,
             parent: commuted,
         }),
+        | (Computation::Fixpoint { body, evidence }, &[commuted]) if commuted != body => {
+            let looped = sink.arena.computation_fixpoint(commuted, evidence);
+            let _first = sink.loops.insert(looped);
+            looped
+        },
         | _ => return node,
     };
     let origin = found_or(sink.origins.computation(node), fallback);

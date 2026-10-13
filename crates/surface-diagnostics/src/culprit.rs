@@ -188,6 +188,8 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         | LoweringRefusal::NonExhaustiveMatch { .. } => "some value matches no arm",
         | LoweringRefusal::UnmarkedSelfReference { .. } => "recursion without a claim",
         | LoweringRefusal::Unreachable { .. } => "no path reaches this",
+        | LoweringRefusal::OutsideLoop { .. } => "no loop to leave",
+        | LoweringRefusal::ForNeedsListCase { .. } => "a `for` loop",
         | LoweringRefusal::WithoutK { .. } => "a path matched against reflexivity",
         | LoweringRefusal::BudgetExceeded { .. } => "the lowering's allowance ran out",
         | LoweringRefusal::GrammarMismatch { .. } => "molded under another grammar",
