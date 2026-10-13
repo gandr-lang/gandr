@@ -24,7 +24,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 ## Provided features
 
 - `synthesise_value`, `check_value`, `synthesise_comp`, `check_comp`, `Synthesised` and `Checked`: the four directed faces.
-- Pairs, static lambdas and static applications in the faces: a pair synthesises the eager product of its components or checks against one; a static lambda checks only against a static Pi; a static application synthesises its head's last codomain.
+- Pairs, static lambdas and static applications in the faces, by the rules [`judgement`](src/judgement.rs) tabulates.
 - Native list introductions check against `List A`; the pure fold synthesises `F B` from explicit element and result annotations. Nil and cons branches are checked in their zero- and two-binder contexts, and readmission preserves the native kernel syntax without assumptions.
 - `ConversionCount`: the declared projection of the conversion boundary, returned by every face.
 - `form_value_type`, `form_comp_type`, `FormedValueType` and `FormedCompType`: formation as a judgement, and the types the check faces take.
@@ -41,7 +41,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 - `StaticArity`, `ArgumentPosition` and family refusals preserve the failing argument or arity.
 - `CheckRefusal::classify` assigns producer-failure classes; actual judgments, rather than a duplicate variant-to-class table, witness their refusals.
 - `CheckRefusal::compared`, `Compared` and `compared::Absent`: the types a refusal sets against each other, the one its rule expected and the one it found, as nodes a face spells.
-- `Failure`, `Obligation`, `FrameRole`, `FoldPremise`, `Pursuit`, `Stage`, `judged` and `ModuleReport::failures`: what the checking machine held when it refused, read off the one run that refused — the refusal, the frames it stood inside, outermost first, each a closed rule role with the term and type it judged and the binders it opened, and the goal under way — kept per refused body by position.
+- `Failure`, `Obligation`, `FrameRole`, `FoldPremise`, `Pursuit`, `Stage`, `judged` and `ModuleReport::failures`: what the checking machine held when it refused, kept per refused body by position ([`failure`](src/failure.rs)).
 - `bridge::readmit` and `bridge::Readmission`: independent admission of accepted declarations into a fresh kernel environment.
 - `bridge::Readmitted` and `bridge::Outcome`: each origin and its defined-value, admitted-data, assumed-hole, static-definition, marked, refused or rejected outcome.
 - `bridge::ArtifactAudit`: owed-hole and native-runtime assumptions used by admitted declarations.
