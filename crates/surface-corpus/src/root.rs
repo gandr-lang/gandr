@@ -122,10 +122,10 @@
 //! `pathological/module-malformed-recovery` writes a member whose definition
 //! leaves its operand unwritten, refused at the member's own form;
 //! `pathological/modules/module-missing-component` and
-//! `pathological/modules/module-abstract-type-component` write a signature
-//! component the body does not supply and one only opaque ascription gives a
-//! meaning, each refused at the component, which declares nothing. A refusal at
-//! the declaration form itself has no half to carry an expectation.
+//! `pathological/modules/module-abstract-type-component` write a value
+//! component and an abstract type component the body supplies no member for,
+//! each refused at the component, which declares nothing. A refusal at the
+//! declaration form itself has no half to carry an expectation.
 //!
 //! The alternatives were leaving these sources out, which loses them, and
 //! stating each one's refusal in an attribute, which the lowering cannot read

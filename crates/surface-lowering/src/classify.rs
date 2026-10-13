@@ -302,7 +302,7 @@ mod tests
             LoweringRefusal::UnreadAscription {
                 span: empty,
                 name: SurfaceName::from("T"),
-                form: AscriptionForm::Abstract,
+                form: AscriptionForm::Kinded,
             },
             LoweringRefusal::LowercaseModuleName {
                 span: empty,

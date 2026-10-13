@@ -107,7 +107,7 @@ use crate::model::Sym;
 /// - witness: `surface::term::tests::assembly_reports_the_first_missing_band`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.atom", "expression.pure", "expression.or", "expression.and", "expression.cmp", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 104 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=18 => Sort::Item, 19..=21 => Sort::ModuleMember, 22..=32 | 88..=94 => Sort::Pattern, 33..=38 => Sort::Instantiation, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "escape_sequence")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.atom", "expression.pure", "expression.or", "expression.and", "expression.cmp", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 105 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=18 => Sort::Item, 19..=22 => Sort::ModuleMember, 23..=33 | 89..=95 => Sort::Pattern, 34..=39 => Sort::Instantiation, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "escape_sequence")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let item = precs.prec(PrecName("item.singleton"))?;
@@ -358,24 +358,31 @@ fn declarations(
     // --- module declaration ----------------------------------------------------
     // `module M { … }`, optionally ascribed against a `#{ … }` signature, `:`
     // transparently or `:>` opaquely (`module_ascription_tail`). The shared
-    // `module type_identifier` opener owns one mold. The body is a repetition
-    // of `Sort::ModuleMember` holes: a definition, an attributed definition, or
-    // a nested module of either name case with its own optional ascription,
-    // whose body is the same repetition, so nesting depth is unbounded.
-    out.push(r(
+    // `module` opener and its name own one mold. The body is a repetition of
+    // `Sort::ModuleMember` holes: a definition, an attributed definition, a
+    // type member, or a nested module of either name case with its own
+    // optional ascription, whose body is the same repetition, so nesting depth
+    // is unbounded.
+    let mut module = r(
         RuleName("module_declaration"),
         Provenance("module_declaration"),
         s,
         p,
         seq([
             t(TileLabel("module")),
-            t(TileLabel("type_identifier")),
+            alt([t(TileLabel("type_identifier")), t(TileLabel("identifier"))]),
             opt(module_ascription_tail()),
             t(TileLabel("{")),
             repeat(h(Sort::ModuleMember)),
             t(TileLabel("}")),
         ]),
+    );
+    module.adaptations.push(Adaptation::new(
+        RuleName("module_declaration"),
+        SurfaceForm("lowercase_module_name"),
+        AdaptationReason("parse-and-decline: a top-level module named with a lowercase initial stays admissible, so the declaration reaches the lowering's named decline instead of a parse repair whose recovery depends on what the module's signature and body hold"),
     ));
+    out.push(module);
 
     // --- module `import` -------------------------------
     // `import "URI" as name ;`. The URI is a plain string literal, so a new
@@ -3279,9 +3286,9 @@ fn regular_def_tail() -> Regex
 /// The name admits both case spellings. A nested declaration is a component of
 /// its enclosing module's record, and nothing downstream keys on its case, so
 /// refusing the uppercase spelling here would only turn `module Limits` into
-/// a repair region the reader experiences as malformed input. The outer
-/// form's uppercase-only tile keeps its named lowercase-name decline at the
-/// top level, and this slot carries no such ruling to preserve.
+/// a repair region the reader experiences as malformed input. The outer form
+/// admits both spellings too, and the lowering declines a lowercase top-level
+/// name by name; this slot carries no such ruling.
 ///
 /// # Specification
 /// - requires: nothing.

@@ -236,6 +236,9 @@ mod static_operators
                             OriginToken::from(usize::from(declaration.origin())),
                         );
                     },
+                    | DeclarationOutcome::Abstract(sealing) => {
+                        panic!("no fixture seals a module: {sealing:?}")
+                    },
                     | DeclarationOutcome::Refused(refusal) => {
                         panic!("every declaration lowers: {refusal:?}")
                     },

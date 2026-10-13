@@ -642,6 +642,7 @@ fn is_whole_unsigned_body(
         | DeclarationOutcome::Completed { .. }
         | DeclarationOutcome::Uncompleted { .. }
         | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Abstract(_)
         | DeclarationOutcome::Refused(_) => WholeBody::Inner,
     }
 }

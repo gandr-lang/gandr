@@ -12,10 +12,10 @@
 //! module's produced checker refusals compare and every type their failures
 //! name — what each rule's term was checked against, the binders each rule
 //! opened, the hypotheses in scope — through `gandr-surface-pretty` on a
-//! [`SPELLING_WIDTH`]-column page, constants by their declared names, and
-//! carries the spellings beside the origin table. A type the printer cannot
-//! lay out on one line is left unspelled, since it stands in a one-line
-//! label. A module that refuses nothing spells nothing.
+//! [`SPELLING_WIDTH`]-column page, constants by their paths from the top
+//! level, and carries the spellings beside the origin table. A type the
+//! printer cannot lay out on one line is left unspelled, since it stands in a
+//! one-line label. A module that refuses nothing spells nothing.
 //!
 //! The alternatives were keeping the arena in the composition, which costs a
 //! copy of the whole arena per revision or makes the admission borrow what a
@@ -32,6 +32,7 @@
 //! checker's report.
 
 use alloc::collections::BTreeMap;
+use alloc::string::String;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -173,8 +174,10 @@ impl Spellings
     ///   [`gandr_core_checker::CheckRefusal::compared`] names it, and each type
     ///   [`Failure::types`] names, is keyed by its node and spelled through
     ///   [`present_type`] on a page of [`SPELLING_WIDTH`] columns, constants by
-    ///   their declared names; a type the printer cannot lay out, or lays out
-    ///   over more than one line, is left unkeyed; nothing else is keyed.
+    ///   their paths from the top level, so a member of a module, a sealed
+    ///   abstract type among them, reads as it is written outside it; a type
+    ///   the printer cannot lay out, or lays out over more than one line, is
+    ///   left unkeyed; nothing else is keyed.
     /// - provides: the spellings a diagnostic reads a refusal's types from once
     ///   the arena is gone.
     /// - fails: never.
@@ -183,8 +186,10 @@ impl Spellings
     /// # Adequacy
     /// - hypothesis: L3 — a value mismatch spells its expected and found types
     ///   apart; a failure spells the types its rules were checked against; a
-    ///   module whose declarations all check spells none.
+    ///   module whose declarations all check spells none; a sealed abstract
+    ///   type is spelled by its module's path.
     /// - witness: `diagnostics::diagnostics::a_refusal_keeps_its_failure_and_spells_its_types`
+    /// - witness: `diagnostics::diagnostics::a_sealed_type_is_spelled_by_its_path`
     #[spec(ensures: |ret| ret.0.iter().all(|(node, presentation)| !presentation.as_ref().contains('\n')
         && (report.declarations().iter().any(|declaration|
             matches!(declaration.produced().refusal(), Maybe::Present(Refusal::Checking(refusal))
@@ -219,7 +224,8 @@ impl Spellings
         if named.is_empty() {
             return Self(spelled);
         }
-        let names = constant_names(module);
+        let paths = constant_names(module);
+        let names: Vec<Name<'_>> = paths.iter().map(|path| Name::from(path.as_str())).collect();
         let source = CoreSource::new(arena, &names);
         for node in named {
             if spelled.contains_key(&node) {
@@ -254,13 +260,17 @@ impl Spellings
     }
 }
 
-/// The name a printer writes for each constant of `module`, indexed by its
-/// admission position; a position no declaration holds is the empty name.
+/// The name a printer writes for each constant of `module`, by admission
+/// position.
+///
+/// A name is the declaration's path from the top level, its segments joined
+/// by `.`; a position no declaration holds is the empty name.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: one name per position up to the highest declared one; each
-///   declared position holds its declaration's name.
+///   declared position holds its declaration's path, so a member of a module, a
+///   sealed abstract type among them, reads as it is written outside it.
 /// - provides: the constant names a [`CoreSource`] reads to spell a type that
 ///   mentions a declaration.
 /// - fails: never.
@@ -268,13 +278,15 @@ impl Spellings
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a refusal comparing two declared types spells the names
-///   of the declarations it mentions.
+///   of the declarations it mentions, and a sealed abstract type is spelled by
+///   its module's path rather than its bare name.
 /// - witness: `diagnostics::diagnostics::a_refusal_keeps_its_failure_and_spells_its_types`
+/// - witness: `diagnostics::diagnostics::a_sealed_type_is_spelled_by_its_path`
 #[spec(ensures: |ret| module.declarations().iter().all(|declaration|
     ret.get(usize::from(declaration.constant())).is_some()))]
 #[inline]
 #[must_use]
-pub fn constant_names<'source>(module: &LoweredModule<'source>) -> Vec<Name<'source>>
+pub fn constant_names(module: &LoweredModule<'_>) -> Vec<String>
 {
     let positions = module
         .declarations()
@@ -282,11 +294,16 @@ pub fn constant_names<'source>(module: &LoweredModule<'source>) -> Vec<Name<'sou
         .map(|declaration| usize::from(declaration.constant()).saturating_add(1))
         .max()
         .unwrap_or_default();
-    let mut names = alloc::vec![Name::from(""); positions];
+    let mut paths = alloc::vec![String::new(); positions];
     for declaration in module.declarations() {
-        if let Some(slot) = names.get_mut(usize::from(declaration.constant())) {
-            *slot = Name::from(<&str>::from(SourceFragment::from(declaration.name())));
+        if let Some(slot) = paths.get_mut(usize::from(declaration.constant())) {
+            *slot = module
+                .path_of(declaration)
+                .iter()
+                .map(|segment| <&str>::from(SourceFragment::from(*segment)))
+                .collect::<Vec<_>>()
+                .join(".");
         }
     }
-    names
+    paths
 }

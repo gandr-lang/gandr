@@ -11,11 +11,15 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use anodized::spec;
+use gandr_core_checker::AbstractType;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckingContext;
+use gandr_core_checker::ComponentOrdinal;
 use gandr_core_checker::Declaration;
 use gandr_core_checker::ModuleReport;
 use gandr_core_checker::OriginToken;
+use gandr_core_checker::SealSite;
+use gandr_core_checker::SealingSite;
 use gandr_core_checker::body;
 use gandr_core_checker::check_module;
 use gandr_core_checker::signature;
@@ -27,6 +31,7 @@ use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::LoweringBudget;
 use gandr_surface_lowering::RegisteredAttribute;
+use gandr_surface_lowering::Sealing;
 use gandr_surface_lowering::SurfaceName;
 use gandr_surface_lowering::lower_module;
 use gandr_surface_lowering::namespace::Recognition;
@@ -158,7 +163,8 @@ pub fn checked(source: SourceText<'_>) -> Checked<'_>
 /// - requires: `module` is a lowered fixture module.
 /// - ensures: only non-refused declarations are returned, in admission order,
 ///   preserving each constant, origin, declared type and body or its absence
-///   reason, and a data declaration's native signature, shared with `module`.
+///   reason, a data declaration's native signature, shared with `module`, and a
+///   sealed abstract type's kind, representation, extent and site.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -192,8 +198,11 @@ pub fn checked(source: SourceText<'_>) -> Checked<'_>
             )
             .all(|(declared, lowered)| {
                 let gandr_core_checker::DeclarationContent::Value { ref signature, body: ref held_body } = *declared.content() else {
-                    return matches!(*declared.content(), gandr_core_checker::DeclarationContent::Data(ref held) if matches!(lowered.outcome(), DeclarationOutcome::Data(index) if module.data(index) == Maybe::Present(held)))
-                        && declared.constant() == lowered.constant()
+                    return match *declared.content() {
+                        gandr_core_checker::DeclarationContent::Data(ref held) => matches!(lowered.outcome(), DeclarationOutcome::Data(index) if module.data(index) == Maybe::Present(held)),
+                        gandr_core_checker::DeclarationContent::Abstract(sealed) => matches!(lowered.outcome(), DeclarationOutcome::Abstract(sealing) if sealed == abstract_type(sealing)),
+                        gandr_core_checker::DeclarationContent::Value { .. } => false,
+                    } && declared.constant() == lowered.constant()
                         && usize::from(declared.origin()) == usize::from(lowered.origin());
                 };
                 declared.constant() == lowered.constant()
@@ -211,7 +220,7 @@ pub fn checked(source: SourceText<'_>) -> Checked<'_>
                             *signature == Maybe::Absent(signature::Absent::Unsigned)
                                 && *held_body == Maybe::Present(value)
                         }
-                        DeclarationOutcome::Data(_) | DeclarationOutcome::Refused(_) => false,
+                        DeclarationOutcome::Data(_) | DeclarationOutcome::Abstract(_) | DeclarationOutcome::Refused(_) => false,
                     }
             })
 },
@@ -245,6 +254,13 @@ pub fn declarations(module: &LoweredModule<'_>) -> Vec<Declaration>
                         | Maybe::Absent(_) => None,
                     };
                 },
+                | DeclarationOutcome::Abstract(sealing) => {
+                    return Some(Declaration::abstract_type(
+                        lowered.constant(),
+                        abstract_type(sealing),
+                        OriginToken::from(usize::from(lowered.origin())),
+                    ));
+                },
                 | DeclarationOutcome::Refused(_) => return None,
             };
             let origin = OriginToken::from(usize::from(lowered.origin()));
@@ -256,6 +272,25 @@ pub fn declarations(module: &LoweredModule<'_>) -> Vec<Declaration>
             ))
         })
         .collect()
+}
+
+/// The checker's abstract type for the sealing the lowering recorded: its
+/// kind, representation and extent, at the site its sealing module and
+/// component number.
+///
+/// # Specification
+/// trivial.
+fn abstract_type(sealing: Sealing) -> AbstractType
+{
+    AbstractType::new(
+        sealing.kind,
+        sealing.representation,
+        sealing.extent,
+        SealSite::new(
+            SealingSite::from(usize::from(sealing.sealing)),
+            ComponentOrdinal::from(usize::from(sealing.component)),
+        ),
+    )
 }
 
 /// The settle report for `source` under `root`, over its own verdicts, each

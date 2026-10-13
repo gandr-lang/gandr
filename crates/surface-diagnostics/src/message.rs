@@ -675,7 +675,7 @@ mod tests
             LoweringRefusal::UnreadAscription {
                 span,
                 name,
-                form: AscriptionForm::Opaque,
+                form: AscriptionForm::Kinded,
             },
             LoweringRefusal::LowercaseModuleName { span, name },
             LoweringRefusal::NonExhaustiveMatch { span },

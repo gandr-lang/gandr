@@ -16,12 +16,17 @@ mod modules
     use core::fmt::Write as _;
 
     use anodized::spec;
+    use gandr_core_checker::AbstractType;
     use gandr_core_checker::CheckBudget;
     use gandr_core_checker::CheckRefusal;
     use gandr_core_checker::CheckingContext;
+    use gandr_core_checker::ComponentOrdinal;
     use gandr_core_checker::Declaration;
+    use gandr_core_checker::Mismatch;
     use gandr_core_checker::ModuleReport;
     use gandr_core_checker::OriginToken;
+    use gandr_core_checker::SealSite;
+    use gandr_core_checker::SealingSite;
     use gandr_core_checker::Verdict;
     use gandr_core_checker::body;
     use gandr_core_checker::bridge;
@@ -30,7 +35,9 @@ mod modules
     use gandr_core_term::CoreArena;
     use gandr_core_term::Value;
     use gandr_core_term::ValueId;
+    use gandr_core_term::ValueType;
     use gandr_core_term::ValueTypeId;
+    use gandr_kernel_term::BaseType;
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::DeclarationContent;
     use gandr_kernel_term::Value as KernelValue;
@@ -41,6 +48,7 @@ mod modules
     use gandr_surface_lowering::AscriptionForm;
     use gandr_surface_lowering::Coerced;
     use gandr_surface_lowering::DeclarationOutcome;
+    use gandr_surface_lowering::Ending;
     use gandr_surface_lowering::FormFault;
     use gandr_surface_lowering::FormName;
     use gandr_surface_lowering::FragmentBoundary;
@@ -124,6 +132,8 @@ mod modules
         Bodied,
         /// A native data signature.
         Data,
+        /// A sealed abstract type.
+        Abstract,
         /// The lowering's refusal.
         Refused(LoweringRefusal<'source>),
     }
@@ -159,6 +169,9 @@ mod modules
         Mismatched,
         /// Any other refusal.
         Refused,
+        /// A nominal declaration, a sealed abstract type's atom or a data
+        /// signature, admitted.
+        Declared,
     }
 
     /// One module's stratum item, as these tests compare it.
@@ -337,6 +350,7 @@ mod modules
                     },
                     | DeclarationOutcome::Bodied { body } => ret.arena.value(body).is_some(),
                     | DeclarationOutcome::Data(index) => matches!(ret.module.data(index), Maybe::Present(signature) if ret.arena.value_type(signature.kind()).is_some()),
+                    | DeclarationOutcome::Abstract(sealing) => ret.arena.value_type(sealing.kind).is_some() && ret.arena.value_type(sealing.representation).is_some(),
                     | DeclarationOutcome::Refused(_) => true,
                 })
         },
@@ -391,6 +405,7 @@ mod modules
                     },
                     | DeclarationOutcome::Bodied { body } => ret.arena.value(body).is_some(),
                     | DeclarationOutcome::Data(index) => matches!(ret.module.data(index), Maybe::Present(signature) if ret.arena.value_type(signature.kind()).is_some()),
+                    | DeclarationOutcome::Abstract(sealing) => ret.arena.value_type(sealing.kind).is_some() && ret.arena.value_type(sealing.representation).is_some(),
                     | DeclarationOutcome::Refused(_) => true,
                 })
         },
@@ -425,7 +440,7 @@ mod modules
     /// - hypothesis: L2 on the named goldens — successful and locally refused
     ///   members coexist while successful nodes remain readable by the checker.
     /// - witness: `modules::modules::a_nonempty_ascription_checks_each_component_at_its_member`
-    /// - witness: `modules::modules::a_bare_type_component_declines_and_keeps_its_siblings`
+    /// - witness: `modules::modules::a_transparent_abstract_component_reads_its_type_member`
     #[spec(
         ensures: |ret| {
             ret.module
@@ -444,6 +459,7 @@ mod modules
                     },
                     | DeclarationOutcome::Bodied { body } => ret.arena.value(body).is_some(),
                     | DeclarationOutcome::Data(index) => matches!(ret.module.data(index), Maybe::Present(signature) if ret.arena.value_type(signature.kind()).is_some()),
+                    | DeclarationOutcome::Abstract(sealing) => ret.arena.value_type(sealing.kind).is_some() && ret.arena.value_type(sealing.representation).is_some(),
                     | DeclarationOutcome::Refused(_) => true,
                 })
         },
@@ -553,7 +569,8 @@ mod modules
                                     DeclarationOutcome::Uncompleted { .. },
                                 )
                                 | (Amounts::Bodied, DeclarationOutcome::Bodied { .. })
-                                | (Amounts::Data, DeclarationOutcome::Data(_)) => true,
+                                | (Amounts::Data, DeclarationOutcome::Data(_))
+                                | (Amounts::Abstract, DeclarationOutcome::Abstract(_)) => true,
                                 | (
                                     Amounts::Refused(actual),
                                     DeclarationOutcome::Refused(expected),
@@ -576,6 +593,7 @@ mod modules
                     | DeclarationOutcome::Uncompleted { .. } => Amounts::Uncompleted,
                     | DeclarationOutcome::Bodied { .. } => Amounts::Bodied,
                     | DeclarationOutcome::Data(_) => Amounts::Data,
+                    | DeclarationOutcome::Abstract(_) => Amounts::Abstract,
                     | DeclarationOutcome::Refused(refusal) => Amounts::Refused(refusal),
                 };
                 (
@@ -695,6 +713,7 @@ mod modules
             },
             | outcome @ (DeclarationOutcome::Uncompleted { .. }
             | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Abstract(_)
             | DeclarationOutcome::Refused(_)) => {
                 panic!("`{path}` has a body, not {outcome:?}")
             },
@@ -793,6 +812,7 @@ mod modules
             | DeclarationOutcome::Uncompleted { declared_type } => declared_type,
             | outcome @ (DeclarationOutcome::Bodied { .. }
             | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Abstract(_)
             | DeclarationOutcome::Refused(_)) => {
                 panic!("`{path}` has a declared type, not {outcome:?}")
             },
@@ -967,6 +987,22 @@ mod modules
                             | Maybe::Absent(_) => None,
                         };
                     },
+                    | DeclarationOutcome::Abstract(sealing) => {
+                        let site = SealSite::new(
+                            SealingSite::from(usize::from(sealing.sealing)),
+                            ComponentOrdinal::from(usize::from(sealing.component)),
+                        );
+                        return Some(Declaration::abstract_type(
+                            declaration.constant(),
+                            AbstractType::new(
+                                sealing.kind,
+                                sealing.representation,
+                                sealing.extent,
+                                site,
+                            ),
+                            OriginToken::from(usize::from(declaration.origin())),
+                        ));
+                    },
                     | DeclarationOutcome::Refused(_) => return None,
                 };
                 Some(Declaration::new(
@@ -1002,6 +1038,7 @@ mod modules
     ///   results.
     /// - witness: `modules::modules::a_nonempty_ascription_checks_each_component_at_its_member`
     /// - witness: `modules::modules::a_dangling_member_signature_is_an_obligation`
+    /// - witness: `modules::modules::opaque_ascription_seals`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -1034,6 +1071,10 @@ mod modules
                                 DeclarationOutcome::Uncompleted { .. }
                             ),
                             | Judgement::Mismatched | Judgement::Refused => true,
+                            | Judgement::Declared => matches!(
+                                declaration.outcome(),
+                                DeclarationOutcome::Abstract(_) | DeclarationOutcome::Data(_)
+                            ),
                         }
                     },
                     | _ => false,
@@ -1048,9 +1089,7 @@ mod modules
             .iter()
             .map(|judged| {
                 let judgement = match judged.verdict() {
-                    | Verdict::Data => {
-                        panic!("native declarations have no source reader in this fixture")
-                    },
+                    | Verdict::Data => Judgement::Declared,
                     | Verdict::Checked { .. } => Judgement::Checked,
                     | Verdict::Synthesised { .. } => Judgement::Synthesised,
                     | Verdict::Owed(_) => Judgement::Owed,
@@ -1702,30 +1741,225 @@ mod modules
     }
 
     #[test]
-    fn a_bare_type_component_declines_and_keeps_its_siblings()
+    fn a_transparent_abstract_component_reads_its_type_member()
     {
-        let source = "module M : #{ type T, value: Integer } { def value = 1; }";
+        let source = "module M : #{ type T, value: T } { type T = Integer; def value = 1; }\ndef \
+                      used : M.T;\ndef used = M.value;\ndef wrong : M.T;\ndef wrong = \"text\";";
         let mut lowered = lower(source);
         assert_eq!(
             rows(&lowered),
             [
                 row("M.value", Role::Declared, Amounts::Completed),
-                row(
-                    "M.T",
-                    Role::Held,
-                    Amounts::Refused(LoweringRefusal::UnreadAscription {
-                        span: span_of(source, "T", 0_usize),
-                        name: name("T"),
-                        form: AscriptionForm::Abstract,
-                    })
-                ),
+                row("M.T", Role::Witness, Amounts::Completed),
+                row("used", Role::Declared, Amounts::Completed),
+                row("wrong", Role::Declared, Amounts::Completed),
             ],
-            "the bare component is declined by its name and its sibling is matched"
+            "the component mints no atom: its one declaration checks the member's kind"
+        );
+        let structure = lowered
+            .module
+            .structures()
+            .first()
+            .expect("the module has a stratum item");
+        let defined = match *structure.types() {
+            | [ref component] if component.name == name("T") => component.defined,
+            | ref other => panic!("one type component `T`, not {other:?}"),
+        };
+        assert!(
+            structure.sealed().is_empty(),
+            "a transparent ascription seals nothing"
+        );
+        for path in ["M.value", "used"] {
+            assert_eq!(
+                Maybe::Present(declared_type_of(&lowered, path, Role::Declared)),
+                defined,
+                "`{path}` is stated at the type the member names"
+            );
+        }
+        assert_eq!(
+            verdicts(&mut lowered),
+            [
+                judged(1_usize, Judgement::Checked),
+                judged(2_usize, Judgement::Checked),
+                judged(3_usize, Judgement::Checked),
+                judged(4_usize, Judgement::Mismatched),
+            ],
+            "so the client reads the member's own type, and only a value of it checks"
+        );
+    }
+
+    #[test]
+    fn an_abstract_component_kinds_at_a_universe()
+    {
+        let kinded = "module M : #{ type T : Type[+, 0] } { type T = Integer; }";
+        let mut lowered = lower(kinded);
+        assert_eq!(
+            rows(&lowered),
+            [row("M.T", Role::Witness, Amounts::Completed)],
+            "the written kind is checked by the component's one declaration"
         );
         assert_eq!(
             verdicts(&mut lowered),
-            [judged(0_usize, Judgement::Checked)],
-            "and the sibling checks"
+            [judged(1_usize, Judgement::Checked)],
+            "and the member's type inhabits it"
+        );
+
+        let classified = "module M : #{ type T : Integer } { type T = Integer; }";
+        let mut lowered = lower(classified);
+        assert_eq!(
+            verdicts(&mut lowered),
+            [judged(1_usize, Judgement::Mismatched)],
+            "a kind that is no universe classifies no type"
+        );
+
+        let sealed = "module M :> #{ type T : Type[+, 0] } { type T = Integer; }";
+        let mut lowered = lower(sealed);
+        assert_eq!(
+            rows(&lowered),
+            [row("M.T", Role::Abstract, Amounts::Abstract)],
+            "an opaque ascription declares the abstract type at the written kind"
+        );
+        assert_eq!(
+            verdicts(&mut lowered),
+            [judged(0_usize, Judgement::Declared)],
+            "which the checker admits"
+        );
+
+        let unsorted = "module M :> #{ type T : Integer } { type T = Integer; }";
+        let mut lowered = lower(unsorted);
+        assert_eq!(
+            verdicts(&mut lowered),
+            [judged(0_usize, Judgement::Refused)],
+            "and an abstract type at a kind that is no universe is refused"
+        );
+    }
+
+    #[test]
+    fn an_abstract_component_with_no_type_member_is_refused_by_name()
+    {
+        let unknown = |source: &'static str| {
+            Amounts::Refused(LoweringRefusal::UnknownMember {
+                span: span_of(source, "T", 0_usize),
+                module: name("M"),
+                member: name("T"),
+            })
+        };
+        let transparent = "module M : #{ type T, value: Integer } { def value = 1; }";
+        assert_eq!(
+            rows(&lower(transparent)),
+            [
+                row("M.value", Role::Declared, Amounts::Completed),
+                row("M.T", Role::Held, unknown(transparent)),
+            ],
+            "the component names a type member the body does not declare, and its sibling \
+             is matched"
+        );
+        let sealed = "module M :> #{ type T, value: T } { def value = 1; }\ndef after = 2;";
+        assert_eq!(
+            rows(&lower(sealed)),
+            [
+                row("M.T", Role::Abstract, unknown(sealed)),
+                row("M.value", Role::Declared, unknown(sealed)),
+                row("after", Role::Declared, Amounts::Bodied),
+            ],
+            "an atom without a representation is refused, and so is every member stated at it"
+        );
+    }
+
+    #[test]
+    fn a_repeated_type_member_is_refused_naming_the_first()
+    {
+        let source =
+            "module M { type T = Integer; type T = String; def value : T; def value = 1; }";
+        let lowered = lower(source);
+        assert_eq!(
+            rows(&lowered),
+            [
+                row(
+                    "M.T",
+                    Role::Held,
+                    Amounts::Refused(LoweringRefusal::DuplicateDefinition {
+                        span: span_of(source, "T", 1_usize),
+                        name: name("T"),
+                        first: span_of(source, "T", 0_usize),
+                    })
+                ),
+                row("M.value", Role::Declared, Amounts::Completed),
+            ],
+            "the second member is refused and the first still reads"
+        );
+    }
+
+    #[test]
+    fn a_type_member_is_named_only_after_it_is_written()
+    {
+        let source = "module M { type T = Integer; def value : T; def value = 1; module N { def \
+                      inner : T; def inner = 2; } }";
+        let mut lowered = lower(source);
+        assert_eq!(
+            rows(&lowered),
+            [
+                row("M.value", Role::Declared, Amounts::Completed),
+                row("M.N.inner", Role::Declared, Amounts::Completed),
+            ],
+            "a type member declares nothing of its own"
+        );
+        let defined = match *lowered.module.structures().first().expect("module").types() {
+            | [ref member] if member.name == name("T") => member.defined,
+            | ref other => panic!("one exported type member `T`, not {other:?}"),
+        };
+        for path in ["M.value", "M.N.inner"] {
+            assert_eq!(
+                Maybe::Present(declared_type_of(&lowered, path, Role::Declared)),
+                defined,
+                "`{path}` reads the member by its bare name, in its module and a nested one"
+            );
+        }
+        assert_eq!(
+            verdicts(&mut lowered),
+            [
+                judged(1_usize, Judgement::Checked),
+                judged(2_usize, Judgement::Checked),
+            ],
+            "and checks at it"
+        );
+
+        let early = "module M { def value : T; def value = 1; type T = Integer; }";
+        assert_eq!(
+            rows(&lower(early)),
+            [row(
+                "M.value",
+                Role::Declared,
+                Amounts::Refused(LoweringRefusal::UnresolvedTypeHead {
+                    span: span_of(early, "T", 0_usize),
+                    name: name("T"),
+                    arity: gandr_surface_lowering::HeadArity::Nullary,
+                })
+            )],
+            "a member written before the type member does not see it"
+        );
+    }
+
+    #[test]
+    fn a_sealed_component_over_a_refused_member_is_refused_with_it()
+    {
+        let source = "module M :> #{ type T, value: T } { type T = Missing; def value = 1; }\ndef \
+                      client : M.T;\ndef client = M.value;\ndef after = 2;";
+        let fault = Amounts::Refused(LoweringRefusal::UnresolvedTypeHead {
+            span: span_of(source, "Missing", 0_usize),
+            name: name("Missing"),
+            arity: gandr_surface_lowering::HeadArity::Nullary,
+        });
+        assert_eq!(
+            rows(&lower(source)),
+            [
+                row("M.T", Role::Abstract, fault),
+                row("M.T", Role::Held, fault),
+                row("M.value", Role::Declared, fault),
+                row("client", Role::Declared, fault),
+                row("after", Role::Declared, Amounts::Bodied),
+            ],
+            "the atom carries its representation's refusal to the members and the client"
         );
     }
 
@@ -2134,27 +2368,247 @@ mod modules
     }
 
     #[test]
-    fn opaque_module_ascription_is_declined_not_read_as_transparent()
+    fn opaque_ascription_seals()
     {
-        let source = "module M :> #{ visible: Integer } { def visible = 2; }";
-        let lowered = lower(source);
+        let source = "module Counter :> #{ type T, seed : T } { type T = Integer ; def seed = 7 ; \
+                      }\ndef held : Counter.T ;\ndef held = Counter.seed ;\ndef n : Integer ;\ndef \
+                      n = Counter.seed ;";
+        let mut lowered = lower(source);
         assert_eq!(
             rows(&lowered),
-            [row(
-                "M",
-                Role::Held,
-                Amounts::Refused(LoweringRefusal::UnreadAscription {
-                    span: span_of(source, ":>", 0_usize),
-                    name: name("M"),
-                    form: AscriptionForm::Opaque,
-                })
-            )],
-            "the module is declined at its opaque ascription"
+            [
+                row("Counter.T", Role::Abstract, Amounts::Abstract),
+                row("Counter.seed", Role::Declared, Amounts::Completed),
+                row("held", Role::Declared, Amounts::Completed),
+                row("n", Role::Declared, Amounts::Completed),
+            ],
+            "the abstract component declares one abstract type, admitted before the members"
+        );
+        let structure = lowered
+            .module
+            .structures()
+            .first()
+            .expect("the module has a stratum item");
+        assert!(
+            matches!(*structure.sealed(), [component] if component.name == name("T")
+                && component.atom == ConstantIndex::from(0_usize)),
+            "the module exports its component as the atom: {:?}",
+            structure.sealed()
+        );
+        assert!(structure.types().is_empty(), "and no type of its own");
+        assert_eq!(
+            lowered
+                .module
+                .structured_names()
+                .get(&ConstantIndex::from(0_usize))
+                .map(|path| path
+                    .segments()
+                    .iter()
+                    .map(AsRef::as_ref)
+                    .collect::<Vec<&str>>()),
+            Some(vec!["Counter", "T"]),
+            "the atom is exported under its component's path"
+        );
+        let atom = ValueType::Abstract(ConstantIndex::from(0_usize));
+        for path in ["Counter.seed", "held"] {
+            assert_eq!(
+                lowered
+                    .arena
+                    .value_type(declared_type_of(&lowered, path, Role::Declared)),
+                Some(&atom),
+                "`{path}` is stated at the atom"
+            );
+        }
+        let Some(DeclarationOutcome::Abstract(sealing)) = lowered
+            .module
+            .declarations()
+            .first()
+            .map(LoweredDeclaration::outcome)
+        else {
+            panic!("the first declaration is the abstract type");
+        };
+        assert_eq!(
+            (
+                lowered.arena.value_type(sealing.representation),
+                lowered.arena.value_type(sealing.kind),
+                usize::from(sealing.extent),
+                usize::from(sealing.sealing),
+                usize::from(sealing.component),
+            ),
+            (
+                Some(&ValueType::Base(BaseType::Integer)),
+                Some(&ValueType::Universe {
+                    sort: gandr_core_term::Sort::Ground(gandr_kernel_term::GroundSort::Value),
+                    level: gandr_kernel_strata::Level::constant(
+                        gandr_kernel_strata::LevelConstant::ZERO
+                    ),
+                }),
+                2_usize,
+                0_usize,
+                0_usize,
+            ),
+            "its representation is the member, its kind the fuss-free universe, its seal \
+             reaches the module's last member, and its site is the first module's first \
+             component"
+        );
+        let report = report(&mut lowered);
+        let judgements: Vec<(usize, bool)> = report
+            .judged()
+            .iter()
+            .map(|judged| {
+                (
+                    usize::from(judged.constant()),
+                    matches!(judged.verdict(), Verdict::Data | Verdict::Checked { .. }),
+                )
+            })
+            .collect();
+        assert_eq!(
+            judgements,
+            [
+                (0_usize, true),
+                (2_usize, true),
+                (3_usize, true),
+                (4_usize, false)
+            ],
+            "the member checks at the representation inside, a client at the atom outside, \
+             and the atom is not its representation outside"
+        );
+        let leak = report
+            .judged()
+            .iter()
+            .find(|judged| judged.constant() == ConstantIndex::from(4_usize))
+            .map(gandr_core_checker::Judged::verdict);
+        let Some(Verdict::Refused(CheckRefusal::TypeMismatch(Mismatch::Value {
+            synthesised, ..
+        }))) = leak
+        else {
+            panic!("the leak is a type mismatch, not {leak:?}");
+        };
+        assert_eq!(
+            lowered.arena.value_type(synthesised),
+            Some(&atom),
+            "naming the atom it found"
+        );
+
+        let early = "def early : Counter.T ;\ndef early = 1 ;\nmodule Counter :> #{ type T } { \
+                     type T = Integer ; }";
+        assert_eq!(
+            rows(&lower(early)),
+            [
+                row(
+                    "early",
+                    Role::Declared,
+                    Amounts::Refused(LoweringRefusal::ForwardMemberReference {
+                        span: span_of(early, "Counter.T", 0_usize),
+                        name: name("T"),
+                        declared: span_of(early, "T", 1_usize),
+                    })
+                ),
+                row("Counter.T", Role::Abstract, Amounts::Abstract),
+            ],
+            "a declaration before the module does not read its atom"
+        );
+    }
+
+    #[test]
+    fn a_signed_member_of_a_sealed_module_exports_its_witness()
+    {
+        let source = "module Counter :> #{ type T, seed : T } { type T = Integer ; def seed : \
+                      Integer ; def seed = 7 ; }\ndef held : Counter.T ;\ndef held = Counter.seed ;";
+        let mut lowered = lower(source);
+        assert_eq!(
+            rows(&lowered),
+            [
+                row("Counter.T", Role::Abstract, Amounts::Abstract),
+                row("Counter.seed", Role::Declared, Amounts::Completed),
+                row("Counter.seed", Role::Witness, Amounts::Completed),
+                row("held", Role::Declared, Amounts::Completed),
+            ],
+            "the member keeps its own type and a witness states the component's"
         );
         assert_eq!(
             strata(&lowered),
-            [],
-            "and nothing of it is read as a transparent module"
+            [Stratum::new("Counter", Coerced(true)).value("seed", 3_usize)],
+            "the module exports the witness in the member's place"
+        );
+        assert_eq!(
+            constant_read_by(&lowered, "held"),
+            ConstantIndex::from(3_usize),
+            "so a client reads the member at the atom"
+        );
+        assert_eq!(
+            verdicts(&mut lowered),
+            [
+                judged(0_usize, Judgement::Declared),
+                judged(2_usize, Judgement::Checked),
+                judged(3_usize, Judgement::Checked),
+                judged(4_usize, Judgement::Checked),
+            ],
+            "and every declaration checks"
+        );
+    }
+
+    #[test]
+    fn a_qualified_type_reference_resolves_through_the_namespace()
+    {
+        let source = "module Shapes { type Side = Integer ; module Inner { type Label = String ; } \
+                      }\nmodule Box : #{ type Item = Integer, item : Item } { def item = 1 ; \
+                      }\ndef side : Shapes.Side ;\ndef side = 3 ;\ndef label : Shapes.Inner.Label \
+                      ;\ndef label = \"l\" ;\ndef boxed : Box.Item ;\ndef boxed = Box.item ;";
+        let mut lowered = lower(source);
+        let expected = [
+            ("side", BaseType::Integer),
+            ("label", BaseType::String),
+            ("boxed", BaseType::Integer),
+        ];
+        for (path, base) in expected {
+            assert_eq!(
+                lowered
+                    .arena
+                    .value_type(declared_type_of(&lowered, path, Role::Declared)),
+                Some(&ValueType::Base(base)),
+                "`{path}` reads the type its path names"
+            );
+        }
+        assert!(
+            verdicts(&mut lowered)
+                .iter()
+                .all(|&(_, judgement)| judgement == Judgement::Checked),
+            "and every declaration checks at it"
+        );
+    }
+
+    #[test]
+    fn an_unbound_type_path_is_refused_by_name()
+    {
+        let source = "module Shapes :> #{ side : Integer } { type Hidden = Integer ; def side = 1 \
+                      ; }\ndef corner : Shapes.Corner ;\ndef hidden : Shapes.Hidden ;\ndef \
+                      stranger : Nowhere.Side ;";
+        let unknown = |member: &'static str| {
+            Amounts::Refused(LoweringRefusal::UnknownMember {
+                span: selected(source, format!("Shapes.{member}")),
+                module: name("Shapes"),
+                member: name(member),
+            })
+        };
+        assert_eq!(
+            rows(&lower(source)),
+            [
+                row("Shapes.side", Role::Declared, Amounts::Completed),
+                row("corner", Role::Declared, unknown("Corner")),
+                row("hidden", Role::Declared, unknown("Hidden")),
+                row(
+                    "stranger",
+                    Role::Declared,
+                    Amounts::Refused(LoweringRefusal::UnresolvedTypeHead {
+                        span: span_of(source, "Nowhere", 0_usize),
+                        name: name("Nowhere"),
+                        arity: gandr_surface_lowering::HeadArity::Nullary,
+                    })
+                ),
+            ],
+            "a type the module does not export, one its seal hides and a path no module \
+             governs are each refused by name"
         );
     }
 
@@ -2333,20 +2787,21 @@ mod modules
     #[test]
     fn an_unread_member_keeps_its_own_report()
     {
-        let source = "module M {\n  type Hom = Type;\n}\n\ndef after = 1;\n";
+        let source = "module M {\n  type = Type;\n}\n\ndef after = 1;\n";
         let lowered = repaired(source);
+        let missing_name = span_of(source, "type", 0_usize).end();
         assert_eq!(
             rows(&lowered),
             [row(
                 "M",
                 Role::Held,
                 Amounts::Refused(LoweringRefusal::MalformedForm {
-                    span: span_of(source, "type", 0_usize),
+                    span: ByteSpan::new(missing_name, missing_name).expect("the span is ordered"),
                     form: FormName::MODULE,
-                    fault: FormFault::MisplacedTile,
+                    fault: FormFault::Repaired(Repair::Unended(Ending::Unnamed)),
                 })
             )],
-            "the report is at the member's own tile rather than over the whole declaration"
+            "the report is where the member's name belongs rather than over the whole declaration"
         );
         assert_eq!(
             strata(&lowered),
@@ -2396,7 +2851,7 @@ mod modules
                 );
             }
             else {
-                let lowered = repaired(source.as_str());
+                let lowered = lower(source.as_str());
                 let whole =
                     ByteSpan::new(ByteOffset::from(0_usize), ByteOffset::from(source.len()))
                         .expect("the span is ordered");
@@ -2411,6 +2866,27 @@ mod modules
                         })
                     )],
                     "the lowercase module `{spelled}` is declined at its declaration, by name"
+                );
+                let plain = format!("module {spelled} {{ def zero = 0; }}\ndef after = 1;");
+                let module = span_of(
+                    &plain,
+                    format!("module {spelled} {{ def zero = 0; }}"),
+                    0_usize,
+                );
+                assert_eq!(
+                    rows(&lower(plain.as_str())),
+                    [
+                        row(
+                            spelled,
+                            Role::Held,
+                            Amounts::Refused(LoweringRefusal::LowercaseModuleName {
+                                span: module,
+                                name: name(spelled),
+                            })
+                        ),
+                        row("after", Role::Declared, Amounts::Bodied),
+                    ],
+                    "whatever the module holds, and the declaration after it still lands"
                 );
             }
         }

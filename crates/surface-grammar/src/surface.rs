@@ -57,8 +57,8 @@
 //! The groups form one expression chain, one pattern chain and one type chain
 //! whose union, intersection and lazy-product bands are mutually incomparable
 //! between the sum and arrow bands; the item group stands apart from all three.
-//! Its pinned shape is 2536 molds, 78 labels projected to more than one mold,
-//! and the fingerprint `0xc099_8437_a48e_2005`; a change to any form, group or
+//! Its pinned shape is 2537 molds, 78 labels projected to more than one mold,
+//! and the fingerprint `0x4012_7ae2_0573_af0c`; a change to any form, group or
 //! edge moves the fingerprint, and the test pinning it states the change.
 //!
 //! ### Lists close on an optional separator
@@ -439,6 +439,7 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "feed_statement",
     "grade_prefix",
     "if_answer_type",
+    "lowercase_module_name",
     "node_statement",
     "op_member",
     "parameterized_observation",

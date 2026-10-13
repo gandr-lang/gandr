@@ -1,0 +1,17 @@
+module Counter :> #{ type T, zero : T, next : +U[ω] (T -> -F T), read : +U[ω] (T -> -F Integer) } {
+  type T = Integer;
+  @[ runs("0") ]
+  def zero = 0;
+  @[ runs("<fun>") ]
+  def next(n : T) -> -F T { become n + 1 }
+  @[ runs("<fun>") ]
+  def read(n : T) -> -F Integer { return n }
+}
+
+@[ runs("1") ]
+def one : +U (-F Counter.T) ;
+def one = thunk { become Counter.next(Counter.zero) } ;
+
+@[ runs("1") ]
+def shown : +U (-F Integer) ;
+def shown = thunk { run n <- force one ; become Counter.read(n) } ;

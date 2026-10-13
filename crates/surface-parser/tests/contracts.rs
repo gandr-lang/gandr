@@ -335,7 +335,7 @@ fn a_path_payload_parses_only_parenthesized() -> Result<(), Box<dyn Error>>
         parenthesized.obligations()
     );
     assert_eq!(
-        ["type_path", "send_session_type"],
+        [RuleName("type_path"), RuleName("send_session_type")],
         dot_rules(pbg, parenthesized.tree())?.as_slice(),
         "the first `.` is the path's and the second the send's"
     );
@@ -345,7 +345,7 @@ fn a_path_payload_parses_only_parenthesized() -> Result<(), Box<dyn Error>>
         "the bare path payload is a repair, not a second reading"
     );
     assert_eq!(
-        Some(&"send_session_type"),
+        Some(&RuleName("send_session_type")),
         dot_rules(pbg, bare.tree())?.first(),
         "the send claims the first `.`, so `Seat` alone is the payload and the path never forms"
     );
@@ -360,7 +360,7 @@ fn a_path_payload_parses_only_parenthesized() -> Result<(), Box<dyn Error>>
 fn dot_rules(
     pbg: &Pbg,
     tree: &SyntaxTree<'_>,
-) -> Result<Vec<&'static str>, Box<dyn Error>>
+) -> Result<Vec<RuleName>, Box<dyn Error>>
 {
     let mut rules = Vec::new();
     let mut pending = vec![tree.root()];
@@ -368,7 +368,7 @@ fn dot_rules(
         if let Some(NodeLabel::Tile(mold)) = label_of(tree, id)
             && text(tree, id) == "."
         {
-            rules.push(pbg.rule_of(mold)?.name().0);
+            rules.push(pbg.rule_of(mold)?.name());
         }
         pending.extend(children(tree, id).into_iter().rev());
     }

@@ -165,6 +165,9 @@ pub enum Recognized
     ModuleNamespace,
     /// A value component of a `module` declaration.
     ModuleComponent,
+    /// A type component of a `module` declaration: a manifest or abstract
+    /// component of its signature, or a type member of its body.
+    ModuleType,
     /// A top-level definition.
     Definition,
 }
@@ -642,6 +645,7 @@ impl Recognition
                         | Recognized::BuiltinPrimitive { position, primitive } => (position, SeedKind::Primitive(primitive)),
                         | Recognized::ModuleNamespace
                         | Recognized::ModuleComponent
+                        | Recognized::ModuleType
                         | Recognized::Definition => return false,
                     };
                     if (position.table, position.entry) == (table, entry) {

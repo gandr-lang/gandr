@@ -608,6 +608,9 @@ pub enum Former
     Projection,
     /// A bare type head: a primitive, a type identifier or a type variable.
     TypeHead,
+    /// A qualified type reference `M.T`: a module's type component, named
+    /// through the namespace.
+    TypePath,
     /// The universe `Type[s, l]`, its sort and level each defaulted when left
     /// off.
     Universe,
@@ -679,7 +682,7 @@ impl Former
     ///   of successful table outcomes plus the miss outcome. The evidence is
     ///   bounded to the current closed enum and table.
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 44_usize] = [
+    pub const ALL: [Self; 45_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Hole,
@@ -703,6 +706,7 @@ impl Former
         Self::Unary,
         Self::Projection,
         Self::TypeHead,
+        Self::TypePath,
         Self::Universe,
         Self::TypeApplication,
         Self::ThunkType,
@@ -746,7 +750,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 45_usize] = [
+pub const FORMERS: [(&str, Former); 46_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -772,6 +776,7 @@ pub const FORMERS: [(&str, Former); 45_usize] = [
     ("primitive_type", Former::TypeHead),
     ("type_identifier", Former::TypeHead),
     ("type_variable", Former::TypeHead),
+    ("type_path", Former::TypePath),
     ("universe_type", Former::Universe),
     ("type_application", Former::TypeApplication),
     ("u_type", Former::ThunkType),
