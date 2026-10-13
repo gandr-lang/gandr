@@ -60,6 +60,20 @@
 //! classifier and checked, it crosses the bridge as the kernel's native path,
 //! and admission replays every corolla's round trips.
 //!
+//! At degree one the path is definable in source from its own pieces:
+//! `pathProduct(here(Unit), pathProduct(equiv(f₁, g₁), … equiv(fₖ, gₖ)))`,
+//! one `equiv` per inhabited corolla in catalogue order, nested to the right.
+//! [`crate::product`] elaborates that product to the same native path, so a
+//! constant defined by hand and one defined by `ua[1, k]` are convertible and
+//! `here` relates them (`model/higher-cells/ua-by-hand.gandr`). What the
+//! derived form carries beyond the hand one is what this module checks and
+//! a product never asks: naturality along every automorphism of each corolla,
+//! which a translator pair mutually inverse at its codes can fail
+//! (`pathological/higher-cells/ua-by-hand-unnatural.gandr`, refused as
+//! [`UaDefect::NotNatural`] where the hand product is a path), and from degree
+//! two the Segal certification that stands behind each unit stage, which no
+//! hand definition states.
+//!
 //! # The written statement
 //!
 //! `ua[n, k](a, b, f, g)` states univalence at the stratum of degree `n` over

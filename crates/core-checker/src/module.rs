@@ -245,8 +245,9 @@ pub struct ModuleReport
     /// The path endpoint pairs each accepted declaration's type conversions
     /// related, by position, with each derivation.
     relations: BTreeMap<ConstantIndex, Vec<EndpointRelation>>,
-    /// The path each univalence statement the run decided derives, by node.
-    universals: BTreeMap<ValueId, ValueId>,
+    /// The native path each univalence statement the run decided derives, and
+    /// each path product it judged elaborates to, by node.
+    natives: BTreeMap<ValueId, ValueId>,
     /// The body each accepted declaration defines its constant as, elaborated
     /// to the universe it was declared at, by position.
     definitions: BTreeMap<ConstantIndex, ValueId>,
@@ -408,16 +409,17 @@ impl ModuleReport
         &self.relations
     }
 
-    /// The path each univalence statement the run decided derives, by node:
-    /// what the statement crosses to the kernel as.
+    /// The native path each univalence statement the run decided derives, and
+    /// each path product it judged elaborates to, by node: what the statement
+    /// or the product crosses to the kernel as.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn universals(&self) -> &BTreeMap<ValueId, ValueId>
+    pub const fn natives(&self) -> &BTreeMap<ValueId, ValueId>
     {
-        &self.universals
+        &self.natives
     }
 
     /// The body each accepted declaration defines its constant as: its body,
@@ -949,7 +951,7 @@ pub fn check_declaration_supported(
     && &ret.directed == context.directed()
     && &ret.reflexivities == context.reflexivities()
     && &ret.relations == context.relations()
-    && &ret.universals == context.universals()
+    && &ret.natives == context.natives()
     && ret.definitions.iter().map(|(&constant, &body)| (constant, body))
         .eq(context.definitions().definitions())
     && ret.failures.iter().all(|(constant, failure)|
@@ -993,7 +995,7 @@ pub fn check_module(
         directed: context.directed().clone(),
         reflexivities: context.reflexivities().clone(),
         relations: context.relations().clone(),
-        universals: context.universals().clone(),
+        natives: context.natives().clone(),
         definitions: context.definitions().definitions().collect(),
         data_signatures: context.data_signatures().clone(),
         abstract_types: context.abstract_types().collect(),

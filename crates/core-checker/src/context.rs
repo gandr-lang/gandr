@@ -305,9 +305,10 @@ pub struct CheckingContext<'arena>
     /// The path endpoint pairs each accepted declaration's type conversions
     /// related, by position.
     relations: BTreeMap<ConstantIndex, Vec<crate::code::EndpointRelation>>,
-    /// The path each univalence statement the judgement decided derives, by
+    /// The native universe path each univalence statement the judgement
+    /// decided derives, and each path product it judged elaborates to, by
     /// node.
-    universals: BTreeMap<ValueId, ValueId>,
+    natives: BTreeMap<ValueId, ValueId>,
     /// The abstract types admitted, by position.
     sealed: BTreeMap<ConstantIndex, Sealed>,
     /// The sites that minted them, in minting order.
@@ -396,7 +397,9 @@ impl<'arena> CheckingContext<'arena>
     /// - panics: none.
     /// - intension: mints three value-type nodes into `arena` — the unit type,
     ///   the integer atom and the string atom — which every literal and unit
-    ///   rule then hands out.
+    ///   rule then hands out; the judgement mints the types it rewrites — a
+    ///   codomain shifted under a binder, instantiated at an argument, or
+    ///   decoded from a quote — into the same arena.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a fresh context synthesises the three rigid atoms and
@@ -439,7 +442,7 @@ impl<'arena> CheckingContext<'arena>
             flows: BTreeMap::new(),
             directed: BTreeMap::new(),
             reflexivities: BTreeMap::new(),
-            universals: BTreeMap::new(),
+            natives: BTreeMap::new(),
             nesting: BTreeMap::new(),
             relating: BTreeMap::new(),
             relations: BTreeMap::new(),
@@ -1271,12 +1274,12 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Specification
     /// - requires: `body` was accepted at `declared`.
     /// - ensures: [`Self::definitions`] holds, at `constant`, `body` itself
-    ///   unless `body` is a `ua` the judgement derived a path for, which it
-    ///   holds instead, or `declared` is, at its weak head, a value universe
-    ///   above the level of the universe `body` inhabits; then the lift of
-    ///   `body` to that universe, minted. The definition is the code the kernel
-    ///   admits for the declaration, so a decode or a transport unfolds alike
-    ///   on either side.
+    ///   unless `body` is a `ua` the judgement derived a path for or a path
+    ///   product it elaborated, which holds that native path instead, or
+    ///   `declared` is, at its weak head, a value universe above the level of
+    ///   the universe `body` inhabits; then the lift of `body` to that
+    ///   universe, minted. The definition is the code the kernel admits for the
+    ///   declaration, so a decode or a transport unfolds alike on either side.
     /// - fails: never; a body whose level cannot be read is defined as it
     ///   stands, and the kernel's replay of an unfolding over it declines
     ///   rather than certifies a wrong one.
@@ -1285,14 +1288,15 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Adequacy
     /// - hypothesis: L3 — code definitions at their natural universe and a
     ///   larger universe are observed by subsequent decoding and independent
-    ///   readmission, and a transport along a constant defined by `ua` computes
-    ///   along its derived path; a missing body, lift or path changes those
-    ///   outcomes.
+    ///   readmission, and a transport along a constant defined by `ua` or by a
+    ///   path product computes along its native path; a missing body, lift or
+    ///   path changes those outcomes.
     /// - witness: `bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
     /// - witness: `bridge::tests::a_smaller_type_at_a_larger_universe_readmits_with_a_lift`
     /// - witness: `ua::tests::a_written_statement_derives_the_path_at_its_stratum`
+    /// - witness: `product::tests::a_product_of_written_paths_elaborates_to_the_native_product`
     #[spec(ensures: matches!(self.definitions.body(constant), Maybe::Present(defined)
-        if defined == body || self.universals.get(&body) == Some(&defined)
+        if defined == body || self.natives.get(&body) == Some(&defined)
             || matches!(self.arena.value(defined), Some(Value::Quote(lifted))
             if matches!(value_type_view(self.arena, *lifted), Ok(ValueTypeView::Lift { .. })))))]
     pub(crate) fn define(
@@ -1302,7 +1306,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         body: ValueId,
     )
     {
-        let elaborated = match self.universals.get(&body) {
+        let elaborated = match self.natives.get(&body) {
             | Some(&path) => path,
             | None => self.elaborate(declared, body).unwrap_or(body),
         };
@@ -1680,37 +1684,41 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         &self.relations
     }
 
-    /// The path each univalence statement the judgement decided derives, by
+    /// The native universe path each univalence statement the judgement
+    /// decided derives, and each path product it judged elaborates to, by
     /// node.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn universals(&self) -> &BTreeMap<ValueId, ValueId>
+    pub const fn natives(&self) -> &BTreeMap<ValueId, ValueId>
     {
-        &self.universals
+        &self.natives
     }
 
-    /// Record the path the judgement derived for the `ua` at `at`.
+    /// Record the native path the judgement derived for the `ua` or
+    /// elaborated for the path product at `at`.
     ///
     /// # Specification
-    /// - requires: `path` is the path [`crate::ua::decide`] derived at `at`.
+    /// - requires: `path` is the path [`crate::ua::decide`] derived or
+    ///   [`crate::product::native`] elaborated at `at`.
     /// - ensures: `at` has `path` as its record, replacing an earlier one.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a decided statement crosses as exactly its recorded
-    ///   path, which the kernel admits.
+    /// - hypothesis: L3 — a decided statement and a judged product cross as
+    ///   exactly their recorded paths, which the kernel admits.
     /// - witness: `ua::tests::a_written_statement_derives_the_path_at_its_stratum`
-    #[spec(ensures: self.universals.get(&at) == Some(&path))]
-    pub(crate) fn record_universal(
+    /// - witness: `product::tests::a_product_of_written_paths_elaborates_to_the_native_product`
+    #[spec(ensures: self.natives.get(&at) == Some(&path))]
+    pub(crate) fn record_native(
         &mut self,
         at: ValueId,
         path: ValueId,
     )
     {
-        self.universals.insert(at, path);
+        self.natives.insert(at, path);
     }
 
     /// Trace the conversion of two computations as

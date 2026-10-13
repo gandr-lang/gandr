@@ -426,6 +426,48 @@ fn a_list_moves_along_a_universe_equivalence()
 }
 
 #[test]
+fn a_path_product_lowers_to_its_former()
+{
+    let negation = "def not(b: Bool) -> -F Bool {\n  case b {\n    true => return +{.1 = unit},\n    false => return +{.0 = unit}\n  }\n}\n";
+    let mut arena = CoreArena::new();
+    let source = format!("{negation}def paired = pathProduct(here(Unit), equiv(not, not));\n");
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let DeclarationOutcome::Bodied { body } = outcome_of(&module, "paired".into())
+    else {
+        panic!("the product lowers");
+    };
+    let Some(&Value::PathProduct(first, second)) = arena.value(body)
+    else {
+        panic!("`pathProduct(p, q)` is the native product");
+    };
+    assert!(
+        matches!(arena.value(first), Some(&Value::Here(_)))
+            && matches!(arena.value(second), Some(&Value::Equiv(..))),
+        "both paths are read as values, in order"
+    );
+    let report = judged(&module, &mut arena);
+    assert_accepted(&report);
+    assert!(
+        report.natives().contains_key(&body),
+        "the checker elaborates the product to its native path"
+    );
+
+    let mut arena = CoreArena::new();
+    let source = format!("{negation}def half = pathProduct(equiv(not, not));\n");
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    assert!(
+        matches!(
+            outcome_of(&module, "half".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Arity(count),
+                ..
+            }) if count == OperandCount::from(1_usize)
+        ),
+        "a path product takes two paths"
+    );
+}
+
+#[test]
 fn a_computation_endpoint_is_the_value_it_returns()
 {
     let mut arena = CoreArena::new();

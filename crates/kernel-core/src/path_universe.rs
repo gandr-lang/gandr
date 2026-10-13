@@ -26,9 +26,11 @@
 //! evidence describes recorded action skeletons, not kernel endpoint values.
 //! They participate in ordinary arena traversal, declaration admission,
 //! structural conversion and artifact encoding. The surface writes the
-//! equivalence, `equiv(f, g)`, which its frontend erases to `PathEquiv`, and
+//! equivalence, `equiv(f, g)`, which its frontend erases to `PathEquiv`;
 //! univalence at a stratum, `ua[n, k](a, b, f, g)`, which it erases to a
-//! `PathProduct` of `PathEquiv`s over the reflexivity at the unit.
+//! `PathProduct` of `PathEquiv`s over the reflexivity at the unit; and the
+//! product `pathProduct(p, q)`, which it erases to the `PathProduct` of its
+//! components' certificates, a `here` at a code among them as `PathRefl`.
 //!
 //! | Rule | Kernel obligation or computation |
 //! | ---- | -------------------------------- |

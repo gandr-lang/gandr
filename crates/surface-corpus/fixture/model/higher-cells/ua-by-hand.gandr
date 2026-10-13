@@ -1,0 +1,48 @@
+sign Magma {
+  sort M : Type;
+  oper mul : (x : M, y : M) --> (z : M);
+  oper one : () --> (z : M);
+}
+
+/// `ua[1, 4]` written by hand: reflexivity at the unit for the empty shape,
+/// then one `equiv` per corolla in catalogue order, the constant's before the
+/// binary one's, nested to the right. What the hand definition does not state
+/// is what `ua` checks beyond it: naturality along each corolla's symmetries
+/// (`pathological/higher-cells/ua-by-hand-unnatural.gandr`), and from degree
+/// two (`ua-corolla-strata.gandr`) the Segal certification of the stages above
+/// the corollas.
+module ByHand {
+  type Tel = #{Unit, #{+{Unit}, Bool}};
+
+  @[ checks ]
+  def exchange(b : Bool) -> -F Bool {
+    case b {
+      true => return +{.1 = unit},
+      false => return +{.0 = unit}
+    }
+  }
+
+  @[ checks ]
+  def keep(e : +{Unit}) -> -F +{Unit} {
+    return e
+  }
+
+  @[ checks ]
+  def opposite = ua[1, 4](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
+
+  @[ checks ]
+  def opposite_by_hand : Path(Type, Tel, Tel) ;
+  def opposite_by_hand = pathProduct(here(Unit), pathProduct(equiv(keep, keep), equiv(exchange, exchange))) ;
+
+  @[ checks ]
+  def same : Path(Path(Type, Tel, Tel), opposite, opposite_by_hand) ;
+  def same = here(opposite) ;
+
+  @[ checks ]
+  def moves : Path(Tel, transport(\X. X, opposite_by_hand, #{unit, #{+{.0 = unit}, +{.0 = unit}}}), #{unit, #{+{.0 = unit}, +{.1 = unit}}}) ;
+  def moves = here(#{unit, #{+{.0 = unit}, +{.1 = unit}}}) ;
+
+  @[ checks ]
+  def alike : Path(Tel, transport(\X. X, opposite, #{unit, #{+{.0 = unit}, +{.0 = unit}}}), transport(\X. X, opposite_by_hand, #{unit, #{+{.0 = unit}, +{.0 = unit}}})) ;
+  def alike = here(#{unit, #{+{.0 = unit}, +{.1 = unit}}}) ;
+}

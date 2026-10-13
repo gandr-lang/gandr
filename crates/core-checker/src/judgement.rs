@@ -283,16 +283,19 @@
 //!
 //! `bridge::tests::native_path_module_round_trips` exports all five forms,
 //! persists and imports four declarations, then replays imported product
-//! transport. The surface writes none of these forms itself: it writes a
-//! universe equivalence `equiv(f, g)`, which the rule in [`crate::equiv`]
-//! decides by computation and the bridge erases to `PathEquiv` with the
-//! dialogues it recorded, and univalence at a stratum `ua[n, k](a, b, f, g)`,
-//! which [`crate::ua`] derives and the bridge erases to the path product of
-//! one `PathEquiv` per corolla. The directed family's statements — `sim`,
-//! `forward` and `arrow` at `Flow(Type, A, B)` — are the rules of
-//! [`crate::flow`] and [`crate::forward`]. The bridge mode, higher fields and
-//! guarded List inhabitants stay at their kernel rule-language boundaries;
-//! function extensionality is the element-identity rule below.
+//! transport. Of these forms the surface writes only the product,
+//! `pathProduct(p, q)`, whose rule in [`crate::product`] also reads a
+//! component at the universe's element identity and elaborates such a product
+//! to the native one. Beside it, the surface writes a universe equivalence
+//! `equiv(f, g)`, which the rule in [`crate::equiv`] decides by computation
+//! and the bridge erases to `PathEquiv` with the dialogues it recorded, and
+//! univalence at a stratum `ua[n, k](a, b, f, g)`, which [`crate::ua`]
+//! derives and the bridge erases to the path product of one `PathEquiv` per
+//! corolla. The directed family's statements — `sim`, `forward` and `arrow`
+//! at `Flow(Type, A, B)` — are the rules of [`crate::flow`] and
+//! [`crate::forward`]. The bridge mode, higher fields and guarded List
+//! inhabitants stay at their kernel rule-language boundaries; function
+//! extensionality is the element-identity rule below.
 //!
 //! **Choice.** Preserve untrusted native evidence across the export boundary
 //! instead of treating successful frontend checking as certification.
@@ -1251,6 +1254,8 @@ enum Frame
     /// Await the first component path.
     PathProductFirst
     {
+        /// The product.
+        product: ValueId,
         /// The first path.
         at: ValueId,
         /// The second path.
@@ -1259,12 +1264,14 @@ enum Frame
     /// Await the second component path.
     PathProductSecond
     {
+        /// The product.
+        product: ValueId,
         /// The second path.
         at: ValueId,
-        /// The first source.
-        source: ValueTypeId,
-        /// The first target.
-        target: ValueTypeId,
+        /// The first path's classifier.
+        classifier: ValueTypeId,
+        /// The first path, read.
+        first: crate::product::Component,
     },
     /// Check the inverse after the forward map.
     PathBackward
@@ -3453,7 +3460,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Ok(Step::Ascend(Produced::ValueType(classifier)))
             },
             | Value::PathProduct(first, second) => {
-                self.wait(Frame::PathProductFirst { at: first, second });
+                self.wait(Frame::PathProductFirst {
+                    product: term,
+                    at: first,
+                    second,
+                });
                 Ok(Step::Descend(Goal::Value {
                     term: first,
                     direction: Direction::Synthesise,
@@ -5776,12 +5787,20 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Frame::PrimitiveResult { result } | Frame::TransportOperand { result },
                 Produced::Checked,
             ) => Ok(Step::Ascend(Produced::CompType(result))),
-            | (Frame::PathProductFirst { at, second }, Produced::ValueType(classifier)) => {
-                let (source, target) = self.path_endpoints(at, classifier)?;
+            | (
+                Frame::PathProductFirst {
+                    product,
+                    at,
+                    second,
+                },
+                Produced::ValueType(classifier),
+            ) => {
+                let first = crate::product::component(self.context, at, classifier)?;
                 self.wait(Frame::PathProductSecond {
+                    product,
                     at: second,
-                    source,
-                    target,
+                    classifier,
+                    first,
                 });
                 Ok(Step::Descend(Goal::Value {
                     term: second,
@@ -5789,16 +5808,27 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }))
             },
             | (
-                Frame::PathProductSecond { at, source, target },
+                Frame::PathProductSecond {
+                    product,
+                    at,
+                    classifier: first_classifier,
+                    first,
+                },
                 Produced::ValueType(classifier),
             ) => {
-                let (right_source, right_target) = self.path_endpoints(at, classifier)?;
-                let arena = self.context.arena_mut();
-                let source = arena.value_type_product(&[source, right_source]);
-                let target = arena.value_type_product(&[target, right_target]);
-                let source = arena.value_quote(source);
-                let target = arena.value_quote(target);
-                let classifier = arena.value_type_path_universe(source, target);
+                let second = crate::product::component(self.context, at, classifier)?;
+                if first.reading == crate::product::Reading::Element
+                    || second.reading == crate::product::Reading::Element
+                {
+                    let native = crate::product::native(
+                        self.context,
+                        product,
+                        (first_classifier, classifier),
+                    )?;
+                    self.context.record_native(product, native);
+                }
+                let classifier =
+                    crate::product::classifier(self.context.arena_mut(), first, second);
                 Ok(Step::Ascend(Produced::ValueType(classifier)))
             },
             | (
@@ -5914,7 +5944,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             },
             | (Frame::UaTranslators { at }, Produced::Checked) => {
                 let universal = crate::ua::decide(self.context, at)?;
-                self.context.record_universal(at, universal.path());
+                self.context.record_native(at, universal.path());
                 let identity = universal.identity(self.context.arena_mut());
                 Ok(Step::Ascend(Produced::ValueType(identity)))
             },

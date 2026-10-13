@@ -1,6 +1,7 @@
 //! Element identity in the lowering: the path type `Path(A, a, b)`, its
 //! reflexivity `here(a)`, function extensionality `funext(f, g)`, universe
-//! equivalence `equiv(f, g)`, transport `transport(\X. T, p, v)` and its
+//! equivalence `equiv(f, g)`, the product of two universe paths
+//! `pathProduct(p, q)`, transport `transport(\X. T, p, v)` and its
 //! dependent form `transport(M, p, z₀, q, v)`, and `back`, `then` and `cong`,
 //! each unfolded to the transport it derives; and the native list's
 //! constructors `nil` and `cons(h, t)`, the recursive motive transport first
@@ -28,12 +29,12 @@
 //!
 //! # The identity vocabulary is names nothing else binds
 //!
-//! `here`, `funext`, `equiv`, `transport`, `back`, `cong`, `bisim`, `sim`,
-//! `stay`, `forward`, `arrow`, `ride` and `recorded` are spelled as ordinary
-//! calls and resolved after every binder and every earlier declaration, so a
-//! parameter or a definition of the same name shadows them, as it shadows a
-//! prelude primitive; `then` is the grammar's own infix tile, and `Flow` a
-//! type head resolved the same way.
+//! `here`, `funext`, `equiv`, `pathProduct`, `transport`, `back`, `cong`,
+//! `bisim`, `sim`, `stay`, `forward`, `arrow`, `ride` and `recorded` are
+//! spelled as ordinary calls and resolved after every binder and every
+//! earlier declaration, so a parameter or a definition of the same name
+//! shadows them, as it shadows a prelude primitive; `then` is the grammar's
+//! own infix tile, and `Flow` a type head resolved the same way.
 //! Reserving the names outright was the alternative; it would break every
 //! program that already binds one. Reversal: a namespace for the identity
 //! vocabulary, `Path.here`, once the namespaces carry formers rather than
@@ -47,6 +48,12 @@
 //! first and decides it by computation (`gandr_core_checker`'s funext and
 //! equiv rules). Univalence at a stratum, `ua[n, k](a, b, f, g)`, is the same
 //! kind of name with its stratum in the head; [`super::ua`] lowers it.
+//!
+//! `pathProduct(p, q)` stands as a value over two paths read as values: the
+//! kernel's native product of universe paths, which relates the eager pairs of
+//! the two paths' endpoints, nested to the right as `ua[n, k]` nests its
+//! telescope. Every name of the derived form then has a spelling, so the
+//! degree-one derivation can be written by hand and compared with it.
 //!
 //! # `transport` states its motive
 //!
@@ -238,11 +245,12 @@ quenchant_shape::reason_enum! {
 /// An identity operation a call's head spells.
 ///
 /// # Specification
-/// - ensures: reflexivity, function and universe extensionality, transport in a
-///   one-binder motive or a telescope, the two derived operations, the native
-///   list cell, the two session statements, the identity flow, the forward flow
-///   of a translator, the function flow of two boundary flows, a ride along a
-///   flow and a recorded run, spelled as calls.
+/// - ensures: reflexivity, function and universe extensionality, the product of
+///   two universe paths, transport in a one-binder motive or a telescope, the
+///   two derived operations, the native list cell, the two session statements,
+///   the identity flow, the forward flow of a translator, the function flow of
+///   two boundary flows, a ride along a flow and a recorded run, spelled as
+///   calls.
 /// - executable: none — a tag holds no head to check its spelling against.
 ///
 /// # Adequacy
@@ -253,6 +261,7 @@ quenchant_shape::reason_enum! {
 /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
 /// - witness: `lower::identity::tests::a_run_rides_a_flow_between_sessions`
 /// - witness: `lower::identity::tests::directed_statements_lower_to_their_formers`
+/// - witness: `lower::identity::tests::a_path_product_lowers_to_its_former`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) enum Operation
 {
@@ -262,6 +271,8 @@ pub(super) enum Operation
     Funext,
     /// `equiv(f, g)`.
     Equiv,
+    /// `pathProduct(p, q)`.
+    PathProduct,
     /// `transport(\X. T, p, v)`.
     Transport,
     /// `back(p)`.
@@ -305,10 +316,12 @@ pub(super) enum Operation
 /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
 /// - witness: `lower::identity::tests::a_run_rides_a_flow_between_sessions`
 /// - witness: `lower::identity::tests::directed_statements_lower_to_their_formers`
-const SPELLED: [(&str, Operation); 14] = [
+/// - witness: `lower::identity::tests::a_path_product_lowers_to_its_former`
+const SPELLED: [(&str, Operation); 15] = [
     (HERE, Operation::Here),
     ("funext", Operation::Funext),
     ("equiv", Operation::Equiv),
+    ("pathProduct", Operation::PathProduct),
     ("transport", Operation::Transport),
     ("back", Operation::Back),
     ("cong", Operation::Cong),
@@ -617,22 +630,22 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `operation` is what the call's head spells.
     /// - ensures: `here(a)` and `stay(a)` stand as values reading their point
-    ///   as a value at an endpoint; `funext(f, g)`, `equiv(f, g)`, `cons(h,
-    ///   t)`, `bisim(A, B)` and `sim(A, B)` stand as values reading both
-    ///   operands as values; `transport(\X. T, p, v)` and `ride(\X. T, f, v)`
-    ///   stand as computations reading their motive, path or flow and value as
-    ///   values, and `transport(M, p, z₀, q, v)` as a computation reading its
-    ///   motive as a value type and the other four as values; `back(p)` and
-    ///   `cong(f, p)` stand as computations derived as [`Self::derive`] does;
-    ///   `recorded(m₀, …, mₙ)` stands as a value over its moves, each read as
-    ///   [`Self::recorded_move`] reads it. Every operand is read under the
-    ///   site's frame.
+    ///   as a value at an endpoint; `funext(f, g)`, `equiv(f, g)`,
+    ///   `pathProduct(p, q)`, `cons(h, t)`, `bisim(A, B)` and `sim(A, B)` stand
+    ///   as values reading both operands as values; `transport(\X. T, p, v)`
+    ///   and `ride(\X. T, f, v)` stand as computations reading their motive,
+    ///   path or flow and value as values, and `transport(M, p, z₀, q, v)` as a
+    ///   computation reading its motive as a value type and the other four as
+    ///   values; `back(p)` and `cong(f, p)` stand as computations derived as
+    ///   [`Self::derive`] does; `recorded(m₀, …, mₙ)` stands as a value over
+    ///   its moves, each read as [`Self::recorded_move`] reads it. Every
+    ///   operand is read under the site's frame.
     /// - fails: the wrong-sort refusal where the operation's sort is not read;
     ///   the arity refusal for other than one argument to `here`, `stay`,
-    ///   `forward` or `back`, two to `funext`, `equiv`, `cons`, `cong`,
-    ///   `bisim`, `sim` or `arrow`, three to `ride`, and three or five to
-    ///   `transport`; the unannotated refusal for a three-operand transport or
-    ///   a ride whose motive is no static abstraction; [`Self::derive`]'s
+    ///   `forward` or `back`, two to `funext`, `equiv`, `pathProduct`, `cons`,
+    ///   `cong`, `bisim`, `sim` or `arrow`, three to `ride`, and three or five
+    ///   to `transport`; the unannotated refusal for a three-operand transport
+    ///   or a ride whose motive is no static abstraction; [`Self::derive`]'s
     ///   refusal; a move's refusal; the argument list's fault.
     /// - panics: none.
     ///
@@ -650,6 +663,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
     /// - witness: `lower::identity::tests::a_run_rides_a_flow_between_sessions`
     /// - witness: `lower::identity::tests::a_move_out_of_shape_is_refused`
+    /// - witness: `lower::identity::tests::a_path_product_lowers_to_its_former`
     #[spec(
         captures: start = self.operands.len(),
         ensures: |ret| {
@@ -660,6 +674,7 @@ impl<'source> Lowerer<'_, 'source>
                         | (Operation::Stay, Some(&Plan::Stay(point))) => self.at_endpoint.contains(&point),
                         | (Operation::Funext, Some(&Plan::Funext(..)))
                         | (Operation::Equiv, Some(&Plan::Equiv(..)))
+                        | (Operation::PathProduct, Some(&Plan::PathProduct(..)))
                         | (Operation::Cons, Some(&Plan::ListCons(..)))
                         | (Operation::Bisim, Some(&Plan::SessionRelated(SessionRelation::Equivalence, ..)))
                         | (Operation::Sim, Some(&Plan::SessionRelated(SessionRelation::Subtyping, ..)))
@@ -684,6 +699,7 @@ impl<'source> Lowerer<'_, 'source>
             | Operation::Here
             | Operation::Funext
             | Operation::Equiv
+            | Operation::PathProduct
             | Operation::Cons
             | Operation::Bisim
             | Operation::Sim
@@ -711,6 +727,7 @@ impl<'source> Lowerer<'_, 'source>
             | Operation::Here
             | Operation::Funext
             | Operation::Equiv
+            | Operation::PathProduct
             | Operation::Cons
             | Operation::Bisim
             | Operation::Sim
@@ -738,6 +755,7 @@ impl<'source> Lowerer<'_, 'source>
             | (
                 Operation::Funext
                 | Operation::Equiv
+                | Operation::PathProduct
                 | Operation::Cons
                 | Operation::Bisim
                 | Operation::Sim
@@ -751,6 +769,7 @@ impl<'source> Lowerer<'_, 'source>
                 self.read(right, Reading::Value(frame));
                 let plan = match operation {
                     | Operation::Equiv => Plan::Equiv(left, right),
+                    | Operation::PathProduct => Plan::PathProduct(left, right),
                     | Operation::Cons => Plan::ListCons(left, right),
                     | Operation::Bisim => {
                         Plan::SessionRelated(SessionRelation::Equivalence, left, right)

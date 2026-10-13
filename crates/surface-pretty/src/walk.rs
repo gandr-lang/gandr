@@ -43,19 +43,24 @@
 //!
 //! # Native universe paths
 //!
-//! The native presentations are `Path_U(a, b)`, `refl(a)`, `equiv(f, g)` and
-//! `pathProduct(p, q)`. Endpoint, map and product order is retained. Each is
-//! explicitly `Fidelity::Approximate`: these forms have no surface parser
-//! syntax, and an equivalence’s display does not include its classifier or
-//! replay evidence. The core adapter and checkpoint adapter expose the same
-//! value-child positions.
+//! The native presentations are `Path_U(a, b)`, `refl(a)` and `equiv(f, g)`.
+//! Endpoint and map order is retained. Each is explicitly
+//! `Fidelity::Approximate`: these forms have no surface parser syntax, and an
+//! equivalence’s display does not include its classifier or replay evidence.
+//! The core adapter and checkpoint adapter expose the same value-child
+//! positions. The product of two universe paths, `pathProduct(p, q)`, is the
+//! one native former the surface writes: the lowering reads the call back to
+//! the same node, so it is faithful, its components in order and each as
+//! faithful as its own spelling.
 //!
 //! **Choice.** Show the structural constructor instead of an unreadable marker,
 //! while withholding a surface round-trip claim. The printer neither compares
 //! certified maps nor replays transport. **Reversal.** A faithful notation
 //! requires parser and lowering rules that preserve all required information.
 //! `native_paths_preserve_ordered_endpoints_and_maps` checks the order and
-//! approximation boundary through public presentation.
+//! approximation boundary through public presentation, and
+//! `a_product_of_written_paths_spells_as_written` the product's faithful
+//! spelling.
 //!
 //! # Element identity
 //!
@@ -2945,10 +2950,7 @@ impl Walk<'_, '_>
                 self.fidelity = Fidelity::Approximate;
                 Some(Join::Bracket(Bracket::PathEquiv))
             },
-            | Former::PathProduct(..) => {
-                self.fidelity = Fidelity::Approximate;
-                Some(Join::Bracket(Bracket::PathProduct))
-            },
+            | Former::PathProduct(..) => Some(Join::Bracket(Bracket::PathProduct)),
             | Former::Product(arity) | Former::Tuple(arity) => Some(Join::Braced {
                 brace: Brace::Hash,
                 arity: Arity(usize::from(arity)),

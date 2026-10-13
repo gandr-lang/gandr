@@ -358,3 +358,85 @@ fn a_univalence_statement_round_trips_with_its_descriptions()
         "an accepted statement is judged again for its derived path; a refused one is adopted"
     );
 }
+
+/// Two products of reflexivity at the unit written apart — `here` twice, and
+/// `here` beside the native reflexivity — and a path identifying them under
+/// the item key `last`.
+///
+/// # Specification
+/// - ensures: three signed declarations; the two products agree only once each
+///   is elaborated to its native path.
+/// - panics: only if the ordered fixture is rejected by the program container.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the identification checks freshly and after the products
+///   resume, and is judged again under a new key.
+/// - witness: `tests::native_formers::a_path_product_resumes_to_its_native_path`
+#[spec(ensures: |ret| ret.items().len() == 3)]
+fn products(last: ItemKey) -> Program
+{
+    let mut arena = CoreArena::new();
+    let unit = arena.value_type_unit();
+    let code = arena.value_quote(unit);
+    let here = arena.value_here(code);
+    let native = arena.value_path_refl(code);
+    let written = arena.value_path_product(here, here);
+    let mixed = arena.value_path_product(here, native);
+    let pair = arena.value_type_product(&[unit, unit]);
+    let pair = arena.value_quote(pair);
+    let universe = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let identity = arena.value_type_path(universe, pair, pair);
+    let first = arena.value_constant(ConstantIndex::from(0_usize));
+    let second = arena.value_constant(ConstantIndex::from(1_usize));
+    let same = arena.value_type_path(identity, first, second);
+    let reflexive = arena.value_here(first);
+    let items = [
+        (ItemKey::from("by_hand"), identity, written),
+        (ItemKey::from("mixed"), identity, mixed),
+        (last, same, reflexive),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(position, (key, declared, body))| {
+        Item::new(
+            key,
+            Declaration::new(
+                ConstantIndex::from(position),
+                Maybe::Present(declared),
+                Maybe::Present(body),
+                OriginToken::from(position),
+            ),
+        )
+    })
+    .collect();
+    Program::new(arena, items).expect("fixture positions ascend")
+}
+
+#[test]
+fn a_path_product_resumes_to_its_native_path()
+{
+    let original = check_program(&mut products(ItemKey::from("same")), CheckBudget::DEFAULT)
+        .expect("the initial pass succeeds");
+    let checkpoints = original.checkpoints();
+    assert!(
+        checkpoints
+            .items()
+            .iter()
+            .all(|item| matches!(item.typing(), Typing::Checked { .. })),
+        "the products agree once elaborated: {checkpoints:?}"
+    );
+    let renamed = resume_from(checkpoints, &mut products(ItemKey::from("again")))
+        .expect("the products resume under a renamed identification");
+    let fresh = check_program(&mut products(ItemKey::from("again")), CheckBudget::DEFAULT)
+        .expect("fresh checking succeeds");
+    assert_eq!(
+        renamed.checkpoints(),
+        fresh.checkpoints(),
+        "a judgement after resumed products reads their native paths, as a fresh check does"
+    );
+    assert_eq!(
+        renamed.adoptions(),
+        [Adoption::Judged, Adoption::Judged, Adoption::Judged],
+        "a product is judged again for its native path; the renamed item has no checkpoint"
+    );
+}
