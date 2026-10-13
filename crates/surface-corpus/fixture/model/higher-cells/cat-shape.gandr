@@ -47,4 +47,16 @@ module SetoidCat : Model(CatShape) {
     return here(thunk { become compose(p, q, s, f, thunk { become compose(q, r, s, g, h) }) })
   }
 
+  @[ checks ]
+  def unitLFromR : (p : Type, q : Type, f : +U[ω] (p -> -F q)) => Path((+U[ω] (p -> -F q)), comp(p, p, q, id(p), f), f) ;
+  def unitLFromR = unitR ;
+
+  @[ checks ]
+  def unitLEither(p : Type, q : Type, f : +U[ω] (p -> -F q), b : Bool) -> -F Path((+U[ω] (p -> -F q)), comp(p, p, q, id(p), f), f) {
+    case b {
+      true => become unitL(p, q, f),
+      false => become unitR(p, q, f)
+    }
+  }
+
 }

@@ -1020,6 +1020,11 @@ mod tests
                 side: EndpointSide::Left,
                 verdict: KernelVerdict::NotConvertible,
             }),
+            KernelError::Identity(IdentityError::RelatedEndpointsDiffer {
+                left: ContentDigest::default(),
+                right: ContentDigest::default(),
+                verdict: KernelVerdict::NotConvertible,
+            }),
             KernelError::Identity(IdentityError::NeutralFibre),
             KernelError::Identity(IdentityError::EmptyFibre),
             KernelError::Identity(IdentityError::HigherFieldRequired),

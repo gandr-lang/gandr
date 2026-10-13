@@ -30,6 +30,7 @@ use gandr_kernel_term::LevelSignature;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::MarkedDeclaration;
 use gandr_kernel_term::QuantifiedStep;
+use gandr_kernel_term::RelatedEndpoints;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::StringLiteral;
 use gandr_kernel_term::TermArena;
@@ -1819,7 +1820,9 @@ fn readmit(artifact: &DecodedArtifact) -> Result<Environment, KernelError>
         }
         let levels = marked.declaration().levels().clone();
         let staged = match *marked.declaration().content() {
-            | DeclarationContent::Def { declared, body } => staging.def(levels, declared, body),
+            | DeclarationContent::Def { declared, body } => staging
+                .def(levels, declared, body)
+                .relating(marked.declaration().related().to_vec()),
             | DeclarationContent::Axiom { declared } => staging.axiom(levels, declared),
             | DeclarationContent::Data { .. } | DeclarationContent::AbstractType { .. } => {
                 panic!("the fixture holds definitions and axioms")
@@ -2117,6 +2120,182 @@ fn a_dialogue_naming_the_wrong_unfolding_is_refused_by_name()
             EndpointSide::Left,
             KernelVerdict::Declined(ReplayDecline::Refused(ReplayRefusal::Exhausted)),
         ))
+    );
+}
+
+/// Stage `law : Path(U(Bool → F Bool), k, k) = given` over the definitions of
+/// [`delayed_law`] and `axiom given : Path(U(Bool → F Bool), ⟨force delay⟩,
+/// k)`, every earlier declaration admitted and recorded. The ascription
+/// converts the two path types only where `k` converts with `⟨force delay⟩`,
+/// which unfolds `j` under a thunk: the shape of a definition whose declared
+/// type and body's type state compound endpoints related through a
+/// definition's body. Returns the law unadmitted, with `k` and `⟨force
+/// delay⟩` minted in its content.
+///
+/// # Specification
+/// trivial.
+fn ascribed_law(
+    alias: Admitted
+) -> Result<
+    (
+        Environment,
+        Vec<MarkedDeclaration>,
+        StagedDeclaration,
+        [ValueId; 2],
+    ),
+    KernelError,
+>
+{
+    let mut environment = Environment::new();
+    let mut declarations = Vec::new();
+    let mut staging = environment.stage();
+    let boolean = boolean(staging.arena());
+    let declaration = staging.def(
+        LevelSignature::monomorphic(),
+        boolean.function,
+        boolean.identity,
+    );
+    let k = admit(&mut environment, &mut declarations, declaration)?.position();
+    let mut staging = environment.stage();
+    let named_k = staging.arena().value_constant(k);
+    let declaration = match alias {
+        | Admitted::Defined => {
+            staging.def(LevelSignature::monomorphic(), boolean.function, named_k)
+        },
+        | Admitted::Assumed => staging.axiom(LevelSignature::monomorphic(), boolean.function),
+    };
+    let j = admit(&mut environment, &mut declarations, declaration)?.position();
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let named_j = arena.value_constant(j);
+    let forced = arena.computation_force(named_j);
+    let inner = arena.value_thunk(forced);
+    let returned = arena.computation_return(inner);
+    let body = arena.value_thunk(returned);
+    let returns = arena.comp_type_returner(boolean.function);
+    let declared = arena.value_type_thunk(returns);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+    let delay = admit(&mut environment, &mut declarations, declaration)?.position();
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let endpoint = applied(arena, delay, &[]);
+    let named_k = arena.value_constant(k);
+    let stated = arena.value_type_path(boolean.function, endpoint, named_k);
+    let declaration = staging.axiom(LevelSignature::monomorphic(), stated);
+    let given = admit(&mut environment, &mut declarations, declaration)?.position();
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let named_k = arena.value_constant(k);
+    let endpoint = applied(arena, delay, &[]);
+    let diagonal = arena.value_type_path(boolean.function, named_k, named_k);
+    let body = arena.value_constant(given);
+    let law = staging.def(LevelSignature::monomorphic(), diagonal, body);
+    Ok((environment, declarations, law, [named_k, endpoint]))
+}
+
+/// The pair and replay verdict a relation refusal names, if `admitted` is
+/// one.
+///
+/// # Specification
+/// trivial.
+fn relation_refusal(admitted: &Result<CheckedId, KernelError>) -> Option<KernelVerdict>
+{
+    match *admitted {
+        | Err(KernelError::Identity(IdentityError::RelatedEndpointsDiffer { verdict, .. })) => {
+            Some(verdict)
+        },
+        | _ => None,
+    }
+}
+
+#[test]
+fn a_definition_relating_compound_endpoints_admits()
+{
+    // Without a relation the forced reading leaves `k` apart from `⟨force
+    // delay⟩`: the refusal the ascription met before definitions carried
+    // their dialogues.
+    let (mut environment, _, law, _) = ascribed_law(Admitted::Defined).expect("the fixture");
+    assert!(matches!(
+        environment.add_decl(law),
+        Err(KernelError::ValueTypeMismatch(_))
+    ));
+    // A relation between other terms is not read: matching is by content.
+    let (mut environment, _, law, [_, endpoint]) =
+        ascribed_law(Admitted::Defined).expect("the fixture");
+    let elsewhere = law.relating(alloc::vec![RelatedEndpoints {
+        left: endpoint,
+        right: endpoint,
+        dialogue: DELAYED.to_vec(),
+    }]);
+    assert!(matches!(
+        environment.add_decl(elsewhere),
+        Err(KernelError::ValueTypeMismatch(_))
+    ));
+    // The relation the producer's conversion kept admits the law, and crosses
+    // the wire with it.
+    let (mut environment, mut declarations, law, [k, endpoint]) =
+        ascribed_law(Admitted::Defined).expect("the fixture");
+    let relation = RelatedEndpoints {
+        left: k,
+        right: endpoint,
+        dialogue: DELAYED.to_vec(),
+    };
+    let law = law.relating(alloc::vec![relation]);
+    admit(&mut environment, &mut declarations, law)
+        .expect("the dialogue unfolds `j` under the thunk");
+    let bytes = gandr_kernel_term::encode(environment.arena(), &declarations);
+    let decoded = gandr_kernel_term::decode(bytes.as_image()).expect("the relation decodes");
+    let readmitted = Environment::replay(decoded.arena().clone(), decoded.declarations())
+        .expect("the decoded law replays its relation");
+    assert_eq!(readmitted.entries().len(), 5);
+    let mut stripped = decoded.declarations().to_vec();
+    if let Some(last) = stripped.last_mut() {
+        *last =
+            MarkedDeclaration::new(last.mark(), last.declaration().clone().relating(Vec::new()));
+    }
+    let refusal = Environment::replay(decoded.arena().clone(), &stripped)
+        .expect_err("the law without its relation is refused");
+    assert_eq!(refusal.position(), ConstantIndex::from(4_usize));
+    assert!(matches!(
+        refusal.error(),
+        &KernelError::ValueTypeMismatch(_)
+    ));
+}
+
+#[test]
+fn a_corrupted_relation_is_refused_by_name()
+{
+    let refused = |alias: Admitted, dialogue: &[ConversionDecision<()>]| {
+        let (mut environment, _, law, [k, endpoint]) = ascribed_law(alias).expect("the fixture");
+        let law = law.relating(alloc::vec![RelatedEndpoints {
+            left: k,
+            right: endpoint,
+            dialogue: dialogue.to_vec(),
+        }]);
+        relation_refusal(&environment.add_decl(law))
+    };
+    let at = |position: usize| {
+        Some(KernelVerdict::Declined(ReplayDecline::Refused(
+            ReplayRefusal::Inapplicable {
+                at: TracePosition::from(position),
+            },
+        )))
+    };
+    // The wrong side: `delay` is the right side's head, not the left's.
+    let mut wrong_side = DELAYED;
+    if let Some(reduction) = wrong_side.get_mut(1) {
+        *reduction = ConversionDecision::ReduceLeft { redex: () };
+    }
+    assert_eq!(refused(Admitted::Defined, &wrong_side), at(1));
+    // A decision pointing at an unrelated definition: in the control `j` is
+    // an axiom, so the dialogue's unfolding of it has nothing to unfold.
+    assert_eq!(refused(Admitted::Assumed, &DELAYED), at(6));
+    // The empty dialogue names no unfolding.
+    assert_eq!(
+        refused(Admitted::Defined, &[]),
+        Some(KernelVerdict::Declined(ReplayDecline::Refused(
+            ReplayRefusal::Exhausted
+        )))
     );
 }
 

@@ -376,6 +376,7 @@ use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::LevelSignature;
 use gandr_kernel_term::MarkedDeclaration;
 use gandr_kernel_term::QuantifiedStep;
+use gandr_kernel_term::RelatedEndpoints;
 use gandr_kernel_term::SealScope;
 use gandr_kernel_term::StructuredName;
 use gandr_kernel_term::Summand;
@@ -385,6 +386,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::code::Certificate;
 use crate::code::CodeDefinitions;
+use crate::code::EndpointRelation;
 use crate::code::Lift;
 use crate::code::Reflexivity;
 use crate::code::Unfolded;
@@ -1115,6 +1117,7 @@ where
         funexts: report.funexts(),
         equivalences: report.equivalences(),
         reflexivities: report.reflexivities(),
+        relations: report.relations(),
         universals: report.universals(),
         definitions: report.definitions(),
     };
@@ -1183,7 +1186,11 @@ where
                 source,
                 &mut positions,
                 constant,
-                Offer::Definition { declared, body },
+                Offer::Definition {
+                    declared,
+                    body,
+                    relations: source.relations.get(&constant).map_or(&[], Vec::as_slice),
+                },
                 &vouch,
             ),
             | (None, Verdict::Owed(entry)) => cross(
@@ -1303,8 +1310,9 @@ fn close_seals(
 }
 
 /// What every erasure reads besides the arena and the positions: the lifts,
-/// function extensionalities, universe equivalences and reflexivities the
-/// judgement recorded and the bodies it defined its constants as.
+/// function extensionalities, universe equivalences, reflexivities and endpoint
+/// relations the judgement recorded and the bodies it defined its constants
+/// as.
 #[derive(Clone, Copy, Debug)]
 struct Source<'source>
 {
@@ -1316,6 +1324,9 @@ struct Source<'source>
     equivalences: &'source BTreeMap<ValueId, crate::equiv::Equivalence>,
     /// The reflexivities the judgement checked against a path type, by node.
     reflexivities: &'source BTreeMap<ValueId, Reflexivity>,
+    /// The path endpoint pairs each accepted declaration's conversions
+    /// related, by position.
+    relations: &'source BTreeMap<ConstantIndex, Vec<EndpointRelation>>,
     /// The path each univalence statement the judgement decided derives, by
     /// node.
     universals: &'source BTreeMap<ValueId, ValueId>,
@@ -1339,6 +1350,8 @@ enum Offer<'signature>
         declared: ValueTypeId,
         /// The body.
         body: ValueId,
+        /// The path endpoint pairs its conversions related.
+        relations: &'signature [EndpointRelation],
     },
     /// An axiom: the type an owed hole owes.
     Axiom
@@ -1369,6 +1382,8 @@ enum Erased
         declared: gandr_kernel_term::ValueTypeId,
         /// The body's image.
         body: gandr_kernel_term::ValueId,
+        /// The related endpoint pairs' images, each with its dialogue.
+        related: Vec<RelatedEndpoints>,
     },
     /// An axiom's declared type.
     Axiom
@@ -1486,9 +1501,13 @@ where
             constructors,
             kind,
         ),
-        | Erased::Definition { declared, body } => {
-            staging.def(LevelSignature::monomorphic(), declared, body)
-        },
+        | Erased::Definition {
+            declared,
+            body,
+            related,
+        } => staging
+            .def(LevelSignature::monomorphic(), declared, body)
+            .relating(related),
         | Erased::Axiom { declared } => staging.axiom(LevelSignature::monomorphic(), declared),
         | Erased::Abstract {
             kind,
@@ -2551,7 +2570,9 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     /// - witness: `bridge::tests::a_refused_declaration_leaves_the_environment_unchanged`
     #[spec(ensures: |ret| { let (matched_left_value, matched_right_value) = (offer, &ret);
 if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref parameters,ref constructors,ref kind }) = *matched_right_value { parameters.len() == signature.parameters().len() && constructors.iter().map(Vec::len).eq(signature.constructors().iter().map(Vec::len)) && target.value_type(*kind).is_some() && parameters.iter().chain(constructors.iter().flatten()).all(|&field| target.value_type(field).is_some()) }
- else if matches!(matched_left_value, Offer::Definition { .. }) && let Ok(Erased::Definition { ref declared, ref body }) = *matched_right_value { target.value_type(*declared).is_some() && target.value(*body).is_some() }
+ else if matches!(matched_left_value, Offer::Definition { .. }) && let Ok(Erased::Definition { ref declared, ref body, ref related }) = *matched_right_value { target.value_type(*declared).is_some() && target.value(*body).is_some()
+    && matches!(matched_left_value, Offer::Definition { relations, .. } if relations.len() == related.len())
+    && related.iter().all(|pair| target.value(pair.left).is_some() && target.value(pair.right).is_some()) }
  else if matches!(matched_left_value, Offer::Axiom { .. }) && let Ok(Erased::Axiom { ref declared }) = *matched_right_value { target.value_type(*declared).is_some() }
  else if matches!(matched_left_value, Offer::Abstract(_)) && let Ok(Erased::Abstract { ref kind, ref representation }) = *matched_right_value { target.value_type(*kind).is_some() && target.value_type(*representation).is_some() }
  else { (*matched_right_value).is_err() }
@@ -2586,10 +2607,34 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     kind,
                 })
             },
-            | Offer::Definition { declared, body } => {
+            | Offer::Definition {
+                declared,
+                body,
+                relations,
+            } => {
                 let declared = self.value_type(target, declared)?;
                 let body = self.value(target, body)?;
-                Ok(Erased::Definition { declared, body })
+                // The relations after the body, so their endpoints reuse the
+                // images the declared type already minted.
+                let mut related = Vec::with_capacity(relations.len());
+                for relation in relations {
+                    let left = self.value(target, relation.left())?;
+                    let right = self.value(target, relation.right())?;
+                    related.push(RelatedEndpoints {
+                        left,
+                        right,
+                        dialogue: relation
+                            .decisions()
+                            .iter()
+                            .map(|decision| decision.map(|_| ()))
+                            .collect(),
+                    });
+                }
+                Ok(Erased::Definition {
+                    declared,
+                    body,
+                    related,
+                })
             },
             | Offer::Axiom { declared } => {
                 let declared = self.value_type(target, declared)?;
@@ -5362,6 +5407,7 @@ mod tests
             funexts: &BTreeMap::new(),
             equivalences: &BTreeMap::new(),
             reflexivities: &BTreeMap::new(),
+            relations: &BTreeMap::new(),
             universals: &BTreeMap::new(),
             definitions: &definitions,
         };
@@ -7074,6 +7120,68 @@ mod tests
     }
 
     #[test]
+    fn an_ascription_crosses_with_the_endpoints_it_related()
+    {
+        // def k : U (Integer -> F Integer) = thunk { \x. return x } ;
+        // def j : U (Integer -> F Integer) = k ;
+        // def given : Path(U (…), thunk { force j }, k) = here(k) ;
+        // def law : Path(U (…), k, k) = given ;
+        // The ascription converts the two path types only through `j`'s body
+        // under the thunk, which the kernel's forced reading does not unfold.
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let returns = arena.comp_type_returner(integer);
+        let arrow = arena.comp_type_arrow(integer, returns);
+        let function = arena.value_type_thunk(arrow);
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let returned = arena.computation_return(bound);
+        let lambda = arena.computation_lambda(returned);
+        let identity = arena.value_thunk(lambda);
+        let [k, j, given] = [0_usize, 1, 2].map(|at| arena.value_constant(ConstantIndex::from(at)));
+        let forced = arena.computation_force(j);
+        let delayed = arena.value_thunk(forced);
+        let stated = arena.value_type_path(function, delayed, k);
+        let diagonal = arena.value_type_path(function, k, k);
+        let here = arena.value_here(k);
+        let declared = Maybe::Present(function);
+        let (_, readmission) = judge_and_readmit(&mut arena, &[
+            declaration(At(0), declared, Maybe::Present(identity)),
+            declaration(At(1), declared, Maybe::Present(k)),
+            declaration(At(2), Maybe::Present(stated), Maybe::Present(here)),
+            declaration(At(3), Maybe::Present(diagonal), Maybe::Present(given)),
+        ]);
+        assert!(
+            readmission
+                .readmitted()
+                .iter()
+                .all(|entry| matches!(entry.outcome(), Outcome::Defined { .. })),
+            "the kernel replays the ascription's dialogue: {:?}",
+            readmission.readmitted()
+        );
+        let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+        let related: Vec<usize> = artifact
+            .declarations()
+            .iter()
+            .map(|marked| marked.declaration().related().len())
+            .collect();
+        assert_eq!(related, [0, 0, 0, 1], "the law alone carries a pair");
+        let mut stripped = artifact.declarations().to_vec();
+        if let Some(law) = stripped.last_mut() {
+            *law = gandr_kernel_term::MarkedDeclaration::new(
+                law.mark(),
+                law.declaration().clone().relating(Vec::new()),
+            );
+        }
+        let refusal = gandr_kernel_core::Environment::replay(artifact.arena().clone(), &stripped)
+            .expect_err("without its pair the law is the refusal the ascription met before");
+        assert_eq!(refusal.position(), ConstantIndex::from(3_usize));
+        assert!(matches!(
+            refusal.error(),
+            &gandr_kernel_core::KernelError::ValueTypeMismatch(_)
+        ));
+    }
+
+    #[test]
     fn an_equiv_crosses_as_a_universe_path()
     {
         // def not : U (+{(), ()} -> F +{(), ()}) ;
@@ -7558,6 +7666,7 @@ mod tests
             funexts: &BTreeMap::new(),
             equivalences: &BTreeMap::new(),
             reflexivities: &BTreeMap::new(),
+            relations: &BTreeMap::new(),
             universals: &BTreeMap::new(),
             definitions: &definitions,
         };
@@ -8261,6 +8370,7 @@ mod tests
             funexts: &BTreeMap::new(),
             equivalences: &BTreeMap::new(),
             reflexivities: &BTreeMap::new(),
+            relations: &BTreeMap::new(),
             universals: &BTreeMap::new(),
             definitions: &definitions,
         };

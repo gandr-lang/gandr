@@ -571,6 +571,61 @@ pub fn equivalent(
     convert(context, Pairing::Values(left, right))
 }
 
+/// Whether two path endpoints a type conversion met are the same term, keeping
+/// the derivation where the machine's traced reading relates them.
+///
+/// # Specification
+/// - requires: both endpoints stand under the binders the conversion is under.
+/// - ensures: [`Agreement::Convertible`] with the trace recorded for the pair
+///   on `context` when the machine relates `left` to `right` with returned
+///   endpoints held at the definitions they call; otherwise
+///   [`Agreement::Convertible`] exactly when its untraced conversion relates
+///   them, and [`Agreement::Apart`] when it does not.
+/// - provides: the dialogue a definition carries for the kernel, whose forced
+///   reading does not unfold a definition under a binder. The traced reading is
+///   tried first and only ever adds a derivation: where it does not relate, the
+///   verdict and every refusal are the untraced conversion's, so nothing the
+///   conversion accepted is refused.
+/// - fails: the untraced conversion's refusal, where the traced reading does
+///   not relate.
+/// - panics: none.
+/// - executable: none — both verdicts are the machine's own readings; a
+///   predicate restating them would run the two readings again.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an ascription relating compound endpoints through a
+///   definition's body keeps the pair and its derivation, which the kernel
+///   replays; an ascription whose endpoints are the same syntax keeps none.
+/// - witness: `module::tests::an_ascription_keeps_the_endpoints_it_related`
+/// - witness: `bridge::tests::an_ascription_crosses_with_the_endpoints_it_related`
+fn endpoints_agree(
+    context: &mut CheckingContext<'_>,
+    left: ValueId,
+    right: ValueId,
+) -> Result<Agreement, CheckRefusal>
+{
+    if let Ok(Maybe::Present(decisions)) =
+        context
+            .definitions()
+            .relate_terms(context.arena(), left, right)
+    {
+        context.record_relation(left, right, decisions);
+        return Ok(Agreement::Convertible);
+    }
+    let verdict = context
+        .definitions()
+        .convert_terms(context.arena(), left, right)?;
+    if verdict == gandr_core_nbe::MachineVerdict::Convertible {
+        Ok(Agreement::Convertible)
+    }
+    else {
+        Ok(Agreement::Apart)
+    }
+}
+
 /// Decide whether the two types of `root` are the same tree at their weak
 /// heads.
 ///
@@ -668,10 +723,7 @@ fn convert(
                     || root_knowledge(context, right)? == Knowledge::Unknown
                     || gandr_core_term::equal_certificate_syntax(context.arena(), left, right)
                         == gandr_core_term::CertificateEquality::Equal
-                    || context
-                        .definitions()
-                        .convert_terms(context.arena(), left, right)?
-                        == gandr_core_nbe::MachineVerdict::Convertible
+                    || endpoints_agree(context, left, right)? == Agreement::Convertible
             },
             | Pairing::Assignable(left, right) => {
                 let left = context.whnf_value_type(left)?;

@@ -329,6 +329,7 @@ pub use crate::capability::Grants;
 pub use crate::capability::HostGrant;
 pub use crate::code::Certificate;
 pub use crate::code::CodeDefinitions;
+pub use crate::code::EndpointRelation;
 pub use crate::code::Evaluation;
 pub use crate::code::Lift;
 pub use crate::code::Reading;

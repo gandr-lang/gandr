@@ -274,6 +274,7 @@ use gandr_kernel_term::Declaration;
 use gandr_kernel_term::DeclarationContent;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::GroundSort;
+use gandr_kernel_term::RelatedEndpoints;
 use gandr_kernel_term::TableEntryCount;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
@@ -464,44 +465,59 @@ fn comp_shape_mismatch(
 
 /// What `goal` comes to once the returned endpoints its structure leaves open
 /// are read: normalized with the admitted definitions in `entries` unfolding,
-/// and the normal forms converted by the one conversion.
+/// and the normal forms converted by the one conversion; and, where that
+/// leaves the goal apart, what the endpoint pairs the declaration relates
+/// make of it.
 ///
 /// # Specification
-/// - requires: `goal`'s roots live in `arena`.
-/// - ensures: [`EndpointReading::Apart`] when the structural walk diverges;
-///   [`EndpointReading::Converts`] when it converges setting nothing aside;
-///   otherwise what [`read_endpoints`] makes of the set-aside pairs at the
-///   unfoldings of `entries`' definitions, every other entry opaque. `arena`
-///   holds what it held on entry.
+/// - requires: `goal`'s roots and the judgement's related pairs live in
+///   `arena`.
+/// - ensures: [`EndpointReading::Converts`] when the structural walk converges
+///   setting nothing aside, or [`read_endpoints`] converts the set-aside pairs
+///   at the unfoldings of the judgement's entries' definitions, every other
+///   entry opaque; otherwise, when the judgement relates no pair,
+///   [`EndpointReading::Apart`], and when it does, what
+///   [`crate::element_identity::related_endpoints`] makes of the goal at those
+///   unfoldings. `arena` holds what it held on entry.
 /// - provides: the one place the checker reads a returned endpoint, shared by
-///   both mode switches; the unfoldings are built only when a pair is set
-///   aside. Reflexivity relates its endpoints by the dialogue it carries
-///   instead ([`crate::element_identity::reflexive_endpoints`]).
-/// - fails: never.
+///   every mode switch; the unfoldings are built only when a pair is set aside
+///   or a relation is read. Reflexivity relates its endpoints by the dialogue
+///   it carries instead ([`crate::element_identity::reflexive_endpoints`]).
+/// - fails: [`crate::element_identity::IdentityError::RelatedEndpointsDiffer`]
+///   when a related pair's dialogue does not replay.
 /// - panics: none.
+///
+/// # Errors
+/// As `fails`.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a path type whose endpoint returns its value through a
 ///   definition converts at a mode switch, and one returning a different value
-///   does not.
+///   does not; compound endpoints related only through a definition's body
+///   convert by the definition's dialogue and are refused by name when it is
+///   corrupted.
 /// - witness: `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`
 /// - witness: `element_identity::tests::a_certificate_with_a_returned_endpoint_decodes_checks_and_replays`
+/// - witness: `element_identity::tests::a_definition_relating_compound_endpoints_admits`
+/// - witness: `element_identity::tests::a_corrupted_relation_is_refused_by_name`
 #[spec(captures: before = arena.watermark(), ensures: arena.watermark() == before)]
 fn read_returned(
     arena: &mut TermArena,
-    entries: &[AdmittedDeclaration],
+    judgement: Judgement<'_>,
     goal: ConversionGoal,
-) -> EndpointReading
+) -> Result<EndpointReading, KernelError>
 {
     let mut pending = Vec::new();
-    if pending_endpoints(arena, goal, &mut pending) == Convertibility::Distinct {
-        return EndpointReading::Apart;
+    let structural = pending_endpoints(arena, goal, &mut pending);
+    if structural == Convertibility::Convertible && pending.is_empty() {
+        return Ok(EndpointReading::Converts);
     }
-    if pending.is_empty() {
-        return EndpointReading::Converts;
+    if structural == Convertibility::Distinct && judgement.related.is_empty() {
+        return Ok(EndpointReading::Apart);
     }
     let unfoldings = Unfoldings::new(
-        entries
+        judgement
+            .entries
             .iter()
             .map(|entry| match *entry.content() {
                 | DeclarationContent::Def { body, .. } => Unfoldable::Body(body),
@@ -511,7 +527,16 @@ fn read_returned(
             })
             .collect(),
     );
-    read_endpoints(arena, &unfoldings, &pending, ReplayBudget::DEFAULT)
+    if structural == Convertibility::Convertible
+        && read_endpoints(arena, &unfoldings, &pending, ReplayBudget::DEFAULT)
+            == EndpointReading::Converts
+    {
+        return Ok(EndpointReading::Converts);
+    }
+    if judgement.related.is_empty() {
+        return Ok(EndpointReading::Apart);
+    }
+    crate::element_identity::related_endpoints(arena, &unfoldings, judgement.related, goal)
 }
 
 /// The read-only inputs every judgement of one declaration stands on.
@@ -532,6 +557,9 @@ pub struct Judgement<'session>
     /// The atoms this declaration reads as their representations, because
     /// it is admitted inside the admission that minted them.
     manifest: &'session [ConstantIndex],
+    /// The path endpoints the declaration's conversions relate, with the
+    /// dialogue relating each pair: empty but for a relating definition.
+    related: &'session [RelatedEndpoints],
     /// The block in scope at its own position, while a data declaration's
     /// fields form.
     block: Block<'session>,
@@ -571,6 +599,7 @@ impl<'session> Judgement<'session>
             entries,
             levels,
             manifest: &[],
+            related: &[],
             block: Block::Outside,
         }
     }
@@ -589,6 +618,21 @@ impl<'session> Judgement<'session>
     ) -> Self
     {
         Self { manifest, ..self }
+    }
+
+    /// The same judgement reading `related` where a mode switch's forced
+    /// reading leaves path endpoints apart.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn relating(
+        self,
+        related: &'session [RelatedEndpoints],
+    ) -> Self
+    {
+        Self { related, ..self }
     }
 
     /// The same judgement with a data block in scope at its own position.
@@ -3160,14 +3204,15 @@ where
                     )?;
                     let (domain, left, right) =
                         crate::element_identity::path_parts(arena, path_type)?;
-                    if let Err(mismatch) = former::assignable(arena, carrier, domain)
-                        && read_returned(
+                    if let Err(mismatch) = former::assignable(arena, carrier, domain) {
+                        let reading = read_returned(
                             arena,
-                            judgement.entries,
+                            judgement,
                             ConversionGoal::ValueType(carrier, domain),
-                        ) != EndpointReading::Converts
-                    {
-                        return Err(mismatch);
+                        )?;
+                        if reading != EndpointReading::Converts {
+                            return Err(mismatch);
+                        }
                     }
                     let (table, rewrites) = session.rewrite_parts();
                     let source_fibre = substitute_value_type(arena, table, rewrites, family, left);
@@ -3225,19 +3270,20 @@ where
                     let carried = arena.computation_path_transport(family, path, start);
                     let carried = arena.value_returned(carried);
                     let lies_over = arena.value_type_path(target_fibre, carried, finish);
-                    if former::assignable(arena, lies_over, over_type).is_err()
-                        && read_returned(
+                    if former::assignable(arena, lies_over, over_type).is_err() {
+                        let reading = read_returned(
                             arena,
-                            judgement.entries,
+                            judgement,
                             ConversionGoal::ValueType(lies_over, over_type),
-                        ) != EndpointReading::Converts
-                    {
-                        return Err(KernelError::Identity(
-                            crate::element_identity::IdentityError::NotOver {
-                                expected: value_type_witness(arena, lies_over),
-                                actual: value_type_witness(arena, over_type),
-                            },
-                        ));
+                        )?;
+                        if reading != EndpointReading::Converts {
+                            return Err(KernelError::Identity(
+                                crate::element_identity::IdentityError::NotOver {
+                                    expected: value_type_witness(arena, lies_over),
+                                    actual: value_type_witness(arena, over_type),
+                                },
+                            ));
+                        }
                     }
                     let (table, rewrites) = session.rewrite_parts();
                     let source = crate::element_identity::telescope_instance(
@@ -3390,14 +3436,15 @@ where
                 },
                 | Frame::ConvertValue(expected) => {
                     let synthesized = produced.value_type()?;
-                    if let Err(mismatch) = former::assignable(arena, expected, synthesized)
-                        && read_returned(
+                    if let Err(mismatch) = former::assignable(arena, expected, synthesized) {
+                        let reading = read_returned(
                             arena,
-                            judgement.entries,
+                            judgement,
                             ConversionGoal::ValueType(expected, synthesized),
-                        ) != EndpointReading::Converts
-                    {
-                        return Err(mismatch);
+                        )?;
+                        if reading != EndpointReading::Converts {
+                            return Err(mismatch);
+                        }
                     }
                     produced = Produced::Checked;
                 },
@@ -3586,14 +3633,15 @@ where
                 },
                 | Frame::ConvertComp(expected) => {
                     let synthesized = produced.comp_type()?;
-                    if let Err(mismatch) = convert_comp_type(arena, expected, synthesized)
-                        && read_returned(
+                    if let Err(mismatch) = convert_comp_type(arena, expected, synthesized) {
+                        let reading = read_returned(
                             arena,
-                            judgement.entries,
+                            judgement,
                             ConversionGoal::CompType(expected, synthesized),
-                        ) != EndpointReading::Converts
-                    {
-                        return Err(mismatch);
+                        )?;
+                        if reading != EndpointReading::Converts {
+                            return Err(mismatch);
+                        }
                     }
                     produced = Produced::Checked;
                 },
@@ -3880,6 +3928,8 @@ where
     M: CheckMemo<NodeSupport, NodeOutcome>,
 {
     let declared = declaration.declared_id();
+    // A relating definition's conversions read the pairs it relates.
+    let judgement = judgement.relating(declaration.related());
     // A data declaration's own position names its block while it is checked:
     // the occurrence walk refuses every non-strictly-positive or non-uniform
     // self occurrence by name first, and formation then reads the self

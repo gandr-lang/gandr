@@ -114,6 +114,7 @@ use gandr_kernel_term::DeclarationBuilder;
 use gandr_kernel_term::DeclarationContent;
 use gandr_kernel_term::LevelSignature;
 use gandr_kernel_term::MarkedDeclaration;
+use gandr_kernel_term::RelatedEndpoints;
 use gandr_kernel_term::SealExtent;
 use gandr_kernel_term::SealScope;
 use gandr_kernel_term::TermArena;
@@ -198,6 +199,42 @@ impl StagedDeclaration
     pub const fn declaration(&self) -> &Declaration
     {
         &self.declaration
+    }
+
+    /// This staged definition carrying `related` as the path endpoints its
+    /// type conversions relate, its content start and content unchanged.
+    ///
+    /// # Specification
+    /// - requires: every pair's roots were minted into the arena this
+    ///   declaration was staged into, no earlier than its content start.
+    /// - ensures: the declaration as [`Declaration::relating`] leaves it, at
+    ///   the same content start: a definition carries exactly `related`, any
+    ///   other declaration is unchanged.
+    /// - provides: how a producer attaches the dialogues its conversion kept
+    ///   before offering the definition; the choke point replays them.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a relating definition admits by its dialogue and the
+    ///   same definition without it is refused.
+    /// - witness: `element_identity::tests::a_definition_relating_compound_endpoints_admits`
+    #[spec(
+        captures: entry = (self.content_start, matches!(self.declaration.content(), DeclarationContent::Def { .. }), self.declaration.related().len(), related.len()),
+        ensures: |ret| ret.content_start == entry.0
+            && ret.declaration.related().len() == if entry.1 { entry.3 } else { entry.2 },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn relating(
+        self,
+        related: Vec<RelatedEndpoints>,
+    ) -> Self
+    {
+        Self {
+            declaration: self.declaration.relating(related),
+            ..self
+        }
     }
 }
 

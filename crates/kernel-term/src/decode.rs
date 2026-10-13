@@ -314,6 +314,9 @@ struct DeclMeta
     constructors: Vec<Vec<GlobalIndex>>,
     /// The sealing-provenance slot's atoms, for a definition only.
     provenance: Vec<ConstantIndex>,
+    /// The left and right endpoint roots and the dialogue of each pair a
+    /// relating definition carries; empty for every other declaration.
+    related: Vec<(GlobalIndex, GlobalIndex, crate::Dialogue)>,
 }
 
 /// Where the decoder found an artifact's segments, as offsets into the image it
@@ -637,6 +640,11 @@ fn budget_report(
             .chain(meta.sealed.map(|(representation, _)| representation))
             .chain(meta.parameters.iter().copied())
             .chain(meta.constructors.iter().flatten().copied())
+            .chain(
+                meta.related
+                    .iter()
+                    .flat_map(|&(left, right, _)| [left, right]),
+            )
         {
             let size = size_of(root);
             largest = largest.max(size);
@@ -855,19 +863,22 @@ fn value_id_at(
 )]
 #[spec(
     requires: metas.iter().all(|meta| value_type_id_at(&table.nodes, meta.root_declared).is_some()
+        && meta.related.iter().all(|&(left, right, _)| matches!(meta.kind, DeclKind::Def)
+            && value_id_at(&table.nodes, left).is_some() && value_id_at(&table.nodes, right).is_some())
         && match meta.kind {
             DeclKind::Def => meta.root_body.is_some_and(|root| value_id_at(&table.nodes, root).is_some()),
             DeclKind::Data => meta.root_body.is_none() && meta.parameters.iter().chain(meta.constructors.iter().flatten()).all(|root| value_type_id_at(&table.nodes, *root).is_some()),
             DeclKind::AbstractType => meta.root_body.is_none() && meta.sealed.is_some_and(|(root, _)| value_type_id_at(&table.nodes, root).is_some()),
             DeclKind::Axiom => meta.root_body.is_none(),
         }),
-    captures: entry = table.arena.watermark(),
+    captures: [entry = table.arena.watermark(), related = metas.iter().map(|meta| meta.related.len()).collect::<Vec<_>>()],
     ensures: |ret| table.arena.watermark() == entry && ret.as_ref().map_or_else(
         |error| *error == DecodeError::Malformed { site: MalformedSite::SealExtent },
-        |declarations| declarations.len() == metas.len() && declarations.iter().zip(metas.iter()).all(|(marked, meta)| {
+        |declarations| declarations.len() == metas.len() && declarations.iter().zip(metas.iter()).zip(related.iter()).all(|((marked, meta), &count)| {
             let declaration = marked.declaration();
             marked.mark() == meta.mark && declaration.levels() == &meta.levels
                 && declaration.provenance() == meta.provenance && meta.name.segments().is_empty()
+                && meta.related.is_empty() && declaration.related().len() == count
                 && match *declaration.content() {
                     DeclarationContent::Def { declared, body } => matches!(meta.kind, DeclKind::Def)
                         && value_type_id_at(&table.nodes, meta.root_declared) == Some(declared)
@@ -931,12 +942,24 @@ fn build_declarations(
                 let body = value_id_at(&table.nodes, root).ok_or(DecodeError::Malformed {
                     site: MalformedSite::Polarity,
                 })?;
-                DeclarationBuilder::new(&mut table.arena).sealed_def(
-                    meta.levels.clone(),
-                    declared,
-                    body,
-                    meta.provenance.clone(),
-                )
+                let resolve = |root: GlobalIndex| {
+                    value_id_at(&table.nodes, root).ok_or(DecodeError::Malformed {
+                        site: MalformedSite::Polarity,
+                    })
+                };
+                let mut related = Vec::with_capacity(meta.related.len());
+                for (left, right, dialogue) in core::mem::take(&mut meta.related) {
+                    let left = resolve(left)?;
+                    let right = resolve(right)?;
+                    related.push(crate::decl::RelatedEndpoints {
+                        left,
+                        right,
+                        dialogue,
+                    });
+                }
+                DeclarationBuilder::new(&mut table.arena)
+                    .sealed_def(meta.levels.clone(), declared, body, meta.provenance.clone())
+                    .relating(related)
             },
             | DeclKind::AbstractType => {
                 let (root, extent) = meta.sealed.ok_or(DecodeError::Malformed {
@@ -1553,12 +1576,15 @@ impl<'bytes> ByteReader<'bytes>
 ///   bytes may be arbitrary.
 /// - ensures: success appends this segment’s entries in wire order and returns
 ///   its mark, kind, name, level interface, family-correct live roots and
-///   definition provenance. Exactly definitions have a body root.
+///   definition provenance. Exactly definitions have a body root, and only a
+///   definition under [`tags::KIND_DEF_RELATING`] carries related pairs, each
+///   two value roots and a dialogue.
 /// - provides: segment parsing, not semantic validation of producer claims. On
 ///   failure the cursor and previously completed entries may have advanced;
 ///   this operation does not roll back an entire segment.
 /// - fails: reserved or unknown kinds and marks, malformed names, occupied
-///   reserved slots, and entry, level or root refusals.
+///   reserved slots, malformed dialogue words, and entry, level or root
+///   refusals.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1591,15 +1617,18 @@ impl<'bytes> ByteReader<'bytes>
                 && table.families.get(root.offset().0) == Some(&Family::ValueType),
             (DeclKind::Data | DeclKind::Def | DeclKind::Axiom, None) => true,
             _ => false,
-        }))]
+        }
+        && meta.related.iter().all(|&(left, right, _)| matches!(meta.kind, DeclKind::Def)
+            && [left, right].iter().all(|root| *root < table.next_index()
+                && table.families.get(root.offset().0) == Some(&Family::Value)))))]
 fn decode_declaration(
     reader: &mut ByteReader<'_>,
     table: &mut Table,
 ) -> Result<DeclMeta, DecodeError>
 {
     let mark = decode_admission(reader)?;
-    let kind = reader.next_tag()?;
-    let kind = declaration_kind(kind)?;
+    let kind_tag = reader.next_tag()?;
+    let kind = declaration_kind(kind_tag)?;
     let name = decode_structured_name(reader)?;
     let levels = decode_level_signature(reader)?;
     let entry_count = reader.read_uvarint()?;
@@ -1613,6 +1642,7 @@ fn decode_declaration(
     let mut parameters = Vec::new();
     let mut constructors = Vec::new();
     let mut sealed = None;
+    let mut related = Vec::new();
     let root_body = match kind {
         | DeclKind::Data => {
             let count = usize::from(reader.read_usize()?);
@@ -1633,6 +1663,18 @@ fn decode_declaration(
         | DeclKind::Def => {
             let body = decode_root(reader, table, Family::Value)?;
             provenance = decode_definition_slots(reader)?;
+            // A relating definition closes with its pairs. A count of none
+            // decodes, and the canonical re-encoding, which writes such a
+            // definition under the plain kind, refuses it.
+            if kind_tag == tags::KIND_DEF_RELATING {
+                let count = usize::from(reader.read_usize()?);
+                for _ in 0 .. count {
+                    let left = decode_root(reader, table, Family::Value)?;
+                    let right = decode_root(reader, table, Family::Value)?;
+                    let dialogue = decode_dialogue(reader)?;
+                    related.push((left, right, dialogue));
+                }
+            }
             Some(body)
         },
         // An abstract type carries its kind root, its representation root and
@@ -1658,6 +1700,7 @@ fn decode_declaration(
         parameters,
         constructors,
         provenance,
+        related,
     })
 }
 
@@ -2823,8 +2866,8 @@ fn decode_admission(reader: &mut ByteReader<'_>) -> Result<AdmissionMark, Decode
 ///
 /// # Specification
 /// - requires: `kind` is the byte read at a declaration-kind position.
-/// - ensures: returns the live kind for a definition, an axiom, or a sealed
-///   abstract type.
+/// - ensures: returns the live kind for a definition, plain or relating, an
+///   axiom, a sealed abstract type, or a data signature.
 /// - provides: the one place a kind byte is interpreted, keeping a reserved
 ///   kind's refusal distinct from an unknown byte's, so a reader learns whether
 ///   the kind is unimplemented or unassigned.
@@ -2841,14 +2884,14 @@ fn decode_admission(reader: &mut ByteReader<'_>) -> Result<AdmissionMark, Decode
 ///   validity.
 /// - witness: `decode::tests::tag_alphabets_partition_every_byte`
 #[spec(
-    ensures: |ret| match u8::from(kind) { 0 => ret.as_ref() == Ok(&DeclKind::Def), 1 => ret.as_ref() == Ok(&DeclKind::Axiom), 2 => ret.as_ref() == Ok(&DeclKind::AbstractType), 6 => ret.as_ref() == Ok(&DeclKind::Data), 3 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleSig }), 4 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleDef }), 5 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::FunctorDef }), _ => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::DeclarationKind, tag: kind }) },
+    ensures: |ret| match u8::from(kind) { 0 | 7 => ret.as_ref() == Ok(&DeclKind::Def), 1 => ret.as_ref() == Ok(&DeclKind::Axiom), 2 => ret.as_ref() == Ok(&DeclKind::AbstractType), 6 => ret.as_ref() == Ok(&DeclKind::Data), 3 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleSig }), 4 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleDef }), 5 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::FunctorDef }), _ => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::DeclarationKind, tag: kind }) },
 )]
 #[inline]
 fn declaration_kind(kind: WireTag) -> Result<DeclKind, DecodeError>
 {
     match kind {
         | tags::KIND_DATA => Ok(DeclKind::Data),
-        | tags::KIND_DEF => Ok(DeclKind::Def),
+        | tags::KIND_DEF | tags::KIND_DEF_RELATING => Ok(DeclKind::Def),
         | tags::KIND_AXIOM => Ok(DeclKind::Axiom),
         // The abstract-type kind is deliberately live here: it was reserved with
         // the other three and sealing made it real, so it is decoded rather than
@@ -3834,7 +3877,7 @@ mod tests
             assert_eq!(super::decode_sign(&mut reader), sign);
             assert_eq!(reader.position.0, 1);
             let kind = match byte {
-                | 0 => Ok(super::DeclKind::Def),
+                | 0 | 7 => Ok(super::DeclKind::Def),
                 | 1 => Ok(super::DeclKind::Axiom),
                 | 2 => Ok(super::DeclKind::AbstractType),
                 | 3 => Err(DecodeError::ReservedDeclarationKind {
@@ -4229,6 +4272,7 @@ mod tests
                     root_body: None,
                     sealed: None,
                     provenance: vec![],
+                    related: vec![],
                 })
                 .collect();
             super::budget_report(&table, &metas)
@@ -4310,10 +4354,19 @@ mod tests
             root_body: Some(super::GlobalIndex::from(5_u32)),
             sealed: None,
             provenance: vec![],
+            related: vec![(
+                super::GlobalIndex::from(5_u32),
+                super::GlobalIndex::from(5_u32),
+                vec![],
+            )],
         };
         let metrics = super::budget_report(&table, &[meta]);
         assert_eq!(u64::from(metrics.max_declaration_expanded_work()), 1);
-        assert_eq!(u64::from(metrics.artifact_expanded_work()), 2);
+        assert_eq!(
+            u64::from(metrics.artifact_expanded_work()),
+            4,
+            "a related pair's two roots count toward the artifact's work"
+        );
         let root_cap = u64::from(super::MAX_EXPANDED_TERM_WORK);
         let artifact_cap = u64::from(super::MAX_ARTIFACT_EXPANDED_WORK);
         for root in [
@@ -5105,6 +5158,11 @@ mod tests
                     super::ConstantIndex::from(0_usize),
                     super::ConstantIndex::from(128_usize),
                 ],
+                related: vec![(
+                    super::GlobalIndex::from(5_u32),
+                    super::GlobalIndex::from(5_u32),
+                    vec![gandr_kernel_conversion_trace::ConversionDecision::Decompose],
+                )],
             },
             super::DeclMeta {
                 parameters: vec![],
@@ -5117,6 +5175,7 @@ mod tests
                 root_body: None,
                 sealed: None,
                 provenance: vec![],
+                related: vec![],
             },
             super::DeclMeta {
                 parameters: vec![],
@@ -5132,6 +5191,7 @@ mod tests
                     super::SealExtent::from(0_usize),
                 )),
                 provenance: vec![],
+                related: vec![],
             },
         ];
         let arena_before = table.arena.clone();
@@ -5169,7 +5229,30 @@ mod tests
                     .eq(parts.iter().copied())
             );
             assert!(meta.name.segments().is_empty());
+            assert!(
+                meta.related.is_empty(),
+                "assembly consumes the related pairs"
+            );
         }
+        assert_eq!(
+            declarations
+                .first()
+                .expect("the definition")
+                .declaration()
+                .related(),
+            [crate::decl::RelatedEndpoints {
+                left: body,
+                right: body,
+                dialogue: vec![gandr_kernel_conversion_trace::ConversionDecision::Decompose],
+            }],
+            "the definition keeps its pair, resolved to the arena"
+        );
+        assert!(
+            declarations
+                .iter()
+                .skip(1)
+                .all(|marked| marked.declaration().related().is_empty())
+        );
         let empty =
             super::build_declarations(&mut table, &mut []).expect("empty declaration sequence");
         assert_eq!(empty, []);

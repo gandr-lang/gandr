@@ -627,6 +627,18 @@ pub const NODE_V_SESSION_PATH: WireTag = WireTag(0x5A);
 
 /// Declaration tag: a generative datatype with a checked constructor table.
 pub const KIND_DATA: WireTag = WireTag(0x06);
+/// Declaration tag: a typed definition whose segment closes with the path
+/// endpoints its type conversions relate.
+///
+/// After the [`KIND_DEF`] fields comes a pair count, at least one, then per
+/// pair the left and right endpoint roots and a dialogue: a decision count
+/// and the decision words of [`NODE_V_HERE`]'s alphabet. The kernel replays a
+/// pair's dialogue where a path type's endpoints meet that pair and its
+/// forced reading leaves them apart. A definition with no related pair writes
+/// [`KIND_DEF`], so every other artifact keeps its bytes, and a reader
+/// predating this kind refuses it as an unknown declaration kind rather than
+/// misreading it, which is why the format version holds.
+pub const KIND_DEF_RELATING: WireTag = WireTag(0x07);
 /// Node tag: nominal application with a counted argument vector.
 pub const NODE_VT_DATA: WireTag = WireTag(0x5d);
 /// Node tag: structural record classifier with counted labels and children.
