@@ -34,7 +34,11 @@
 //! atom naming no admitted abstract type are the author's. The alternative for
 //! the unbound index — classing it as the author's — would hide a resolution
 //! bug in the producer behind a source diagnostic; it reverses if a producer
-//! ever hands over unresolved author text.
+//! ever hands over unresolved author text. A session action the endpoint's
+//! state does not admit and every break of an endpoint's linear use are the
+//! author's, an action naming a linear index no fork bound among them: the
+//! linearity refusal is one variant, and the lowering binds every endpoint
+//! it names, so that defect is unreachable from source.
 //!
 //! # The absence class has no refusal, and that is the point
 //!
@@ -127,6 +131,8 @@ pub enum ExpectedShape
     /// A telescope transport's motive `Π (y : A). Π (z : B). F C`: what the
     /// motive of a transport along a path and an identity over it must be.
     Telescope,
+    /// A session type: what a fork's protocol annotation must denote.
+    Session,
 }
 
 /// A checking-only form, met where a type had to be synthesised.
@@ -169,6 +175,8 @@ pub enum CheckingForm
     /// decides whether it is suspended or run, so there is nothing to decide
     /// by without one.
     Nested(ValueId),
+    /// An offer is checked against the type its arms share.
+    Offer(ComputationId),
 }
 
 /// A former of the core vocabulary the judgement has no rule for.
@@ -701,6 +709,28 @@ pub enum CheckRefusal
         /// The first reason the descent walk met.
         reason: gandr_kernel_term::DescentRefusal,
     },
+    /// A session action the session type of its endpoint does not admit.
+    SessionMismatch
+    {
+        /// The action.
+        at: ComputationId,
+        /// The endpoint it acts on.
+        endpoint: crate::session::Endpoint,
+        /// The endpoint's session type when it acted.
+        state: ValueTypeId,
+        /// What the state refuses.
+        defect: crate::session::ProtocolDefect,
+    },
+    /// An endpoint escaped its one linear use: left unconsumed, used after
+    /// its close or twice, captured, delegated, read as a value, left in two
+    /// states by an offer's arms, or a session type outside the linear zone.
+    Linearity
+    {
+        /// The node the discipline breaks at.
+        at: CoreNode,
+        /// How it breaks.
+        defect: crate::session::LinearityDefect,
+    },
     /// A computation written where a value is read and run there, with no
     /// computation enclosing it to run before: one in a definition's own
     /// value, or under static content.
@@ -729,13 +759,14 @@ impl CheckRefusal
     ///   reflexivity at endpoints its point does not reach, a compound endpoint
     ///   that returns no pure value, an abstract type's kind that is no
     ///   universe, a representation above it, an atom naming no abstract type,
-    ///   translators that are no equivalence of species and a run with no
-    ///   computation enclosing it are malformed source; a former outside the
-    ///   fragment and a stratum the checker does not certify are
-    ///   unrepresentable; an unbound index, an exhausted allowance, a dangling
-    ///   id, an admission out of order, a repeated sealing site, a machine
-    ///   invariant and an undecided unfolding are engine faults; nothing is a
-    ///   user absence.
+    ///   translators that are no equivalence of species, a run with no
+    ///   computation enclosing it, a session action its endpoint's state
+    ///   refuses and a break of an endpoint's linear use are malformed source;
+    ///   a former outside the fragment and a stratum the checker does not
+    ///   certify are unrepresentable; an unbound index, an exhausted allowance,
+    ///   a dangling id, an admission out of order, a repeated sealing site, a
+    ///   machine invariant and an undecided unfolding are engine faults;
+    ///   nothing is a user absence.
     /// - provides: the fact a report groups by and an exit code reads.
     /// - fails: never.
     /// - panics: none.
@@ -770,7 +801,8 @@ impl CheckRefusal
         | Self::FamilyArgumentClassifier { .. }
         | Self::StaticLambdaArgument { .. }
         | Self::StaticClassifierExpected { .. }
-        | Self::NegativeOccurrence(_) | Self::NestedOccurrence(_) | Self::IndexOccurrence(_) | Self::NonUniformOccurrence(_) | Self::CrossBlockReference { .. } | Self::DescentNotReplayed { .. } | Self::UnenclosedRun { .. } => matches!(ret, FailureClass::MalformedSource),
+        | Self::NegativeOccurrence(_) | Self::NestedOccurrence(_) | Self::IndexOccurrence(_) | Self::NonUniformOccurrence(_) | Self::CrossBlockReference { .. } | Self::DescentNotReplayed { .. } | Self::UnenclosedRun { .. }
+        | Self::SessionMismatch { .. } | Self::Linearity { .. } => matches!(ret, FailureClass::MalformedSource),
     })]
     #[inline]
     #[must_use]
@@ -819,7 +851,9 @@ impl CheckRefusal
             | Self::NonUniformOccurrence(_)
             | Self::CrossBlockReference { .. }
             | Self::DescentNotReplayed { .. }
-            | Self::UnenclosedRun { .. } => FailureClass::MalformedSource,
+            | Self::UnenclosedRun { .. }
+            | Self::SessionMismatch { .. }
+            | Self::Linearity { .. } => FailureClass::MalformedSource,
             | Self::OutOfFragment { .. }
             | Self::FunextUnsupported { .. }
             | Self::EquivUnsupported { .. }
@@ -842,8 +876,9 @@ impl CheckRefusal
     /// - ensures: a type, sort, level or family-argument mismatch expects the
     ///   type it was checked at and found the type it synthesised; a shape
     ///   mismatch found the type it met, a dependent bind or stack and a
-    ///   compound endpoint the type its body synthesised, and a static Pi over
-    ///   no classifier of codes the child it stands over, each expecting a
+    ///   compound endpoint the type its body synthesised, a static Pi over no
+    ///   classifier of codes the child it stands over, and a session action and
+    ///   a leftover endpoint the endpoint's session type, each expecting a
     ///   former the refusal names rather than a type; every other refusal
     ///   compares no types.
     /// - provides: the type nodes a face spells beside the refusal's locus.
@@ -869,7 +904,9 @@ impl CheckRefusal
         | Self::DependentBind { synthesised, .. } | Self::DependentStack { synthesised, .. } | Self::CompoundEndpoint { synthesised, .. } =>
             ret.found == Maybe::Present(TypeNode::Computation(synthesised)) && ret.expected == UNNAMED,
         | Self::StaticClassifierExpected { found, .. } | Self::FunextUnsupported { classifier: found, .. }
-        | Self::EquivUnsupported { classifier: found, .. } | Self::UncertifiedStratum { code: found, .. } =>
+        | Self::EquivUnsupported { classifier: found, .. } | Self::UncertifiedStratum { code: found, .. }
+        | Self::SessionMismatch { state: found, .. }
+        | Self::Linearity { defect: crate::session::LinearityDefect::Residue { state: found, .. }, .. } =>
             ret.found == Maybe::Present(TypeNode::Value(found)) && ret.expected == UNNAMED,
         | _ => ret == Compared { expected: UNNAMED, found: UNNAMED },
     })]
@@ -927,9 +964,12 @@ impl CheckRefusal
             | Self::EquivUnsupported {
                 classifier: found, ..
             }
-            | Self::UncertifiedStratum { code: found, .. } => {
-                (UNNAMED, Maybe::Present(TypeNode::Value(found)))
-            },
+            | Self::UncertifiedStratum { code: found, .. }
+            | Self::SessionMismatch { state: found, .. }
+            | Self::Linearity {
+                defect: crate::session::LinearityDefect::Residue { state: found, .. },
+                ..
+            } => (UNNAMED, Maybe::Present(TypeNode::Value(found))),
             | Self::NotADataType(_)
             | Self::DataKindNotUniverse(_)
             | Self::DataFieldLevel { .. }
@@ -971,7 +1011,8 @@ impl CheckRefusal
             | Self::NonUniformOccurrence(_)
             | Self::CrossBlockReference { .. }
             | Self::DescentNotReplayed { .. }
-            | Self::UnenclosedRun { .. } => (UNNAMED, UNNAMED),
+            | Self::UnenclosedRun { .. }
+            | Self::Linearity { .. } => (UNNAMED, UNNAMED),
         };
         Compared { expected, found }
     }

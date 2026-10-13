@@ -597,6 +597,24 @@ fn walk(
                             .map(|child| (AnyNode::Value(child), depth, results)),
                     );
                 },
+                // A fork binds linearly; the intuitionistic depth stays.
+                | Some(&Computation::Session(ref action)) => {
+                    pending.extend(
+                        action
+                            .values()
+                            .map(|value| (AnyNode::Value(value), depth, results)),
+                    );
+                    pending.extend(
+                        action
+                            .value_types()
+                            .map(|ty| (AnyNode::ValueType(ty), depth, results)),
+                    );
+                    pending.extend(
+                        action
+                            .computations()
+                            .map(|child| (AnyNode::Computation(child), depth, results)),
+                    );
+                },
                 | Some(&Computation::Hole(_)) | None => {},
             },
             | AnyNode::ValueType(id) => match arena.value_type(id) {
@@ -619,6 +637,14 @@ fn walk(
                         parts
                             .iter()
                             .map(|&part| (AnyNode::ValueType(part), depth, results)),
+                    );
+                },
+                | Some(&ValueType::Session(ref session)) => {
+                    pending.extend(
+                        session
+                            .payloads()
+                            .iter()
+                            .map(|&payload| (AnyNode::ValueType(payload), depth, results)),
                     );
                 },
                 | Some(&ValueType::StaticPi {

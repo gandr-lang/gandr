@@ -143,6 +143,7 @@ pub struct Unfolded(pub u64);
                     Computation::ListFold { .. } | Computation::TelescopeTransport { .. } => 6,
                     Computation::Primitive { arguments, .. } => if arguments.len() == 1 { 2 } else { 3 },
                     Computation::Case { .. } | Computation::PathTransport { .. } => 4,
+                    Computation::Session(ref action) => 1_u64.saturating_add(u64::try_from(action.values().count().saturating_add(action.computations().count()).saturating_add(action.value_types().count())).unwrap_or(u64::MAX)),
                 }
             },
             CoreNode::ValueType(id) => {
@@ -152,6 +153,7 @@ pub struct Unfolded(pub u64);
                     ValueType::Record(ref fields) => 1_u64.saturating_add(u64::try_from(fields.len()).unwrap_or(u64::MAX)),
                     ValueType::Product(ref parts) | ValueType::Sum(ref parts) => 1_u64.saturating_add(u64::try_from(parts.len()).unwrap_or(u64::MAX)),
                     ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => 1,
+                    ValueType::Session(ref session) => 1_u64.saturating_add(u64::try_from(session.payloads().len()).unwrap_or(u64::MAX)),
                     ValueType::Stack { .. } | ValueType::PathUniverse(..) | ValueType::StaticPi { .. } => 3,
                     ValueType::Path { .. } => 4,
                     ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 2,
@@ -388,6 +390,11 @@ pub fn unfolded(
                         pending
                             .extend(branches.iter().map(|&branch| CoreNode::Computation(branch)));
                     },
+                    | Computation::Session(ref action) => {
+                        pending.extend(action.value_types().map(CoreNode::ValueType));
+                        pending.extend(action.values().map(CoreNode::Value));
+                        pending.extend(action.computations().map(CoreNode::Computation));
+                    },
                 }
             },
             | CoreNode::ValueType(id) => {
@@ -400,6 +407,9 @@ pub fn unfolded(
                     },
                     | ValueType::Record(ref fields) => {
                         pending.extend(fields.values().copied().map(CoreNode::ValueType));
+                    },
+                    | ValueType::Session(ref session) => {
+                        pending.extend(session.payloads().iter().copied().map(CoreNode::ValueType));
                     },
                     | ValueType::Stack { input, output } => {
                         pending.extend([CoreNode::CompType(input), CoreNode::CompType(output)]);

@@ -560,7 +560,8 @@ fn checking_row(
                 | ExpectedShape::Product
                 | ExpectedShape::StaticPi
                 | ExpectedShape::Path
-                | ExpectedShape::Telescope,
+                | ExpectedShape::Telescope
+                | ExpectedShape::Session,
             ..
         }
         | CheckRefusal::NotSynthesisable {
@@ -578,7 +579,8 @@ fn checking_row(
                 | CheckingForm::Hole(_)
                 | CheckingForm::StaticLambda(_)
                 | CheckingForm::Fixpoint(_)
-                | CheckingForm::Nested(_),
+                | CheckingForm::Nested(_)
+                | CheckingForm::Offer(_),
         }
         | CheckRefusal::PathCode(_)
         | CheckRefusal::EndpointMismatch { .. }
@@ -618,7 +620,9 @@ fn checking_row(
         | CheckRefusal::IndexOccurrence(_)
         | CheckRefusal::NonUniformOccurrence(_)
         | CheckRefusal::CrossBlockReference { .. }
-        | CheckRefusal::DescentNotReplayed { .. } => {},
+        | CheckRefusal::DescentNotReplayed { .. }
+        | CheckRefusal::SessionMismatch { .. }
+        | CheckRefusal::Linearity { .. } => {},
     }
 }
 
@@ -953,6 +957,10 @@ fn formers(
                 },
                 | Some(&Computation::Fixpoint { body, .. }) => {
                     worklist.push(Node::Computation(body));
+                },
+                | Some(&Computation::Session(ref action)) => {
+                    worklist.extend(action.values().map(Node::Value));
+                    worklist.extend(action.computations().map(Node::Computation));
                 },
                 | Some(&(Computation::Hole(_) | Computation::Mark { .. })) | None => {},
             },

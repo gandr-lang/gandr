@@ -1145,7 +1145,8 @@ _ => ret == Ok(Atom::Other(node)),
                     | ValueType::Lift { .. }
                     | ValueType::Abstract(_)
                     | ValueType::StaticPi { .. }
-                    | ValueType::Unknown => return Ok(node),
+                    | ValueType::Unknown
+                    | ValueType::Session(_) => return Ok(node),
                 },
                 | Node::CompType(at, place) => match *self
                     .core
@@ -1220,6 +1221,8 @@ else { children_correct = pending.get(entry_nodes..).is_some_and(|added| added.i
 if left.keys().eq(right.keys()) { children_correct = pending.get(entry_nodes..).is_some_and(|added| added.iter().copied().eq(left.values().zip(right.values()).map(|(a,b)| (Node::ValueType(*a,here),Node::ValueType(*b,there))))); Ok((Alike::Same,left.len(),0)) } else { Ok((Alike::Different,0,0)) }
 } else if let (&ValueType::Product(ref left), &ValueType::Product(ref right)) | (&ValueType::Sum(ref left), &ValueType::Sum(ref right)) = (left, right) {
 if left.len() == right.len() { children_correct = pending.get(entry_nodes..).is_some_and(|added| added.iter().rev().copied().eq(left.iter().zip(right.iter()).map(|(a,b)| (Node::ValueType(*a,here),Node::ValueType(*b,there))))); Ok((Alike::Same,left.len(),0)) } else { Ok((Alike::Different,0,0)) }
+} else if let ValueType::Session(ref a) = *left && let ValueType::Session(ref b) = *right {
+if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = pending.get(entry_nodes..).is_some_and(|added| added.iter().rev().copied().eq(a.payloads().iter().zip(b.payloads()).map(|(a, b)| (Node::ValueType(*a, here), Node::ValueType(*b, there))))); Ok((Alike::Same, a.payloads().len(), 0)) } else { Ok((Alike::Different, 0, 0)) }
 } else { match (left, right) {
                         (&ValueType::PathUniverse(a, b), &ValueType::PathUniverse(c, d)) =>
                             self.atom(Node::Code(a, here)).and_then(|first_left| {
@@ -1493,6 +1496,19 @@ if left.len() == right.len() { children_correct = pending.get(entry_nodes..).is_
                             Ok(Alike::Same)
                         }
                     }
+                    else if let ValueType::Session(ref a) = *matched_left_value
+                        && let ValueType::Session(ref b) = *matched_right_value
+                    {
+                        if a.protocol() != b.protocol() || a.state() != b.state() {
+                            return Ok(Alike::Different);
+                        }
+                        pending.extend(
+                            a.payloads().iter().zip(b.payloads()).rev().map(|(a, b)| {
+                                (Node::ValueType(*a, here), Node::ValueType(*b, there))
+                            }),
+                        );
+                        Ok(Alike::Same)
+                    }
                     else {
                         {
                             match *matched_left_value {
@@ -1511,7 +1527,8 @@ if left.len() == right.len() { children_correct = pending.get(entry_nodes..).is_
                                 | ValueType::Element { .. }
                                 | ValueType::Abstract(_)
                                 | ValueType::StaticPi { .. }
-                                | ValueType::Unknown => Ok(Alike::Different),
+                                | ValueType::Unknown
+                                | ValueType::Session(_) => Ok(Alike::Different),
                             }
                         }
                     }
@@ -2111,6 +2128,12 @@ if left.len() == right.len() { children_correct = pending.get(entry_nodes..).is_
                         | ValueType::Element { code, .. } => {
                             atoms.push(self.atom(Node::Code(code, place))?);
                         },
+                        | ValueType::Session(ref session) => types.extend(
+                            session
+                                .payloads()
+                                .iter()
+                                .map(|payload| Node::ValueType(*payload, place)),
+                        ),
                     }
                 },
                 | Node::CompType(id, place) => {

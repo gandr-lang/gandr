@@ -367,7 +367,6 @@ use gandr_kernel_term::AdmissionMark;
 use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
-use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Declaration as KernelDeclaration;
 use gandr_kernel_term::EncodedArtifact;
 use gandr_kernel_term::EndpointDialogues;
@@ -493,15 +492,13 @@ pub enum Refusal
         /// The former.
         former: UnadmittedFormer,
     },
-    /// A variable counts in the linear zone, which the kernel's context does
-    /// not have. No former of the fragment binds linearly, so a judged term
-    /// never holds one.
-    LinearVariable
+    /// A session type, a session action or an endpoint: the kernel has no
+    /// channels, so a declaration that names one stays on the checker's side,
+    /// as a declaration whose former the kernel lacks does.
+    Session
     {
-        /// The variable.
-        at: ValueId,
-        /// The index.
-        index: DeBruijnIndex,
+        /// The node.
+        at: CoreNode,
     },
     /// An id names no node of the arena: the caller paired the report with
     /// another arena.
@@ -558,8 +555,8 @@ impl Refusal
     /// - ensures: the class is a function of the variant alone. A withheld
     ///   constant is malformed source, since the declaration it names was
     ///   turned away for a reason its own entry reports; a former outside the
-    ///   fragment is unrepresentable; a linear variable, a dangling id, a
-    ///   cyclic node, a declined certificate and a machine invariant are engine
+    ///   fragment and a session are unrepresentable; a dangling id, a cyclic
+    ///   node, a declined certificate and a machine invariant are engine
     ///   faults, because a judged term from the judged arena holds none of them
     ///   and an unfolding holds by definition; a term hole and the unknown type
     ///   are user absences.
@@ -577,8 +574,8 @@ impl Refusal
     /// - witness: `bridge::tests::a_hole_is_refused_where_it_stands_and_its_filling_is_admitted`
     #[spec(ensures: |ret| match *self {
         | Self::Withheld { .. } | Self::WithheldData { .. } => matches!(ret, FailureClass::MalformedSource),
-        | Self::OutOfFragment { .. } => matches!(ret, FailureClass::Unrepresentable),
-        | Self::LinearVariable { .. } | Self::DanglingNode { .. } | Self::Cyclic { .. }
+        | Self::OutOfFragment { .. } | Self::Session { .. } => matches!(ret, FailureClass::Unrepresentable),
+        | Self::DanglingNode { .. } | Self::Cyclic { .. }
             | Self::CertificateDeclined { .. } | Self::MachineInvariant => matches!(ret, FailureClass::EngineFault),
         | Self::Hole { .. } | Self::Unknown { .. } => matches!(ret, FailureClass::UserAbsence),
     })]
@@ -588,8 +585,7 @@ impl Refusal
     {
         match *self {
             | Self::Withheld { .. } | Self::WithheldData { .. } => FailureClass::MalformedSource,
-            | Self::OutOfFragment { .. } => FailureClass::Unrepresentable,
-            | Self::LinearVariable { .. }
+            | Self::OutOfFragment { .. } | Self::Session { .. } => FailureClass::Unrepresentable,
             | Self::DanglingNode { .. }
             | Self::Cyclic { .. }
             | Self::CertificateDeclined { .. }
@@ -3104,20 +3100,20 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///   erased by this machine is not minted again.
     /// - fails: [`Refusal::Withheld`] for a constant whose declaration did not
     ///   cross; [`Refusal::OutOfFragment`] for a former the fragment has no
-    ///   rule for; [`Refusal::LinearVariable`] for a linear-zone variable;
-    ///   [`Refusal::DanglingNode`] for an id `source` does not hold;
-    ///   [`Refusal::Cyclic`] for a node reached again while its own erasure
-    ///   waits; [`Refusal::CertificateDeclined`] for an unfolding the
-    ///   normaliser does not certify. Nodes minted before the refusal stay in
-    ///   `target`; the caller owns the arena and its rollback.
+    ///   rule for; [`Refusal::Session`] for a session type, a session action or
+    ///   a linear-zone variable; [`Refusal::DanglingNode`] for an id `source`
+    ///   does not hold; [`Refusal::Cyclic`] for a node reached again while its
+    ///   own erasure waits; [`Refusal::CertificateDeclined`] for an unfolding
+    ///   the normaliser does not certify. Nodes minted before the refusal stay
+    ///   in `target`; the caller owns the arena and its rollback.
     /// - panics: none.
     /// - intension: one kernel node is minted per distinct core node reached,
     ///   so sharing in the source is sharing in the image.
     ///
     /// # Errors
     /// - [`Refusal::Withheld`], [`Refusal::OutOfFragment`],
-    ///   [`Refusal::LinearVariable`], [`Refusal::DanglingNode`],
-    ///   [`Refusal::Cyclic`], [`Refusal::CertificateDeclined`] — as above.
+    ///   [`Refusal::Session`], [`Refusal::DanglingNode`], [`Refusal::Cyclic`],
+    ///   [`Refusal::CertificateDeclined`] — as above.
     /// - [`Refusal::MachineInvariant`] — a frame received an image of another
     ///   family.
     ///
@@ -3222,7 +3218,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///   a closed static lambda are minted as the static operators they are
     ///   numbered at. On success the current mode's memo holds `at`.
     /// - fails: [`Refusal::Cyclic`] for an open value;
-    ///   [`Refusal::DanglingNode`]; [`Refusal::LinearVariable`];
+    ///   [`Refusal::DanglingNode`]; [`Refusal::Session`];
     ///   [`Refusal::Withheld`]; [`Refusal::CertificateDeclined`] for a step the
     ///   normaliser does not certify; [`Refusal::OutOfFragment`] for a numeric
     ///   literal, an injection, a value lift, and a static lambda read
@@ -3309,9 +3305,12 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 index,
             } => return Ok(self.erased_value(at, target.value_variable(index))),
             | Value::Variable {
-                zone: Zone::Linear,
-                index,
-            } => return Err(Refusal::LinearVariable { at, index }),
+                zone: Zone::Linear, ..
+            } => {
+                return Err(Refusal::Session {
+                    at: CoreNode::Term(TermNode::Value(at)),
+                });
+            },
             | Value::Constant(constant) => {
                 let position = self.constant_position(at, constant)?;
                 return Ok(self.erased_value(at, target.value_constant(position)));
@@ -3913,6 +3912,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 Frame::SplitReduct { at },
                 TermNode::Computation(self.split_reduct(scrutinee, arity, body)),
             ),
+            | Computation::Session(_) => return Err(Refusal::Session { at: node }),
             | Computation::Hole(hole) => return Err(Refusal::Hole { at: node, hole }),
             | Computation::Mark { body, .. } => (
                 Frame::UnmarkedComputation { at },
@@ -3977,6 +3977,11 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | ValueTypeView::Sum(_)
             | ValueTypeView::Product(_) => {
                 return self.prepare_native(target, CoreNode::Type(TypeNode::Value(at)));
+            },
+            | ValueTypeView::Session(_) => {
+                return Err(Refusal::Session {
+                    at: CoreNode::Type(TypeNode::Value(at)),
+                });
             },
             | ValueTypeView::Stack { .. } => {
                 return Err(Refusal::OutOfFragment {
@@ -4159,7 +4164,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///   at `level` still. A minted decode is of `sort`'s family.
     /// - fails: [`Refusal::CertificateDeclined`] for a step the normaliser does
     ///   not certify; [`Refusal::Withheld`] for a constant that did not cross;
-    ///   [`Refusal::LinearVariable`]; [`Refusal::DanglingNode`];
+    ///   [`Refusal::Session`]; [`Refusal::DanglingNode`];
     ///   [`Refusal::MachineInvariant`] for a code that is no code.
     /// - panics: none.
     ///
@@ -4230,11 +4235,14 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 ) => target.value_variable(index),
                 | (
                     Value::Variable {
-                        zone: Zone::Linear,
-                        index,
+                        zone: Zone::Linear, ..
                     },
                     _,
-                ) => return Err(Refusal::LinearVariable { at: code, index }),
+                ) => {
+                    return Err(Refusal::Session {
+                        at: CoreNode::Term(TermNode::Value(code)),
+                    });
+                },
                 | (Value::Constant(constant), _) => {
                     let position = self.constant_position(code, constant)?;
                     target.value_constant(position)
@@ -7492,9 +7500,8 @@ mod tests
         let linear = arena.value_variable(Zone::Linear, DeBruijnIndex::from(0_u32));
         assert_eq!(
             erase(&mut arena, CoreNode::Term(TermNode::Value(linear))).1,
-            Err(Refusal::LinearVariable {
-                at: linear,
-                index: DeBruijnIndex::from(0_u32),
+            Err(Refusal::Session {
+                at: CoreNode::Term(TermNode::Value(linear)),
             }),
             "a linear variable has no kernel zone to count in"
         );

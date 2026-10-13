@@ -1008,12 +1008,14 @@ Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Compu
 Computation::Resume(..) | Computation::With(..) | Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) | Computation::Split { .. } => 2,
 Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
 Computation::Hole(_) => 0_usize,
+Computation::Session(ref action) => action.values().count().saturating_add(action.computations().count()).saturating_add(action.value_types().count()),
 }),
         | Node::ValueType(id) => self.arena.value_type(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
 ValueType::Data { ref arguments, .. } => arguments.len(),
 ValueType::Record(ref fields) => fields.len(),
 ValueType::Product(ref components) | ValueType::Sum(ref components) => components.len(),
 ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => 0_usize,
+ValueType::Session(ref session) => session.payloads().len(),
 ValueType::Stack { .. } | ValueType::StaticPi { .. } | ValueType::PathUniverse(..) => 2,
 ValueType::Path { .. } => 3,
 ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
@@ -1295,6 +1297,28 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                     );
                     self.tasks.push(open(Node::Value(scrutinee), depth));
                 },
+                // A fork binds into the linear zone: the intuitionistic depth
+                // its child and parent stand at is the fork's own.
+                | Some(&Computation::Session(ref action)) => {
+                    self.tasks.extend(
+                        action
+                            .computations()
+                            .rev()
+                            .map(|child| open(Node::Computation(child), depth)),
+                    );
+                    self.tasks.extend(
+                        action
+                            .values()
+                            .rev()
+                            .map(|child| open(Node::Value(child), depth)),
+                    );
+                    self.tasks.extend(
+                        action
+                            .value_types()
+                            .rev()
+                            .map(|child| open(Node::ValueType(child), depth)),
+                    );
+                },
             },
             | Node::ValueType(id) => match self.arena.value_type(id) {
                 | Some(matched_native_node) => match *matched_native_node {
@@ -1358,6 +1382,13 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                     | ValueType::Element { code, .. } => {
                         self.tasks.push(open(Node::Value(code), depth));
                     },
+                    | ValueType::Session(ref session) => self.tasks.extend(
+                        session
+                            .payloads()
+                            .iter()
+                            .rev()
+                            .map(|&payload| open(Node::ValueType(payload), depth)),
+                    ),
                 },
                 | None => {},
             },
@@ -1970,6 +2001,7 @@ Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Compu
 Computation::Resume(..) | Computation::With(..) | Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) | Computation::Split { .. } => 2,
 Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
 Computation::Hole(_) => 0_usize,
+Computation::Session(ref action) => action.values().count().saturating_add(action.computations().count()).saturating_add(action.value_types().count()),
 })],
         ensures: |ret| self.results.len() == ready.saturating_sub(children)
             && (ret == id || self.arena.computation(id).is_some_and(|original| self.arena.computation(ret).is_some_and(|rewritten|
@@ -2346,6 +2378,26 @@ Computation::Hole(_) => 0_usize,
                     self.arena.computation_mark(mark, rewritten)
                 }
             },
+            | Computation::Session(ref action) => {
+                let rewritten = match action.try_map(
+                    crate::session::ChildOrder::Reverse,
+                    &mut self.results,
+                    |results, value| {
+                        Ok::<_, core::convert::Infallible>(Self::value(results, value))
+                    },
+                    |results, computation| Ok(Self::computation(results, computation)),
+                    |results, ty| Ok(Self::value_type(results, ty)),
+                ) {
+                    | Ok(rewritten) => rewritten,
+                    | Err(never) => match never {},
+                };
+                if rewritten == *action {
+                    id
+                }
+                else {
+                    self.arena.computation_session(rewritten)
+                }
+            },
         }
     }
 
@@ -2370,6 +2422,7 @@ ValueType::Data { ref arguments, .. } => arguments.len(),
 ValueType::Record(ref fields) => fields.len(),
 ValueType::Product(ref components) | ValueType::Sum(ref components) => components.len(),
 ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => 0_usize,
+ValueType::Session(ref session) => session.payloads().len(),
 ValueType::Stack { .. } | ValueType::StaticPi { .. } | ValueType::PathUniverse(..) => 2,
 ValueType::Path { .. } => 3,
 ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
@@ -2528,6 +2581,24 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                 else {
                     self.arena
                         .value_type_static_pi(rewritten_domain, rewritten_codomain)
+                }
+            },
+            | ValueType::Session(ref session) => {
+                let rewritten =
+                    match session.try_map_payloads(crate::session::ChildOrder::Reverse, |payload| {
+                        Ok::<_, core::convert::Infallible>(Self::value_type(
+                            &mut self.results,
+                            payload,
+                        ))
+                    }) {
+                        | Ok(rewritten) => rewritten,
+                        | Err(never) => match never {},
+                    };
+                if rewritten == *session {
+                    id
+                }
+                else {
+                    self.arena.value_type_session(rewritten)
                 }
             },
         }
@@ -3417,6 +3488,18 @@ fn survey_computation(
                 Position::Computation(body, own),
             ]);
         },
+        | Computation::Session(ref action) => {
+            next.extend(
+                action
+                    .values()
+                    .map(|payload| Position::Value(payload, region)),
+            );
+            next.extend(
+                action
+                    .computations()
+                    .map(|body| Position::Computation(body, own)),
+            );
+        },
         | Computation::Hole(_) => {},
     }
 }
@@ -4021,7 +4104,7 @@ mod tests
             Some(&ValueType::Stack { .. } | &ValueType::List(_) | &ValueType::Data { .. } | &ValueType::Record(_) |
 &ValueType::Sum(..) | &ValueType::PathUniverse(..) | &ValueType::Path { .. } | &ValueType::Universe { ..
 } | &ValueType::Lift { .. } | &ValueType::Abstract(_) | &ValueType::StaticPi {
-.. } | &ValueType::Unknown) | None => Token::Other,
+.. } | &ValueType::Unknown | &ValueType::Session(_)) | None => Token::Other,
             },
         | Visit::Value(id) => match arena.value(id) {
             | Some(&Value::Variable { index, .. }) => Token::Variable(u32::from(index)),

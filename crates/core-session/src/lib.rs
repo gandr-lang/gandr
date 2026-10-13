@@ -20,6 +20,7 @@ pub use crate::relation::RelationResult;
 pub use crate::relation::decide;
 pub use crate::relation::duality;
 pub use crate::relation::relate;
+pub use crate::relation::relate_states;
 pub use crate::replay::Completion;
 pub use crate::replay::Move;
 pub use crate::replay::MoveIndex;

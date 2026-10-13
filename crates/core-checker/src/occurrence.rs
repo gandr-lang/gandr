@@ -412,6 +412,16 @@ fn worst(
                     pending.push((AnyNode::CompType(input), Reach::Domain));
                     pending.push((AnyNode::CompType(output), nest(reach)));
                 },
+                // A payload is sent as well as received: read it at a domain,
+                // the conservative polarity.
+                | Some(&ValueType::Session(ref session)) => {
+                    pending.extend(
+                        session
+                            .payloads()
+                            .iter()
+                            .map(|&payload| (AnyNode::ValueType(payload), Reach::Domain)),
+                    );
+                },
                 | Some(&(ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Unknown))
                 | None => {},
             },
@@ -694,6 +704,19 @@ fn worst(
                     pending.push((AnyNode::CompType(motive), term(reach)));
                     pending.extend(
                         [path, start, over, value].map(|child| (AnyNode::Value(child), reach)),
+                    );
+                },
+                | Some(&Computation::Session(ref action)) => {
+                    pending.extend(action.values().map(|value| (AnyNode::Value(value), reach)));
+                    pending.extend(
+                        action
+                            .value_types()
+                            .map(|ty| (AnyNode::ValueType(ty), term(reach))),
+                    );
+                    pending.extend(
+                        action
+                            .computations()
+                            .map(|child| (AnyNode::Computation(child), reach)),
                     );
                 },
                 | Some(&Computation::Hole(_)) | None => {},

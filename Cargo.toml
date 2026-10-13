@@ -286,6 +286,13 @@ path = "crates/core-nbe"
 [workspace.dependencies.gandr-core-sequent]
 path = "crates/core-sequent"
 
+# Contractive binary session types and their one relation engine: the
+# judgement decides endpoint equivalence and subtyping through it.
+# consumers:
+# - core-checker
+[workspace.dependencies.gandr-core-session]
+path = "crates/core-session"
+
 # The core call-by-push-value syntax, the one unified context, the definition
 # chain and the per-scope definitional environment.
 # consumers:

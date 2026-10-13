@@ -1814,6 +1814,8 @@ mod tests
             | Typing::Refused(Refusal::NotAnAbstractType(_)) => "not-an-abstract-type",
             | Typing::Refused(Refusal::SealSiteRepeated(_)) => "seal-site-repeated",
             | Typing::Refused(Refusal::UnenclosedRun { .. }) => "unenclosed-run",
+            | Typing::Refused(Refusal::SessionMismatch { .. }) => "session-mismatch",
+            | Typing::Refused(Refusal::Linearity { .. }) => "linearity",
         })
     }
 

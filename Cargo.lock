@@ -448,6 +448,7 @@ dependencies = [
  "crossbeam-channel",
  "crossbeam-deque",
  "gandr-core-nbe",
+ "gandr-core-session",
  "gandr-core-term",
  "gandr-kernel-check-memo",
  "gandr-kernel-conversion-trace",

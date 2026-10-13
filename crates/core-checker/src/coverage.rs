@@ -691,6 +691,7 @@ impl Walker<'_, '_, '_>
                 | ValueType::Lift { .. }
                 | ValueType::Element { .. }
                 | ValueType::Abstract(_)
+                | ValueType::Session(_)
                 | ValueType::StaticPi { .. }),
             ) => Ok(Kind::Opaque),
         }

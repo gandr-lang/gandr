@@ -1132,7 +1132,7 @@ impl<'source> Program<'source>
 &(Computation::Transport(..) | Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } | Computation::Application(..) |
 Computation::DataCase {..} | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Split { .. } | Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) |
 Computation::ListFold { .. } | Computation::Bind(..) | Computation::Force(_) | Computation::Case { .. }
-| Computation::Hole(_) | Computation::Mark { .. } | Computation::Fixpoint { .. })) |
+| Computation::Hole(_) | Computation::Mark { .. } | Computation::Fixpoint { .. } | Computation::Session(_))) |
 None => ret.0 == "<computation>",
     })]
     fn spell(
@@ -1168,7 +1168,8 @@ None => ret.0 == "<computation>",
                 | Computation::Case { .. }
                 | Computation::Hole(_)
                 | Computation::Mark { .. }
-                | Computation::Fixpoint { .. }),
+                | Computation::Fixpoint { .. }
+                | Computation::Session(_)),
             )
             | None => Vec::from([Piece::Text("<computation>")]),
         };
@@ -1553,6 +1554,10 @@ fn references(
                 },
                 | Some(&(Computation::Mark { body, .. } | Computation::Fixpoint { body, .. })) => {
                     pending.push(Node::Computation(body));
+                },
+                | Some(&Computation::Session(ref action)) => {
+                    pending.extend(action.values().map(Node::Value));
+                    pending.extend(action.computations().map(Node::Computation));
                 },
                 | Some(&Computation::Hole(_)) | None => {},
             },

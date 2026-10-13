@@ -3096,6 +3096,7 @@ where
                     matches!(ret, ContentNode::Fixpoint { evidence: found, .. } if found == evidence)
                 }
                 Computation::ListFold { .. } => matches!(ret, ContentNode::ListFold { .. }),
+                Computation::Session(ref action) => matches!(ret, ContentNode::Session(ref found) if found.shape() == action.shape()),
             },
         )
 },
@@ -3283,6 +3284,17 @@ where
             body: child(Root::Computation(body)),
             evidence,
         },
+        | Some(&Computation::Session(ref action)) => ContentNode::Session(
+            action
+                .try_map(
+                    gandr_core_term::session::ChildOrder::Forward,
+                    child,
+                    |child, value| Ok::<_, core::convert::Infallible>(child(Root::Value(value))),
+                    |child, body| Ok(child(Root::Computation(body))),
+                    |child, ty| Ok(child(Root::ValueType(ty))),
+                )
+                .unwrap_or_else(|never| match never {}),
+        ),
         | None => ContentNode::Unresolved(Sort::Computation),
     }
 }
@@ -3358,6 +3370,9 @@ where
                     )
                 }
                 ValueType::StaticPi { .. } => matches!(ret, ContentNode::StaticPi { .. }),
+                ValueType::Session(ref session) => matches!(ret, ContentNode::SessionType(ref found)
+                    if found.protocol() == session.protocol() && found.state() == session.state()
+                        && found.payloads().len() == session.payloads().len()),
                 ValueType::Unknown => ret == ContentNode::UnknownType,
             },
         )
@@ -3444,6 +3459,11 @@ where
                 codomain: child(Root::ValueType(codomain)),
             }
         },
+        | Some(&ValueType::Session(ref session)) => ContentNode::SessionType(
+            session
+                .try_relocate(|ty| Ok::<_, core::convert::Infallible>(child(Root::ValueType(ty))))
+                .unwrap_or_else(|never| match never {}),
+        ),
         | Some(&ValueType::Unknown) => ContentNode::UnknownType,
         | None => ContentNode::Unresolved(Sort::ValueType),
     }

@@ -212,6 +212,12 @@ pub fn sentence(role: FrameRole) -> Sentence
         | FrameRole::StaticSpine => "synthesising the head of this type operator application",
         | FrameRole::StaticArgument => "synthesising an argument of this type operator application",
         | FrameRole::StaticOperand => "checking an operator argument of this application",
+        | FrameRole::FormSession => "forming the payload types of this session type",
+        | FrameRole::SessionSend => "checking the payload this sends",
+        | FrameRole::OfferArm => "checking an arm of this offer",
+        | FrameRole::ForkProtocol => "forming the session type this fork opens",
+        | FrameRole::ForkChild => "checking the child this forks",
+        | FrameRole::ForkParent => "checking the rest of this fork's parent",
     })
 }
 
@@ -460,6 +466,12 @@ mod tests
             FrameRole::ThunkBody,
             FrameRole::ReturnValue,
             FrameRole::InjectionPayload,
+            FrameRole::FormSession,
+            FrameRole::SessionSend,
+            FrameRole::OfferArm,
+            FrameRole::ForkProtocol,
+            FrameRole::ForkChild,
+            FrameRole::ForkParent,
         ];
         let mut sentences: Vec<super::Sentence> =
             roles.iter().map(|&role| sentence(role)).collect();

@@ -125,11 +125,15 @@ fn supported_excluded_core_forms_are_refused_by_name()
     let force = core.computation_force(unit);
     let text = core.value_literal(Literal::Text(StringLiteral::new(String::from("text"))));
     let text = core.computation_return(text);
+    let close = core.computation_session(gandr_core_term::session::SessionAction::Close {
+        endpoint: 0_u32.into(),
+    });
     for (root, form) in [
         (lambda, Form::Lambda),
         (app, Form::Application),
         (force, Form::Force),
         (text, Form::String),
+        (close, Form::Session),
     ] {
         assert_eq!(
             lower_computation(&core, root),

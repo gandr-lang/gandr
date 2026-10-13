@@ -402,6 +402,7 @@ fn normaliser_stop(fault: EvalFault) -> Stop
         | EvalFault::BoundNonReturner
         | EvalFault::ReturnedNonReturner
         | EvalFault::AppliedNonOperator
+        | EvalFault::SessionAction
         | EvalFault::MachineInvariant => {
             panic!("no pure core term faults the normaliser as: {fault:?}")
         },

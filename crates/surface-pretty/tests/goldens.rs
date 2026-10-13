@@ -751,6 +751,116 @@ mod tests
         }
     }
 
+    /// A session type spells its protocol as the grammar writes it, each
+    /// payload where its send or receive reads it, parenthesized past an
+    /// atom; a state inside a recursion unfolds its binder once, so the
+    /// spelling stays closed; a returner over a session type parenthesizes
+    /// it as it does an arrow.
+    #[test]
+    fn session_types_spell_their_protocol_and_payloads()
+    {
+        use gandr_core_term::session::PayloadCount;
+        use gandr_core_term::session::PayloadSlot;
+        use gandr_core_term::session::Protocol;
+        use gandr_core_term::session::ProtocolState;
+        use gandr_core_term::session::ProtocolSyntax;
+        use gandr_core_term::session::RecursionIndex;
+        use gandr_core_term::session::SessionType;
+        let mut core = CoreArena::new();
+        let integer = core.value_type_base(BaseType::Integer);
+        let string = core.value_type_base(BaseType::String);
+        let unit = core.value_type_unit();
+        let returner = core.comp_type_returner(unit);
+        let suspended = core.value_type_thunk(returner);
+        let state = ProtocolState::from;
+        let label = |text: &str| FieldLabel::from(String::from(text));
+        // ?A. mu t. +{handoff : !C. end, report : !B. &{next : t, retire : end}}
+        let protocol = Arc::new(
+            Protocol::new(
+                alloc::vec![
+                    ProtocolSyntax::Receive {
+                        payload: PayloadSlot::from(0_usize),
+                        next: state(1),
+                    },
+                    ProtocolSyntax::Mu(state(2)),
+                    ProtocolSyntax::Select(BTreeMap::from([
+                        (label("handoff"), state(6)),
+                        (label("report"), state(3)),
+                    ])),
+                    ProtocolSyntax::Send {
+                        payload: PayloadSlot::from(1_usize),
+                        next: state(4),
+                    },
+                    ProtocolSyntax::Offer(BTreeMap::from([
+                        (label("next"), state(5)),
+                        (label("retire"), state(7)),
+                    ])),
+                    ProtocolSyntax::Recur(RecursionIndex::from(0_usize)),
+                    ProtocolSyntax::Send {
+                        payload: PayloadSlot::from(2_usize),
+                        next: state(8),
+                    },
+                    ProtocolSyntax::End,
+                    ProtocolSyntax::End,
+                ],
+                state(0),
+                PayloadCount::from(3_usize),
+            )
+            .expect("a contractive protocol"),
+        );
+        let seat = SessionType::new(
+            Arc::clone(&protocol),
+            Arc::from([integer, string, suspended]),
+        )
+        .expect("three payloads");
+        let inside = seat.at(state(4)).expect("the offer after a report");
+        let ended = SessionType::new(
+            Arc::new(
+                Protocol::new(
+                    alloc::vec![ProtocolSyntax::End],
+                    state(0),
+                    PayloadCount::default(),
+                )
+                .expect("end"),
+            ),
+            Arc::from([]),
+        )
+        .expect("no payloads");
+        let peer = core.value_type_session(seat.dual());
+        let seat = core.value_type_session(seat);
+        let inside = core.value_type_session(inside);
+        let ended = core.value_type_session(ended);
+        let returns_seat = core.comp_type_returner(seat);
+        let returns_end = core.comp_type_returner(ended);
+        let source = CoreSource::new(&core, &[]);
+        for (root, spelling) in [
+            (
+                CoreNode::ValueType(seat),
+                "?Integer. mu t. +{handoff : !(+U (-F Unit)). end, report : !String. &{next : t, retire : end}}",
+            ),
+            (
+                CoreNode::ValueType(peer),
+                "!Integer. mu t. &{handoff : ?(+U (-F Unit)). end, report : ?String. +{next : t, retire : end}}",
+            ),
+            (
+                CoreNode::ValueType(inside),
+                "&{next : mu t. +{handoff : !(+U (-F Unit)). end, report : !String. &{next : t, retire : end}}, retire : end}",
+            ),
+            (CoreNode::ValueType(ended), "end"),
+            (
+                CoreNode::CompType(returns_seat),
+                "-F (?Integer. mu t. +{handoff : !(+U (-F Unit)). end, report : !String. &{next : t, retire : end}})",
+            ),
+            (CoreNode::CompType(returns_end), "-F end"),
+        ] {
+            assert_eq!(
+                spelled(&source, Root::Type(root)),
+                faithful(Written(spelling)),
+                "{root:?} spells its protocol"
+            );
+        }
+    }
+
     /// A tuple of any arity from one spells its components between `#{` and
     /// `}`, a nested tuple one component among them; an injection spells the
     /// summand it enters, the third as readily as the first.

@@ -11,8 +11,9 @@
 //! bind one intuitionistic variable. A quote carries a type into a term, and a
 //! type reads indices through the codes its decodes hold, so the walk descends
 //! through the quoted type too, a dependent arrow's codomain binding one
-//! variable. No former binds into the linear zone, so a linear index passes
-//! every binder unchanged.
+//! variable. A session fork binds one linear variable in its child and one in
+//! its parent, and every other session action reads its endpoint as a linear
+//! occurrence; every other binder leaves a linear index unchanged.
 //!
 //! # A set is a sorted vector
 //!
@@ -38,6 +39,7 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::session::SessionAction;
 use gandr_kernel_term::DeBruijnIndex;
 
 /// Whether a set holds a count.
@@ -312,13 +314,12 @@ impl Free
     }
 
     /// Add the free indices of a child standing under `binders`
-    /// intuitionistic binders.
+    /// intuitionistic binders and `linear` linear ones.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the intuitionistic indices gain the child's lowered by
-    ///   `binders`, its bound ones dropped; the linear indices gain the child's
-    ///   unchanged, since no former binds into the linear zone.
+    /// - ensures: each zone's indices gain the child's lowered by that zone's
+    ///   binders, its bound ones dropped.
     /// - provides: the one step a node's answer is assembled from its
     ///   children's.
     /// - fails: never.
@@ -327,22 +328,27 @@ impl Free
     /// # Adequacy
     /// - hypothesis: L2 — a lambda binds the nearest intuitionistic occurrence
     ///   and lowers a farther one while leaving a linear occurrence unchanged;
-    ///   a dependent quoted arrow lowers only its codomain. Binding both zones
-    ///   or lowering the domain changes the exact free sets.
+    ///   a dependent quoted arrow lowers only its codomain; a fork binds the
+    ///   nearest linear occurrence of its child and parent and lowers a farther
+    ///   one. Binding both zones or lowering the domain changes the exact free
+    ///   sets.
     /// - witness: `free::tests::binders_lower_only_their_own_intuitionistic_occurrences`
     /// - witness: `free::tests::a_quoted_dependent_arrow_binds_only_its_codomain`
-    #[spec(ensures: child.linear.counts.iter().all(|count| self.linear.counts.binary_search(count).is_ok())
+    /// - witness: `free::tests::a_fork_binds_one_endpoint_in_each_half`
+    #[spec(ensures: child.linear.counts.iter().all(|&index| u32::from(index).checked_sub(linear.0)
+            .is_none_or(|lowered| self.linear.counts.binary_search(&DeBruijnIndex::from(lowered)).is_ok()))
         && child.intuitionistic.counts.iter().all(|&index| u32::from(index).checked_sub(binders.0)
             .is_none_or(|lowered| self.intuitionistic.counts.binary_search(&DeBruijnIndex::from(lowered)).is_ok())))]
     fn join_under(
         &mut self,
         child: &Self,
         binders: Lowering,
+        linear: Lowering,
     )
     {
         self.intuitionistic
             .join_lowered(&child.intuitionistic, binders);
-        self.linear.join_lowered(&child.linear, Lowering::NONE);
+        self.linear.join_lowered(&child.linear, linear);
     }
 }
 
@@ -484,6 +490,38 @@ impl FreeIndices
             .ok_or(FreeFault::MachineInvariant)
     }
 
+    /// The free linear indices of `term`, ascending: the endpoints it reads
+    /// without binding, counted from where it stands.
+    ///
+    /// # Specification
+    /// - requires: as [`FreeIndices::of`].
+    /// - ensures: on success, the linear half of [`FreeIndices::of`]'s answer,
+    ///   ascending and each once: a session action's endpoint, and a fork's
+    ///   child and parent each read one linear binder lower.
+    /// - provides: the reading a checker splits the linear zone at a fork and
+    ///   finds an endpoint a thunk captures with.
+    /// - fails: as [`FreeIndices::of`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`FreeIndices::of`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fork whose child and parent each use their own end
+    ///   and an outer endpoint reads the outer one alone, one binder lower; a
+    ///   send reads its endpoint and its payload's.
+    /// - witness: `free::tests::a_fork_binds_one_endpoint_in_each_half`
+    #[spec(ensures: |ret| ret.is_err() || ret.is_ok_and(|counts| counts.windows(2).all(|pair| matches!(pair, [left, right] if left < right))))]
+    #[inline]
+    pub fn linear(
+        &mut self,
+        core: &CoreArena,
+        term: CoreTerm,
+    ) -> Result<&[DeBruijnIndex], FreeFault>
+    {
+        Ok(self.of(core, term)?.linear.counts())
+    }
+
     /// Answer `term` and everything beneath it not yet answered.
     ///
     /// # Specification
@@ -577,16 +615,42 @@ impl FreeIndices
     ) -> Result<Free, FreeFault>
     {
         let mut free = Free::default();
-        if let Reached::Term(CoreTerm::Value(id)) = node {
-            let held = core.value(id).ok_or(FreeFault::Dangling)?;
-            if let Value::Variable { zone, index } = *held {
-                free = Free::variable(zone, index);
-            }
+        // A fork's child and parent each stand under one linear binder.
+        let mut forked = Lowering::NONE;
+        match node {
+            | Reached::Term(CoreTerm::Value(id)) => {
+                let held = core.value(id).ok_or(FreeFault::Dangling)?;
+                if let Value::Variable { zone, index } = *held {
+                    free = Free::variable(zone, index);
+                }
+            },
+            | Reached::Term(CoreTerm::Computation(id)) => {
+                let held = core.computation(id).ok_or(FreeFault::Dangling)?;
+                if let Computation::Session(ref action) = *held {
+                    match *action {
+                        | SessionAction::Fork { .. } => forked = Lowering::ONE,
+                        | SessionAction::Send { endpoint, .. }
+                        | SessionAction::Receive { endpoint }
+                        | SessionAction::Select { endpoint, .. }
+                        | SessionAction::Offer { endpoint, .. }
+                        | SessionAction::Close { endpoint } => {
+                            free = Free::variable(Zone::Linear, endpoint);
+                        },
+                    }
+                }
+            },
+            | Reached::ValueType(_) | Reached::CompType(_) => {},
         }
         let below = Children::of(core, node)?;
         for (child, binders) in below.iter() {
             let answered = self.read(child)?;
-            free.join_under(answered, binders);
+            let linear = match child {
+                | Reached::Term(CoreTerm::Computation(_)) => forked,
+                | Reached::Term(CoreTerm::Value(_))
+                | Reached::ValueType(_)
+                | Reached::CompType(_) => Lowering::NONE,
+            };
+            free.join_under(answered, binders, linear);
         }
         Ok(free)
     }
@@ -654,6 +718,8 @@ enum ExtraChildren<'arena>
     ),
     /// Product components or sum summands, in order.
     Types(core::slice::Iter<'arena, ValueTypeId>),
+    /// Offer arms in label order; each binds nothing.
+    Arms(alloc::collections::btree_map::Values<'arena, gandr_core_term::FieldLabel, ComputationId>),
 }
 
 impl Iterator for ExtraChildren<'_>
@@ -686,6 +752,9 @@ impl Iterator for ExtraChildren<'_>
             | Self::Types(ref mut types) => types
                 .next()
                 .map(|id| (Reached::ValueType(*id), Lowering::NONE)),
+            | Self::Arms(ref mut arms) => arms
+                .next()
+                .map(|id| (Reached::Term(CoreTerm::Computation(*id)), Lowering::NONE)),
         }
     }
 }
@@ -704,6 +773,9 @@ impl DoubleEndedIterator for ExtraChildren<'_>
                 .next_back()
                 .map(|id| (Reached::Term(CoreTerm::Value(*id)), Lowering::NONE)),
             | Self::Computations(ref mut values) => values
+                .next_back()
+                .map(|id| (Reached::Term(CoreTerm::Computation(*id)), Lowering::NONE)),
+            | Self::Arms(ref mut arms) => arms
                 .next_back()
                 .map(|id| (Reached::Term(CoreTerm::Computation(*id)), Lowering::NONE)),
             | Self::Branches(ref mut branches) => branches
@@ -1039,6 +1111,29 @@ Err(_) => false,
                     },
                     | Computation::Hole(_) => [None, None, None, None, None],
                     | Computation::Mark { body, .. } => one(computation(body), Lowering::NONE),
+                    | Computation::Session(ref action) => match *action {
+                        | SessionAction::Send { payload, .. } => {
+                            one(value(payload), Lowering::NONE)
+                        },
+                        | SessionAction::Offer { ref arms, .. } => {
+                            extra = ExtraChildren::Arms(arms.values());
+                            [None, None, None, None, None]
+                        },
+                        | SessionAction::Fork {
+                            protocol,
+                            child,
+                            parent,
+                        } => [
+                            Some((Reached::ValueType(protocol), Lowering::NONE)),
+                            Some((computation(child), Lowering::NONE)),
+                            Some((computation(parent), Lowering::NONE)),
+                            None,
+                            None,
+                        ],
+                        | SessionAction::Receive { .. }
+                        | SessionAction::Select { .. }
+                        | SessionAction::Close { .. } => [None, None, None, None, None],
+                    },
                 }
             },
             | Reached::ValueType(id) => {
@@ -1074,6 +1169,10 @@ Err(_) => false,
                     ],
                     | ValueType::Product(ref components) | ValueType::Sum(ref components) => {
                         extra = ExtraChildren::Types(components.iter());
+                        [None, None, None, None, None]
+                    },
+                    | ValueType::Session(ref session) => {
+                        extra = ExtraChildren::Types(session.payloads().iter());
                         [None, None, None, None, None]
                     },
                     | ValueType::Base(_)
@@ -1194,6 +1293,53 @@ mod tests
                 }
             }
         }
+    }
+
+    #[test]
+    fn a_fork_binds_one_endpoint_in_each_half()
+    {
+        use gandr_core_term::session::SessionAction;
+        let mut core = CoreArena::new();
+        let unit = core.value_unit();
+        let protocol = core.value_type_unit();
+        // Inside the child its own end is 0 and the outer endpoint 1.
+        let to_outer = core.computation_session(SessionAction::Send {
+            endpoint: DeBruijnIndex::from(1_u32),
+            payload: unit,
+        });
+        let own_close = core.computation_session(SessionAction::Close {
+            endpoint: DeBruijnIndex::from(0_u32),
+        });
+        let child = core.computation_bind(to_outer, own_close);
+        let parent = core.computation_session(SessionAction::Close {
+            endpoint: DeBruijnIndex::from(0_u32),
+        });
+        let fork = core.computation_session(SessionAction::Fork {
+            protocol,
+            child,
+            parent,
+        });
+        let mut analysis = FreeIndices::default();
+        assert_eq!(
+            Ok([DeBruijnIndex::from(0_u32), DeBruijnIndex::from(1_u32)].as_slice()),
+            analysis.linear(&core, CoreTerm::Computation(child)),
+            "the child reads its own end and the outer endpoint"
+        );
+        assert_eq!(
+            Ok([DeBruijnIndex::from(0_u32)].as_slice()),
+            analysis.linear(&core, CoreTerm::Computation(fork)),
+            "the fork binds both ends and reads the outer endpoint one lower"
+        );
+        let carried = core.value_variable(Zone::Linear, DeBruijnIndex::from(3_u32));
+        let delegate = core.computation_session(SessionAction::Send {
+            endpoint: DeBruijnIndex::from(2_u32),
+            payload: carried,
+        });
+        assert_eq!(
+            Ok([DeBruijnIndex::from(2_u32), DeBruijnIndex::from(3_u32)].as_slice()),
+            analysis.linear(&core, CoreTerm::Computation(delegate)),
+            "a send reads its endpoint and its payload's"
+        );
     }
 
     #[test]

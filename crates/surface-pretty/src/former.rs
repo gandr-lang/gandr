@@ -247,6 +247,18 @@ pub enum Former<'source, Node>
         /// The classifier of the result.
         codomain: Node,
     },
+    /// A session type: the protocol it reads, the state it stands at, and how
+    /// many payload types its sends and receives read, which the source
+    /// answers by [`Source::component`] in slot order: `?A. mu t. +{l : S}`.
+    Session
+    {
+        /// The protocol, shared by the session type and its peer's.
+        protocol: &'source gandr_core_term::session::Protocol,
+        /// The state the session type stands at.
+        state: gandr_core_term::session::ProtocolState,
+        /// How many payload types the protocol reads.
+        payloads: Arity,
+    },
     /// The returner `-F A` of a value type.
     Returner(Node),
     /// A returner with a diagnostic row annotation, not a surface grammar form.
@@ -403,14 +415,15 @@ pub trait Source
     ) -> Former<'_, Self::Node>;
 
     /// The handle of component `index` of the product, the sum, the tuple, the
-    /// record or the record type `node` names.
+    /// record, the record type or the session type `node` names.
     ///
     /// # Specification
     /// - requires: nothing; any handle and any position are admissible.
     /// - ensures: the handle of the component at `index` when [`read`] answers
     ///   a [`Former::Product`], a [`Former::Sum`], a [`Former::Tuple`], a
-    ///   [`Former::Record`] or a [`Former::RecordType`] for `node` and `index`
-    ///   is below its arity, a record's fields in label order; none otherwise.
+    ///   [`Former::Record`], a [`Former::RecordType`] or a [`Former::Session`]
+    ///   for `node` and `index` is below its arity, a record's fields in label
+    ///   order and a session type's payloads in slot order; none otherwise.
     /// - provides: the children of an n-ary former, which a [`Former`] counts
     ///   but does not hold.
     /// - fails: never; a missing component is an absence, which the printer
@@ -429,6 +442,7 @@ pub trait Source
     ///   changes a golden spelling.
     /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
     /// - witness: `goldens::tests::n_ary_products_and_sums_spell_between_their_braces`
+    /// - witness: `goldens::tests::session_types_spell_their_protocol_and_payloads`
     /// - witness: `goldens::tests::records_spell_their_fields_in_label_order`
     /// - witness: `content_source::tests::value_ty_covers_every_reachable_former`
     fn component(

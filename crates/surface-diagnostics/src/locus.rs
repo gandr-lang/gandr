@@ -43,9 +43,13 @@ use gandr_core_checker::TermNode;
 use gandr_core_checker::TypeNode;
 use gandr_core_checker::UnadmittedFormer;
 use gandr_core_checker::compared;
+use gandr_core_checker::session::Capture;
+use gandr_core_checker::session::LinearityDefect;
+use gandr_core_checker::session::ProtocolDefect;
 use gandr_core_checker::ua::StratumDefect;
 use gandr_core_checker::ua::UaDefect;
 use gandr_core_term::effect::Purity;
+use gandr_core_term::session::ActionKind;
 use gandr_kernel_term::DescentRefusal;
 use gandr_kernel_term::OccurrenceSite;
 use gandr_surface_corpus::CorpusRefusal;
@@ -120,6 +124,10 @@ pub enum Label
     Ran(Purity),
     /// The declaration or refusal a ledger line reports.
     Reported,
+    /// The fork that opened the endpoint a session refusal names.
+    Forked,
+    /// The first arm of an offer, which a later arm disagrees with.
+    FirstArm,
 }
 
 impl fmt::Display for Label
@@ -166,6 +174,8 @@ impl fmt::Display for Label
                 f.write_str("runs by an inferred `run`, performing an effect")
             },
             | Self::Reported => f.write_str("reported here"),
+            | Self::Forked => f.write_str("the endpoint was opened by this fork"),
+            | Self::FirstArm => f.write_str("the arm it disagrees with"),
         }
     }
 }
@@ -603,12 +613,14 @@ impl Annotations
 /// # Adequacy
 /// - hypothesis: L3 — finite typed origin tables separate recorded spans from
 ///   missing nodes. Computation mismatches and shape failures expose context
-///   order; selected whole-declaration failures expose fallback precedence.
-///   Other checker constructors are not individually enumerated.
+///   order; selected whole-declaration failures expose fallback precedence; a
+///   session mismatch and disagreeing offer arms expose the fork and the first
+///   arm. Other checker constructors are not individually enumerated.
 /// - witness: `diagnostics::diagnostics::a_type_mismatch_is_located_at_its_term`
 /// - witness: `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`
 /// - witness: `locus::tests::refusal_locations_keep_origin_families_and_missing_nodes_distinct`
 /// - witness: `locus::tests::checker_fallbacks_preserve_causal_roles`
+/// - witness: `locus::tests::session_refusals_point_at_the_fork_and_name_the_action`
 #[spec(ensures: |ref ret| {
     let label = Label::Culprit(Culprit::of(Refusal::Checking(refusal)));
     let labelled = match ret.primary {
@@ -634,6 +646,12 @@ impl Annotations
             && ret.context[1_usize] == Maybe::Absent(report_context::Absent::Unnamed),
         CheckRefusal::EndpointMismatch { .. } => role(&ret.context[0_usize], Label::Endpoint)
             && role(&ret.context[1_usize], Label::Endpoint),
+        CheckRefusal::SessionMismatch { .. }
+            | CheckRefusal::Linearity { defect: LinearityDefect::Residue { .. } | LinearityDefect::Closed { .. }
+                | LinearityDefect::UsedTwice { .. } | LinearityDefect::Captured { .. } | LinearityDefect::AsValue { .. }, .. } =>
+            role(&ret.context[0_usize], Label::Forked) && ret.context[1_usize] == Maybe::Absent(report_context::Absent::Unnamed),
+        CheckRefusal::Linearity { defect: LinearityDefect::ArmsDisagree { .. }, .. } =>
+            role(&ret.context[0_usize], Label::Forked) && role(&ret.context[1_usize], Label::FirstArm),
         CheckRefusal::NotSynthesisable { form: CheckingForm::Hole(_) }
             | CheckRefusal::NotADataType(_) | CheckRefusal::NotAnAbstractType(_)
             | CheckRefusal::SealSiteRepeated(_)
@@ -777,7 +795,8 @@ fn checked(
                 | CheckingForm::Split(at)
                 | CheckingForm::Lambda(at)
                 | CheckingForm::Return(at)
-                | CheckingForm::Fixpoint(at),
+                | CheckingForm::Fixpoint(at)
+                | CheckingForm::Offer(at),
         }
         | CheckRefusal::DescentNotReplayed { at, .. }
         | CheckRefusal::NonExhaustiveDataCase(at)
@@ -799,6 +818,41 @@ fn checked(
         | CheckRefusal::BudgetExceeded { .. }
         | CheckRefusal::AdmissionOrder { .. }
         | CheckRefusal::MachineInvariant => return Annotations::at(declaration, label),
+        | CheckRefusal::SessionMismatch { at, endpoint, .. } => {
+            (spanned(origins.computation(at)), [
+                annotated(spanned(origins.computation(endpoint.fork)), Label::Forked),
+                Maybe::Absent(report_context::Absent::Unnamed),
+            ])
+        },
+        | CheckRefusal::Linearity {
+            at,
+            defect:
+                LinearityDefect::ArmsDisagree {
+                    endpoint, first, ..
+                },
+        } => (node(origins, at), [
+            annotated(spanned(origins.computation(endpoint.fork)), Label::Forked),
+            annotated(spanned(origins.computation(first)), Label::FirstArm),
+        ]),
+        | CheckRefusal::Linearity {
+            at,
+            defect:
+                LinearityDefect::Residue { endpoint, .. }
+                | LinearityDefect::Closed { endpoint }
+                | LinearityDefect::UsedTwice { endpoint }
+                | LinearityDefect::Captured { endpoint, .. }
+                | LinearityDefect::AsValue { endpoint },
+        } => (node(origins, at), [
+            annotated(spanned(origins.computation(endpoint.fork)), Label::Forked),
+            Maybe::Absent(report_context::Absent::Unnamed),
+        ]),
+        | CheckRefusal::Linearity {
+            at,
+            defect:
+                LinearityDefect::Delegated
+                | LinearityDefect::Unrestricted
+                | LinearityDefect::Unbound { .. },
+        } => (node(origins, at), UNNAMED),
     };
     let primary = match primary {
         | Maybe::Present(span) => Maybe::Present(Annotation { span, label }),
@@ -961,6 +1015,7 @@ impl fmt::Display for Checked
     ///   failing destinations are outside these observations.
     /// - witness: `locus::tests::former_titles_distinguish_subjects_not_node_addresses`
     /// - witness: `locus::tests::checker_titles_preserve_numeric_roles`
+    /// - witness: `locus::tests::session_refusals_point_at_the_fork_and_name_the_action`
     /// - witness: `diagnostics::diagnostics::a_type_mismatch_is_located_at_its_term`
     #[inline]
     fn fmt(
@@ -1070,6 +1125,7 @@ impl fmt::Display for Checked
                     | CheckingForm::StaticLambda(_) => "a type operator",
                     | CheckingForm::Fixpoint(_) => "a fixpoint",
                     | CheckingForm::Nested(_) => "a computation read as a value",
+                    | CheckingForm::Offer(_) => "an offer",
                 }
             ),
             | CheckRefusal::UnknownConstant { constant, .. } => write!(
@@ -1162,6 +1218,51 @@ impl fmt::Display for Checked
                 "the fixpoint's structural-descent claim does not replay: {}",
                 Descent(reason)
             ),
+            | CheckRefusal::SessionMismatch { defect, .. } => match defect {
+                | ProtocolDefect::Action { expected, observed } => write!(
+                    f,
+                    "the endpoint's session type admits {} here, not {}",
+                    Action(expected),
+                    Action(observed)
+                ),
+                | ProtocolDefect::Label => {
+                    f.write_str("the label selected is not one the endpoint's session type offers")
+                },
+                | ProtocolDefect::Arms => f.write_str(
+                    "an offer needs exactly one arm for each label its endpoint's session type offers",
+                ),
+            },
+            | CheckRefusal::Linearity { defect, .. } => match defect {
+                | LinearityDefect::Residue { .. } => f.write_str(
+                    "a half of the fork finishes with an endpoint its session type has not closed",
+                ),
+                | LinearityDefect::Closed { .. } => f.write_str("the endpoint is used after it was closed"),
+                | LinearityDefect::UsedTwice { .. } => {
+                    f.write_str("one action names the endpoint twice")
+                },
+                | LinearityDefect::Captured { by, .. } => write!(
+                    f,
+                    "the endpoint is named inside {}, which may run its use other than once",
+                    Captor(by)
+                ),
+                | LinearityDefect::Delegated => f.write_str(
+                    "a payload is an endpoint or a session type: sending an endpoint is not admitted",
+                ),
+                | LinearityDefect::AsValue { .. } => {
+                    f.write_str("the endpoint is read as a value outside a session action")
+                },
+                | LinearityDefect::ArmsDisagree { .. } => {
+                    f.write_str("the arms of the offer leave the endpoints in different states")
+                },
+                | LinearityDefect::Unrestricted => f.write_str(
+                    "the declaration's type is a session type: an endpoint exists only inside a fork",
+                ),
+                | LinearityDefect::Unbound { index } => write!(
+                    f,
+                    "the action names linear index {}, which no fork bound",
+                    u32::from(index)
+                ),
+            },
         }
     }
 }
@@ -1209,6 +1310,86 @@ impl fmt::Display for Shape
             | ExpectedShape::StaticPi => "a type operator's classifier `K -> J`",
             | ExpectedShape::Path => "an element path type `Path(A, a, b)`",
             | ExpectedShape::Telescope => "a telescope motive `Π (y : A). Π (z : B). F C`",
+            | ExpectedShape::Session => {
+                "a session type `!A. S`, `?A. S`, `+{l : S}`, `&{l : S}` or `end`"
+            },
+        })
+    }
+}
+
+/// A session action, as prose.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Action(pub ActionKind);
+
+impl fmt::Display for Action
+{
+    /// Writes the action with its article.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: writes one noun phrase per action kind.
+    /// - provides: both sides of a session mismatch's title.
+    /// - fails: if the formatter rejects a write.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no written text or
+    ///   independent observation of the destination's failure.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a send refused for a close titles the admitted action
+    ///   before the attempted one, and swapping them changes the title; exact
+    ///   wording and destination failures are outside this observation.
+    /// - witness: `locus::tests::session_refusals_point_at_the_fork_and_name_the_action`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(match self.0 {
+            | ActionKind::Send => "a send",
+            | ActionKind::Receive => "a receive",
+            | ActionKind::Select => "a selection",
+            | ActionKind::Offer => "an offer",
+            | ActionKind::Close => "a close",
+        })
+    }
+}
+
+/// What may run an endpoint's use other than once, as prose.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Captor(pub Capture);
+
+impl fmt::Display for Captor
+{
+    /// Writes the captor with its article.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: writes one noun phrase per captor.
+    /// - provides: the subject of a captured endpoint's title.
+    /// - fails: if the formatter rejects a write.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no written text or
+    ///   independent observation of the destination's failure.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the five captors read as five distinct titles; exact
+    ///   wording and destination failures are outside this observation.
+    /// - witness: `locus::tests::session_refusals_point_at_the_fork_and_name_the_action`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(match self.0 {
+            | Capture::Thunk => "a thunk",
+            | Capture::Recursion => "a fixpoint",
+            | Capture::Branch => "a branch of a case, a lazy pair or a fold",
+            | Capture::Stack => "a first-class stack",
+            | Capture::Continuation => "a continuation a handler or a shift may resume",
         })
     }
 }
@@ -1359,6 +1540,9 @@ impl fmt::Display for Descent
 #[cfg(test)]
 mod tests
 {
+    use alloc::collections::BTreeSet;
+    use alloc::string::String;
+
     use gandr_core_checker::CheckRefusal;
     use gandr_core_checker::CoreNode;
     use gandr_core_checker::ExpectedShape;
@@ -1366,7 +1550,13 @@ mod tests
     use gandr_core_checker::TermNode;
     use gandr_core_checker::TypeNode;
     use gandr_core_checker::UnadmittedFormer;
+    use gandr_core_checker::session::Capture;
+    use gandr_core_checker::session::Endpoint;
+    use gandr_core_checker::session::ForkSide;
+    use gandr_core_checker::session::LinearityDefect;
+    use gandr_core_checker::session::ProtocolDefect;
     use gandr_core_term::CoreArena;
+    use gandr_core_term::session::ActionKind;
     use gandr_kernel_term::ConstructorTag;
     use gandr_kernel_term::DescentRefusal;
     use gandr_kernel_term::FieldPosition;
@@ -1768,5 +1958,112 @@ mod tests
             "the site, then the later declaration"
         );
         assert!(ordinals(&titles[5]).is_empty(), "no node id: {}", titles[5]);
+    }
+
+    #[test]
+    fn session_refusals_point_at_the_fork_and_name_the_action()
+    {
+        let spans: [ByteSpan; 3_usize] = core::array::from_fn(|index| {
+            ByteSpan::new(
+                ByteOffset::from(index * 10_usize),
+                ByteOffset::from(index * 10_usize + 5_usize),
+            )
+            .expect("ordered fixture spans")
+        });
+        let mut arena = CoreArena::new();
+        let unit = arena.value_unit();
+        let [action, fork, arm] = [(); 3_usize].map(|()| arena.computation_return(unit));
+        let state = arena.value_type_unit();
+        let mut origins = OriginTable::new();
+        for (index, computation) in [action, fork, arm].into_iter().enumerate() {
+            origins.record_computation(
+                computation,
+                Origin::new(NodeIndex::from(index), spans[index]),
+            );
+        }
+        let declaration = ByteSpan::new(ByteOffset::from(90_usize), ByteOffset::from(99_usize))
+            .expect("the declaration is distinct from every node");
+        let endpoint = Endpoint {
+            fork,
+            side: ForkSide::Parent,
+        };
+        let mismatch = |expected, observed| CheckRefusal::SessionMismatch {
+            at: action,
+            endpoint,
+            state,
+            defect: ProtocolDefect::Action { expected, observed },
+        };
+        let sending = mismatch(ActionKind::Send, ActionKind::Close);
+        let found = Annotations::refusal(Refusal::Checking(sending), declaration, &origins);
+        assert_eq!(
+            found.primary,
+            Maybe::Present(Annotation {
+                span: spans[0_usize],
+                label: Label::Culprit(Culprit::of(Refusal::Checking(sending))),
+            }),
+            "the action is the culprit"
+        );
+        assert_eq!(
+            found.context,
+            [
+                Maybe::Present(Annotation {
+                    span: spans[1_usize],
+                    label: Label::Forked,
+                }),
+                Maybe::Absent(report_context::Absent::Unnamed),
+            ],
+            "the fork that opened the endpoint is named"
+        );
+        let disagreeing = CheckRefusal::Linearity {
+            at: CoreNode::Term(TermNode::Computation(action)),
+            defect: LinearityDefect::ArmsDisagree {
+                endpoint,
+                first: arm,
+                other: action,
+            },
+        };
+        assert_eq!(
+            Annotations::refusal(Refusal::Checking(disagreeing), declaration, &origins).context,
+            [
+                Maybe::Present(Annotation {
+                    span: spans[1_usize],
+                    label: Label::Forked,
+                }),
+                Maybe::Present(Annotation {
+                    span: spans[2_usize],
+                    label: Label::FirstArm,
+                }),
+            ],
+            "the fork and the arm the later one disagrees with"
+        );
+        let title = Checked(sending).to_string();
+        assert!(
+            matches!(
+                (title.find("a send"), title.find("a close")),
+                (Some(send), Some(close)) if send < close
+            ),
+            "the admitted action, then the attempted one: {title}"
+        );
+        assert_ne!(
+            title,
+            Checked(mismatch(ActionKind::Close, ActionKind::Send)).to_string(),
+            "the two roles are not conflated"
+        );
+        let captors: BTreeSet<String> = [
+            Capture::Thunk,
+            Capture::Recursion,
+            Capture::Branch,
+            Capture::Stack,
+            Capture::Continuation,
+        ]
+        .map(|by| {
+            Checked(CheckRefusal::Linearity {
+                at: CoreNode::Term(TermNode::Computation(action)),
+                defect: LinearityDefect::Captured { endpoint, by },
+            })
+            .to_string()
+        })
+        .into();
+        assert_eq!(captors.len(), 5_usize, "each captor is named apart");
     }
 }

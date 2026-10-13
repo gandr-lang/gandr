@@ -122,9 +122,10 @@
 //! ### Pure normalization boundary
 //!
 //! Conversion refuses all eight runtime-control formers with
-//! `EvalFault::RuntimeControl(ControlFormer)`; it never invokes a host.
-//! Stack/With type codes still compare and read back structurally with captured
-//! scope and effect-operation types intact.
+//! `EvalFault::RuntimeControl(ControlFormer)` and every session action with
+//! `EvalFault::SessionAction`; it never invokes a host. Stack/With type codes
+//! still compare and read back structurally with captured scope and
+//! effect-operation types intact.
 //!
 //! **Choice.** The sequent machine executes control; conversion stays pure.
 //! Host interpretation makes equality state-dependent; erasure certifies
@@ -349,6 +350,9 @@ pub enum EvalFault
 {
     /// A named runtime control former is outside the certificate normalizer.
     RuntimeControl(gandr_core_term::control::ControlFormer),
+    /// A session action communicates over an endpoint; it runs in a session
+    /// runtime, never in the certificate normalizer.
+    SessionAction,
     /// Runtime-native arithmetic is outside the certificate normalizer.
     NativePrimitive(gandr_core_term::primitive::Primitive),
     /// Transport met neither a native path nor a neutral path operand.
@@ -3494,6 +3498,7 @@ fn step_comp(
         | Computation::Project(..) => Err(EvalFault::RuntimeControl(
             gandr_core_term::control::ControlFormer::Project,
         )),
+        | Computation::Session(_) => Err(EvalFault::SessionAction),
         | Computation::ListFold {
             element,
             result,

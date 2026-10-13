@@ -401,6 +401,7 @@ use gandr_core_term::hole::matching;
 use gandr_core_term::instantiate_comp_type;
 use gandr_core_term::instantiate_value_type;
 use gandr_core_term::instantiate_value_type_under;
+use gandr_core_term::session::SessionAction;
 use gandr_core_term::shift_comp_type;
 use gandr_core_term::shift_value_type;
 use gandr_core_term::strengthen_comp_type;
@@ -446,6 +447,8 @@ mod elaboration;
 
 mod native;
 
+mod session;
+
 use self::elaboration::Anchor;
 pub use self::elaboration::Elaboration;
 pub use self::elaboration::MarkEntry;
@@ -455,6 +458,7 @@ pub use self::elaboration::Typings;
 pub use self::elaboration::elaborate_comp;
 pub use self::elaboration::elaborate_value;
 pub use self::elaboration::type_value;
+use self::session::Sessions;
 
 /// The direction a judgement runs in.
 ///
@@ -707,11 +711,12 @@ const fn pursued(goal: Goal) -> Pursuit
 /// - ensures: the formed type `computation` has by the synthesis rule of its
 ///   former.
 /// - provides: the conversions the run made, as [`Synthesised::conversions`].
-/// - fails: [`CheckRefusal::NotSynthesisable`] for a lambda or a return;
-///   [`CheckRefusal::ShapeMismatch`] for a force of a value of no thunk type,
-///   an application whose head has no arrow type, or a bind whose bound
-///   computation has no returner type; otherwise any refusal a reached rule
-///   gives.
+/// - fails: [`CheckRefusal::NotSynthesisable`] for a lambda, a return or an
+///   offer; [`CheckRefusal::ShapeMismatch`] for a force of a value of no thunk
+///   type, an application whose head has no arrow type, or a bind whose bound
+///   computation has no returner type; [`CheckRefusal::SessionMismatch`] and
+///   [`CheckRefusal::Linearity`] as for [`check_comp`]; otherwise any refusal a
+///   reached rule gives.
 /// - panics: none.
 /// - intension: the conversion count is the declared projection of the run's
 ///   crossings of the boundary.
@@ -730,6 +735,7 @@ const fn pursued(goal: Goal) -> Pursuit
 /// - witness: `judgement::tests::a_bind_of_a_non_returner_is_a_shape_mismatch`
 /// - witness: `judgement::tests::the_faces_agree_on_free_terms`
 /// - witness: `judgement::tests::well_typed_terms_synthesise_and_check_their_type`
+/// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
 #[spec(
     captures: depth = context.depth(Zone::Intuitionistic),
     ensures: |ret| context.depth(Zone::Intuitionistic) == depth && match ret {
@@ -770,8 +776,10 @@ pub fn synthesise_comp(
 /// - fails: [`CheckRefusal::ShapeMismatch`] for a lambda against no arrow, a
 ///   return against no returner, or a bind whose bound computation has no
 ///   returner type; [`CheckRefusal::TypeMismatch`] for a synthesising
-///   computation whose type does not convert; otherwise any refusal a reached
-///   rule gives.
+///   computation whose type does not convert; [`CheckRefusal::SessionMismatch`]
+///   for a session action its endpoint's state does not admit, and
+///   [`CheckRefusal::Linearity`] for an endpoint left, reused, captured or sent
+///   (see [`crate::session`]); otherwise any refusal a reached rule gives.
 /// - panics: none.
 /// - intension: the conversion count is the declared projection of the run's
 ///   crossings of the boundary.
@@ -793,6 +801,8 @@ pub fn synthesise_comp(
 /// - witness: `judgement::tests::a_bind_of_a_non_returner_is_a_shape_mismatch`
 /// - witness: `judgement::tests::an_introduction_against_the_wrong_former_is_a_shape_mismatch`
 /// - witness: `judgement::tests::well_typed_terms_synthesise_and_check_their_type`
+/// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
+/// - witness: `judgement::session::tests::a_leftover_endpoint_is_reported_by_name`
 /// - witness: `judgement::tests::the_faces_agree_on_free_terms`
 #[spec(
     captures: depth = context.depth(Zone::Intuitionistic),
@@ -1605,6 +1615,58 @@ enum Frame
     ReturnValue,
     /// An injection waits on its payload's check against its summand.
     InjectionPayload,
+    /// A session type waits on its payloads' formation; none may then be a
+    /// session type.
+    FormSession(ValueTypeId),
+    /// A send waits on its payload's check; its endpoint then advances.
+    SessionSend
+    {
+        /// The send.
+        at: ComputationId,
+        /// The endpoint.
+        endpoint: DeBruijnIndex,
+        /// The session type the endpoint advances to.
+        next: ValueTypeId,
+    },
+    /// An offer's arm is being checked from the zone the offer found; the
+    /// zone it leaves must agree with the first arm's.
+    OfferArm
+    {
+        /// The offer.
+        at: ComputationId,
+        /// The arm's position among the arms, in label order.
+        arm: Ordinal,
+        /// The type every arm is checked against.
+        expected: CompTypeId,
+        /// Where the offer's kept zones begin.
+        zones: session::ZoneMark,
+    },
+    /// A fork waits on its protocol annotation's formation.
+    ForkProtocol
+    {
+        /// The fork.
+        at: ComputationId,
+        /// The fork's own direction, which its parent takes.
+        direction: Direction<CompTypeId>,
+    },
+    /// A fork's child is being checked with its end bound.
+    ForkChild
+    {
+        /// The fork.
+        at: ComputationId,
+        /// The fork's own direction, which its parent takes.
+        direction: Direction<CompTypeId>,
+        /// The child's session type, whose dual the parent's end takes.
+        session: ValueTypeId,
+    },
+    /// A fork's parent is being judged with its end bound.
+    ForkParent
+    {
+        /// The fork.
+        at: ComputationId,
+        /// The fork's own direction.
+        direction: Direction<CompTypeId>,
+    },
 }
 
 /// A frame beside the goal under way when its rule pushed it: the node the
@@ -1735,6 +1797,12 @@ impl Frame
             | Self::ThunkBody => FrameRole::ThunkBody,
             | Self::ReturnValue => FrameRole::ReturnValue,
             | Self::InjectionPayload => FrameRole::InjectionPayload,
+            | Self::FormSession(_) => FrameRole::FormSession,
+            | Self::SessionSend { .. } => FrameRole::SessionSend,
+            | Self::OfferArm { .. } => FrameRole::OfferArm,
+            | Self::ForkProtocol { .. } => FrameRole::ForkProtocol,
+            | Self::ForkChild { .. } => FrameRole::ForkChild,
+            | Self::ForkParent { .. } => FrameRole::ForkParent,
         }
     }
 
@@ -1826,7 +1894,13 @@ impl Frame
             | Self::Unknowing(_)
             | Self::ThunkBody
             | Self::ReturnValue
-            | Self::InjectionPayload => 0_usize,
+            | Self::InjectionPayload
+            | Self::FormSession(_)
+            | Self::SessionSend { .. }
+            | Self::OfferArm { .. }
+            | Self::ForkProtocol { .. }
+            | Self::ForkChild { .. }
+            | Self::ForkParent { .. } => 0_usize,
         })
     }
 }
@@ -1908,6 +1982,8 @@ struct Machine<'context, 'arena>
     /// The term judgements a typed run finished, each with its type, in the
     /// order finished; empty in every other run.
     typings: Vec<Typing>,
+    /// The endpoints the run bound and the zones its offers keep.
+    sessions: Sessions,
 }
 
 impl<'context, 'arena> Machine<'context, 'arena>
@@ -2435,6 +2511,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     {
         let entry = context.binders().depth(Zone::Intuitionistic);
         let remaining = usize::from(context.budget());
+        let base = context.depth(Zone::Linear);
         let mut machine = Machine {
             context,
             frames: Vec::new(),
@@ -2446,12 +2523,15 @@ impl<'context, 'arena> Machine<'context, 'arena>
             anchors: Vec::new(),
             marks: Vec::new(),
             typings: Vec::new(),
+            sessions: Sessions::new(base),
         };
+        let scope = machine.session_scope();
         match machine.drive(goal) {
             | Ok(produced) => Ok((produced, machine.conversions, machine.marks)),
             | Err(halt) => {
                 let failure = machine.failure(halt, entry);
                 machine.unwind(entry);
+                machine.close_sessions(scope);
                 Err(failure)
             },
         }
@@ -2540,7 +2620,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Obligation::new(waiting.frame.role(), at, expected, binders)
             })
             .collect();
-        Failure::new(halt.refusal, obligations, pursuit, hypotheses)
+        let endpoints = self.live_endpoints();
+        Failure::new(halt.refusal, obligations, pursuit, hypotheses, endpoints)
     }
 
     /// Step from `goal` until no frame waits.
@@ -2734,7 +2815,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - requires: nothing.
     /// - ensures: the rule of the goal's direction for its term's former runs,
     ///   or the formation rule of the type's former.
-    /// - fails: as that rule.
+    /// - fails: as that rule; as [`Self::fence`] for a former that may run an
+    ///   endpoint's use other than once.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -2758,6 +2840,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
         goal: Goal,
     ) -> Result<Step, CheckRefusal>
     {
+        self.fence(goal)?;
         match goal {
             | Goal::Stack {
                 judgement,
@@ -2935,33 +3018,36 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(expected),
                 }))
             },
-            | Value::Variable { zone, index } => {
-                match self.context.binders().occurrence(zone, index) {
-                    | Ok(declared) => {
-                        let read = match zone {
-                            | Zone::Intuitionistic => shift_value_type(
-                                self.context.arena_mut(),
-                                declared,
-                                Binders::past(index),
-                            ),
-                            | Zone::Linear => declared,
-                        };
-                        Ok(Step::Ascend(Produced::ValueType(read)))
-                    },
-                    | Err(ContextError::UnboundIndex { zone, index, depth }) => {
-                        Err(CheckRefusal::UnboundIndex {
-                            at: term,
-                            zone,
-                            index,
-                            depth,
-                        })
-                    },
-                    | Err(
-                        ContextError::LinearSlotConsumed { .. }
-                        | ContextError::LinearSlotUnconsumed { .. }
-                        | ContextError::NoBinderToClose { .. },
-                    ) => Err(CheckRefusal::MachineInvariant),
-                }
+            | Value::Variable {
+                zone: Zone::Linear,
+                index,
+            } => self.endpoint_as_value(term, index),
+            | Value::Variable {
+                zone: Zone::Intuitionistic,
+                index,
+            } => match self
+                .context
+                .binders()
+                .occurrence(Zone::Intuitionistic, index)
+            {
+                | Ok(declared) => {
+                    let read =
+                        shift_value_type(self.context.arena_mut(), declared, Binders::past(index));
+                    Ok(Step::Ascend(Produced::ValueType(read)))
+                },
+                | Err(ContextError::UnboundIndex { zone, index, depth }) => {
+                    Err(CheckRefusal::UnboundIndex {
+                        at: term,
+                        zone,
+                        index,
+                        depth,
+                    })
+                },
+                | Err(
+                    ContextError::LinearSlotConsumed { .. }
+                    | ContextError::LinearSlotUnconsumed { .. }
+                    | ContextError::NoBinderToClose { .. },
+                ) => Err(CheckRefusal::MachineInvariant),
             },
             | Value::Constant(constant) => match self.context.consult(constant) {
                 | Maybe::Present(declared) => produced(declared),
@@ -3680,6 +3766,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Computation::Split { .. } => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Split(term),
             }),
+            | Computation::Session(_) => self.session(term, Direction::Synthesise),
             | Computation::Hole(_) | Computation::Mark { .. } => {
                 let unknown = self.context.arena_mut().comp_type_unknown();
                 Ok(Step::Ascend(Produced::CompType(unknown)))
@@ -3803,7 +3890,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Computation::PathTransport { .. }
             | Computation::TelescopeTransport { .. }
             | Computation::Force(_)
-            | Computation::Application(..) => {
+            | Computation::Application(..)
+            | Computation::Session(
+                SessionAction::Send { .. }
+                | SessionAction::Receive { .. }
+                | SessionAction::Select { .. }
+                | SessionAction::Close { .. },
+            ) => {
                 self.wait(Frame::CompBridge { at: term, expected });
                 Ok(Step::Descend(Goal::Computation {
                     term,
@@ -3834,6 +3927,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     term: scrutinee,
                     direction: Direction::Synthesise,
                 }))
+            },
+            | Computation::Session(SessionAction::Offer { .. } | SessionAction::Fork { .. }) => {
+                self.session(term, Direction::Check(expected))
             },
             | Computation::Hole(_) | Computation::Mark { .. } => {
                 Ok(Step::Ascend(Produced::Checked))
@@ -4192,10 +4288,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   eager product and a sum form each component, an empty sum at once; a
     ///   static Pi forms both classifiers, then awaits their check as static
     ///   classifiers; a path type forms its carrier, open or closed, then
-    ///   checks each endpoint against it, left first. A former formed at once
-    ///   leaves the frames as found, but for a data type, a record, a product
-    ///   and a sum, which queue their components; one that descends leaves them
-    ///   no shorter.
+    ///   checks each endpoint against it, left first; a session type forms each
+    ///   payload, then awaits their check as no session types. A former formed
+    ///   at once leaves the frames as found, but for a data type, a record, a
+    ///   product, a sum and a session type, which queue their components; one
+    ///   that descends leaves them no shorter.
     /// - fails: the view's refusal for a former outside the fragment or a
     ///   dangling id; [`CheckRefusal::OutOfFragment`] naming
     ///   [`UnadmittedFormer::TopUniverse`]; [`CheckRefusal::NotAnAbstractType`]
@@ -4210,7 +4307,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     #[spec(
         captures: depth = self.frames.len(),
         ensures: |ret| match ret {
-            | Ok(Step::Ascend(_)) => self.frames.len() == depth || (matches!(self.context.arena().value_type(at), Some(gandr_core_term::ValueType::Data { .. } | gandr_core_term::ValueType::Record(_) | gandr_core_term::ValueType::Product(_) | gandr_core_term::ValueType::Sum(_))) && self.frames.len() >= depth),
+            | Ok(Step::Ascend(_)) => self.frames.len() == depth || (matches!(self.context.arena().value_type(at), Some(gandr_core_term::ValueType::Data { .. } | gandr_core_term::ValueType::Record(_) | gandr_core_term::ValueType::Product(_) | gandr_core_term::ValueType::Sum(_) | gandr_core_term::ValueType::Session(_))) && self.frames.len() >= depth),
             | Ok(Step::Descend(_)) => self.frames.len() >= depth,
             | Err(_) => true,
         },
@@ -4294,6 +4391,20 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 self.frames
                     .extend(components.iter().rev().map(|&component| Waiting {
                         frame: Frame::FormNext(TypeNode::Value(component)),
+                        owner,
+                    }));
+                Ok(Step::Ascend(Produced::Checked))
+            },
+            | ValueTypeView::Session(session) => {
+                let owner = self.owner;
+                let payloads = session.payloads();
+                self.frames.push(Waiting {
+                    frame: Frame::FormSession(at),
+                    owner,
+                });
+                self.frames
+                    .extend(payloads.iter().rev().map(|&payload| Waiting {
+                        frame: Frame::FormNext(TypeNode::Value(payload)),
                         owner,
                     }));
                 Ok(Step::Ascend(Produced::Checked))
@@ -4571,7 +4682,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::Lift { .. }
                 | ValueTypeView::Element { .. }
                 | ValueTypeView::Product(..)
-                | ValueTypeView::Abstract(_) => {
+                | ValueTypeView::Abstract(_)
+                | ValueTypeView::Session(_) => {
                     return Err(CheckRefusal::StaticClassifierExpected {
                         at,
                         found: classifier,
@@ -4635,6 +4747,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::Product(..)
                 | ValueTypeView::StaticPi { .. }
                 | ValueTypeView::Abstract(_)
+                | ValueTypeView::Session(_)
                 | ValueTypeView::Unknown => return Err(CheckRefusal::MachineInvariant),
             },
             | TypeNode::Computation(at) => match comp_type_view(arena, at)? {
@@ -5605,6 +5718,33 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let unknown = self.context.arena_mut().comp_type_unknown();
                 Ok(Step::Ascend(Produced::CompType(unknown)))
             },
+            | (Frame::FormSession(at), Produced::Checked) => self.session_formed(at),
+            | (Frame::SessionSend { endpoint, next, .. }, Produced::Checked) => {
+                self.sent(endpoint, next)
+            },
+            | (
+                Frame::OfferArm {
+                    at,
+                    arm,
+                    expected,
+                    zones,
+                },
+                Produced::Checked,
+            ) => self.armed(at, arm, expected, zones),
+            | (Frame::ForkProtocol { at, direction }, Produced::Checked) => {
+                self.fork_formed(at, direction)
+            },
+            | (
+                Frame::ForkChild {
+                    at,
+                    direction,
+                    session,
+                },
+                Produced::Checked,
+            ) => self.forked(at, direction, session),
+            | (Frame::ForkParent { at, direction }, produced) => {
+                self.joined(at, direction, produced)
+            },
             | (
                 Frame::PathProductFirst { .. }
                 | Frame::Resume { .. }
@@ -5672,7 +5812,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::Unknowing(_)
                 | Frame::ThunkBody
                 | Frame::ReturnValue
-                | Frame::InjectionPayload,
+                | Frame::InjectionPayload
+                | Frame::FormSession(_)
+                | Frame::SessionSend { .. }
+                | Frame::OfferArm { .. }
+                | Frame::ForkProtocol { .. }
+                | Frame::ForkChild { .. },
                 Produced::ValueType(_) | Produced::CompType(_),
             )
             | (Frame::BindBody { .. }, Produced::ValueType(_)) => {
@@ -6246,6 +6391,7 @@ mod tests
     use super::Machine;
     use super::Marking;
     use super::Produced;
+    use super::Sessions;
     use super::check_comp;
     use super::check_value;
     use super::check_value_with_failure;
@@ -8419,6 +8565,7 @@ mod tests
             anchors: Vec::new(),
             marks: Vec::new(),
             typings: Vec::new(),
+            sessions: Sessions::new(BinderDepth::default()),
         };
         let refusal = machine
             .resume(Frame::LambdaBody, Produced::ValueType(unit_type))
@@ -8457,6 +8604,7 @@ mod tests
             anchors: Vec::new(),
             marks: Vec::new(),
             typings: Vec::new(),
+            sessions: Sessions::new(BinderDepth::default()),
         };
         assert_eq!(machine.charge(), Ok(()));
         assert_eq!(machine.remaining, 0);
@@ -9408,7 +9556,7 @@ mod tests
                     | Computation::ListFold { .. } | Computation::Case { .. } | Computation::Split { .. }
                     | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..)
                     | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..)
-                    | Computation::Hole(_) | Computation::Mark { .. } => {
+                    | Computation::Hole(_) | Computation::Mark { .. } | Computation::Session(_) => {
                         prop_assert!(false, "the recipe mints no former outside the fragment, no hole and no mark");
                     },
                 }

@@ -126,8 +126,48 @@ pub fn relate(
     relation: Relation,
 ) -> Result<RelationResult, TypeError>
 {
+    relate_states(left, left.root(), right, right.root(), relation)
+}
+
+/// Produce the finite relation reachable from one state of each session.
+///
+/// # Specification
+/// - ensures: as [`relate`], started from `left_state` and `right_state` rather
+///   than the roots; `relate` is this function at the two roots.
+/// - provides: the relation between two endpoints that have already acted,
+///   whose states are not their protocols' roots.
+/// - fails: a state outside its session's arena, or a broken session reference,
+///   retains its construction error.
+/// - panics: none.
+///
+/// # Errors
+/// [`TypeError::MissingNode`] for a state its session does not hold.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two states of one recursive protocol, one past the binder
+///   and one before it, relate exactly when their unfoldings do, and a state
+///   past the arena is refused.
+/// - witness: `tests::relations::states_past_the_root_relate_through_their_unfoldings`
+#[spec(ensures: |ret| match ret {
+    Ok(RelationResult::Related(ref evidence)) => evidence.payloads.is_empty()
+        && left.head(left_state).is_ok_and(|(a, _)| right.head(right_state).is_ok_and(|(b, _)|
+            evidence.pairs.contains(&gandr_kernel_term::session::StatePair {
+                source: gandr_kernel_term::session::State(a.0), target: gandr_kernel_term::session::State(b.0),
+            }))),
+    Ok(RelationResult::Unrelated) => true,
+    Err(_) => left.head(left_state).is_err() || right.head(right_state).is_err(),
+})]
+#[inline]
+pub fn relate_states(
+    left: &Session,
+    left_state: NodeId,
+    right: &Session,
+    right_state: NodeId,
+    relation: Relation,
+) -> Result<RelationResult, TypeError>
+{
     let mut visited = BTreeSet::new();
-    let mut pending = alloc::vec![(left.root(), right.root())];
+    let mut pending = alloc::vec![(left_state, right_state)];
     while let Some((left_id, right_id)) = pending.pop() {
         let (left_id, left_node) = left.head(left_id)?;
         let (right_id, right_node) = right.head(right_id)?;
@@ -169,6 +209,7 @@ pub fn relate(
         },
     ))
 }
+
 /// Decide duality by comparing against exactly one dual transformation.
 ///
 /// # Specification

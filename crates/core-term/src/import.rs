@@ -140,14 +140,15 @@ impl Image
                 | Value::Reify(_)
                 | Value::Hole(_),
             )
-            | Self::Computation(Computation::Hole(_))
+            | Self::Computation(Computation::Hole(_) | Computation::Session(_))
             | Self::ValueType(
                 ValueType::Base(_)
                 | ValueType::Product(_)
                 | ValueType::Sum(_)
                 | ValueType::Universe { .. }
                 | ValueType::Abstract(_)
-                | ValueType::Unknown,
+                | ValueType::Unknown
+                | ValueType::Session(_),
             )
             | Self::CompType(CompType::Unknown) => [None, None, None, None, None],
             | Self::ValueType(ValueType::Stack {
@@ -515,6 +516,23 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                         }),
                                     );
                                 },
+                                | Computation::Session(ref action) => {
+                                    self.pending.extend(
+                                        action
+                                            .value_types()
+                                            .map(|ty| Task::Open(Node::ValueType(ty)))
+                                            .chain(
+                                                action
+                                                    .values()
+                                                    .map(|value| Task::Open(Node::Value(value))),
+                                            )
+                                            .chain(
+                                                action.computations().map(|body| {
+                                                    Task::Open(Node::Computation(body))
+                                                }),
+                                            ),
+                                    );
+                                },
                                 | _ => {},
                             }
                         },
@@ -536,6 +554,13 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 | ValueType::Product(ref components)
                                 | ValueType::Sum(ref components) => self.pending.extend(
                                     components
+                                        .iter()
+                                        .rev()
+                                        .map(|&ty| Task::Open(Node::ValueType(ty))),
+                                ),
+                                | ValueType::Session(ref session) => self.pending.extend(
+                                    session
+                                        .payloads()
                                         .iter()
                                         .rev()
                                         .map(|&ty| Task::Open(Node::ValueType(ty))),
@@ -682,6 +707,19 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                         .body = mapped;
                                 }
                             }
+                        },
+                        | Image::Computation(Computation::Session(ref mut action)) => {
+                            *action = action.try_map(
+                                crate::session::ChildOrder::Forward,
+                                &mut (),
+                                |&mut (), value| map_value(value),
+                                |&mut (), body| map_computation(body),
+                                |&mut (), ty| map_type(ty),
+                            )?;
+                        },
+                        | Image::ValueType(ValueType::Session(ref mut session)) => {
+                            *session = session
+                                .try_map_payloads(crate::session::ChildOrder::Forward, map_type)?;
                         },
                         | _ => {},
                     }

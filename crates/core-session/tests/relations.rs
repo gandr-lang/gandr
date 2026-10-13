@@ -9,9 +9,12 @@ use gandr_core_session::Decision;
 use gandr_core_session::Node;
 use gandr_core_session::NodeId;
 use gandr_core_session::Relation;
+use gandr_core_session::RelationResult;
 use gandr_core_session::Session;
+use gandr_core_session::TypeError;
 use gandr_core_session::decide;
 use gandr_core_session::duality;
+use gandr_core_session::relate_states;
 
 use crate::common::REPORT;
 use crate::common::YIELD;
@@ -50,6 +53,46 @@ fn unfolded_recursive_types_are_equivalent()
         );
     }
     assert_eq!(duality(&folded, &unfolded.dual()), Ok(Decision::Related));
+}
+
+#[test]
+fn states_past_the_root_relate_through_their_unfoldings()
+{
+    let folded = session(alloc::vec![
+        Node::Mu(NodeId(1)),
+        Node::Send(YIELD, NodeId(2)),
+        Node::Var(NodeId(0))
+    ]);
+    let prefixed = session(alloc::vec![
+        Node::Send(REPORT, NodeId(1)),
+        Node::Mu(NodeId(2)),
+        Node::Send(YIELD, NodeId(3)),
+        Node::Var(NodeId(1))
+    ]);
+    let related = |left: &Session, a: usize, right: &Session, b: usize| {
+        relate_states(left, NodeId(a), right, NodeId(b), Relation::Equivalent)
+            .map(|result| matches!(result, RelationResult::Related(_)))
+    };
+    assert_eq!(
+        related(&folded, 2, &prefixed, 1),
+        Ok(true),
+        "the variable unfolds to the body the binder past the prefix starts"
+    );
+    assert_eq!(
+        related(&folded, 1, &prefixed, 3),
+        Ok(true),
+        "a body state and a variable state meet at one unfolding"
+    );
+    assert_eq!(
+        related(&folded, 0, &prefixed, 0),
+        Ok(false),
+        "the prefix's own send differs at the roots"
+    );
+    assert_eq!(
+        related(&folded, 3, &prefixed, 0),
+        Err(TypeError::MissingNode(NodeId(3))),
+        "a state past the arena is refused"
+    );
 }
 
 #[test]

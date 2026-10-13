@@ -100,6 +100,8 @@ pub enum Form
     Mark,
     /// A fixpoint: the vocabulary has no recursion.
     Fixpoint,
+    /// A session action: the image has no channels.
+    Session,
     /// A tuple of other than zero or two components: the image's products
     /// are binary.
     TupleArity,
@@ -165,6 +167,7 @@ impl core::fmt::Display for Form
             | Self::Hole => "a term hole",
             | Self::Mark => "a mark",
             | Self::Fixpoint => "a fixpoint",
+            | Self::Session => "a session action",
             | Self::TupleArity => "a tuple of neither zero nor two components",
             | Self::SumArity => "a sum other than binary",
         })
@@ -434,6 +437,9 @@ pub fn lower_computation(
                     | Computation::Mark { .. } => return Err(LowerError::OutsideSlice(Form::Mark)),
                     | Computation::Fixpoint { .. } => {
                         return Err(LowerError::OutsideSlice(Form::Fixpoint));
+                    },
+                    | Computation::Session(_) => {
+                        return Err(LowerError::OutsideSlice(Form::Session));
                     },
                 }
             },

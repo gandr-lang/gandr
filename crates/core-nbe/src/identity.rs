@@ -257,7 +257,8 @@ pub fn clause(
             | ValueType::Path { .. }
             | ValueType::Stack { .. }
             | ValueType::Lift { .. }
-            | ValueType::StaticPi { .. } => Clause::Unclassified,
+            | ValueType::StaticPi { .. }
+            | ValueType::Session(_) => Clause::Unclassified,
         },
     )
 }

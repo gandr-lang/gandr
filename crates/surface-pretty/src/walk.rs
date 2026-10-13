@@ -153,6 +153,22 @@
 //! refusal can leave unused documents charged to the builder. A layout ceiling
 //! returns `PresentationError`, never partial output. Witness:
 //! `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`.
+//!
+//! # Session types
+//!
+//! A session type is spelled as the grammar writes it: `!A. S`, `?A. S`,
+//! `+{l : S, …}`, `&{l : S, …}`, `mu t. S` and `end`, each payload type a
+//! child the walk spells and parenthesizes past an atom. The protocol is
+//! spelled from the state the type stands at; a recursion variable whose
+//! binder lies outside that state unfolds once to its binder, so the spelling
+//! is closed and reads back to an equivalent type. Recursion binders are
+//! named `t`, `t1`, … by nesting, apart from the binders of terms.
+//!
+//! - **Alternatives.** Spelling the whole protocol and marking the state would
+//!   print what the endpoint no longer follows; `?`, the spelling of a node the
+//!   surface does not write, would hide a type the grammar parses.
+//! - **Reversal.** A ruled spelling for a state, or binder names avoiding the
+//!   names a term mentions as term binders do.
 
 use alloc::collections::BTreeSet;
 use alloc::format;
@@ -162,6 +178,10 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_core_term::Sort;
 use gandr_core_term::Zone;
+use gandr_core_term::session::PayloadSlot;
+use gandr_core_term::session::Protocol;
+use gandr_core_term::session::ProtocolNode;
+use gandr_core_term::session::ProtocolState;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::GroundSort;
@@ -302,7 +322,7 @@ enum Kind
     | Kind::ValueType => matches!(*former, Former::BaseType(_) | Former::Product(_) | Former::RecordType(_)
         | Former::Stack(..) | Former::List(_)
         | Former::Sum(_) | Former::ThunkType(_) | Former::Universe { .. } | Former::TypeLift
-        | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::PathUniverse(..)),
+        | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::PathUniverse(..) | Former::Session { .. }),
     | Kind::CompType => matches!(*former, Former::Returner(_) | Former::EffectfulReturner { .. } | Former::Arrow { .. }
         | Former::With(..) | Former::Pi { .. } | Former::ComputationElement(_)),
     | Kind::Value => matches!(*former, Former::Variable { .. } | Former::Constant(_) | Former::Unit
@@ -330,6 +350,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::TypeLift
         | Former::Element(_)
         | Former::Abstract(_)
+        | Former::Session { .. }
         | Former::StaticPi { .. } => Kind::ValueType,
         | Former::Returner(_)
         | Former::With(..)
@@ -580,6 +601,9 @@ enum Children<Node>
     | Former::Product(arity) | Former::Sum(arity) => matches!(ret,
         Children::Components { arity: Arity(count), admits: Admits::ValueType, entries: Entries::Positional, .. }
             if count == usize::from(arity)),
+    | Former::Session { payloads, .. } => matches!(ret,
+        Children::Components { arity: Arity(count), admits: Admits::ValueType, entries: Entries::Positional, .. }
+            if count == usize::from(payloads)),
     | Former::RecordType(arity) => matches!(ret,
         Children::Components { arity: Arity(count), admits: Admits::ValueType, entries: Entries::Labelled(Label::Field), .. }
             if count == usize::from(arity)),
@@ -641,6 +665,9 @@ where
         ),
         | Former::Product(arity) | Former::Sum(arity) => {
             components(arity, Admits::ValueType, Entries::Positional)
+        },
+        | Former::Session { payloads, .. } => {
+            components(payloads, Admits::ValueType, Entries::Positional)
         },
         | Former::RecordType(arity) => {
             components(arity, Admits::ValueType, Entries::Labelled(Label::Field))
@@ -783,6 +810,174 @@ struct Piece
     doc: DocId,
     /// How loosely it binds.
     binding: Binding,
+}
+
+/// One run of a session type's spelling: fixed text, or the payload type in a
+/// slot.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Segment
+{
+    /// Text, written as it stands.
+    Text(String),
+    /// The payload type in this slot.
+    Payload(PayloadSlot),
+}
+
+/// A pending step of a protocol's spelling.
+#[derive(Clone, Copy, Debug)]
+enum Spelling<'protocol>
+{
+    /// Spell the session type at this state.
+    State(ProtocolState),
+    /// Write fixed text.
+    Text(&'static str),
+    /// Write a branch's label and its colon.
+    Label(&'protocol gandr_kernel_term::FieldLabel),
+    /// Close the innermost recursion binder.
+    Leave,
+}
+
+/// The nesting position of a recursion binder among the binders open around
+/// it, outermost zero.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Nesting(usize);
+
+impl Nesting
+{
+    /// The binder's name: `t`, then `t1`, `t2`, ….
+    ///
+    /// # Specification
+    /// trivial.
+    fn name(self) -> String
+    {
+        if self.0 == 0_usize {
+            String::from("t")
+        }
+        else {
+            format!("t{}", self.0)
+        }
+    }
+}
+
+/// The spelling of the session type `protocol` stands for at `state`, its
+/// payload types left as slots, and how loosely it binds.
+///
+/// # Specification
+/// - requires: nothing; a state past the protocol spells `?`.
+/// - ensures: `!` and `?` prefix their payload slot and `. ` their
+///   continuation; a selection is `+{l : S, …}` and an offer `&{l : S, …}` in
+///   label order; `end` is `end`; a `mu` is `mu t. S`, its binder named by its
+///   nesting; a variable is its binder's name, and a variable whose binder
+///   encloses the state rather than the spelling unfolds to that binder, so the
+///   spelling is closed. A selection, an offer and `end` bind as atoms, every
+///   other head as an arrow does.
+/// - provides: the one session-type spelling both sources share, since both
+///   read the same protocol.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: the `while let` pops one pending step per iteration.
+/// - measure: the protocol's nodes are reached along tree edges, and a variable
+///   unfolds only to a binder no open binder repeats, which a contractive
+///   protocol's finite binders bound.
+/// - input recursion: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a recursive protocol with every former spells as the
+///   grammar writes it at its root and at a state inside its recursion.
+/// - witness: `goldens::tests::session_types_spell_their_protocol_and_payloads`
+#[spec(ensures: |ret| ret.0.iter().all(|segment| match *segment {
+    | Segment::Text(ref text) => !text.is_empty(),
+    | Segment::Payload(slot) => protocol.nodes().iter().any(|node| {
+        matches!(*node, ProtocolNode::Send { payload, .. } | ProtocolNode::Receive { payload, .. } if payload == slot)
+    }),
+}) && (ret.1 == Binding::Atom)
+    == matches!(protocol.node(state), Ok(&(ProtocolNode::Select(_) | ProtocolNode::Offer(_) | ProtocolNode::End))))]
+fn protocol_template(
+    protocol: &Protocol,
+    state: ProtocolState,
+) -> (Vec<Segment>, Binding)
+{
+    let mut segments = Vec::new();
+    let mut text = String::new();
+    let mut binders: Vec<ProtocolState> = Vec::new();
+    let mut pending = Vec::from([Spelling::State(state)]);
+    while let Some(step) = pending.pop() {
+        let at = match step {
+            | Spelling::Text(glyphs) => {
+                text.push_str(glyphs);
+                continue;
+            },
+            | Spelling::Label(label) => {
+                text.push_str(label.as_ref());
+                text.push_str(" : ");
+                continue;
+            },
+            | Spelling::Leave => {
+                let _closed = binders.pop();
+                continue;
+            },
+            | Spelling::State(at) => at,
+        };
+        match protocol.node(at) {
+            | Err(_) => text.push('?'),
+            | Ok(&ProtocolNode::Send { payload, next }) => {
+                text.push('!');
+                segments.push(Segment::Text(core::mem::take(&mut text)));
+                segments.push(Segment::Payload(payload));
+                text.push_str(". ");
+                pending.push(Spelling::State(next));
+            },
+            | Ok(&ProtocolNode::Receive { payload, next }) => {
+                text.push('?');
+                segments.push(Segment::Text(core::mem::take(&mut text)));
+                segments.push(Segment::Payload(payload));
+                text.push_str(". ");
+                pending.push(Spelling::State(next));
+            },
+            | Ok(&(ProtocolNode::Select(ref branches) | ProtocolNode::Offer(ref branches))) => {
+                text.push_str(match protocol.node(at) {
+                    | Ok(&ProtocolNode::Offer(_)) => "&{",
+                    | _ => "+{",
+                });
+                pending.push(Spelling::Text("}"));
+                for (position, (label, &target)) in branches.iter().enumerate().rev() {
+                    pending.push(Spelling::State(target));
+                    pending.push(Spelling::Label(label));
+                    if position > 0_usize {
+                        pending.push(Spelling::Text(", "));
+                    }
+                }
+            },
+            | Ok(&ProtocolNode::End) => text.push_str("end"),
+            | Ok(&ProtocolNode::Mu(body)) => {
+                text.push_str("mu ");
+                text.push_str(&Nesting(binders.len()).name());
+                text.push_str(". ");
+                binders.push(at);
+                pending.push(Spelling::Leave);
+                pending.push(Spelling::State(body));
+            },
+            | Ok(&ProtocolNode::Recur(binder)) => {
+                match binders.iter().rposition(|&open| open == binder) {
+                    | Some(position) => text.push_str(&Nesting(position).name()),
+                    | None => pending.push(Spelling::State(binder)),
+                }
+            },
+        }
+    }
+    if !text.is_empty() {
+        segments.push(Segment::Text(text));
+    }
+    let binding = match protocol.node(state) {
+        | Ok(&(ProtocolNode::Select(_) | ProtocolNode::Offer(_) | ProtocolNode::End)) => {
+            Binding::Atom
+        },
+        | _ => Binding::Arrow,
+    };
+    (segments, binding)
 }
 
 /// The bridges between the sorts, and the keywords that lead a computation.
@@ -952,6 +1147,15 @@ enum Join
     /// Univalence at a stratum over its two translator records, after the
     /// head spelling its stratum and its descriptions, `ua[n, k](a, b,`.
     Ua(DocId),
+    /// A session type over its payloads, spelled by the template the visit
+    /// pushed, binding as the template's head does.
+    Session
+    {
+        /// How many payload pieces it takes, in slot order.
+        payloads: Arity,
+        /// How loosely the spelling binds.
+        binding: Binding,
+    },
 }
 
 /// One unit of the walk's pending work.
@@ -1373,6 +1577,9 @@ struct Walk<'walk, 'meter, 'names>
     fidelity: Fidelity,
     /// How the presentation writes its thunks.
     bodies: Bodies,
+    /// The spellings of the session types whose payloads are being walked,
+    /// innermost last; each join takes its own.
+    protocols: Vec<Vec<Segment>>,
 }
 
 impl Walk<'_, '_, '_>
@@ -2025,6 +2232,18 @@ impl Walk<'_, '_, '_>
                 arity: Arity(2_usize),
                 entries: Entries::Positional,
             }),
+            | Former::Session {
+                protocol,
+                state,
+                payloads,
+            } => {
+                let (template, binding) = protocol_template(protocol, state);
+                self.protocols.push(template);
+                Some(Join::Session {
+                    payloads: Arity(usize::from(payloads)),
+                    binding,
+                })
+            },
             | Former::BaseType(BaseType::Numeric)
             | Former::TypeLift
             | Former::ValueLift
@@ -2445,7 +2664,7 @@ impl Walk<'_, '_, '_>
         captures: [entry = self.pieces.len(), taken = match join {
             Join::Prefix(_) | Join::EffectReturner(_) | Join::StaticLambda | Join::Lambda | Join::Thunk
                 | Join::Bracket(Bracket::PathRefl | Bracket::Here | Bracket::List) => Some(1_usize),
-            Join::Braced { arity: Arity(count), entries: Entries::Positional, .. } => Some(count),
+            Join::Braced { arity: Arity(count), entries: Entries::Positional, .. } | Join::Session { payloads: Arity(count), .. } => Some(count),
             Join::Braced { arity: Arity(count), entries: Entries::Labelled(_), .. } => count.checked_mul(2_usize),
             Join::Arrow | Join::Pi | Join::Sequence | Join::Ua(_) | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv) => Some(2_usize),
             Join::Apply(Arity(arguments)) => arguments.checked_add(1_usize),
@@ -2457,6 +2676,7 @@ impl Walk<'_, '_, '_>
                     Join::Arrow | Join::Pi | Join::StaticLambda => Binding::Arrow,
                     Join::Sequence => Binding::Sequence,
                     Join::Apply(_) | Join::Bracket(_) | Join::Braced { .. } | Join::Ua(_) => Binding::Atom,
+                    Join::Session { binding, .. } => binding,
                 }),
             | Err(PresentationError::Build(_) | PresentationError::Unbalanced) => self.pieces.len() <= entry,
             | Err(PresentationError::Render(_)) => false,
@@ -2472,6 +2692,31 @@ impl Walk<'_, '_, '_>
                 let operand = self.pop()?;
                 let operand = self.bare_up_to(operand, Binding::Atom)?;
                 (self.builder.concat(head, operand)?, Binding::Prefix)
+            },
+            | Join::Session {
+                payloads: Arity(count),
+                binding,
+            } => {
+                let mut popped = Vec::with_capacity(count);
+                for _ in 0_usize .. count {
+                    popped.push(self.pop()?);
+                }
+                let mut payloads = Vec::with_capacity(count);
+                for piece in popped.into_iter().rev() {
+                    payloads.push(self.bare_up_to(piece, Binding::Atom)?);
+                }
+                let template = self.protocols.pop().ok_or(PresentationError::Unbalanced)?;
+                let mut items = Vec::with_capacity(template.len());
+                for segment in &template {
+                    items.push(match *segment {
+                        | Segment::Text(ref text) => self.leaf(Glyphs(text))?,
+                        | Segment::Payload(slot) => payloads
+                            .get(usize::from(slot))
+                            .copied()
+                            .ok_or(PresentationError::Unbalanced)?,
+                    });
+                }
+                (self.builder.concat_all(items)?, binding)
             },
             | Join::Prefix(prefix) => {
                 let operand = self.pop()?;
@@ -2699,6 +2944,7 @@ where
         open: OpenBinders(0_usize),
         fidelity: Fidelity::Faithful,
         bodies: Bodies::of(admits),
+        protocols: Vec::new(),
     };
     let mut tasks = Vec::from([Task::Visit {
         node: root,
@@ -2956,6 +3202,7 @@ mod tests
             open: super::OpenBinders(0_usize),
             fidelity: Fidelity::Faithful,
             bodies: super::Bodies::Opaque,
+            protocols: super::Vec::new(),
         };
         let refusal = super::PresentationError::Build(
             gandr_surface_layout::error::BuildError::LimitExceeded {
@@ -2994,6 +3241,7 @@ mod tests
             open: super::OpenBinders(0_usize),
             fidelity: Fidelity::Faithful,
             bodies: super::Bodies::Opaque,
+            protocols: super::Vec::new(),
         };
         walk.atom(super::Glyphs("x")).expect("one operand builds");
         assert_eq!(

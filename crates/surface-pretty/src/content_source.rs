@@ -111,7 +111,7 @@ impl Source for ContentSource<'_>
 (Some(&ContentNode::DataCase { .. } | &ContentNode::RecordProjection(..) | &ContentNode::TupleProjection(..) |
 &ContentNode::Primitive(..) | &ContentNode::Transport(..) | &ContentNode::ElementTransport { .. } | &ContentNode::TelescopeTransport { .. } |
 &ContentNode::Perform { .. } | &ContentNode::Handle { .. } | &ContentNode::Resume(..) | &ContentNode::Split(..) | &ContentNode::Reset(_) | &ContentNode::Shift(_) | &ContentNode::With(..) | &ContentNode::Project(..) | &ContentNode::ListFold { .. } |
-&ContentNode::Case { .. } | &ContentNode::Fixpoint { .. }), Former::Computation) |
+&ContentNode::Case { .. } | &ContentNode::Fixpoint { .. } | &ContentNode::Session(_)), Former::Computation) |
 (Some(&ContentNode::ListNil), Former::ListNil) |
 (Some(&ContentNode::ValueLift { .. }), Former::ValueLift) |
 (Some(&ContentNode::TypeLift { .. }), Former::TypeLift) => true,
@@ -167,6 +167,8 @@ impl Source for ContentSource<'_>
             usize::from(arity) == parts.len(),
         (Some(&ContentNode::Universe { sort, ref level }), Former::Universe { sort: actual_sort, level: actual_level }) =>
             sort == actual_sort && level == actual_level,
+        (Some(found), Former::Session { protocol, state, payloads }) => matches!(*found, ContentNode::SessionType(ref session)
+            if core::ptr::eq(core::ptr::from_ref(protocol), core::ptr::from_ref(session.protocol())) && state == session.state() && usize::from(payloads) == session.payloads().len()),
 
         (Some(&ContentNode::Constant(ref reference) | &ContentNode::Abstract(ref reference)), Former::Unreadable) =>
             match *reference {
@@ -209,6 +211,7 @@ impl Source for ContentSource<'_>
             | ContentNode::TelescopeTransport { .. }
             | ContentNode::ListFold { .. }
             | ContentNode::Case { .. }
+            | ContentNode::Session(_)
             | ContentNode::Fixpoint { .. } => Former::Computation,
             | ContentNode::Lambda(body) => Former::Lambda(body),
             | ContentNode::Application(function, argument) => {
@@ -290,6 +293,11 @@ impl Source for ContentSource<'_>
                 Former::StaticApplication(operator, argument)
             },
             | ContentNode::StaticPi { domain, codomain } => Former::StaticPi { domain, codomain },
+            | ContentNode::SessionType(ref session) => Former::Session {
+                protocol: session.protocol(),
+                state: session.state(),
+                payloads: Arity::from(session.payloads().len()),
+            },
             // Data has no printer reader. A hole or a mark is displayed by
             // the session. `Path` carries three children, more than a bracket
             // join holds, and a compound endpoint has no former of its own.
@@ -310,13 +318,14 @@ impl Source for ContentSource<'_>
     }
 
     /// The index of component `index` of the product, the sum, the tuple, the
-    /// record or the record type at `node`.
+    /// record, the record type or the session type at `node`.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the index at `index` among a product's, a sum's or a tuple's
-    ///   components, or a record's or a record type's fields in label order;
-    ///   none past them, for another node, or past the table.
+    ///   components, a record's or a record type's fields in label order, or a
+    ///   session type's payloads in slot order; none past them, for another
+    ///   node, or past the table.
     /// - provides: the printer's reading of an n-ary former.
     /// - fails: never.
     /// - panics: none.
@@ -332,6 +341,7 @@ impl Source for ContentSource<'_>
     #[spec(ensures: |ret| ret == match self.0.get(usize::from(node)) {
         | Some(&(ContentNode::Product(ref parts) | ContentNode::Sum(ref parts) | ContentNode::Tuple(ref parts))) => parts.get(usize::from(index)).copied(),
         | Some(&(ContentNode::RecordType(ref fields) | ContentNode::Record(ref fields))) => fields.values().nth(usize::from(index)).copied(),
+        | Some(&ContentNode::SessionType(ref session)) => session.payloads().get(usize::from(index)).copied(),
         | _ => None,
     })]
     #[inline]
@@ -347,6 +357,9 @@ impl Source for ContentSource<'_>
             | ContentNode::Tuple(ref parts) => parts.get(usize::from(index)).copied(),
             | ContentNode::RecordType(ref fields) | ContentNode::Record(ref fields) => {
                 fields.values().nth(usize::from(index)).copied()
+            },
+            | ContentNode::SessionType(ref session) => {
+                session.payloads().get(usize::from(index)).copied()
             },
             | _ => None,
         }

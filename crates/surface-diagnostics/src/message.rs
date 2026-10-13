@@ -40,6 +40,8 @@ use core::fmt;
 
 use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::CheckingForm;
+use gandr_core_checker::session::LinearityDefect;
+use gandr_core_checker::session::ProtocolDefect;
 use gandr_core_checker::ua::StratumDefect;
 use gandr_core_checker::ua::UaDefect;
 use gandr_surface_corpus::CorpusRefusal;
@@ -54,6 +56,8 @@ use gandr_surface_syntax::ClosingClass;
 use gandr_surface_syntax::GroutShape;
 use quenchant_shape::shape::Maybe;
 
+use crate::locus::Action;
+use crate::locus::Captor;
 use crate::locus::Descent;
 use crate::locus::Former;
 use crate::locus::Shape;
@@ -502,6 +506,7 @@ fn checked(
                 | CheckingForm::StaticLambda(_) => "a type operator",
                 | CheckingForm::Fixpoint(_) => "a recursive definition",
                 | CheckingForm::Nested(_) => "a computation written where a value is read",
+                | CheckingForm::Offer(_) => "an offer",
             }
         ),
         | CheckRefusal::UnknownConstant { .. } => {
@@ -583,6 +588,49 @@ fn checked(
         | CheckRefusal::DescentNotReplayed { reason, .. } => {
             write!(f, "the recursion is not structural: {}", Descent(reason))
         },
+        | CheckRefusal::SessionMismatch { defect, .. } => match defect {
+            | ProtocolDefect::Action { expected, observed } => write!(
+                f,
+                "the endpoint's protocol expects {} here, not {}",
+                Action(expected),
+                Action(observed)
+            ),
+            | ProtocolDefect::Label => {
+                f.write_str("the endpoint's protocol offers no such label here")
+            },
+            | ProtocolDefect::Arms => {
+                f.write_str("`offer` must handle every label of its protocol exactly once")
+            },
+        },
+        | CheckRefusal::Linearity { defect, .. } => match defect {
+            | LinearityDefect::Residue { .. } => {
+                f.write_str("the endpoint is not closed before its half of the fork ends")
+            },
+            | LinearityDefect::Closed { .. } => f.write_str("the endpoint is used after `close`"),
+            | LinearityDefect::UsedTwice { .. } => {
+                f.write_str("one action names the endpoint twice")
+            },
+            | LinearityDefect::Captured { by, .. } => write!(
+                f,
+                "the endpoint is used inside {}, which may run it other than once",
+                Captor(by)
+            ),
+            | LinearityDefect::Delegated => {
+                f.write_str("an endpoint or a protocol cannot be sent as a payload")
+            },
+            | LinearityDefect::AsValue { .. } => {
+                f.write_str("an endpoint can be used only by a session action")
+            },
+            | LinearityDefect::ArmsDisagree { .. } => {
+                f.write_str("the arms of this `offer` leave the endpoints in different states")
+            },
+            | LinearityDefect::Unrestricted => f.write_str(
+                "a declaration cannot have a session type; an endpoint is opened by `fork`",
+            ),
+            | LinearityDefect::Unbound { .. } => {
+                f.write_str("internal error: a session action names an endpoint no `fork` opened")
+            },
+        },
     }
 }
 
@@ -604,12 +652,18 @@ mod tests
     use gandr_core_checker::TermNode;
     use gandr_core_checker::TypeNode;
     use gandr_core_checker::UnadmittedFormer;
+    use gandr_core_checker::session::Capture;
+    use gandr_core_checker::session::Endpoint;
+    use gandr_core_checker::session::ForkSide;
+    use gandr_core_checker::session::LinearityDefect;
+    use gandr_core_checker::session::ProtocolDefect;
     use gandr_core_checker::ua::StratumDefect;
     use gandr_core_checker::ua::UaDefect;
     use gandr_core_checker::ua::Way;
     use gandr_core_term::BinderDepth;
     use gandr_core_term::CoreArena;
     use gandr_core_term::Zone;
+    use gandr_core_term::session::ActionKind;
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::ConstructorTag;
     use gandr_kernel_term::DeBruijnIndex;
@@ -666,6 +720,11 @@ mod tests
         let site = OccurrenceSite::Parameter(ParameterPosition::from(0_usize));
         let corolla = ShapeIndex::from(0_usize);
         let element = ElementIndex::from(0_usize);
+        let endpoint = Endpoint {
+            fork: computation,
+            side: ForkSide::Child,
+        };
+        let node = CoreNode::Term(TermNode::Computation(computation));
         let lowering = [
             LoweringRefusal::UnresolvedName { span, name },
             LoweringRefusal::UnresolvedDocLink { span, name },
@@ -974,6 +1033,75 @@ mod tests
             CheckRefusal::UaInequivalent {
                 at: value,
                 defect: UaDefect::Stuck { corolla, element },
+            },
+            CheckRefusal::SessionMismatch {
+                at: computation,
+                endpoint,
+                state: value_type,
+                defect: ProtocolDefect::Action {
+                    expected: ActionKind::Send,
+                    observed: ActionKind::Close,
+                },
+            },
+            CheckRefusal::SessionMismatch {
+                at: computation,
+                endpoint,
+                state: value_type,
+                defect: ProtocolDefect::Label,
+            },
+            CheckRefusal::SessionMismatch {
+                at: computation,
+                endpoint,
+                state: value_type,
+                defect: ProtocolDefect::Arms,
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::Residue {
+                    endpoint,
+                    state: value_type,
+                },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::Closed { endpoint },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::UsedTwice { endpoint },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::Captured {
+                    endpoint,
+                    by: Capture::Thunk,
+                },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::Delegated,
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::AsValue { endpoint },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::ArmsDisagree {
+                    endpoint,
+                    first: computation,
+                    other: computation,
+                },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::Unrestricted,
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::Unbound {
+                    index: DeBruijnIndex::from(0_u32),
+                },
             },
             CheckRefusal::UnenclosedRun { at: value },
         ]
