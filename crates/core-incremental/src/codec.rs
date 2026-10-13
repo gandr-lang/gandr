@@ -1386,6 +1386,11 @@ where
             write_index(writer, domain)?;
             write_index(writer, codomain)?;
         },
+        | ContentNode::FlowProduct(first, second) => {
+            writer.tag(Tag(0x6B));
+            write_index(writer, first)?;
+            write_index(writer, second)?;
+        },
         | ContentNode::Recorded(ref moves) => {
             writer.tag(Tag(0x65));
             writer.count(Count(moves.len()))?;
@@ -2958,6 +2963,7 @@ fn read_effect_row(
                     | ContentNode::Then(..) => tag == 0x64,
                     | ContentNode::Forward(_) => tag == 0x69,
                     | ContentNode::FunctionFlow(..) => tag == 0x6A,
+                    | ContentNode::FlowProduct(..) => tag == 0x6B,
                     | ContentNode::Recorded(_) => tag == 0x65,
                     | ContentNode::Ride { .. } => tag == 0x66,
                     | ContentNode::FlowType { .. } => tag == 0x67,
@@ -3117,6 +3123,7 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
         | 0x64 => ContentNode::Then(read_index(reader)?, read_index(reader)?),
         | 0x69 => ContentNode::Forward(read_index(reader)?),
         | 0x6A => ContentNode::FunctionFlow(read_index(reader)?, read_index(reader)?),
+        | 0x6B => ContentNode::FlowProduct(read_index(reader)?, read_index(reader)?),
         | 0x65 => {
             let count = reader.count()?;
             let mut moves = Vec::new();

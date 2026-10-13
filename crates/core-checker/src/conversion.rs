@@ -1258,6 +1258,7 @@ fn convert(
                                         | Value::Here(_)
                                         | Value::Stay(_)
                                         | Value::Then(..)
+                                        | Value::FlowProduct(..)
                                         | Value::Forward(_)
                                         | Value::FunctionFlow(..)
                                         | Value::SessionRelated { .. }

@@ -2161,6 +2161,22 @@ enum Frame
         /// The first leg's image.
         first: gandr_kernel_term::ValueId,
     },
+    /// Await the first component of a flow product.
+    FlowProductFirst
+    {
+        /// The product.
+        at: ValueId,
+        /// The second component.
+        second: ValueId,
+    },
+    /// Await the second component of a flow product.
+    FlowProductSecond
+    {
+        /// The product.
+        at: ValueId,
+        /// The first component's image.
+        first: gandr_kernel_term::ValueId,
+    },
     /// Await the flow type a forward flow was decided at.
     ForwardType
     {
@@ -3602,6 +3618,10 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 Frame::ThenFirst { at, second },
                 CoreNode::Term(TermNode::Value(first)),
             ),
+            | Value::FlowProduct(first, second) => (
+                Frame::FlowProductFirst { at, second },
+                CoreNode::Term(TermNode::Value(first)),
+            ),
             | Value::Forward(translator) => match self.source.directed.get(&at) {
                 | Some(&crate::forward::Directed::Forward(ref decided)) => (
                     Frame::ForwardType {
@@ -4631,6 +4651,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     | Value::SessionRelated { .. }
                     | Value::Stay(_)
                     | Value::Then(..)
+                    | Value::FlowProduct(..)
                     | Value::Forward(_)
                     | Value::FunctionFlow(..)
                     | Value::Recorded(_),
@@ -5109,6 +5130,13 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | (Frame::ThenSecond { at, first }, AnyNode::Value(second)) => {
                 Ok(self.erased_value(at, target.value_then(first, second, Seam::Sequence)))
             },
+            | (Frame::FlowProductFirst { at, second }, AnyNode::Value(first)) => {
+                self.frames.push(Frame::FlowProductSecond { at, first });
+                self.argument(second)
+            },
+            | (Frame::FlowProductSecond { at, first }, AnyNode::Value(second)) => {
+                Ok(self.erased_value(at, target.value_flow_product(first, second)))
+            },
             | (
                 Frame::ForwardType {
                     at,
@@ -5452,6 +5480,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 | Frame::DecodeOf { .. }
                 | Frame::ThenFirst { .. }
                 | Frame::ThenSecond { .. }
+                | Frame::FlowProductFirst { .. }
+                | Frame::FlowProductSecond { .. }
                 | Frame::ForwardTranslator { .. }
                 | Frame::ForwardImages(_)
                 | Frame::FunctionFlowDomain { .. }

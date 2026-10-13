@@ -74,6 +74,12 @@
 //! two the Segal certification that stands behind each unit stage, which no
 //! hand definition states.
 //!
+//! The directed twin is written the same way: `flowProduct(stay(Unit),
+//! flowProduct(forward(f₁), … forward(fₖ)))` is a flow from the telescope to
+//! itself, the shape a directed univalence at degree one would derive, and a
+//! term ridden along it moves forward as one transported along the path does.
+//! It has no derived counterpart to be compared with yet.
+//!
 //! # The written statement
 //!
 //! `ua[n, k](a, b, f, g)` states univalence at the stratum of degree `n` over

@@ -228,6 +228,7 @@ impl Image
                 | Value::Funext(ref mut first, ref mut second)
                 | Value::Equiv(ref mut first, ref mut second)
                 | Value::Then(ref mut first, ref mut second)
+                | Value::FlowProduct(ref mut first, ref mut second)
                 | Value::FunctionFlow(ref mut first, ref mut second)
                 | Value::SessionRelated {
                     source: ref mut first,

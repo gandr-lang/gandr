@@ -1012,7 +1012,8 @@ fn converge(
                         if !one.iter().map(shape).eq(other.iter().map(shape)) || xs.len() != ys.len() { return Convertibility::Distinct; }
                         stack.extend(xs.iter().zip(ys.iter()).map(|(&a, &b)| ConversionGoal::Value(a, b)));
                     },
-                    | (&Value::PathProduct(a, b), &Value::PathProduct(c, d)) => {
+                    | (&Value::PathProduct(a, b), &Value::PathProduct(c, d))
+                    | (&Value::FlowProduct(a, b), &Value::FlowProduct(c, d)) => {
                         stack.push(ConversionGoal::Value(a, c));
                         stack.push(ConversionGoal::Value(b, d));
                     },
@@ -1136,7 +1137,7 @@ fn converge(
                     },
                     | (
                         &Value::Constructor { .. } | &Value::Record(_) | &Value::SessionPath { .. } | &Value::SessionFlow { .. } | &Value::PathRefl(_) | &Value::PathProduct(..) | &Value::PathEquiv { .. }
-                        | &Value::Here { .. } | &Value::Stay { .. } | &Value::ForwardFlow { .. } | &Value::FunctionFlow { .. } | &Value::Then { .. }
+                        | &Value::Here { .. } | &Value::Stay { .. } | &Value::ForwardFlow { .. } | &Value::FunctionFlow { .. } | &Value::Then { .. } | &Value::FlowProduct(..)
                         | &Value::Returned(_) | &Value::Higher { .. } | &Value::HigherEvaluation { .. } | &Value::QuantifiedEvaluation { .. }
                         | &Value::Variable(_)
                         | &Value::Constant(_)

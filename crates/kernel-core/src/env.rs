@@ -1907,6 +1907,7 @@ fn collect_reachable(
                 },
                 | Some(
                     &Value::PathProduct(first, second)
+                    | &Value::FlowProduct(first, second)
                     | &Value::ListCons(first, second)
                     | &Value::StaticApplication(first, second)
                     | &Value::Then { first, second, .. },

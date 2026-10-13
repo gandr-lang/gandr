@@ -265,6 +265,10 @@ pub enum FrameRole
     ThenFirst,
     /// A composite waits on its second flow, which starts where the first ends.
     ThenSecond,
+    /// A flow product waits on its first flow's type.
+    FlowProductFirst,
+    /// A flow product waits on its second flow's type.
+    FlowProductSecond,
     /// A ride waits on the flow it moves along.
     RideFlow,
     /// A ride's motive is being formed under the flow's carrier.
@@ -392,6 +396,8 @@ impl fmt::Display for FrameRole
             | Self::StaySynthesised => "StaySynthesised",
             | Self::ThenFirst => "ThenFirst",
             | Self::ThenSecond => "ThenSecond",
+            | Self::FlowProductFirst => "FlowProductFirst",
+            | Self::FlowProductSecond => "FlowProductSecond",
             | Self::RideFlow => "RideFlow",
             | Self::RideMotive => "RideMotive",
             | Self::RideValue => "RideValue",
@@ -835,6 +841,8 @@ mod tests
             FrameRole::StaySynthesised,
             FrameRole::ThenFirst,
             FrameRole::ThenSecond,
+            FrameRole::FlowProductFirst,
+            FrameRole::FlowProductSecond,
             FrameRole::RideFlow,
             FrameRole::RideMotive,
             FrameRole::RideValue,

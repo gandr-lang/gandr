@@ -93,10 +93,11 @@
 //! | `0x66` | Lazy pairing, two computation children | Admitted |
 //! | `0x67` | Lazy projection, inline side byte and one computation child | Admitted |
 //! | `0x68` | Telescope ride, motive (the dependent arrow over a two-entry telescope), flow, source point, flow over it and input children | Admitted |
-//! | `0x69–0xFF` | Unassigned | Refused |
+//! | `0x69` | Flow product, two flow children | Admitted |
+//! | `0x6A–0xFF` | Unassigned | Refused |
 //!
 //! The admitted domain is sparse: the greatest assigned native byte is
-//! `0x68`, not a promise to accept every smaller byte. Boundary witnesses
+//! `0x69`, not a promise to accept every smaller byte. Boundary witnesses
 //! admit assigned native tags, refuse inline opcodes and retired bytes as
 //! native nodes, and retain the frozen block. The unit and the empty type are
 //! zero-count products and sums, and List nil is a zero-child leaf; all three
@@ -293,6 +294,7 @@
 //! | [`NODE_V_FORWARD_FLOW`] | an image count, then one dialogue per image | classifier, translator, one output per image |
 //! | [`NODE_V_FUNCTION_FLOW`] | none | classifier, domain flow, codomain flow |
 //! | [`NODE_V_THEN`] | the seam byte, [`SEAM_SEQUENCE`] or [`SEAM_FEEDBACK`] | first flow, second flow |
+//! | [`NODE_V_FLOW_PRODUCT`] | none | first flow, second flow, framed as [`NODE_V_PATH_PRODUCT`] |
 //! | [`NODE_V_SESSION_FLOW`] | simulation evidence, as [`NODE_V_SESSION_PATH`] | classifier, payload-path tuple |
 //!
 //! A forward flow's image dialogues and outputs are the replayed translator
@@ -741,6 +743,9 @@ pub const SIDE_RIGHT: WireTag = WireTag(1);
 /// Node tag: directed transport over a two-entry telescope, over its motive,
 /// flow, start point, flow over it and input value.
 pub const NODE_C_TELESCOPE_RIDE: WireTag = WireTag(0x68);
+/// Node tag: componentwise product of universe flows, over the flow of the
+/// left components and the flow of the right.
+pub const NODE_V_FLOW_PRODUCT: WireTag = WireTag(0x69);
 /// Composition seam: the first output feeds the second input.
 pub const SEAM_SEQUENCE: WireTag = WireTag(0);
 /// Composition seam: the second output also feeds back into the first input.
@@ -927,7 +932,7 @@ pub struct NodeTagDescription
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_FLOW | NODE_V_STAY | NODE_V_FORWARD_FLOW | NODE_V_FUNCTION_FLOW | NODE_V_THEN | NODE_C_RIDE | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD | NODE_C_TELESCOPE_RIDE) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
+    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_FLOW | NODE_V_STAY | NODE_V_FORWARD_FLOW | NODE_V_FUNCTION_FLOW | NODE_V_THEN | NODE_C_RIDE | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD | NODE_C_TELESCOPE_RIDE | NODE_V_FLOW_PRODUCT) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
             && match max_token_bound { Some(bound) => bound.0 >= 1, None => true },
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -979,7 +984,7 @@ const fn row(
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_FLOW | NODE_V_STAY | NODE_V_FORWARD_FLOW | NODE_V_FUNCTION_FLOW | NODE_V_THEN | NODE_C_RIDE | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD | NODE_C_TELESCOPE_RIDE) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
+    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_FLOW | NODE_V_STAY | NODE_V_FORWARD_FLOW | NODE_V_FUNCTION_FLOW | NODE_V_THEN | NODE_C_RIDE | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD | NODE_C_TELESCOPE_RIDE | NODE_V_FLOW_PRODUCT) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
             && !matches!(tag, NODE_VT_BASE | NODE_V_VARIABLE | NODE_V_CONSTANT | NODE_VT_ABSTRACT | NODE_V_LIST_NIL),
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -1079,7 +1084,7 @@ const fn bounded_alias(
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
-pub const NODE_TAG_TABLE: [NodeTagDescription; 70] = [
+pub const NODE_TAG_TABLE: [NodeTagDescription; 71] = [
     row(
         NODE_VT_BASE,
         ChildArity::Fixed(0),
@@ -1156,6 +1161,7 @@ pub const NODE_TAG_TABLE: [NodeTagDescription; 70] = [
     unbounded(NODE_C_WITH, ChildArity::Fixed(2)),
     unbounded(NODE_C_PROJECT, ChildArity::Fixed(1)),
     unbounded(NODE_C_TELESCOPE_RIDE, ChildArity::Fixed(5)),
+    unbounded(NODE_V_FLOW_PRODUCT, ChildArity::Fixed(2)),
 ];
 
 #[cfg(test)]
@@ -1231,6 +1237,7 @@ mod tests
                         Some(&crate::Value::ForwardFlow { .. }) => row.tag == super::NODE_V_FORWARD_FLOW,
                         Some(&crate::Value::FunctionFlow { .. }) => row.tag == super::NODE_V_FUNCTION_FLOW,
                         Some(&crate::Value::Then { .. }) => row.tag == super::NODE_V_THEN,
+                        Some(&crate::Value::FlowProduct(..)) => row.tag == super::NODE_V_FLOW_PRODUCT,
                         Some(&crate::Value::ListNil) => row.tag == super::NODE_V_LIST_NIL,
                         Some(&crate::Value::ListCons(..)) => row.tag == super::NODE_V_LIST_CONS,
                         None => false,
@@ -1417,6 +1424,7 @@ mod tests
         let lazy_projection = arena.computation_project(crate::Side::Right, lazy_pair);
         let telescope_ride =
             arena.computation_telescope_ride(telescope, stay, unit, returned, literal);
+        let flow_product = arena.value_flow_product(stay, forward_flow);
         let nodes = alloc::vec![
             AnyNode::ValueType(base),
             AnyNode::ValueType(universe),
@@ -1488,6 +1496,7 @@ mod tests
             AnyNode::Computation(lazy_pair),
             AnyNode::Computation(lazy_projection),
             AnyNode::Computation(telescope_ride),
+            AnyNode::Value(flow_product),
         ];
         (arena, nodes)
     }
@@ -1596,10 +1605,10 @@ mod tests
                 "the flow reservation is spent: {assigned_flow:#04x}"
             );
         }
-        for unassigned in 0x69_u8 ..= u8::MAX {
+        for unassigned in 0x6A_u8 ..= u8::MAX {
             assert!(
                 !assigned[usize::from(unassigned)],
-                "every byte above the telescope ride is unassigned: {unassigned:#04x}"
+                "every byte above the flow product is unassigned: {unassigned:#04x}"
             );
         }
     }
@@ -1632,7 +1641,7 @@ mod tests
             .chain([0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x38, 0x39, 0x3A])
             .chain(0x48 ..= 0x4F)
             .chain([0x50, 0x51, 0x52, 0x5a, 0x5b, 0x5c])
-            .chain(0x5d ..= 0x68)
+            .chain(0x5d ..= 0x69)
             .collect();
         let actual: Vec<_> = NODE_TAG_TABLE.iter().map(|row| u8::from(row.tag)).collect();
         assert_eq!(actual, expected);

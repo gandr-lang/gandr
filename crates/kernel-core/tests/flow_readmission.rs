@@ -1,10 +1,10 @@
 //! A module of every directed certificate kind, persisted and readmitted.
 //!
 //! The producing environment admits a forward flow, a composition, `stay`, a
-//! function flow, a session simulation, a ride and a telescope ride. The
-//! artifact decodes to the same nodes and replays in a fresh environment; a
-//! copy whose image, seam or boundary was tampered with is refused at the
-//! declaration that broke, by the refusal's name.
+//! function flow, a session simulation, a ride, a telescope ride, a flow
+//! product and a ride along it. The artifact decodes to the same nodes and
+//! replays in a fresh environment; a copy whose image, seam, boundary or
+//! product order was tampered with is refused at the declaration that broke.
 
 extern crate alloc;
 
@@ -57,6 +57,9 @@ mod flow_readmission
     const CONSTANT: usize = 3;
     /// `funext : Flow_U(U (Bool → F Bool), U (Unit → F Bool))`.
     const FUNEXT: usize = 5;
+    /// `product : Flow_U(⌜Bool × Bool⌝, ⌜Bool × Unit⌝)`, negation beside the
+    /// terminal map.
+    const PRODUCT: usize = 9;
 
     /// Every declaration the environment admitted, marked as it was
     /// admitted, encoded over its arena.
@@ -206,7 +209,8 @@ mod flow_readmission
             .expect("the certificate admits");
     }
 
-    /// The module: every certificate kind, a ride and a telescope ride.
+    /// The module: every certificate kind, a ride, a telescope ride, a flow
+    /// product and a ride along it.
     ///
     /// # Specification
     /// trivial.
@@ -315,6 +319,33 @@ mod flow_readmission
             let value = arena.value_stay(here);
             let ride = arena.computation_telescope_ride(motive, flow, start, over, value);
             let landed = arena.value_type_flow(string, here, here);
+            let returner = arena.comp_type_returner(landed);
+            (arena.value_type_thunk(returner), arena.value_thunk(ride))
+        });
+        define(&mut environment, |arena| {
+            let codes = codes(arena);
+            let unit_type = arena.value_type_unit();
+            let first = arena.value_constant(ConstantIndex::from(NOT));
+            let second = arena.value_constant(ConstantIndex::from(TERMINAL));
+            let flow = arena.value_flow_product(first, second);
+            let source = arena.value_type_product(&[codes.boolean_type, codes.boolean_type]);
+            let target = arena.value_type_product(&[codes.boolean_type, unit_type]);
+            let source = arena.value_quote(source);
+            let target = arena.value_quote(target);
+            (arena.value_type_flow_universe(source, target), flow)
+        });
+        define(&mut environment, |arena| {
+            let codes = codes(arena);
+            let unit_type = arena.value_type_unit();
+            let [left, _] = codes.constructors;
+            let moving = arena.value_variable(DeBruijnIndex::from(0_u32));
+            let motive = arena.value_type_element(moving, Level::zero());
+            let flow = arena.value_constant(ConstantIndex::from(PRODUCT));
+            let pair = arena.value_tuple(&[left, left]);
+            let ride = arena.computation_ride(motive, flow, pair);
+            let target = arena.value_type_product(&[codes.boolean_type, unit_type]);
+            let target = arena.value_quote(target);
+            let landed = arena.value_type_element(target, Level::zero());
             let returner = arena.comp_type_returner(landed);
             (arena.value_type_thunk(returner), arena.value_thunk(ride))
         });
@@ -432,5 +463,16 @@ mod flow_readmission
             refusal.error(),
             &KernelError::Flow(FlowError::Boundary(Boundary::Domain))
         );
+
+        // A product in the wrong order: its classifier relates the swapped
+        // pairs, which the declared type does not.
+        let refusal = tampered(&bytes, ConstantIndex::from(PRODUCT), |arena, body| {
+            let Some(&Value::FlowProduct(first, second)) = arena.value(body)
+            else {
+                panic!("a flow product");
+            };
+            arena.value_flow_product(second, first)
+        });
+        assert!(!matches!(refusal.error(), &KernelError::Flow(_)));
     }
 }

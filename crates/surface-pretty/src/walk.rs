@@ -51,16 +51,17 @@
 //! positions. The product of two universe paths, `pathProduct(p, q)`, is the
 //! one native former the surface writes: the lowering reads the call back to
 //! the same node, so it is faithful, its components in order and each as
-//! faithful as its own spelling.
+//! faithful as its own spelling. Its directed twin `flowProduct(p, q)` is the
+//! kernel's own former, written and printed the same way.
 //!
 //! **Choice.** Show the structural constructor instead of an unreadable marker,
 //! while withholding a surface round-trip claim. The printer neither compares
 //! certified maps nor replays transport. **Reversal.** A faithful notation
 //! requires parser and lowering rules that preserve all required information.
 //! `native_paths_preserve_ordered_endpoints_and_maps` checks the order and
-//! approximation boundary through public presentation, and
+//! approximation boundary through public presentation,
 //! `a_product_of_written_paths_spells_as_written` the product's faithful
-//! spelling.
+//! spelling and `a_product_of_flows_spells_as_written` its twin's.
 //!
 //! # Element identity
 //!
@@ -338,7 +339,7 @@ enum Kind
         | Former::Quote(_) | Former::QuoteComputation(_) | Former::StaticLambda(_) | Former::StaticApplication(..)
         | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_) | Former::Funext(..) | Former::Equiv(..)
         | Former::Ua { .. } | Former::Nested(_) | Former::Run(_) | Former::Constructor { .. } | Former::Returned(_)
-        | Former::SessionRelated(..) | Former::Stay(_) | Former::Then(..) | Former::Forward(_) | Former::FunctionFlow(..) | Former::Recorded { .. }),
+        | Former::SessionRelated(..) | Former::Stay(_) | Former::Then(..) | Former::FlowProduct(..) | Former::Forward(_) | Former::FunctionFlow(..) | Former::Recorded { .. }),
     | Kind::Computation => matches!(*former, Former::Return(_) | Former::Bind(..) | Former::Force(_)
         | Former::Application(..) | Former::Lambda(_) | Former::Primitive { .. } | Former::Transport(..)
         | Former::PathTransport { .. } | Former::Ride { .. } | Former::TelescopeTransport { .. } | Former::Fixpoint(_) | Former::Case { .. }
@@ -400,6 +401,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::SessionRelated(..)
         | Former::Stay(_)
         | Former::Then(..)
+        | Former::FlowProduct(..)
         | Former::Forward(_)
         | Former::FunctionFlow(..)
         | Former::Ua { .. }
@@ -867,6 +869,7 @@ where
         | Former::Equiv(first, second)
         | Former::SessionRelated(_, first, second)
         | Former::Then(first, second)
+        | Former::FlowProduct(first, second)
         | Former::FunctionFlow(first, second)
         | Former::Ua {
             forward: first,
@@ -1394,6 +1397,8 @@ enum Bracket
     Stay,
     /// Directed composition, `then(f, g)`.
     Then,
+    /// The product of two universe flows, `flowProduct(p, q)`.
+    FlowProduct,
     /// A forward flow, `forward(f)`.
     Forward,
     /// A function flow, `arrow(d, c)`.
@@ -1424,6 +1429,7 @@ impl Bracket
             | Self::Sim => "sim(",
             | Self::Stay => "stay(",
             | Self::Then => "then(",
+            | Self::FlowProduct => "flowProduct(",
             | Self::Forward => "forward(",
             | Self::Arrow => "arrow(",
             | Self::Run => "Run(",
@@ -2927,6 +2933,7 @@ impl Walk<'_, '_>
             },
             | Former::Stay(_) => Some(Join::Bracket(Bracket::Stay)),
             | Former::Then(..) => Some(Join::Bracket(Bracket::Then)),
+            | Former::FlowProduct(..) => Some(Join::Bracket(Bracket::FlowProduct)),
             | Former::Forward(_) => Some(Join::Bracket(Bracket::Forward)),
             | Former::FunctionFlow(..) => Some(Join::Bracket(Bracket::Arrow)),
             | Former::RunType(_) => Some(Join::Bracket(Bracket::Run)),
@@ -3713,6 +3720,7 @@ impl Walk<'_, '_>
             | Former::SessionRelated(..)
             | Former::Stay(_)
             | Former::Then(..)
+            | Former::FlowProduct(..)
             | Former::Forward(_)
             | Former::FunctionFlow(..)
             | Former::RunType(_)
@@ -3785,7 +3793,7 @@ impl Walk<'_, '_>
             Join::Braced { arity: Arity(count), entries: Entries::Positional, .. } | Join::Session { payloads: Arity(count), .. }
                 | Join::Form { pieces: Arity(count), .. } => Some(count),
             Join::Braced { arity: Arity(count), entries: Entries::Labelled(_), .. } => count.checked_mul(2_usize),
-            Join::Arrow | Join::Pi | Join::Sequence | Join::Ua(_) | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::Then | Bracket::Arrow) => Some(2_usize),
+            Join::Arrow | Join::Pi | Join::Sequence | Join::Ua(_) | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::Then | Bracket::FlowProduct | Bracket::Arrow) => Some(2_usize),
             Join::Apply(Arity(arguments)) => arguments.checked_add(1_usize),
         }],
         ensures: |ref ret| match *ret {
@@ -3972,6 +3980,7 @@ impl Walk<'_, '_>
                     | Bracket::Bisim
                     | Bracket::Sim
                     | Bracket::Then
+                    | Bracket::FlowProduct
                     | Bracket::Arrow => {
                         let second = self.pop()?;
                         let first = self.pop()?;

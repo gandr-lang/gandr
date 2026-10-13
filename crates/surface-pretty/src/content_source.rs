@@ -354,6 +354,7 @@ impl Source for ContentSource<'_>
             } => Former::SessionRelated(relation, source, target),
             | ContentNode::Stay(point) => Former::Stay(point),
             | ContentNode::Then(first, second) => Former::Then(first, second),
+            | ContentNode::FlowProduct(first, second) => Former::FlowProduct(first, second),
             | ContentNode::Forward(translator) => Former::Forward(translator),
             | ContentNode::FunctionFlow(domain, codomain) => Former::FunctionFlow(domain, codomain),
             | ContentNode::RunType(code) => Former::RunType(code),

@@ -55,6 +55,8 @@ enum Head
     Forward(ValueId),
     /// The arrow's action over two boundary flows.
     Function(ValueId, ValueId),
+    /// A componentwise product of two universe flows.
+    Product(ValueId, ValueId),
     /// A session simulation, a feedback seam or a neutral.
     Other,
 }
@@ -68,12 +70,14 @@ enum Head
 ///   result; a motive that ignores its binder returns the value; a product, a
 ///   sum and a list motive ride constructorwise, a list one cell per step; at
 ///   `El(x)` over the level-zero universe a forward flow applies its
-///   translator, and a function flow returns the function wrapped by its
-///   boundaries — the argument ridden along the domain flow, the function
-///   applied, the result ridden along the codomain flow; at a singleton motive
+///   translator, a function flow returns the function wrapped by its boundaries
+///   — the argument ridden along the domain flow, the function applied, the
+///   result ridden along the codomain flow — and a flow product rides a pair's
+///   components along its two flows, left then right; at a singleton motive
 ///   `Flow(D, l, x)` or `Flow_U(l, x)` a `stay` value returns the flow and any
 ///   other value composes with it. Otherwise `Stuck`: a session simulation, a
-///   feedback seam and a neutral flow have no endpoint-value action.
+///   feedback seam, a neutral flow and a flow product at a value that is no
+///   pair have no endpoint-value action.
 /// - provides: the replay's δ-free directed computation.
 /// - fails: `ArenaFault` on an unreadable flow, motive or component.
 /// - panics: none.
@@ -86,11 +90,12 @@ enum Head
 ///   translator; a composite rides in order; a pair, a sum and a list ride
 ///   constructorwise; a singleton motive composes; a function flow applies its
 ///   boundaries in variance order; a neutral flow over a dependent motive
-///   sticks.
+///   sticks; a flow product rides a pair componentwise.
 /// - witness: `flow_universe::tests::stay_and_forward_admit_and_ride`
 /// - witness: `flow_universe::tests::ride_computes_through_the_motive_rows`
 /// - witness: `flow_universe::tests::composition_preserves_direction_and_refuses_feedback`
 /// - witness: `flow_universe::tests::function::directed_funext_forms_and_rides_in_variance_order`
+/// - witness: `flow_universe::tests::a_flow_product_rides_a_pair_componentwise`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |reduction| match *reduction {
     Reduction::Reduced(reduct) => arena.computation(reduct).is_some(),
     Reduction::Stuck => true,
@@ -120,6 +125,7 @@ where
         | Some(&Value::FunctionFlow {
             domain, codomain, ..
         }) => Head::Function(domain, codomain),
+        | Some(&Value::FlowProduct(first, second)) => Head::Product(first, second),
         | Some(_) => Head::Other,
         | None => return Err(KernelError::ArenaFault),
     };
@@ -134,7 +140,7 @@ where
             let rest = arena.computation_ride(lifted, second, moved);
             return Ok(Reduction::Reduced(arena.computation_bind(step, rest)));
         },
-        | Head::Forward(_) | Head::Function(..) | Head::Other => {},
+        | Head::Forward(_) | Head::Function(..) | Head::Product(..) | Head::Other => {},
     }
     if binder_use(arena, table, memo, Family::Type(motive)) == BinderUse::Ignored {
         return Ok(Reduction::Reduced(arena.computation_return(value)));
@@ -215,6 +221,23 @@ where
                     (domain, codomain),
                     value,
                 )),
+                | Head::Product(first, second) => {
+                    let Some(&[left, right]) = arena.value(value).and_then(Value::components)
+                    else {
+                        return Ok(Reduction::Stuck);
+                    };
+                    let step = arena.computation_ride(motive, first, left);
+                    let lifted = shift_value_type(arena, table, memo, motive, one, one);
+                    let second = shift_value(arena, table, memo, second, BinderDepth::NONE, one);
+                    let right = shift_value(arena, table, memo, right, BinderDepth::NONE, one);
+                    let rest = arena.computation_ride(lifted, second, right);
+                    let moved_left = arena.value_variable(DeBruijnIndex::from(1_u32));
+                    let moved_right = arena.value_variable(DeBruijnIndex::from(0_u32));
+                    let pair = arena.value_tuple(&[moved_left, moved_right]);
+                    let returned = arena.computation_return(pair);
+                    let rest = arena.computation_bind(rest, returned);
+                    Reduction::Reduced(arena.computation_bind(step, rest))
+                },
                 | Head::Stay | Head::Then(..) | Head::Other => Reduction::Stuck,
             })
         },

@@ -869,6 +869,7 @@ impl LooseDepths
                             tasks.push(ReachTask::OpenValue(codomain));
                         },
                         | Value::PathProduct(first, second)
+                        | Value::FlowProduct(first, second)
                         | Value::ListCons(first, second)
                         | Value::StaticApplication(first, second)
                         | Value::Then { first, second, .. } => {
@@ -1421,7 +1422,7 @@ Value::ForwardFlow { flow_type, translator, ref outputs, .. } => outputs.iter().
 Value::FunctionFlow { flow_type, domain, codomain } => self.cached_value_type(flow_type).join(self.cached_value(domain)).join(self.cached_value(codomain)),
 Value::Higher { evidence: ref values, .. } | Value::QuantifiedEvaluation { children: ref values, .. } => values.iter().fold(LooseDepth(0), |depth, id| depth.join(self.cached_value(*id))),
 Value::HigherEvaluation { ref components, .. } => components.iter().fold(LooseDepth(0), |depth, component| depth.join(self.cached_value(component.left)).join(self.cached_value(component.right)).join(self.cached_value(component.evidence))),
-Value::ListCons(a, b) | Value::PathProduct(a, b) | Value::StaticApplication(a, b) | Value::Then { first: a, second: b, .. } => self.cached_value(a).join(self.cached_value(b)),
+Value::ListCons(a, b) | Value::PathProduct(a, b) | Value::FlowProduct(a, b) | Value::StaticApplication(a, b) | Value::Then { first: a, second: b, .. } => self.cached_value(a).join(self.cached_value(b)),
 Value::Thunk(body) | Value::Returned(body) => self.cached_comp(body),
 Value::Quote(ty) => self.cached_value_type(ty),
 Value::QuoteComputation(ty) => self.cached_comp_type(ty),
@@ -1521,6 +1522,7 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
                 })
             },
             | Value::PathProduct(first, second)
+            | Value::FlowProduct(first, second)
             | Value::ListCons(first, second)
             | Value::StaticApplication(first, second)
             | Value::Then { first, second, .. } => {

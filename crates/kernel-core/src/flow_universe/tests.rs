@@ -1128,6 +1128,84 @@ fn ride_computes_through_the_motive_rows()
     );
 }
 
+/// A flow product synthesizes the universe flow between the pairs of its
+/// components' endpoints, refuses the reversed classifier, and rides a pair
+/// componentwise, the first flow on the left.
+#[test]
+fn a_flow_product_rides_a_pair_componentwise()
+{
+    let mut arena = TermArena::new();
+    let fixture = fixture(&mut arena);
+    let terminal = terminal(&mut arena, &fixture);
+    let stay = arena.value_stay(fixture.boolean);
+    let product = arena.value_flow_product(terminal, stay);
+    let classifier = admit(&mut arena, product).expect("the product admits");
+    let decoded = |arena: &TermArena, code: ValueId| match arena.value(code) {
+        | Some(&gandr_kernel_term::Value::Quote(root)) => arena.value_type(root).cloned(),
+        | _ => None,
+    };
+    let Some(&gandr_kernel_term::ValueType::FlowUniverse(source, target)) =
+        arena.value_type(classifier)
+    else {
+        panic!("a flow product synthesizes a universe flow");
+    };
+    assert_eq!(
+        decoded(&arena, source),
+        Some(gandr_kernel_term::ValueType::Product(
+            [fixture.boolean_type, fixture.boolean_type].into()
+        ))
+    );
+    assert_eq!(
+        decoded(&arena, target),
+        Some(gandr_kernel_term::ValueType::Product(
+            [fixture.unit_type, fixture.boolean_type].into()
+        ))
+    );
+    let reversed = arena.value_type_flow_universe(target, source);
+    assert!(check_closed_value(&mut arena, product, reversed).is_err());
+
+    let [left, right] = fixture.constructors;
+    let replays = |arena: &mut TermArena, input: ValueId, output: ValueId| {
+        let term = ride(arena, product, input);
+        let expected = arena.computation_return(output);
+        replay_ride(
+            arena,
+            term,
+            expected,
+            EngineClaim::Convertible,
+            &Dialogue::default(),
+            ReplayBudget::DEFAULT,
+        )
+    };
+    let input = arena.value_tuple(&[right, left]);
+    let output = arena.value_tuple(&[fixture.unit, left]);
+    assert_eq!(
+        replays(&mut arena, input, output),
+        Ok(KernelVerdict::Convertible)
+    );
+    // The components ride in place: the right component is not the left's.
+    let swapped = arena.value_tuple(&[fixture.unit, right]);
+    let verdict = replays(&mut arena, input, swapped);
+    assert!(
+        !matches!(
+            verdict,
+            Ok(KernelVerdict::Convertible) | Err(KernelError::Flow(_))
+        ),
+        "{verdict:?}"
+    );
+    // A pair over a function code is no code of the universe's vocabulary.
+    let returner = arena.comp_type_returner(fixture.boolean_type);
+    let function = arena.comp_type_arrow(fixture.boolean_type, returner);
+    let function = arena.value_type_thunk(function);
+    let function = arena.value_quote(function);
+    let at_function = arena.value_stay(function);
+    let mixed = arena.value_flow_product(at_function, stay);
+    assert!(
+        matches!(admit(&mut arena, mixed), Err(KernelError::Flow(_))),
+        "a flow product over a function code is refused"
+    );
+}
+
 /// Directed J: a telescope ride along `stay` in both entries returns its
 /// value; along `stay` in the carrier it rides in the fibre; a flow over
 /// another start refuses by name.

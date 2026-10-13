@@ -540,6 +540,7 @@ fn worst(
                     | Value::Funext(first, second)
                     | Value::Equiv(first, second)
                     | Value::Then(first, second)
+                    | Value::FlowProduct(first, second)
                     | Value::FunctionFlow(first, second)
                     | Value::SessionRelated {
                         source: first,

@@ -5663,4 +5663,39 @@ mod tests
             "swapping the boundaries is another function"
         );
     }
+
+    /// A pair ridden along a flow product runs its left component along the
+    /// first flow and its right along the second, in place.
+    #[test]
+    fn a_flow_product_runs_componentwise()
+    {
+        let mut core = CoreArena::new();
+        let five = integer(&mut core, Digits("5"));
+        let six = integer(&mut core, Digits("6"));
+        let unit = core.value_unit();
+        let identity = decoded(&mut core);
+        let pairing = translator(&mut core, paired);
+        let lefting = translator(&mut core, injected_left);
+        let first = core.value_forward(pairing);
+        let second = core.value_forward(lefting);
+        let pair = core.value_tuple(&[five, six]);
+        let product = core.value_flow_product(first, second);
+        let rode = core.computation_ride(identity, product, pair);
+        let left = core.value_tuple(&[five, unit]);
+        let right = core.value_injection(Side::Left.into(), six);
+        let image = core.value_tuple(&[left, right]);
+        let expected = returned(&mut core, image);
+        assert_eq!(
+            evaluated(&mut core, rode),
+            expected,
+            "each component rides its own flow"
+        );
+        let swapped = core.value_flow_product(second, first);
+        let rode = core.computation_ride(identity, swapped, pair);
+        assert_ne!(
+            evaluated(&mut core, rode),
+            expected,
+            "the first flow moves the left component"
+        );
+    }
 }

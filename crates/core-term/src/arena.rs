@@ -1907,6 +1907,21 @@ impl CoreArena
         self.alloc_value(Value::Then(first, second))
     }
 
+    /// Mint the componentwise product `flowProduct(p, q)` of two universe
+    /// flows.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_flow_product(
+        &mut self,
+        first: ValueId,
+        second: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::FlowProduct(first, second))
+    }
+
     /// Mint the forward flow `forward(f)`.
     ///
     /// # Specification

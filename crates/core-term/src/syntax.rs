@@ -378,6 +378,11 @@ pub enum Value
     /// Directed composition `then(f, g)`: given `f : Flow(A, a, b)` and `g :
     /// Flow(A, b, c)`, an element of `Flow(A, a, c)`.
     Then(ValueId, ValueId),
+    /// The componentwise product `flowProduct(p, q)` of two universe flows:
+    /// from `p : Flow(Type, a, a')` and `q : Flow(Type, b, b')` an element of
+    /// `Flow(Type, #{a, b}, #{a', b'})`, the directed twin of
+    /// [`Self::PathProduct`].
+    FlowProduct(ValueId, ValueId),
     /// A forward flow `forward(f)`: an element of `Flow(Type, a, b)` for a
     /// closed translator `f : U (A → F B)` between first-order codes, `a` and
     /// `b` the quotes of `A` and `B`, whose output at every pattern of `A`'s
@@ -1251,6 +1256,7 @@ fn equal_syntax(
                     else if let (&Value::Funext(a, b), &Value::Funext(c, d))
                     | (&Value::Equiv(a, b), &Value::Equiv(c, d))
                     | (&Value::Then(a, b), &Value::Then(c, d))
+                    | (&Value::FlowProduct(a, b), &Value::FlowProduct(c, d))
                     | (&Value::FunctionFlow(a, b), &Value::FunctionFlow(c, d)) =
                         (matched_left_value, matched_right_value)
                     {

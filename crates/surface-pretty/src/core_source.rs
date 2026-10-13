@@ -444,6 +444,7 @@ impl<'arena> CoreSource<'arena>
         | (Some(&Value::Forward(point)), Former::Forward(actual)) => actual == CoreNode::Value(point),
         | (Some(&Value::Funext(left, right)), Former::Funext(actual_left, actual_right))
         | (Some(&Value::Then(left, right)), Former::Then(actual_left, actual_right))
+        | (Some(&Value::FlowProduct(left, right)), Former::FlowProduct(actual_left, actual_right))
         | (Some(&Value::FunctionFlow(left, right)), Former::FunctionFlow(actual_left, actual_right)) =>
             actual_left == CoreNode::Value(left) && actual_right == CoreNode::Value(right),
         | (Some(&Value::Equiv(forward, backward)), Former::Equiv(actual_forward, actual_backward))
@@ -533,6 +534,9 @@ impl<'arena> CoreSource<'arena>
             | Value::Stay(point) => Former::Stay(CoreNode::Value(point)),
             | Value::Then(first, second) => {
                 Former::Then(CoreNode::Value(first), CoreNode::Value(second))
+            },
+            | Value::FlowProduct(first, second) => {
+                Former::FlowProduct(CoreNode::Value(first), CoreNode::Value(second))
             },
             | Value::Forward(translator) => Former::Forward(CoreNode::Value(translator)),
             | Value::FunctionFlow(domain, codomain) => {
@@ -1216,6 +1220,7 @@ impl Source for CoreSource<'_>
                 | Value::SessionRelated { .. }
                 | Value::Stay(_)
                 | Value::Then(..)
+                | Value::FlowProduct(..)
                 | Value::Forward(_)
                 | Value::FunctionFlow(..)
                 | Value::Primitive { .. }
@@ -1398,6 +1403,7 @@ impl Source for CoreSource<'_>
                 | Value::SessionRelated { .. }
                 | Value::Stay(_)
                 | Value::Then(..)
+                | Value::FlowProduct(..)
                 | Value::Forward(_)
                 | Value::FunctionFlow(..) => None,
             },

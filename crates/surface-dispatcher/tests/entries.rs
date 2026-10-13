@@ -165,6 +165,7 @@ mod entries
         "cong",
         "cons",
         "equiv",
+        "flowProduct",
         "forward",
         "funext",
         "here",

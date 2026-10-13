@@ -69,12 +69,12 @@
 //! unchanged: its skeleton is the target's, labels and payloads kept.
 //!
 //! Between codes that are not both sessions — the forward and function flows
-//! of [`crate::forward`] — the motive must be one the directed computation
-//! table moves:
+//! of [`crate::forward`] and their products in [`crate::product`] — the
+//! motive must be one the directed computation table moves:
 //!
 //! | motive position reading `X` | the ride |
 //! |---|---|
-//! | `X` decoded, `El X` | a forward flow applies its translator; a function flow wraps the function in its two boundaries |
+//! | `X` decoded, `El X` | a forward flow applies its translator; a function flow wraps the function in its two boundaries; a flow product rides a pair's components along its two flows |
 //! | a product, a sum or a list of such positions | constructorwise, `nil` unchanged |
 //! | `Flow(Type, l, X)`, the singleton | `stay(l)` becomes the flow; any other flow composes with it |
 //!

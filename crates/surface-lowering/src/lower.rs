@@ -2088,6 +2088,8 @@ enum Plan
     Forward(NodeIndex),
     /// The function flow over its domain and codomain flows.
     FunctionFlow(NodeIndex, NodeIndex),
+    /// The product of two universe flows.
+    FlowProduct(NodeIndex, NodeIndex),
     /// Two flows composed, returned: `f then g` where a flow is answered.
     FlowThen(NodeIndex, NodeIndex),
     /// A recorded run, its moves in order, each payload the node it was
@@ -6014,7 +6016,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         constructed.fields.start == start
                             && constructed.fields.end == self.operands.len()
                     },
-                    | Some(&(Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::PathProduct(..) | Plan::Ua { .. } | Plan::ListCons(..) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Derived(_) | Plan::Exercise(_) | Plan::Resume(..) | Plan::SessionRelated(..) | Plan::Stay(_) | Plan::Forward(_) | Plan::FunctionFlow(..) | Plan::Recorded(_) | Plan::Ride(..))) => true,
+                    | Some(&(Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::PathProduct(..) | Plan::Ua { .. } | Plan::ListCons(..) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Derived(_) | Plan::Exercise(_) | Plan::Resume(..) | Plan::SessionRelated(..) | Plan::Stay(_) | Plan::Forward(_) | Plan::FunctionFlow(..) | Plan::FlowProduct(..) | Plan::Recorded(_) | Plan::Ride(..))) => true,
                     | _ => false,
                 }
         },
@@ -8544,6 +8546,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Stay(_)
                 | Plan::Forward(_)
                 | Plan::FunctionFlow(..)
+                | Plan::FlowProduct(..)
                 | Plan::Recorded(_)
                 | Plan::Constructor(_) => Some(Produced::Value),
                 | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Action(_) | Plan::Ride(..) | Plan::FlowThen(..) => {
@@ -8808,6 +8811,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Stay(_)
             | Plan::Forward(_)
             | Plan::FunctionFlow(..)
+            | Plan::FlowProduct(..)
             | Plan::StaticLambda(_)
             | Plan::Thunk(_)
             | Plan::Here(_)
@@ -9324,7 +9328,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| match ret {
             | Maybe::Absent(_) => true,
             | Maybe::Present(Lowered::Value(id)) => {
-                matches!(*plan, Plan::StaticLambda(_) | Plan::Thunk(_) | Plan::Run(_) | Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::PathProduct(..) | Plan::Ua { .. } | Plan::ListNil | Plan::ListCons(..) | Plan::SessionRelated(..) | Plan::Stay(_) | Plan::Forward(_) | Plan::FunctionFlow(..))
+                matches!(*plan, Plan::StaticLambda(_) | Plan::Thunk(_) | Plan::Run(_) | Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::PathProduct(..) | Plan::Ua { .. } | Plan::ListNil | Plan::ListCons(..) | Plan::SessionRelated(..) | Plan::Stay(_) | Plan::Forward(_) | Plan::FunctionFlow(..) | Plan::FlowProduct(..))
                     && sink.origins.value(id) == Maybe::Present(origin)
             },
             | Maybe::Present(Lowered::Computation(id)) => {
@@ -9469,6 +9473,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::FunctionFlow(domain, codomain) => self.value_at(domain).and_then(|into| {
                 self.value_at(codomain).map(|out| {
                     let id = sink.arena.value_function_flow(into, out);
+                    sink.value(id, origin)
+                })
+            }),
+            | Plan::FlowProduct(first, second) => self.value_at(first).and_then(|left| {
+                self.value_at(second).map(|right| {
+                    let id = sink.arena.value_flow_product(left, right);
                     sink.value(id, origin)
                 })
             }),

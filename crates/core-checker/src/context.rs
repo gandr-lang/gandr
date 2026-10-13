@@ -2110,6 +2110,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
             | Value::Here(_)
             | Value::Stay(_)
             | Value::Then(..)
+            | Value::FlowProduct(..)
             | Value::Forward(_)
             | Value::FunctionFlow(..)
             | Value::SessionRelated { .. }

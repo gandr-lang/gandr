@@ -188,6 +188,8 @@ pub fn sentence(role: FrameRole) -> Sentence
         | FrameRole::ThenSecond => {
             "checking the second flow of this composite against the first one's target"
         },
+        | FrameRole::FlowProductFirst => "synthesising the first flow of this product",
+        | FrameRole::FlowProductSecond => "synthesising the second flow of this product",
         | FrameRole::RideFlow => "synthesising the flow this ride follows",
         | FrameRole::RideMotive => "forming the motive of this ride",
         | FrameRole::RideValue => "checking the value this ride moves against the flow's source",
@@ -461,6 +463,8 @@ mod tests
             FrameRole::StaySynthesised,
             FrameRole::ThenFirst,
             FrameRole::ThenSecond,
+            FrameRole::FlowProductFirst,
+            FrameRole::FlowProductSecond,
             FrameRole::RideFlow,
             FrameRole::RideMotive,
             FrameRole::RideValue,

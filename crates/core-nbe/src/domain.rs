@@ -786,6 +786,9 @@ pub enum FlowFormer
     Then,
     /// `arrow(d, c)`: two parts, the domain flow and then the codomain flow.
     Function,
+    /// `flowProduct(p, q)`: two parts, the flow of the left components and
+    /// then the flow of the right.
+    Product,
 }
 
 /// The target level of a lift, held by id so a [`DomainValue`] stays `Copy`.
