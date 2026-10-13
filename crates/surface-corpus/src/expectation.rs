@@ -1,4 +1,4 @@
-//! The four expectation schemas, the verdict a declaration states, and the
+//! The five expectation schemas, the verdict a declaration states, and the
 //! reading of a declared name's attributes into it.
 //!
 //! # A name states one verdict or none
@@ -50,14 +50,33 @@
 //! — a structured value compared up to sharing, say — when a file of outcomes
 //! beside the source would return with its own comparison.
 //!
+//! # A normal form refines *checks* for a rule-bearing block
+//!
+//! `normalizes("call ~> normal form")` on a `data` family or a `sign` block
+//! states that the block checks, owing nothing, and that the engine reads
+//! `call` to `normal form` under the block's rules: the reading
+//! `LoweredModule::normal_form` certifies, spelled as `gandr run` spells a
+//! value. The block's attributes are its operations' too, and an operation
+//! reads the call under the rules of the block that holds it, so the family
+//! and its operations settle together. The produced side writes the call as
+//! stated, trimmed, then ` ~> `, then the engine's spelling or the reason it
+//! has none, and compares the line byte for byte, so a stated normal form
+//! that differs from the engine's shows both. A payload with no `~>` states no
+//! verdict ([`ExpectationFault::UnwrittenNormalForm`]); a declaration refused
+//! or owing has nothing to read, and one outside every rule-bearing block
+//! reads that it has no rules, so either stays unsettled. Like `runs`, it
+//! refines `checks`, so the strict root admits it. It is the stated half of
+//! the coincidence the lowering decides: a block whose rules part is refused
+//! there and reads no normal form here.
+//!
 //! # Under the strict root
 //!
 //! The strict root holds every declaration to *checks, owing nothing*. An
 //! `owes` or `refuses` attribute there is not read: its first occurrence in
 //! reading order is the corpus refusal the declaration produces instead of its
 //! verdict. A declaration carrying neither is read as under the fixture root,
-//! where the two schemas it can carry — `checks` and `runs` — both state that
-//! it checks, owing nothing.
+//! where the three schemas it can carry — `checks`, `runs` and `normalizes` —
+//! all state that it checks, owing nothing.
 //!
 //! Under the strict root an `owes` or `refuses` attribute is itself a refusal:
 //! `CorpusRefusal::ExpectationOutsideFixtureRoot`, classed `MalformedSource`,
@@ -75,7 +94,8 @@
 //! migrate into the gate by describing itself as expected, and ignoring them,
 //! which leaves a misleading annotation in a gating source. The choice reverses
 //! if the strict root grows an expectation that asserts something stricter than
-//! _checks, owing 0_; that schema is admitted beside `checks`, as `runs` is.
+//! _checks, owing 0_; that schema is admitted beside `checks`, as `runs` and
+//! `normalizes` are.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -90,6 +110,7 @@ use gandr_kernel_term::Literal;
 use gandr_kernel_term::Sign;
 use gandr_surface_lowering::AttributeEntry;
 use gandr_surface_lowering::RegisteredAttribute;
+use gandr_surface_lowering::coincide::CallText;
 use gandr_surface_syntax::ByteSpan;
 use quenchant_shape::shape::Maybe;
 
@@ -125,7 +146,19 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// One of the four expectation schemas.
+quenchant_shape::reason_enum! {
+    /// Why a `normalizes` line reads no call.
+    pub mod normalized_call {
+        /// The line separates no call from a normal form.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The line writes no `~>`.
+            Unwritten,
+        }
+    }
+}
+
+/// One of the five expectation schemas.
 ///
 /// # Specification
 /// - requires: nothing; source correspondence is established by the reader or
@@ -157,6 +190,9 @@ pub enum ExpectationSchema
     /// `runs("outcome")`: the declaration checks, owing nothing, and running
     /// it produces the outcome spelled.
     Runs,
+    /// `normalizes("call ~> normal form")`: the block checks, owing nothing,
+    /// and its rules read the call to the normal form spelled.
+    Normalizes,
 }
 
 impl ExpectationSchema
@@ -165,8 +201,8 @@ impl ExpectationSchema
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: `checks`, `owes`, `refuses` and `runs` name their schemas;
-    ///   any other registered attribute names none.
+    /// - ensures: `checks`, `owes`, `refuses`, `runs` and `normalizes` name
+    ///   their schemas; any other registered attribute names none.
     /// - provides: the filter that decides which attributes state a verdict.
     /// - fails: never; an attribute stating something else is the
     ///   [`expectation_schema::Absent::Unrelated`] absence.
@@ -184,9 +220,10 @@ impl ExpectationSchema
     ("checks", Maybe::Present(Self::Checks))
     | ("owes", Maybe::Present(Self::Owes))
     | ("refuses", Maybe::Present(Self::Refuses))
-    | ("runs", Maybe::Present(Self::Runs)) => true,
+    | ("runs", Maybe::Present(Self::Runs))
+    | ("normalizes", Maybe::Present(Self::Normalizes)) => true,
     (name, Maybe::Absent(expectation_schema::Absent::Unrelated)) => {
-        !matches!(name, "checks" | "owes" | "refuses" | "runs")
+        !matches!(name, "checks" | "owes" | "refuses" | "runs" | "normalizes")
     }
     _ => false,
 },
@@ -200,6 +237,7 @@ impl ExpectationSchema
             | "owes" => Maybe::Present(Self::Owes),
             | "refuses" => Maybe::Present(Self::Refuses),
             | "runs" => Maybe::Present(Self::Runs),
+            | "normalizes" => Maybe::Present(Self::Normalizes),
             | _ => Maybe::Absent(expectation_schema::Absent::Unrelated),
         }
     }
@@ -239,6 +277,7 @@ impl fmt::Display for ExpectationSchema
             | Self::Owes => "owes",
             | Self::Refuses => "refuses",
             | Self::Runs => "runs",
+            | Self::Normalizes => "normalizes",
         })
     }
 }
@@ -274,16 +313,20 @@ pub enum Outcome
     /// The declaration checks, owing nothing, and running it produces the
     /// outcome spelled.
     Runs(RunSpelling),
+    /// The block checks, owing nothing, and its rules read a call to a normal
+    /// form: the line `call ~> normal form`.
+    Normalizes(RunSpelling),
 }
 
 impl fmt::Display for Outcome
 {
-    /// Writes `checks owing n`, `refuses Name` or `runs to outcome`.
+    /// Writes `checks owing n`, `refuses Name`, `runs to outcome` or
+    /// `normalizes call ~> normal form`.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: writes the verdict kind and its count, refusal name or run
-    ///   spelling.
+    /// - ensures: writes the verdict kind and its count, refusal name, run
+    ///   spelling or normalization line.
     /// - fails: propagates a refusing output sink as `fmt::Error`.
     /// - panics: none.
     /// - executable: none — the formatter exposes neither emitted text nor
@@ -309,6 +352,7 @@ impl fmt::Display for Outcome
             | Self::Checks(owed) => write!(f, "checks owing {owed}"),
             | Self::Refuses(name) => write!(f, "refuses {name}"),
             | Self::Runs(ref spelled) => write!(f, "runs to {spelled}"),
+            | Self::Normalizes(ref spelled) => write!(f, "normalizes {spelled}"),
         }
     }
 }
@@ -383,8 +427,8 @@ impl fmt::Display for Stated
 /// - requires: nothing; source correspondence is established by the reader or
 ///   producer.
 /// - ensures: Distinguishes unknown refusal names, negative counts,
-///   unrepresentable counts and conflicting expectations, preserving the source
-///   positions of each cause.
+///   unrepresentable counts, unwritten normal forms and conflicting
+///   expectations, preserving the source positions of each cause.
 /// - panics: none.
 /// - executable: none — The source and attempted interpretation are not stored
 ///   in this enum; the reader predicates and source fixtures establish the
@@ -428,6 +472,13 @@ pub enum ExpectationFault
         /// The bytes the second expectation covers.
         second: ByteSpan,
     },
+    /// A `normalizes` payload writing no `~>` between a call and its normal
+    /// form.
+    UnwrittenNormalForm
+    {
+        /// The bytes the attribute covers.
+        span: ByteSpan,
+    },
 }
 
 impl fmt::Display for ExpectationFault
@@ -467,6 +518,9 @@ impl fmt::Display for ExpectationFault
             },
             | Self::ConflictingExpectations { .. } => {
                 f.write_str("the expectation contradicts an earlier one")
+            },
+            | Self::UnwrittenNormalForm { .. } => {
+                f.write_str("the `normalizes` payload writes no `~>` before a normal form")
             },
         }
     }
@@ -553,11 +607,11 @@ pub struct Expectations
 /// - panics: none.
 ///
 /// # Errors
-/// [`SettleFault::UnreadablePayload`] when an `owes`, `refuses` or `runs`
-/// payload is not an integer or a text literal of `arena`.
+/// [`SettleFault::UnreadablePayload`] when an `owes`, `refuses`, `runs` or
+/// `normalizes` payload is not an integer or a text literal of `arena`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — all four schemas under both roots; negative, zero,
+/// - hypothesis: L3 — all five schemas under both roots; negative, zero,
 ///   maximal and overflowing obligation counts; missing and wrong-kind
 ///   payloads; absent, single and conflicting expectations. Exact membership,
 ///   verdict, guard and source spans distinguish changed defaults, wrong schema
@@ -659,8 +713,9 @@ where
 ///   supplies its payload arena.
 /// - ensures: `checks` states zero obligations without a payload; `owes` reads
 ///   an integer count; `refuses` resolves an exact vocabulary spelling or
-///   reports its unknown name; `runs` preserves the text payload. Malformed
-///   counts and names retain the attribute span.
+///   reports its unknown name; `runs` preserves the text payload; `normalizes`
+///   preserves a text payload that writes `~>` and reports one that does not.
+///   Malformed counts, names and lines retain the attribute span.
 /// - fails: `UnreadablePayload` at the attribute span for an absent or
 ///   wrong-kind payload required by the schema.
 /// - panics: none.
@@ -677,6 +732,7 @@ where
 /// - witness: `expectation::tests::an_owes_payload_outside_the_counts_states_no_verdict`
 /// - witness: `expectation::tests::missing_and_nonliteral_payloads_fail_but_checks_needs_none`
 /// - witness: `settle::tests::a_refusal_outside_the_vocabulary_fails_the_fixture`
+/// - witness: `settle::tests::a_normal_form_settles_against_the_engines_reading`
 /// - witness: `run::tests::run_mismatches_expose_both_spellings_and_preserve_sink_refusal`
 #[spec(
     ensures: |ret| {
@@ -717,6 +773,19 @@ where
                             ret, Ok(Stated::Verdict(Outcome::Runs(ref spelled))) if
                             spelled.as_ref() == text.as_ref()
                         )
+                    }
+                    Literal::Text(ref text) if schema == ExpectationSchema::Normalizes => {
+                        match ret {
+                            Ok(Stated::Verdict(Outcome::Normalizes(ref spelled))) => {
+                                spelled.as_ref() == text.as_ref()
+                                    && matches!(normalized_call(text), Maybe::Present(_))
+                            }
+                            Ok(Stated::Malformed(ExpectationFault::UnwrittenNormalForm { span })) => {
+                                span == entry.span()
+                                    && matches!(normalized_call(text), Maybe::Absent(_))
+                            }
+                            _ => false,
+                        }
                     }
                     _ => ret == Err(unreadable),
                 },
@@ -765,8 +834,50 @@ fn stated_by(
                 String::from(text.as_ref()),
             ))))
         },
+        | ExpectationSchema::Normalizes => {
+            let literal = payload(entry, arena)?;
+            let Literal::Text(ref text) = *literal
+            else {
+                return Err(unreadable);
+            };
+            Ok(match normalized_call(text) {
+                | Maybe::Present(_) => Stated::Verdict(Outcome::Normalizes(RunSpelling::from(
+                    String::from(text.as_ref()),
+                ))),
+                | Maybe::Absent(normalized_call::Absent::Unwritten) => {
+                    Stated::Malformed(ExpectationFault::UnwrittenNormalForm { span })
+                },
+            })
+        },
     }
 }
+
+/// The call a `normalizes` line reads: the text before its first `~>`,
+/// trimmed.
+///
+/// # Specification
+/// - ensures: absent exactly when `line` writes no `~>`; otherwise the text
+///   before the first one, without surrounding white space.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a line with an arrow and one without, through
+///   [`stated_by`]'s witness.
+/// - witness: `settle::tests::a_normal_form_settles_against_the_engines_reading`
+#[spec(ensures: |ret| matches!(ret, Maybe::Present(_)) == line.as_ref().contains(NORMAL_FORM_ARROW))]
+#[inline]
+pub fn normalized_call<L>(line: &L) -> Maybe<CallText<'_>, normalized_call::Absent>
+where
+    L: AsRef<str>,
+{
+    match line.as_ref().split_once(NORMAL_FORM_ARROW) {
+        | Some((call, _normal)) => Maybe::Present(CallText::from(call.trim())),
+        | None => Maybe::Absent(normalized_call::Absent::Unwritten),
+    }
+}
+
+/// What separates a call from its normal form in a `normalizes` line.
+pub const NORMAL_FORM_ARROW: &str = "~>";
 
 /// The literal `entry`'s payload is in `arena`.
 ///
@@ -966,6 +1077,7 @@ mod tests
             ("checks", ExpectationSchema::Checks),
             ("refuses", ExpectationSchema::Refuses),
             ("owes", ExpectationSchema::Owes),
+            ("normalizes", ExpectationSchema::Normalizes),
         ] {
             assert_eq!(
                 ExpectationSchema::of(registered(SurfaceName::from(spelled))),
@@ -1230,6 +1342,7 @@ mod tests
             ExpectationSchema::Owes,
             ExpectationSchema::Refuses,
             ExpectationSchema::Runs,
+            ExpectationSchema::Normalizes,
         ] {
             assert_eq!(
                 fmt::Write::write_fmt(&mut RefusingWriter, format_args!("{schema}")),
@@ -1242,6 +1355,10 @@ mod tests
             (
                 Outcome::Runs(RunSpelling::from(String::from("λ actual"))),
                 "λ actual",
+            ),
+            (
+                Outcome::Normalizes(RunSpelling::from(String::from("f(λ) ~> λ"))),
+                "f(λ) ~> λ",
             ),
         ] {
             let stated = Stated::Verdict(outcome);
@@ -1261,6 +1378,7 @@ mod tests
             ExpectationFault::NegativeObligations { span: first },
             ExpectationFault::ObligationsBeyondRange { span: first },
             ExpectationFault::ConflictingExpectations { first, second },
+            ExpectationFault::UnwrittenNormalForm { span: first },
         ] {
             let stated = Stated::Malformed(fault);
             let rendered = stated.to_string();

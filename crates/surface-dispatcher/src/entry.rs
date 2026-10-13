@@ -597,16 +597,25 @@ impl<'step> Entries<'step>
                                 declaration,
                                 unsettlement: match (declaration.stated(), declaration.outcome()) {
                                     | (&Stated::Verdict(Outcome::Checks(_)), _)
-                                    | (&Stated::Verdict(Outcome::Runs(_)), Outcome::Checks(_)) => {
-                                        Unsettlement::Obligations
-                                    },
+                                    | (
+                                        &Stated::Verdict(Outcome::Runs(_) | Outcome::Normalizes(_)),
+                                        Outcome::Checks(_),
+                                    ) => Unsettlement::Obligations,
                                     | (&Stated::Verdict(Outcome::Refuses(_)), _) => {
                                         Unsettlement::Unproduced
                                     },
                                     | (
                                         &Stated::Verdict(Outcome::Runs(_)),
-                                        Outcome::Runs(_) | Outcome::Refuses(_),
+                                        Outcome::Runs(_)
+                                        | Outcome::Refuses(_)
+                                        | Outcome::Normalizes(_),
                                     ) => Unsettlement::RunOutcome,
+                                    | (
+                                        &Stated::Verdict(Outcome::Normalizes(_)),
+                                        Outcome::Normalizes(_)
+                                        | Outcome::Refuses(_)
+                                        | Outcome::Runs(_),
+                                    ) => Unsettlement::NormalForm,
                                     | (&Stated::Malformed(_), _) => Unsettlement::Malformed,
                                 },
                             }

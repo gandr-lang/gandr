@@ -1,0 +1,21 @@
+@[ normalizes("add(Zero, Zero) ~> Zero") ]
+data NatUnits : Type {
+  Zero : NatUnits;
+  Succ : (n : NatUnits) --> NatUnits;
+  oper add(m : NatUnits, n : NatUnits) -> NatUnits;
+  rule add(Zero, n) ==> n;
+  rule add(m, Zero) ==> m;
+  rule add(Succ(m), n) ==> Succ(add(m, n));
+}
+
+@[ runs("Zero") ]
+def zero_plus_zero : +U (-F NatUnits) ;
+def zero_plus_zero = thunk { become add(Zero, Zero) } ;
+
+@[ runs("Succ(Zero)") ]
+def one_plus_zero : +U (-F NatUnits) ;
+def one_plus_zero = thunk { become add(Succ(Zero), Zero) } ;
+
+@[ runs("Succ(Succ(Succ(Zero)))") ]
+def two_plus_one : +U (-F NatUnits) ;
+def two_plus_one = thunk { become add(Succ(Succ(Zero)), Succ(Zero)) } ;

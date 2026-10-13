@@ -2112,21 +2112,27 @@ impl<'source> Collector<'_, 'source>
     ///   refused the form for the same repair keeps one refusal, and a family
     ///   admitted under its classifier is refused by the repair rather than
     ///   decoded — and held under the family's name otherwise; with no repair,
-    ///   every diagnostic whose span lies inside `child`'s takes one held slot
-    ///   under the family's name, in report order; nothing for a child the
-    ///   description route did not describe.
+    ///   a refusal of the family's rules as one rewriting system
+    ///   (`RulesUnoriented`, `RulesDiverge`, `RulesUndecided`) is offered to
+    ///   the family's own slot, and every other diagnostic whose span lies
+    ///   inside `child`'s takes one held slot under the family's name, in
+    ///   report order; nothing for a child the description route did not
+    ///   describe.
     /// - provides: member-local refusal beside native admission: a declined
-    ///   member leaves its family and its siblings standing, and a malformed
-    ///   form is reported once, at its repair.
+    ///   member leaves its family and its siblings standing, a family whose
+    ///   rules part is refused whole, and a malformed form is reported once, at
+    ///   its repair.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a retired rule arrow inside a data family is held at
     ///   the arrow while the family keeps both generators and the declaration
     ///   after it lowers; an unended data or codata family is refused once, at
-    ///   its missing close, whatever its members would refuse.
+    ///   its missing close, whatever its members would refuse; a family two of
+    ///   whose rules rewrite one term apart is refused under its own name.
     /// - witness: `description::tests::member_refusals_keep_their_spans_and_other_declarations`
     /// - witness: `description::tests::an_unended_family_is_refused_once_at_its_close`
+    /// - witness: `coincide::tests::two_rules_rewriting_one_term_apart_refuse_the_block`
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: self.collected.slots.len() >= before,
@@ -2159,6 +2165,17 @@ impl<'source> Collector<'_, 'source>
             return;
         }
         for (span, refusal) in refusals {
+            if matches!(
+                refusal,
+                LoweringRefusal::RulesUnoriented { .. }
+                    | LoweringRefusal::RulesDiverge { .. }
+                    | LoweringRefusal::RulesUndecided { .. }
+            ) && let Maybe::Present(owner) = self.collected.owner_of(child.node)
+                && let Some(slot) = self.collected.slots.get_mut(usize::from(owner))
+            {
+                slot.refuse(child.node, refusal);
+                continue;
+            }
             let introduced = Placed {
                 node: child.node,
                 span,
@@ -6766,6 +6783,65 @@ impl<'source> LoweredModule<'source>
     pub const fn cells(&self) -> &crate::desc_cells::CellReport
     {
         &self.cells
+    }
+
+    /// The normal form `call` reaches under the rules of the described
+    /// declaration whose bytes hold `declaration`'s: the engine's reading of a
+    /// call into a family or a `sign` block, asked of the block or of one of
+    /// its operations.
+    ///
+    /// # Specification
+    /// - requires: `declaration` is one of this module's declarations.
+    /// - ensures: `coincide::normal_form` over the description and the cells of
+    ///   the described declaration whose interval contains `declaration`'s.
+    /// - fails: [`crate::coincide::NormalFormFault::Undescribed`] when no
+    ///   described declaration contains that interval; otherwise as the call's
+    ///   normal form fails.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a family's declaration and its operation read one
+    ///   call to one normal form, and a declaration outside every described one
+    ///   is undescribed.
+    /// - witness: `coincide::tests::a_call_reads_its_normal_form_or_says_why_not`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks the cells once for the containing block; the check walks them once more"
+        )
+    )]
+    #[spec(ensures: |ret| !matches!(ret, Err(crate::coincide::NormalFormFault::Undescribed))
+        || !self.cells.declarations.iter().any(|cells| cells.at.span.start() <= declaration.span().start()
+            && declaration.span().end() <= cells.at.span.end()))]
+    #[inline]
+    pub fn normal_form(
+        &self,
+        declaration: &LoweredDeclaration<'source>,
+        call: crate::coincide::CallText<'_>,
+    ) -> Result<crate::coincide::NormalForm, crate::coincide::NormalFormFault>
+    {
+        let span = declaration.span();
+        let holds = |at: ByteSpan| at.start() <= span.start() && span.end() <= at.end();
+        let described = self
+            .descriptions
+            .declarations
+            .iter()
+            .find(|described| holds(described.at.span));
+        let cells = self
+            .cells
+            .declarations
+            .iter()
+            .find(|cells| holds(cells.at.span));
+        match (described, cells) {
+            | (Some(described), Some(cells)) => {
+                crate::coincide::normal_form(&described.description, cells, call)
+            },
+            | _ => Err(crate::coincide::NormalFormFault::Undescribed),
+        }
     }
 
     /// The modules, in pre-order: a module before every module nested in it.

@@ -105,7 +105,7 @@ quenchant_shape::reason_enum! {
 pub enum CorpusRefusal
 {
     /// An `owes` or `refuses` attribute on a declaration under the strict
-    /// root, which admits `checks` and `runs`.
+    /// root, which admits `checks`, `runs` and `normalizes`.
     ExpectationOutsideFixtureRoot
     {
         /// The schema the attribute names.
@@ -150,7 +150,7 @@ impl fmt::Display for CorpusRefusal
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: writes the rejected schema and names both schemas admitted by
+    /// - ensures: writes the rejected schema and names every schema admitted by
     ///   the strict root; the source span is the diagnostic's locus and never
     ///   appears in the text.
     /// - fails: propagates a refusing sink as `fmt::Error`.
@@ -176,7 +176,7 @@ impl fmt::Display for CorpusRefusal
         match *self {
             | Self::ExpectationOutsideFixtureRoot { schema, .. } => write!(
                 f,
-                "`{schema}` states an expectation the strict root refuses; only `checks` and `runs` are admitted outside the fixture root"
+                "`{schema}` states an expectation the strict root refuses; only `checks`, `runs` and `normalizes` are admitted outside the fixture root"
             ),
         }
     }
@@ -456,6 +456,13 @@ pub enum RefusalName
     ForNeedsListCase,
     /// A path matched against reflexivity, `here`: axiom K.
     WithoutK,
+    /// A rule of a block's rules the path order does not orient, so the
+    /// rules may not end.
+    RulesUnoriented,
+    /// Two rules of a block rewriting one term to two normal forms.
+    RulesDiverge,
+    /// A critical pair of a block's rules its step budget left undecided.
+    RulesUndecided,
     /// A work allowance ran out, the lowering's or the checker's.
     BudgetExceeded,
     /// A tree lowered under another grammar than it was molded under.
@@ -541,7 +548,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 122_usize] = [
+    pub const VOCABULARY: [Self; 125_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -627,6 +634,9 @@ impl RefusalName
         Self::AcrossHandler,
         Self::ForNeedsListCase,
         Self::WithoutK,
+        Self::RulesUnoriented,
+        Self::RulesDiverge,
+        Self::RulesUndecided,
         Self::BudgetExceeded,
         Self::GrammarMismatch,
         Self::UnknownMold,
@@ -711,6 +721,9 @@ impl RefusalName
         (Self::AcrossHandler, b"AcrossHandler") |
         (Self::ForNeedsListCase, b"ForNeedsListCase") |
         (Self::WithoutK, b"WithoutK") |
+        (Self::RulesUnoriented, b"RulesUnoriented") |
+        (Self::RulesDiverge, b"RulesDiverge") |
+        (Self::RulesUndecided, b"RulesUndecided") |
         (Self::BudgetExceeded, b"BudgetExceeded") | (Self::GrammarMismatch,
         b"GrammarMismatch") | (Self::UnknownMold, b"UnknownMold") | (Self::TypeMismatch,
         b"TypeMismatch") | (Self::ShapeMismatch, b"ShapeMismatch") |
@@ -903,6 +916,9 @@ impl RefusalName
             | Self::AcrossHandler => "AcrossHandler",
             | Self::ForNeedsListCase => "ForNeedsListCase",
             | Self::WithoutK => "WithoutK",
+            | Self::RulesUnoriented => "RulesUnoriented",
+            | Self::RulesDiverge => "RulesDiverge",
+            | Self::RulesUndecided => "RulesUndecided",
             | Self::BudgetExceeded => "BudgetExceeded",
             | Self::GrammarMismatch => "GrammarMismatch",
             | Self::UnknownMold => "UnknownMold",
@@ -1101,6 +1117,12 @@ impl Refusal<'_>
         RefusalName::ForNeedsListCase) |
         (Self::Lowering(LoweringRefusal::WithoutK { .. }),
         RefusalName::WithoutK) |
+        (Self::Lowering(LoweringRefusal::RulesUnoriented { .. }),
+        RefusalName::RulesUnoriented) |
+        (Self::Lowering(LoweringRefusal::RulesDiverge { .. }),
+        RefusalName::RulesDiverge) |
+        (Self::Lowering(LoweringRefusal::RulesUndecided { .. }),
+        RefusalName::RulesUndecided) |
         (Self::Lowering(LoweringRefusal::BudgetExceeded { .. }) |
         Self::Checking(CheckRefusal::BudgetExceeded { .. }), RefusalName::BudgetExceeded)
         | (Self::Lowering(LoweringRefusal::GrammarMismatch { .. }),
@@ -1284,7 +1306,10 @@ impl Refusal<'_>
         RefusalName::OutsideLoop) | (LoweringRefusal::AcrossHandler { .. },
         RefusalName::AcrossHandler) | (LoweringRefusal::ForNeedsListCase { .. },
         RefusalName::ForNeedsListCase) | (LoweringRefusal::WithoutK { .. },
-        RefusalName::WithoutK) | (LoweringRefusal::BudgetExceeded { .. },
+        RefusalName::WithoutK) | (LoweringRefusal::RulesUnoriented { .. },
+        RefusalName::RulesUnoriented) | (LoweringRefusal::RulesDiverge { .. },
+        RefusalName::RulesDiverge) | (LoweringRefusal::RulesUndecided { .. },
+        RefusalName::RulesUndecided) | (LoweringRefusal::BudgetExceeded { .. },
         RefusalName::BudgetExceeded) | (LoweringRefusal::GrammarMismatch { .. },
         RefusalName::GrammarMismatch) | (LoweringRefusal::UnknownMold { .. },
         RefusalName::UnknownMold)
@@ -1327,6 +1352,9 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | LoweringRefusal::AcrossHandler { .. } => RefusalName::AcrossHandler,
         | LoweringRefusal::ForNeedsListCase { .. } => RefusalName::ForNeedsListCase,
         | LoweringRefusal::WithoutK { .. } => RefusalName::WithoutK,
+        | LoweringRefusal::RulesUnoriented { .. } => RefusalName::RulesUnoriented,
+        | LoweringRefusal::RulesDiverge { .. } => RefusalName::RulesDiverge,
+        | LoweringRefusal::RulesUndecided { .. } => RefusalName::RulesUndecided,
         | LoweringRefusal::BudgetExceeded { .. } => RefusalName::BudgetExceeded,
         | LoweringRefusal::GrammarMismatch { .. } => RefusalName::GrammarMismatch,
         | LoweringRefusal::UnknownMold { .. } => RefusalName::UnknownMold,
@@ -1571,7 +1599,11 @@ mod tests
             .admit(ExpectationSchema::Owes, at)
             .expect_err("owes is forbidden under the strict root");
         let rendered = refusal.to_string();
-        for admitted in [ExpectationSchema::Checks, ExpectationSchema::Runs] {
+        for admitted in [
+            ExpectationSchema::Checks,
+            ExpectationSchema::Runs,
+            ExpectationSchema::Normalizes,
+        ] {
             assert_eq!(CorpusRoot::Strict.admit(admitted, at), Ok(()));
             assert!(
                 rendered.contains(&admitted.to_string()),

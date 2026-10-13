@@ -229,7 +229,9 @@ use gandr_theory_cell_complexes::HoleName;
 use gandr_theory_cell_complexes::NonLinearPattern;
 use gandr_theory_cell_complexes::Orientation;
 use gandr_theory_cell_complexes::Polarity;
+use gandr_theory_cell_complexes::ProdHead;
 use gandr_theory_cell_complexes::ProdPat;
+use gandr_theory_cell_complexes::ProdRef;
 use gandr_theory_cell_complexes::ProdView;
 use gandr_theory_cell_complexes::Sym;
 use gandr_theory_cell_complexes::admit_linear_cell;
@@ -237,6 +239,7 @@ use gandr_theory_cell_complexes::frame_defining_cell;
 use gandr_theory_levitation::CircuitElaborationError;
 use gandr_theory_levitation::CircuitRule;
 use gandr_theory_levitation::DeclPolarity;
+use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Name;
 use gandr_theory_levitation::OperDesc;
 use gandr_theory_levitation::RuleFace;
@@ -246,7 +249,9 @@ use gandr_theory_levitation::TermNode;
 use gandr_theory_levitation::TermView;
 use gandr_theory_levitation::WhiskeredCell;
 use gandr_theory_levitation::elaborate_body;
+use quenchant_shape::shape::Maybe;
 
+use crate::boundary::AdmittedFaceIndex;
 use crate::boundary::ConstructorCount;
 use crate::boundary::DeclinedFaceIndex;
 use crate::boundary::DeclinedOpIndex;
@@ -710,6 +715,9 @@ pub struct DescElaboration
     /// Each declined operation, by index into the description's operations,
     /// with its reason.
     pub declined_opers: Vec<(DeclinedOpIndex, OpElaborateError)>,
+    /// Each admitted face, by index into the description's rules, with the
+    /// cell it became; two faces equal up to their spelling share one cell.
+    pub admitted_faces: Vec<(AdmittedFaceIndex, CellId)>,
     /// Each declined face, by index into the description's rules, with its
     /// reason.
     pub declined_faces: Vec<(DeclinedFaceIndex, ElaborateError)>,
@@ -732,9 +740,10 @@ pub struct DescElaboration
 ///   cells; every one of them cuts at the declaration's polarity — positive for
 ///   `data`, negative for `codata`.
 /// - ensures: `opers` holds one [`OpFrame`] per admitted operation and
-///   `declined_opers` the rest, both in declaration order; `declined_faces`
-///   pairs each declined face with its [`ElaborateError`], and a face applying
-///   a declined operation is declined with
+///   `declined_opers` the rest, both in declaration order; `admitted_faces`
+///   pairs each admitted face with its cell and `declined_faces` each declined
+///   face with its [`ElaborateError`], between them every face once, in rule
+///   order; a face applying a declined operation is declined with
 ///   [`ElaborateError::UnrepresentableOperation`] and never reaches the store.
 /// - ensures: `circuits` holds one [`CircuitElaboration`] per circuit rule, in
 ///   declaration order; a rule whose body denotes no single composite is
@@ -778,6 +787,12 @@ pub struct DescElaboration
             .declined_faces
             .iter()
             .all(|&(index, _)| usize::from(index) < desc.rules.len())
+        && ret.admitted_faces.len().saturating_add(ret.declined_faces.len()) == desc.rules.len()
+        && ret
+            .admitted_faces
+            .iter()
+            .all(|&(index, cell)| usize::from(index) < desc.rules.len()
+                && matches!(ret.store.get(cell), quenchant_shape::shape::Maybe::Present(_)))
         && ret
             .declined_opers
             .iter()
@@ -820,10 +835,12 @@ pub fn elaborate_data_desc<G>(desc: &SignDesc<G>) -> DescElaboration
             },
         }
     }
+    let mut admitted_faces = Vec::with_capacity(desc.rules.len());
     let mut declined_faces = Vec::new();
     for (index, face) in desc.rules.iter().enumerate() {
-        if let Err(error) = admit_face(&mut store, face, desc.polarity, &opers, &unrepresentable) {
-            declined_faces.push((DeclinedFaceIndex::from(index), error));
+        match admit_face(&mut store, face, desc.polarity, &opers, &unrepresentable) {
+            | Ok(cell) => admitted_faces.push((AdmittedFaceIndex::from(index), cell)),
+            | Err(error) => declined_faces.push((DeclinedFaceIndex::from(index), error)),
         }
     }
     let circuits = desc
@@ -836,6 +853,7 @@ pub fn elaborate_data_desc<G>(desc: &SignDesc<G>) -> DescElaboration
         store,
         opers,
         declined_opers,
+        admitted_faces,
         declined_faces,
         circuits,
         eta,
@@ -846,9 +864,9 @@ pub fn elaborate_data_desc<G>(desc: &SignDesc<G>) -> DescElaboration
 /// admission seam.
 ///
 /// # Specification
-/// - ensures: the face's cell is in `store` when it mentions no declined
-///   operation, elaborates, and passes the admission seam; otherwise `store` is
-///   unchanged.
+/// - ensures: the face's cell is in `store`, under the identifier returned,
+///   when it mentions no declined operation, elaborates, and passes the
+///   admission seam; otherwise `store` is unchanged.
 /// - fails: [`ElaborateError::UnrepresentableOperation`] first, then as
 ///   [`elaborate_rule`] fails, then as the admission seam refuses.
 /// - panics: none.
@@ -865,29 +883,16 @@ pub fn elaborate_data_desc<G>(desc: &SignDesc<G>) -> DescElaboration
 /// - witness: `elaborate::tests::face_admission_is_atomic_and_deduplicates`
 /// - witness: `elaborate::tests::operation_gate_precedes_shape_and_scans_both_faces`
 /// - witness: `elaborate::tests::a_repeated_hole_and_a_mixed_polarity_hole_earn_distinct_refusals`
-#[cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(
-        spec_clause_traversal,
-        reason = "parity: the body's insertion scans the store for an equal cell; the check scans it for a cell of this face's kind"
-    )
-)]
 #[spec(
     captures: before = usize::from(store.len()),
-    ensures: |ret| {
-    if ret.is_err() {
-        usize::from(store.len()) == before
-    } else {
-        (usize::from(store.len()) == before
+    ensures: |ret| ret.as_ref().map_or_else(
+        |_| usize::from(store.len()) == before,
+        |&cell| (usize::from(store.len()) == before
             || usize::from(store.len()) == before.saturating_add(1))
-            && store
-                .iter()
-                .any(|(_, cell)| {
-                    cell.provenance() == CellProvenance::SurfaceRule
-                        && cell.polarity() == cut_polarity(polarity)
-                })
-    }
-},
+            && matches!(store.get(cell), quenchant_shape::shape::Maybe::Present(stored)
+                if stored.provenance() == CellProvenance::SurfaceRule
+                    && stored.polarity() == cut_polarity(polarity)),
+    ),
 )]
 fn admit_face(
     store: &mut CellStore,
@@ -895,12 +900,11 @@ fn admit_face(
     polarity: DeclPolarity,
     opers: &[OpFrame],
     unrepresentable: &[&Name],
-) -> Result<(), ElaborateError>
+) -> Result<CellId, ElaborateError>
 {
     declined_operation(face, unrepresentable)?;
     let cell = elaborate_rule(face, polarity, opers)?;
-    admit_cell(store, cell)?;
-    Ok(())
+    admit_cell(store, cell)
 }
 
 /// Admit one circuit rule: its composite, then its cell, through the gate a
@@ -1668,6 +1672,177 @@ pub fn elaborate_rule(
         Orientation::PolarityDerived,
         CellProvenance::SurfaceRule,
     ))
+}
+
+/// The command a call `f(head, rest…)` elaborates to: the cut its operation's
+/// faces match, against the operation's reserved return continuations.
+///
+/// A call is a face's left-hand side without its right: the command a
+/// normalization starts from, whose normal form delivers the call's results to
+/// the return continuations ([`read_command`] reads them back).
+///
+/// # Specification
+/// - ensures: for an operation application whose arguments are producers,
+///   `⟨head |ε f(rest…; κ₁ … κₙ)⟩` with the return continuations
+///   [`elaborate_rule`] gives `f`'s faces, so the left-hand side of every face
+///   of `f` that matches the call as a term matches its command.
+/// - fails: [`ElaborateError::LhsNotOperation`] when `call` is not an operation
+///   application; as the left-hand side of a face fails otherwise.
+/// - panics: none.
+///
+/// # Errors
+/// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a one-output call is the left-hand side of the face it
+///   instantiates, a two-output call cuts against two return continuations, and
+///   a constructor and a call holding a call are refused; reading each admitted
+///   command back gives the call.
+/// - witness: `elaborate::tests::a_call_elaborates_to_the_cut_its_faces_match_and_reads_back`
+#[spec(ensures: |ret| match ret.as_ref() {
+    Ok(command) => command.polarity() == cut_polarity(polarity)
+        && read_command(command) == Maybe::Present(call.clone()),
+    Err(&ElaborateError::LhsNotOperation) => !matches!(call.view(), TermView::Op { .. }),
+    Err(&(ElaborateError::EmptyOperation | ElaborateError::UnsupportedShape)) => true,
+    Err(_) => false,
+})]
+#[inline]
+pub fn elaborate_call(
+    call: &FreeTerm,
+    polarity: DeclPolarity,
+    opers: &[OpFrame],
+) -> Result<CmdPat, ElaborateError>
+{
+    let TermView::Op { name, args } = call.view()
+    else {
+        return Err(ElaborateError::LhsNotOperation);
+    };
+    operation_cut(
+        name,
+        args,
+        return_continuations(outputs_of(name, opers)),
+        cut_polarity(polarity),
+    )
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a command denotes no first-order term.
+    pub mod command_reading {
+        /// The reason the command reads as no term.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// The consumer ends at the terminal `★`, which no term writes.
+            Terminal,
+            /// A frame with several continuations hands a result to one that
+            /// is not a hole: the results go to several places, and one term
+            /// writes them to one.
+            SplitResults,
+        }
+    }
+}
+
+/// The first-order term a command denotes: `⟨p | c⟩` read as the context `c`
+/// filled with `p`.
+///
+/// An operation frame `f(q̄; κ)` reads as `κ[f(p, q̄)]`, a return-side frame
+/// `K⁻(κ)` as `κ[K(p)]`, the delivery frame `$deliver(q̄; κ₁ … κₙ)` as the
+/// results tuple `(p, q̄)`, and a consumer hole as the hole the term stands
+/// in. This is the inverse of the elaboration: a rule's two faces read back as
+/// the written rule's two sides, and the normal form of a call reads back as
+/// its results.
+///
+/// # Specification
+/// - ensures: the term the command's consumer builds around its producer, a
+///   producer metavariable read as the variable it names.
+/// - provides: [`command_reading::Absent::Terminal`] when the consumer ends at
+///   `★`; [`command_reading::Absent::SplitResults`] when a frame with several
+///   continuations hands one to anything but a hole.
+/// - panics: none.
+/// - intension: one turn per frame of the consumer, so nesting costs no stack.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a call, a constructor wrapping a call and a delivered
+///   pair read back as the terms they were elaborated from, and the terminal
+///   consumer reads as none; reading a frame's argument out of order, or
+///   dropping the wrapping constructor, changes one of them.
+/// - witness: `elaborate::tests::a_call_elaborates_to_the_cut_its_faces_match_and_reads_back`
+/// - witness: `elaborate::tests::a_rules_faces_read_back_as_the_written_rule`
+#[spec(ensures: |ret| match ret {
+    Maybe::Absent(command_reading::Absent::Terminal) => command.consumer().to_ref().preorder()
+        .any(|head| matches!(head, gandr_theory_cell_complexes::ConsHead::Top)),
+    Maybe::Absent(command_reading::Absent::SplitResults) | Maybe::Present(_) => true,
+})]
+#[inline]
+pub fn read_command(command: &CmdPat) -> Maybe<FreeTerm, command_reading::Absent>
+{
+    let mut term = read_producer(command.producer().to_ref());
+    let mut consumer = command.consumer().to_ref();
+    loop {
+        match consumer.view() {
+            | ConsView::Meta(_) => return Maybe::Present(term),
+            | ConsView::Top => return Maybe::Absent(command_reading::Absent::Terminal),
+            | ConsView::Frame { ctor, ret } => {
+                term = FreeTerm::ctor(ctor.as_ref(), [term]);
+                consumer = ret;
+            },
+            | ConsView::Op { op, args, mut rets } => {
+                let arguments: Vec<FreeTerm> = core::iter::once(term)
+                    .chain(args.map(read_producer))
+                    .collect();
+                let delivered = op.as_ref() == DELIVER;
+                if !delivered
+                    && rets.len() == 1
+                    && let Some(ret) = rets.next()
+                {
+                    term = FreeTerm::op(op.as_ref(), arguments);
+                    consumer = ret;
+                    continue;
+                }
+                if !rets.all(|ret| matches!(ret.view(), ConsView::Meta(_))) {
+                    return Maybe::Absent(command_reading::Absent::SplitResults);
+                }
+                return Maybe::Present(if delivered {
+                    FreeTerm::results(arguments)
+                }
+                else {
+                    FreeTerm::op(op.as_ref(), arguments)
+                });
+            },
+        }
+    }
+}
+
+/// The first-order term a producer pattern denotes: a constructor tree whose
+/// metavariables read as the variables they name.
+///
+/// # Specification
+/// - ensures: one term node per pattern node, in the same order.
+/// - panics: none.
+/// - intension: one pass over the table's descendants in reverse pre-order,
+///   each constructor taking its arguments off a stack, then the root.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`read_command`]: a constructor of two arguments read
+///   with its arguments swapped changes a witnessed term.
+/// - witness: `elaborate::tests::a_rules_faces_read_back_as_the_written_rule`
+#[spec(ensures: |ret| ret.collect_vars().len() == producer.metavars().count())]
+fn read_producer(producer: ProdRef<'_>) -> FreeTerm
+{
+    let mut built: Vec<FreeTerm> = Vec::new();
+    let take = |built: &mut Vec<FreeTerm>, head: &ProdHead| match *head {
+        | ProdHead::Meta(ref var) => FreeTerm::var(var.hole().as_ref()),
+        | ProdHead::Ctor(ref ctor, arity) => {
+            let split = built.len().saturating_sub(usize::from(arity));
+            let arguments: Vec<FreeTerm> = built.drain(split ..).rev().collect();
+            FreeTerm::ctor(ctor.as_ref(), arguments)
+        },
+    };
+    let descendants = usize::from(producer.size()).saturating_sub(1);
+    for entry in producer.entries().take(descendants) {
+        let node = take(&mut built, entry.head());
+        built.push(node);
+    }
+    take(&mut built, producer.head())
 }
 
 /// How many outputs `name` has in the admitted alphabet: its frame's
@@ -2675,6 +2850,105 @@ mod tests
     }
 
     #[test]
+    fn a_call_elaborates_to_the_cut_its_faces_match_and_reads_back()
+    {
+        let desc = nat_with([add_op(), divmod_op()], [add_zero_face(), add_succ_face()]);
+        let opers = elaborate_data_desc(&desc).opers;
+        let zero = || FreeTerm::ctor("Zero", []);
+        let one = || FreeTerm::ctor("Succ", [zero()]);
+        let call = FreeTerm::op("add", [zero(), one()]);
+        let command = elaborate_call(&call, DeclPolarity::Data, &opers)
+            .expect("a call of producers elaborates");
+        assert_eq!(
+            CmdPat::cut(
+                Polarity::Positive,
+                ProdPat::ctor("Zero", []),
+                ConsPat::op(
+                    "add",
+                    [ProdPat::ctor("Succ", [ProdPat::ctor("Zero", [])])],
+                    ConsPat::meta(RETURN_CONT)
+                ),
+            ),
+            command,
+            "⟨Zero | add(Succ(Zero); $ret)⟩: the left-hand side `add(Zero, n)` matches"
+        );
+        assert_eq!(Maybe::Present(call), read_command(&command));
+        let pair = FreeTerm::op("divmod", [one(), zero()]);
+        let command = elaborate_call(&pair, DeclPolarity::Data, &opers)
+            .expect("a two-output call elaborates");
+        assert_eq!(
+            CmdPat::cut(
+                Polarity::Positive,
+                ProdPat::ctor("Succ", [ProdPat::ctor("Zero", [])]),
+                ConsPat::operation("divmod", [ProdPat::ctor("Zero", [])], [
+                    ConsPat::meta("$ret.0"),
+                    ConsPat::meta("$ret.1")
+                ]),
+            ),
+            command,
+            "one return continuation per output port"
+        );
+        assert_eq!(Maybe::Present(pair), read_command(&command));
+        assert_eq!(
+            Err(ElaborateError::LhsNotOperation),
+            elaborate_call(&one(), DeclPolarity::Data, &opers),
+            "a constructor is no call"
+        );
+        assert_eq!(
+            Err(ElaborateError::UnsupportedShape),
+            elaborate_call(
+                &FreeTerm::op("add", [FreeTerm::op("add", [zero(), zero()]), zero()]),
+                DeclPolarity::Data,
+                &opers
+            ),
+            "a call holding a call is outside the fragment"
+        );
+        assert_eq!(
+            Maybe::Absent(command_reading::Absent::Terminal),
+            read_command(&CmdPat::cut(
+                Polarity::Positive,
+                ProdPat::ctor("Zero", []),
+                ConsPat::top()
+            )),
+            "the terminal consumer writes no term"
+        );
+    }
+
+    #[test]
+    fn a_rules_faces_read_back_as_the_written_rule()
+    {
+        let desc = nat_with([add_op(), divmod_op()], [
+            add_succ_face(),
+            face(
+                FreeTerm::op("divmod", [FreeTerm::var("m"), FreeTerm::ctor("Zero", [])]),
+                FreeTerm::results([FreeTerm::ctor("Zero", []), FreeTerm::var("m")]),
+            ),
+            face(
+                FreeTerm::op("add", [
+                    FreeTerm::ctor("Pair", [FreeTerm::var("a"), FreeTerm::var("b")]),
+                    FreeTerm::var("n"),
+                ]),
+                FreeTerm::ctor("Pair", [FreeTerm::var("b"), FreeTerm::var("a")]),
+            ),
+        ]);
+        let opers = elaborate_data_desc(&desc).opers;
+        for face in &desc.rules {
+            let cell =
+                elaborate_rule(face, DeclPolarity::Data, &opers).expect("the face elaborates");
+            assert_eq!(
+                (
+                    Maybe::Present(face.lhs.clone()),
+                    Maybe::Present(face.rhs.clone())
+                ),
+                (read_command(cell.lhs()), read_command(cell.rhs())),
+                "{} ==> {} reads back as written",
+                face.lhs,
+                face.rhs
+            );
+        }
+    }
+
+    #[test]
     fn a_circuit_rule_under_a_many_out_operation_elaborates()
     {
         // `*p(-x, +x′); *divmod(-x′, -y, +q, +r);` leaving `(q, r)`.
@@ -3199,13 +3473,14 @@ mod tests
         store.insert(frame_cell(&Sym::from("Seed"), Polarity::Positive));
         let good = add_zero_face();
         assert_eq!(
-            Ok(()),
+            Ok(CellId::from(1_usize)),
             admit_face(&mut store, &good, DeclPolarity::Data, &[], &[])
         );
         let before = store.clone();
         assert_eq!(
-            Ok(()),
-            admit_face(&mut store, &good, DeclPolarity::Data, &[], &[])
+            Ok(CellId::from(1_usize)),
+            admit_face(&mut store, &good, DeclPolarity::Data, &[], &[]),
+            "an equal face is the cell already admitted"
         );
         assert_eq!(before, store);
         for refused in [

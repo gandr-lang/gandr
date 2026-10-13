@@ -113,6 +113,11 @@ count_wrapper! {
 }
 
 count_wrapper! {
+    /// The index of an admitted rule face in its description's `rules`.
+    pub struct AdmittedFaceIndex;
+}
+
+count_wrapper! {
     /// The index of a declined operation in its description's `opers`.
     pub struct DeclinedOpIndex;
 }

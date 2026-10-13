@@ -253,8 +253,8 @@ enum Unsettled
     /// Both sides are *checks*, owing different counts: only obligations
     /// survive.
     Obligations,
-    /// Anything else: a refusal on either side, a stated run outcome, or an
-    /// expectation stating no verdict.
+    /// Anything else: a refusal on either side, a stated run outcome or
+    /// normal form, or an expectation stating no verdict.
     Verdict,
 }
 
@@ -263,8 +263,8 @@ enum Unsettled
 /// # Specification
 /// - requires: nothing.
 /// - ensures: obligations exactly when both stated and produced outcomes are
-///   checks; every refusal, stated run or malformed expectation is
-///   verdict-shaped.
+///   checks; every refusal, stated run, stated normal form or malformed
+///   expectation is verdict-shaped.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -282,7 +282,12 @@ fn unsettled_by(declaration: &DeclarationReport<'_>) -> Unsettled
     match (declaration.stated(), declaration.outcome()) {
         | (&Stated::Verdict(Outcome::Checks(_)), Outcome::Checks(_)) => Unsettled::Obligations,
         | (
-            &(Stated::Verdict(Outcome::Checks(_) | Outcome::Refuses(_) | Outcome::Runs(_))
+            &(Stated::Verdict(
+                Outcome::Checks(_)
+                | Outcome::Refuses(_)
+                | Outcome::Runs(_)
+                | Outcome::Normalizes(_),
+            )
             | Stated::Malformed(_)),
             _,
         ) => Unsettled::Verdict,

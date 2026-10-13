@@ -379,6 +379,44 @@ where
     )
 }
 
+/// Replay one recorded path from `start` against `end`: the certificate of a
+/// normalization, whose one path is the derivation that reached its normal
+/// form.
+///
+/// A normal form is evidence the way a join is: re-firing the recorded steps
+/// from the start must land on it. This is [`replay_from_peak`] with one path,
+/// so a normalization is certified by the replay a join is certified by.
+///
+/// # Specification
+/// - ensures: positive exactly when, with `start` and `end` skolemized to
+///   constants, every step of `path` fires in order from the skolemized start
+///   and lands on the skolemized `end`.
+/// - ensures: a recorded [`CellId`] resolves as an insertion-order index into
+///   `store`, never by cell content.
+/// - panics: none.
+/// - intension: retains no step.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a normalization's own path replays to its normal form,
+///   and the same path against the start, or truncated, does not; ignoring the
+///   target or accepting a stuck step changes one of them.
+/// - witness: `tracelet::tests::a_normalization_replays_to_its_normal_form_alone`
+#[inline]
+#[must_use]
+#[spec(ensures: |output| output == replay_from_peak(store, start, end, path, path))]
+pub fn replay_path<A>(
+    store: &CellStore<A>,
+    start: &A::Cmd,
+    end: &A::Cmd,
+    path: &[CellApp<A>],
+) -> TraceletReplay
+where
+    A: CellAlphabet,
+{
+    let ran = run_path(store, A::skolemize(start), path, &mut Discard);
+    reached(&ran, &A::skolemize(end))
+}
+
 /// Whether two certificates are replay-equivalent: the definition of when two
 /// certificates are one transformation.
 ///
@@ -1380,5 +1418,33 @@ mod tests
         assert!(!bool::from(invalid.replay(&store)));
         assert!(!bool::from(replay_equivalent(&original, &invalid, &store)));
         assert!(!bool::from(replay_equivalent(&invalid, &original, &store)));
+    }
+
+    #[test]
+    fn a_normalization_replays_to_its_normal_form_alone()
+    {
+        let mut store = CellStore::<ToyAlphabet>::new();
+        let _unit = store.insert(toy_cell(
+            Toy::add(Toy::zero(), Toy::var("y")),
+            Toy::var("y"),
+        ));
+        let start = Toy::add(Toy::zero(), Toy::add(Toy::zero(), Toy::succ(Toy::zero())));
+        let normalized = normalize(&store, &start, NormalizationBudget::from(8_usize));
+        assert_eq!(Toy::succ(Toy::zero()), normalized.normal);
+        assert!(bool::from(replay_path(
+            &store,
+            &start,
+            &normalized.normal,
+            &normalized.path
+        )));
+        assert!(
+            !bool::from(replay_path(&store, &start, &start, &normalized.path)),
+            "the path does not land back on its start"
+        );
+        let truncated: Vec<_> = normalized.path.iter().take(1).cloned().collect();
+        assert!(
+            !bool::from(replay_path(&store, &start, &normalized.normal, &truncated)),
+            "a truncated path stops short of the normal form"
+        );
     }
 }

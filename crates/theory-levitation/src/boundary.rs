@@ -288,6 +288,11 @@ count_wrapper! {
 }
 
 count_wrapper! {
+    /// A zero-based index into a description's rule faces.
+    pub struct RuleIndex(usize);
+}
+
+count_wrapper! {
     /// The most boundary nodes one circuit derivation may unfold.
     pub struct CircuitNodeBudget(usize);
 }
@@ -319,6 +324,11 @@ verdict_wrapper! {
 verdict_wrapper! {
     /// Whether a description code lies in the first-order fragment.
     pub struct FirstOrderStatus;
+}
+
+verdict_wrapper! {
+    /// Whether the lexicographic path order puts one term above another.
+    pub struct PathOrderStatus;
 }
 
 verdict_wrapper! {

@@ -1,0 +1,7 @@
+@[ refuses("RulesUnoriented") ]
+data NatGrow : Type {
+  Zero : NatGrow;
+  Succ : (n : NatGrow) --> NatGrow;
+  oper grow(n : NatGrow) -> NatGrow;
+  rule grow(n) ==> Succ(grow(n));
+}

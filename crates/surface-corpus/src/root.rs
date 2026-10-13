@@ -5,15 +5,17 @@
 //! A source is a fixture or a gate by where it sits, never by what it says
 //! about itself. The strict root gates: every declaration must check owing
 //! nothing, and the expectations it admits are `checks`, which asserts exactly
-//! that, and `runs`, which asserts that and a run outcome besides. An `owes` or
+//! that, `runs`, which asserts that and a run outcome besides, and
+//! `normalizes`, which asserts that and a block's normal form. An `owes` or
 //! `refuses` attribute there could describe a red declaration as green, so it
 //! is refused as a source error instead of read.
 //!
 //! A source is a fixture or a gate by the root it sits under, never by what it
 //! says about itself. `CorpusRoot::Strict` is the gating root: every
-//! declaration is held to _checks, owing 0_, or to the stricter _runs to_ a
-//! spelling it states. `CorpusRoot::Fixture` is the root where the checker's
-//! refusals and obligations are asserted, and all four schemas are admitted
+//! declaration is held to _checks, owing 0_, or to the stricter _runs to_ or
+//! _normalizes_ line it states. `CorpusRoot::Fixture` is the root where the
+//! checker's refusals and obligations are asserted, and all five schemas are
+//! admitted
 //! there. Inside a root, a declaration carrying an expectation attribute is a
 //! fixture (`Membership::Fixture`) and gets its own line in the report; one
 //! carrying none is counted.
@@ -164,7 +166,7 @@ use crate::refusal::CorpusRefusal;
 ///   selected policy.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — both roots and all four schemas; exact admission variants
+/// - hypothesis: L3 — both roots and all five schemas; exact admission variants
 ///   and a nonempty refusal span distinguish widened or narrowed policy arms.
 ///   End-to-end settlement distinguishes an expectation interpreted under the
 ///   wrong root; directory provenance remains a caller premise.
@@ -176,7 +178,7 @@ pub enum CorpusRoot
     /// The gating root: every declaration is held to *checks, owing nothing*,
     /// and an `owes` or `refuses` attribute is refused outright.
     Strict,
-    /// The fixture root: all four schemas are admitted, so a source here
+    /// The fixture root: all five schemas are admitted, so a source here
     /// asserts what the checker refuses and what it owes.
     Fixture,
 }
@@ -188,8 +190,8 @@ impl CorpusRoot
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the fixture root admits every schema; the strict root admits
-    ///   `checks` and `runs`, the schemas that assert at least what the root
-    ///   already requires.
+    ///   `checks`, `runs` and `normalizes`, the schemas that assert at least
+    ///   what the root already requires.
     /// - provides: the guard that keeps a gating source from describing itself
     ///   green.
     /// - fails: [`CorpusRefusal::ExpectationOutsideFixtureRoot`], naming the
@@ -201,7 +203,7 @@ impl CorpusRoot
     /// meets an `owes` or `refuses` expectation.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — both roots crossed with all four schemas at a
+    /// - hypothesis: L3 — both roots crossed with all five schemas at a
     ///   nonempty byte span; exact results distinguish widened or narrowed
     ///   admissions, swapped refused schemas and lost source spans. The
     ///   end-to-end strict-root witness observes guarded settlement, not merely
@@ -212,7 +214,7 @@ impl CorpusRoot
         ensures: |ret| {
     matches!(
         (self, schema, ret), (Self::Fixture, _, Ok(())) | (Self::Strict,
-        ExpectationSchema::Checks | ExpectationSchema::Runs, Ok(())) | (Self::Strict,
+        ExpectationSchema::Checks | ExpectationSchema::Runs | ExpectationSchema::Normalizes, Ok(())) | (Self::Strict,
         ExpectationSchema::Owes, Err(CorpusRefusal::ExpectationOutsideFixtureRoot {
         schema : ExpectationSchema::Owes, .. })) | (Self::Strict,
         ExpectationSchema::Refuses, Err(CorpusRefusal::ExpectationOutsideFixtureRoot {
@@ -233,9 +235,13 @@ impl CorpusRoot
                 ExpectationSchema::Checks
                 | ExpectationSchema::Owes
                 | ExpectationSchema::Refuses
-                | ExpectationSchema::Runs,
+                | ExpectationSchema::Runs
+                | ExpectationSchema::Normalizes,
             )
-            | (Self::Strict, ExpectationSchema::Checks | ExpectationSchema::Runs) => Ok(()),
+            | (
+                Self::Strict,
+                ExpectationSchema::Checks | ExpectationSchema::Runs | ExpectationSchema::Normalizes,
+            ) => Ok(()),
             | (Self::Strict, ExpectationSchema::Owes | ExpectationSchema::Refuses) => {
                 Err(CorpusRefusal::ExpectationOutsideFixtureRoot { schema, span })
             },
@@ -322,10 +328,12 @@ mod tests
                 refused(ExpectationSchema::Refuses),
             ),
             (CorpusRoot::Strict, ExpectationSchema::Runs, Ok(())),
+            (CorpusRoot::Strict, ExpectationSchema::Normalizes, Ok(())),
             (CorpusRoot::Fixture, ExpectationSchema::Checks, Ok(())),
             (CorpusRoot::Fixture, ExpectationSchema::Owes, Ok(())),
             (CorpusRoot::Fixture, ExpectationSchema::Refuses, Ok(())),
             (CorpusRoot::Fixture, ExpectationSchema::Runs, Ok(())),
+            (CorpusRoot::Fixture, ExpectationSchema::Normalizes, Ok(())),
         ];
 
         for (root, schema, admitted) in table {
