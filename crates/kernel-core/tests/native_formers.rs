@@ -11,18 +11,23 @@ mod native_formers
     use anodized::spec;
     use gandr_kernel_conversion_trace::ConversionDecision;
     use gandr_kernel_core::CheckedId;
+    use gandr_kernel_core::CompTypeHead;
     use gandr_kernel_core::EngineClaim;
     use gandr_kernel_core::Environment;
+    use gandr_kernel_core::ExpectedComputationShape;
     use gandr_kernel_core::KernelError;
     use gandr_kernel_core::KernelVerdict;
     use gandr_kernel_core::ReplayBudget;
     use gandr_kernel_core::ReplayNode;
     use gandr_kernel_core::ReplaySides;
+    use gandr_kernel_core::Unfoldable;
     use gandr_kernel_core::Unfoldings;
     use gandr_kernel_core::replay;
     use gandr_kernel_strata::Level;
     use gandr_kernel_term::AdmissionMark;
+    use gandr_kernel_term::CompTypeId;
     use gandr_kernel_term::Component;
+    use gandr_kernel_term::ComputationId;
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::ConstructorTag;
     use gandr_kernel_term::DeBruijnIndex;
@@ -31,6 +36,7 @@ mod native_formers
     use gandr_kernel_term::GroundSort;
     use gandr_kernel_term::LevelSignature;
     use gandr_kernel_term::MarkedDeclaration;
+    use gandr_kernel_term::Side;
     use gandr_kernel_term::ValueId;
     use gandr_kernel_term::ValueType;
     use gandr_kernel_term::ValueTypeId;
@@ -619,6 +625,178 @@ mod native_formers
 
         let bytes = encode(environment.arena(), &declarations);
         let decoded = decode(bytes.as_image()).expect("tuple projection canonical reader");
+        assert_eq!(encode(decoded.arena(), decoded.declarations()), bytes);
+    }
+
+    /// A lazy pairing checks against its lazy product; each projection of the
+    /// admitted pairing synthesizes its own side and replays, through the
+    /// pairing's unfolding, to that side's returner; a projection of a pairing
+    /// replays with no decision; a pairing at a returner, a projection of a
+    /// returner and a projection read at the other side's type refuse by name;
+    /// the declarations survive canonical decode.
+    #[test]
+    fn lazy_product_pairs_projects_and_survives_decode()
+    {
+        /// The pairing `⟨return unit, return 0⟩`, its two components, and the
+        /// two sides' returner types, minted in one staging arena.
+        fn fixture(
+            arena: &mut gandr_kernel_term::TermArena
+        ) -> (ComputationId, [(ComputationId, CompTypeId); 2])
+        {
+            let unit_type = arena.value_type_unit();
+            let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+            let unit = arena.value_unit();
+            let zero = arena.value_literal(gandr_kernel_term::Literal::Integer(
+                gandr_kernel_term::IntegerLiteral::new(
+                    gandr_kernel_term::Sign::NonNegative,
+                    gandr_kernel_term::Magnitude::zero(),
+                ),
+            ));
+            let left = arena.computation_return(unit);
+            let right = arena.computation_return(zero);
+            let unit_returner = arena.comp_type_returner(unit_type);
+            let integer_returner = arena.comp_type_returner(integer);
+            (arena.computation_with(left, right), [
+                (left, unit_returner),
+                (right, integer_returner),
+            ])
+        }
+
+        let mut environment = Environment::new();
+        let mut declarations = Vec::new();
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let (pairing, [(_, left_type), (_, right_type)]) = fixture(arena);
+        let lazy = arena.comp_type_with(left_type, right_type);
+        let declared = arena.value_type_thunk(lazy);
+        let record_body = arena.value_thunk(pairing);
+        let declaration = staging.def(LevelSignature::monomorphic(), declared, record_body);
+        declarations.push(MarkedDeclaration::new(
+            AdmissionMark::Checked,
+            declaration.declaration().clone(),
+        ));
+        let record = environment
+            .add_decl(declaration)
+            .expect("a pairing checks against its lazy product")
+            .position();
+        let unfoldings = Unfoldings::new(vec![Unfoldable::Body(record_body)]);
+
+        for side in [Side::Left, Side::Right] {
+            let mut staging = environment.stage();
+            let arena = staging.arena();
+            let (_, components) = fixture(arena);
+            let (component, classifier) = match side {
+                | Side::Left => components[0],
+                | Side::Right => components[1],
+            };
+            let named = arena.value_constant(record);
+            let forced = arena.computation_force(named);
+            let projection = arena.computation_project(side, forced);
+            let declared = arena.value_type_thunk(classifier);
+            let body = arena.value_thunk(projection);
+            let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+            declarations.push(MarkedDeclaration::new(
+                AdmissionMark::Checked,
+                declaration.declaration().clone(),
+            ));
+            environment
+                .add_decl(declaration)
+                .expect("a projection synthesizes its side of the lazy product");
+            let mut arena = environment.arena().clone();
+            let unfold = [
+                ConversionDecision::Unfold {
+                    constant: ReplayNode::Constant(record),
+                },
+                ConversionDecision::ReduceLeft {
+                    redex: ReplayNode::Constant(record),
+                },
+            ];
+            assert_eq!(
+                replay(
+                    &mut arena,
+                    &unfoldings,
+                    ReplaySides::Computations(projection, component),
+                    EngineClaim::Convertible,
+                    unfold,
+                    ReplayBudget::default()
+                ),
+                KernelVerdict::Convertible
+            );
+        }
+
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let (pairing, [(left, left_type), _]) = fixture(arena);
+        let reduction = arena.computation_project(Side::Left, pairing);
+        let declared = arena.value_type_thunk(left_type);
+        let body = arena.value_thunk(reduction);
+        let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+        declarations.push(MarkedDeclaration::new(
+            AdmissionMark::Checked,
+            declaration.declaration().clone(),
+        ));
+        environment
+            .add_decl(declaration)
+            .expect("a projection of a pairing synthesizes its side");
+        let mut arena = environment.arena().clone();
+        assert_eq!(
+            replay(
+                &mut arena,
+                &Unfoldings::default(),
+                ReplaySides::Computations(reduction, left),
+                EngineClaim::Convertible,
+                [],
+                ReplayBudget::default()
+            ),
+            KernelVerdict::Convertible
+        );
+
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let (pairing, [(_, left_type), _]) = fixture(arena);
+        let wrong_side = arena.computation_project(Side::Right, pairing);
+        let declared = arena.value_type_thunk(left_type);
+        let body = arena.value_thunk(wrong_side);
+        let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+        assert!(
+            matches!(
+                environment.add_decl(declaration),
+                Err(KernelError::ComputationTypeMismatch(_))
+            ),
+            "the right side is an integer returner, not the unit's"
+        );
+
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let (_, [(left, left_type), _]) = fixture(arena);
+        let not_a_pairing = arena.computation_project(Side::Left, left);
+        let declared = arena.value_type_thunk(left_type);
+        let body = arena.value_thunk(not_a_pairing);
+        let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+        assert!(matches!(
+            environment.add_decl(declaration),
+            Err(KernelError::ComputationShapeMismatch {
+                expected: ExpectedComputationShape::With,
+                actual,
+            }) if actual.head() == CompTypeHead::Returner
+        ));
+
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let (pairing, [(_, left_type), _]) = fixture(arena);
+        let declared = arena.value_type_thunk(left_type);
+        let body = arena.value_thunk(pairing);
+        let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+        assert!(matches!(
+            environment.add_decl(declaration),
+            Err(KernelError::ComputationShapeMismatch {
+                expected: ExpectedComputationShape::With,
+                actual,
+            }) if actual.head() == CompTypeHead::Returner
+        ));
+
+        let bytes = encode(environment.arena(), &declarations);
+        let decoded = decode(bytes.as_image()).expect("lazy product canonical reader");
         assert_eq!(encode(decoded.arena(), decoded.declarations()), bytes);
     }
 }

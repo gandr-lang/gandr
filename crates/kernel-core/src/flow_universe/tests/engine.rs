@@ -82,6 +82,9 @@ fn children(
             | Computation::Fixpoint { .. } => {
                 panic!("recursion is outside the forward-translator fixture")
             },
+            | Computation::With(..) | Computation::Project(..) => {
+                panic!("the lazy product is outside the forward-translator fixture")
+            },
         },
         | AnyNode::ValueType(_) | AnyNode::CompType(_) => panic!("no fixture type node"),
     }
@@ -177,6 +180,9 @@ fn translate(
                     },
                     | Computation::Fixpoint { .. } => {
                         panic!("recursion is outside the forward-translator fixture")
+                    },
+                    | Computation::With(..) | Computation::Project(..) => {
+                        panic!("the lazy product is outside the forward-translator fixture")
                     },
                 };
                 computations.insert(id, computation);

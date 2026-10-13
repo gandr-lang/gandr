@@ -28,8 +28,8 @@
 //! - Reversal: a core sum or lazy record keyed by labels would carry them where
 //!   the positional formers drop them.
 //!
-//! The kernel has no node for the lazy product yet, so a declaration holding
-//! one checks and is refused at the kernel boundary by name
+//! The kernel carries the lazy product as its own node, so a declaration
+//! holding one checks and crosses the kernel boundary like any other
 //! ([#203](https://github.com/gandr-lang/gandr/issues/203)).
 //!
 //! # A label's index is read from the type the source states

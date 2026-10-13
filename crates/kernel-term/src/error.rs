@@ -202,6 +202,8 @@ pub enum TagSite
     FixpointEvidence,
     /// A higher-field layer kind, outside the guard and redirect alphabet.
     HigherLayer,
+    /// A lazy projection's side, outside the left and right alphabet.
+    ProjectionSide,
 }
 
 impl fmt::Display for TagSite
@@ -244,6 +246,7 @@ impl fmt::Display for TagSite
             | Self::ConstraintRelation => "a constraint relation",
             | Self::FixpointEvidence => "a fixpoint evidence claim",
             | Self::HigherLayer => "a higher-field layer kind",
+            | Self::ProjectionSide => "a lazy projection side",
         })
     }
 }

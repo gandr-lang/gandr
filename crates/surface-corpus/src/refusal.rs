@@ -58,9 +58,6 @@ use core::fmt;
 
 use anodized::spec;
 use gandr_core_checker::CheckRefusal;
-use gandr_core_checker::CoreNode;
-use gandr_core_checker::bridge;
-use gandr_core_checker::bridge::WireGap;
 use gandr_core_term::FailureClass;
 use gandr_kernel_term::StringLiteral;
 use gandr_surface_lowering::LoweringRefusal;
@@ -410,9 +407,6 @@ pub enum RefusalName
     ExpectationOutsideFixtureRoot,
     /// Two rows disagree on the operation types of a shared interface.
     EffectSignatureConflict,
-    /// A former the checker accepts and the kernel's wire format has no node
-    /// for, refused when the declaration is readmitted.
-    Unwired,
 }
 
 impl RefusalName
@@ -432,7 +426,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 71_usize] = [
+    pub const VOCABULARY: [Self; 70_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -503,7 +497,6 @@ impl RefusalName
         Self::HandlerCoverage,
         Self::ShiftWithoutReset,
         Self::DependentStack,
-        Self::Unwired,
     ];
 
     /// The name as a `refuses` payload spells it: the name of the variant it
@@ -580,7 +573,6 @@ impl RefusalName
         | (Self::EndpointMismatch, b"EndpointMismatch")
         | (Self::IdentityAtOpenType, b"IdentityAtOpenType")
         | (Self::CompoundEndpoint, b"CompoundEndpoint")
-        | (Self::Unwired, b"Unwired")
     )
 },
     )]
@@ -659,7 +651,6 @@ impl RefusalName
             | Self::StaticLambdaArgument => "StaticLambdaArgument",
             | Self::StaticClassifierExpected => "StaticClassifierExpected",
             | Self::ExpectationOutsideFixtureRoot => "ExpectationOutsideFixtureRoot",
-            | Self::Unwired => "Unwired",
         })
     }
 
@@ -756,15 +747,6 @@ pub enum Refusal<'source>
     Checking(CheckRefusal),
     /// The corpus root refused an expectation the declaration carries.
     Corpus(CorpusRefusal),
-    /// The checker accepted the declaration and its readmission refused it:
-    /// the kernel's wire format has no node for the former at `at`.
-    Readmission
-    {
-        /// The node holding the former.
-        at: CoreNode,
-        /// The node the wire format lacks.
-        gap: WireGap,
-    },
 }
 
 impl Refusal<'_>
@@ -887,7 +869,6 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::EndpointMismatch { .. }), RefusalName::EndpointMismatch)
         | (Self::Checking(CheckRefusal::IdentityAtOpenType { .. }), RefusalName::IdentityAtOpenType)
         | (Self::Checking(CheckRefusal::CompoundEndpoint { .. }), RefusalName::CompoundEndpoint)
-        | (Self::Readmission { .. }, RefusalName::Unwired)
     )
 },
     )]
@@ -901,7 +882,6 @@ impl Refusal<'_>
             | Self::Corpus(CorpusRefusal::ExpectationOutsideFixtureRoot { .. }) => {
                 RefusalName::ExpectationOutsideFixtureRoot
             },
-            | Self::Readmission { .. } => RefusalName::Unwired,
         }
     }
 
@@ -925,7 +905,6 @@ impl Refusal<'_>
         Self::Lowering(ref refusal) => refusal.classify(),
         Self::Checking(ref refusal) => refusal.classify(),
         Self::Corpus(ref refusal) => refusal.classify(),
-        Self::Readmission { at, gap } => bridge::Refusal::Unwired { at, gap }.classify(),
     };
     matches!(
         (expected, ret), (FailureClass::UserAbsence, FailureClass::UserAbsence) |
@@ -943,7 +922,6 @@ impl Refusal<'_>
             | Self::Lowering(ref refusal) => refusal.classify(),
             | Self::Checking(ref refusal) => refusal.classify(),
             | Self::Corpus(ref refusal) => refusal.classify(),
-            | Self::Readmission { at, gap } => bridge::Refusal::Unwired { at, gap }.classify(),
         }
     }
 }

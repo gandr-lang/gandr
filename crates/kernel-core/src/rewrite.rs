@@ -1289,9 +1289,9 @@ const fn outcome_of(node: AnyNode) -> RewriteOutcome
 #[spec(captures: before = tasks.len(),
     ensures: tasks.get(before ..).is_some_and(|added| added.len() == match node {
     AnyNode::Value(id) => arena.value(id).map_or(0, |source| match *source { Value::Constructor { ref fields, .. } => fields.len().saturating_add(1), Value::Record(ref fields) => fields.len(), Value::Tuple(ref components) => components.len(), Value::Higher { ref evidence, .. } => evidence.len(), Value::HigherEvaluation { ref components, .. } => components.len().saturating_mul(3), Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => 0, Value::PathEquiv { .. } => 3, Value::ListCons(..) | Value::SessionPath { .. } | Value::PathProduct(..) | Value::StaticApplication(..) => 2, _ => 1 }),
-    AnyNode::Computation(id) => arena.computation(id).map_or(0, |source| match *source { Computation::ListFold { .. } | Computation::RelatedApplication { .. } => 5, Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2), Computation::Case { ref branches, .. } => branches.len().saturating_add(1), Computation::PathTransport { .. } => 3, Computation::Transport(..) | Computation::Application(..) | Computation::Bind(..) => 2, _ => 1 }),
+    AnyNode::Computation(id) => arena.computation(id).map_or(0, |source| match *source { Computation::ListFold { .. } | Computation::RelatedApplication { .. } => 5, Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2), Computation::Case { ref branches, .. } => branches.len().saturating_add(1), Computation::PathTransport { .. } => 3, Computation::Transport(..) | Computation::Application(..) | Computation::Bind(..) | Computation::With(..) => 2, _ => 1 }),
     AnyNode::ValueType(id) => arena.value_type(id).map_or(0, |source| match *source { ValueType::Data { ref arguments, .. } => arguments.len(), ValueType::Record(ref fields) => fields.len(), ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.len(), ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => 0, ValueType::Path { .. } => 3, ValueType::PathUniverse(..) | ValueType::StaticPi { .. } => 2, _ => 1 }),
-    AnyNode::CompType(id) => arena.comp_type(id).map_or(0, |source| match *source { CompType::Arrow { .. } | CompType::Pi { .. } => 2, _ => 1 }),
+    AnyNode::CompType(id) => arena.comp_type(id).map_or(0, |source| match *source { CompType::Arrow { .. } | CompType::Pi { .. } | CompType::With(..) => 2, _ => 1 }),
 }
         && added.iter().all(|task| matches!(*task, RewriteTask::Open(_, child_depth, step)
             if step == rewrite && (child_depth == depth || child_depth == depth.deeper() || child_depth == depth.deeper().deeper() || child_depth == depth.deeper().deeper().deeper())))))]
@@ -1535,6 +1535,26 @@ fn push_rewrite_children(
                     rewrite,
                 ));
             },
+            // A pairing binds nothing: both components stand at its depth.
+            | Some(&Computation::With(left, right)) => {
+                tasks.push(RewriteTask::Open(
+                    AnyNode::Computation(right),
+                    depth,
+                    rewrite,
+                ));
+                tasks.push(RewriteTask::Open(
+                    AnyNode::Computation(left),
+                    depth,
+                    rewrite,
+                ));
+            },
+            | Some(&Computation::Project(_, pair)) => {
+                tasks.push(RewriteTask::Open(
+                    AnyNode::Computation(pair),
+                    depth,
+                    rewrite,
+                ));
+            },
             | Some(&Computation::Case {
                 scrutinee,
                 ref branches,
@@ -1649,6 +1669,10 @@ fn push_rewrite_children(
             },
             | Some(&CompType::Element { code, .. }) => {
                 tasks.push(RewriteTask::Open(AnyNode::Value(code), depth, rewrite));
+            },
+            | Some(&CompType::With(left, right)) => {
+                tasks.push(RewriteTask::Open(AnyNode::CompType(right), depth, rewrite));
+                tasks.push(RewriteTask::Open(AnyNode::CompType(left), depth, rewrite));
             },
         },
     }
@@ -2171,7 +2195,7 @@ Computation::ListFold { .. } | Computation::RelatedApplication { .. } => 5,
 Computation::PathTransport { .. } => 3,
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
 Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
-Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) => 2,
+Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) | Computation::With(..) => 2,
 _ => 1,
 })],
     ensures: |ret| results.len() == before.saturating_sub(arity) && arena.computation(id).map_or_else(|| ret == id, |node| arena.computation(ret).is_some_and(|rewritten| core::mem::discriminant(node) == core::mem::discriminant(rewritten))),
@@ -2369,6 +2393,26 @@ fn close_computation(
             }
             else {
                 arena.computation_bind(rewritten_bound, rewritten_body)
+            }
+        },
+        | Computation::With(left, right) => {
+            let rewritten_right =
+                popped(results, AnyNode::Computation(right)).computation_or(right);
+            let rewritten_left = popped(results, AnyNode::Computation(left)).computation_or(left);
+            if rewritten_left == left && rewritten_right == right {
+                id
+            }
+            else {
+                arena.computation_with(rewritten_left, rewritten_right)
+            }
+        },
+        | Computation::Project(side, pair) => {
+            let rewritten = popped(results, AnyNode::Computation(pair)).computation_or(pair);
+            if rewritten == pair {
+                id
+            }
+            else {
+                arena.computation_project(side, rewritten)
             }
         },
         | Computation::Case {
@@ -2613,7 +2657,7 @@ fn close_value_type(
 /// - witness: `rewrite::tests::a_code_carrying_type_rewrites_through_its_code`
 /// - witness: `rewrite::tests::unreadable_subjects_rewrite_to_their_original_ids`
 #[spec(captures: before = results.len(),
-    ensures: |ret| results.len() == before.saturating_sub(arena.comp_type(id).map_or(0, |source| match *source { CompType::Arrow { .. } | CompType::Pi { .. } => 2, _ => 1 }))
+    ensures: |ret| results.len() == before.saturating_sub(arena.comp_type(id).map_or(0, |source| match *source { CompType::Arrow { .. } | CompType::Pi { .. } | CompType::With(..) => 2, _ => 1 }))
         && arena.comp_type(id).map_or(ret == id, |source| matches!(source, &CompType::Element { .. }) || arena.comp_type(ret).is_some_and(|result|
             core::mem::discriminant(source) == core::mem::discriminant(result))))]
 fn close_comp_type(
@@ -2670,6 +2714,16 @@ fn close_comp_type(
             else {
                 let target = target.clone();
                 arena.comp_type_element(rewritten, target)
+            }
+        },
+        | CompType::With(left, right) => {
+            let rewritten_right = popped(results, AnyNode::CompType(right)).comp_type_or(right);
+            let rewritten_left = popped(results, AnyNode::CompType(left)).comp_type_or(left);
+            if rewritten_left == left && rewritten_right == right {
+                id
+            }
+            else {
+                arena.comp_type_with(rewritten_left, rewritten_right)
             }
         },
     }

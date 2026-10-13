@@ -202,6 +202,9 @@ fn children(
                 panic!("no nominal or record eliminator in this fixture")
             },
             | Computation::Fixpoint { .. } => panic!("no fixpoint in this fixture"),
+            | Computation::With(..) | Computation::Project(..) => {
+                panic!("no lazy product in this fixture")
+            },
             | Computation::ListFold { .. } => panic!("eliminator outside fixture fragment"),
         },
         | AnyNode::ValueType(_) | AnyNode::CompType(_) => panic!("no type nodes"),
@@ -301,6 +304,9 @@ fn translate(
                         panic!("no nominal or record eliminator in this fixture")
                     },
                     | Computation::Fixpoint { .. } => panic!("no fixpoint in this fixture"),
+                    | Computation::With(..) | Computation::Project(..) => {
+                        panic!("no lazy product in this fixture")
+                    },
                     | Computation::ListFold { .. } => panic!("unsupported computation"),
                 };
                 computations.insert(id, computation);

@@ -1,18 +1,18 @@
-@[ refuses("Unwired") ]
+@[ checks ]
 def lazy() -> &{get : -F Integer, put : -F String} {
   &{.put => return "s", .get => return 1}
 }
 
-@[ refuses("Unwired") ]
+@[ checks ]
 def binary : +U (-F Integer & -F String) ;
 def binary = thunk { &{.0 => return 1, .1 => return "s"} } ;
 
-@[ refuses("Unwired") ]
+@[ checks ]
 def observe(m : +U &{get : -F Integer, put : -F String}) -> -F Integer {
   become m.get
 }
 
-@[ refuses("Unwired") ]
+@[ checks ]
 def offered(n : Integer) -> &{get : -F Integer, put : -F String} {
   &{.put => return "s", .get => return n}
 }

@@ -98,7 +98,6 @@ impl Culprit
                 Self("an expectation the strict root refuses")
             },
             | Refusal::Checking(checking) => checked(checking),
-            | Refusal::Readmission { .. } => Self("checks, but the kernel cannot hold it yet"),
         }
     }
 }

@@ -95,13 +95,6 @@ impl fmt::Display for Plain<'_>
                      root a declaration states `checks` or `runs`"
                 )
             },
-            | Refusal::Readmission { gap, .. } => {
-                write!(
-                    f,
-                    "{gap}: the declaration checks, but the kernel cannot re-derive it until its \
-                     wire format holds the former"
-                )
-            },
         }
     }
 }
@@ -522,7 +515,6 @@ mod tests
     use gandr_core_checker::TermNode;
     use gandr_core_checker::TypeNode;
     use gandr_core_checker::UnadmittedFormer;
-    use gandr_core_checker::bridge::WireGap;
     use gandr_core_term::BinderDepth;
     use gandr_core_term::CoreArena;
     use gandr_core_term::Zone;
@@ -801,14 +793,10 @@ mod tests
             span,
             schema: ExpectationSchema::Owes,
         });
-        let unwired = Refusal::Readmission {
-            at: CoreNode::Type(TypeNode::Computation(comp_type)),
-            gap: WireGap::LazyRecord,
-        };
         let refusals: Vec<Refusal<'_>> = lowering
             .into_iter()
             .chain(checking)
-            .chain([corpus, unwired])
+            .chain([corpus])
             .collect();
         let named: Vec<RefusalName> = refusals.iter().map(Refusal::name).collect();
         let missing: Vec<RefusalName> = RefusalName::VOCABULARY

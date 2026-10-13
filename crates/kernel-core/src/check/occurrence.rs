@@ -405,6 +405,12 @@ fn worst(
                 | Some(&CompType::Element { code, .. }) => {
                     pending.push((AnyNode::Value(code), term(reach)));
                 },
+                // The lazy product is a field-local former, so a self
+                // occurrence in either component is nested.
+                | Some(&CompType::With(left, right)) => {
+                    pending.push((AnyNode::CompType(left), nest(reach)));
+                    pending.push((AnyNode::CompType(right), nest(reach)));
+                },
                 | None => {},
             },
             | AnyNode::Value(id) => match arena.value(id) {
@@ -506,14 +512,18 @@ fn worst(
                 ) => {
                     pending.push((AnyNode::Value(value), reach));
                 },
-                | Some(&(Computation::Lambda(body) | Computation::Fixpoint { body, .. })) => {
+                | Some(
+                    &(Computation::Lambda(body)
+                    | Computation::Fixpoint { body, .. }
+                    | Computation::Project(_, body)),
+                ) => {
                     pending.push((AnyNode::Computation(body), reach));
                 },
                 | Some(&Computation::Application(head, argument)) => {
                     pending.push((AnyNode::Computation(head), reach));
                     pending.push((AnyNode::Value(argument), reach));
                 },
-                | Some(&Computation::Bind(bound, body)) => {
+                | Some(&(Computation::Bind(bound, body) | Computation::With(bound, body))) => {
                     pending.push((AnyNode::Computation(bound), reach));
                     pending.push((AnyNode::Computation(body), reach));
                 },

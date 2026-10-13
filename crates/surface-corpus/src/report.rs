@@ -45,11 +45,8 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use anodized::spec;
-use gandr_core_checker::CoreNode;
 use gandr_core_checker::ObligationCount;
-use gandr_core_checker::bridge::WireGap;
 use gandr_core_term::FailureClass;
-use gandr_kernel_term::ConstantIndex;
 use gandr_surface_lowering::DeclarationCount;
 use quenchant_shape::shape::Maybe;
 
@@ -939,44 +936,6 @@ impl<'source> SettleReport<'source>
         self.ledger
     }
 
-    /// Stand the readmission's refusal in place of the checker's verdict for
-    /// the declaration admitted at `constant`, whose former at `at` the
-    /// kernel's wire format has no node for.
-    ///
-    /// # Specification
-    /// - requires: the readmission refused the declaration at `constant` for
-    ///   `gap` at `at`.
-    /// - ensures: that declaration, unless guarded, produces the readmission
-    ///   refusal and owes nothing; every other declaration is unchanged.
-    /// - fails: never; a constant no declaration carries changes nothing.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a lazy record declaration stating the refusal settles
-    ///   and one stating that it checks does not, beside a declaration that
-    ///   crossed and a constant no declaration carries.
-    /// - witness: `report::tests::an_unwired_declaration_settles_only_as_its_refusal`
-    #[spec(
-        captures: before = self.declarations.len(),
-        ensures: self.declarations.len() == before,
-    )]
-    #[inline]
-    pub fn unwire(
-        &mut self,
-        constant: ConstantIndex,
-        at: CoreNode,
-        gap: WireGap,
-    )
-    {
-        if let Some(declaration) = self
-            .declarations
-            .iter_mut()
-            .find(|declaration| declaration.constant() == constant)
-        {
-            declaration.unwire(at, gap);
-        }
-    }
-
     /// The run's counts.
     ///
     /// # Specification
@@ -1204,15 +1163,9 @@ mod tests
     use alloc::vec::Vec;
     use core::fmt;
 
-    use gandr_core_checker::CoreNode;
     use gandr_core_checker::ObligationCount;
-    use gandr_core_checker::TypeNode;
-    use gandr_core_checker::bridge::WireGap;
     use gandr_core_term::FailureClass;
-    use gandr_kernel_term::ConstantIndex;
     use gandr_surface_lowering::DeclarationCount;
-    use gandr_surface_lowering::DeclarationOutcome;
-    use gandr_surface_lowering::SurfaceName;
     use gandr_surface_syntax::SourceText;
 
     use super::ClassCounts;
@@ -1220,15 +1173,10 @@ mod tests
     use super::SettleCounts;
     use super::Tally;
     use crate::fixture::RefusingWriter;
-    use crate::fixture::checked;
-    use crate::fixture::ran_at;
     use crate::fixture::settled;
     use crate::root::CorpusRoot;
-    use crate::settle::DeclarationReport;
-    use crate::settle::Produced;
     use crate::settle::Settlement;
     use crate::settle::Surviving;
-    use crate::settle::settle;
 
     #[test]
     fn the_run_is_settled_only_when_every_declaration_is()
@@ -1581,122 +1529,6 @@ def plain_hole : Integer ;
             total.settlement(),
             Settlement::Unsettled,
             "an unsettled part unsettles the whole"
-        );
-    }
-
-    #[test]
-    fn an_unwired_declaration_settles_only_as_its_refusal()
-    {
-        let source = SourceText::from(
-            r#"@[ refuses("Unwired") ] def stated : +U (-F Integer & -F Integer) ;
-@[ checks ] def claimed : +U (-F Integer & -F Integer) ;
-@[ checks ] def crossed : Integer ; def crossed = 3 ;"#,
-        );
-        let checked = checked(source);
-        let mut report = settle(
-            CorpusRoot::Fixture,
-            &checked.arena,
-            &checked.module,
-            &checked.verdicts,
-            &mut ran_at,
-        )
-        .expect("the verdicts are the module's own");
-        let wired = |name: &str| {
-            let declaration = checked
-                .module
-                .declarations()
-                .iter()
-                .find(|declaration| declaration.name() == SurfaceName::from(name))
-                .expect("the source declares the name");
-            let (DeclarationOutcome::Uncompleted { declared_type }
-            | DeclarationOutcome::Completed { declared_type, .. }) = declaration.outcome()
-            else {
-                panic!("`{name}` lowers a signature");
-            };
-            (
-                declaration.constant(),
-                CoreNode::Type(TypeNode::Value(declared_type)),
-            )
-        };
-        let (stated, at) = wired("stated");
-        let (claimed, claimed_at) = wired("claimed");
-        let before = report.tally();
-        report.unwire(ConstantIndex::from(99_usize), at, WireGap::LazyRecord);
-        assert_eq!(
-            report.tally(),
-            before,
-            "a constant no declaration carries changes nothing"
-        );
-        report.unwire(stated, at, WireGap::LazyRecord);
-        report.unwire(claimed, claimed_at, WireGap::LazyRecord);
-        let row = |name: &str| {
-            report
-                .declarations()
-                .iter()
-                .find(|declaration| declaration.name() == SurfaceName::from(name))
-                .expect("the report carries the name")
-        };
-
-        assert_eq!(
-            row("stated").produced(),
-            Produced::Unwired {
-                at,
-                gap: WireGap::LazyRecord
-            },
-            "the readmission's refusal stands in place of the checker's verdict"
-        );
-        assert_eq!(
-            usize::from(row("stated").owed()),
-            0_usize,
-            "a refused declaration owes nothing"
-        );
-        assert_eq!(
-            row("stated").settlement(),
-            Settlement::Settled,
-            "stating the refusal settles it"
-        );
-        assert_eq!(
-            row("claimed").settlement(),
-            Settlement::Unsettled,
-            "a declaration the kernel cannot hold does not check"
-        );
-        assert_eq!(
-            row("crossed").settlement(),
-            Settlement::Settled,
-            "a declaration that crossed is unchanged"
-        );
-        assert_eq!(
-            usize::from(
-                report
-                    .tally()
-                    .refusals()
-                    .count(FailureClass::Unrepresentable)
-            ),
-            2_usize,
-            "the wire gap is the unrepresentable class"
-        );
-
-        let mut guarded = settled(
-            CorpusRoot::Strict,
-            SourceText::from(r#"@[ refuses("Unwired") ] def g : +U (-F Integer & -F Integer) ;"#),
-        );
-        let constant = guarded
-            .declarations()
-            .first()
-            .map(DeclarationReport::constant)
-            .expect("one declaration");
-        let held = guarded
-            .declarations()
-            .first()
-            .map(DeclarationReport::produced);
-        guarded.unwire(constant, at, WireGap::LazyRecord);
-        assert_eq!(
-            guarded
-                .declarations()
-                .first()
-                .map(DeclarationReport::produced),
-            held,
-            "a guarded declaration keeps its guard"
         );
     }
 }

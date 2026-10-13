@@ -532,16 +532,15 @@ pub fn recheck(
     }
 }
 
-/// What admitting a rechecked document produced: the diagnostics replacing
-/// the published ones when the admission changed what the document reports,
-/// and the synchronisation's timing with the admission's wall.
+/// What admitting a rechecked document produced: the diagnostic replacing the
+/// published ones when the kernel disagreed, and the synchronisation's timing
+/// with the admission's wall.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Admitted
 {
-    /// The diagnostics to publish in place of the recheck's, when the
-    /// admission found a disagreement or refused a declaration the kernel's
-    /// wire format cannot carry.
-    pub replacement: Maybe<Vec<Diagnostic>, agreed::Absent>,
+    /// The diagnostic to publish in place of the recheck's, when the
+    /// admission found a disagreement.
+    pub fault: Maybe<Diagnostic, agreed::Absent>,
     /// The synchronisation's timing.
     pub timing: Timing,
 }
@@ -552,27 +551,23 @@ quenchant_shape::reason_enum! {
         /// The reason nothing is published.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
-            /// The kernel re-derived every acceptance and its wire format
-            /// carried every declaration, or there was nothing to admit: the
-            /// diagnostics already published stand.
+            /// The kernel re-derived every acceptance, or there was nothing to
+            /// admit: the diagnostics already published stand.
             Agreed,
         }
     }
 }
 
-/// Run the admission the document's latest recheck of `text`, at `uri`, left
-/// in its `session`.
+/// Run the admission the document's latest recheck left in its `session`.
 ///
 /// # Specification
-/// - requires: `timing` is the timing of the recheck that judged `text`, the
-///   session's latest revision.
+/// - requires: `timing` is the timing of the recheck that judged the session's
+///   latest revision.
 /// - ensures: when the recheck left an admission pending, it runs, and the
-///   timing carries its wall. A kernel disagreement is one error at the origin
-///   naming the fault `submit` would have reported; an admission that refuses a
-///   declaration the wire format cannot carry is the diagnostics `submit`'s
-///   composition of `text` publishes at `verbosity`. Either is published in
-///   place of the recheck's diagnostics. Otherwise nothing runs and the timing
-///   is returned as it was.
+///   timing carries its wall; a kernel disagreement is one error at the origin
+///   naming the fault `submit` would have reported, to publish in place of the
+///   recheck's diagnostics. Otherwise nothing runs and the timing is returned
+///   as it was.
 /// - provides: the second half of every synchronisation, run after its
 ///   diagnostics are published.
 /// - fails: never; a disagreement is a diagnostic.
@@ -580,30 +575,24 @@ quenchant_shape::reason_enum! {
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a synchronisation's timing line carries the admission's
-///   wall after the recheck's, and a refused document's carries none; L2 — over
-///   every corpus source, the diagnostics last published are the walk's,
-///   unwired lazy records included.
+///   wall after the recheck's, and a refused document's carries none.
 /// - witness: `session::session::an_edit_to_a_large_document_rechecks_its_forms`
-/// - witness: `session::session::every_corpus_report_is_published_where_the_walk_renders_it`
 /// - witness: `recheck::tests::an_admission_follows_the_published_diagnostics`
 #[spec(ensures: |ret| ret.timing.forms == timing.forms && ret.timing.judged == timing.judged
     && ret.timing.wall == timing.wall
     && match timing.admitted {
         Maybe::Absent(admitted::Absent::Pending) => matches!(ret.timing.admitted, Maybe::Present(_)),
         Maybe::Present(_) | Maybe::Absent(admitted::Absent::Unadmitted) =>
-            ret.timing.admitted == timing.admitted && matches!(ret.replacement, Maybe::Absent(_)),
+            ret.timing.admitted == timing.admitted && matches!(ret.fault, Maybe::Absent(_)),
     })]
 #[must_use]
 pub fn admit(
-    uri: &DocumentUri,
     session: &mut DocumentSession,
-    text: SourceText<'_>,
-    verbosity: Verbosity,
     timing: Timing,
 ) -> Admitted
 {
     let unchanged = Admitted {
-        replacement: Maybe::Absent(agreed::Absent::Agreed),
+        fault: Maybe::Absent(agreed::Absent::Agreed),
         timing,
     };
     let (&mut Ok(ref mut session), Maybe::Absent(admitted::Absent::Pending)) =
@@ -612,26 +601,14 @@ pub fn admit(
         return unchanged;
     };
     let started = Instant::now();
-    let replacement = match session.admit() {
-        | Ok(Maybe::Present(admitted)) if !admitted.crossed().unwired().is_empty() => {
-            // economy: the published judgement is gone by now, so a document
-            // holding a former the wire format lacks is judged a second time
-            // to read the admission's refusals onto it; the reversal is the
-            // wire format carrying the former, which leaves nothing unwired.
-            Maybe::Present(match session.judge(text) {
-                | Ok(submission) => {
-                    diagnostics_of(submission.admitted(admitted), uri, text, verbosity)
-                },
-                | Err(fault) => vec![Diagnostic::at_origin(fault.to_string())],
-            })
-        },
+    let fault = match session.admit() {
         | Ok(_) => Maybe::Absent(agreed::Absent::Agreed),
-        | Err(disagreement) => Maybe::Present(vec![Diagnostic::at_origin(
+        | Err(disagreement) => Maybe::Present(Diagnostic::at_origin(
             SessionFault::Compose(ComposeFault::Readmission(disagreement)).to_string(),
-        )]),
+        )),
     };
     Admitted {
-        replacement,
+        fault,
         timing: Timing {
             admitted: Maybe::Present(started.elapsed()),
             ..timing
@@ -1266,15 +1243,9 @@ mod tests
             Maybe::Absent(admitted::Absent::Pending),
             "the diagnostics exist before the kernel is offered the revision"
         );
-        let admission = admit(
-            &uri,
-            &mut session,
-            SourceText::from("def a : Integer ;\ndef a = 1 ;\n"),
-            Verbosity::User,
-            rechecked.timing,
-        );
+        let admission = admit(&mut session, rechecked.timing);
         assert!(
-            matches!(admission.replacement, Maybe::Absent(_)),
+            matches!(admission.fault, Maybe::Absent(_)),
             "the kernel agrees"
         );
         assert!(matches!(admission.timing.admitted, Maybe::Present(_)));
@@ -1292,14 +1263,7 @@ mod tests
             "the admission adds its wall and keeps the recheck's"
         );
         assert_eq!(
-            admit(
-                &uri,
-                &mut session,
-                SourceText::from("def a : Integer ;\ndef a = 1 ;\n"),
-                Verbosity::User,
-                admission.timing
-            )
-            .timing,
+            admit(&mut session, admission.timing).timing,
             admission.timing,
             "an admitted synchronisation is not admitted again"
         );
@@ -1314,17 +1278,7 @@ mod tests
             Maybe::Absent(admitted::Absent::Unadmitted),
             "a revision refused whole leaves nothing to admit"
         );
-        assert_eq!(
-            admit(
-                &uri,
-                &mut session,
-                SourceText::from("pure 3\n"),
-                Verbosity::User,
-                refused.timing
-            )
-            .timing,
-            refused.timing
-        );
+        assert_eq!(admit(&mut session, refused.timing).timing, refused.timing);
     }
 
     #[test]

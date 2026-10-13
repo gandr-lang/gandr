@@ -123,6 +123,42 @@
 //! in the kernel if an erased split's projection chain proves costly to check
 //! or replay.
 //!
+//! # The lazy product
+//!
+//! [`CompType::With`] is the computation product `C & D` of call-by-push-value
+//! (Paul Blain Levy, *Call-By-Push-Value: A Functional/Imperative Synthesis*,
+//! Springer 2003, the computation product with its projections).
+//! [`Computation::With`] pairs two computations without running either;
+//! [`Computation::Project`] observes one [`Side`] and runs that component. The
+//! β law is `Project(Left, With(M, N)) = M`, and `N` on the right. The η law is
+//! the type's definition as a destructor-defined (negative) type: a
+//! computation `M : C & D` is `With(Project(Left, M), Project(Right, M))`, the
+//! pairing of its own projections.
+//!
+//! **Choice.** A native negative former at its own three bytes, binary as the
+//! core's former is. A lazy record of `n` entries is the right-nested chain
+//! the lowering builds; the empty lazy record `⊤` has no node.
+//!
+//! **Alternatives.** The record of thunks: by the call-by-push-value
+//! isomorphism `U(&{l : C_l}) ≅ #{l : U C_l}` the lazy record derives from the
+//! positive record and thunks, with no new node. That encoding loses two
+//! properties:
+//!
+//! - **`With`'s η.** A computation of type `C & D` stops being the pairing of
+//!   its projections: the encoding turns it into a value of a record type, and
+//!   no conversion rule relates that value to the record of its projections.
+//! - **The codata abstraction.** Under the encoding the lazy record is data, so
+//!   a pattern can match the record the lazy product hides; only observation
+//!   should reach a component.
+//!
+//! A counted former, like [`ValueType::Product`], would spell an `n`-entry
+//! lazy record without the chain; it waits on the core's former becoming
+//! counted, and takes a new byte when it does.
+//!
+//! **Reversal.** Never while effects are in the language. With effects the
+//! lazy record and the record of thunks are not interchangeable, and the two
+//! lost properties are the reason the former is native.
+//!
 //! Children are typed arena ids and the derived relations are shallow, with the
 //! child-id-equality caveat stated once in [`crate::term`].
 //!
@@ -135,6 +171,9 @@
 //! [`Value::components`]: crate::Value::components
 //! [`Computation::TupleProjection`]: crate::Computation::TupleProjection
 //! [`Computation::Case`]: crate::Computation::Case
+//! [`Computation::With`]: crate::Computation::With
+//! [`Computation::Project`]: crate::Computation::Project
+//! [`Side`]: crate::Side
 //! [`TermArena::value_type_element`]: crate::TermArena::value_type_element
 //! [`TermArena::comp_type_element`]: crate::TermArena::comp_type_element
 
@@ -497,4 +536,7 @@ pub enum CompType
         /// level.
         target: Level,
     },
+    /// The lazy product `C & D` of two computation types: a computation of
+    /// this type runs neither component until a projection observes one.
+    With(CompTypeId, CompTypeId),
 }
