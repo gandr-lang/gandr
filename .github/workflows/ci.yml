@@ -565,8 +565,8 @@ jobs:
         run: mise run treefmt:check
       - name: markdown allowlist and budgets
         run: mise run check:markdown
-      - name: conflict marker check
-        run: mise run check:conflict-markers
+      - name: merge residue check
+        run: mise run check:merge-residue
       - name: validate npm lock sidecars
         run: mise run check:lockfile
       - name: keep workflow tools outside the package graph

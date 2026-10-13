@@ -27,10 +27,10 @@ pass_filenames = false
 stages = ["pre-commit"]
 
 [[repos.hooks]]
-id = "conflict-markers"
-name = "conflict-marker check"
+id = "merge-residue"
+name = "merge residue check"
 language = "system"
-entry = "mise run check:conflict-markers"
+entry = "mise run check:merge-residue"
 pass_filenames = false
 always_run = true
 stages = ["pre-commit"]
