@@ -26,6 +26,7 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::GroundSort;
+use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
@@ -41,6 +42,7 @@ use crate::lower::lower_module;
 use crate::module::DeclarationOutcome;
 use crate::module::LoweredModule;
 use crate::namespace::Recognition;
+use crate::origin::Provenance;
 use crate::resolve::OperandCount;
 use crate::resolve::SurfaceName;
 
@@ -1253,6 +1255,46 @@ fn a_match_keeps_its_patterns_beside_its_tree()
             .iter()
             .all(|judged| !matches!(judged.verdict(), Verdict::Refused(_))),
         "{report:?}"
+    );
+}
+
+#[test]
+fn a_leaf_keeps_its_arm_body_written()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{MAYBE}def pick(m : Maybe(Integer), d : Integer) -> -F Integer {{ case m {{ Some(x) => return x, None => return d }} }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let root = tail_of(&arena, body_named(&module, SurfaceName::from("pick")));
+    let written = |span: ByteSpan| source.get(usize::from(span.start()) .. usize::from(span.end()));
+    let mut returned = Vec::new();
+    for at in reachable(&arena, root) {
+        let Some(&Computation::Return(value)) = arena.computation(at)
+        else {
+            continue;
+        };
+        for origin in [
+            module.origins().computation(at),
+            module.origins().value(value),
+        ] {
+            let Maybe::Present(origin) = origin
+            else {
+                panic!("every node of the tree has an origin");
+            };
+            assert_eq!(
+                origin.provenance(),
+                Provenance::Written,
+                "an arm's body is the source's, in its leaf's copy too"
+            );
+            returned.push(written(origin.span()));
+        }
+    }
+    returned.sort_unstable();
+    assert_eq!(
+        returned,
+        [Some("d"), Some("return d"), Some("return x"), Some("x")],
+        "each return, and what it returns, at its own bytes"
     );
 }
 
