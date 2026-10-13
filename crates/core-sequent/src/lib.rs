@@ -137,6 +137,7 @@ pub use crate::il::NodeFamily;
 pub use crate::il::PatternArm;
 pub use crate::il::ProducerId;
 pub use crate::il::ProducerNode;
+pub use crate::il::Selector;
 pub use crate::il::SequentWatermark;
 pub use crate::inspect::Stats;
 pub use crate::inspect::dump;

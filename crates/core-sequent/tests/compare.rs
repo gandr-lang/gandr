@@ -104,13 +104,14 @@ pub fn same_value(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — independently allocated graphs agree despite different
-///   addresses; distinct leaves, each pair field, branch labels, binders,
-///   eliminators, constructor ordinals and field counts, nominal branches and
-///   fixpoint evidence and split arities differ, while a datatype or motive
-///   alone does not. Missing nodes, quotes, static forms and native paths are
-///   outside this observer's pure focusing fragment. These finite cases
-///   challenge ignored labels or children and address comparison, not cyclic
-///   inputs or equivalence modulo evaluation.
+///   addresses; distinct leaves, each pair field, record labels, branch labels,
+///   binders, eliminators, projected components and labels, constructor
+///   ordinals and field counts, nominal branches and fixpoint evidence and
+///   split arities differ, while a datatype or motive alone does not. Missing
+///   nodes, quotes, static forms and native paths are outside this observer's
+///   pure focusing fragment. These finite cases challenge ignored labels or
+///   children and address comparison, not cyclic inputs or equivalence modulo
+///   evaluation.
 /// - witness: `tests::compare::structural_equality_ignores_addresses_but_not_labels`
 /// - witness: `tests::compare::computation_comparison_preserves_every_child_role`
 #[spec(ensures: |ret| match start {
@@ -118,12 +119,13 @@ pub fn same_value(
         | (Some(left), Some(right)) => match *left {
             | Value::ListNil | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) => (ret == Agreement::Same) == (left == right),
             | Value::Tuple(ref components) => ret != Agreement::Same || matches!(*right, Value::Tuple(ref others) if components.len() == others.len()),
+            | Value::Record(ref fields) => ret != Agreement::Same || matches!(*right, Value::Record(ref others) if fields.keys().eq(others.keys())),
             | Value::Injection(side, _) => ret != Agreement::Same || matches!(*right, Value::Injection(other_side, _) if side == other_side),
             | Value::Lift { ref target, .. } => ret != Agreement::Same || matches!(*right, Value::Lift { target: ref other_target, .. } if target == other_target),
             | Value::ListCons(..) | Value::Thunk(_) => ret != Agreement::Same || core::mem::discriminant(left) == core::mem::discriminant(right),
             | Value::Constructor { tag, ref fields, .. } => ret != Agreement::Same
                 || matches!(*right, Value::Constructor { tag: other_tag, fields: ref other_fields, .. } if tag == other_tag && fields.len() == other_fields.len()),
-            Value::Record(_) | Value::Reify(_) | Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Returned(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(_, _) | Value::Hole(_) | Value::Mark { .. } => ret == Agreement::Differ,
+            Value::Reify(_) | Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Returned(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(_, _) | Value::Hole(_) | Value::Mark { .. } => ret == Agreement::Differ,
         },
         | _ => ret == Agreement::Differ,
     },
@@ -164,6 +166,15 @@ fn walk(
                                 .map(|(&component, &other)| Pending::Values(component, other)),
                         );
                         components.len() == others.len()
+                    },
+                    | (&Value::Record(ref fields), &Value::Record(ref others)) => {
+                        pending.extend(
+                            fields
+                                .values()
+                                .zip(others.values())
+                                .map(|(&field, &other)| Pending::Values(field, other)),
+                        );
+                        fields.keys().eq(others.keys())
                     },
                     | (&Value::Literal(ref literal), &Value::Literal(ref other)) => {
                         literal == other
@@ -310,6 +321,20 @@ fn walk(
                         arity == other_arity
                     },
                     | (
+                        &Computation::RecordProjection(record, ref label),
+                        &Computation::RecordProjection(other, ref other_label),
+                    ) => {
+                        pending.push(Pending::Values(record, other));
+                        label == other_label
+                    },
+                    | (
+                        &Computation::TupleProjection(tuple, component),
+                        &Computation::TupleProjection(other, other_component),
+                    ) => {
+                        pending.push(Pending::Values(tuple, other));
+                        component == other_component
+                    },
+                    | (
                         &Computation::Fixpoint { body, evidence },
                         &Computation::Fixpoint {
                             body: other_body,
@@ -424,6 +449,37 @@ fn structural_equality_ignores_addresses_but_not_labels()
     ] {
         assert_eq!(Agreement::Differ, same_value(&left, a, &right, b));
     }
+    let label = |name: &str| gandr_kernel_term::FieldLabel::from(alloc::string::String::from(name));
+    let left_record = left.value_record(alloc::collections::BTreeMap::from([
+        (label("a"), left_unit),
+        (label("b"), left_variable),
+    ]));
+    let right_record = right.value_record(alloc::collections::BTreeMap::from([
+        (label("a"), right_unit),
+        (label("b"), right_variable),
+    ]));
+    let relabelled = right.value_record(alloc::collections::BTreeMap::from([
+        (label("a"), right_unit),
+        (label("c"), right_variable),
+    ]));
+    let swapped_fields = right.value_record(alloc::collections::BTreeMap::from([
+        (label("a"), right_variable),
+        (label("b"), right_unit),
+    ]));
+    let narrower = right.value_record(alloc::collections::BTreeMap::from([(
+        label("a"),
+        right_unit,
+    )]));
+    assert_eq!(
+        Agreement::Same,
+        same_value(&left, left_record, &right, right_record)
+    );
+    for other in [relabelled, swapped_fields, narrower, right_pair] {
+        assert_eq!(
+            Agreement::Differ,
+            same_value(&left, left_record, &right, other)
+        );
+    }
     let empty = CoreArena::new();
     assert_eq!(
         Agreement::Differ,
@@ -466,6 +522,9 @@ fn computation_comparison_preserves_every_child_role()
     let matched =
         left.computation_data_case(unit, motive, alloc::vec![returned_unit, returned_variable]);
     let recursive = left.computation_fixpoint(returned_unit, FixpointEvidence::StructuralDescent);
+    let label = |name: &str| gandr_kernel_term::FieldLabel::from(alloc::string::String::from(name));
+    let selected = left.computation_record_projection(variable, label("a"));
+    let positioned = left.computation_tuple_projection(variable, 1_usize.into());
     let mut right = CoreArena::new();
     let other_variable = right.value_variable(Zone::Intuitionistic, 0_u32.into());
     right.computation_return(other_variable);
@@ -489,6 +548,8 @@ fn computation_comparison_preserves_every_child_role()
     ]);
     let other_recursive =
         right.computation_fixpoint(other_returned_unit, FixpointEvidence::StructuralDescent);
+    let other_selected = right.computation_record_projection(other_variable, label("a"));
+    let other_positioned = right.computation_tuple_projection(other_variable, 1_usize.into());
     for (a, b) in [
         (returned_unit, other_returned_unit),
         (returned_variable, other_returned_variable),
@@ -499,6 +560,8 @@ fn computation_comparison_preserves_every_child_role()
         (cased, other_cased),
         (matched, other_matched),
         (recursive, other_recursive),
+        (selected, other_selected),
+        (positioned, other_positioned),
     ] {
         assert_eq!(Agreement::Same, same_computation(&left, a, &right, b));
     }
@@ -543,6 +606,10 @@ fn computation_comparison_preserves_every_child_role()
         right.computation_fixpoint(other_returned_unit, FixpointEvidence::Partial);
     let changed_recursive_body =
         right.computation_fixpoint(other_returned_variable, FixpointEvidence::StructuralDescent);
+    let changed_label = right.computation_record_projection(other_variable, label("b"));
+    let changed_record = right.computation_record_projection(other_unit, label("a"));
+    let changed_component = right.computation_tuple_projection(other_variable, 2_usize.into());
+    let changed_tuple = right.computation_tuple_projection(other_unit, 1_usize.into());
     for (a, b) in [
         (function, changed_function),
         (applied, changed_head),
@@ -559,6 +626,11 @@ fn computation_comparison_preserves_every_child_role()
         (matched, dropped_branch),
         (recursive, changed_evidence),
         (recursive, changed_recursive_body),
+        (selected, changed_label),
+        (selected, changed_record),
+        (selected, other_positioned),
+        (positioned, changed_component),
+        (positioned, changed_tuple),
     ] {
         assert_eq!(Agreement::Differ, same_computation(&left, a, &right, b));
     }

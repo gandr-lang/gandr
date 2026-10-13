@@ -11,10 +11,10 @@
 //! - **focus** — a `μ` standing as a constructor field or a frame argument,
 //!   where only a value may stand;
 //! - **polarity** — a cut whose producer or consumer observes the other
-//!   polarity: constructors, literals, thunks, matches and force frames are
-//!   positive; copattern objects and application frames are negative;
-//!   variables, constants, `μ`, covariables, `μ̃` and `★` take the cut's
-//!   polarity.
+//!   polarity: constructors, literals, thunks, matches, selections and force
+//!   frames are positive; copattern objects and application frames are
+//!   negative; variables, constants, `μ`, covariables, `μ̃` and `★` take the
+//!   cut's polarity.
 //!
 //! On success it answers the command's free variables and covariables, as
 //! indices counted from the command itself, so scope is checked by the caller
@@ -28,11 +28,11 @@
 //! match or copattern object answering one head twice; a `μ` standing where
 //! only a value may; and a cut whose producer or consumer observes the other
 //! polarity. Constructors, literals, thunks, recursive thunks, matches, nominal
-//! matches and force frames are positive, copattern objects and application
-//! frames negative, and variables, constants, `μ`, covariables, `μ̃` and `★`
-//! take the cut's polarity. On success it answers the command's free variables
-//! and covariables, counted from the command, so a caller asks for a closed
-//! command by asking for an empty `FreeSet`.
+//! matches, selections and force frames are positive, copattern objects and
+//! application frames negative, and variables, constants, `μ`, covariables,
+//! `μ̃` and `★` take the cut's polarity. On success it answers the command's
+//! free variables and covariables, counted from the command, so a caller asks
+//! for a closed command by asking for an empty `FreeSet`.
 //!
 //! The arena is acyclic by construction, so the walk is a loop with no depth
 //! limit. The alternative was a full two-sided type check, which needs the
@@ -742,6 +742,9 @@ impl Walk<'_>
                     self.stack.push(Visit::Producer(branch, depth));
                 }
             },
+            | ConsumerNode::Select { then, .. } => {
+                self.stack.push(Visit::Consumer(then, depth));
+            },
         }
         Ok(())
     }
@@ -862,8 +865,8 @@ fn producer_polarity(node: &ProducerNode) -> Option<Polarity>
 /// The polarity a consumer observes, or `None` when it takes the cut's.
 ///
 /// # Specification
-/// - ensures: positive for matches, the polarity its head observes for a
-///   destructor frame, `None` for covariables, `μ̃` and `★`.
+/// - ensures: positive for matches and selections, the polarity its head
+///   observes for a destructor frame, `None` for covariables, `μ̃` and `★`.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — every consumer node kind, including both destructor
@@ -871,7 +874,7 @@ fn producer_polarity(node: &ProducerNode) -> Option<Polarity>
 ///   observations and incorrectly fixed tails are distinguished.
 /// - witness: `check::tests::every_node_kind_declares_its_intrinsic_polarity`
 #[spec(ensures: |ret| ret == match *node {
-    | ConsumerNode::ListFold { .. } | ConsumerNode::Case { .. } | ConsumerNode::DataCase { .. } | ConsumerNode::Destructor { tag: DestructorTag::Force, .. } => Some(Polarity::Positive),
+    | ConsumerNode::ListFold { .. } | ConsumerNode::Case { .. } | ConsumerNode::DataCase { .. } | ConsumerNode::Select { .. } | ConsumerNode::Destructor { tag: DestructorTag::Force, .. } => Some(Polarity::Positive),
     | ConsumerNode::Destructor { tag: DestructorTag::Apply | DestructorTag::Project(_), .. } => Some(Polarity::Negative),
     | ConsumerNode::Covariable(_) | ConsumerNode::MuTilde { .. } | ConsumerNode::Top => None,
 })]
@@ -880,7 +883,8 @@ fn consumer_polarity(node: &ConsumerNode) -> Option<Polarity>
     match *node {
         | ConsumerNode::ListFold { .. }
         | ConsumerNode::Case { .. }
-        | ConsumerNode::DataCase { .. } => Some(Polarity::Positive),
+        | ConsumerNode::DataCase { .. }
+        | ConsumerNode::Select { .. } => Some(Polarity::Positive),
         | ConsumerNode::Destructor { tag, .. } => Some(tag.polarity()),
         | ConsumerNode::Covariable(_) | ConsumerNode::MuTilde { .. } | ConsumerNode::Top => None,
     }

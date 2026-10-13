@@ -111,7 +111,6 @@ use gandr_core_checker::body;
 use gandr_core_checker::bridge;
 use gandr_core_checker::check_module;
 use gandr_core_checker::signature;
-use gandr_core_sequent::FocusRefusal;
 use gandr_core_term::CoreArena;
 use gandr_core_term::FailureClass;
 use gandr_kernel_term::ConstantIndex;
@@ -126,7 +125,6 @@ use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::OriginTable;
-use gandr_surface_lowering::SurfaceName;
 use gandr_surface_lowering::namespace::ShadowedBuiltin;
 use gandr_surface_parser::MeldError;
 use gandr_surface_parser::ObligationInstance;
@@ -237,10 +235,6 @@ pub enum Composed<'source>
         /// declaration the lowering refused at its own form files no half,
         /// so no attribute can be read off it.
         unstatable: Vec<LoweringRefusal<'source>>,
-        /// Each declaration that checks but whose focusing a former the
-        /// command IL lacks refused, in admission order: what a pending
-        /// source holding no unstatable refusal stands pending on.
-        awaiting: Vec<Awaiting<'source>>,
         /// Every core node the lowering minted, mapped back to the syntax
         /// that produced it: the table a checker refusal's node is located
         /// through.
@@ -268,81 +262,6 @@ pub enum Composed<'source>
     /// The lowering refused the source as a whole, before any declaration
     /// existed to carry a verdict: a root that is not a list of declarations.
     Refused(LoweringRefusal<'source>),
-}
-
-/// A declaration that checks but does not focus for want of a command-IL
-/// former.
-///
-/// The former is a record, or the projection of a record or a tuple, which
-/// the IL gains under [#221](https://github.com/gandr-lang/gandr/issues/221).
-///
-/// A pending source holding one stands pending on it. Once the IL holds the
-/// former, the source focuses whole and the walk reports it as no longer
-/// pending, so it moves under the fixture root.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Awaiting<'source>
-{
-    /// The declaration's name.
-    name: SurfaceName<'source>,
-    /// The focusing's refusal: one of the three the IL lacks.
-    refusal: FocusRefusal,
-}
-
-impl fmt::Display for Awaiting<'_>
-{
-    /// Writes the declaration's name and the focusing's refusal, then the
-    /// issue under which the command IL gains the former.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn fmt(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result
-    {
-        write!(
-            f,
-            "`{}`: {}, until the command IL holds it (#221)",
-            self.name, self.refusal
-        )
-    }
-}
-
-/// The declarations of `program` whose focusing a former the command IL lacks
-/// refused, in admission order.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: exactly the focusing refusals of a record, a record projection
-///   and a tuple projection, each with its declaration's name, in admission
-///   order; every other focusing refusal is left out.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a pending source holding a record value stands pending on
-///   it, and one whose focusing refuses a code stands lowered.
-/// - witness: `walk::tests::each_root_stands_its_sources`
-#[spec(ensures: |ret| ret.iter().all(|awaiting| matches!(awaiting.refusal,
-    FocusRefusal::Record(_) | FocusRefusal::RecordProjection(_) | FocusRefusal::TupleProjection(_))))]
-fn awaiting<'source>(program: &Program<'source>) -> Vec<Awaiting<'source>>
-{
-    program
-        .focus_refusals()
-        .filter(|&(_, refusal)| {
-            matches!(
-                refusal,
-                FocusRefusal::Record(_)
-                    | FocusRefusal::RecordProjection(_)
-                    | FocusRefusal::TupleProjection(_)
-            )
-        })
-        .map(|(name, refusal)| Awaiting { name, refusal })
-        .collect()
 }
 
 quenchant_shape::reason_enum! {
@@ -393,7 +312,6 @@ impl Composed<'_>
                 report,
                 exercised,
                 unstatable,
-                awaiting,
                 origins,
                 spellings,
                 trails,
@@ -404,7 +322,6 @@ impl Composed<'_>
                 report,
                 exercised,
                 unstatable,
-                awaiting,
                 origins,
                 spellings,
                 trails,
@@ -945,7 +862,6 @@ pub fn judge(
         | Ok(report) => {
             let exercised = Exercised::of(&arena, &module, &report);
             let unstatable = unstatable(&module);
-            let awaiting = awaiting(&program);
             let trails = Trails::of(&verdicts);
             let spellings = Spellings::of(&arena, &module, &report, &trails);
             let shadowed = module.recognition().shadowed().to_vec();
@@ -953,7 +869,6 @@ pub fn judge(
                 report,
                 exercised,
                 unstatable,
-                awaiting,
                 origins: module.into_origins(),
                 spellings,
                 trails,
@@ -1832,7 +1747,6 @@ def h = 1 ;"#,
                 report,
                 exercised,
                 unstatable,
-                awaiting: super::awaiting(&program),
                 origins: module.into_origins(),
                 spellings,
                 trails,

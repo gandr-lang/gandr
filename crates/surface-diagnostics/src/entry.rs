@@ -47,7 +47,6 @@ use gandr_surface_corpus::Outcome;
 use gandr_surface_corpus::Settlement;
 use gandr_surface_corpus::Stated;
 use gandr_surface_corpus::produced_refusal;
-use gandr_surface_dispatcher::Awaiting;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Shown;
 use gandr_surface_dispatcher::Spellings;
@@ -169,9 +168,6 @@ enum LineKind<'step>
     Fixture(&'step DeclarationReport<'step>),
     /// A refusal a pending source carries, printed by `test`.
     Pending(LoweringRefusal<'step>),
-    /// A declaration of a pending source that checks and awaits a former of
-    /// the command IL, printed by `test`.
-    Awaiting(&'step Awaiting<'step>),
     /// A pending source the lowering read, carrying no refusal an expectation
     /// cannot state.
     Lowered,
@@ -180,9 +176,8 @@ enum LineKind<'step>
 impl fmt::Display for Line<'_>
 {
     /// Writes the source's path, then the settled fixture's report, the
-    /// pending refusal with the bytes it stands at, the declaration awaiting
-    /// the command IL, or the note that a pending source belongs under the
-    /// fixture root.
+    /// pending refusal with the bytes it stands at, or the note that a pending
+    /// source belongs under the fixture root.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -214,7 +209,6 @@ impl fmt::Display for Line<'_>
                 | Maybe::Present(span) => write!(f, "{path}: pending: {refusal} at {span}"),
                 | Maybe::Absent(_) => write!(f, "{path}: pending: {refusal}"),
             },
-            | LineKind::Awaiting(awaiting) => write!(f, "{path}: pending: {awaiting}"),
             | LineKind::Lowered => write!(
                 f,
                 "{path}: unsettled: a pending source whose every expectation can be stated; it \
@@ -263,14 +257,11 @@ enum Cursor<'step>
         /// The judgements each refused body stood inside.
         trails: &'step Trails,
     },
-    /// The refusals and the declarations awaiting the command IL of a pending
-    /// source still to print.
+    /// The refusals of a pending source still to print.
     Pending
     {
         /// The refusals at a declaration's own form.
         unstatable: slice::Iter<'step, LoweringRefusal<'step>>,
-        /// The declarations awaiting the command IL, after the refusals.
-        awaiting: slice::Iter<'step, Awaiting<'step>>,
     },
 }
 
@@ -377,10 +368,9 @@ pub fn entries<'step>(
         path: actual, kind: LineKind::Pending(refusal),
     }))) => verb == Verb::Test && core::ptr::eq(core::ptr::from_ref(actual), core::ptr::from_ref(path)) && refusal == expected,
     (Standing::Pending, expected, actual) => {
-        let Composed::Settled { ref unstatable, ref awaiting, .. } = *expected else { return false; };
-        let Cursor::Pending { unstatable: ref held, awaiting: ref waits } = *actual else { return false; };
+        let Composed::Settled { ref unstatable, .. } = *expected else { return false; };
+        let Cursor::Pending { unstatable: ref held } = *actual else { return false; };
         verb == Verb::Test && core::ptr::eq(core::ptr::from_ref(held.as_slice()), core::ptr::from_ref(unstatable.as_slice()))
-            && core::ptr::eq(core::ptr::from_ref(waits.as_slice()), core::ptr::from_ref(awaiting.as_slice()))
     },
     (Standing::Settled | Standing::Unsettled | Standing::Refused | Standing::Lowered,
         &Composed::Refused(refusal), &Cursor::Last(Entry::Report(report))) =>
@@ -416,17 +406,9 @@ fn cursor<'step>(
             })),
             | Verb::Check(_) => Cursor::Done,
         },
-        | (
-            Standing::Pending,
-            &Composed::Settled {
-                ref unstatable,
-                ref awaiting,
-                ..
-            },
-        ) => match verb {
+        | (Standing::Pending, &Composed::Settled { ref unstatable, .. }) => match verb {
             | Verb::Test => Cursor::Pending {
                 unstatable: unstatable.iter(),
-                awaiting: awaiting.iter(),
             },
             | Verb::Check(_) => Cursor::Done,
         },
@@ -607,7 +589,7 @@ impl<'step> Iterator for Entries<'step>
             Cursor::Last(_) => 1_usize,
             Cursor::Lowered { ref shadowed, ref declarations, .. } => shadowed.len().saturating_add(declarations.len()).saturating_add(1_usize),
             Cursor::Declarations { ref shadowed, ref declarations, .. } => shadowed.len().saturating_add(declarations.len()),
-            Cursor::Pending { ref unstatable, ref awaiting } => unstatable.len().saturating_add(awaiting.len()),
+            Cursor::Pending { ref unstatable } => unstatable.len(),
         }],
         ensures: |ref ret| {
             let remaining = match self.cursor {
@@ -615,7 +597,7 @@ impl<'step> Iterator for Entries<'step>
                 Cursor::Last(_) => 1_usize,
                 Cursor::Lowered { ref shadowed, ref declarations, .. } => shadowed.len().saturating_add(declarations.len()).saturating_add(1_usize),
                 Cursor::Declarations { ref shadowed, ref declarations, .. } => shadowed.len().saturating_add(declarations.len()),
-                Cursor::Pending { ref unstatable, ref awaiting } => unstatable.len().saturating_add(awaiting.len()),
+                Cursor::Pending { ref unstatable } => unstatable.len(),
             };
             ret.as_ref().map_or(remaining == 0_usize, |entry| remaining < before && match *entry {
                 Entry::Report(report) => core::ptr::eq(core::ptr::from_ref(report.path()), core::ptr::from_ref(self.path)),
@@ -648,22 +630,13 @@ impl<'step> Iterator for Entries<'step>
                     kind: LineKind::Lowered,
                 }))
             },
-            | Cursor::Pending {
-                mut unstatable,
-                mut awaiting,
-            } => {
-                let kind = match unstatable.next() {
-                    | Some(&refusal) => Some(LineKind::Pending(refusal)),
-                    | None => awaiting.next().map(LineKind::Awaiting),
-                };
-                self.cursor = Cursor::Pending {
-                    unstatable,
-                    awaiting,
-                };
-                kind.map(|kind| {
+            | Cursor::Pending { mut unstatable } => {
+                let refusal = unstatable.next();
+                self.cursor = Cursor::Pending { unstatable };
+                refusal.map(|&refusal| {
                     Entry::Line(Line {
                         path: self.path,
-                        kind,
+                        kind: LineKind::Pending(refusal),
                     })
                 })
             },

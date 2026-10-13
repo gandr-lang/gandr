@@ -109,16 +109,14 @@
 //! A source under `fixture/pending/` carries a refusal no expectation can
 //! state: the lowering refuses it as a whole — its root is not a list of
 //! declarations — or refuses one of its declarations at the declaration's own
-//! form, which files no half for an attribute to be read off; or a declaration
-//! checks but its focusing meets a former the command IL lacks
-//! ([#221](https://github.com/gandr-lang/gandr/issues/221)). The runner counts
+//! form, which files no half for an attribute to be read off. The runner counts
 //! such a source as pending and settles none of its declarations; `test` prints
 //! each such refusal, naming the form the fragment lacks — a call or an
-//! operator, a record update, a data declaration, a module, an effect, the
-//! record in the IL — which is the former the source waits for, and its run
-//! outcomes are written when it moves. A pending source that carries none — the
-//! fragment grew, and every expectation it needs can be stated — is unsettled,
-//! and moves to the fixture root with its expectations written.
+//! operator, a record update, a data declaration, a module, an effect — which
+//! is the former the source waits for, and its run outcomes are written when it
+//! moves. A pending source that carries none — the fragment grew, and every
+//! expectation it needs can be stated — is unsettled, and moves to the fixture
+//! root with its expectations written.
 //!
 //! Three module sources stay pending for the second reason.
 //! `pathological/module-malformed-recovery` writes a member whose definition

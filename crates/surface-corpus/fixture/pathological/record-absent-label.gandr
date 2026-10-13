@@ -1,0 +1,6 @@
+@[ refuses("AbsentRecordField") ]
+def absent(r : #{n : Integer, s : String}) -> -F Integer {
+  case r {
+    #{.z = m} => return m
+  }
+}

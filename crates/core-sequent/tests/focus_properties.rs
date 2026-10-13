@@ -444,6 +444,58 @@ fn cases() -> Vec<Case>
         origin: FocusOrigin::Fixpoint,
     });
 
+    let label = |name: &str| gandr_kernel_term::FieldLabel::from(alloc::string::String::from(name));
+
+    let mut core = CoreArena::new();
+    let unit = core.value_unit();
+    let one = integer(&mut core, Integer(1));
+    let two = integer(&mut core, Integer(2));
+    let record = core.value_record(alloc::collections::BTreeMap::from([
+        (label("c"), unit),
+        (label("a"), one),
+        (label("b"), two),
+    ]));
+    let root = core.computation_return(record);
+    cases.push(Case {
+        label: "a record of three labels returned",
+        core,
+        root,
+        origin: FocusOrigin::Return,
+    });
+
+    let mut core = CoreArena::new();
+    let unit = core.value_unit();
+    let one = integer(&mut core, Integer(1));
+    let two = integer(&mut core, Integer(2));
+    let record = core.value_record(alloc::collections::BTreeMap::from([
+        (label("a"), one),
+        (label("b"), unit),
+        (label("c"), two),
+    ]));
+    let root = core.computation_record_projection(record, label("b"));
+    cases.push(Case {
+        label: "a record of three labels, its middle label projected",
+        core,
+        root,
+        origin: FocusOrigin::Projection,
+    });
+
+    let mut core = CoreArena::new();
+    let unit = core.value_unit();
+    let one = integer(&mut core, Integer(1));
+    let two = integer(&mut core, Integer(2));
+    let triple = core.value_tuple(&[one, unit, two]);
+    let projected = core.computation_tuple_projection(triple, 1_usize.into());
+    let own = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+    let body = core.computation_return(own);
+    let root = core.computation_bind(projected, body);
+    cases.push(Case {
+        label: "a triple's middle component projected and bound",
+        core,
+        root,
+        origin: FocusOrigin::Projection,
+    });
+
     cases
 }
 
@@ -489,6 +541,7 @@ fn hand_built_cases_cover_every_former()
             FocusOrigin::Fixpoint,
             FocusOrigin::Lambda,
             FocusOrigin::Case,
+            FocusOrigin::Projection,
             FocusOrigin::Bind,
         ]),
         seen,

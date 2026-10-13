@@ -436,17 +436,18 @@ impl<'run> Reading<'run>
     /// As the failure clause states.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — exact literal, opaque, tuple, injection and lift
-    ///   nodes distinguish changed payloads, head tags and field order; invalid
-    ///   arity and a dependency read too early have exact refusals. L2 — thunk,
-    ///   recursive-thunk and datatype-constructor readings compare with the
-    ///   independent normaliser.
+    /// - hypothesis: L3 — exact literal, opaque, tuple, record, injection and
+    ///   lift nodes distinguish changed payloads, head tags, labels and field
+    ///   order; invalid arity and a dependency read too early have exact
+    ///   refusals. L2 — thunk, recursive-thunk and datatype-constructor
+    ///   readings compare with the independent normaliser.
     /// - witness: `readback::tests::shared_fields_preserve_their_order`
     /// - witness: `readback::tests::refusals_restore_an_existing_core_prefix`
     /// - witness: `readback::tests::forward_dependencies_are_refused_before_reading_the_parent`
     /// - witness: `tests::differential::thunks_compare_structurally_through_readback`
     /// - witness: `tests::differential::hand_built_declared_data_cases_agree`
     /// - witness: `machine::tests::a_recursive_thunk_computes_through_its_own_binding`
+    /// - witness: `machine::tests::a_selection_reads_the_width_of_the_value_it_meets`
     #[spec(
         ensures: |ret| match ret {
             | Err(error) => self.store.value(id).is_some() || error == ReadbackRefusal::Dangling(id),
@@ -459,6 +460,9 @@ impl<'run> Reading<'run>
                     | (&ConstructorTag::ListCons, &[head, tail]) => matches!(*node, gandr_core_term::Value::ListCons(h, t) if self.read.get(&head) == Some(&h) && self.read.get(&tail) == Some(&t)),
                     | (&ConstructorTag::Tuple(arity), fields) => fields.len() == usize::from(arity)
                         && node.components().is_some_and(|values| fields.iter().map(|field| self.read.get(field)).eq(values.iter().map(Some))),
+                    | (&ConstructorTag::Record(ref labels), fields) => fields.len() == labels.len()
+                        && matches!(*node, gandr_core_term::Value::Record(ref read) if read.keys().eq(labels.iter())
+                            && fields.iter().map(|field| self.read.get(field)).eq(read.values().map(Some))),
                     | (&ConstructorTag::Injection(summand), &[body]) => matches!(*node, gandr_core_term::Value::Injection(found, value)
                         if summand == found && self.read.get(&body) == Some(&value)),
                     | (&ConstructorTag::Lift(ref level), &[body]) => matches!(*node, gandr_core_term::Value::Lift { ref target, body: value }
@@ -532,6 +536,20 @@ impl<'run> Reading<'run>
                         .map(|&component| self.lookup(component))
                         .collect::<Result<Vec<_>, _>>()?;
                     Ok(self.core.value_tuple(&components))
+                },
+                | (&ConstructorTag::Record(ref labels), fields)
+                    if fields.len() == labels.len()
+                        && labels
+                            .iter()
+                            .zip(labels.iter().skip(1))
+                            .all(|(before, after)| before < after) =>
+                {
+                    let record = labels
+                        .iter()
+                        .zip(fields)
+                        .map(|(label, &field)| self.lookup(field).map(|read| (label.clone(), read)))
+                        .collect::<Result<alloc::collections::BTreeMap<_, _>, _>>()?;
+                    Ok(self.core.value_record(record))
                 },
                 | (&ConstructorTag::Injection(summand), &[body]) => {
                     let body = self.lookup(body)?;
