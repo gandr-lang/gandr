@@ -455,6 +455,7 @@ dependencies = [
  "gandr-kernel-strata",
  "gandr-kernel-term",
  "gandr-theory-deep-inference",
+ "gandr-theory-sites",
  "proptest",
  "quenchant-anodized",
  "quenchant-shape",

@@ -24,9 +24,11 @@ test = true
 # certificate is addressed by the check-memo seam's content digest. The kernel
 # bridge erases into the term crate's arena and admits through the kernel's
 # choke point, which re-derives every declaration the judgement accepts. The
-# pinned anodized facade supplies the executable specifications; logic/BigInt
-# stays disabled in this no_std library. Nothing here names a surface crate:
-# names, spans and syntax stay above the core.
+# corolla stratum's species and equivalences come from the site crate, which
+# `ua_n` reads its range and alphabet from. The pinned anodized facade
+# supplies the executable specifications; logic/BigInt stays disabled in this
+# no_std library. Nothing here names a surface crate: names, spans and syntax
+# stay above the core.
 [dependencies]
 anodized.workspace = true
 gandr-core-nbe.workspace = true
@@ -37,6 +39,7 @@ gandr-kernel-core.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
 gandr-theory-deep-inference.workspace = true
+gandr-theory-sites.workspace = true
 quenchant-shape.workspace = true
 serde.workspace = true
 

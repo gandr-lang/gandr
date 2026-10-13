@@ -501,8 +501,9 @@ pub fn level_of(
 ///
 /// # Specification
 /// - requires: nothing; a non-quote is refused.
-/// - ensures: every reachable type is Base, a product of zero or two
-///   components, or a sum of two summands.
+/// - ensures: every reachable type is Base, a product of any arity, the unit
+///   among them, or a sum of at least one summand: the kernel's universe-path
+///   vocabulary less its session codes.
 /// - provides: the decoded endpoint of an admitted native path.
 /// - fails: `PathCode` for any other endpoint, reachable former or arity.
 /// - panics: none.
@@ -511,8 +512,11 @@ pub fn level_of(
 /// `CheckRefusal::PathCode`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a native Bool equivalence crosses; open codes refuse.
+/// - hypothesis: L3 — a native Bool equivalence crosses; open codes refuse; the
+///   telescope of a binary corolla beside a constant, a sum of one summand
+///   inside products, crosses.
 /// - witness: `bridge::tests::native_path_module_round_trips`
+/// - witness: `ua::tests::the_swap_of_a_binary_generator_is_a_path_of_the_certificate_universe`
 #[spec(ensures: |ret| match ret { Ok(root) => matches!(arena.value(code), Some(&gandr_core_term::Value::Quote(quoted)) if root == quoted) && matches!(arena.value_type(root), Some(&(gandr_core_term::ValueType::Base(_) | gandr_core_term::ValueType::Product(_) | gandr_core_term::ValueType::Sum(_)))), Err(CheckRefusal::PathCode(found)) => found == code, Err(_) => false })]
 pub fn path_code(
     arena: &CoreArena,
@@ -531,12 +535,10 @@ pub fn path_code(
         }
         match arena.value_type(node) {
             | Some(&gandr_core_term::ValueType::Base(_)) => {},
-            | Some(&gandr_core_term::ValueType::Product(ref parts))
-                if matches!(parts.len(), 0_usize | 2_usize) =>
-            {
+            | Some(&gandr_core_term::ValueType::Product(ref parts)) => {
                 pending.extend(parts.iter().copied());
             },
-            | Some(&gandr_core_term::ValueType::Sum(ref parts)) if parts.len() == 2_usize => {
+            | Some(&gandr_core_term::ValueType::Sum(ref parts)) if !parts.is_empty() => {
                 pending.extend(parts.iter().copied());
             },
             | _ => return Err(CheckRefusal::PathCode(code)),

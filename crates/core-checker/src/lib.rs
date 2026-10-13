@@ -221,6 +221,12 @@
 //!   363(1835) (2005). <https://doi.org/10.1098/rsta.2005.1650> — the de Bruijn
 //!   criterion: a result is trusted when a small independent checker re-derives
 //!   it, the posture of the kernel bridge.
+//! - Iosif Petrakis. "Univalent Typoids." 2022. `arXiv:2205.06651` — a
+//!   univalence map as a typoid function: the two-cell obligation [`ua`] names.
+//! - Michael Shulman. "Univalence for Inverse Diagrams and Homotopy
+//!   Canonicity." _Mathematical Structures in Computer Science_ 25, 5 (2015).
+//!   `doi:10.1017/S0960129514000565` — diagrams built degree by degree, the
+//!   telescope [`ua`] derives `ua_n` through.
 //!
 //! Each decision, with the alternative it was chosen over and what would
 //! reverse it, is stated in the documentation of the module it governs.
@@ -254,6 +260,7 @@ pub mod stage;
 pub mod staging;
 mod support;
 pub mod template;
+pub mod ua;
 mod view;
 
 pub use crate::code::Certificate;
