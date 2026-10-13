@@ -11,7 +11,7 @@ data NatDiv : Type {
   rule divmod(m, Succ(d)) ==> walk(m, d, d, Zero, Zero);
 }
 
-@[ runs("(ctor[1](ctor[1](ctor[0]())), ctor[1](ctor[0]()))") ]
+@[ runs("#{Succ(Succ(Zero)), Succ(Zero)}") ]
 def five_by_two : +U (-F (NatDiv * NatDiv)) ;
 def five_by_two = thunk {
   run (quot, rem) <- divmod(Succ(Succ(Succ(Succ(Succ(Zero))))), Succ(Succ(Zero)));

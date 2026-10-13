@@ -16,9 +16,21 @@
 //! A declaration is a value. Running it returns that value, and when the value
 //! is a thunk — a computation suspended, a function's body among them — the
 //! thunk is forced, so `def main = thunk { return 42 }` runs to `42` and a
-//! function runs to its own terminal, `<fun>`. The run's terminal is read back
-//! into the core and spelled; the spelling is the one `gandr run` prints, the
+//! function runs to its own terminal, `fn (a) { a }`. The run's terminal is
+//! read back into the core and spelled by `gandr-surface-pretty`, the printer
+//! a hover answers with; the spelling is the one `gandr run` prints, the
 //! session's value line carries and a `runs` expectation compares.
+//!
+//! **The value spelling is the shared printer's.** A run's value is the
+//! computation the printer presents: constructors by their declared names,
+//! constants by their paths, a function as its `fn`, a thunk as its body, a
+//! tuple as `#{a, b}`, an injection as `+{.0 = v}` and a record as `#{.l =
+//! v}` — the grammar's own spellings, laid out on one line. The focused
+//! command IL carries a data constructor's family when the core names one,
+//! so the read-back value names its constructors. The alternative was the
+//! run stage's own renderer, which wrote `ctor[i](…)` and `<fun>` and so
+//! answered differently from a hover over the same value; the choice
+//! reverses only if a run's value needs a spelling the grammar cannot write.
 //!
 //! # Classification
 //!
@@ -42,7 +54,7 @@
 //! not run. `Program::evaluate` mints `return c` for the declaration at `c`,
 //! runs it on a fresh L machine under a budget of 2²⁴ steps, forces the
 //! terminal when it is a thunk, so a suspended computation runs and a function
-//! answers `<fun>`, and reads the terminal back into the core. Nothing runs
+//! answers its `fn`, and reads the terminal back into the core. Nothing runs
 //! that no caller asked for: the settle comparison runs the declarations that
 //! state a `runs` outcome, the session runs what the user entered, and `gandr
 //! run` runs one declaration. The alternative was a run pipeline of its own
@@ -81,9 +93,9 @@
 //! kernel readmission; their portable evidence remains part of the artifact.
 //! The command IL does not execute native paths or transport: focusing reports
 //! `UniverseTransport` rather than treating a certificate as a runtime closure.
-//! The value renderer names a native path `<path>` and leaves unreduced
-//! transport under `<computation>`, without executing evidence while printing
-//! it. Dependency discovery traverses native classifiers, maps and product
+//! The printer spells a native path value and an unreduced transport as the
+//! core holds them, without executing evidence while printing them.
+//! Dependency discovery traverses native classifiers, maps and product
 //! components.
 //!
 //! **Choice.** Keep admission, evaluation and presentation as separate
@@ -121,16 +133,18 @@ use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
-use gandr_core_term::session::RecordedMove;
-use gandr_core_term::session::SessionRelation;
 use gandr_kernel_term::ConstantIndex;
-use gandr_kernel_term::Literal;
-use gandr_kernel_term::Side;
-use gandr_kernel_term::Sign;
 use gandr_surface_corpus::RunSpelling;
 use gandr_surface_corpus::Runner;
+use gandr_surface_diagnostics::Families;
+use gandr_surface_diagnostics::constant_names;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::SurfaceName;
+use gandr_surface_pretty::CoreNode;
+use gandr_surface_pretty::CoreSource;
+use gandr_surface_pretty::Name;
+use gandr_surface_pretty::Presentation;
+use gandr_surface_pretty::present_computation_line;
 use quenchant_shape::shape::Maybe;
 
 quenchant_shape::reason_enum! {
@@ -187,6 +201,10 @@ pub struct Program<'source>
     /// Each declaration's name and standing, by admission position; a
     /// position no declaration holds is absent.
     declarations: BTreeMap<ConstantIndex, Declared<'source>>,
+    /// The name the printer writes for each constant, by admission position.
+    names: Vec<String>,
+    /// The constructors of the module's data declarations, by family.
+    families: Families,
 }
 
 /// One declaration of a program: its name and how it stands for a run.
@@ -224,10 +242,26 @@ enum Opacity
     Unfocused(FocusRefusal),
 }
 
-/// A value, spelled: the text `gandr run` prints for a run that returned one.
+/// A value, spelled: the text `gandr run` prints for a run that returned one,
+/// laid out by the printer every face shares.
 #[repr(transparent)]
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ValueSpelling(String);
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct ValueSpelling(Presentation);
+
+impl ValueSpelling
+{
+    /// The presentation the spelling is: its text, whether it says the whole
+    /// of the value, and why any `?` in it stands.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn presentation(&self) -> &Presentation
+    {
+        &self.0
+    }
+}
 
 impl AsRef<str> for ValueSpelling
 {
@@ -238,7 +272,7 @@ impl AsRef<str> for ValueSpelling
     #[inline]
     fn as_ref(&self) -> &str
     {
-        &self.0
+        self.0.as_ref()
     }
 }
 
@@ -254,7 +288,7 @@ impl fmt::Display for ValueSpelling
         f: &mut fmt::Formatter<'_>,
     ) -> fmt::Result
     {
-        f.write_str(&self.0)
+        f.write_str(self.0.as_ref())
     }
 }
 
@@ -285,6 +319,9 @@ pub enum Unfinished
     /// The machine carried as itself a constant the program defines, which
     /// the program's own definitions rule out.
     Inconsistent(ConstantIndex),
+    /// The printer could not lay the run's terminal out within its build
+    /// ceilings.
+    Unspelled,
 }
 
 /// Why a declaration never reached the machine.
@@ -398,6 +435,9 @@ impl fmt::Display for Evaluation<'_>
                 "unfinished: the machine carried defined constant {} as itself",
                 usize::from(constant)
             ),
+            | Self::Unfinished(Unfinished::Unspelled) => {
+                f.write_str("unfinished: the value is too large to spell")
+            },
             | Self::Unrunnable(Unrunnable::Undeclared(constant)) => write!(
                 f,
                 "unrunnable: no declaration sits at admission position {}",
@@ -526,6 +566,8 @@ impl<'source> Program<'source>
             arena,
             definitions,
             declarations,
+            names: constant_names(module),
+            families: Families::of(module),
         }
     }
 
@@ -632,12 +674,13 @@ impl<'source> Program<'source>
     ///   thunk; a terminal that is, or holds outside any suspension, a
     ///   declaration owed its body, and a run stuck observing one, is
     ///   [`Evaluation::Blamed`] on it; any other stuck run is
-    ///   [`Evaluation::Stuck`]; a machine fault or a terminal with no core
-    ///   reading is [`Evaluation::Unfinished`]; otherwise the terminal is read
-    ///   back and spelled: an integer in decimal, a text quoted with its
-    ///   escapes, `unit`, a pair as `(a, b)`, an injection as `inl(v)`,
-    ///   `inr(v)` or, past the second summand, `inj[i](v)`, a thunk as
-    ///   `<thunk>`, a function as `<fun>`, a code as `<code>`.
+    ///   [`Evaluation::Stuck`]; a machine fault, a terminal with no core
+    ///   reading or one the printer cannot lay out is
+    ///   [`Evaluation::Unfinished`]; otherwise the terminal is read back and
+    ///   spelled as the grammar writes it: an integer in decimal, a text quoted
+    ///   with its escapes, `unit`, a tuple as `#{a, b}`, an injection as `+{.i
+    ///   = v}`, a constructor by its name, a thunk as `thunk { … }` and a
+    ///   function as its `fn`.
     /// - provides: the run stage every caller shares, so one declaration has
     ///   one outcome and one spelling wherever it is run.
     /// - fails: never; every failure is an outcome. A refused entry command
@@ -694,7 +737,7 @@ impl<'source> Program<'source>
                 Evaluation::Unfinished(Unfinished::Inconsistent(index)) => self.declarations.get(&index)
                     .is_some_and(|declared| matches!(declared.slot, Slot::Defined(_))),
                 Evaluation::Value(_) | Evaluation::Stuck(_)
-                    | Evaluation::Unfinished(Unfinished::Fault(_) | Unfinished::Readback(_)) => true,
+                    | Evaluation::Unfinished(Unfinished::Fault(_) | Unfinished::Readback(_) | Unfinished::Unspelled) => true,
             }
     )]
     #[inline]
@@ -752,7 +795,9 @@ impl<'source> Program<'source>
         };
         let mut core = CoreArena::new();
         match machine.read_back(terminal, &mut core) {
-            | Ok(read) => Evaluation::Value(self.spell(&core, read)),
+            | Ok(read) => self
+                .spell(&core, read)
+                .map_or_else(Evaluation::Unfinished, Evaluation::Value),
             | Err(refusal) => Evaluation::Unfinished(Unfinished::Readback(refusal)),
         }
     }
@@ -1063,310 +1108,49 @@ impl<'source> Program<'source>
         }
     }
 
-    /// The spelling of the terminal `read`, read back into `core`.
+    /// The spelling of the terminal `read`, read back into `core`, through
+    /// the printer every face shares.
     ///
     /// # Specification
-    /// - requires: the reachable core graph is finite and acyclic; missing ids
-    ///   are permitted and have explicit placeholder spellings.
-    /// - ensures: literals retain signs, decimal components and escaped text;
-    ///   unit, functions, suspensions, codes and holes have their declared
-    ///   spellings. Pairs and injections preserve field order and nesting, an
-    ///   injection at the first two summands spelled `inl(v)` and `inr(v)` and
-    ///   at any later one `inj[i](v)`, `i` its summand; lifts and marks are
-    ///   erased, and constants retain known names or the unknown-constant
-    ///   placeholder.
-    /// - fails: unsupported computation heads and missing nodes are spelled,
-    ///   not dereferenced or silently omitted.
+    /// - requires: nothing; a malformed core graph is admissible.
+    /// - ensures: the terminal presented as the computation it is, on one line
+    ///   without a break search: a returned value as the value, a function as
+    ///   its `fn`, constants by their paths from the top level and constructors
+    ///   by their names, every former as the grammar writes it and `?` where
+    ///   the printer cannot spell a node; the unspelled-layout absence where
+    ///   the printer cannot write it.
+    /// - provides: the one value spelling `gandr run`, the session and a `runs`
+    ///   expectation share, the same printer a hover answers with.
+    /// - fails: [`Unfinished::Unspelled`] when the presentation reaches a build
+    ///   ceiling.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — source values cover integer, quoted text, unit,
-    ///   functions and thunks; a core fixture covers nested pairs, every
-    ///   injection spelling and constant names. Numeric and malformed-core
-    ///   cases are not separately generated by these witnesses.
+    /// - hypothesis: L3 — source values cover integers, text, unit, functions,
+    ///   thunks, constructors, tuples and injections at their exact spellings;
+    ///   the corpus `runs` expectations pin every value the corpus runs to.
     /// - witness: `evaluate::tests::a_value_runs_to_its_spelling`
     /// - witness: `evaluate::tests::structured_values_keep_repeated_references_and_field_order`
-    #[spec(ensures: |ref ret| match core.computation(read) {
-        Some(&Computation::Lambda(_)) => ret.0 == "<fun>",
-        Some(&Computation::With(..)) => ret.0 == "<with>",
-        Some(&Computation::Return(value)) => match core.value(value) {
-            Some(&Value::Constructor {..}) => ret.0.starts_with("ctor[") && ret.0.ends_with(')'),
-            Some(&Value::Record(_)) => ret.0.starts_with("#{") && ret.0.ends_with('}'),
-            Some(&Value::Reify(_)) => ret.0 == "<stack>",
-            Some(&Value::Primitive { primitive, .. }) => ret.0 == primitive.name().as_ref(),
-            Some(held) if held.components().is_some_and(<[_]>::is_empty) => ret.0 == "unit",
-            Some(&Value::ListNil) => ret.0 == "nil",
-            Some(&Value::ListCons(..)) => ret.0.starts_with("cons(") && ret.0.ends_with(')'),
-            Some(&Value::Thunk(_)) => ret.0 == "<thunk>",
-            Some(&(Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { relation: SessionRelation::Equivalence, .. })) => ret.0 == "<path>",
-            Some(&(Value::SessionRelated { relation: SessionRelation::Subtyping, .. } | Value::Stay(_) | Value::Then(..))) => ret.0 == "<flow>",
-            Some(&Value::Recorded(_)) => ret.0.starts_with("recorded(") && ret.0.ends_with(')'),
-            Some(&(Value::Returned(_) | Value::Nested(_) | Value::Run(_))) => ret.0 == "<computation>",
-            Some(&(Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..))) => ret.0 == "<code>",
-            Some(&Value::Constant(constant)) => match self.name(constant) {
-                Maybe::Present(name) => ret.0 == name.as_ref(),
-                Maybe::Absent(declaration_name::Absent::Undeclared) => ret.0 == "<constant>",
-            },
-            Some(&Value::Variable { .. }) => ret.0 == "<variable>",
-            Some(&Value::Literal(Literal::Integer(ref integer))) => {
-                let digits: &str = integer.magnitude().as_ref();
-                ret.0.chars().eq(core::iter::once('-').filter(|_| integer.sign() == Sign::Negative).chain(digits.chars()))
-            },
-            Some(&Value::Literal(Literal::Numeric(ref numeric))) => {
-                let integer: &str = numeric.integer_part().as_ref();
-                let fraction: &str = numeric.fraction().as_ref();
-                ret.0.chars().eq(core::iter::once('-').filter(|_| numeric.sign() == Sign::Negative)
-                    .chain(integer.chars()).chain(core::iter::once('.'))
-                    .chain(if fraction.is_empty() { "0" } else { fraction }.chars()))
-            },
-            Some(&Value::Literal(Literal::Text(ref text))) => {
-                let text: &str = text.as_ref();
-                ret.0.chars().eq(core::iter::once('"').chain(text.escape_debug()).chain(core::iter::once('"')))
-            },
-            Some(&Value::Tuple(_)) => ret.0.starts_with('(') && ret.0.ends_with(')'),
-            Some(&Value::Injection(summand, _)) => Side::try_from(summand).map_or_else(
-                |_beyond| ret.0.starts_with("inj[") && ret.0.ends_with(')'),
-                |side| ret.0.starts_with(match side { Side::Left => "inl(", Side::Right => "inr(" }) && ret.0.ends_with(')'),
-            ),
-            Some(&(Value::Lift { .. } | Value::Mark { .. })) => true,
-            Some(&Value::Hole(_)) => ret.0 == "?",
-            None => ret.0 == "<dangling>",
-        },
-        Some(&Computation::Primitive { .. } |
-&(Computation::Transport(..) | Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } | Computation::Application(..) |
-Computation::DataCase {..} | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Split { .. } | Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) |
-Computation::ListFold { .. } | Computation::Bind(..) | Computation::Force(_) | Computation::Case { .. }
-| Computation::Hole(_) | Computation::Mark { .. } | Computation::Fixpoint { .. } | Computation::Session(_) | Computation::Ride { .. })) |
-None => ret.0 == "<computation>",
+    #[spec(ensures: |ref ret| match *ret {
+        Ok(ref spelled) => !AsRef::<str>::as_ref(spelled).is_empty(),
+        Err(ref unfinished) => *unfinished == Unfinished::Unspelled,
     })]
     fn spell(
         &self,
         core: &CoreArena,
         read: ComputationId,
-    ) -> ValueSpelling
+    ) -> Result<ValueSpelling, Unfinished>
     {
-        let mut spelled = String::new();
-        let mut pending = match core.computation(read) {
-            | Some(&Computation::Return(value)) => Vec::from([Piece::Value(value)]),
-            | Some(&Computation::Lambda(_)) => Vec::from([Piece::Text("<fun>")]),
-            | Some(&Computation::With(..)) => Vec::from([Piece::Text("<with>")]),
-            | Some(
-                &Computation::Primitive { .. }
-                | &(Computation::Transport(..)
-                | Computation::PathTransport { .. }
-                | Computation::TelescopeTransport { .. }
-                | Computation::Application(..)
-                | Computation::Perform { .. }
-                | Computation::Handle { .. }
-                | Computation::Exercise { .. }
-                | Computation::Scope { .. }
-                | Computation::Resume(..)
-                | Computation::Split { .. }
-                | Computation::Reset(_)
-                | Computation::Shift(_)
-                | Computation::Project(..)
-                | Computation::Bind(..)
-                | Computation::Force(_)
-                | Computation::DataCase { .. }
-                | Computation::RecordProjection(..)
-                | Computation::TupleProjection(..)
-                | Computation::ListFold { .. }
-                | Computation::Case { .. }
-                | Computation::Hole(_)
-                | Computation::Mark { .. }
-                | Computation::Fixpoint { .. }
-                | Computation::Session(_)
-                | Computation::Ride { .. }),
-            )
-            | None => Vec::from([Piece::Text("<computation>")]),
-        };
-        while let Some(piece) = pending.pop() {
-            let value = match piece {
-                | Piece::Label(label) => {
-                    spelled.push_str(label.as_ref());
-                    continue;
-                },
-                | Piece::Field(label) => {
-                    spelled.push('"');
-                    spelled.extend(label.as_ref().escape_debug());
-                    spelled.push('"');
-                    spelled.push_str(": ");
-                    continue;
-                },
-                | Piece::Text(text) => {
-                    spelled.push_str(text);
-                    continue;
-                },
-                | Piece::Value(value) => value,
-            };
-            match core.value(value) {
-                | Some(&Value::Constructor {
-                    tag, ref fields, ..
-                }) => {
-                    let _written =
-                        core::fmt::write(&mut spelled, format_args!("ctor[{}](", usize::from(tag)));
-                    pending.push(Piece::Text(")"));
-                    for (index, &field) in fields.iter().enumerate().rev() {
-                        if index.saturating_add(1) < fields.len() {
-                            pending.push(Piece::Text(", "));
-                        }
-                        pending.push(Piece::Value(field));
-                    }
-                },
-                | Some(&Value::Record(ref fields)) => {
-                    spelled.push_str("#{");
-                    pending.push(Piece::Text("}"));
-                    for (index, (label, &field)) in fields.iter().enumerate().rev() {
-                        if index.saturating_add(1) < fields.len() {
-                            pending.push(Piece::Text(", "));
-                        }
-                        pending.push(Piece::Value(field));
-                        pending.push(Piece::Field(label));
-                    }
-                },
-                | Some(&Value::Reify(_)) => spelled.push_str("<stack>"),
-                | Some(&Value::Primitive { primitive, .. }) => {
-                    spelled.push_str(primitive.name().as_ref());
-                },
-                | Some(
-                    &(Value::PathRefl(_)
-                    | Value::PathProduct(..)
-                    | Value::PathEquiv { .. }
-                    | Value::Here(_)
-                    | Value::Funext(..)
-                    | Value::Equiv(..)
-                    | Value::Ua { .. }
-                    | Value::SessionRelated {
-                        relation: SessionRelation::Equivalence,
-                        ..
-                    }),
-                ) => spelled.push_str("<path>"),
-                | Some(
-                    &(Value::SessionRelated {
-                        relation: SessionRelation::Subtyping,
-                        ..
-                    }
-                    | Value::Stay(_)
-                    | Value::Then(..)),
-                ) => spelled.push_str("<flow>"),
-                | Some(&Value::Recorded(ref moves)) => {
-                    spelled.push_str("recorded(");
-                    pending.push(Piece::Text(")"));
-                    for (index, step) in moves.iter().enumerate().rev() {
-                        match *step {
-                            | RecordedMove::Sent(payload) => pending.extend([
-                                Piece::Text(")"),
-                                Piece::Value(payload),
-                                Piece::Text("sent("),
-                            ]),
-                            | RecordedMove::Received(payload) => pending.extend([
-                                Piece::Text(")"),
-                                Piece::Value(payload),
-                                Piece::Text("received("),
-                            ]),
-                            | RecordedMove::Selected(ref label) => pending.extend([
-                                Piece::Text(")"),
-                                Piece::Label(label),
-                                Piece::Text("selected("),
-                            ]),
-                            | RecordedMove::Offered(ref label) => pending.extend([
-                                Piece::Text(")"),
-                                Piece::Label(label),
-                                Piece::Text("offered("),
-                            ]),
-                            | RecordedMove::Closed => pending.push(Piece::Text("closed")),
-                        }
-                        if index > 0 {
-                            pending.push(Piece::Text(", "));
-                        }
-                    }
-                },
-                | Some(&(Value::Returned(_) | Value::Nested(_) | Value::Run(_))) => {
-                    spelled.push_str("<computation>");
-                },
-                | Some(&Value::Literal(Literal::Integer(ref integer))) => {
-                    if integer.sign() == Sign::Negative {
-                        spelled.push('-');
-                    }
-                    spelled.push_str(integer.magnitude().as_ref());
-                },
-                | Some(&Value::Literal(Literal::Numeric(ref numeric))) => {
-                    if numeric.sign() == Sign::Negative {
-                        spelled.push('-');
-                    }
-                    spelled.push_str(numeric.integer_part().as_ref());
-                    spelled.push('.');
-                    let fraction: &str = numeric.fraction().as_ref();
-                    spelled.push_str(if fraction.is_empty() { "0" } else { fraction });
-                },
-                | Some(&Value::Literal(Literal::Text(ref text))) => {
-                    spelled.push('"');
-                    let text: &str = text.as_ref();
-                    spelled.extend(text.escape_debug());
-                    spelled.push('"');
-                },
-                | Some(&Value::ListNil) => spelled.push_str("nil"),
-                | Some(&Value::ListCons(head, tail)) => pending.extend([
-                    Piece::Text(")"),
-                    Piece::Value(tail),
-                    Piece::Text(", "),
-                    Piece::Value(head),
-                    Piece::Text("cons("),
-                ]),
-                | Some(&Value::Tuple(ref components)) => match **components {
-                    | [] => spelled.push_str("unit"),
-                    | [only] => {
-                        pending.extend([Piece::Text(",)"), Piece::Value(only), Piece::Text("(")]);
-                    },
-                    | [ref leading @ .., last] => {
-                        pending.extend([Piece::Text(")"), Piece::Value(last)]);
-                        for &component in leading.iter().rev() {
-                            pending.extend([Piece::Text(", "), Piece::Value(component)]);
-                        }
-                        pending.push(Piece::Text("("));
-                    },
-                },
-                | Some(&Value::Injection(summand, body)) => match Side::try_from(summand) {
-                    | Ok(side) => pending.extend([
-                        Piece::Text(")"),
-                        Piece::Value(body),
-                        Piece::Text(match side {
-                            | Side::Left => "inl(",
-                            | Side::Right => "inr(",
-                        }),
-                    ]),
-                    | Err(_) => {
-                        let _written = core::fmt::write(
-                            &mut spelled,
-                            format_args!("inj[{}](", usize::from(summand)),
-                        );
-                        pending.extend([Piece::Text(")"), Piece::Value(body)]);
-                    },
-                },
-                | Some(&(Value::Lift { body, .. } | Value::Mark { body, .. })) => {
-                    pending.push(Piece::Value(body));
-                },
-                | Some(&Value::Hole(_)) => spelled.push('?'),
-                | Some(&Value::Thunk(_)) => spelled.push_str("<thunk>"),
-                | Some(
-                    &(Value::Quote(_)
-                    | Value::QuoteComputation(_)
-                    | Value::StaticLambda(_)
-                    | Value::StaticApplication(..)),
-                ) => {
-                    spelled.push_str("<code>");
-                },
-                | Some(&Value::Constant(constant)) => match self.name(constant) {
-                    | Maybe::Present(name) => spelled.push_str(name.as_ref()),
-                    | Maybe::Absent(declaration_name::Absent::Undeclared) => {
-                        spelled.push_str("<constant>");
-                    },
-                },
-                | Some(&Value::Variable { .. }) => spelled.push_str("<variable>"),
-                | None => spelled.push_str("<dangling>"),
-            }
-        }
-        ValueSpelling(spelled)
+        let names: Vec<Name<'_>> = self
+            .names
+            .iter()
+            .map(|name| Name::from(name.as_str()))
+            .collect();
+        let constructors = self.families.naming(&names);
+        let source = CoreSource::new(core, &names).naming(&constructors);
+        present_computation_line(&source, CoreNode::Computation(read))
+            .map(ValueSpelling)
+            .map_err(|_refusal| Unfinished::Unspelled)
     }
 }
 
@@ -1384,20 +1168,6 @@ impl Runner for Program<'_>
     {
         RunSpelling::from(self.evaluate(constant).to_string())
     }
-}
-
-/// A piece of a spelling still to write.
-#[derive(Clone, Copy, Debug)]
-enum Piece<'core>
-{
-    /// An exact record field label, escaped before its value.
-    Field(&'core gandr_core_term::FieldLabel),
-    /// A choice label, written bare.
-    Label(&'core gandr_core_term::FieldLabel),
-    /// Fixed text.
-    Text(&'static str),
-    /// A value, spelled in turn.
-    Value(ValueId),
 }
 
 /// The constants `body` refers to, outside its types.
@@ -1766,12 +1536,12 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
             ("greeting", r#""a \"quoted\"\nline""#),
             ("nothing", "unit"),
             ("copy", "42"),
-            ("identity", "<fun>"),
-            ("first", "<fun>"),
+            ("identity", "fn (a) { a }"),
+            ("first", "fn (a) { fn (b) { a } }"),
             ("applied", "42"),
             ("chosen", "42"),
             ("delayed", r#""later""#),
-            ("nested", "<thunk>"),
+            ("nested", "thunk { 1 }"),
         ] {
             let evaluation = run(&mut values, SurfaceName::from(name));
             assert!(
@@ -1819,7 +1589,7 @@ def kept : +U (-F (+U (-F Integer))) ; def kept = thunk { return holder } ;"#,
         );
         assert_eq!(
             run(&mut goals, SurfaceName::from("kept")).to_string(),
-            "<thunk>",
+            "thunk { force suspended }",
             "a goal under a suspension the run returns is not reached"
         );
         let rendered = run(&mut goals, SurfaceName::from("forced")).to_string();
@@ -2046,18 +1816,23 @@ def bad : Integer ; def bad = "text" ; def small : Type ; def small = Integer ;"
             ConstantIndex::from(1_usize)
         ]);
         let returned = core.computation_return(outer);
+        let spelled = |core: &gandr_core_term::CoreArena, returned| {
+            names
+                .spell(core, returned)
+                .map(|spelling| spelling.as_ref().to_owned())
+        };
         assert_eq!(
-            names.spell(&core, returned).as_ref(),
-            "(first, (second, first))"
+            spelled(&core, returned),
+            Ok(String::from("#{first, #{second, first}}"))
         );
         for (summand, expected) in [
-            (0_usize, "inl(second)"),
-            (1, "inr(second)"),
-            (2, "inj[2](second)"),
+            (0_usize, "+{.0 = second}"),
+            (1, "+{.1 = second}"),
+            (2, "+{.2 = second}"),
         ] {
             let injected = core.value_injection(summand.into(), second);
             let returned = core.computation_return(injected);
-            assert_eq!(names.spell(&core, returned).as_ref(), expected);
+            assert_eq!(spelled(&core, returned), Ok(String::from(expected)));
         }
     }
 
@@ -2275,9 +2050,9 @@ def bad : Integer ; def bad = "text" ; def small : Type ; def small = Integer ;"
     {
         let mut program = program(PICK);
         for (name, delivered) in [
-            ("zero", "ctor[0]()"),
-            ("one", "ctor[1](ctor[0]())"),
-            ("three", "ctor[1](ctor[1](ctor[0]()))"),
+            ("zero", "Zero"),
+            ("one", "Succ(Zero)"),
+            ("three", "Succ(Succ(Zero))"),
         ] {
             let evaluation = run(&mut program, SurfaceName::from(name));
             assert_eq!(

@@ -12,11 +12,25 @@
 //! | [`present_type`]              | a value or computation type at a width                   |
 //! | [`present_value`]             | a value at a width, bounded at [`DEPTH_LIMIT`]            |
 //! | [`present_computation`]       | an elaborated body at a width, its exits elided           |
+//! | [`present_computation_line`]  | the same body on one line, never laid out                |
 //! | [`Presentation`]              | the laid-out text and whether it says the whole node     |
 //! | [`Source`], [`Former`]        | the one question the printer asks of its input           |
 //! | [`CoreSource`]                | the core arena as a source                               |
 //! | [`ContentSource`]             | a checkpoint's content table as a source                 |
 //! | [`PresentationError`]         | a layout ceiling reached on the way                      |
+//!
+//! # One walk, two composers
+//!
+//! The walk writes each leaf and join into a composer. The page faces compose
+//! a layout document and let the engine choose its breaks;
+//! [`present_computation_line`] composes text directly, taking at each choice
+//! the side with fewer breaks, because building the document — not choosing
+//! among its layouts — is most of what a value a run prints would cost.
+//!
+//! - **Alternatives.** Rendering the layout document without a break search
+//!   still builds and interns the document for every value.
+//! - **Reversal.** A one-line face whose text must follow a cost only the
+//!   resolver decides.
 //!
 //! # One spelling per former
 //!
@@ -88,9 +102,11 @@
 //! `fn (x) { c }` and, inside a body, a thunk is `thunk { c }`. A value
 //! presented alone keeps its thunks opaque. Case analyses, splits,
 //! projections, fixpoints, native operations, transports and the effect and
-//! control operators have spellings that name what the core holds by position
-//! — a constructor, a field label, an operation — which no [`Source`]
-//! answers, so each is written `?`, approximate. A source as written is the
+//! control operators are spelled as the surface writes them. What the core
+//! holds only by position — a constructor's name by its tag, a field label, an
+//! operation — comes from the [`Source`]: a data case's branch is written
+//! under the pattern [`Source::constructor`] names, and a source that cannot
+//! name it writes `?` there, approximate. A source as written is the
 //! formatter's (`gandr-surface-format`): it keeps every token, the exit
 //! keywords among them, so a source round-trips as written.
 //!
@@ -157,6 +173,8 @@
 
 extern crate alloc;
 
+mod compose;
+
 mod content_source;
 
 mod core_source;
@@ -165,8 +183,11 @@ mod error;
 
 mod former;
 
+mod scope;
+
 mod walk;
 
+use alloc::collections::BTreeSet;
 use core::fmt;
 
 use anodized::spec;
@@ -177,14 +198,18 @@ use gandr_surface_layout::PhysicalLineEnding;
 use gandr_surface_layout::RenderError;
 use gandr_surface_layout::RenderLimits;
 use gandr_surface_layout::RenderMeter;
-use gandr_surface_layout::arena::TextSource;
 use gandr_surface_layout::build::DocBuilder;
 use gandr_surface_layout::limits::BuildLimits;
 use gandr_surface_layout::limits::BuildMeter;
 use gandr_surface_layout::render::RenderedText;
 use gandr_surface_layout::render::render;
 
+use crate::compose::Compose;
+use crate::compose::Glyphs;
+use crate::compose::OneLine;
+use crate::compose::Paged;
 pub use crate::content_source::ContentSource;
+pub use crate::core_source::Constructors;
 pub use crate::core_source::CoreNode;
 pub use crate::core_source::CoreSource;
 pub use crate::core_source::Restoration;
@@ -194,6 +219,11 @@ pub use crate::former::Component;
 pub use crate::former::Former;
 pub use crate::former::Name;
 pub use crate::former::Source;
+pub use crate::former::Unreadable;
+pub use crate::former::Unspelled;
+pub use crate::scope::Binder;
+pub use crate::scope::BinderIndex;
+pub use crate::scope::Scopes;
 use crate::walk::Admits;
 use crate::walk::Tail;
 use crate::walk::Walked;
@@ -274,6 +304,8 @@ pub struct Presentation
     text: RenderedText,
     /// Whether the text says the whole node.
     fidelity: Fidelity,
+    /// Why each `?` the text holds was written.
+    unspelled: BTreeSet<Unspelled>,
 }
 
 impl Presentation
@@ -287,6 +319,17 @@ impl Presentation
     pub const fn fidelity(&self) -> Fidelity
     {
         self.fidelity
+    }
+
+    /// Why the printer wrote each `?` the text holds, one entry per reason.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn unspelled(&self) -> &BTreeSet<Unspelled>
+    {
+        &self.unspelled
     }
 }
 
@@ -371,7 +414,7 @@ pub fn present_type<S>(
 where
     S: Source + ?Sized,
 {
-    present(source, root, Admits::Type, page)
+    present(source, root, Admits::Type, Layout::Page(page))
 }
 
 /// The value at `root` of `source`, laid out at `page`.
@@ -421,7 +464,7 @@ pub fn present_value<S>(
 where
     S: Source + ?Sized,
 {
-    present(source, root, Admits::Value, page)
+    present(source, root, Admits::Value, Layout::Page(page))
 }
 
 /// The computation at `root` of `source`, an elaborated body, laid out at
@@ -470,17 +513,77 @@ pub fn present_computation<S>(
 where
     S: Source + ?Sized,
 {
-    present(source, root, Admits::Computation(Tail::Ends), page)
+    present(
+        source,
+        root,
+        Admits::Computation(Tail::Ends),
+        Layout::Page(page),
+    )
 }
 
-/// The node at `root` of `source`, in a position admitting `admits`, laid out
-/// at `page`.
+/// The computation at `root` of `source` as [`present_computation`] spells
+/// it, on as few lines as it admits.
+///
+/// The layout a page no line overflows selects, written by the same walk
+/// straight into text, with no layout document built and no break searched
+/// for.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: the text [`present_computation`] writes at a page wider than
+///   every line, the same fidelity and the same unspelled reasons; a body's
+///   statements on one line, a break only where the document admits no other.
+/// - provides: the spelling of a value a run prints, read as one line and never
+///   laid out to a page.
+/// - fails: as [`present_type`].
+/// - panics: none.
+///
+/// # Errors
+/// As [`present_type`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — the elaborated bodies of the golden, with binds, blocks
+///   and calls, written on one line equal their layout at a page no line
+///   overflows; a choice taken the wrong way or a soft break kept changes the
+///   text.
+/// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+#[spec(ensures: |ref ret| match *ret {
+    Ok(ref presentation) => !presentation.as_ref().contains(['\r', '\t']),
+    Err(PresentationError::Render(RenderError::InvalidWidth)) => false,
+    Err(_) => true,
+})]
+#[inline]
+pub fn present_computation_line<S>(
+    source: &S,
+    root: S::Node,
+) -> Result<Presentation, PresentationError>
+where
+    S: Source + ?Sized,
+{
+    present(source, root, Admits::Computation(Tail::Ends), Layout::Line)
+}
+
+/// Where a presentation is written: laid out at a page, or on as few lines
+/// as the document admits.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Layout
+{
+    /// Laid out at the page by the resolver.
+    Page(PageWidth),
+    /// Written straight into text, on as few lines as admitted.
+    Line,
+}
+
+/// The node at `root` of `source`, in a position admitting `admits`, written
+/// as `layout` asks.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the walk's document rendered at `page`, the computation width
-///   twice the page, saturating at its maximum, so the resolver can prove which
-///   candidates fit. Over-budget walks produce `?`, approximate. Successful
+/// - ensures: the walk's document rendered at the page of a [`Layout::Page`],
+///   the computation width twice the page, saturating at its maximum, so the
+///   resolver can prove which candidates fit; for [`Layout::Line`], the walk
+///   written straight into text on as few lines as it admits, no layout
+///   document built. Over-budget walks produce `?`, approximate. Successful
 ///   text has no carriage return or tab; layout-owned endings are line feeds.
 ///   Computation width is never narrower than the page.
 /// - provides: the one path every entry point takes.
@@ -509,25 +612,53 @@ fn present<S>(
     source: &S,
     root: S::Node,
     admits: Admits,
-    page: PageWidth,
+    layout: Layout,
 ) -> Result<Presentation, PresentationError>
 where
     S: Source + ?Sized,
 {
-    let mut meter = BuildMeter::new(BuildLimits::default());
-    let mut builder = DocBuilder::try_new(&mut meter)?;
-    let (doc, fidelity) = match walk(source, root, admits, &mut builder)? {
-        | Walked::Built { doc, fidelity } => (doc, fidelity),
-        | Walked::OverBudget => (builder.text(TextSource::from("?"))?, Fidelity::Approximate),
+    let spelled = |composer: &mut dyn Compose| {
+        Ok::<_, PresentationError>(match walk(source, root, admits, composer)? {
+            | Walked::Built {
+                doc,
+                fidelity,
+                unspelled,
+            } => (doc, fidelity, unspelled),
+            | Walked::OverBudget => (
+                composer.text(Glyphs("?"))?,
+                Fidelity::Approximate,
+                BTreeSet::from([Unspelled::OverBudget]),
+            ),
+        })
     };
-    let arena = builder.finish()?;
-    let computation = ComputationWidth::from(u32::from(page).saturating_mul(2_u32));
-    let options = LayoutOptions::try_new(page, computation, PhysicalLineEnding::Lf)?;
-    let mut render_meter = RenderMeter::new(RenderLimits::default());
-    let rendered = render(&arena, doc, &options, &mut render_meter)?;
+    let (text, fidelity, unspelled) = match layout {
+        | Layout::Page(page) => {
+            let mut meter = BuildMeter::new(BuildLimits::default());
+            let mut builder = DocBuilder::try_new(&mut meter)?;
+            let mut paged = Paged::new(&mut builder);
+            let (doc, fidelity, unspelled) = spelled(&mut paged)?;
+            let doc = paged.handle(doc)?;
+            let arena = builder.finish()?;
+            let computation = ComputationWidth::from(u32::from(page).saturating_mul(2_u32));
+            let options = LayoutOptions::try_new(page, computation, PhysicalLineEnding::Lf)?;
+            let mut render_meter = RenderMeter::new(RenderLimits::default());
+            let rendered = render(&arena, doc, &options, &mut render_meter)?;
+            (rendered.text, fidelity, unspelled)
+        },
+        | Layout::Line => {
+            let mut line = OneLine::new();
+            let (doc, fidelity, unspelled) = spelled(&mut line)?;
+            (
+                RenderedText::from(line.into_text(doc)?),
+                fidelity,
+                unspelled,
+            )
+        },
+    };
     Ok(Presentation {
-        text: rendered.text,
+        text,
         fidelity,
+        unspelled,
     })
 }
 

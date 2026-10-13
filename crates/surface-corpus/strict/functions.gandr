@@ -1,8 +1,8 @@
-@[ runs("<fun>") ]
+@[ runs("fn (a) { a }") ]
 def identity : +U (Integer -> -F Integer) ;
 def identity = thunk { fn (x) { return x } } ;
 
-@[ runs("<fun>") ]
+@[ runs("fn (a) { fn (b) { a } }") ]
 def first : +U (Integer -> Integer -> -F Integer) ;
 def first = thunk { fn (x) { fn (y) { return x } } } ;
 

@@ -423,6 +423,12 @@ pub struct OriginTable
     /// Each variable written in the source, with its binder's span, ascending
     /// by id.
     bindings: Vec<(ValueId, ByteSpan)>,
+    /// Each `ua` statement with where it names its two descriptions, in the
+    /// order lowered; the arena shares a statement written twice alike.
+    sides: Vec<(ValueId, [Origin; 2])>,
+    /// Each element transport with where its motive is written, in the order
+    /// lowered; the arena shares a transport written twice alike.
+    motives: Vec<(ComputationId, Origin)>,
 }
 
 /// Record one family's origin, keeping the vector ascending by id.
@@ -872,6 +878,18 @@ impl OriginTable
         &self.bindings
     }
 
+    /// Every lambda and bind with the origin of the binder it opens, in mint
+    /// order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn binders(&self) -> &[(ComputationId, Origin)]
+    {
+        &self.binders
+    }
+
     /// Every value's origin, in mint order.
     ///
     /// # Specification
@@ -1085,6 +1103,91 @@ impl OriginTable
     ) -> Maybe<Origin, origin::Absent>
     {
         find(&self.binders, opener)
+    }
+
+    /// Record where the `ua` statement `statement` names its two
+    /// descriptions, the source's first: a description is no core node, so a
+    /// face answers it through the statement.
+    ///
+    /// # Specification
+    /// - requires: nothing; a statement the arena shares with an earlier one is
+    ///   recorded again, at its own names.
+    /// - ensures: the pair is appended, so [`Self::sides`] holds it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a statement between two magmas records both names
+    ///   where they are written.
+    /// - witness: `lower::ua::tests::a_statement_lowers_to_univalence_at_its_stratum`
+    #[spec(
+        captures: before = self.sides.len(),
+        ensures: self.sides.len() == before.saturating_add(1)
+            && self.sides.last() == Some(&(statement, named)),
+    )]
+    #[inline]
+    pub fn record_sides(
+        &mut self,
+        statement: ValueId,
+        named: [Origin; 2],
+    )
+    {
+        self.sides.push((statement, named));
+    }
+
+    /// Each `ua` statement with where it names its two descriptions, the
+    /// source's first, in the order lowered.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn sides(&self) -> &[(ValueId, [Origin; 2])]
+    {
+        &self.sides
+    }
+
+    /// Record where the element transport or ride `transport` writes its
+    /// motive: the family the motive denotes is shared by every motive that
+    /// denotes it, so a face answers each written motive through its own
+    /// transport.
+    ///
+    /// # Specification
+    /// - requires: nothing; a transport the arena shares with an earlier one is
+    ///   recorded again, at its own motive.
+    /// - ensures: the pair is appended, so [`Self::motives`] holds it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a list moved along a universe path records its motive
+    ///   where it is written.
+    /// - witness: `lower::identity::tests::a_list_moves_along_a_universe_equivalence`
+    #[spec(
+        captures: before = self.motives.len(),
+        ensures: self.motives.len() == before.saturating_add(1)
+            && self.motives.last() == Some(&(transport, motive)),
+    )]
+    #[inline]
+    pub fn record_motive(
+        &mut self,
+        transport: ComputationId,
+        motive: Origin,
+    )
+    {
+        self.motives.push((transport, motive));
+    }
+
+    /// Each element transport and ride with where its motive is written, in
+    /// the order lowered.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn motives(&self) -> &[(ComputationId, Origin)]
+    {
+        &self.motives
     }
 }
 

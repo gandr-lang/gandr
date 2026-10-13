@@ -228,13 +228,15 @@ features = ["std"]
 version = "1.5.1"
 default-features = false
 
-# The hasher behind the grammar's label index and the syntax tree builder's
-# leaf-digest cache: a fixed-seed folded-multiply hash, deterministic across
-# runs. The choices and their reversals are in the consumers' READMEs.
+# The hasher behind the grammar's label index, the syntax tree builder's
+# leaf-digest cache and the printer's binder scopes: a fixed-seed
+# folded-multiply hash, deterministic across runs. The choices and their
+# reversals are in the consumers' READMEs and module docs.
 # features:
 # - none: the fixed-seed state needs neither `std` nor a random seed
 # consumers:
 # - surface-grammar
+# - surface-pretty
 [workspace.dependencies.foldhash]
 version = "0.2.0"
 default-features = false
@@ -780,12 +782,14 @@ path = "crates/theory-spec-combinators"
 [workspace.dependencies.gandr-workflow-test-timing]
 path = "crates/workflow-test-timing"
 
-# SwissTable hash maps without `std`, for the grammar's label index. The
-# choice and its reversal are in the grammar's README.
+# SwissTable hash maps without `std`, for the grammar's label index and the
+# printer's binder scopes. The choice and its reversal are in the grammar's
+# README and the printer's scope module.
 # features:
 # - none: the index names its own hasher, so the default one stays off
 # consumers:
 # - surface-grammar
+# - surface-pretty
 [workspace.dependencies.hashbrown]
 version = "0.17.1"
 default-features = false

@@ -3,6 +3,7 @@
 //! through its [`Restoration`].
 
 use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_term::Carried;
@@ -15,13 +16,17 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::session::SessionAction;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::Side;
+use quenchant_shape::shape::Maybe;
 
 use crate::former::Arity;
 use crate::former::Component;
 use crate::former::Former;
 use crate::former::Name;
 use crate::former::Source;
+use crate::former::Unreadable;
 
 /// A node of a core arena, of any of its four families.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -127,12 +132,125 @@ impl Restoration
 /// The restoration that restores nothing.
 const UNRESTORED: &Restoration = &Restoration(BTreeMap::new());
 
+/// The constructor names of the data families a presentation meets, and the
+/// family each data case eliminates.
+///
+/// The core names a constructor by its family and its tag, and a data case
+/// matches by tag alone, so neither holds a constructor's name. A source
+/// reads them here: a family's constructors by the family's name, in tag
+/// order with each one's field count, and a data case's family by the case.
+/// Two families of one name keep the first one recorded.
+///
+/// # Specification
+/// - requires: the families are named as the source names a family and the
+///   cases are computations of the source's arena.
+/// - ensures: a recorded family answers its constructors by tag; a recorded
+///   case answers its family; everything else answers nothing.
+/// - provides: the patterns a data case is written in and the head a
+///   constructor value is written under.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a family of a nullary and a unary constructor names a
+///   constructor value and both branches of a case over it; a shifted tag
+///   changes the golden.
+/// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
+/// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Constructors<'text>
+{
+    /// Each family's constructors in tag order, with their field counts.
+    families: BTreeMap<Name<'text>, Vec<(Name<'text>, Arity)>>,
+    /// The family each data case eliminates.
+    cases: BTreeMap<ComputationId, Name<'text>>,
+}
+
+impl<'text> Constructors<'text>
+{
+    /// The family `family`'s constructors, in tag order with their field
+    /// counts, recorded unless a family of that name already is.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the family answers the constructors of its first record.
+    /// - provides: the constructor names a source reads.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Constructors`].
+    /// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
+    #[spec(ensures: self.families.contains_key(&family))]
+    #[inline]
+    pub fn family<I>(
+        &mut self,
+        family: Name<'text>,
+        constructors: I,
+    ) where
+        I: IntoIterator<Item = (Name<'text>, Arity)>,
+    {
+        let _first = self
+            .families
+            .entry(family)
+            .or_insert_with(|| constructors.into_iter().collect());
+    }
+
+    /// The data case `case` eliminates a value of `family`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the case answers `family`, the first record winning.
+    /// - provides: the family a case's patterns are named from.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Constructors`].
+    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+    #[spec(ensures: self.cases.contains_key(&case))]
+    #[inline]
+    pub fn case(
+        &mut self,
+        case: ComputationId,
+        family: Name<'text>,
+    )
+    {
+        let _first = self.cases.entry(case).or_insert(family);
+    }
+
+    /// The constructor of `family` at `tag`, and its field count.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn constructor(
+        &self,
+        family: Name<'_>,
+        tag: Component,
+    ) -> Option<(Name<'text>, Arity)>
+    {
+        self.families
+            .get(family.as_ref())?
+            .get(usize::from(tag))
+            .copied()
+    }
+}
+
+/// The constructor table that names nothing.
+const UNNAMED: &Constructors<'static> = &Constructors {
+    families: BTreeMap::new(),
+    cases: BTreeMap::new(),
+};
+
 /// A core arena read through the names of the constants it mentions.
 ///
 /// A core node names a constant or an abstract type by its admission
 /// position; `names` spells position `i` as its `i`-th entry. A position past
 /// the table reads as [`Former::Unreadable`]. A source restoring an
-/// elaboration reads every node the elaboration rebuilt as its original.
+/// elaboration reads every node the elaboration rebuilt as its original; one
+/// naming constructors reads them from its [`Constructors`]; one within a
+/// context reads a variable past the root's binders by the context's names.
 ///
 /// # Specification
 /// - requires: `names` is indexed by admission position.
@@ -162,6 +280,10 @@ pub struct CoreSource<'arena>
     names: &'arena [Name<'arena>],
     /// The rebuilt nodes read as their originals.
     restoration: &'arena Restoration,
+    /// The constructors' names, by family.
+    constructors: &'arena Constructors<'arena>,
+    /// The names of the binders the root stands under, outermost first.
+    context: &'arena [Option<Name<'arena>>],
 }
 
 impl<'arena> CoreSource<'arena>
@@ -181,6 +303,8 @@ impl<'arena> CoreSource<'arena>
             arena,
             names,
             restoration: UNRESTORED,
+            constructors: UNNAMED,
+            context: &[],
         }
     }
 
@@ -202,33 +326,92 @@ impl<'arena> CoreSource<'arena>
         }
     }
 
+    /// This source, naming constructors and data cases from `constructors`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn naming(
+        self,
+        constructors: &'arena Constructors<'arena>,
+    ) -> Self
+    {
+        Self {
+            constructors,
+            ..self
+        }
+    }
+
+    /// This source, its roots standing under binders named by `context`,
+    /// outermost first.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn within(
+        self,
+        context: &'arena [Option<Name<'arena>>],
+    ) -> Self
+    {
+        Self { context, ..self }
+    }
+
     /// The name at admission position `constant`.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: `wrap` over the table's entry for `constant`;
-    ///   [`Former::Unreadable`] past the table.
-    /// - provides: the constant and abstract-type readings.
+    /// - ensures: the table's entry for `constant`; none past the table.
+    /// - provides: the constant, abstract-type and family readings.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the constant and abstract-type wrappers at a live
+    /// - hypothesis: L3 — the constant and abstract-type readings at a live
     ///   admission position and the exact table end expose shifted names or a
-    ///   missing-entry fallback. Arbitrary callback behavior is excluded.
+    ///   missing-entry fallback.
     /// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
-    #[spec(ensures: |ret| usize::from(constant) < self.names.len()
-        || matches!(ret, Former::Unreadable)
-    )]
-    fn named(
+    #[spec(ensures: |ret| ret == self.names.get(usize::from(constant)).copied())]
+    fn name(
         &self,
         constant: ConstantIndex,
-        wrap: fn(Name<'arena>) -> Former<'arena, CoreNode>,
-    ) -> Former<'arena, CoreNode>
+    ) -> Option<Name<'arena>>
     {
-        self.names
-            .get(usize::from(constant))
-            .map_or(Former::Unreadable, |name| wrap(*name))
+        self.names.get(usize::from(constant)).copied()
+    }
+
+    /// The name the family `datatype` names, a data type of the arena.
+    ///
+    /// # Specification
+    /// trivial.
+    fn family(
+        &self,
+        datatype: ValueTypeId,
+    ) -> Option<Name<'arena>>
+    {
+        match *self.arena.value_type(datatype)? {
+            | ValueType::Data { declaration, .. } => self.name(declaration),
+            | ValueType::Record(_)
+            | ValueType::PathUniverse(..)
+            | ValueType::Path { .. }
+            | ValueType::Flow { .. }
+            | ValueType::Run(_)
+            | ValueType::Base(_)
+            | ValueType::Product(_)
+            | ValueType::Sum(_)
+            | ValueType::List(_)
+            | ValueType::Thunk(_)
+            | ValueType::Universe { .. }
+            | ValueType::Lift { .. }
+            | ValueType::Element { .. }
+            | ValueType::Abstract(_)
+            | ValueType::StaticPi { .. }
+            | ValueType::Unknown
+            | ValueType::Stack { .. }
+            | ValueType::Session(_)
+            | ValueType::Capability { .. } => None,
+        }
     }
 
     /// The value `id` names.
@@ -273,14 +456,21 @@ impl<'arena> CoreSource<'arena>
             zone == actual_zone && index == actual_index,
         | (Some(&Value::Constant(index)), Former::Constant(name)) => self.names.get(usize::from(index))
             .is_some_and(|held| held.as_ref() == name.as_ref()),
-        | (Some(&Value::Constant(index)), Former::Unreadable) => usize::from(index) >= self.names.len(),
-        (Some(&Value::Constructor { .. } | &Value::Hole(_) | &Value::Mark { .. } | &Value::Returned(_) | &Value::Recorded(_)) | None,
-Former::Unreadable) | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::ListNil), Former::ListNil) |
-(Some(&Value::Lift { .. }), Former::ValueLift) => true,
+        | (Some(&Value::Constant(index)), Former::Unreadable(Unreadable::Unnamed)) => usize::from(index) >= self.names.len(),
+        | (Some(&Value::Constructor { datatype, tag, ref fields }), Former::Constructor { name, arity }) =>
+            usize::from(arity) == fields.len() && name == self.family(datatype)
+                .and_then(|family| self.constructors.constructor(family, Component::from(usize::from(tag))))
+                .map(|(held, _)| held),
+        | (Some(&Value::Recorded(ref moves)), Former::Recorded { payloads, .. }) =>
+            usize::from(payloads) == moves.iter().filter(|step| matches!(step.payload(), Maybe::Present(_))).count(),
+        (Some(&Value::Hole(_)), Former::Unreadable(Unreadable::Hole)) | (Some(&Value::Mark { .. }), Former::Unreadable(Unreadable::Mark))
+            | (Some(&Value::Lift { .. }), Former::Unreadable(Unreadable::Lift)) | (None, Former::Unreadable(Unreadable::Dangling))
+            | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::ListNil), Former::ListNil) => true,
         | (Some(&Value::Thunk(body)), Former::Thunk(actual))
         | (Some(&Value::Nested(body)), Former::Nested(actual))
+        | (Some(&Value::Returned(body)), Former::Returned(actual))
         | (Some(&Value::Run(body)), Former::Run(actual)) => actual == CoreNode::Computation(body),
-        | (Some(&Value::Record(ref fields)), Former::Unreadable) => fields.is_empty(),
+        | (Some(&Value::Record(ref fields)), Former::Unit) => fields.is_empty(),
         | (Some(&Value::Record(ref fields)), Former::Record(arity)) => !fields.is_empty() && usize::from(arity) == fields.len(),
         | (Some(&Value::Literal(ref literal)), Former::Literal(actual)) =>
             core::ptr::eq(core::ptr::from_ref(literal), core::ptr::from_ref(actual)),
@@ -304,21 +494,35 @@ Former::Unreadable) | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::Li
     {
         let Some(value) = self.arena.value(id)
         else {
-            return Former::Unreadable;
+            return Former::Unreadable(Unreadable::Dangling);
         };
         match *value {
-            // The source grammar has no native data reader. A hole or a mark
-            // is displayed by the session, not spelled here, a compound
-            // endpoint has no former of its own, a recorded run is a trace
-            // the printer does not spell, and the surface writes no empty
-            // record: `#{}` is the unit. Element identity is `here`, function
-            // extensionality `funext`, universe equivalence `equiv` and
-            // univalence at a stratum `ua[n, k]`.
-            | Value::Constructor { .. }
-            | Value::Hole(_)
-            | Value::Mark { .. }
-            | Value::Returned(_)
-            | Value::Recorded(_) => Former::Unreadable,
+            | Value::Constructor {
+                datatype,
+                tag,
+                ref fields,
+            } => Former::Constructor {
+                name: self
+                    .family(datatype)
+                    .and_then(|family| {
+                        self.constructors
+                            .constructor(family, Component::from(usize::from(tag)))
+                    })
+                    .map(|(name, _)| name),
+                arity: Arity::from(fields.len()),
+            },
+            | Value::Hole(_) => Former::Unreadable(Unreadable::Hole),
+            | Value::Mark { .. } => Former::Unreadable(Unreadable::Mark),
+            | Value::Returned(body) => Former::Returned(CoreNode::Computation(body)),
+            | Value::Recorded(ref moves) => Former::Recorded {
+                moves,
+                payloads: Arity::from(
+                    moves
+                        .iter()
+                        .filter(|step| matches!(step.payload(), Maybe::Present(_)))
+                        .count(),
+                ),
+            },
             | Value::SessionRelated {
                 relation,
                 source,
@@ -349,7 +553,7 @@ Former::Unreadable) | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::Li
                 forward: CoreNode::Value(forward),
                 backward: CoreNode::Value(backward),
             },
-            | Value::Record(ref fields) if fields.is_empty() => Former::Unreadable,
+            | Value::Record(ref fields) if fields.is_empty() => Former::Unit,
             | Value::Record(ref fields) => Former::Record(Arity::from(fields.len())),
             | Value::Reify(_) => Former::Reify,
             | Value::Primitive { primitive, .. } => {
@@ -363,7 +567,9 @@ Former::Unreadable) | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::Li
                 forward, backward, ..
             } => Former::PathEquiv(CoreNode::Value(forward), CoreNode::Value(backward)),
             | Value::Variable { zone, index } => Former::Variable { zone, index },
-            | Value::Constant(constant) => self.named(constant, Former::Constant),
+            | Value::Constant(constant) => self
+                .name(constant)
+                .map_or(Former::Unreadable(Unreadable::Unnamed), Former::Constant),
             | Value::ListNil => Former::ListNil,
             | Value::ListCons(head, tail) => {
                 Former::ListCons(CoreNode::Value(head), CoreNode::Value(tail))
@@ -375,7 +581,7 @@ Former::Unreadable) | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::Li
                 Former::Injection(Component::from(usize::from(summand)), CoreNode::Value(body))
             },
             | Value::Thunk(body) => Former::Thunk(CoreNode::Computation(body)),
-            | Value::Lift { .. } => Former::ValueLift,
+            | Value::Lift { .. } => Former::Unreadable(Unreadable::Lift),
             | Value::Quote(quoted) => Former::Quote(CoreNode::ValueType(quoted)),
             | Value::QuoteComputation(quoted) => {
                 Former::QuoteComputation(CoreNode::CompType(quoted))
@@ -414,10 +620,14 @@ Former::Unreadable) | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::Li
     #[spec(ensures: |ret| match (self.arena.value_type(id), ret) {
         | (Some(&ValueType::Stack { input, output }), Former::Stack(a, b)) => a == CoreNode::CompType(input) && b == CoreNode::CompType(output),
         | (Some(&ValueType::PathUniverse(source, target)), Former::PathUniverse(actual_source, actual_target)) => actual_source == CoreNode::Value(source) && actual_target == CoreNode::Value(target),
-        (Some(&ValueType::Data { .. } | &ValueType::Unknown | &ValueType::Path { .. } | &ValueType::Flow { .. }) | None,
-Former::Unreadable) |
-(Some(&ValueType::Lift { .. }), Former::TypeLift) => true,
-        | (Some(&ValueType::Record(ref fields)), Former::Unreadable) => fields.is_empty(),
+        | (Some(&ValueType::Data { declaration, ref arguments }), Former::Data { name, arity }) =>
+            usize::from(arity) == arguments.len() && self.name(declaration) == name,
+        | (Some(&ValueType::Path { carrier, left, right }), Former::Path { carrier: actual_carrier, left: actual_left, right: actual_right })
+        | (Some(&ValueType::Flow { carrier, source: left, target: right }), Former::Flow { carrier: actual_carrier, left: actual_left, right: actual_right }) =>
+            actual_carrier == CoreNode::ValueType(carrier) && actual_left == CoreNode::Value(left) && actual_right == CoreNode::Value(right),
+        (Some(&ValueType::Unknown), Former::Unreadable(Unreadable::UnknownType)) | (Some(&ValueType::Lift { .. }), Former::Unreadable(Unreadable::Lift))
+            | (None, Former::Unreadable(Unreadable::Dangling)) => true,
+        | (Some(&ValueType::Record(ref fields)), Former::Product(arity)) => fields.is_empty() && usize::from(arity) == 0_usize,
         | (Some(&ValueType::Record(ref fields)), Former::RecordType(arity)) => !fields.is_empty() && usize::from(arity) == fields.len(),
         | (Some(&ValueType::Base(base)), Former::BaseType(actual)) => base == actual,
         | (Some(&ValueType::Product(ref parts)), Former::Product(arity))
@@ -430,7 +640,7 @@ Former::Unreadable) |
         | (Some(&ValueType::Run(code)), Former::RunType(actual)) => actual == CoreNode::Value(code),
         | (Some(&ValueType::Abstract(index)), Former::Abstract(name)) => self.names.get(usize::from(index))
             .is_some_and(|held| held.as_ref() == name.as_ref()),
-        | (Some(&ValueType::Abstract(index)), Former::Unreadable) => usize::from(index) >= self.names.len(),
+        | (Some(&ValueType::Abstract(index)), Former::Unreadable(Unreadable::Unnamed)) => usize::from(index) >= self.names.len(),
         | (Some(&ValueType::StaticPi { domain, codomain }), Former::StaticPi { domain: actual_domain, codomain: actual_codomain }) =>
             actual_domain == CoreNode::ValueType(domain) && actual_codomain == CoreNode::ValueType(codomain),
         | (Some(&ValueType::Session(ref session)), Former::Session { protocol, state, payloads }) =>
@@ -446,18 +656,39 @@ Former::Unreadable) |
     {
         let Some(value_type) = self.arena.value_type(id)
         else {
-            return Former::Unreadable;
+            return Former::Unreadable(Unreadable::Dangling);
         };
         match *value_type {
-            // A native data classifier, a path type and a flow type have no
-            // spelling in the source grammar's bracket joins, and the surface
-            // writes no empty record type: `#{}` is `Unit`.
-            | ValueType::Data { .. }
-            | ValueType::Unknown
-            | ValueType::Path { .. }
-            | ValueType::Flow { .. } => Former::Unreadable,
+            | ValueType::Data {
+                declaration,
+                ref arguments,
+            } => Former::Data {
+                name: self.name(declaration),
+                arity: Arity::from(arguments.len()),
+            },
+            | ValueType::Path {
+                carrier,
+                left,
+                right,
+            } => Former::Path {
+                carrier: CoreNode::ValueType(carrier),
+                left: CoreNode::Value(left),
+                right: CoreNode::Value(right),
+            },
+            | ValueType::Flow {
+                carrier,
+                source,
+                target,
+            } => Former::Flow {
+                carrier: CoreNode::ValueType(carrier),
+                left: CoreNode::Value(source),
+                right: CoreNode::Value(target),
+            },
             | ValueType::Run(code) => Former::RunType(CoreNode::Value(code)),
-            | ValueType::Record(ref fields) if fields.is_empty() => Former::Unreadable,
+            | ValueType::Unknown => Former::Unreadable(Unreadable::UnknownType),
+            | ValueType::Record(ref fields) if fields.is_empty() => {
+                Former::Product(Arity::from(0_usize))
+            },
             | ValueType::Record(ref fields) => Former::RecordType(Arity::from(fields.len())),
             | ValueType::Product(ref parts) => Former::Product(Arity::from(parts.len())),
             | ValueType::Sum(ref parts) => Former::Sum(Arity::from(parts.len())),
@@ -471,9 +702,11 @@ Former::Unreadable) |
             | ValueType::List(element) => Former::List(CoreNode::ValueType(element)),
             | ValueType::Thunk(body) => Former::ThunkType(CoreNode::CompType(body)),
             | ValueType::Universe { sort, ref level } => Former::Universe { sort, level },
-            | ValueType::Lift { .. } => Former::TypeLift,
+            | ValueType::Lift { .. } => Former::Unreadable(Unreadable::Lift),
             | ValueType::Element { code, .. } => Former::Element(CoreNode::Value(code)),
-            | ValueType::Abstract(atom) => self.named(atom, Former::Abstract),
+            | ValueType::Abstract(atom) => self
+                .name(atom)
+                .map_or(Former::Unreadable(Unreadable::Unnamed), Former::Abstract),
             | ValueType::StaticPi { domain, codomain } => Former::StaticPi {
                 domain: CoreNode::ValueType(domain),
                 codomain: CoreNode::ValueType(codomain),
@@ -518,7 +751,7 @@ Former::Unreadable) |
     /// - witness: `core_source::tests::holes_marks_and_the_unknown_type_read_as_unreadable`
     #[spec(ensures: |ret| match (self.arena.comp_type(id), ret) {
         | (Some(&CompType::With(first, second)), Former::With(a, b)) => a == CoreNode::CompType(first) && b == CoreNode::CompType(second),
-        | (Some(&CompType::Unknown) | None, Former::Unreadable) => true,
+        | (Some(&CompType::Unknown), Former::Unreadable(Unreadable::UnknownType)) | (None, Former::Unreadable(Unreadable::Dangling)) => true,
         | (Some(&CompType::Returner { result, ref effects }), Former::Returner(actual)) => actual == CoreNode::ValueType(result) && effects.purity() == gandr_core_term::effect::Purity::Pure,
         | (Some(&CompType::Returner { result, ref effects }), Former::EffectfulReturner { result: actual, .. }) => actual == CoreNode::ValueType(result) && effects.purity() == gandr_core_term::effect::Purity::Effectful,
         | (Some(&CompType::Arrow { domain, codomain }), Former::Arrow { domain: actual_domain, codomain: actual_codomain })
@@ -534,10 +767,10 @@ Former::Unreadable) |
     {
         let Some(comp_type) = self.arena.comp_type(id)
         else {
-            return Former::Unreadable;
+            return Former::Unreadable(Unreadable::Dangling);
         };
         match *comp_type {
-            | CompType::Unknown => Former::Unreadable,
+            | CompType::Unknown => Former::Unreadable(Unreadable::UnknownType),
             | CompType::With(first, second) => {
                 Former::With(CoreNode::CompType(first), CoreNode::CompType(second))
             },
@@ -566,6 +799,252 @@ Former::Unreadable) |
             | CompType::Element { code, .. } => Former::ComputationElement(CoreNode::Value(code)),
         }
     }
+
+    /// The computation `id` names.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each computation former read as its [`Former`], its children
+    ///   as nodes of their families and its names spelled: a primitive by its
+    ///   prelude function's name, an operation and a record field by their own,
+    ///   a scope by its interface's; a hole and a mark as the honest set's, and
+    ///   an id the arena does not hold as dangling.
+    /// - provides: the computation half of [`Source::read`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the computation golden reads every computation former
+    ///   and its children in order; a truncated arena reads dangling.
+    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
+    /// - witness: `core_source::tests::holes_marks_and_the_unknown_type_read_as_unreadable`
+    #[spec(ensures: |ret| match (self.arena.computation(id), ret) {
+        | (Some(&Computation::Hole(_)), Former::Unreadable(Unreadable::Hole))
+        | (Some(&Computation::Mark { .. }), Former::Unreadable(Unreadable::Mark))
+        | (None, Former::Unreadable(Unreadable::Dangling)) => true,
+        | (Some(&Computation::Return(value)), Former::Return(actual))
+        | (Some(&Computation::Force(value)), Former::Force(actual)) => actual == CoreNode::Value(value),
+        | (Some(&Computation::Lambda(body)), Former::Lambda(actual))
+        | (Some(&Computation::Fixpoint { body, .. }), Former::Fixpoint(actual))
+        | (Some(&Computation::Reset(body)), Former::Reset(actual))
+        | (Some(&Computation::Shift(body)), Former::Shift(actual)) => actual == CoreNode::Computation(body),
+        | (Some(&Computation::Bind(bound, rest)), Former::Bind(actual_bound, actual_rest)) =>
+            actual_bound == CoreNode::Computation(bound) && actual_rest == CoreNode::Computation(rest),
+        | (Some(&Computation::Application(function, argument)), Former::Application(actual_function, actual_argument)) =>
+            actual_function == CoreNode::Computation(function) && actual_argument == CoreNode::Value(argument),
+        | (Some(&Computation::Primitive { primitive, ref arguments }), Former::Primitive { name, arity }) =>
+            name.as_ref() == primitive.name().as_ref() && usize::from(arity) == arguments.len(),
+        | (Some(&Computation::Case { scrutinee, ref branches }), Former::Case { scrutinee: actual, arity }) =>
+            actual == CoreNode::Value(scrutinee) && usize::from(arity) == branches.len(),
+        | (Some(&Computation::DataCase { scrutinee, ref branches, .. }), Former::DataCase { scrutinee: actual, arity }) =>
+            actual == CoreNode::Value(scrutinee) && usize::from(arity) == branches.len(),
+        | (Some(&Computation::Split { scrutinee, arity, body }), Former::Split { scrutinee: actual, arity: actual_arity, body: actual_body }) =>
+            actual == CoreNode::Value(scrutinee) && usize::from(arity) == usize::from(actual_arity) && actual_body == CoreNode::Computation(body),
+        | (Some(&Computation::Handle { ref clauses, .. }), Former::Handle { clauses: count, .. })
+        | (Some(&Computation::Scope { ref clauses, .. }), Former::Scope { clauses: count, .. }) => usize::from(count) == clauses.len(),
+        | (Some(&Computation::Session(ref action)), _) => match (action, ret) {
+            | (&SessionAction::Send { endpoint, payload }, Former::Send { endpoint: actual, payload: actual_payload }) =>
+                endpoint == actual && actual_payload == CoreNode::Value(payload),
+            | (&SessionAction::Receive { endpoint }, Former::Receive(actual))
+            | (&SessionAction::Close { endpoint }, Former::Close(actual)) => endpoint == actual,
+            | (&SessionAction::Select { endpoint, ref label }, Former::Select { endpoint: actual, label: actual_label }) =>
+                endpoint == actual && actual_label.as_ref() == label.as_ref(),
+            | (&SessionAction::Offer { endpoint, ref arms }, Former::Offer { endpoint: actual, arms: count }) =>
+                endpoint == actual && usize::from(count) == arms.len(),
+            | (&SessionAction::Fork { .. }, Former::Fork { .. }) => true,
+            | _ => false,
+        },
+        | (Some(_), _) => !matches!(ret, Former::Unreadable(_)),
+        | (None, _) => false,
+    })]
+    fn computation(
+        &self,
+        id: ComputationId,
+    ) -> Former<'arena, CoreNode>
+    {
+        let value = CoreNode::Value;
+        let computation = CoreNode::Computation;
+        let Some(held) = self.arena.computation(id)
+        else {
+            return Former::Unreadable(Unreadable::Dangling);
+        };
+        match *held {
+            | Computation::Return(returned) => Former::Return(value(returned)),
+            | Computation::Bind(bound, rest) => Former::Bind(computation(bound), computation(rest)),
+            | Computation::Force(thunk) => Former::Force(value(thunk)),
+            | Computation::Application(function, argument) => {
+                Former::Application(computation(function), value(argument))
+            },
+            | Computation::Lambda(body) => Former::Lambda(computation(body)),
+            | Computation::Primitive {
+                primitive,
+                ref arguments,
+            } => Former::Primitive {
+                name: Name::from(<&'static str>::from(primitive.name())),
+                arity: Arity::from(arguments.len()),
+            },
+            | Computation::Transport(path, transported) => {
+                Former::Transport(value(path), value(transported))
+            },
+            | Computation::PathTransport {
+                motive,
+                path,
+                value: transported,
+            } => Former::PathTransport {
+                motive: CoreNode::ValueType(motive),
+                path: value(path),
+                value: value(transported),
+            },
+            | Computation::Ride {
+                motive,
+                flow,
+                value: moved,
+            } => Former::Ride {
+                motive: CoreNode::ValueType(motive),
+                flow: value(flow),
+                value: value(moved),
+            },
+            | Computation::TelescopeTransport {
+                motive,
+                path,
+                start,
+                over,
+                value: transported,
+            } => Former::TelescopeTransport {
+                motive: CoreNode::CompType(motive),
+                path: value(path),
+                start: value(start),
+                over: value(over),
+                value: value(transported),
+            },
+            | Computation::Fixpoint { body, .. } => Former::Fixpoint(computation(body)),
+            | Computation::Case {
+                scrutinee,
+                ref branches,
+            } => Former::Case {
+                scrutinee: value(scrutinee),
+                arity: Arity::from(branches.len()),
+            },
+            | Computation::Split {
+                scrutinee,
+                arity,
+                body,
+            } => Former::Split {
+                scrutinee: value(scrutinee),
+                arity: Arity::from(usize::from(arity)),
+                body: computation(body),
+            },
+            | Computation::DataCase {
+                scrutinee,
+                ref branches,
+                ..
+            } => Former::DataCase {
+                scrutinee: value(scrutinee),
+                arity: Arity::from(branches.len()),
+            },
+            | Computation::RecordProjection(record, ref label) => {
+                Former::RecordProjection(value(record), Name::from(label.as_ref()))
+            },
+            | Computation::TupleProjection(tuple, component) => {
+                Former::TupleProjection(value(tuple), Component::from(usize::from(component)))
+            },
+            | Computation::Hole(_) => Former::Unreadable(Unreadable::Hole),
+            | Computation::Mark { .. } => Former::Unreadable(Unreadable::Mark),
+            | Computation::ListFold {
+                list,
+                on_nil,
+                on_cons,
+                ..
+            } => Former::ListFold {
+                list: value(list),
+                nil: computation(on_nil),
+                cons: computation(on_cons),
+            },
+            | Computation::Perform {
+                ref operation,
+                payload,
+                ..
+            } => Former::Perform {
+                operation: Name::from(operation.as_ref()),
+                payload: value(payload),
+            },
+            | Computation::Handle {
+                subject,
+                on_return,
+                ref clauses,
+                ..
+            } => Former::Handle {
+                subject: computation(subject),
+                on_return: computation(on_return),
+                clauses: Arity::from(clauses.len()),
+            },
+            | Computation::Exercise {
+                capability,
+                ref operation,
+                payload,
+                ..
+            } => Former::Exercise {
+                capability: value(capability),
+                operation: Name::from(operation.as_ref()),
+                payload: value(payload),
+            },
+            | Computation::Scope {
+                ref signature,
+                subject,
+                on_return,
+                ref clauses,
+            } => Former::Scope {
+                interface: Name::from(signature.name().as_ref()),
+                subject: computation(subject),
+                on_return: computation(on_return),
+                clauses: Arity::from(clauses.len()),
+            },
+            | Computation::Resume(stack, resumed) => {
+                Former::Resume(value(stack), computation(resumed))
+            },
+            | Computation::Reset(body) => Former::Reset(computation(body)),
+            | Computation::Shift(body) => Former::Shift(computation(body)),
+            | Computation::With(first, second) => {
+                Former::Lazy(computation(first), computation(second))
+            },
+            | Computation::Project(side, observed) => Former::Project(
+                Component::from(match side {
+                    | Side::Left => 0_usize,
+                    | Side::Right => 1_usize,
+                }),
+                computation(observed),
+            ),
+            | Computation::Session(ref action) => match *action {
+                | SessionAction::Send { endpoint, payload } => Former::Send {
+                    endpoint,
+                    payload: value(payload),
+                },
+                | SessionAction::Receive { endpoint } => Former::Receive(endpoint),
+                | SessionAction::Select {
+                    endpoint,
+                    ref label,
+                } => Former::Select {
+                    endpoint,
+                    label: Name::from(label.as_ref()),
+                },
+                | SessionAction::Offer { endpoint, ref arms } => Former::Offer {
+                    endpoint,
+                    arms: Arity::from(arms.len()),
+                },
+                | SessionAction::Close { endpoint } => Former::Close(endpoint),
+                | SessionAction::Fork {
+                    protocol,
+                    child,
+                    parent,
+                } => Former::Fork {
+                    protocol: CoreNode::ValueType(protocol),
+                    child: computation(child),
+                    parent: computation(parent),
+                },
+            },
+        }
+    }
 }
 
 impl Source for CoreSource<'_>
@@ -577,11 +1056,11 @@ impl Source for CoreSource<'_>
     /// # Specification
     /// - requires: nothing; an id from another arena reads as whatever this
     ///   arena holds at it, or as unreadable.
-    /// - ensures: as [`Source::read`], of the node `node` restores to; a
-    ///   return, a bind, a force, an application and a lambda read as their own
-    ///   formers over their children, every other held computation but a hole
-    ///   or a mark as [`Former::Computation`], and a hole, a mark or a missing
-    ///   handle as unreadable.
+    /// - ensures: as [`Source::read`], of the node `node` restores to: each
+    ///   family read by its own reader, every former of the family as its own
+    ///   [`Former`] over its children, the honest set's members — a hole, a
+    ///   mark, the unknown type, a lift — as unreadable, and a missing handle
+    ///   as dangling.
     /// - provides: the printer's reading of the core arena.
     /// - fails: never.
     /// - panics: none.
@@ -601,35 +1080,11 @@ impl Source for CoreSource<'_>
     /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
     /// - witness: `core_source::tests::a_restored_elaboration_reads_as_written`
     #[spec(captures: restored = self.restoration.restored(node), ensures: |ret| match restored {
-        | CoreNode::Computation(id) => match (self.arena.computation(id), ret) {
-            | (Some(&(Computation::Hole(_) | Computation::Mark { .. })) | None, Former::Unreadable) => true,
-            | (Some(&Computation::Return(value)), Former::Return(actual))
-            | (Some(&Computation::Force(value)), Former::Force(actual)) => actual == CoreNode::Value(value),
-            | (Some(&Computation::Lambda(body)), Former::Lambda(actual)) => actual == CoreNode::Computation(body),
-            | (Some(&Computation::Bind(bound, rest)), Former::Bind(actual_bound, actual_rest)) =>
-                actual_bound == CoreNode::Computation(bound) && actual_rest == CoreNode::Computation(rest),
-            | (Some(&Computation::Application(function, argument)), Former::Application(actual_function, actual_argument)) =>
-                actual_function == CoreNode::Computation(function) && actual_argument == CoreNode::Value(argument),
-            | (Some(&(Computation::Return(_) | Computation::Force(_) | Computation::Lambda(_) | Computation::Bind(..)
-                | Computation::Application(..) | Computation::Hole(_) | Computation::Mark { .. })), _) => false,
-            | (Some(_), Former::Computation) => true,
-            | _ => false,
-        },
-        | CoreNode::Value(id) if self.arena.value(id).is_none() => matches!(ret, Former::Unreadable),
-        | CoreNode::ValueType(id) if self.arena.value_type(id).is_none() => matches!(ret, Former::Unreadable),
-        | CoreNode::CompType(id) if self.arena.comp_type(id).is_none() => matches!(ret, Former::Unreadable),
-        | CoreNode::Value(_) => matches!(ret, Former::Variable { .. } | Former::Constant(_) | Former::Unit
-            | Former::Literal(_) | Former::Tuple(_) | Former::Record(_) | Former::Injection(..) | Former::Thunk(_)
-            | Former::ValueLift | Former::Reify | Former::ListNil | Former::ListCons(..)
-            | Former::Quote(_) | Former::QuoteComputation(_) | Former::StaticLambda(_) | Former::StaticApplication(..)
-            | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_) | Former::Funext(..) | Former::Equiv(..)
-            | Former::Ua { .. } | Former::Nested(_) | Former::Run(_) | Former::SessionRelated(..) | Former::Stay(_) | Former::Then(..) | Former::Unreadable),
-        | CoreNode::ValueType(_) => matches!(ret, Former::BaseType(_) | Former::Product(_) | Former::RecordType(_)
-            | Former::Stack(..) | Former::List(_)
-            | Former::Sum(_) | Former::ThunkType(_) | Former::Universe { .. } | Former::TypeLift
-            | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::Capability { .. } | Former::PathUniverse(..) | Former::Session { .. } | Former::RunType(_) | Former::Unreadable),
-        | CoreNode::CompType(_) => matches!(ret, Former::Returner(_) | Former::EffectfulReturner { .. } | Former::Arrow { .. } | Former::Pi { .. }
-            | Former::With(..) | Former::ComputationElement(_) | Former::Unreadable),
+        | CoreNode::Value(id) if self.arena.value(id).is_none() => matches!(ret, Former::Unreadable(Unreadable::Dangling)),
+        | CoreNode::Computation(id) if self.arena.computation(id).is_none() => matches!(ret, Former::Unreadable(Unreadable::Dangling)),
+        | CoreNode::ValueType(id) if self.arena.value_type(id).is_none() => matches!(ret, Former::Unreadable(Unreadable::Dangling)),
+        | CoreNode::CompType(id) if self.arena.comp_type(id).is_none() => matches!(ret, Former::Unreadable(Unreadable::Dangling)),
+        | CoreNode::Value(_) | CoreNode::Computation(_) | CoreNode::ValueType(_) | CoreNode::CompType(_) => true,
     })]
     #[inline]
     fn read(
@@ -639,59 +1094,26 @@ impl Source for CoreSource<'_>
     {
         match self.restoration.restored(node) {
             | CoreNode::Value(id) => self.value(id),
-            | CoreNode::Computation(id) => match self.arena.computation(id) {
-                | Some(&Computation::Return(value)) => Former::Return(CoreNode::Value(value)),
-                | Some(&Computation::Bind(bound, rest)) => {
-                    Former::Bind(CoreNode::Computation(bound), CoreNode::Computation(rest))
-                },
-                | Some(&Computation::Force(thunk)) => Former::Force(CoreNode::Value(thunk)),
-                | Some(&Computation::Application(function, argument)) => {
-                    Former::Application(CoreNode::Computation(function), CoreNode::Value(argument))
-                },
-                | Some(&Computation::Lambda(body)) => Former::Lambda(CoreNode::Computation(body)),
-                | Some(
-                    &(Computation::Transport(..)
-                    | Computation::PathTransport { .. }
-                    | Computation::TelescopeTransport { .. }
-                    | Computation::Primitive { .. }
-                    | Computation::DataCase { .. }
-                    | Computation::RecordProjection(..)
-                    | Computation::TupleProjection(..)
-                    | Computation::Perform { .. }
-                    | Computation::Handle { .. }
-                    | Computation::Exercise { .. }
-                    | Computation::Scope { .. }
-                    | Computation::Resume(..)
-                    | Computation::Split { .. }
-                    | Computation::Reset(_)
-                    | Computation::Shift(_)
-                    | Computation::With(..)
-                    | Computation::Project(..)
-                    | Computation::Fixpoint { .. }
-                    | Computation::ListFold { .. }
-                    | Computation::Case { .. }
-                    | Computation::Session(_)
-                    | Computation::Ride { .. }),
-                ) => Former::Computation,
-                | Some(&(Computation::Hole(_) | Computation::Mark { .. })) | None => {
-                    Former::Unreadable
-                },
-            },
+            | CoreNode::Computation(id) => self.computation(id),
             | CoreNode::ValueType(id) => self.value_type(id),
             | CoreNode::CompType(id) => self.comp_type(id),
         }
     }
 
-    /// The handle of component `index` of the product, the sum, the tuple,
-    /// the record or the record type `node` names in the arena.
+    /// The handle of component `index` of the n-ary former `node` names in
+    /// the arena.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: of the node `node` restores to, the value type at `index`
-    ///   among a held product's, sum's or record type's components, and the
-    ///   value at `index` among a held tuple's or record's, a record's fields
-    ///   in label order; none for an index past them, another former, another
-    ///   family or a missing handle.
+    ///   among a held product's, sum's or record type's components and a
+    ///   session type's payloads; the value at `index` among a held tuple's,
+    ///   record's or constructor's fields and a family's arguments; the value
+    ///   among a primitive's arguments and the computation among a case's or a
+    ///   data case's branches, a handler's operation clauses and an offer's
+    ///   arms; a record's fields and an offer's arms in label order; none for
+    ///   an index past them, another former, another family or a missing
+    ///   handle.
     /// - provides: the printer's reading of an n-ary former.
     /// - fails: never.
     /// - panics: none.
@@ -701,25 +1123,32 @@ impl Source for CoreSource<'_>
     /// # Adequacy
     /// - hypothesis: L3 — the golden braces read every component of products
     ///   and sums of arity one to three, of tuples of arity one to three and of
-    ///   records of two fields, in order; a direct read past the arity and of a
-    ///   non-product observes the absence.
+    ///   records of two fields, in order, and the computation golden a case's
+    ///   branches and a handler's clauses; a direct read past the arity and of
+    ///   a non-product observes the absence.
     /// - witness: `goldens::tests::n_ary_products_and_sums_spell_between_their_braces`
     /// - witness: `goldens::tests::n_ary_tuples_and_injections_spell_between_their_braces`
     /// - witness: `goldens::tests::records_spell_their_fields_in_label_order`
+    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
     /// - witness: `core_source::tests::components_read_in_order_and_stop_at_the_arity`
-    #[spec(captures: restored = self.restoration.restored(node), ensures: |ret| ret == match restored {
-        | CoreNode::ValueType(id) => match self.arena.value_type(id) {
+    #[spec(captures: restored = self.restoration.restored(node), ensures: |ret| match restored {
+        | CoreNode::ValueType(id) => ret == match self.arena.value_type(id) {
             | Some(&(ValueType::Product(ref parts) | ValueType::Sum(ref parts))) => parts.get(usize::from(index)).map(|&part| CoreNode::ValueType(part)),
-            | Some(&ValueType::Session(ref session)) => session.payloads().get(usize::from(index)).map(|&payload| CoreNode::ValueType(payload)),
             | Some(&ValueType::Record(ref fields)) => fields.values().nth(usize::from(index)).map(|&field| CoreNode::ValueType(field)),
-            | _ => None,
+            | Some(&ValueType::Data { ref arguments, .. }) => arguments.get(usize::from(index)).map(|&argument| CoreNode::Value(argument)),
+            | Some(_) | None => ret,
         },
-        | CoreNode::Value(id) => match self.arena.value(id) {
+        | CoreNode::Value(id) => ret == match self.arena.value(id) {
             | Some(&Value::Tuple(ref components)) => components.get(usize::from(index)).map(|&component| CoreNode::Value(component)),
             | Some(&Value::Record(ref fields)) => fields.values().nth(usize::from(index)).map(|&field| CoreNode::Value(field)),
-            | _ => None,
+            | Some(&Value::Constructor { ref fields, .. }) => fields.get(usize::from(index)).map(|&field| CoreNode::Value(field)),
+            | Some(&Value::Recorded(ref moves)) => moves.iter()
+                .filter_map(|step| match step.payload() { Maybe::Present(payload) => Some(CoreNode::Value(payload)), Maybe::Absent(_) => None })
+                .nth(usize::from(index)),
+            | Some(_) | None => None,
         },
-        | CoreNode::Computation(_) | CoreNode::CompType(_) => None,
+        | CoreNode::Computation(id) => self.arena.computation(id).is_some() || ret.is_none(),
+        | CoreNode::CompType(_) => ret.is_none(),
     })]
     #[inline]
     fn component(
@@ -728,64 +1157,173 @@ impl Source for CoreSource<'_>
         index: Component,
     ) -> Option<CoreNode>
     {
+        let at = usize::from(index);
         match self.restoration.restored(node) {
             | CoreNode::ValueType(id) => match *self.arena.value_type(id)? {
-                | ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts
-                    .get(usize::from(index))
-                    .map(|&part| CoreNode::ValueType(part)),
+                | ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
+                    parts.get(at).map(|&part| CoreNode::ValueType(part))
+                },
                 | ValueType::Record(ref fields) => fields
                     .values()
-                    .nth(usize::from(index))
+                    .nth(at)
                     .map(|&field| CoreNode::ValueType(field)),
                 | ValueType::Session(ref session) => session
                     .payloads()
-                    .get(usize::from(index))
+                    .get(at)
                     .map(|&payload| CoreNode::ValueType(payload)),
-                | _ => None,
+                | ValueType::Data { ref arguments, .. } => {
+                    arguments.get(at).map(|&argument| CoreNode::Value(argument))
+                },
+                | ValueType::PathUniverse(..)
+                | ValueType::Path { .. }
+                | ValueType::Flow { .. }
+                | ValueType::Run(_)
+                | ValueType::Base(_)
+                | ValueType::List(_)
+                | ValueType::Thunk(_)
+                | ValueType::Universe { .. }
+                | ValueType::Lift { .. }
+                | ValueType::Element { .. }
+                | ValueType::Abstract(_)
+                | ValueType::StaticPi { .. }
+                | ValueType::Unknown
+                | ValueType::Stack { .. }
+                | ValueType::Capability { .. } => None,
             },
             | CoreNode::Value(id) => match *self.arena.value(id)? {
                 | Value::Tuple(ref components) => components
-                    .get(usize::from(index))
+                    .get(at)
                     .map(|&component| CoreNode::Value(component)),
-                | Value::Record(ref fields) => fields
-                    .values()
-                    .nth(usize::from(index))
-                    .map(|&field| CoreNode::Value(field)),
-                | _ => None,
+                | Value::Record(ref fields) => {
+                    fields.values().nth(at).map(|&field| CoreNode::Value(field))
+                },
+                | Value::Constructor { ref fields, .. } => {
+                    fields.get(at).map(|&field| CoreNode::Value(field))
+                },
+                | Value::Recorded(ref moves) => moves
+                    .iter()
+                    .filter_map(|step| match step.payload() {
+                        | Maybe::Present(payload) => Some(CoreNode::Value(payload)),
+                        | Maybe::Absent(_) => None,
+                    })
+                    .nth(at),
+                | Value::SessionRelated { .. }
+                | Value::Stay(_)
+                | Value::Then(..)
+                | Value::Primitive { .. }
+                | Value::PathRefl(_)
+                | Value::PathProduct(..)
+                | Value::PathEquiv { .. }
+                | Value::Here(_)
+                | Value::Funext(..)
+                | Value::Equiv(..)
+                | Value::Ua { .. }
+                | Value::Returned(_)
+                | Value::Nested(_)
+                | Value::Run(_)
+                | Value::Variable { .. }
+                | Value::Constant(_)
+                | Value::Literal(_)
+                | Value::Injection(..)
+                | Value::ListNil
+                | Value::ListCons(..)
+                | Value::Thunk(_)
+                | Value::Lift { .. }
+                | Value::Quote(_)
+                | Value::QuoteComputation(_)
+                | Value::StaticLambda(_)
+                | Value::StaticApplication(..)
+                | Value::Hole(_)
+                | Value::Mark { .. }
+                | Value::Reify(_) => None,
             },
-            | CoreNode::Computation(_) | CoreNode::CompType(_) => None,
+            | CoreNode::Computation(id) => match *self.arena.computation(id)? {
+                | Computation::Primitive { ref arguments, .. } => {
+                    arguments.get(at).map(|&argument| CoreNode::Value(argument))
+                },
+                | Computation::Case { ref branches, .. } => branches
+                    .get(at)
+                    .map(|&branch| CoreNode::Computation(branch)),
+                | Computation::DataCase { ref branches, .. } => branches
+                    .get(at)
+                    .map(|&branch| CoreNode::Computation(branch)),
+                | Computation::Handle { ref clauses, .. }
+                | Computation::Scope { ref clauses, .. } => clauses
+                    .get(at)
+                    .map(|clause| CoreNode::Computation(clause.body)),
+                | Computation::Session(SessionAction::Offer { ref arms, .. }) => {
+                    arms.values().nth(at).map(|&arm| CoreNode::Computation(arm))
+                },
+                | Computation::Session(
+                    SessionAction::Send { .. }
+                    | SessionAction::Receive { .. }
+                    | SessionAction::Select { .. }
+                    | SessionAction::Close { .. }
+                    | SessionAction::Fork { .. },
+                )
+                | Computation::Transport(..)
+                | Computation::PathTransport { .. }
+                | Computation::TelescopeTransport { .. }
+                | Computation::Ride { .. }
+                | Computation::Lambda(_)
+                | Computation::Fixpoint { .. }
+                | Computation::Application(..)
+                | Computation::Return(_)
+                | Computation::Bind(..)
+                | Computation::Force(_)
+                | Computation::Split { .. }
+                | Computation::RecordProjection(..)
+                | Computation::TupleProjection(..)
+                | Computation::Hole(_)
+                | Computation::Mark { .. }
+                | Computation::ListFold { .. }
+                | Computation::Perform { .. }
+                | Computation::Exercise { .. }
+                | Computation::Resume(..)
+                | Computation::Reset(_)
+                | Computation::Shift(_)
+                | Computation::With(..)
+                | Computation::Project(..) => None,
+            },
+            | CoreNode::CompType(_) => None,
         }
     }
 
-    /// The label of field `index` of the record or the record type `node`
-    /// names in the arena.
+    /// The label of entry `index` of the record, the record type, the
+    /// handler or the offer `node` names in the arena.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: of the node `node` restores to, the label at `index` among a
-    ///   held record's or record type's fields, in label order; none for an
-    ///   index past them, another former, another family or a missing handle.
-    /// - provides: the printer's reading of a record's labels.
+    ///   held record's or record type's fields and an offer's arms, in label
+    ///   order, and the operation a handler's clause at `index` answers; none
+    ///   for an index past them, another former, another family or a missing
+    ///   handle.
+    /// - provides: the printer's reading of a record's labels, a handler's
+    ///   operations and an offer's labels.
     /// - fails: never.
     /// - panics: none.
     /// - intension: as [`Self::component`], linear in the fields before it.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — records and record types of two fields written out of
-    ///   label order spell each field under its own label; a direct read past
-    ///   the fields and of a tuple observes the absence.
+    ///   label order spell each field under its own label, and a handler's
+    ///   clause its operation; a direct read past the fields and of a tuple
+    ///   observes the absence.
     /// - witness: `goldens::tests::records_spell_their_fields_in_label_order`
+    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
     /// - witness: `core_source::tests::components_read_in_order_and_stop_at_the_arity`
-    #[spec(captures: restored = self.restoration.restored(node), ensures: |ret| ret.as_ref().map(|name| -> &str { name.as_ref() }) == match restored {
-        | CoreNode::ValueType(id) => match self.arena.value_type(id) {
+    #[spec(captures: restored = self.restoration.restored(node), ensures: |ret| match restored {
+        | CoreNode::ValueType(id) => ret.as_ref().map(|name| -> &str { name.as_ref() }) == match self.arena.value_type(id) {
             | Some(&ValueType::Record(ref fields)) => fields.keys().nth(usize::from(index)).map(AsRef::as_ref),
-            | _ => None,
+            | Some(_) | None => None,
         },
-        | CoreNode::Value(id) => match self.arena.value(id) {
+        | CoreNode::Value(id) => ret.as_ref().map(|name| -> &str { name.as_ref() }) == match self.arena.value(id) {
             | Some(&Value::Record(ref fields)) => fields.keys().nth(usize::from(index)).map(AsRef::as_ref),
-            | _ => None,
+            | Some(_) | None => None,
         },
-        | CoreNode::Computation(_) | CoreNode::CompType(_) => None,
+        | CoreNode::Computation(id) => self.arena.computation(id).is_some() || ret.is_none(),
+        | CoreNode::CompType(_) => ret.is_none(),
     })]
     #[inline]
     fn label(
@@ -794,18 +1332,150 @@ impl Source for CoreSource<'_>
         index: Component,
     ) -> Option<Name<'_>>
     {
-        let label = match self.restoration.restored(node) {
+        let at = usize::from(index);
+        let label: &str = match self.restoration.restored(node) {
             | CoreNode::ValueType(id) => match *self.arena.value_type(id)? {
-                | ValueType::Record(ref fields) => fields.keys().nth(usize::from(index)),
-                | _ => None,
+                | ValueType::Record(ref fields) => fields.keys().nth(at).map(AsRef::as_ref),
+                | ValueType::Data { .. }
+                | ValueType::PathUniverse(..)
+                | ValueType::Path { .. }
+                | ValueType::Flow { .. }
+                | ValueType::Run(_)
+                | ValueType::Base(_)
+                | ValueType::Product(_)
+                | ValueType::Sum(_)
+                | ValueType::List(_)
+                | ValueType::Thunk(_)
+                | ValueType::Universe { .. }
+                | ValueType::Lift { .. }
+                | ValueType::Element { .. }
+                | ValueType::Abstract(_)
+                | ValueType::StaticPi { .. }
+                | ValueType::Unknown
+                | ValueType::Stack { .. }
+                | ValueType::Session(_)
+                | ValueType::Capability { .. } => None,
             },
             | CoreNode::Value(id) => match *self.arena.value(id)? {
-                | Value::Record(ref fields) => fields.keys().nth(usize::from(index)),
-                | _ => None,
+                | Value::Record(ref fields) => fields.keys().nth(at).map(AsRef::as_ref),
+                | Value::Primitive { .. }
+                | Value::PathRefl(_)
+                | Value::PathProduct(..)
+                | Value::PathEquiv { .. }
+                | Value::Here(_)
+                | Value::Funext(..)
+                | Value::Equiv(..)
+                | Value::Ua { .. }
+                | Value::Returned(_)
+                | Value::Nested(_)
+                | Value::Run(_)
+                | Value::Variable { .. }
+                | Value::Constant(_)
+                | Value::Literal(_)
+                | Value::Tuple(_)
+                | Value::Injection(..)
+                | Value::ListNil
+                | Value::ListCons(..)
+                | Value::Thunk(_)
+                | Value::Lift { .. }
+                | Value::Quote(_)
+                | Value::QuoteComputation(_)
+                | Value::StaticLambda(_)
+                | Value::StaticApplication(..)
+                | Value::Constructor { .. }
+                | Value::Hole(_)
+                | Value::Mark { .. }
+                | Value::Reify(_)
+                | Value::Recorded(_)
+                | Value::SessionRelated { .. }
+                | Value::Stay(_)
+                | Value::Then(..) => None,
             },
-            | CoreNode::Computation(_) | CoreNode::CompType(_) => None,
+            | CoreNode::Computation(id) => match *self.arena.computation(id)? {
+                | Computation::Handle { ref clauses, .. }
+                | Computation::Scope { ref clauses, .. } => {
+                    clauses.get(at).map(|clause| clause.operation.as_ref())
+                },
+                | Computation::Session(SessionAction::Offer { ref arms, .. }) => {
+                    arms.keys().nth(at).map(AsRef::as_ref)
+                },
+                | Computation::Session(
+                    SessionAction::Send { .. }
+                    | SessionAction::Receive { .. }
+                    | SessionAction::Select { .. }
+                    | SessionAction::Close { .. }
+                    | SessionAction::Fork { .. },
+                )
+                | Computation::Primitive { .. }
+                | Computation::Transport(..)
+                | Computation::PathTransport { .. }
+                | Computation::TelescopeTransport { .. }
+                | Computation::Ride { .. }
+                | Computation::Lambda(_)
+                | Computation::Fixpoint { .. }
+                | Computation::Application(..)
+                | Computation::Return(_)
+                | Computation::Bind(..)
+                | Computation::Force(_)
+                | Computation::Case { .. }
+                | Computation::Split { .. }
+                | Computation::DataCase { .. }
+                | Computation::RecordProjection(..)
+                | Computation::TupleProjection(..)
+                | Computation::Hole(_)
+                | Computation::Mark { .. }
+                | Computation::ListFold { .. }
+                | Computation::Perform { .. }
+                | Computation::Exercise { .. }
+                | Computation::Resume(..)
+                | Computation::Reset(_)
+                | Computation::Shift(_)
+                | Computation::With(..)
+                | Computation::Project(..) => None,
+            },
+            | CoreNode::CompType(_) => None,
         }?;
-        Some(Name::from(label.as_ref()))
+        Some(Name::from(label))
+    }
+
+    /// The constructor of the family the data case `node` eliminates at tag
+    /// `index`, and its field count.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: for a held data case the constructor table records a family
+    ///   for, the family's constructor at `index`; none otherwise.
+    /// - provides: a data case's patterns.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Source::constructor`].
+    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+    #[spec(ensures: |ret| ret.is_none() || matches!(self.restoration.restored(node), CoreNode::Computation(_)))]
+    #[inline]
+    fn constructor(
+        &self,
+        node: CoreNode,
+        index: Component,
+    ) -> Option<(Name<'_>, Arity)>
+    {
+        let CoreNode::Computation(id) = self.restoration.restored(node)
+        else {
+            return None;
+        };
+        let family = *self.constructors.cases.get(&id)?;
+        self.constructors.constructor(family, index)
+    }
+
+    /// The names of the binders the root stands under.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn context(&self) -> &[Option<Name<'_>>]
+    {
+        self.context
     }
 }
 
@@ -831,6 +1501,7 @@ mod tests
     use super::Former;
     use super::Name;
     use super::Source as _;
+    use super::Unreadable;
 
     /// Node families retain child order and refuse handles dropped by
     /// truncation.
@@ -880,7 +1551,10 @@ mod tests
             CoreNode::ValueType(value_type),
             CoreNode::CompType(comp_type),
         ] {
-            assert!(matches!(source.read(node), Former::Unreadable));
+            assert!(matches!(
+                source.read(node),
+                Former::Unreadable(Unreadable::Dangling)
+            ));
         }
     }
 
@@ -1014,11 +1688,11 @@ mod tests
         let source = CoreSource::new(&arena, &names[.. 1]);
         assert!(matches!(
             source.read(CoreNode::Value(constant)),
-            Former::Unreadable
+            Former::Unreadable(Unreadable::Unnamed)
         ));
         assert!(matches!(
             source.read(CoreNode::ValueType(abstract_type)),
-            Former::Unreadable
+            Former::Unreadable(Unreadable::Unnamed)
         ));
     }
 
@@ -1038,15 +1712,21 @@ mod tests
         let unknown = arena.value_type_unknown();
         let unknown_computation = arena.comp_type_unknown();
         let source = CoreSource::new(&arena, &[]);
-        for node in [
-            CoreNode::Value(hole),
-            CoreNode::Value(marked),
-            CoreNode::Computation(computation_hole),
-            CoreNode::Computation(computation_mark),
-            CoreNode::ValueType(unknown),
-            CoreNode::CompType(unknown_computation),
+        for (node, reason) in [
+            (CoreNode::Value(hole), Unreadable::Hole),
+            (CoreNode::Value(marked), Unreadable::Mark),
+            (CoreNode::Computation(computation_hole), Unreadable::Hole),
+            (CoreNode::Computation(computation_mark), Unreadable::Mark),
+            (CoreNode::ValueType(unknown), Unreadable::UnknownType),
+            (
+                CoreNode::CompType(unknown_computation),
+                Unreadable::UnknownType,
+            ),
         ] {
-            assert!(matches!(source.read(node), Former::Unreadable), "{node:?}");
+            assert!(
+                matches!(source.read(node), Former::Unreadable(read) if read == reason),
+                "{node:?}"
+            );
         }
         assert!(matches!(source.read(CoreNode::Value(unit)), Former::Unit));
         assert!(matches!(

@@ -139,13 +139,19 @@ pub enum ConstructorTag
     Lift(Level),
     /// A nominal datatype's constructor, by its ordinal in the declaration,
     /// with the number of fields it carries. The datatype itself is a type,
-    /// which the IL does not carry.
+    /// which the IL does not carry; the declaration that names its family is
+    /// carried when the core names one, so a value read back names its
+    /// constructor. The machine never reads it: a data case matches by
+    /// ordinal alone.
     Data
     {
         /// The constructor's ordinal in its declaration.
         tag: gandr_kernel_term::ConstructorTag,
         /// The number of fields the constructor carries.
         arity: ProducerArity,
+        /// The declaration of the family, when the core's classifier names
+        /// one.
+        family: Option<gandr_kernel_term::ConstantIndex>,
     },
     /// A recorded run: its moves in order, each send's and receive's payload
     /// a producer field in move order. A choice's label and a close live in
@@ -1532,6 +1538,7 @@ mod tests
                 ConstructorTag::Data {
                     tag: gandr_kernel_term::ConstructorTag::from(1_usize),
                     arity: ProducerArity::from(3_usize),
+                    family: None,
                 },
                 3_usize,
             ),
@@ -1588,6 +1595,7 @@ mod tests
             ConstructorTag::Data {
                 tag: gandr_kernel_term::ConstructorTag::from(0_usize),
                 arity: ProducerArity::TWO,
+                family: None,
             },
             ConstructorTag::Record(alloc::sync::Arc::from([gandr_core_term::FieldLabel::from(
                 String::from("a"),

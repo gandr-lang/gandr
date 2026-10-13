@@ -170,6 +170,7 @@
 //! - **Reversal.** A ruled spelling for a state, or binder names avoiding the
 //!   names a term mentions as term binders do.
 
+use alloc::borrow::Cow;
 use alloc::collections::BTreeSet;
 use alloc::format;
 use alloc::string::String;
@@ -178,6 +179,7 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_core_term::Sort;
 use gandr_core_term::Zone;
+use gandr_core_term::session::ActionKind;
 use gandr_core_term::session::PayloadSlot;
 use gandr_core_term::session::Protocol;
 use gandr_core_term::session::ProtocolNode;
@@ -185,23 +187,26 @@ use gandr_core_term::session::ProtocolState;
 use gandr_core_term::session::SessionRelation;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
+use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Sign;
-use gandr_surface_layout::arena::DocId;
-use gandr_surface_layout::arena::TextSource;
-use gandr_surface_layout::build::DocBuilder;
 use gandr_surface_layout::units::NestAmount;
 use quenchant_shape::shape::Maybe;
 
 use crate::DEPTH_LIMIT;
 use crate::Fidelity;
 use crate::ValueDepth;
+use crate::compose::Compose;
+use crate::compose::Doc;
+use crate::compose::Glyphs;
 use crate::error::PresentationError;
 use crate::former::Component;
 use crate::former::Former;
 use crate::former::Name;
 use crate::former::Source;
+use crate::former::Unreadable;
+use crate::former::Unspelled;
 
 quenchant_shape::reason_enum! {
     /// Why a universe has no surface spelling.
@@ -250,11 +255,6 @@ const CONTINUATION: u32 = 2;
 /// times over; the bound is reached by a malformed source — a cycle — whose
 /// presentation is then `?` rather than a walk that does not end.
 const VISIT_BUDGET: u32 = 0x0001_0000;
-
-/// Fixed or computed text a leaf holds.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug)]
-struct Glyphs<'text>(&'text str);
 
 /// An owned spelling computed for one leaf.
 #[repr(transparent)]
@@ -322,19 +322,27 @@ enum Kind
 #[spec(ensures: |ret| match ret {
     | Kind::ValueType => matches!(*former, Former::BaseType(_) | Former::Product(_) | Former::RecordType(_)
         | Former::Stack(..) | Former::List(_)
-        | Former::Sum(_) | Former::ThunkType(_) | Former::Universe { .. } | Former::TypeLift
-        | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::Capability { .. } | Former::PathUniverse(..) | Former::Session { .. } | Former::RunType(_)),
+        | Former::Sum(_) | Former::ThunkType(_) | Former::Universe { .. }
+        | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::Capability { .. } | Former::PathUniverse(..) | Former::Session { .. }
+        | Former::Path { .. } | Former::Flow { .. } | Former::Data { .. } | Former::RunType(_)),
     | Kind::CompType => matches!(*former, Former::Returner(_) | Former::EffectfulReturner { .. } | Former::Arrow { .. }
         | Former::With(..) | Former::Pi { .. } | Former::ComputationElement(_)),
     | Kind::Value => matches!(*former, Former::Variable { .. } | Former::Constant(_) | Former::Unit
-        | Former::Literal(_) | Former::Tuple(_) | Former::Record(_) | Former::Injection(..) | Former::Thunk(_) | Former::ValueLift
+        | Former::Literal(_) | Former::Tuple(_) | Former::Record(_) | Former::Injection(..) | Former::Thunk(_)
         | Former::Reify | Former::ListNil | Former::ListCons(..)
         | Former::Quote(_) | Former::QuoteComputation(_) | Former::StaticLambda(_) | Former::StaticApplication(..)
         | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_) | Former::Funext(..) | Former::Equiv(..)
-        | Former::Ua { .. } | Former::Nested(_) | Former::Run(_) | Former::SessionRelated(..) | Former::Stay(_) | Former::Then(..)),
+        | Former::Ua { .. } | Former::Nested(_) | Former::Run(_) | Former::Constructor { .. } | Former::Returned(_)
+        | Former::SessionRelated(..) | Former::Stay(_) | Former::Then(..) | Former::Recorded { .. }),
     | Kind::Computation => matches!(*former, Former::Return(_) | Former::Bind(..) | Former::Force(_)
-        | Former::Application(..) | Former::Lambda(_) | Former::Computation),
-    | Kind::Unknown => matches!(*former, Former::Unreadable),
+        | Former::Application(..) | Former::Lambda(_) | Former::Primitive { .. } | Former::Transport(..)
+        | Former::PathTransport { .. } | Former::Ride { .. } | Former::TelescopeTransport { .. } | Former::Fixpoint(_) | Former::Case { .. }
+        | Former::Split { .. } | Former::DataCase { .. } | Former::RecordProjection(..) | Former::TupleProjection(..)
+        | Former::ListFold { .. } | Former::Perform { .. } | Former::Handle { .. } | Former::Exercise { .. }
+        | Former::Scope { .. } | Former::Resume(..) | Former::Reset(_) | Former::Shift(_) | Former::Lazy(..)
+        | Former::Project(..) | Former::Send { .. } | Former::Receive(_) | Former::Select { .. } | Former::Offer { .. }
+        | Former::Close(_) | Former::Fork { .. }),
+    | Kind::Unknown => matches!(*former, Former::Unreadable(_)),
 })]
 const fn kind<Node>(former: &Former<'_, Node>) -> Kind
 {
@@ -348,12 +356,14 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::List(_)
         | Former::ThunkType(_)
         | Former::Universe { .. }
-        | Former::TypeLift
         | Former::Element(_)
         | Former::Abstract(_)
         | Former::Session { .. }
         | Former::StaticPi { .. }
         | Former::Capability { .. }
+        | Former::Path { .. }
+        | Former::Flow { .. }
+        | Former::Data { .. }
         | Former::RunType(_) => Kind::ValueType,
         | Former::Returner(_)
         | Former::With(..)
@@ -375,7 +385,6 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Injection(..)
         | Former::Thunk(_)
         | Former::Reify
-        | Former::ValueLift
         | Former::Quote(_)
         | Former::QuoteComputation(_)
         | Former::StaticLambda(_)
@@ -388,14 +397,43 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Then(..)
         | Former::Ua { .. }
         | Former::Nested(_)
-        | Former::Run(_) => Kind::Value,
+        | Former::Run(_)
+        | Former::Constructor { .. }
+        | Former::Recorded { .. }
+        | Former::Returned(_) => Kind::Value,
         | Former::Return(_)
         | Former::Bind(..)
         | Former::Force(_)
         | Former::Application(..)
         | Former::Lambda(_)
-        | Former::Computation => Kind::Computation,
-        | Former::Unreadable => Kind::Unknown,
+        | Former::Primitive { .. }
+        | Former::Transport(..)
+        | Former::PathTransport { .. }
+        | Former::Ride { .. }
+        | Former::TelescopeTransport { .. }
+        | Former::Fixpoint(_)
+        | Former::Case { .. }
+        | Former::Split { .. }
+        | Former::DataCase { .. }
+        | Former::RecordProjection(..)
+        | Former::TupleProjection(..)
+        | Former::ListFold { .. }
+        | Former::Perform { .. }
+        | Former::Handle { .. }
+        | Former::Exercise { .. }
+        | Former::Scope { .. }
+        | Former::Resume(..)
+        | Former::Reset(_)
+        | Former::Shift(_)
+        | Former::Lazy(..)
+        | Former::Project(..)
+        | Former::Send { .. }
+        | Former::Receive(_)
+        | Former::Select { .. }
+        | Former::Offer { .. }
+        | Former::Close(_)
+        | Former::Fork { .. } => Kind::Computation,
+        | Former::Unreadable(_) => Kind::Unknown,
     }
 }
 
@@ -434,12 +472,14 @@ pub enum Tail
 
 /// Whether a thunk's body is spelled or the thunk written opaque.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Bodies
+pub enum Bodies
 {
     /// `<thunk>`: a value presented alone is a normal form, whose thunks are
     /// closures a reader does not read.
     Opaque,
-    /// `thunk { c }`: a computation presented is a body a reader reads.
+    /// `thunk { c }`: a computation presented is a body a reader reads, and
+    /// so is a thunk a type mentions, a path's endpoint, which the author
+    /// wrote.
     Spelled,
 }
 
@@ -453,8 +493,10 @@ impl Bodies
     const fn of(admits: Admits) -> Self
     {
         match admits {
-            | Admits::Computation(_) => Self::Spelled,
-            | Admits::Type | Admits::ValueType | Admits::CompType | Admits::Value => Self::Opaque,
+            | Admits::Computation(_) | Admits::Type | Admits::ValueType | Admits::CompType => {
+                Self::Spelled
+            },
+            | Admits::Value => Self::Opaque,
         }
     }
 }
@@ -526,173 +568,292 @@ fn reach(
     }
 }
 
-/// One child a former reads, and what its position admits.
-#[derive(Clone, Copy, Debug)]
-struct Slot<Node>
+/// How many binders a child stands under beyond its parent's, and the zone
+/// they open in.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Binds
 {
-    /// The child.
-    node: Node,
-    /// What its position admits.
-    admits: Admits,
+    /// The zone each binder opens in.
+    pub zone: Zone,
+    /// How many open.
+    pub count: usize,
 }
 
-/// The children a former reads, in reading order.
-#[derive(Clone, Copy, Debug)]
-enum Children<Node>
+impl Binds
 {
-    /// A leaf.
-    None,
-    /// One child.
-    One(Slot<Node>),
-    /// Two children, first then second.
-    Two(Slot<Node>, Slot<Node>),
-    /// The components of the product, the sum, the tuple, the record or the
-    /// record type `of` names, which the source answers one by one
-    /// ([`Source::component`]).
-    Components
+    /// No binder.
+    const NONE: Self = Self::intuitionistic(OpenBinders(0_usize));
+    /// One intuitionistic binder.
+    const ONE: Self = Self::intuitionistic(OpenBinders(1_usize));
+
+    /// `count` intuitionistic binders.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn intuitionistic(count: OpenBinders) -> Self
     {
-        /// The former that holds them.
-        of: Node,
-        /// How many components it has.
-        arity: Arity,
-        /// What each component's position admits.
-        admits: Admits,
-        /// Whether each is written after a label.
-        entries: Entries,
-    },
+        Self {
+            zone: Zone::Intuitionistic,
+            count: count.0,
+        }
+    }
 }
 
-/// The children `former` reads, each with what its position admits, in a
-/// position admitting `admits` of a presentation writing its thunks as
-/// `bodies` says.
+/// The label an entry is written after, which the source answers for the
+/// former `of` holding the entry.
+#[derive(Clone, Copy, Debug)]
+struct Labelled<Node>
+{
+    /// The record, the record type or the injection.
+    of: Node,
+    /// The entry's position; an injection's summand.
+    index: Component,
+    /// What the label is.
+    label: Label,
+}
+
+/// One child a former reads: the node, what its position admits, the
+/// binders it stands under and the label written before it.
+#[derive(Clone, Copy, Debug)]
+pub struct Slot<Node>
+{
+    /// The child; none for a component the source does not answer, spelled
+    /// `?`.
+    pub node: Option<Node>,
+    /// What its position admits.
+    pub admits: Admits,
+    /// The binders it stands under.
+    pub binds: Binds,
+    /// The label written before it, a piece of its own.
+    label: Option<Labelled<Node>>,
+}
+
+impl<Node> Slot<Node>
+{
+    /// `node` at a position admitting `admits`, under `binds`, unlabelled.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn of(
+        node: Node,
+        admits: Admits,
+        binds: Binds,
+    ) -> Self
+    {
+        Self {
+            node: Some(node),
+            admits,
+            binds,
+            label: None,
+        }
+    }
+}
+
+/// One branch of a data case as the printer reads it: its body below the
+/// lambdas binding its constructor's fields, the constructor's name, and how
+/// many fields the body stands under.
+#[derive(Clone, Copy, Debug)]
+struct Arm<'source, Node>
+{
+    /// The body, or the whole branch when the constructor is unknown; none
+    /// for a branch the source does not answer.
+    body: Option<Node>,
+    /// The constructor's name, when the source knows it and the branch binds
+    /// its fields.
+    name: Option<Name<'source>>,
+    /// How many field binders the body stands under.
+    fields: usize,
+}
+
+/// Branch `index` of the data case `case`.
+///
+/// # Specification
+/// - requires: nothing; a malformed source is admissible.
+/// - ensures: when the source names the constructor and the branch is that many
+///   lambdas deep, at most [`DEPTH_LIMIT`], the body below them, the name and
+///   the field count; otherwise the whole branch, no name and no fields.
+/// - provides: the one reading of a branch both the child table and the pattern
+///   share, so a pattern names exactly the binders its body opens.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// The loop peels one lambda per field, at most [`DEPTH_LIMIT`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a data case over a nullary and a unary constructor spells
+///   each branch under its pattern, the unary one's field bound.
+/// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+#[spec(ensures: |ret| ret.name.is_some() || ret.fields == 0_usize)]
+fn arm<S>(
+    source: &S,
+    case: S::Node,
+    index: Component,
+) -> Arm<'_, S::Node>
+where
+    S: Source + ?Sized,
+{
+    let branch = source.component(case, index);
+    let unknown = Arm {
+        body: branch,
+        name: None,
+        fields: 0_usize,
+    };
+    let (Some(branch), Some((name, fields))) = (branch, source.constructor(case, index))
+    else {
+        return unknown;
+    };
+    let fields = usize::from(fields);
+    if u32::try_from(fields).is_ok_and(|count| count > DEPTH_LIMIT.0) {
+        return unknown;
+    }
+    let mut body = branch;
+    for _ in 0_usize .. fields {
+        let Former::Lambda(inner) = source.read(body)
+        else {
+            return unknown;
+        };
+        body = inner;
+    }
+    Arm {
+        body: Some(body),
+        name: Some(name),
+        fields,
+    }
+}
+
+/// The children `former` reads at `node`, each with what its position
+/// admits and the binders it stands under, in reading order, in a position
+/// admitting `admits` of a presentation writing its thunks as `bodies` says.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: a product's, a sum's and a record type's components, each a value
-///   type, and a tuple's and a record's, each a value, are answered by the
-///   source for `node`, a record's and a record type's written after their
-///   field labels; a stack's and a lazy pair's two items admit computation
-///   types; a static Pi's domain and codomain admit value types; a thunk type's
-///   body and a quoted computation type admit computation types; a returner's
-///   result, an arrow's and a dependent arrow's domain and a quoted value type
-///   admit value types, the arrows' codomains computation types; a decode's
-///   code, an injection's body, a static abstraction's body and a static
-///   application's operator and argument admit values; native path endpoints,
-///   maps and component paths admit values; a return's and a force's operand
-///   and an application's argument admit values; the computation a bind runs
-///   and the function an application applies admit computations where the body
-///   goes on, the rest of a bind what its own position admits; a lambda's body,
-///   and a thunk's when bodies are spelled, admit computations where the body
-///   ends; a nested computation and a run, when bodies are spelled, admit a
-///   computation where the body goes on; every other former, an opaque thunk,
-///   nested computation or run among them, is a leaf.
+/// - ensures: an n-ary former's components, answered by the source for `node`,
+///   a record's and a record type's after their field labels and an injection's
+///   body after its summand; type children admit types and term children terms
+///   as the grammar places them; a dependent arrow's codomain, a static
+///   abstraction's, a lambda's and a fixpoint's body, a bind's rest, a case's
+///   branches, a transport's motive, a return clause and a stack capture's body
+///   stand under one binder, a split's body under one per component, a data
+///   case's branch under one per field of its constructor, a fold's cell branch
+///   and a handler's operation clauses under two, a scope's subject under the
+///   capability's and a fork's child and parent each under one linear binder;
+///   the computation a bind runs, the function an application applies and a
+///   computation where a value is read admit computations where the body goes
+///   on, a body in braces one where it ends, and a bind's rest and the branches
+///   of a case what its own position admits; a thunk's body is a child only
+///   where bodies are spelled; every leaf former has none.
 /// - provides: the one table of child positions the scan and the walk share.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — finite composite grammar fixtures and misplaced bridge
-///   children observe arity, child order and admitted families. Static
-///   abstraction and application fixtures cover their value positions;
-///   arbitrary node representations are outside this spelling evidence.
+///   children observe arity, child order, binders and admitted families.
+///   Arbitrary node representations are outside this spelling evidence.
 /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
 /// - witness: `goldens::tests::records_spell_their_fields_in_label_order`
 /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
 /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
 /// - witness: `goldens::tests::native_paths_preserve_ordered_endpoints_and_maps`
 /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
-#[spec(ensures: |ret| match *former {
-    | Former::Stack(..) | Former::With(..) => matches!(ret,
-        Children::Two(Slot { admits: Admits::CompType, .. }, Slot { admits: Admits::CompType, .. })),
-    | Former::Product(arity) | Former::Sum(arity) => matches!(ret,
-        Children::Components { arity: Arity(count), admits: Admits::ValueType, entries: Entries::Positional, .. }
-            if count == usize::from(arity)),
-    | Former::Session { payloads, .. } => matches!(ret,
-        Children::Components { arity: Arity(count), admits: Admits::ValueType, entries: Entries::Positional, .. }
-            if count == usize::from(payloads)),
-    | Former::RecordType(arity) => matches!(ret,
-        Children::Components { arity: Arity(count), admits: Admits::ValueType, entries: Entries::Labelled(Label::Field), .. }
-            if count == usize::from(arity)),
-    | Former::Tuple(arity) => matches!(ret,
-        Children::Components { arity: Arity(count), admits: Admits::Value, entries: Entries::Positional, .. }
-            if count == usize::from(arity)),
-    | Former::Record(arity) => matches!(ret,
-        Children::Components { arity: Arity(count), admits: Admits::Value, entries: Entries::Labelled(Label::Assignment), .. }
-            if count == usize::from(arity)),
-    | Former::StaticPi { .. } => matches!(ret,
-        Children::Two(Slot { admits: Admits::ValueType, .. }, Slot { admits: Admits::ValueType, .. })),
-    | Former::Arrow { .. } | Former::Pi { .. } => matches!(ret,
-        Children::Two(Slot { admits: Admits::ValueType, .. }, Slot { admits: Admits::CompType, .. })),
-    | Former::ListCons(..) | Former::PathUniverse(..) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Funext(..) | Former::Equiv(..) | Former::Ua { .. } | Former::StaticApplication(..) | Former::SessionRelated(..) | Former::Then(..) => matches!(ret,
-        Children::Two(Slot { admits: Admits::Value, .. }, Slot { admits: Admits::Value, .. })),
-    | Former::ThunkType(_) | Former::QuoteComputation(_) => matches!(ret,
-        Children::One(Slot { admits: Admits::CompType, .. })),
-    | Former::List(_) | Former::Returner(_) | Former::EffectfulReturner { .. } | Former::Quote(_) => matches!(ret,
-        Children::One(Slot { admits: Admits::ValueType, .. })),
-    | Former::PathRefl(_) | Former::Here(_) | Former::Element(_) | Former::ComputationElement(_) | Former::Injection(..) | Former::StaticLambda(_) | Former::Stay(_) | Former::RunType(_)
-        | Former::Return(_) | Former::Force(_) => matches!(ret,
-        Children::One(Slot { admits: Admits::Value, .. })),
-    | Former::Bind(..) => matches!(ret,
-        Children::Two(Slot { admits: Admits::Computation(Tail::Continues), .. }, Slot { admits: rest, .. }) if rest == admits),
-    | Former::Application(..) => matches!(ret,
-        Children::Two(Slot { admits: Admits::Computation(Tail::Continues), .. }, Slot { admits: Admits::Value, .. })),
-    | Former::Lambda(_) => matches!(ret, Children::One(Slot { admits: Admits::Computation(Tail::Ends), .. })),
-    | Former::Thunk(_) => match bodies {
-        Bodies::Spelled => matches!(ret, Children::One(Slot { admits: Admits::Computation(Tail::Ends), .. })),
-        Bodies::Opaque => matches!(ret, Children::None),
-    },
-    | Former::Nested(_) | Former::Run(_) => match bodies {
-        Bodies::Spelled => matches!(ret, Children::One(Slot { admits: Admits::Computation(Tail::Continues), .. })),
-        Bodies::Opaque => matches!(ret, Children::None),
-    },
-    | _ => matches!(ret, Children::None),
+#[spec(ensures: |ref ret| match *former {
+    | Former::Product(arity) | Former::Sum(arity) | Former::RecordType(arity) => ret.len() == usize::from(arity)
+        && ret.iter().all(|slot| slot.admits == Admits::ValueType && slot.binds == Binds::NONE),
+    | Former::Tuple(arity) | Former::Record(arity) | Former::Data { arity, .. } | Former::Constructor { arity, .. }
+        | Former::Primitive { arity, .. } => ret.len() == usize::from(arity)
+        && ret.iter().all(|slot| slot.admits == Admits::Value && slot.binds == Binds::NONE),
+    | Former::Pi { .. } | Former::StaticLambda(_) | Former::Lambda(_) | Former::Bind(..) | Former::Fixpoint(_)
+        | Former::Shift(_) => ret.last().is_some_and(|slot| slot.binds == Binds::ONE),
+    | Former::Case { arity, .. } | Former::DataCase { arity, .. } => ret.len() == usize::from(arity).saturating_add(1_usize)
+        && ret.first().is_some_and(|slot| slot.admits == Admits::Value && slot.binds == Binds::NONE),
+    | Former::Thunk(_) => ret.len() == match bodies { Bodies::Spelled => 1_usize, Bodies::Opaque => 0_usize },
+    | Former::Session { payloads, .. } => ret.len() == usize::from(payloads)
+        && ret.iter().all(|slot| slot.admits == Admits::ValueType && slot.binds == Binds::NONE),
+    | Former::Offer { arms, .. } => ret.len() == usize::from(arms),
+    | Former::Fork { .. } => ret.len() == 3_usize
+        && ret.iter().skip(1_usize).all(|slot| slot.binds == Binds { zone: Zone::Linear, count: 1_usize }),
+    | Former::BaseType(_) | Former::Universe { .. } | Former::Abstract(_) | Former::Capability { .. }
+        | Former::Variable { .. } | Former::Constant(_) | Former::Unit | Former::ListNil | Former::Literal(_)
+        | Former::Reify | Former::Receive(_) | Former::Select { .. } | Former::Close(_) | Former::Unreadable(_) => ret.is_empty(),
+    | _ => !ret.is_empty(),
 })]
-fn children<Node>(
-    node: Node,
-    former: &Former<'_, Node>,
+pub fn children<S>(
+    source: &S,
+    node: S::Node,
+    former: &Former<'_, S::Node>,
     admits: Admits,
     bodies: Bodies,
-) -> Children<Node>
+) -> Vec<Slot<S::Node>>
 where
-    Node: Copy,
+    S: Source + ?Sized,
 {
-    let slot = |node: Node, admits: Admits| Slot { node, admits };
+    let value = |node| Slot::of(node, Admits::Value, Binds::NONE);
+    let value_type = |node| Slot::of(node, Admits::ValueType, Binds::NONE);
+    let comp_type = |node| Slot::of(node, Admits::CompType, Binds::NONE);
+    let continues = |node| Slot::of(node, Admits::Computation(Tail::Continues), Binds::NONE);
+    let ends = |node, binds| Slot::of(node, Admits::Computation(Tail::Ends), binds);
     let components =
-        |arity: crate::former::Arity, admits: Admits, entries: Entries| Children::Components {
-            of: node,
-            arity: Arity(usize::from(arity)),
-            admits,
-            entries,
+        |arity: crate::former::Arity, admits: Admits, binds: Binds, label: Option<Label>| {
+            (0_usize .. usize::from(arity))
+                .map(|index| {
+                    let index = Component::from(index);
+                    Slot {
+                        node: source.component(node, index),
+                        admits,
+                        binds,
+                        label: label.map(|label| Labelled {
+                            of: node,
+                            index,
+                            label,
+                        }),
+                    }
+                })
+                .collect::<Vec<_>>()
         };
+    let clauses = |subject: Slot<S::Node>, on_return, count| {
+        let mut slots = Vec::from([subject, ends(on_return, Binds::ONE)]);
+        slots.extend(components(
+            count,
+            Admits::Computation(Tail::Ends),
+            Binds::intuitionistic(OpenBinders(2_usize)),
+            None,
+        ));
+        slots
+    };
     match *former {
-        | Former::Stack(first, second) | Former::With(first, second) => Children::Two(
-            slot(first, Admits::CompType),
-            slot(second, Admits::CompType),
-        ),
+        | Former::Stack(first, second) | Former::With(first, second) => {
+            Vec::from([comp_type(first), comp_type(second)])
+        },
         | Former::Product(arity) | Former::Sum(arity) => {
-            components(arity, Admits::ValueType, Entries::Positional)
+            components(arity, Admits::ValueType, Binds::NONE, None)
         },
         | Former::Session { payloads, .. } => {
-            components(payloads, Admits::ValueType, Entries::Positional)
+            components(payloads, Admits::ValueType, Binds::NONE, None)
         },
         | Former::RecordType(arity) => {
-            components(arity, Admits::ValueType, Entries::Labelled(Label::Field))
+            components(arity, Admits::ValueType, Binds::NONE, Some(Label::Field))
         },
-        | Former::Tuple(arity) => components(arity, Admits::Value, Entries::Positional),
+        | Former::Tuple(arity)
+        | Former::Data { arity, .. }
+        | Former::Constructor { arity, .. }
+        | Former::Primitive { arity, .. }
+        | Former::Recorded {
+            payloads: arity, ..
+        } => components(arity, Admits::Value, Binds::NONE, None),
         | Former::Record(arity) => {
-            components(arity, Admits::Value, Entries::Labelled(Label::Assignment))
+            components(arity, Admits::Value, Binds::NONE, Some(Label::Assignment))
         },
-        | Former::StaticPi {
-            domain: first,
-            codomain: second,
-        } => Children::Two(
-            slot(first, Admits::ValueType),
-            slot(second, Admits::ValueType),
-        ),
-        | Former::Arrow { domain, codomain } | Former::Pi { domain, codomain } => Children::Two(
-            slot(domain, Admits::ValueType),
-            slot(codomain, Admits::CompType),
-        ),
+        | Former::StaticPi { domain, codomain } => {
+            Vec::from([value_type(domain), value_type(codomain)])
+        },
+        | Former::Arrow { domain, codomain } => {
+            Vec::from([value_type(domain), comp_type(codomain)])
+        },
+        | Former::Pi { domain, codomain } => Vec::from([
+            value_type(domain),
+            Slot::of(codomain, Admits::CompType, Binds::ONE),
+        ]),
         | Former::PathUniverse(first, second)
         | Former::PathProduct(first, second)
         | Former::Funext(first, second)
@@ -706,46 +867,164 @@ where
         }
         | Former::PathEquiv(first, second)
         | Former::ListCons(first, second)
-        | Former::StaticApplication(first, second) => {
-            Children::Two(slot(first, Admits::Value), slot(second, Admits::Value))
-        },
+        | Former::StaticApplication(first, second)
+        | Former::Transport(first, second) => Vec::from([value(first), value(second)]),
+        | Former::Path {
+            carrier,
+            left,
+            right,
+        }
+        | Former::Flow {
+            carrier,
+            left,
+            right,
+        } => Vec::from([value_type(carrier), value(left), value(right)]),
         | Former::ThunkType(child) | Former::QuoteComputation(child) => {
-            Children::One(slot(child, Admits::CompType))
+            Vec::from([comp_type(child)])
         },
         | Former::List(child)
         | Former::Returner(child)
         | Former::EffectfulReturner { result: child, .. }
-        | Former::Quote(child) => Children::One(slot(child, Admits::ValueType)),
+        | Former::Quote(child) => Vec::from([value_type(child)]),
         | Former::PathRefl(child)
         | Former::Element(child)
         | Former::ComputationElement(child)
-        | Former::Injection(_, child)
-        | Former::StaticLambda(child)
         | Former::Here(child)
         | Former::Stay(child)
         | Former::RunType(child)
         | Former::Return(child)
-        | Former::Force(child) => Children::One(slot(child, Admits::Value)),
-        | Former::Bind(bound, rest) => Children::Two(
-            slot(bound, Admits::Computation(Tail::Continues)),
-            slot(rest, admits),
-        ),
-        | Former::Application(function, argument) => Children::Two(
-            slot(function, Admits::Computation(Tail::Continues)),
-            slot(argument, Admits::Value),
-        ),
-        | Former::Lambda(body) => Children::One(slot(body, Admits::Computation(Tail::Ends))),
-        | Former::Thunk(body) => match bodies {
-            | Bodies::Spelled => Children::One(slot(body, Admits::Computation(Tail::Ends))),
-            | Bodies::Opaque => Children::None,
+        | Former::Force(child)
+        | Former::RecordProjection(child, _)
+        | Former::TupleProjection(child, _)
+        | Former::Perform { payload: child, .. }
+        | Former::Send { payload: child, .. } => Vec::from([value(child)]),
+        | Former::Injection(summand, child) => Vec::from([Slot {
+            label: Some(Labelled {
+                of: node,
+                index: summand,
+                label: Label::Summand,
+            }),
+            ..value(child)
+        }]),
+        | Former::StaticLambda(body) => Vec::from([Slot::of(body, Admits::Value, Binds::ONE)]),
+        | Former::Bind(bound, rest) => {
+            Vec::from([continues(bound), Slot::of(rest, admits, Binds::ONE)])
         },
-        | Former::Nested(body) | Former::Run(body) => match bodies {
-            | Bodies::Spelled => Children::One(slot(body, Admits::Computation(Tail::Continues))),
-            | Bodies::Opaque => Children::None,
+        | Former::Application(function, argument) => {
+            Vec::from([continues(function), value(argument)])
+        },
+        | Former::Lambda(body) | Former::Fixpoint(body) | Former::Shift(body) => {
+            Vec::from([ends(body, Binds::ONE)])
+        },
+        | Former::Thunk(body) => match bodies {
+            | Bodies::Spelled => Vec::from([ends(body, Binds::NONE)]),
+            | Bodies::Opaque => Vec::new(),
+        },
+        | Former::Nested(body)
+        | Former::Run(body)
+        | Former::Returned(body)
+        | Former::Project(_, body) => Vec::from([continues(body)]),
+        | Former::PathTransport {
+            motive,
+            path,
+            value: transported,
+        }
+        | Former::Ride {
+            motive,
+            flow: path,
+            value: transported,
+        } => Vec::from([
+            Slot::of(motive, Admits::ValueType, Binds::ONE),
+            value(path),
+            value(transported),
+        ]),
+        | Former::TelescopeTransport {
+            motive,
+            path,
+            start,
+            over,
+            value: transported,
+        } => Vec::from([
+            comp_type(motive),
+            value(path),
+            value(start),
+            value(over),
+            value(transported),
+        ]),
+        | Former::Case { scrutinee, arity } => {
+            let mut slots = Vec::from([value(scrutinee)]);
+            slots.extend(components(arity, admits, Binds::ONE, None));
+            slots
+        },
+        | Former::Split {
+            scrutinee,
+            arity,
+            body,
+        } => Vec::from([
+            value(scrutinee),
+            Slot::of(
+                body,
+                admits,
+                Binds::intuitionistic(OpenBinders(usize::from(arity))),
+            ),
+        ]),
+        | Former::DataCase { scrutinee, arity } => {
+            let mut slots = Vec::from([value(scrutinee)]);
+            slots.extend((0_usize .. usize::from(arity)).map(|index| {
+                let arm = arm(source, node, Component::from(index));
+                Slot {
+                    node: arm.body,
+                    admits,
+                    binds: Binds::intuitionistic(OpenBinders(arm.fields)),
+                    label: None,
+                }
+            }));
+            slots
+        },
+        | Former::ListFold { list, nil, cons } => Vec::from([
+            value(list),
+            Slot::of(nil, admits, Binds::NONE),
+            Slot::of(cons, admits, Binds::intuitionistic(OpenBinders(2_usize))),
+        ]),
+        | Former::Handle {
+            subject,
+            on_return,
+            clauses: count,
+        } => clauses(ends(subject, Binds::NONE), on_return, count),
+        | Former::Scope {
+            subject,
+            on_return,
+            clauses: count,
+            ..
+        } => clauses(ends(subject, Binds::ONE), on_return, count),
+        | Former::Exercise {
+            capability,
+            payload,
+            ..
+        } => Vec::from([value(capability), value(payload)]),
+        | Former::Resume(stack, computation) => Vec::from([value(stack), continues(computation)]),
+        | Former::Reset(body) => Vec::from([ends(body, Binds::NONE)]),
+        | Former::Lazy(first, second) => Vec::from([continues(first), continues(second)]),
+        | Former::Offer { arms, .. } => {
+            components(arms, Admits::Computation(Tail::Ends), Binds::NONE, None)
+        },
+        | Former::Fork {
+            protocol,
+            child,
+            parent,
+        } => {
+            let linear = Binds {
+                zone: Zone::Linear,
+                count: 1_usize,
+            };
+            Vec::from([
+                value_type(protocol),
+                ends(child, linear),
+                Slot::of(parent, admits, linear),
+            ])
         },
         | Former::BaseType(_)
         | Former::Universe { .. }
-        | Former::TypeLift
         | Former::Abstract(_)
         | Former::Capability { .. }
         | Former::Variable { .. }
@@ -754,9 +1033,10 @@ where
         | Former::ListNil
         | Former::Literal(_)
         | Former::Reify
-        | Former::ValueLift
-        | Former::Computation
-        | Former::Unreadable => Children::None,
+        | Former::Receive(_)
+        | Former::Select { .. }
+        | Former::Close(_)
+        | Former::Unreadable(_) => Vec::new(),
     }
 }
 
@@ -818,7 +1098,7 @@ enum Binding
 struct Piece
 {
     /// The document.
-    doc: DocId,
+    doc: Doc,
     /// How loosely it binds.
     binding: Binding,
 }
@@ -872,7 +1152,8 @@ impl Nesting
 }
 
 /// The spelling of the session type `protocol` stands for at `state`, its
-/// payload types left as slots, and how loosely it binds.
+/// payload types left as slots, how loosely it binds, and whether it reads
+/// every state it reaches.
 ///
 /// # Specification
 /// - requires: nothing; a state past the protocol spells `?`.
@@ -904,17 +1185,18 @@ impl Nesting
     | Segment::Payload(slot) => protocol.nodes().iter().any(|node| {
         matches!(*node, ProtocolNode::Send { payload, .. } | ProtocolNode::Receive { payload, .. } if payload == slot)
     }),
-}) && (ret.1 == Binding::Atom)
+}) && (protocol.node(state).is_ok() || ret.2 == Fidelity::Approximate) && (ret.1 == Binding::Atom)
     == matches!(protocol.node(state), Ok(&(ProtocolNode::Select(_) | ProtocolNode::Offer(_) | ProtocolNode::End))))]
 fn protocol_template(
     protocol: &Protocol,
     state: ProtocolState,
-) -> (Vec<Segment>, Binding)
+) -> (Vec<Segment>, Binding, Fidelity)
 {
     let mut segments = Vec::new();
     let mut text = String::new();
     let mut binders: Vec<ProtocolState> = Vec::new();
     let mut pending = Vec::from([Spelling::State(state)]);
+    let mut fidelity = Fidelity::Faithful;
     while let Some(step) = pending.pop() {
         let at = match step {
             | Spelling::Text(glyphs) => {
@@ -933,7 +1215,10 @@ fn protocol_template(
             | Spelling::State(at) => at,
         };
         match protocol.node(at) {
-            | Err(_) => text.push('?'),
+            | Err(_) => {
+                fidelity = Fidelity::Approximate;
+                text.push('?');
+            },
             | Ok(&ProtocolNode::Send { payload, next }) => {
                 text.push('!');
                 segments.push(Segment::Text(core::mem::take(&mut text)));
@@ -988,7 +1273,7 @@ fn protocol_template(
         },
         | _ => Binding::Arrow,
     };
-    (segments, binding)
+    (segments, binding, fidelity)
 }
 
 /// The bridges between the sorts, and the keywords that lead a computation.
@@ -1138,7 +1423,7 @@ enum Join
     /// A bridge over one operand.
     Prefix(Prefix),
     /// A returner prefixed by the rendered effect names.
-    EffectReturner(DocId),
+    EffectReturner(Doc),
     /// A braced former over this many entries.
     Braced
     {
@@ -1172,7 +1457,7 @@ enum Join
     Bracket(Bracket),
     /// Univalence at a stratum over its two translator records, after the
     /// head spelling its stratum and its descriptions, `ua[n, k](a, b,`.
-    Ua(DocId),
+    Ua(Doc),
     /// A session type over its payloads, spelled by the template the visit
     /// pushed, binding as the template's head does.
     Session
@@ -1182,6 +1467,196 @@ enum Join
         /// How loosely the spelling binds.
         binding: Binding,
     },
+    /// A former spelled by the parts the visit pushed, over this many child
+    /// pieces, binding as given.
+    Form
+    {
+        /// How many child pieces its parts take, in reading order.
+        pieces: Arity,
+        /// How loosely the spelling binds.
+        binding: Binding,
+    },
+}
+
+/// A name as a former spelled by parts writes it: the name itself, or `?`.
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Written(Cow<'static, str>);
+
+impl From<Written> for Cow<'static, str>
+{
+    /// The text written.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(written: Written) -> Self
+    {
+        written.0
+    }
+}
+
+/// One run of a former's spelling by parts.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Part
+{
+    /// Text, written as it stands.
+    Text(Cow<'static, str>),
+    /// The next child's piece, bare when it binds at most this loosely, a
+    /// block when it is a bind's statements, parenthesized otherwise.
+    Piece(Binding),
+    /// The name of the binder at this offset among those the former's
+    /// children open.
+    Binder(usize),
+    /// The linear variable at this index, by its binder's name.
+    Endpoint(DeBruijnIndex),
+    /// A space, or a line break indented two columns.
+    Space,
+    /// Nothing, or a line break.
+    Tight,
+    /// A line break that breaks with the block around it.
+    Line,
+    /// The parts so far are a block's head, ending with its opening brace.
+    Open,
+    /// The block opened last ends: its body two columns in, the brace
+    /// closing it on a line of its own.
+    Close,
+}
+
+/// The parts of one former's spelling as they are built, and how many child
+/// pieces they take.
+#[derive(Debug, Default)]
+struct Parts
+{
+    /// The parts, in writing order.
+    parts: Vec<Part>,
+    /// How many of them are child pieces.
+    pieces: usize,
+}
+
+impl Parts
+{
+    /// Appends `part`; a child piece is counted.
+    ///
+    /// # Specification
+    /// trivial.
+    fn part(
+        &mut self,
+        part: Part,
+    ) -> &mut Self
+    {
+        if matches!(part, Part::Piece(_)) {
+            self.pieces = self.pieces.saturating_add(1_usize);
+        }
+        self.parts.push(part);
+        self
+    }
+
+    /// Appends fixed or computed text.
+    ///
+    /// # Specification
+    /// trivial.
+    fn text(
+        &mut self,
+        text: impl Into<Cow<'static, str>>,
+    ) -> &mut Self
+    {
+        self.part(Part::Text(text.into()))
+    }
+
+    /// Appends the next child's piece, bare up to `loosest`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn piece(
+        &mut self,
+        loosest: Binding,
+    ) -> &mut Self
+    {
+        self.part(Part::Piece(loosest))
+    }
+
+    /// Appends `, ` and a soft line before every entry of a block but the
+    /// first, `index` counting the entries.
+    ///
+    /// # Specification
+    /// trivial.
+    fn separated(
+        &mut self,
+        index: Component,
+    ) -> &mut Self
+    {
+        if usize::from(index) > 0_usize {
+            let _ = self.text(",").part(Part::Line);
+        }
+        self
+    }
+
+    /// Appends the names of the first `count` binders the children open,
+    /// separated by `, `.
+    ///
+    /// # Specification
+    /// trivial.
+    fn binders(
+        &mut self,
+        count: Arity,
+    ) -> &mut Self
+    {
+        for offset in 0_usize .. count.0 {
+            if offset > 0_usize {
+                let _ = self.text(", ");
+            }
+            let _ = self.part(Part::Binder(offset));
+        }
+        self
+    }
+
+    /// Appends `count` more arguments of a call already opened, each after a
+    /// comma, then the closing parenthesis.
+    ///
+    /// # Specification
+    /// trivial.
+    fn rest(
+        &mut self,
+        count: Arity,
+    ) -> &mut Self
+    {
+        for _ in 0_usize .. count.0 {
+            let _ = self.text(",").part(Part::Space).piece(Binding::Sequence);
+        }
+        self.part(Part::Tight).text(")")
+    }
+
+    /// Appends a call's `count` arguments between parentheses.
+    ///
+    /// # Specification
+    /// trivial.
+    fn arguments(
+        &mut self,
+        count: Arity,
+    ) -> &mut Self
+    {
+        let _ = self.text("(");
+        for index in 0_usize .. count.0 {
+            if index > 0_usize {
+                let _ = self.text(",").part(Part::Space);
+            }
+            let _ = self.piece(Binding::Sequence);
+        }
+        self.part(Part::Tight).text(")")
+    }
+
+    /// Appends a block over the next child's piece: the parts so far its
+    /// head, ending with its opening brace.
+    ///
+    /// # Specification
+    /// trivial.
+    fn body(&mut self) -> &mut Self
+    {
+        self.part(Part::Open)
+            .piece(Binding::Sequence)
+            .part(Part::Close)
+    }
 }
 
 /// One unit of the walk's pending work.
@@ -1198,38 +1673,31 @@ enum Task<Node>
         /// How many value formers enclose the node.
         depth: ValueDepth,
     },
-    /// Open the binder of the dependent arrow, static abstraction, bind or
-    /// lambda whose body follows.
-    Bind,
-    /// Close that binder.
+    /// Open a binder in a zone, of the former whose child follows.
+    Bind(Zone),
+    /// Close the innermost binder.
     Unbind,
     /// Spell a component the source did not answer, as `?`.
     Missing,
-    /// Spell the label entry `index` of `of` is written after.
-    Label
-    {
-        /// The record, the record type or the injection.
-        of: Node,
-        /// The entry's position; an injection's summand.
-        index: Component,
-        /// What the label is.
-        label: Label,
-    },
+    /// Spell the label an entry is written after.
+    Label(Labelled<Node>),
     /// Combine finished pieces.
     Join(Join),
 }
 
 /// What a walk produced.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Walked
 {
     /// The document of the root, and whether it says the whole of it.
     Built
     {
         /// The root's document.
-        doc: DocId,
+        doc: Doc,
         /// Whether every node was spelled in full.
         fidelity: Fidelity,
+        /// Why each `?` the document holds was written.
+        unspelled: BTreeSet<Unspelled>,
     },
     /// The source took more visits than one presentation makes.
     OverBudget,
@@ -1422,29 +1890,26 @@ where
         if reach(admits, depth, kind) != Reach::Spell {
             continue;
         }
-        if let Former::Abstract(name) | Former::Constant(name) = former {
+        if let Former::Abstract(name)
+        | Former::Constant(name)
+        | Former::Data {
+            name: Some(name), ..
+        }
+        | Former::Constructor {
+            name: Some(name), ..
+        }
+        | Former::Primitive { name, .. } = former
+        {
             let _fresh = names.insert(name);
         }
         let below = below(depth, kind);
-        match children(node, &former, admits, bodies) {
-            | Children::None => {},
-            | Children::Components {
-                of,
-                arity: Arity(count),
-                admits,
-                ..
-            } => {
-                for index in (0_usize .. count).rev() {
-                    if let Some(component) = source.component(of, Component::from(index)) {
-                        pending.push((component, admits, below));
-                    }
-                }
-            },
-            | Children::One(only) => pending.push((only.node, only.admits, below)),
-            | Children::Two(first, second) => {
-                pending.push((second.node, second.admits, below));
-                pending.push((first.node, first.admits, below));
-            },
+        for slot in children(source, node, &former, admits, bodies)
+            .into_iter()
+            .rev()
+        {
+            if let Some(child) = slot.node {
+                pending.push((child, slot.admits, below));
+            }
         }
     }
     Maybe::Present(names)
@@ -1588,28 +2053,64 @@ fn literal(literal: &Literal) -> Spelled
 
 /// The walk's state: the builder it writes into, the finished pieces, the
 /// open binders and what it has had to approximate.
-struct Walk<'walk, 'meter, 'names>
+struct Walk<'walk, 'names>
 {
-    /// The builder every leaf and join is written into.
-    builder: &'walk mut DocBuilder<'meter>,
+    /// The composer every leaf and join is written into.
+    builder: &'walk mut dyn Compose,
     /// Finished pieces, innermost last.
     pieces: Vec<Piece>,
     /// The binder names by position.
     binders: Binders<'names>,
-    /// How many binders — of dependent arrows, static abstractions, binds and
-    /// lambdas — are open.
-    open: OpenBinders,
+    /// The zone of each open binder, outermost first; a binder's position
+    /// among them names it.
+    opened: Vec<Zone>,
+    /// The names of the intuitionistic binders the root stands under,
+    /// outermost first.
+    context: &'names [Option<Name<'names>>],
     /// Whether every node so far was spelled in full.
     fidelity: Fidelity,
+    /// Why each `?` written so far was written.
+    unspelled: BTreeSet<Unspelled>,
     /// How the presentation writes its thunks.
     bodies: Bodies,
     /// The spellings of the session types whose payloads are being walked,
     /// innermost last; each join takes its own.
     protocols: Vec<Vec<Segment>>,
+    /// The parts of the formers spelled by parts whose children are being
+    /// walked, innermost last; each join takes its own.
+    forms: Vec<Vec<Part>>,
 }
 
-impl Walk<'_, '_, '_>
+impl Walk<'_, '_>
 {
+    /// Pushes `?` for a node the walk cannot spell, and records why.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`Self::approximate`] over `?`; `reason` is among the
+    ///   reasons recorded.
+    /// - provides: every `?` the walk writes.
+    /// - fails: as [`Self::leaf`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::leaf`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — misplaced, unreadable and unbound nodes each spell
+    ///   `?` under their own reason.
+    /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
+    #[spec(ensures: |ref ret| self.unspelled.contains(&reason) && self.fidelity == Fidelity::Approximate
+        && matches!(*ret, Ok(()) | Err(PresentationError::Build(_))))]
+    fn unspell(
+        &mut self,
+        reason: Unspelled,
+    ) -> Result<(), PresentationError>
+    {
+        let _fresh = self.unspelled.insert(reason);
+        self.approximate(Glyphs("?"))
+    }
+
     /// A text leaf.
     ///
     /// # Specification
@@ -1631,7 +2132,7 @@ impl Walk<'_, '_, '_>
     #[spec(
         requires: !glyphs.0.contains(['\r', '\n', '\t']),
         ensures: |ref ret| match *ret {
-            | Ok(doc) => glyphs.0.is_empty() || doc != self.builder.empty(),
+            | Ok(doc) => glyphs.0.is_empty() || doc != Doc::EMPTY,
             | Err(PresentationError::Build(_)) => true,
             | Err(_) => false,
         },
@@ -1639,9 +2140,9 @@ impl Walk<'_, '_, '_>
     fn leaf(
         &mut self,
         glyphs: Glyphs<'_>,
-    ) -> Result<DocId, PresentationError>
+    ) -> Result<Doc, PresentationError>
     {
-        Ok(self.builder.text(TextSource::from(glyphs.0))?)
+        self.builder.text(glyphs)
     }
 
     /// Pushes a finished atom holding `glyphs`.
@@ -1764,7 +2265,7 @@ impl Walk<'_, '_, '_>
     {
         let text: &str = name.as_ref();
         if text.is_empty() || text.contains(['\n', '\r', '\t']) {
-            return self.approximate(Glyphs("?"));
+            return self.unspell(Unspelled::Unprintable);
         }
         self.atom(Glyphs(text))
     }
@@ -1821,6 +2322,12 @@ impl Walk<'_, '_, '_>
                 let mut text: &str = held.as_ref().map_or("", AsRef::as_ref);
                 if text.is_empty() || text.contains(['\n', '\r', '\t']) {
                     self.fidelity = Fidelity::Approximate;
+                    let _fresh = self.unspelled.insert(if text.is_empty() {
+                        Unspelled::Missing
+                    }
+                    else {
+                        Unspelled::Unprintable
+                    });
                     text = "?";
                 }
                 match label {
@@ -1832,13 +2339,95 @@ impl Walk<'_, '_, '_>
         self.atom(Glyphs(spelled.as_str()))
     }
 
-    /// Pushes the name an intuitionistic variable `index` binders out reads
-    /// as, or `?` for one past every open binder.
+    /// A leaf naming the variable `index` binders out in `zone`: the open
+    /// binder it counts to, else the context binder past them, else `?`.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the name of the binder `index` binders out from the
-    ///   occurrence; `?`, approximate, when fewer binders are open.
+    /// - ensures: the name of the open binder of `zone` that `index` counts out
+    ///   to from the occurrence; past every open binder of the zone, an
+    ///   intuitionistic variable reads as the context binder it counts out to,
+    ///   innermost last; `?`, approximate and recorded unbound, for a linear
+    ///   variable past every open binder, one past the context, and a context
+    ///   binder the source cannot name, and recorded exhausted when the
+    ///   generated names ran out.
+    /// - provides: the spelling of a bound variable and of an endpoint.
+    /// - fails: the builder's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns [`PresentationError::Build`] when the builder refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nested binders distinguish reversed de Bruijn order
+    ///   and capture; a free variable reads its context binder's name and one
+    ///   past the context exposes a fabricated name. The fixtures do not open
+    ///   enough binders to exhaust the candidate counter.
+    /// - witness: `goldens::tests::long_dependent_function_type_breaks_at_the_narrow_page`
+    /// - witness: `goldens::tests::a_binder_skips_the_names_the_type_mentions`
+    /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
+    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
+    #[spec(
+        captures: [entry = self.pieces.len(), fidelity = self.fidelity],
+        ensures: |ref ret| self.pieces.len() == entry
+            && (fidelity != Fidelity::Approximate || self.fidelity == Fidelity::Approximate)
+            && matches!(*ret, Ok(_) | Err(PresentationError::Build(_))),
+    )]
+    fn variable_leaf(
+        &mut self,
+        zone: Zone,
+        index: DeBruijnIndex,
+    ) -> Result<Doc, PresentationError>
+    {
+        let mut remaining = usize::try_from(u32::from(index)).unwrap_or(usize::MAX);
+        let mut found = None;
+        for (position, &open) in self.opened.iter().enumerate().rev() {
+            if open != zone {
+                continue;
+            }
+            if remaining == 0_usize {
+                found = Some(position);
+                break;
+            }
+            remaining = remaining.saturating_sub(1_usize);
+        }
+        let spelled = match found {
+            | Some(position) => match self.binders.name_at(OpenBinders(position)) {
+                | Maybe::Present(name) => Ok(name.0.clone()),
+                | Maybe::Absent(_) => Err(Unspelled::Exhausted),
+            },
+            | None => match zone {
+                | Zone::Intuitionistic => self
+                    .context
+                    .len()
+                    .checked_sub(remaining)
+                    .and_then(|outer| outer.checked_sub(1_usize))
+                    .and_then(|position| self.context.get(position).copied().flatten())
+                    .filter(|name| {
+                        let text: &str = name.as_ref();
+                        !text.is_empty() && !text.contains(['\n', '\r', '\t'])
+                    })
+                    .map(|name| String::from(name.as_ref()))
+                    .ok_or(Unspelled::Unbound),
+                | Zone::Linear => Err(Unspelled::Unbound),
+            },
+        };
+        match spelled {
+            | Ok(name) => self.leaf(Glyphs(name.as_str())),
+            | Err(reason) => {
+                self.fidelity = Fidelity::Approximate;
+                let _fresh = self.unspelled.insert(reason);
+                self.leaf(Glyphs("?"))
+            },
+        }
+    }
+
+    /// Pushes the name the variable `index` binders out in `zone` reads as.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one atom piece holding [`Self::variable_leaf`]'s leaf.
     /// - provides: the spelling of a bound variable.
     /// - fails: as [`Self::leaf`].
     /// - panics: none.
@@ -1847,17 +2436,12 @@ impl Walk<'_, '_, '_>
     /// As [`Self::leaf`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — nested binders distinguish reversed de Bruijn order
-    ///   and capture; a free variable exposes a fabricated in-scope name. The
-    ///   fixtures do not open enough binders to exhaust the candidate counter.
+    /// - hypothesis: L3 — as [`Self::variable_leaf`].
     /// - witness: `goldens::tests::long_dependent_function_type_breaks_at_the_narrow_page`
-    /// - witness: `goldens::tests::a_binder_skips_the_names_the_type_mentions`
     /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
-    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
     #[spec(
         captures: [entry = self.pieces.len(), fidelity = self.fidelity],
-        ensures: |ref ret| ((fidelity != Fidelity::Approximate && index.0 < self.open.0)
-            || self.fidelity == Fidelity::Approximate)
+        ensures: |ref ret| (fidelity != Fidelity::Approximate || self.fidelity == Fidelity::Approximate)
             && match *ret {
                 | Ok(()) => entry.checked_add(1_usize) == Some(self.pieces.len())
                     && self.pieces.last().is_some_and(|piece| piece.binding == Binding::Atom),
@@ -1867,24 +2451,16 @@ impl Walk<'_, '_, '_>
     )]
     fn variable(
         &mut self,
-        index: OpenBinders,
+        zone: Zone,
+        index: DeBruijnIndex,
     ) -> Result<(), PresentationError>
     {
-        let Some(position) = self
-            .open
-            .0
-            .checked_sub(index.0)
-            .and_then(|outer| outer.checked_sub(1_usize))
-        else {
-            return self.approximate(Glyphs("?"));
-        };
-        match self.binders.name_at(OpenBinders(position)) {
-            | Maybe::Present(name) => {
-                let name = name.clone();
-                self.atom(Glyphs(name.0.as_str()))
-            },
-            | Maybe::Absent(_) => self.approximate(Glyphs("?")),
-        }
+        let doc = self.variable_leaf(zone, index)?;
+        self.pieces.push(Piece {
+            doc,
+            binding: Binding::Atom,
+        });
+        Ok(())
     }
 
     /// The finished piece on top of the stack.
@@ -1949,14 +2525,14 @@ impl Walk<'_, '_, '_>
         &mut self,
         piece: Piece,
         loosest: Binding,
-    ) -> Result<DocId, PresentationError>
+    ) -> Result<Doc, PresentationError>
     {
         if piece.binding <= loosest {
             return Ok(piece.doc);
         }
         let open = self.leaf(Glyphs("("))?;
         let close = self.leaf(Glyphs(")"))?;
-        Ok(self.builder.concat_all([open, piece.doc, close])?)
+        self.builder.concat_all(&[open, piece.doc, close])
     }
 
     /// `head` then a space, or a line break indented two columns.
@@ -1989,14 +2565,14 @@ impl Walk<'_, '_, '_>
     )]
     fn space_or_break(
         &mut self,
-        head: DocId,
-    ) -> Result<DocId, PresentationError>
+        head: Doc,
+    ) -> Result<Doc, PresentationError>
     {
         let space = self.leaf(Glyphs(" "))?;
-        let line = self.builder.hard_line();
+        let line = Doc::HARD_LINE;
         let indented = self.builder.nest(NestAmount::from(CONTINUATION), line)?;
         let choice = self.builder.choice(indented, space)?;
-        Ok(self.builder.concat(head, choice)?)
+        self.builder.concat(head, choice)
     }
 
     /// `head` then nothing, or a line break.
@@ -2005,7 +2581,8 @@ impl Walk<'_, '_, '_>
     /// - requires: nothing.
     /// - ensures: the inline branch is empty; the broken branch puts the closer
     ///   on its own line and is the left alternative, retained when both
-    ///   alternatives are width-tainted.
+    ///   alternatives are width-tainted. A composer that settles the choice as
+    ///   it composes answers `head` itself for the inline branch.
     /// - provides: the break before a bracket's closer.
     /// - fails: the builder's refusal.
     /// - panics: none.
@@ -2023,20 +2600,19 @@ impl Walk<'_, '_, '_>
     #[spec(
         captures: [entry = self.pieces.len()],
         ensures: |ref ret| self.pieces.len() == entry && match *ret {
-            | Ok(doc) => doc != head,
-            | Err(PresentationError::Build(_)) => true,
+            | Ok(_) | Err(PresentationError::Build(_)) => true,
             | Err(_) => false,
         },
     )]
     fn none_or_break(
         &mut self,
-        head: DocId,
-    ) -> Result<DocId, PresentationError>
+        head: Doc,
+    ) -> Result<Doc, PresentationError>
     {
-        let none = self.builder.empty();
-        let line = self.builder.hard_line();
+        let none = Doc::EMPTY;
+        let line = Doc::HARD_LINE;
         let choice = self.builder.choice(line, none)?;
-        Ok(self.builder.concat(head, choice)?)
+        self.builder.concat(head, choice)
     }
 
     /// `head`, `body` and a closing brace, as one group: on one line, a space
@@ -2073,16 +2649,16 @@ impl Walk<'_, '_, '_>
     )]
     fn block(
         &mut self,
-        head: DocId,
-        body: DocId,
-    ) -> Result<DocId, PresentationError>
+        head: Doc,
+        body: Doc,
+    ) -> Result<Doc, PresentationError>
     {
-        let line = self.builder.line();
+        let line = Doc::LINE;
         let inner = self.builder.concat(line, body)?;
         let inner = self.builder.nest(NestAmount::from(CONTINUATION), inner)?;
         let close = self.leaf(Glyphs("}"))?;
-        let doc = self.builder.concat_all([head, inner, line, close])?;
-        Ok(self.builder.group(doc)?)
+        let doc = self.builder.concat_all(&[head, inner, line, close])?;
+        self.builder.group(doc)
     }
 
     /// `piece` bare when it binds at most as loosely as `loosest`, a block
@@ -2117,7 +2693,7 @@ impl Walk<'_, '_, '_>
         &mut self,
         piece: Piece,
         loosest: Binding,
-    ) -> Result<DocId, PresentationError>
+    ) -> Result<Doc, PresentationError>
     {
         if piece.binding == Binding::Sequence && loosest < Binding::Sequence {
             let open = self.leaf(Glyphs("{"))?;
@@ -2132,18 +2708,17 @@ impl Walk<'_, '_, '_>
     /// - requires: `tasks` is the walk's stack, and `former` is what `source`
     ///   reads at `node`.
     /// - ensures: a value at the depth limit finishes as `<deep>`; a node of a
-    ///   sort its position does not admit, an unreadable node and a former
-    ///   without a surface spelling finish as `?`; a thunk finishes as
-    ///   `<thunk>` and a nested computation and a run as `?` where bodies are
-    ///   opaque; a leaf former finishes as its spelling, the 0-ary product as
-    ///   `Unit`, the 0-ary sum as `Void` and the sum of two 0-ary products as
-    ///   `Bool`; a composite former pushes its join below its children's
-    ///   visits, each labelled entry's label scheduled just before it, a
-    ///   dependent arrow's codomain, a static abstraction's, a lambda's body
-    ///   and a bind's rest between the opening and the closing of its binder; a
-    ///   static application schedules its spine as [`Self::spine`] does and an
-    ///   application its call as [`Self::call`] does; a decode, a quote, a
-    ///   returner where the body ends and a nested computation push their
+    ///   sort its position does not admit and an unreadable node finish as `?`;
+    ///   a thunk finishes as `<thunk>` where bodies are opaque; a leaf former
+    ///   finishes as its spelling, the 0-ary product as `Unit`, the 0-ary sum
+    ///   as `Void` and the sum of two 0-ary products as `Bool`; a composite
+    ///   former pushes its join below its children's visits, each label
+    ///   scheduled just before its entry and each child between the opening and
+    ///   the closing of the binders it stands under; a former spelled by parts
+    ///   pushes its parts as [`Self::form`] builds them; a static application
+    ///   schedules its spine as [`Self::spine`] does and an application its
+    ///   call as [`Self::call`] does; a decode, a quote, a returner where the
+    ///   body ends, a nested computation and a returned value push their
     ///   child's visit alone, so the child's piece is theirs; a returner
     ///   anywhere else is `pure v` and a run `run c`.
     /// - provides: one step of the walk.
@@ -2165,8 +2740,8 @@ impl Walk<'_, '_, '_>
     /// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
     /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
     #[spec(
-        captures: [entry = self.pieces.len(), pending = tasks.len(), opened = self.open, fidelity = self.fidelity],
-        ensures: |ref ret| self.open == opened
+        captures: [entry = self.pieces.len(), pending = tasks.len(), opened = self.opened.len(), fidelity = self.fidelity],
+        ensures: |ref ret| self.opened.len() == opened
             && (fidelity != Fidelity::Approximate || self.fidelity == Fidelity::Approximate)
             && match *ret {
                 | Ok(()) => (entry.checked_add(1_usize) == Some(self.pieces.len()) && tasks.len() == pending)
@@ -2191,7 +2766,7 @@ impl Walk<'_, '_, '_>
         match reach(admits, depth, kind) {
             | Reach::Spell => {},
             | Reach::Deep => return self.approximate(Glyphs("<deep>")),
-            | Reach::Misplaced => return self.approximate(Glyphs("?")),
+            | Reach::Misplaced => return self.unspell(Unspelled::Misplaced),
         }
         let join = match former {
             | Former::BaseType(BaseType::Integer) => return self.atom(Glyphs("Integer")),
@@ -2245,30 +2820,49 @@ impl Walk<'_, '_, '_>
             | Former::Universe { sort, level } => {
                 return match universe(sort, level) {
                     | Maybe::Present(spelled) => self.atom(Glyphs(spelled.0.as_str())),
-                    | Maybe::Absent(_) => self.approximate(Glyphs("?")),
+                    | Maybe::Absent(_) => self.unspell(Unspelled::Universe),
                 };
             },
-            | Former::Variable {
-                zone: Zone::Intuitionistic,
-                index,
-            } => {
-                let index = usize::try_from(u32::from(index)).unwrap_or(usize::MAX);
-                return self.variable(OpenBinders(index));
+            | Former::Variable { zone, index } => {
+                return self.variable(zone, index);
             },
             | Former::Thunk(_) => match self.bodies {
                 | Bodies::Opaque => return self.approximate(Glyphs("<thunk>")),
                 | Bodies::Spelled => Some(Join::Thunk),
             },
-            // A computation where a value is read stands bare, its run left
-            // to the checker; its piece is the node's.
-            | Former::Nested(_) => match self.bodies {
-                | Bodies::Opaque => return self.approximate(Glyphs("?")),
-                | Bodies::Spelled => None,
-            },
-            | Former::Run(_) => match self.bodies {
-                | Bodies::Opaque => return self.approximate(Glyphs("?")),
-                | Bodies::Spelled => Some(Join::Prefix(Prefix::Run)),
-            },
+            | Former::Run(_) => Some(Join::Prefix(Prefix::Run)),
+            | Former::Path { .. }
+            | Former::Flow { .. }
+            | Former::Data { .. }
+            | Former::Constructor { .. }
+            | Former::Recorded { .. }
+            | Former::Primitive { .. }
+            | Former::Transport(..)
+            | Former::PathTransport { .. }
+            | Former::Ride { .. }
+            | Former::TelescopeTransport { .. }
+            | Former::Fixpoint(_)
+            | Former::Case { .. }
+            | Former::Split { .. }
+            | Former::DataCase { .. }
+            | Former::RecordProjection(..)
+            | Former::TupleProjection(..)
+            | Former::ListFold { .. }
+            | Former::Perform { .. }
+            | Former::Handle { .. }
+            | Former::Exercise { .. }
+            | Former::Scope { .. }
+            | Former::Resume(..)
+            | Former::Reset(_)
+            | Former::Shift(_)
+            | Former::Lazy(..)
+            | Former::Project(..)
+            | Former::Send { .. }
+            | Former::Receive(_)
+            | Former::Select { .. }
+            | Former::Offer { .. }
+            | Former::Close(_)
+            | Former::Fork { .. } => Some(self.form(source, node, &former)),
             | Former::Reify => return self.approximate(Glyphs("<stack>")),
             | Former::Stack(..) => {
                 self.fidelity = Fidelity::Approximate;
@@ -2284,21 +2878,21 @@ impl Walk<'_, '_, '_>
                 state,
                 payloads,
             } => {
-                let (template, binding) = protocol_template(protocol, state);
+                let (template, binding, fidelity) = protocol_template(protocol, state);
+                if fidelity == Fidelity::Approximate {
+                    self.fidelity = Fidelity::Approximate;
+                    let _fresh = self.unspelled.insert(Unspelled::Protocol);
+                }
                 self.protocols.push(template);
                 Some(Join::Session {
                     payloads: Arity(usize::from(payloads)),
                     binding,
                 })
             },
-            | Former::BaseType(BaseType::Numeric)
-            | Former::TypeLift
-            | Former::ValueLift
-            | Former::Variable {
-                zone: Zone::Linear, ..
-            }
-            | Former::Computation
-            | Former::Unreadable => return self.approximate(Glyphs("?")),
+            | Former::BaseType(BaseType::Numeric) => {
+                return self.unspell(Unspelled::Unreadable(Unreadable::NumericAtom));
+            },
+            | Former::Unreadable(reason) => return self.unspell(Unspelled::Unreadable(reason)),
             | Former::PathUniverse(..) => {
                 self.fidelity = Fidelity::Approximate;
                 Some(Join::Bracket(Bracket::PathUniverse))
@@ -2400,74 +2994,39 @@ impl Walk<'_, '_, '_>
             | Former::Force(_) => Some(Join::Prefix(Prefix::Force)),
             | Former::Bind(..) => Some(Join::Sequence),
             | Former::Lambda(_) => Some(Join::Lambda),
+            // A computation where a value is read stands bare, its run left
+            // to the checker, and so does the computation a returned value
+            // stands for; its piece, as a decode's and a quote's, is the
+            // node's.
             | Former::Element(_)
             | Former::ComputationElement(_)
             | Former::Quote(_)
-            | Former::QuoteComputation(_) => None,
+            | Former::QuoteComputation(_)
+            | Former::Nested(_)
+            | Former::Returned(_) => None,
         };
         if let Some(join) = join {
             tasks.push(Task::Join(join));
         }
         let below = below(depth, kind);
-        let visit = |slot: Slot<S::Node>| Task::Visit {
-            node: slot.node,
-            admits: slot.admits,
-            depth: below,
-        };
-        let binds_last = matches!(
-            join,
-            Some(Join::Pi | Join::StaticLambda | Join::Sequence | Join::Lambda)
-        );
-        match children(node, &former, admits, self.bodies) {
-            | Children::None => {},
-            | Children::Components {
-                of,
-                arity: Arity(count),
-                admits,
-                entries,
-            } => {
-                for index in (0_usize .. count).rev() {
-                    let index = Component::from(index);
-                    tasks.push(
-                        source
-                            .component(of, index)
-                            .map_or(Task::Missing, |component| Task::Visit {
-                                node: component,
-                                admits,
-                                depth: below,
-                            }),
-                    );
-                    if let Entries::Labelled(label) = entries {
-                        tasks.push(Task::Label { of, index, label });
-                    }
-                }
-            },
-            | Children::One(only) => {
-                if binds_last {
-                    tasks.push(Task::Unbind);
-                }
-                tasks.push(visit(only));
-                if binds_last {
-                    tasks.push(Task::Bind);
-                }
-            },
-            | Children::Two(first, second) => {
-                if binds_last {
-                    tasks.push(Task::Unbind);
-                }
-                tasks.push(visit(second));
-                if binds_last {
-                    tasks.push(Task::Bind);
-                }
-                tasks.push(visit(first));
-            },
-        }
-        if let Former::Injection(summand, _) = former {
-            tasks.push(Task::Label {
-                of: node,
-                index: summand,
-                label: Label::Summand,
-            });
+        for slot in children(source, node, &former, admits, self.bodies)
+            .into_iter()
+            .rev()
+        {
+            for _ in 0_usize .. slot.binds.count {
+                tasks.push(Task::Unbind);
+            }
+            tasks.push(slot.node.map_or(Task::Missing, |child| Task::Visit {
+                node: child,
+                admits: slot.admits,
+                depth: below,
+            }));
+            for _ in 0_usize .. slot.binds.count {
+                tasks.push(Task::Bind(slot.binds.zone));
+            }
+            if let Some(label) = slot.label {
+                tasks.push(Task::Label(label));
+            }
         }
         Ok(())
     }
@@ -2631,11 +3190,12 @@ impl Walk<'_, '_, '_>
         });
     }
 
-    /// A leaf naming the binder the join at hand closes over, `?` and
-    /// approximate when the names ran out.
+    /// A leaf naming the binder at `offset` among those the join at hand's
+    /// children open, `?` and approximate when the names ran out.
     ///
     /// # Specification
-    /// - requires: the open count names the binder this join closes over.
+    /// - requires: the open count is the join's own, its children's binders
+    ///   closed, so position `open + offset` names the binder.
     /// - ensures: the generated name is a leaf; an exhausted counter yields `?`
     ///   and marks the presentation approximate without adding a piece.
     /// - fails: the builder's refusal.
@@ -2643,36 +3203,522 @@ impl Walk<'_, '_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — nested dependent arrows and static abstractions
-    ///   observe the chosen binder and scope. The binder cache witness covers
-    ///   counter exhaustion separately; layout refusal at this exact join is
-    ///   outside the finite spelling fixtures.
+    ///   observe the chosen binder and scope, and a split's two binders their
+    ///   order. The binder cache witness covers counter exhaustion separately;
+    ///   layout refusal at this exact join is outside the finite spelling
+    ///   fixtures.
     /// - witness: `goldens::tests::long_dependent_function_type_breaks_at_the_narrow_page`
     /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
+    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
     /// - witness: `walk::tests::binder_exhaustion_preserves_existing_names`
     #[spec(
         captures: [entry = self.pieces.len(), fidelity = self.fidelity,
-            exhausted = self.open.0 >= self.binders.generated.len() && self.binders.next.0 == u32::MAX],
+            exhausted = self.opened.len().saturating_add(offset.0) >= self.binders.generated.len() && self.binders.next.0 == u32::MAX],
         ensures: |ref ret| self.pieces.len() == entry
             && (fidelity != Fidelity::Approximate || self.fidelity == Fidelity::Approximate)
             && (!exhausted || self.fidelity == Fidelity::Approximate)
             && match *ret {
-                | Ok(doc) => doc != self.builder.empty(),
+                | Ok(doc) => doc != Doc::EMPTY,
                 | Err(PresentationError::Build(_)) => true,
                 | Err(_) => false,
             },
     )]
-    fn binder(&mut self) -> Result<DocId, PresentationError>
+    fn binder(
+        &mut self,
+        offset: OpenBinders,
+    ) -> Result<Doc, PresentationError>
     {
-        match self.binders.name_at(self.open) {
+        let position = OpenBinders(self.opened.len().saturating_add(offset.0));
+        match self.binders.name_at(position) {
             | Maybe::Present(name) => {
                 let name = name.clone();
                 self.leaf(Glyphs(name.0.as_str()))
             },
             | Maybe::Absent(_) => {
                 self.fidelity = Fidelity::Approximate;
+                let _fresh = self.unspelled.insert(Unspelled::Exhausted);
                 self.leaf(Glyphs("?"))
             },
         }
+    }
+
+    /// `name` as a part's text, or `?` for a name a line cannot hold or the
+    /// source does not answer, recorded as unprintable or as `missing`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the name itself when it is non-empty and holds no line feed,
+    ///   carriage return or tab; `?` otherwise, the presentation approximate
+    ///   and the reason recorded.
+    /// - provides: every name a former spelled by parts writes.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a handler's clause names and a data case's
+    ///   constructors spell as written; an unnamed constructor spells `?`.
+    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+    #[spec(ensures: |ref ret| !ret.0.contains(['\n', '\r', '\t']) && !ret.0.is_empty())]
+    fn spelled(
+        &mut self,
+        name: Option<Name<'_>>,
+        missing: Unspelled,
+    ) -> Written
+    {
+        match name.as_ref().map(AsRef::as_ref) {
+            | Some(text) if !text.is_empty() && !text.contains(['\n', '\r', '\t']) => {
+                Written(Cow::Owned(String::from(text)))
+            },
+            | Some(_) | None => {
+                self.fidelity = Fidelity::Approximate;
+                let _fresh = self.unspelled.insert(match name {
+                    | Some(_) => Unspelled::Unprintable,
+                    | None => missing,
+                });
+                Written(Cow::Borrowed("?"))
+            },
+        }
+    }
+
+    /// Pushes the parts `former`, a former spelled by parts, is written in,
+    /// and answers the join that writes them.
+    ///
+    /// # Specification
+    /// - requires: `former` is what `source` reads at `node`, a former
+    ///   [`children`] answers child slots for.
+    /// - ensures: one more parts list, whose pieces are the former's children
+    ///   in reading order: `Path(A, x, y)`; a family or a constructor as its
+    ///   name, applied to its components when it has any; a primitive and an
+    ///   operation as a call of their name; `transport(…)` over its motive —
+    ///   `\a. M`, or `+U M` for a telescope — and operands; `v.l` and `v.i`;
+    ///   `case v { … }` with one arm per branch, its pattern `+{.i = a}`, `#{a,
+    ///   b}` or a constructor's applied to its field binders, `?` for a
+    ///   constructor the source cannot name; `handle { c } with { pure(x) => r,
+    ///   oper op(p, k) => b }`, the scope's head `handle c : I`; `c.op(v)`;
+    ///   `send(e, v)`, `recv(e)`, `select(e, l)`, `offer(e) { l => c }`,
+    ///   `close(e)` and `fork (a : S) { t } as a ; u`, each endpoint named by
+    ///   its binder. The forms the grammar does not write — native transport, a
+    ///   fixpoint `rec f { c }`, a fold, `resume(k, c)`, `reset { c }`, `shift
+    ///   k { c }`, a lazy pair `&{c, d}` and its observation `c.0` — make the
+    ///   presentation approximate.
+    /// - provides: the spelling of every former without a join of its own.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the computation golden reads every computation
+    ///   former, the type golden a path and a family, the value golden a
+    ///   constructor; a swapped part or a lost binder changes the golden.
+    /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
+    /// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
+    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+    #[spec(
+        captures: [forms = self.forms.len()],
+        ensures: |ret| self.forms.len() == forms.saturating_add(1_usize)
+            && matches!(ret, Join::Form { pieces: Arity(count), .. }
+                if self.forms.last().is_some_and(|parts| parts.iter().filter(|part| matches!(**part, Part::Piece(_))).count() == count)),
+    )]
+    fn form<S>(
+        &mut self,
+        source: &S,
+        node: S::Node,
+        former: &Former<'_, S::Node>,
+    ) -> Join
+    where
+        S: Source + ?Sized,
+    {
+        let mut parts = Parts::default();
+        let clauses = |walk: &mut Self, parts: &mut Parts, count: crate::former::Arity| {
+            let _ = parts
+                .text(" with {")
+                .part(Part::Open)
+                .text("pure(")
+                .part(Part::Binder(0_usize))
+                .text(") => ")
+                .piece(Binding::Arrow);
+            for index in 0_usize .. usize::from(count) {
+                let label = source.label(node, Component::from(index));
+                let name = walk.spelled(label, Unspelled::Missing);
+                let _ = parts
+                    .text(",")
+                    .part(Part::Line)
+                    .text("oper ")
+                    .text(name)
+                    .text("(")
+                    .part(Part::Binder(0_usize))
+                    .text(", ")
+                    .part(Part::Binder(1_usize))
+                    .text(") => ")
+                    .piece(Binding::Arrow);
+            }
+            let _ = parts.part(Part::Close);
+        };
+        let binding = match *former {
+            | Former::Path { .. } => {
+                let _ = parts.text("Path").arguments(Arity(3_usize));
+                Binding::Atom
+            },
+            | Former::Flow { .. } => {
+                let _ = parts.text("Flow").arguments(Arity(3_usize));
+                Binding::Atom
+            },
+            | Former::Recorded { moves, .. } => {
+                let _ = parts.text("recorded(");
+                for (index, step) in moves.moves().into_iter().enumerate() {
+                    if index > 0_usize {
+                        let _ = parts.text(",").part(Part::Space);
+                    }
+                    let _ = match step.action {
+                        | ActionKind::Send => {
+                            parts.text("sent(").piece(Binding::Sequence).text(")")
+                        },
+                        | ActionKind::Receive => {
+                            parts.text("received(").piece(Binding::Sequence).text(")")
+                        },
+                        | ActionKind::Select => {
+                            let label = self.spelled(step.label, Unspelled::Missing);
+                            parts.text("selected(").text(label).text(")")
+                        },
+                        | ActionKind::Offer => {
+                            let label = self.spelled(step.label, Unspelled::Missing);
+                            parts.text("offered(").text(label).text(")")
+                        },
+                        | ActionKind::Close => parts.text("closed"),
+                    };
+                }
+                let _ = parts.part(Part::Tight).text(")");
+                Binding::Atom
+            },
+            | Former::Data { name, arity } | Former::Constructor { name, arity } => {
+                let name = self.spelled(name, Unspelled::Unreadable(Unreadable::Unnamed));
+                let _ = parts.text(name);
+                if usize::from(arity) > 0_usize {
+                    let _ = parts.arguments(Arity(usize::from(arity)));
+                }
+                Binding::Atom
+            },
+            | Former::Primitive { name, arity } => {
+                let name = self.spelled(Some(Name::from(name.as_ref())), Unspelled::Missing);
+                let _ = parts.text(name).arguments(Arity(usize::from(arity)));
+                Binding::Atom
+            },
+            | Former::Perform { operation, .. } => {
+                let name = self.spelled(Some(operation), Unspelled::Missing);
+                let _ = parts.text(name).arguments(Arity(1_usize));
+                Binding::Atom
+            },
+            | Former::Transport(..) => {
+                self.fidelity = Fidelity::Approximate;
+                let _ = parts.text("transport").arguments(Arity(2_usize));
+                Binding::Atom
+            },
+            | Former::Resume(..) => {
+                self.fidelity = Fidelity::Approximate;
+                let _ = parts.text("resume").arguments(Arity(2_usize));
+                Binding::Atom
+            },
+            | Former::PathTransport { .. } | Former::Ride { .. } => {
+                let lead = if matches!(*former, Former::Ride { .. }) {
+                    "ride(\\"
+                }
+                else {
+                    "transport(\\"
+                };
+                let _ = parts
+                    .text(lead)
+                    .part(Part::Binder(0_usize))
+                    .text(".")
+                    .part(Part::Space)
+                    .piece(Binding::Arrow)
+                    .rest(Arity(2_usize));
+                Binding::Atom
+            },
+            | Former::TelescopeTransport { .. } => {
+                let _ = parts
+                    .text("transport(+U ")
+                    .piece(Binding::Atom)
+                    .rest(Arity(4_usize));
+                Binding::Atom
+            },
+            | Former::Fixpoint(_) => {
+                self.fidelity = Fidelity::Approximate;
+                let _ = parts
+                    .text("rec ")
+                    .part(Part::Binder(0_usize))
+                    .text(" {")
+                    .body();
+                Binding::Prefix
+            },
+            | Former::Reset(_) => {
+                self.fidelity = Fidelity::Approximate;
+                let _ = parts.text("reset {").body();
+                Binding::Prefix
+            },
+            | Former::Shift(_) => {
+                self.fidelity = Fidelity::Approximate;
+                let _ = parts
+                    .text("shift ")
+                    .part(Part::Binder(0_usize))
+                    .text(" {")
+                    .body();
+                Binding::Prefix
+            },
+            | Former::Case { arity, .. } => {
+                let _ = parts
+                    .text("case ")
+                    .piece(Binding::Prefix)
+                    .text(" {")
+                    .part(Part::Open);
+                for index in 0_usize .. usize::from(arity) {
+                    let _ = parts
+                        .separated(Component::from(index))
+                        .text(format!("+{{.{index} = "))
+                        .part(Part::Binder(0_usize))
+                        .text("} => ")
+                        .piece(Binding::Arrow);
+                }
+                let _ = parts.part(Part::Close);
+                Binding::Prefix
+            },
+            | Former::Split { arity, .. } => {
+                let _ = parts
+                    .text("case ")
+                    .piece(Binding::Prefix)
+                    .text(" {")
+                    .part(Part::Open);
+                if usize::from(arity) == 0_usize {
+                    let _ = parts.text("unit");
+                }
+                else {
+                    let _ = parts
+                        .text("#{")
+                        .binders(Arity(usize::from(arity)))
+                        .text("}");
+                }
+                let _ = parts.text(" => ").piece(Binding::Arrow).part(Part::Close);
+                Binding::Prefix
+            },
+            | Former::DataCase { arity, .. } => {
+                let _ = parts
+                    .text("case ")
+                    .piece(Binding::Prefix)
+                    .text(" {")
+                    .part(Part::Open);
+                for index in 0_usize .. usize::from(arity) {
+                    let arm = arm(source, node, Component::from(index));
+                    let name = self.spelled(arm.name, Unspelled::Unreadable(Unreadable::Unnamed));
+                    let _ = parts.separated(Component::from(index)).text(name);
+                    if arm.fields > 0_usize {
+                        let _ = parts.text("(").binders(Arity(arm.fields)).text(")");
+                    }
+                    let _ = parts.text(" => ").piece(Binding::Arrow);
+                }
+                let _ = parts.part(Part::Close);
+                Binding::Prefix
+            },
+            | Former::RecordProjection(_, label) => {
+                let label = self.spelled(Some(label), Unspelled::Missing);
+                let _ = parts.piece(Binding::Atom).text(".").text(label);
+                Binding::Atom
+            },
+            | Former::TupleProjection(_, index) => {
+                let _ = parts
+                    .piece(Binding::Atom)
+                    .text(format!(".{}", usize::from(index)));
+                Binding::Atom
+            },
+            | Former::Project(side, _) => {
+                self.fidelity = Fidelity::Approximate;
+                let _ = parts
+                    .piece(Binding::Atom)
+                    .text(format!(".{}", usize::from(side)));
+                Binding::Atom
+            },
+            | Former::ListFold { .. } => {
+                self.fidelity = Fidelity::Approximate;
+                let _ = parts
+                    .text("fold ")
+                    .piece(Binding::Prefix)
+                    .text(" {")
+                    .part(Part::Open)
+                    .text("nil => ")
+                    .piece(Binding::Arrow)
+                    .text(",")
+                    .part(Part::Line)
+                    .text("cons(")
+                    .binders(Arity(2_usize))
+                    .text(") => ")
+                    .piece(Binding::Arrow)
+                    .part(Part::Close);
+                Binding::Prefix
+            },
+            | Former::Handle { clauses: count, .. } => {
+                let _ = parts.text("handle {").body();
+                clauses(self, &mut parts, count);
+                Binding::Prefix
+            },
+            | Former::Scope {
+                interface,
+                clauses: count,
+                ..
+            } => {
+                let interface = self.spelled(Some(interface), Unspelled::Missing);
+                let _ = parts
+                    .text("handle ")
+                    .part(Part::Binder(0_usize))
+                    .text(" : ")
+                    .text(interface)
+                    .text(" {")
+                    .body();
+                clauses(self, &mut parts, count);
+                Binding::Prefix
+            },
+            | Former::Exercise { operation, .. } => {
+                let operation = self.spelled(Some(operation), Unspelled::Missing);
+                let _ = parts
+                    .piece(Binding::Atom)
+                    .text(".")
+                    .text(operation)
+                    .arguments(Arity(1_usize));
+                Binding::Atom
+            },
+            | Former::Lazy(..) => {
+                self.fidelity = Fidelity::Approximate;
+                let _ = parts
+                    .text("&{")
+                    .piece(Binding::Sequence)
+                    .text(",")
+                    .part(Part::Space)
+                    .piece(Binding::Sequence)
+                    .part(Part::Tight)
+                    .text("}");
+                Binding::Atom
+            },
+            | Former::Send { endpoint, .. } => {
+                let _ = parts
+                    .text("send(")
+                    .part(Part::Endpoint(endpoint))
+                    .rest(Arity(1_usize));
+                Binding::Atom
+            },
+            | Former::Receive(endpoint) => {
+                let _ = parts.text("recv(").part(Part::Endpoint(endpoint)).text(")");
+                Binding::Atom
+            },
+            | Former::Close(endpoint) => {
+                let _ = parts
+                    .text("close(")
+                    .part(Part::Endpoint(endpoint))
+                    .text(")");
+                Binding::Atom
+            },
+            | Former::Select { endpoint, label } => {
+                let label = self.spelled(Some(label), Unspelled::Missing);
+                let _ = parts
+                    .text("select(")
+                    .part(Part::Endpoint(endpoint))
+                    .text(", ")
+                    .text(label)
+                    .text(")");
+                Binding::Atom
+            },
+            | Former::Offer { endpoint, arms } => {
+                let _ = parts
+                    .text("offer(")
+                    .part(Part::Endpoint(endpoint))
+                    .text(") {")
+                    .part(Part::Open);
+                for index in 0_usize .. usize::from(arms) {
+                    let label = source.label(node, Component::from(index));
+                    let name = self.spelled(label, Unspelled::Missing);
+                    let _ = parts
+                        .separated(Component::from(index))
+                        .text(name)
+                        .text(" => ")
+                        .piece(Binding::Arrow);
+                }
+                let _ = parts.part(Part::Close);
+                Binding::Prefix
+            },
+            | Former::Fork { .. } => {
+                let _ = parts
+                    .text("fork (")
+                    .part(Part::Binder(0_usize))
+                    .text(" : ")
+                    .piece(Binding::Arrow)
+                    .text(") {")
+                    .body()
+                    .text(" as ")
+                    .part(Part::Binder(0_usize))
+                    .text(" ;")
+                    .part(Part::Line)
+                    .piece(Binding::Sequence);
+                Binding::Sequence
+            },
+            | Former::Reify
+            | Former::Stack(..)
+            | Former::With(..)
+            | Former::ListNil
+            | Former::ListCons(..)
+            | Former::PathUniverse(..)
+            | Former::PathRefl(_)
+            | Former::PathEquiv(..)
+            | Former::PathProduct(..)
+            | Former::BaseType(_)
+            | Former::Product(_)
+            | Former::Sum(_)
+            | Former::RecordType(_)
+            | Former::ThunkType(_)
+            | Former::Universe { .. }
+            | Former::Element(_)
+            | Former::Abstract(_)
+            | Former::StaticPi { .. }
+            | Former::Capability { .. }
+            | Former::Session { .. }
+            | Former::Returner(_)
+            | Former::EffectfulReturner { .. }
+            | Former::Arrow { .. }
+            | Former::Pi { .. }
+            | Former::ComputationElement(_)
+            | Former::List(_)
+            | Former::Variable { .. }
+            | Former::Constant(_)
+            | Former::Unit
+            | Former::Literal(_)
+            | Former::Tuple(_)
+            | Former::Record(_)
+            | Former::Injection(..)
+            | Former::Thunk(_)
+            | Former::Quote(_)
+            | Former::QuoteComputation(_)
+            | Former::StaticLambda(_)
+            | Former::StaticApplication(..)
+            | Former::Here(_)
+            | Former::Funext(..)
+            | Former::Equiv(..)
+            | Former::SessionRelated(..)
+            | Former::Stay(_)
+            | Former::Then(..)
+            | Former::RunType(_)
+            | Former::Return(_)
+            | Former::Bind(..)
+            | Former::Force(_)
+            | Former::Application(..)
+            | Former::Lambda(_)
+            | Former::Nested(_)
+            | Former::Run(_)
+            | Former::Ua { .. }
+            | Former::Returned(_)
+            | Former::Unreadable(_) => {
+                self.fidelity = Fidelity::Approximate;
+                let _fresh = self.unspelled.insert(Unspelled::Misplaced);
+                let _ = parts.text("?");
+                Binding::Atom
+            },
+        };
+        let pieces = Arity(parts.pieces);
+        self.forms.push(parts.parts);
+        Join::Form { pieces, binding }
     }
 
     /// Combines the finished pieces a join takes into one.
@@ -2720,7 +3766,8 @@ impl Walk<'_, '_, '_>
         captures: [entry = self.pieces.len(), taken = match join {
             Join::Prefix(_) | Join::EffectReturner(_) | Join::StaticLambda | Join::Lambda | Join::Thunk
                 | Join::Bracket(Bracket::PathRefl | Bracket::Here | Bracket::List | Bracket::Stay | Bracket::Run) => Some(1_usize),
-            Join::Braced { arity: Arity(count), entries: Entries::Positional, .. } | Join::Session { payloads: Arity(count), .. } => Some(count),
+            Join::Braced { arity: Arity(count), entries: Entries::Positional, .. } | Join::Session { payloads: Arity(count), .. }
+                | Join::Form { pieces: Arity(count), .. } => Some(count),
             Join::Braced { arity: Arity(count), entries: Entries::Labelled(_), .. } => count.checked_mul(2_usize),
             Join::Arrow | Join::Pi | Join::Sequence | Join::Ua(_) | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::Then) => Some(2_usize),
             Join::Apply(Arity(arguments)) => arguments.checked_add(1_usize),
@@ -2732,7 +3779,7 @@ impl Walk<'_, '_, '_>
                     Join::Arrow | Join::Pi | Join::StaticLambda => Binding::Arrow,
                     Join::Sequence => Binding::Sequence,
                     Join::Apply(_) | Join::Bracket(_) | Join::Braced { .. } | Join::Ua(_) => Binding::Atom,
-                    Join::Session { binding, .. } => binding,
+                    Join::Session { binding, .. } | Join::Form { binding, .. } => binding,
                 }),
             | Err(PresentationError::Build(_) | PresentationError::Unbalanced) => self.pieces.len() <= entry,
             | Err(PresentationError::Render(_)) => false,
@@ -2772,7 +3819,7 @@ impl Walk<'_, '_, '_>
                             .ok_or(PresentationError::Unbalanced)?,
                     });
                 }
-                (self.builder.concat_all(items)?, binding)
+                (self.builder.concat_all(&items)?, binding)
             },
             | Join::Prefix(prefix) => {
                 let operand = self.pop()?;
@@ -2811,7 +3858,7 @@ impl Walk<'_, '_, '_>
                     }
                     items.extend(entry.iter().rev().map(|piece| piece.doc));
                 }
-                let inner = self.builder.concat_all(items)?;
+                let inner = self.builder.concat_all(&items)?;
                 let inner = self.none_or_break(inner)?;
                 let close = self.leaf(Glyphs("}"))?;
                 (self.builder.concat(inner, close)?, Binding::Atom)
@@ -2828,22 +3875,22 @@ impl Walk<'_, '_, '_>
             | Join::Pi => {
                 let codomain = self.pop()?;
                 let domain = self.pop()?;
-                let binder = self.binder()?;
+                let binder = self.binder(OpenBinders(0_usize))?;
                 let open = self.leaf(Glyphs("("))?;
                 let colon = self.leaf(Glyphs(" : "))?;
                 let arrow = self.leaf(Glyphs(") ->"))?;
                 let head = self
                     .builder
-                    .concat_all([open, binder, colon, domain.doc, arrow])?;
+                    .concat_all(&[open, binder, colon, domain.doc, arrow])?;
                 let head = self.space_or_break(head)?;
                 (self.builder.concat(head, codomain.doc)?, Binding::Arrow)
             },
             | Join::StaticLambda => {
                 let body = self.pop()?;
-                let binder = self.binder()?;
+                let binder = self.binder(OpenBinders(0_usize))?;
                 let lead = self.leaf(Glyphs("\\"))?;
                 let dot = self.leaf(Glyphs("."))?;
-                let head = self.builder.concat_all([lead, binder, dot])?;
+                let head = self.builder.concat_all(&[lead, binder, dot])?;
                 let head = self.space_or_break(head)?;
                 (self.builder.concat(head, body.doc)?, Binding::Arrow)
             },
@@ -2851,23 +3898,23 @@ impl Walk<'_, '_, '_>
                 let rest = self.pop()?;
                 let bound = self.pop()?;
                 let bound = self.bare_or_block(bound, Binding::Arrow)?;
-                let binder = self.binder()?;
+                let binder = self.binder(OpenBinders(0_usize))?;
                 let run = self.leaf(Glyphs("run "))?;
                 let arrow = self.leaf(Glyphs(" <- "))?;
                 let semicolon = self.leaf(Glyphs(" ;"))?;
-                let line = self.builder.line();
+                let line = Doc::LINE;
                 (
                     self.builder
-                        .concat_all([run, binder, arrow, bound, semicolon, line, rest.doc])?,
+                        .concat_all(&[run, binder, arrow, bound, semicolon, line, rest.doc])?,
                     Binding::Sequence,
                 )
             },
             | Join::Lambda => {
                 let body = self.pop()?;
-                let binder = self.binder()?;
+                let binder = self.binder(OpenBinders(0_usize))?;
                 let open = self.leaf(Glyphs("fn ("))?;
                 let close = self.leaf(Glyphs(") {"))?;
-                let head = self.builder.concat_all([open, binder, close])?;
+                let head = self.builder.concat_all(&[open, binder, close])?;
                 (self.block(head, body.doc)?, Binding::Prefix)
             },
             | Join::Thunk => {
@@ -2891,7 +3938,7 @@ impl Walk<'_, '_, '_>
                     }
                     items.push(argument.doc);
                 }
-                let inner = self.builder.concat_all(items)?;
+                let inner = self.builder.concat_all(&items)?;
                 let inner = self.none_or_break(inner)?;
                 let close = self.leaf(Glyphs(")"))?;
                 (self.builder.concat(inner, close)?, Binding::Atom)
@@ -2926,7 +3973,7 @@ impl Walk<'_, '_, '_>
                         items.extend([opener, body.doc]);
                     },
                 }
-                let inner = self.builder.concat_all(items)?;
+                let inner = self.builder.concat_all(&items)?;
                 let inner = self.none_or_break(inner)?;
                 let close = self.leaf(Glyphs(")"))?;
                 (self.builder.concat(inner, close)?, Binding::Atom)
@@ -2939,10 +3986,55 @@ impl Walk<'_, '_, '_>
                 let comma = self.space_or_break(comma)?;
                 let inner = self
                     .builder
-                    .concat_all([head, forward.doc, comma, backward.doc])?;
+                    .concat_all(&[head, forward.doc, comma, backward.doc])?;
                 let inner = self.none_or_break(inner)?;
                 let close = self.leaf(Glyphs(")"))?;
                 (self.builder.concat(inner, close)?, Binding::Atom)
+            },
+            | Join::Form {
+                pieces: Arity(count),
+                binding,
+            } => {
+                let mut children = Vec::with_capacity(count);
+                for _ in 0_usize .. count {
+                    children.push(self.pop()?);
+                }
+                let parts = self.forms.pop().ok_or(PresentationError::Unbalanced)?;
+                let mut current = Vec::new();
+                let mut heads = Vec::new();
+                for part in parts {
+                    match part {
+                        | Part::Text(text) => current.push(self.leaf(Glyphs(text.as_ref()))?),
+                        | Part::Piece(loosest) => {
+                            let piece = children.pop().ok_or(PresentationError::Unbalanced)?;
+                            current.push(self.bare_or_block(piece, loosest)?);
+                        },
+                        | Part::Binder(offset) => current.push(self.binder(OpenBinders(offset))?),
+                        | Part::Endpoint(index) => {
+                            current.push(self.variable_leaf(Zone::Linear, index)?);
+                        },
+                        | Part::Space => {
+                            let head = self.builder.concat_all(&core::mem::take(&mut current))?;
+                            current.push(self.space_or_break(head)?);
+                        },
+                        | Part::Tight => {
+                            let head = self.builder.concat_all(&core::mem::take(&mut current))?;
+                            current.push(self.none_or_break(head)?);
+                        },
+                        | Part::Line => current.push(Doc::LINE),
+                        | Part::Open => heads.push(core::mem::take(&mut current)),
+                        | Part::Close => {
+                            let body = self.builder.concat_all(&core::mem::take(&mut current))?;
+                            let head = heads.pop().ok_or(PresentationError::Unbalanced)?;
+                            let head = self.builder.concat_all(&head)?;
+                            current.push(self.block(head, body)?);
+                        },
+                    }
+                }
+                if !heads.is_empty() || !children.is_empty() {
+                    return Err(PresentationError::Unbalanced);
+                }
+                (self.builder.concat_all(&current)?, binding)
             },
         };
         self.pieces.push(Piece { doc, binding });
@@ -2983,7 +4075,7 @@ impl Walk<'_, '_, '_>
 /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
 /// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
 #[spec(ensures: |ref ret| match *ret {
-    | Ok(Walked::Built { doc, .. }) => doc != builder.empty(),
+    | Ok(Walked::Built { doc, .. }) => doc != Doc::EMPTY,
     | Ok(Walked::OverBudget) | Err(PresentationError::Build(_) | PresentationError::Unbalanced) => true,
     | Err(PresentationError::Render(_)) => false,
 })]
@@ -2991,23 +4083,28 @@ pub fn walk<S>(
     source: &S,
     root: S::Node,
     admits: Admits,
-    builder: &mut DocBuilder<'_>,
+    builder: &mut dyn Compose,
 ) -> Result<Walked, PresentationError>
 where
     S: Source + ?Sized,
 {
-    let Maybe::Present(mentioned) = mentioned(source, root, admits)
+    let Maybe::Present(mut mentioned) = mentioned(source, root, admits)
     else {
         return Ok(Walked::OverBudget);
     };
+    let context = source.context();
+    mentioned.extend(context.iter().flatten().copied());
     let mut walk = Walk {
         builder,
         pieces: Vec::new(),
         binders: Binders::new(mentioned),
-        open: OpenBinders(0_usize),
+        opened: Vec::new(),
+        context,
         fidelity: Fidelity::Faithful,
+        unspelled: BTreeSet::new(),
         bodies: Bodies::of(admits),
         protocols: Vec::new(),
+        forms: Vec::new(),
     };
     let mut tasks = Vec::from([Task::Visit {
         node: root,
@@ -3029,10 +4126,12 @@ where
                 remaining = left;
                 walk.visit(source, node, source.read(node), admits, depth, &mut tasks)?;
             },
-            | Task::Bind => walk.open = OpenBinders(walk.open.0.saturating_add(1_usize)),
-            | Task::Unbind => walk.open = OpenBinders(walk.open.0.saturating_sub(1_usize)),
-            | Task::Missing => walk.approximate(Glyphs("?"))?,
-            | Task::Label { of, index, label } => walk.label(source, of, index, label)?,
+            | Task::Bind(zone) => walk.opened.push(zone),
+            | Task::Unbind => {
+                let _closed = walk.opened.pop();
+            },
+            | Task::Missing => walk.unspell(Unspelled::Missing)?,
+            | Task::Label(Labelled { of, index, label }) => walk.label(source, of, index, label)?,
             | Task::Join(join) => walk.join(join)?,
         }
     }
@@ -3042,13 +4141,14 @@ where
     }
     // A body's statements break together: on one line when the whole body
     // fits, one statement per line otherwise.
-    let doc = match walk.bodies {
-        | Bodies::Spelled => walk.builder.group(root.doc)?,
-        | Bodies::Opaque => root.doc,
+    let doc = match admits {
+        | Admits::Computation(_) => walk.builder.group(root.doc)?,
+        | Admits::Type | Admits::ValueType | Admits::CompType | Admits::Value => root.doc,
     };
     Ok(Walked::Built {
         doc,
         fidelity: walk.fidelity,
+        unspelled: walk.unspelled,
     })
 }
 
@@ -3104,7 +4204,7 @@ mod tests
             captures: [entry = self.reads.get()],
             ensures: |ret| self.reads.get() == entry.saturating_add(1_u32)
                 && (matches!(ret, Former::Product(arity) if usize::from(arity) == 0)
-                    || matches!(ret, Former::ThunkType(_) | Former::Returner(_) | Former::Unreadable)),
+                    || matches!(ret, Former::ThunkType(_) | Former::Returner(_) | Former::Unreadable(_))),
         )]
         fn read(
             &self,
@@ -3117,7 +4217,7 @@ mod tests
                 Former::Product(crate::former::Arity::from(0_usize))
             }
             else if entry >= VISIT_BUDGET.saturating_add(4_u32) {
-                Former::Unreadable
+                Former::Unreadable(crate::former::Unreadable::Dangling)
             }
             else if entry & 1_u32 == 1_u32 {
                 Former::ThunkType(ChangingNode)
@@ -3256,16 +4356,20 @@ mod tests
             ..gandr_surface_layout::limits::BuildLimits::default()
         };
         let mut meter = gandr_surface_layout::limits::BuildMeter::new(limits);
-        let mut builder =
-            super::DocBuilder::try_new(&mut meter).expect("singleton nodes need no text bytes");
+        let mut builder = gandr_surface_layout::build::DocBuilder::try_new(&mut meter)
+            .expect("singleton nodes need no text bytes");
+        let mut paged = crate::compose::Paged::new(&mut builder);
         let mut walk = super::Walk {
-            builder: &mut builder,
+            builder: &mut paged,
             pieces: super::Vec::new(),
             binders: super::Binders::new(super::BTreeSet::new()),
-            open: super::OpenBinders(0_usize),
+            opened: super::Vec::new(),
+            context: &[],
             fidelity: Fidelity::Faithful,
+            unspelled: super::BTreeSet::new(),
             bodies: super::Bodies::Opaque,
             protocols: super::Vec::new(),
+            forms: super::Vec::new(),
         };
         let refusal = super::PresentationError::Build(
             gandr_surface_layout::error::BuildError::LimitExceeded {
@@ -3296,15 +4400,20 @@ mod tests
         let mut meter = gandr_surface_layout::limits::BuildMeter::new(
             gandr_surface_layout::limits::BuildLimits::default(),
         );
-        let mut builder = super::DocBuilder::try_new(&mut meter).expect("default limits build");
+        let mut builder = gandr_surface_layout::build::DocBuilder::try_new(&mut meter)
+            .expect("default limits build");
+        let mut paged = crate::compose::Paged::new(&mut builder);
         let mut walk = super::Walk {
-            builder: &mut builder,
+            builder: &mut paged,
             pieces: super::Vec::new(),
             binders: super::Binders::new(super::BTreeSet::new()),
-            open: super::OpenBinders(0_usize),
+            opened: super::Vec::new(),
+            context: &[],
             fidelity: Fidelity::Faithful,
+            unspelled: super::BTreeSet::new(),
             bodies: super::Bodies::Opaque,
             protocols: super::Vec::new(),
+            forms: super::Vec::new(),
         };
         walk.atom(super::Glyphs("x")).expect("one operand builds");
         assert_eq!(

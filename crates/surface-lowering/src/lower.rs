@@ -2010,8 +2010,8 @@ enum Plan
     Force(NodeIndex),
     /// A run over its computation, standing for the value it returns.
     Run(NodeIndex),
-    /// A lambda over its block.
-    Lambda(Block),
+    /// A lambda over its block, and the node its parameter is written at.
+    Lambda(Block, NodeIndex),
     /// A block's statements bound over its last computation.
     Block(Block),
     /// A loop's fixpoint over its body.
@@ -2056,6 +2056,8 @@ enum Plan
         stratum: gandr_core_term::ua::Stratum,
         /// The two descriptions as a stratum reads them.
         sides: Arc<gandr_core_term::ua::Sides>,
+        /// Where the two descriptions are named, the source's first.
+        named: [Origin; 2],
         /// The forward translator record.
         forward: NodeIndex,
         /// The backward translator record.
@@ -2570,6 +2572,9 @@ struct Lowerer<'run, 'source>
     described: BTreeMap<SlotIndex, DataIndex>,
     /// The data declarations' signatures, by [`DataIndex`].
     data: Vec<Arc<DataSignature>>,
+    /// The names of each data declaration's constructors in tag order, by
+    /// [`DataIndex`].
+    constructors: Vec<Vec<String>>,
     /// Each recursive function's own name, by the frame that binds it.
     recursions: BTreeMap<ScopeId, native::Recursion>,
     /// Each recursive call, by its head: the instantiation whose claim checks
@@ -2884,6 +2889,7 @@ pub fn lower_module<'source>(
         collected,
         recognition,
         data,
+        constructors,
         ..
     } = lowerer;
 
@@ -2904,6 +2910,7 @@ pub fn lower_module<'source>(
         collected.cells,
     )
     .with_documentation(documentation)
+    .with_constructors(constructors)
     .with_inferred_exits(inferred)
     .with_nested_sites(nested))
 }
@@ -3045,6 +3052,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             signatures: BTreeMap::new(),
             described: BTreeMap::new(),
             data: Vec::new(),
+            constructors: Vec::new(),
             recursions: BTreeMap::new(),
             descents: BTreeMap::new(),
             operated: BTreeMap::new(),
@@ -4988,7 +4996,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     #[spec(
         ensures: |ret| {
             ret.is_err()
-                || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Lambda(Block { statements, .. })) if statements.start <= statements.end && statements.end <= self.statements.len())
+                || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Lambda(Block { statements, .. }, _)) if statements.start <= statements.end && statements.end <= self.statements.len())
         },
     )]
     fn lambda(
@@ -5013,7 +5021,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Maybe::Absent(native::answered::Absent::Unstated),
         )?;
 
-        self.plan(site, Plan::Lambda(body));
+        self.plan(site, Plan::Lambda(body, binder.node));
 
         Ok(())
     }
@@ -8465,7 +8473,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Stay(_)
                 | Plan::Recorded(_)
                 | Plan::Constructor(_) => Some(Produced::Value),
-                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(_) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Action(_) | Plan::Ride(..) | Plan::FlowThen(..) => {
+                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Action(_) | Plan::Ride(..) | Plan::FlowThen(..) => {
                     Some(Produced::Computation)
                 },
                 | Plan::Atom(_)
@@ -8737,7 +8745,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Return(_)
             | Plan::Force(_)
             | Plan::Run(_)
-            | Plan::Lambda(_) => self.mint_over(&plan, sink, origin),
+            | Plan::Lambda(..) => self.mint_over(&plan, sink, origin),
         }
     }
 
@@ -9244,7 +9252,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     && sink.origins.value(id) == Maybe::Present(origin)
             },
             | Maybe::Present(Lowered::Computation(id)) => {
-                matches!(*plan, Plan::Return(_) | Plan::Force(_) | Plan::Lambda(_) | Plan::Transport(..))
+                matches!(*plan, Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Transport(..))
                     && sink.origins.computation(id) == Maybe::Present(origin)
             },
             | Maybe::Present(Lowered::ValueType(id)) => {
@@ -9308,6 +9316,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Ua {
                 stratum,
                 ref sides,
+                named,
                 forward,
                 backward,
             } => self.value_at(forward).and_then(|first| {
@@ -9315,6 +9324,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     let id = sink
                         .arena
                         .value_ua(stratum, Arc::clone(sides), first, second);
+                    sink.origins.record_sides(id, named);
                     sink.value(id, origin)
                 })
             }),
@@ -9370,9 +9380,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 let id = sink.arena.value_stay(at);
                 sink.value(id, origin)
             }),
-            | Plan::Lambda(body) => self.mint_body(body, sink, origin).map(|under| {
+            | Plan::Lambda(body, binder) => self.mint_body(body, sink, origin).map(|under| {
                 let id = sink.arena.computation_lambda(under);
-                sink.computation(id, origin)
+                let lowered = sink.computation(id, origin);
+                if let Maybe::Present(name) = self.origin_at(binder) {
+                    sink.origins.record_binder(id, name);
+                }
+                lowered
             }),
             | Plan::Unplanned
             | Plan::ValueHole(_)

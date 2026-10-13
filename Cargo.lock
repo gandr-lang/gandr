@@ -840,6 +840,7 @@ name = "gandr-surface-pretty"
 version = "0.0.0"
 dependencies = [
  "expect-test",
+ "foldhash 0.2.0",
  "gandr-core-incremental",
  "gandr-core-nbe",
  "gandr-core-term",
@@ -848,6 +849,7 @@ dependencies = [
  "gandr-surface-layout",
  "gandr-theory-levitation",
  "gandr-theory-sites",
+ "hashbrown 0.17.1",
  "quenchant-anodized",
  "quenchant-shape",
 ]

@@ -580,7 +580,7 @@ mod tests
                     OutKind::Type,
                     "id : +U ((a : Type) -> a -> -F a)".to_owned()
                 ),
-                (OutKind::Value, "<fun>".to_owned())
+                (OutKind::Value, "fn (a) { fn (b) { b } }".to_owned())
             ]
         );
     }

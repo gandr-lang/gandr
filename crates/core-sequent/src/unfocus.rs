@@ -445,6 +445,8 @@ enum Task
         tag: gandr_kernel_term::ConstructorTag,
         /// Its field count.
         arity: ProducerArity,
+        /// The declaration of its family, when the IL carries one.
+        family: Option<gandr_kernel_term::ConstantIndex>,
     },
     /// Pop one computation and build its thunk.
     Thunk,
@@ -737,14 +739,17 @@ impl Unfocusing<'_>
                 self.values.push(lift);
                 Ok(())
             },
-            | Task::Native { tag, arity } => {
+            | Task::Native { tag, arity, family } => {
                 let start = self
                     .values
                     .len()
                     .checked_sub(usize::from(arity))
                     .ok_or(UnfocusRefusal::DecodeInvariant)?;
                 let fields: Vec<ValueId> = self.values.drain(start ..).collect();
-                let datatype = self.core.value_type_unknown();
+                let datatype = match family {
+                    | Some(declaration) => self.core.value_type_data(declaration, Vec::new()),
+                    | None => self.core.value_type_unknown(),
+                };
                 let constructed = self.core.value_constructor(datatype, tag, fields);
                 self.values.push(constructed);
                 Ok(())
@@ -1187,8 +1192,8 @@ impl Unfocusing<'_>
                         self.tasks.push(Task::Value(body, depth));
                         return Ok(());
                     },
-                    | (&ConstructorTag::Data { tag, arity }, fields) => {
-                        self.tasks.push(Task::Native { tag, arity });
+                    | (&ConstructorTag::Data { tag, arity, family }, fields) => {
+                        self.tasks.push(Task::Native { tag, arity, family });
                         for &field in fields.iter().rev() {
                             self.tasks.push(Task::Value(field, depth));
                         }

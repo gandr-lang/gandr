@@ -2,7 +2,7 @@ module Seed :> #{ type T, zero : T, next : +U[ω] (T -> -F T) } {
   type T = Integer;
   @[ runs("0") ]
   def zero = 0;
-  @[ runs("<fun>") ]
+  @[ runs("fn (a) { add(a, 1) }") ]
   def next(n : T) -> -F T { become n + 1 }
 }
 

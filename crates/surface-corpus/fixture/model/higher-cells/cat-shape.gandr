@@ -15,19 +15,19 @@ module SetoidCat : Model(CatShape) {
   type Ob = Type;
   type Hom(a : Ob, b : Ob) = +U[ω] (a -> -F b);
 
-  @[ runs("<fun>") ]
+  @[ runs("fn (a) { fn (b) { b } }") ]
   def ident(t : Type, x : t) -> -F t { return x }
 
-  @[ runs("<fun>") ]
+  @[ runs("fn (a) { fn (b) { fn (c) { fn (d) { fn (e) { fn (f) { run g <- d(f) ; e(g) } } } } } }") ]
   def compose(t : Type, u : Type, v : Type, f : +U[ω] (t -> -F u), g : +U[ω] (u -> -F v), x : t) -> -F v {
     run y <- f(x);
     become g(y)
   }
 
-  @[ runs("<fun>") ]
+  @[ runs("fn (a) { thunk { SetoidCat.ident(a) } }") ]
   def id(t : Type) -> -F (+U[ω] (t -> -F t)) { return thunk { become ident(t) } }
 
-  @[ runs("<fun>") ]
+  @[ runs("fn (a) { fn (b) { fn (c) { fn (d) { fn (e) { thunk { SetoidCat.compose(a, b, c, d, e) } } } } } }") ]
   def comp(t : Type, u : Type, v : Type, f : +U[ω] (t -> -F u), g : +U[ω] (u -> -F v)) -> -F (+U[ω] (t -> -F v)) {
     return thunk { become compose(t, u, v, f, g) }
   }

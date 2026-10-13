@@ -454,6 +454,8 @@ mod session;
 
 use self::elaboration::Anchor;
 pub use self::elaboration::Elaboration;
+pub use self::elaboration::Formed;
+pub use self::elaboration::Kept;
 pub use self::elaboration::MarkEntry;
 use self::elaboration::Marking;
 pub use self::elaboration::Typing;
@@ -2093,13 +2095,11 @@ struct Machine<'context, 'arena>
     remaining: usize,
     /// Whether a refusal ends the run or marks the term it stands at.
     marking: Marking,
-    /// The term judgements under way, innermost last; empty in a strict run.
+    /// The term judgements under way, innermost last; empty in a strict run
+    /// unless the context records typings.
     anchors: Vec<Anchor>,
     /// The refusals a total run marked, in the order met.
     marks: Vec<MarkEntry>,
-    /// The term judgements a typed run finished, each with its type, in the
-    /// order finished; empty in every other run.
-    typings: Vec<Typing>,
     /// The endpoints the run bound and the zones its offers keep.
     sessions: Sessions,
 }
@@ -2920,7 +2920,6 @@ impl<'context, 'arena> Machine<'context, 'arena>
             marking,
             anchors: Vec::new(),
             marks: Vec::new(),
-            typings: Vec::new(),
             sessions: Sessions::new(base),
         };
         let scope = machine.session_scope();
@@ -3540,10 +3539,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     frame: Frame::UaTranslators { at: term },
                     owner,
                 });
-                for &(translator, expected) in premises.iter().rev() {
+                for &(record, expected) in premises.iter().rev() {
                     self.frames.push(Waiting {
                         frame: Frame::NativeNext(Goal::Value {
-                            term: translator,
+                            term: record,
                             direction: Direction::Check(expected),
                         }),
                         owner,
@@ -9287,7 +9286,6 @@ mod tests
             marking: Marking::Strict,
             anchors: Vec::new(),
             marks: Vec::new(),
-            typings: Vec::new(),
             sessions: Sessions::new(BinderDepth::default()),
         };
         let refusal = machine
@@ -9326,7 +9324,6 @@ mod tests
             marking: Marking::Strict,
             anchors: Vec::new(),
             marks: Vec::new(),
-            typings: Vec::new(),
             sessions: Sessions::new(BinderDepth::default()),
         };
         assert_eq!(machine.charge(), Ok(()));

@@ -28,6 +28,7 @@ mod tests
     use gandr_core_nbe::ReadbackMode;
     use gandr_core_nbe::eval_value;
     use gandr_core_nbe::readback_value;
+    use gandr_core_term::ComponentCount;
     use gandr_core_term::CoreArena;
     use gandr_core_term::DefinitionalEnvironment;
     use gandr_core_term::Sort;
@@ -35,6 +36,9 @@ mod tests
     use gandr_core_term::ValueId;
     use gandr_core_term::ValueTypeId;
     use gandr_core_term::Zone;
+    use gandr_core_term::primitive::Arguments;
+    use gandr_core_term::primitive::PRELUDE;
+    use gandr_core_term::session::RecordedMove;
     use gandr_core_term::ua::Description;
     use gandr_core_term::ua::Generator;
     use gandr_core_term::ua::Sides;
@@ -45,6 +49,7 @@ mod tests
     use gandr_kernel_strata::LevelVarIndex;
     use gandr_kernel_term::BaseType;
     use gandr_kernel_term::ConstantIndex;
+    use gandr_kernel_term::ConstructorTag;
     use gandr_kernel_term::DeBruijnIndex;
     use gandr_kernel_term::FieldLabel;
     use gandr_kernel_term::FractionDigits;
@@ -59,6 +64,7 @@ mod tests
     use gandr_kernel_term::Summand;
     use gandr_surface_pretty::Arity;
     use gandr_surface_pretty::Component;
+    use gandr_surface_pretty::Constructors;
     use gandr_surface_pretty::CoreNode;
     use gandr_surface_pretty::CoreSource;
     use gandr_surface_pretty::DEPTH_LIMIT;
@@ -68,7 +74,9 @@ mod tests
     use gandr_surface_pretty::PageWidth;
     use gandr_surface_pretty::Presentation;
     use gandr_surface_pretty::Source;
+    use gandr_surface_pretty::Unreadable;
     use gandr_surface_pretty::present_computation;
+    use gandr_surface_pretty::present_computation_line;
     use gandr_surface_pretty::present_type;
     use gandr_surface_pretty::present_value;
     use gandr_theory_sites::Degree;
@@ -411,7 +419,7 @@ mod tests
         ///   malformed-source fixtures.
         /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
         #[spec(ensures: |ret| self.0.get(node.0).map_or(
-            matches!(ret, Former::Unreadable),
+            matches!(ret, Former::Unreadable(Unreadable::Dangling)),
             |held| core::mem::discriminant(held) == core::mem::discriminant(&ret),
         ))]
         fn read(
@@ -419,7 +427,10 @@ mod tests
             node: Row,
         ) -> Former<'_, Row>
         {
-            self.0.get(node.0).copied().unwrap_or(Former::Unreadable)
+            self.0
+                .get(node.0)
+                .copied()
+                .unwrap_or(Former::Unreadable(Unreadable::Dangling))
         }
 
         /// No component: a row holds its former alone, so a product or a sum
@@ -893,8 +904,9 @@ mod tests
     }
 
     /// A record type and a record spell each field after its own label, in
-    /// label order whatever order they were given in; the surface writes no
-    /// empty record, `#{}` being the unit, so one spells `?`.
+    /// label order whatever order they were given in; the empty record type
+    /// is the unit type and the empty record the unit, as the grammar writes
+    /// them.
     #[test]
     fn records_spell_their_fields_in_label_order()
     {
@@ -931,11 +943,11 @@ mod tests
             ),
             (
                 Root::Type(CoreNode::ValueType(empty_type)),
-                approximate(Written("?")),
+                faithful(Written("Unit")),
             ),
             (
                 Root::Value(CoreNode::Value(empty)),
-                approximate(Written("?")),
+                faithful(Written("unit")),
             ),
         ] {
             assert_eq!(
@@ -950,8 +962,10 @@ mod tests
     /// grammar parses it: the two bridges with their operand parenthesized
     /// unless atomic, a product, a sum or a lazy pair between its braces with
     /// any former bare among its entries, the arrow's domain bare up to a
-    /// bridge, a decode as the code it reads, and an abstract type by its
-    /// name.
+    /// bridge, a decode as the code it reads, an abstract type by its name, a
+    /// family bare when nullary and applied to its arguments otherwise, and a
+    /// path type over its carrier and both endpoints. A free variable reads
+    /// its context binder's name, past the binders the type opens itself.
     #[test]
     fn every_type_former_spells_as_the_grammar_writes_it()
     {
@@ -959,6 +973,8 @@ mod tests
             Name::from("Accumulator"),
             Name::from("Carry"),
             Name::from("small"),
+            Name::from("Tree"),
+            Name::from("List"),
         ];
         let mut core = CoreArena::new();
         let integer = core.value_type_base(BaseType::Integer);
@@ -998,6 +1014,21 @@ mod tests
         let lazy = core.comp_type_with(returns_integer, returns_unit);
         let lazy_chain = core.comp_type_with(function, lazy);
         let suspended_lazy = core.value_type_thunk(lazy);
+        let tree = core.value_type_data(ConstantIndex::from(3_usize), Vec::new());
+        let integer_code = core.value_quote(integer);
+        let list = core.value_type_data(ConstantIndex::from(4_usize), vec![integer_code]);
+        let one = self::integer(&mut core, Sign::NonNegative, Written("1"));
+        let path = core.value_type_path(list, alias, one);
+        let returns_path = core.comp_type_returner(path);
+        let flow = core.value_type_flow(list, alias, one);
+        let returns_flow = core.comp_type_returner(flow);
+        let opened = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let outer = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let inner = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
+        let between = core.value_type_path(integer, opened, outer);
+        let returns_between = core.comp_type_returner(between);
+        let over_context = core.comp_type_pi(integer, returns_between);
+        let unnamed = core.value_type_path(integer, inner, outer);
         let source = CoreSource::new(&core, &names);
         for (root, spelling) in [
             (CoreNode::ValueType(integer), "Integer"),
@@ -1056,6 +1087,16 @@ mod tests
             ),
             (CoreNode::CompType(returns_named), "-F small"),
             (CoreNode::CompType(decoded_returner), "-F Integer"),
+            (CoreNode::ValueType(tree), "Tree"),
+            (CoreNode::ValueType(list), "List(Integer)"),
+            (
+                CoreNode::CompType(returns_path),
+                "-F Path(List(Integer), small, 1)",
+            ),
+            (
+                CoreNode::CompType(returns_flow),
+                "-F Flow(List(Integer), small, 1)",
+            ),
         ] {
             assert_eq!(
                 spelled(&source, Root::Type(root)),
@@ -1063,6 +1104,18 @@ mod tests
                 "{root:?} spells as the grammar writes it"
             );
         }
+        let context = [Some(Name::from("x")), None, Some(Name::from("y"))];
+        let within = CoreSource::new(&core, &names).within(&context);
+        assert_eq!(
+            spelled(&within, Root::Type(CoreNode::CompType(over_context))),
+            faithful(Written("(a : Integer) -> -F Path(Integer, a, y)")),
+            "a variable past the opened binder reads its context binder's name"
+        );
+        assert_eq!(
+            spelled(&within, Root::Type(CoreNode::ValueType(unnamed))),
+            approximate(Written("Path(Integer, x, ?)")),
+            "an unnamed context binder spells `?`"
+        );
     }
 
     /// Each universe spells its sort and its constant level as the grammar
@@ -1204,11 +1257,18 @@ mod tests
     /// Every value leaf spells as the surface writes it — a signed integer,
     /// a numeric literal with and without a fraction, a string's escapes, the
     /// unit and a constant by its name — and a thunk, whose body a reader
-    /// cannot see, is `<thunk>` and approximate.
+    /// cannot see, is `<thunk>` and approximate. A constructor spells by the
+    /// name its family's table gives its tag, bare when nullary and applied
+    /// to its fields otherwise; a source without the table spells its head
+    /// `?` and still spells its fields.
     #[test]
     fn every_value_leaf_spells_as_the_surface_writes_it()
     {
-        let names = [Name::from("Accumulator"), Name::from("Carry")];
+        let names = [
+            Name::from("Accumulator"),
+            Name::from("Carry"),
+            Name::from("Nat"),
+        ];
         let mut core = CoreArena::new();
         let negative = integer(&mut core, Sign::Negative, Written("42"));
         let fraction = core.value_literal(Literal::Numeric(NumericLiteral::new(
@@ -1242,6 +1302,27 @@ mod tests
                 spelled(&source, Root::Value(root)),
                 expected,
                 "{root:?} spells as the surface writes it"
+            );
+        }
+        let nat = core.value_type_data(ConstantIndex::from(2_usize), Vec::new());
+        let zero = core.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
+        let one = core.value_constructor(nat, ConstructorTag::from(1_usize), vec![zero]);
+        let mut constructors = Constructors::default();
+        constructors.family(Name::from("Nat"), [
+            (Name::from("Zero"), Arity::from(0_usize)),
+            (Name::from("Succ"), Arity::from(1_usize)),
+        ]);
+        let unnamed = CoreSource::new(&core, &names);
+        let named = CoreSource::new(&core, &names).naming(&constructors);
+        for (source, root, expected) in [
+            (&named, zero, faithful(Written("Zero"))),
+            (&named, one, faithful(Written("Succ(Zero)"))),
+            (&unnamed, one, approximate(Written("?(?)"))),
+        ] {
+            assert_eq!(
+                spelled(source, Root::Value(CoreNode::Value(root))),
+                expected,
+                "{root:?} spells its constructor"
             );
         }
     }
@@ -1528,6 +1609,11 @@ mod tests
         }
     }
 
+    /// An elaborated body spells as the grammar writes it, its exits elided:
+    /// a returner at the end of a block bare, a call by its head, a thunk in
+    /// a body spelled; a case binds its summand's payload, a split its
+    /// components, a data case each constructor's fields under the
+    /// constructor's name; a projection and a primitive call as written.
     #[test]
     fn an_elaborated_body_prints_with_its_exits_elided()
     {
@@ -1554,11 +1640,45 @@ mod tests
         let applied = core.computation_application(pure_one, two);
         let suspended = core.value_thunk(applied);
         let suspends = core.computation_return(suspended);
-        // A case analysis has no spelling here.
+        // A case binds the payload of its summand, a split the components it
+        // opens, and a data case each constructor's fields.
         let case = core.computation_case(bound, &[returned, returned]);
         let analysed = core.computation_lambda(case);
-        let names = [Name::from("kept")];
-        let source = CoreSource::new(&core, &names);
+        let split = core.computation_split(bound, ComponentCount::from(2_usize), returned);
+        let opened = core.computation_lambda(split);
+        let nat = core.value_type_data(ConstantIndex::from(1_usize), Vec::new());
+        let returns_nat = core.comp_type_returner(nat);
+        let zero = core.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
+        let returns_zero = core.computation_return(zero);
+        let field = core.computation_lambda(returned);
+        let data_case = core.computation_data_case(bound, returns_nat, vec![returns_zero, field]);
+        let matched = core.computation_lambda(data_case);
+        let projection =
+            core.computation_record_projection(bound, FieldLabel::from(String::from("x")));
+        let projected = core.computation_lambda(projection);
+        let primitive = core.computation_primitive(PRELUDE[0], Arguments::Unary(bound));
+        let primitive_call = core.computation_lambda(primitive);
+        // A recorded run spells its moves, and a ride its motive under the
+        // binder it opens.
+        let recorded = core.value_recorded(Arc::from(vec![
+            RecordedMove::Received(one),
+            RecordedMove::Selected(FieldLabel::from(String::from("report"))),
+            RecordedMove::Sent(two),
+            RecordedMove::Offered(FieldLabel::from(String::from("retire"))),
+            RecordedMove::Closed,
+        ]));
+        let motive_point = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let motive = core.value_type_run(motive_point);
+        let ride = core.computation_ride(motive, bound, bound);
+        let riding = core.computation_lambda(ride);
+        let names = [Name::from("kept"), Name::from("Nat")];
+        let mut constructors = Constructors::default();
+        constructors.family(Name::from("Nat"), [
+            (Name::from("Zero"), Arity::from(0_usize)),
+            (Name::from("Succ"), Arity::from(1_usize)),
+        ]);
+        constructors.case(data_case, Name::from("Nat"));
+        let source = CoreSource::new(&core, &names).naming(&constructors);
         let body = |id| Root::Computation(CoreNode::Computation(id));
         for (root, expected, fidelity) in [
             (body(identity), "fn (a) { a }", Fidelity::Faithful),
@@ -1566,7 +1686,32 @@ mod tests
             (body(forced), "force kept", Fidelity::Faithful),
             (body(pure_one), "1", Fidelity::Faithful),
             (body(suspends), "thunk { (pure 1)(2) }", Fidelity::Faithful),
-            (body(analysed), "fn (a) { ? }", Fidelity::Approximate),
+            (
+                body(analysed),
+                "fn (a) { case a { +{.0 = b} => b, +{.1 = b} => b } }",
+                Fidelity::Faithful,
+            ),
+            (
+                body(opened),
+                "fn (a) { case a { #{b, c} => c } }",
+                Fidelity::Faithful,
+            ),
+            (
+                body(matched),
+                "fn (a) { case a { Zero => Zero, Succ(b) => b } }",
+                Fidelity::Faithful,
+            ),
+            (body(projected), "fn (a) { a.x }", Fidelity::Faithful),
+            (
+                body(primitive_call),
+                "fn (a) { prim.id(a) }",
+                Fidelity::Faithful,
+            ),
+            (
+                body(riding),
+                "fn (a) { ride(\\b. Run(b), a, a) }",
+                Fidelity::Faithful,
+            ),
         ] {
             assert_eq!(
                 spelled(&source, root),
@@ -1574,6 +1719,15 @@ mod tests
                 "{expected}"
             );
         }
+        assert_eq!(
+            spelled(&source, Root::Value(CoreNode::Value(recorded))),
+            (
+                "recorded(received(1), selected(report), sent(2), offered(retire), closed)"
+                    .to_owned(),
+                Fidelity::Faithful
+            ),
+            "a recorded run spells each move as written"
+        );
         assert_eq!(
             spelled(&source, Root::Value(CoreNode::Value(suspended))),
             ("<thunk>".to_owned(), Fidelity::Approximate),
@@ -1584,5 +1738,31 @@ mod tests
             flat: "fn (a) { run b <- { run b <- pure 1 ; pure b } ; kept(b) }",
             fidelity: Fidelity::Faithful,
         });
+        // Written on one line, each body is its layout at a page no line
+        // overflows.
+        for id in [
+            identity,
+            calling,
+            forced,
+            pure_one,
+            suspends,
+            analysed,
+            opened,
+            matched,
+            projected,
+            primitive_call,
+            riding,
+            sequenced,
+        ] {
+            let root = CoreNode::Computation(id);
+            let wide = present_computation(&source, root, PageWidth::from(4_096_u32))
+                .expect("the body lays out");
+            let line = present_computation_line(&source, root).expect("the body writes");
+            assert_eq!(
+                (line.as_ref(), line.fidelity()),
+                (wide.as_ref(), wide.fidelity()),
+                "one line is the wide layout"
+            );
+        }
     }
 }

@@ -23,10 +23,10 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 
 - `synthesise_value`, `check_value`, `synthesise_comp`, `check_comp`, `Synthesised` and `Checked`: the four directed faces.
 - Pairs, static lambdas and static applications in the faces, by the rules [`judgement`](src/judgement.rs) tabulates.
-- Native list introductions check against `List A`; the pure fold synthesises `F B` from explicit element and result annotations. Nil and cons branches are checked in their zero- and two-binder contexts, and readmission preserves the native kernel syntax without assumptions.
+- Native list introductions check against `List A`; the pure fold synthesises `F B` from explicit element and result annotations, its branches checked by the rules [`judgement`](src/judgement.rs) states.
 - `ConversionCount`: the declared projection of the conversion boundary, returned by every face.
 - `form_value_type`, `form_comp_type`, `FormedValueType` and `FormedCompType`: formation as a judgement, and the types the check faces take.
-- `type_value`, `type_module`, `Typing` and `Typings`: the typed run, which keeps the type of every term it judged, refused terms included.
+- `type_value`, `type_module`, `Typing`, `Formed`, `Typings` and `Formations`: the typed run, keeping the type of every term it judged, refused ones too, and the level of each type it formed or `Formations` names.
 - `classify_value_type`, `classify_comp_type` and `level_of`: the unique classifier of each formed type.
 - `CodeDefinitions`, `Certificate`, `Unfolded`, `unfolding::Absent` and `Lift`: static definitions, certified reductions and recorded universe lifts.
 - `Declaration`, `DeclarationContent` and `OriginToken`: name-free value/data input. Values retain optional signature/body halves; data retain a `DataSignature`.

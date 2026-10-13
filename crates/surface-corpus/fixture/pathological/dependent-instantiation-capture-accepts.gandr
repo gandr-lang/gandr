@@ -1,4 +1,4 @@
-@[ runs("<fun>") ]
+@[ runs("fn (a) { fn (b) { fn (c) { fn (d) { fn (e) { fn (f) { run g <- d(f) ; e(g) } } } } } }") ]
 def comp(a : Type, b : Type, c : Type, f : +U[ω] (a -> -F b), g : +U[ω] (b -> -F c), x : a) -> -F c {
   run y <- f(x);
   become g(y)

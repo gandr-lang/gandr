@@ -6368,6 +6368,9 @@ pub struct LoweredModule<'source>
     declarations: Vec<LoweredDeclaration<'source>>,
     /// The data declarations' signatures, by [`DataIndex`].
     data: Vec<Arc<DataSignature>>,
+    /// The names of each data declaration's constructors in tag order, by
+    /// [`DataIndex`].
+    constructors: Vec<Vec<String>>,
     /// The modules, in pre-order: a module before every module nested in it.
     structures: Vec<LoweredStructure<'source>>,
     /// The attribute side table, keyed by declaration content identity.
@@ -6413,6 +6416,7 @@ impl<'source> LoweredModule<'source>
             cells: crate::desc_cells::CellReport::default(),
             declarations,
             data,
+            constructors: Vec::new(),
             structures,
             attributes,
             documentation: BTreeMap::new(),
@@ -6469,6 +6473,22 @@ impl<'source> LoweredModule<'source>
     ) -> Self
     {
         self.inferred_exits = inferred_exits;
+        self
+    }
+
+    /// This module, carrying the names of each data declaration's
+    /// constructors in tag order, by [`DataIndex`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_constructors(
+        mut self,
+        constructors: Vec<Vec<String>>,
+    ) -> Self
+    {
+        self.constructors = constructors;
         self
     }
 
@@ -6583,6 +6603,21 @@ impl<'source> LoweredModule<'source>
             Maybe::Absent(data_signature::Absent::Unlisted),
             Maybe::Present,
         )
+    }
+
+    /// The names of the constructors of the data declaration at `index`, in
+    /// tag order; none past the list.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn constructors(
+        &self,
+        index: DataIndex,
+    ) -> &[String]
+    {
+        self.constructors.get(index.0).map_or(&[], Vec::as_slice)
     }
 
     /// The descriptions consumed by native type and higher-cell interpretation.

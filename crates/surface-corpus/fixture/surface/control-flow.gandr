@@ -20,7 +20,7 @@ def first(n : Nat) -> -F Nat {
   return Succ(m)
 }
 
-@[ runs("ctor[1](ctor[1](ctor[0]()))") ]
+@[ runs("Succ(Succ(Zero))") ]
 def first_zero : +U (-F Nat) ;
 def first_zero = thunk { become first(Zero) } ;
 
@@ -35,7 +35,7 @@ def pick(n : Nat) -> -F Nat {
   return Succ(m)
 }
 
-@[ runs("ctor[1](ctor[1](ctor[0]()))") ]
+@[ runs("Succ(Succ(Zero))") ]
 def pick_two : +U (-F Nat) ;
 def pick_two = thunk { become pick(Succ(Succ(Zero))) } ;
 
@@ -49,7 +49,7 @@ def leave(n : Nat) -> -F Nat {
   }
 }
 
-@[ runs("ctor[0]()") ]
+@[ runs("Zero") ]
 def leave_one : +U (-F Nat) ;
 def leave_one = thunk { become leave(Succ(Zero)) } ;
 
@@ -58,7 +58,7 @@ def hand(n : Nat) -> -F Nat {
   loop { become leave(Succ(n)) }
 }
 
-@[ runs("ctor[1](ctor[0]())") ]
+@[ runs("Succ(Zero)") ]
 def hand_one : +U (-F Nat) ;
 def hand_one = thunk { become hand(Succ(Zero)) } ;
 
@@ -87,7 +87,7 @@ def sift(n : Nat) -> -F Nat {
   return n
 }
 
-@[ runs("ctor[0]()") ]
+@[ runs("Zero") ]
 def sift_zero : +U (-F Nat) ;
 def sift_zero = thunk { become sift(Zero) } ;
 

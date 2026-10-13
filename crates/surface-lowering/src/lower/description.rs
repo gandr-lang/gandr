@@ -9,6 +9,7 @@
 //! the native reading on every data form can replace it as the producer.
 
 use alloc::collections::BTreeMap;
+use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -214,6 +215,14 @@ impl<'source> Lowerer<'_, 'source>
             match result {
                 | Ok(signature) => {
                     let index = DataIndex::from(self.data.len());
+                    self.constructors.push(
+                        entry
+                            .description
+                            .ctors
+                            .iter()
+                            .map(|constructor| String::from(constructor.name.as_ref()))
+                            .collect(),
+                    );
                     self.data.push(Arc::new(signature));
                     let _first = self.described.insert(SlotIndex::from(position), index);
                 },

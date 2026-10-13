@@ -60,14 +60,25 @@
 //! type it was checked against, or the type it synthesised — the unknown type
 //! where its synthesis was marked. A term judged twice — checked, then
 //! synthesised to cross a bridge — is kept twice, the inner judgement first.
-//! These are what a face shows for a position inside the term: the editor's
-//! hover. No other run keeps them, so a strict or total judgement pays
-//! nothing for them; a face that wants them judges the declaration again in a
-//! typed run. The alternative was keeping the type of every term in every
-//! run's report, which charges each judgement of every revision for a table a
-//! face reads only at a hover. The choice reverses when a face reads the table
-//! on every revision, as an inlay of every binder's type would. Witness:
+//! As each type formation finishes it keeps the type with the level it formed
+//! at, under the binders it was formed under. These are what a face shows for
+//! a position inside the term: the editor's hover. No other run keeps them, so
+//! a strict or total judgement pays nothing for them; a face that wants them
+//! judges the declaration again in a typed run. The alternative was keeping
+//! the type of every term in every run's report, which charges each judgement
+//! of every revision for a table a face reads only at a hover. The choice
+//! reverses when a face reads the table on every revision, as an inlay of
+//! every binder's type would. Witness:
 //! `judgement::elaboration::tests::a_typed_run_keeps_the_type_of_every_term_it_judged`.
+//!
+//! The record lives in the checking context, not in the machine: the context
+//! records from the typed run's start to its finish, and every judgement run
+//! inside it — a strict sub-judgement, a formation, a signature, a `ua`'s
+//! translator records — keeps into the same log without knowing it. The
+//! earlier design kept the record on the typed run's own machine, and every
+//! nested run was a gap no hover could answer; a recording point per run
+//! kind would have to be found again for each new judgement. Reversal: none
+//! while a nested run can judge a term the source wrote.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -81,6 +92,7 @@ use gandr_core_term::Zone;
 use gandr_core_term::hole::MarkIndex;
 use gandr_core_term::hole::TermId;
 use gandr_core_term::wrap_marks;
+use gandr_kernel_strata::Level;
 
 use super::Direction;
 use super::Frame;
@@ -89,6 +101,7 @@ use super::Machine;
 use super::Produced;
 use super::Step;
 use crate::context::CheckingContext;
+use crate::context::Recording;
 use crate::conversion::ConversionCount;
 use crate::failure::Failure;
 use crate::formation::FormedCompType;
@@ -97,7 +110,9 @@ use crate::refusal::CheckRefusal;
 use crate::refusal::TermNode;
 use crate::refusal::TypeNode;
 
-/// Whether a refusal ends a run or marks the term it stands at.
+/// Whether a refusal ends a run or marks the term it stands at. Whether the
+/// run keeps the type of each term it judges is the context's, not the
+/// run's: every run inside a typed run keeps them.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(super) enum Marking
 {
@@ -105,9 +120,6 @@ pub(super) enum Marking
     Strict,
     /// A refusal other than an engine fault marks the term under judgement.
     Total,
-    /// A refusal marks as in a total run, and every term judgement keeps the
-    /// type it finished at.
-    Typed,
 }
 
 /// A term judgement under way in a total run, where a refusal is recovered.
@@ -173,14 +185,39 @@ pub struct Typing
     pub ty: TypeNode,
 }
 
-/// A typed run's record: every term judgement it finished, with its type, and
-/// the refusals it marked.
+/// A type formation a typed run finished: the type and the level it formed
+/// at, read under the binders it was formed under.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Formed
+{
+    /// The type formed.
+    pub ty: TypeNode,
+    /// The level it formed at.
+    pub level: Level,
+}
+
+/// What a recording context kept: the term judgements and the type
+/// formations finished, each in the order finished.
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+pub struct Kept
+{
+    /// The term judgements finished.
+    pub typings: Vec<Typing>,
+    /// The type formations finished.
+    pub formed: Vec<Formed>,
+}
+
+/// A typed run's record: every term judgement it finished, with its type,
+/// every type formation it finished, with its level, and the refusals it
+/// marked.
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Typings
 {
     /// The term judgements finished, in the order finished: a term after
     /// every term inside it.
-    typings: Vec<Typing>,
+    judged: Vec<Typing>,
+    /// The type formations finished, in the order finished.
+    formed: Vec<Formed>,
     /// The refusals marked, in the order met.
     marks: Vec<MarkEntry>,
 }
@@ -196,7 +233,19 @@ impl Typings
     #[must_use]
     pub fn typings(&self) -> &[Typing]
     {
-        &self.typings
+        &self.judged
+    }
+
+    /// The type formations finished, in the order finished, each at the
+    /// level it formed at under the binders it was formed under.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn formed(&self) -> &[Formed]
+    {
+        &self.formed
     }
 
     /// The refusals marked, in the order met.
@@ -208,6 +257,42 @@ impl Typings
     pub fn marks(&self) -> &[MarkEntry]
     {
         &self.marks
+    }
+
+    /// `body`'s record, after what `signature`'s formation kept: what a
+    /// typed declaration keeps for its written type and its body, the type's
+    /// first.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the typings and the formations are `signature`'s then
+    ///   `body`'s, in order; the marks are `body`'s.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a declaration whose written type holds a path's
+    ///   endpoints keeps them before its body's terms.
+    /// - witness: `module::tests::a_typed_module_keeps_the_terms_its_signature_judges`
+    #[spec(
+        captures: [count = signature.typings.len().saturating_add(body.judged.len()), marked = body.marks.len()],
+        ensures: |ret| ret.judged.len() == count && ret.marks.len() == marked,
+    )]
+    pub(crate) fn after(
+        signature: Kept,
+        body: Self,
+    ) -> Self
+    {
+        let Kept {
+            mut typings,
+            mut formed,
+        } = signature;
+        typings.extend(body.judged);
+        formed.extend(body.formed);
+        Self {
+            judged: typings,
+            formed,
+            marks: body.marks,
+        }
     }
 }
 
@@ -466,6 +551,7 @@ pub fn type_value(
             | Direction::Check(expected) => Direction::Check(expected.id()),
         },
     };
+    let outer = context.start_typings();
     let mut machine = Machine {
         context,
         frames: Vec::new(),
@@ -473,19 +559,21 @@ pub fn type_value(
         native_types: Vec::new(),
         conversions: ConversionCount::default(),
         remaining,
-        marking: Marking::Typed,
+        marking: Marking::Total,
         anchors: Vec::new(),
         marks: Vec::new(),
-        typings: Vec::new(),
         sessions: super::Sessions::new(base),
     };
     let scope = machine.session_scope();
     let _outcome = machine.drive(goal);
     machine.unwind(entry);
     machine.close_sessions(scope);
+    let marks = machine.marks;
+    let Kept { typings, formed } = context.finish_typings(outer);
     Typings {
-        typings: machine.typings,
-        marks: machine.marks,
+        judged: typings,
+        formed,
+        marks,
     }
 }
 
@@ -529,12 +617,15 @@ fn marked(
 
 impl Machine<'_, '_>
 {
-    /// Record a term goal as where a total run recovers.
+    /// Record a term goal as where a total run recovers, and, in any run while
+    /// the context records typings, a term goal, or a formation goal the
+    /// context keeps, as where its judgement finishes.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: in a total or typed run, a value or computation goal is
-    ///   pushed with the frame height, binder depth and field-type height it
+    /// - ensures: a value or computation goal in a total run or while the
+    ///   context records, and a formation goal while it records that formation,
+    ///   is pushed with the frame height, binder depth and field-type height it
     ///   began at; nothing changes otherwise.
     /// - panics: none.
     ///
@@ -546,40 +637,47 @@ impl Machine<'_, '_>
     /// - witness: `judgement::elaboration::tests::the_strict_judgement_is_the_total_runs_oracle`
     #[spec(
         captures: before = self.anchors.len(),
-        ensures: self.anchors.len() == before.saturating_add(usize::from(
-            self.marking != Marking::Strict && !matches!(goal, Goal::Form(_) | Goal::Stack { .. }),
-        )),
+        ensures: self.anchors.len() == before.saturating_add(usize::from(match goal {
+            Goal::Value { .. } | Goal::Computation { .. } =>
+                self.marking == Marking::Total || self.context.recording() == Recording::On,
+            Goal::Form(ty) => self.context.forming(ty) == Recording::On,
+            Goal::Stack { .. } => false,
+        })),
     )]
     pub(super) fn anchor(
         &mut self,
         goal: Goal,
     )
     {
-        match (self.marking, goal) {
-            | (Marking::Total | Marking::Typed, Goal::Value { .. } | Goal::Computation { .. }) => {
-                let depth = self.context.depth(Zone::Intuitionistic);
-                let sessions = self.session_scope();
-                self.anchors.push(Anchor {
-                    goal,
-                    frames: self.frames.len(),
-                    depth,
-                    native: self.native_types.len(),
-                    sessions,
-                });
+        let recording = self.context.recording() == Recording::On;
+        let anchored = match goal {
+            | Goal::Value { .. } | Goal::Computation { .. } => {
+                self.marking == Marking::Total || recording
             },
-            | (Marking::Strict, _)
-            | (Marking::Total | Marking::Typed, Goal::Form(_) | Goal::Stack { .. }) => {},
+            | Goal::Form(ty) => self.context.forming(ty) == Recording::On,
+            | Goal::Stack { .. } => false,
+        };
+        if anchored {
+            let depth = self.context.depth(Zone::Intuitionistic);
+            let sessions = self.session_scope();
+            self.anchors.push(Anchor {
+                goal,
+                frames: self.frames.len(),
+                depth,
+                native: self.native_types.len(),
+                sessions,
+            });
         }
     }
 
     /// Retire the anchors of every goal the ascent finished, `produced` the
-    /// result each finished with; a typed run keeps each one's type.
+    /// result each finished with; while the context records typings, each
+    /// one's type is kept.
     ///
     /// # Specification
     /// - requires: `produced` is the result the ascent hands up.
-    /// - ensures: every anchor left began below the current frame height; in a
-    ///   typed run, each anchor retired is kept as [`Self::keep`] keeps it,
-    ///   innermost first.
+    /// - ensures: every anchor left began below the current frame height; each
+    ///   anchor retired is kept as [`Self::keep`] keeps it, innermost first.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -603,34 +701,31 @@ impl Machine<'_, '_>
         }
     }
 
-    /// In a typed run, keep `goal`'s term with the type it finished at:
-    /// `produced` for a synthesis, the expected type for a check.
+    /// While the context records typings, keep `goal`'s term with the type it
+    /// finished at: `produced` for a synthesis, the expected type for a check.
     ///
     /// # Specification
     /// - requires: `produced` is what `goal`'s judgement finished with.
-    /// - ensures: in a typed run, a value or computation goal checked against a
-    ///   type is kept with that type, and one synthesised is kept with the type
-    ///   it produced in its own family; nothing is kept for any other goal or
-    ///   result, or in any other run.
+    /// - ensures: while the context records, a value or computation goal
+    ///   checked against a type is kept with that type, and one synthesised is
+    ///   kept with the type it produced in its own family; nothing is kept for
+    ///   any other goal or result, or while the context does not record.
     /// - panics: none.
+    /// - executable: none — the context's log has no observer short of the
+    ///   typed run's result, which the witness reads.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a checked and a synthesised judgement, and a strict
     ///   run of the same term, separate the expected side, the produced side
     ///   and the empty record.
     /// - witness: `judgement::elaboration::tests::a_typed_run_keeps_the_type_of_every_term_it_judged`
-    #[spec(
-        captures: before = self.typings.len(),
-        ensures: self.typings.len() <= before.saturating_add(1_usize)
-            && (self.marking == Marking::Typed || self.typings.len() == before),
-    )]
     fn keep(
         &mut self,
         goal: Goal,
         produced: Produced,
     )
     {
-        if self.marking != Marking::Typed {
+        if self.context.recording() == Recording::Off {
             return;
         }
         let typing = match (goal, produced) {
@@ -688,9 +783,13 @@ impl Machine<'_, '_>
                 },
                 Produced::ValueType(_) | Produced::Checked,
             )
-            | (Goal::Form(_) | Goal::Stack { .. }, _) => return,
+            | (Goal::Stack { .. }, _) => return,
+            | (Goal::Form(node), _) => {
+                self.context.keep_formed(node);
+                return;
+            },
         };
-        self.typings.push(typing);
+        self.context.keep_typing(typing);
     }
 
     /// Answer a refusal: end a strict run, or mark the innermost term under
@@ -703,8 +802,9 @@ impl Machine<'_, '_>
     ///   retired, the frames, binders and field types fall back to where its
     ///   goal began, one mark is recorded at its term, the goal is the running
     ///   one again, and it is answered — checked, the unknown type, or, for a
-    ///   term that cannot synthesise, a check against the unknown type. A typed
-    ///   run keeps an answered goal as [`Self::keep`] keeps it.
+    ///   term that cannot synthesise, a check against the unknown type. While
+    ///   the context records typings, an answered goal is kept as
+    ///   [`Self::keep`] keeps it.
     /// - fails: `refusal` itself, as above.
     /// - panics: none.
     ///
@@ -732,10 +832,9 @@ impl Machine<'_, '_>
     ) -> Result<Step, CheckRefusal>
     {
         let recoverable = match (self.marking, refusal.classify()) {
-            | (Marking::Strict, _)
-            | (Marking::Total | Marking::Typed, FailureClass::EngineFault) => false,
+            | (Marking::Strict, _) | (Marking::Total, FailureClass::EngineFault) => false,
             | (
-                Marking::Total | Marking::Typed,
+                Marking::Total,
                 FailureClass::MalformedSource
                 | FailureClass::Unrepresentable
                 | FailureClass::UserAbsence,
@@ -744,9 +843,14 @@ impl Machine<'_, '_>
         if !recoverable {
             return Err(refusal);
         }
-        let Some(anchor) = self.anchors.pop()
-        else {
-            return Err(refusal);
+        let anchor = loop {
+            let Some(anchor) = self.anchors.pop()
+            else {
+                return Err(refusal);
+            };
+            if let Goal::Value { .. } | Goal::Computation { .. } = anchor.goal {
+                break anchor;
+            }
         };
         self.frames.truncate(anchor.frames);
         self.native_types.truncate(anchor.native);

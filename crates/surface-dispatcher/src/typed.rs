@@ -18,8 +18,11 @@
 //! - **A binder** is spelled at the type of the uses that resolve to it, read
 //!   through the origin table's use-to-binder record; a binder no use resolves
 //!   to takes no entry, and a reader there is answered by the node around it.
-//! - **A written type** is spelled at its universe: the sort it inhabits at its
-//!   natural level. A type the lowering inserted takes no entry.
+//! - **A written type** is spelled at its universe: the level the typed run
+//!   formed it at, under the binders it was formed under, and the level it
+//!   reads closed where no formation reached it. A type the lowering inserted
+//!   takes no entry. A description a `ua` names is no core node; it is spelled
+//!   at the universe its statement's path lies in.
 //! - **A declaration** is spelled at its declared type, at the type its body
 //!   synthesised when it states none, and at its universe when it declares
 //!   data; a declaration the lowering refused keeps its refusal instead, since
@@ -55,23 +58,37 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckingContext;
+use gandr_core_checker::Formations;
+use gandr_core_checker::Formed;
 use gandr_core_checker::TermNode;
 use gandr_core_checker::TypeNode;
+use gandr_core_checker::Typings;
 use gandr_core_checker::level_of;
 use gandr_core_checker::type_module;
+use gandr_core_term::Computation;
+use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Sort;
+use gandr_core_term::Value;
+use gandr_core_term::ValueId;
+use gandr_core_term::ValueType;
+use gandr_core_term::Zone;
+use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::GroundSort;
+use gandr_surface_diagnostics::Families;
 use gandr_surface_diagnostics::constant_names;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::DeclarationOutcome;
+use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::Origin;
 use gandr_surface_lowering::Provenance;
+use gandr_surface_pretty::BinderIndex;
 use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::CoreSource;
 use gandr_surface_pretty::Name;
 use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Presentation;
+use gandr_surface_pretty::Scopes;
 use gandr_surface_pretty::present_type;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
@@ -234,6 +251,144 @@ struct Entry
     /// A term's last kept type, the type an outer judgement checked it
     /// against; [`Self::ty`] for any other entry.
     last: TypeNode,
+    /// The declaration whose run typed the node, and the node, whose binders
+    /// name the variables its type mentions; none for a closed node.
+    within: Option<Within>,
+}
+
+/// Where a typed node stands: the declaration whose run first typed it, and
+/// the node itself.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Within
+{
+    /// The declaration, by the constant it admits.
+    constant: ConstantIndex,
+    /// The node.
+    node: CoreNode,
+}
+
+/// One intuitionistic binder a typed node stands under: the binder around
+/// it and the name the source writes for it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Bound
+{
+    /// The intuitionistic binder around this one.
+    around: Option<BinderIndex>,
+    /// The name written at the binder, or at a use resolving to it; none
+    /// where the source writes none.
+    name: Option<String>,
+}
+
+/// What the table keeps to name the binders an entry stands under when a
+/// reader asks: each declaration's roots, and where the source writes each
+/// binder and each use. The scopes are walked one declaration at a time by
+/// the answer that needs them, never while the table is built.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct Naming
+{
+    /// The source text the spans index.
+    text: String,
+    /// Each declaration's declared type and body, ascending by constant.
+    roots: Vec<(ConstantIndex, [Option<CoreNode>; 2])>,
+    /// Each lambda and bind with where the binder it opens is written,
+    /// ascending by id.
+    openers: Vec<(ComputationId, ByteSpan)>,
+    /// Each written use of a variable with where a name for its binder is
+    /// written: first where the origin table records the binder a use
+    /// resolves to, then the use itself, which a type's variables have and no
+    /// binding records.
+    uses: Vec<(ValueId, ByteSpan)>,
+}
+
+impl Naming
+{
+    /// What `module`, lowered from `source`, keeps for naming binders.
+    ///
+    /// # Specification
+    /// - requires: `module` was lowered from `source`.
+    /// - ensures: the source text, each value declaration's roots by its
+    ///   constant, the origin table's binders, and its bindings then its
+    ///   written values as uses.
+    /// - provides: the input of [`scopes`], kept for an answer.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the record is read only through an answer's
+    ///   spelling, which the census witnesses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the corpus census spells every typed node of a body
+    ///   under its binders' names, which this record alone supplies; a binder
+    ///   or use left out spells `?`, which the census fails on.
+    /// - witness: `census::census::every_typed_entry_spells_without_a_dishonest_question_mark`
+    fn of(
+        module: &LoweredModule<'_>,
+        source: SourceText<'_>,
+    ) -> Self
+    {
+        let origins = module.origins();
+        let mut roots: Vec<(ConstantIndex, [Option<CoreNode>; 2])> = module
+            .declarations()
+            .iter()
+            .filter_map(|declaration| {
+                let roots = match declaration.outcome() {
+                    | DeclarationOutcome::Completed {
+                        declared_type,
+                        body,
+                    } => [
+                        Some(CoreNode::ValueType(declared_type)),
+                        Some(CoreNode::Value(body)),
+                    ],
+                    | DeclarationOutcome::Uncompleted { declared_type } => {
+                        [Some(CoreNode::ValueType(declared_type)), None]
+                    },
+                    | DeclarationOutcome::Bodied { body } => [Some(CoreNode::Value(body)), None],
+                    | DeclarationOutcome::Data(_)
+                    | DeclarationOutcome::Abstract(_)
+                    | DeclarationOutcome::Refused(_) => return None,
+                };
+                Some((declaration.constant(), roots))
+            })
+            .collect();
+        roots.sort_by_key(|&(constant, _)| constant);
+        let mut openers: Vec<(ComputationId, ByteSpan)> = origins
+            .binders()
+            .iter()
+            .map(|&(opener, origin)| (opener, origin.span()))
+            .collect();
+        openers.sort_by_key(|&(opener, _)| opener);
+        let uses = origins
+            .bindings()
+            .iter()
+            .copied()
+            .chain(
+                origins
+                    .values()
+                    .iter()
+                    .filter(|&&(_, origin)| origin.provenance() == Provenance::Written)
+                    .map(|&(variable, origin)| (variable, origin.span())),
+            )
+            .collect();
+        Self {
+            text: String::from(<&str>::from(source)),
+            roots,
+            openers,
+            uses,
+        }
+    }
+
+    /// The text the source writes at `span`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn written(
+        &self,
+        span: ByteSpan,
+    ) -> Option<String>
+    {
+        self.text
+            .get(usize::from(span.start()) .. usize::from(span.end()))
+            .map(String::from)
+    }
 }
 
 /// What the table keeps for a declaration: its type node, or the lowering's
@@ -275,6 +430,124 @@ pub struct TypeTable
     arena: CoreArena,
     /// The name the printer writes for each constant, by admission position.
     names: Vec<String>,
+    /// What the table keeps to name the binders an entry stands under.
+    naming: Naming,
+    /// The constructors of the source's data declarations, by family.
+    families: Families,
+}
+
+/// The intuitionistic binder at or around `at`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the first intuitionistic binder of the chain from `at` outward;
+///   none when the chain holds none.
+/// - provides: an entry's context, which skips a fork's linear binders.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// A binder's parent precedes it, so the chain strictly descends.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the corpus census spells each typed node of a body under
+///   its binders' names; a chain stopping at a linear binder leaves a `?` the
+///   census fails on.
+/// - witness: `census::census::every_typed_entry_spells_without_a_dishonest_question_mark`
+#[spec(ensures: |ret| ret.is_none_or(|index| scopes.binder(index).is_some_and(|binder| binder.zone() == Zone::Intuitionistic)))]
+fn intuitionistic(
+    scopes: &Scopes<CoreNode>,
+    at: Option<BinderIndex>,
+) -> Option<BinderIndex>
+{
+    let mut at = at;
+    while let Some(index) = at {
+        let binder = scopes.binder(index)?;
+        if binder.zone() == Zone::Intuitionistic {
+            return Some(index);
+        }
+        at = binder.parent().filter(|&parent| parent < index);
+    }
+    None
+}
+
+/// The binders of one declaration, whose declared type and body are `roots`,
+/// each named by what `naming` records for it.
+///
+/// # Specification
+/// - requires: `arena` holds the declaration's nodes and `names` its module's
+///   constants'.
+/// - ensures: the scopes of every node reachable from `roots`, and for each
+///   binder, at its position, the intuitionistic binder around it and its name:
+///   the one written for the lambda or bind that opens it, else the one written
+///   at a use's binder.
+/// - provides: the context an entry's type is spelled in.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the corpus census spells the types of terms inside
+///   bodies, and of endpoints under a signature's binders, by their binders'
+///   names; a binder left unnamed spells `?`, which the census fails on.
+/// - witness: `census::census::every_typed_entry_spells_without_a_dishonest_question_mark`
+#[spec(ensures: |ret| ret.1.len() == ret.0.binders().len())]
+fn scopes(
+    arena: &CoreArena,
+    names: &[String],
+    naming: &Naming,
+    roots: [Option<CoreNode>; 2],
+) -> (Scopes<CoreNode>, Vec<Bound>)
+{
+    let names: Vec<Name<'_>> = names.iter().map(|name| Name::from(name.as_str())).collect();
+    let printer = CoreSource::new(arena, &names);
+    let scopes = Scopes::of(&printer, roots.into_iter().flatten());
+    let mut bound: Vec<Bound> = scopes
+        .binders()
+        .map(|(_, binder)| {
+            let name = match binder.opener() {
+                | CoreNode::Computation(opener) => naming
+                    .openers
+                    .binary_search_by_key(&opener, |&(held, _)| held)
+                    .ok()
+                    .and_then(|at| naming.openers.get(at))
+                    .and_then(|&(_, span)| naming.written(span)),
+                | CoreNode::Value(_) | CoreNode::ValueType(_) | CoreNode::CompType(_) => None,
+            };
+            Bound {
+                around: intuitionistic(&scopes, binder.parent()),
+                name,
+            }
+        })
+        .collect();
+    // A use names the binder it counts out to.
+    for &(variable, written_at) in &naming.uses {
+        let (Some(Some(innermost)), Some(&Value::Variable { zone, index })) = (
+            scopes.innermost(CoreNode::Value(variable)),
+            arena.value(variable),
+        )
+        else {
+            continue;
+        };
+        let Some(name) = naming.written(written_at).filter(|name| {
+            !name.is_empty()
+                && name
+                    .chars()
+                    .all(|glyph| glyph.is_alphanumeric() || glyph == '_')
+        })
+        else {
+            continue;
+        };
+        let chain = scopes.around(Some(innermost), zone);
+        if let Some(entry) = usize::try_from(u32::from(index))
+            .ok()
+            .and_then(|index| chain.get(index))
+            .and_then(|&at| bound.get_mut(usize::from(at)))
+            && entry.name.is_none()
+        {
+            entry.name = Some(name);
+        }
+    }
+    (scopes, bound)
 }
 
 /// The printer's root for `node`.
@@ -339,9 +612,12 @@ impl TypeTable
         };
         let declarations = adapt(&module);
         let origins = module.origins();
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
-        let typed = type_module(&mut context, &declarations);
-        let mut universes = Vec::new();
+        // Each written type at its universe: the level the typed run formed it
+        // at under the binders it was formed under, the first formation kept;
+        // a written type no kept formation reached — formed by a rule that
+        // forms it outside a formation goal — at the level it reads closed. A
+        // transport's written motive is a written type: the family it denotes.
+        // The run keeps the formations of these types alone.
         let value_types = origins
             .value_types()
             .iter()
@@ -350,13 +626,44 @@ impl TypeTable
             .comp_types()
             .iter()
             .map(|&(id, origin)| (TypeNode::Computation(id), origin, GroundSort::Computation));
-        for (node, origin, sort) in value_types.chain(comp_types) {
-            if origin.provenance() != Provenance::Written {
-                continue;
+        let motives = origins.motives().iter().filter_map(|&(transport, origin)| {
+            match arena.computation(transport) {
+                | Some(
+                    &(Computation::PathTransport { motive, .. } | Computation::Ride { motive, .. }),
+                ) => Some((TypeNode::Value(motive), origin, GroundSort::Value)),
+                | _ => None,
             }
-            if let Ok(level) = level_of(&context, node) {
-                universes.push((origin, sort, level));
-            }
+        });
+        let written: Vec<(TypeNode, Origin, GroundSort)> = value_types
+            .chain(comp_types)
+            .chain(motives)
+            .filter(|&(_, origin, _)| origin.provenance() == Provenance::Written)
+            .collect();
+        let mut wanted: Vec<TypeNode> = written.iter().map(|&(node, ..)| node).collect();
+        wanted.sort_unstable();
+        wanted.dedup();
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        context.keep_formations(Formations::Firsts(wanted));
+        let typed = type_module(&mut context, &declarations);
+        // Each wanted type is formed at most once, so the formations sorted by
+        // type find a written type's own by search; the stable sort keeps the
+        // first should a type appear twice.
+        let mut formed: Vec<&Formed> = typed.values().flat_map(Typings::formed).collect();
+        formed.sort_by_key(|formation| formation.ty);
+        formed.dedup_by_key(|formation| formation.ty);
+        let mut universes = Vec::new();
+        for (node, origin, sort) in written {
+            let level = match formed.binary_search_by_key(&node, |formation| formation.ty) {
+                | Ok(at) => match formed.get(at) {
+                    | Some(formation) => formation.level.clone(),
+                    | None => continue,
+                },
+                | Err(_) => match level_of(&context, node) {
+                    | Ok(level) => level,
+                    | Err(_) => continue,
+                },
+            };
+            universes.push((origin, sort, level));
         }
         let universes: Vec<(Origin, TypeNode)> = universes
             .into_iter()
@@ -365,26 +672,48 @@ impl TypeTable
                 (origin, TypeNode::Value(universe))
             })
             .collect();
-        // Each term's first and last type, and when its last was kept.
-        let mut kept: BTreeMap<TermNode, (TypeNode, TypeNode, usize)> = BTreeMap::new();
-        let mut finished = 0_usize;
-        for typings in typed.values() {
-            for typing in typings.typings() {
-                let entry = kept
-                    .entry(typing.term)
-                    .or_insert((typing.ty, typing.ty, finished));
-                entry.1 = typing.ty;
-                entry.2 = finished;
-                finished = finished.saturating_add(1);
+        // Each term's first and last type, when its last was kept, and the
+        // declaration whose run first typed it: every typing in the order
+        // kept, grouped by term with a sort, each group's first and last read
+        // off its ends.
+        let mut judged: Vec<(TermNode, usize, TypeNode, ConstantIndex)> = typed
+            .iter()
+            .flat_map(|(&constant, typings)| {
+                typings
+                    .typings()
+                    .iter()
+                    .map(move |typing| (constant, typing))
+            })
+            .enumerate()
+            .map(|(finished, (constant, typing))| (typing.term, finished, typing.ty, constant))
+            .collect();
+        judged.sort_unstable_by_key(|&(term, finished, ..)| (term, finished));
+        let mut kept: Vec<(TermNode, TypeNode, TypeNode, usize, ConstantIndex)> = Vec::new();
+        for (term, finished, ty, constant) in judged {
+            match kept.last_mut() {
+                | Some(&mut (held, _, ref mut last, ref mut at, _)) if held == term => {
+                    *last = ty;
+                    *at = finished;
+                },
+                | Some(_) | None => kept.push((term, ty, ty, finished, constant)),
             }
         }
-        let mut order: Vec<(&TermNode, &(TypeNode, TypeNode, usize))> = kept.iter().collect();
-        order.sort_by_key(|&(_, &(_, _, at))| at);
+        let first_of = |term: TermNode| {
+            kept.binary_search_by_key(&term, |&(held, ..)| held)
+                .ok()
+                .and_then(|at| kept.get(at))
+                .map(|&(_, first, _, _, constant)| (first, constant))
+        };
+        let first_type = |term: TermNode| first_of(term).map(|(first, _)| first);
+        let names = constant_names(&module);
+        let mut order: Vec<&(TermNode, TypeNode, TypeNode, usize, ConstantIndex)> =
+            kept.iter().collect();
+        order.sort_unstable_by_key(|&&(_, _, _, at, _)| at);
         let mut entries = Vec::with_capacity(order.len());
-        for (&term, &(first, last, _)) in order {
-            let origin = match term {
-                | TermNode::Value(id) => origins.value(id),
-                | TermNode::Computation(id) => origins.computation(id),
+        for &(term, first, last, _, constant) in order {
+            let (origin, node) = match term {
+                | TermNode::Value(id) => (origins.value(id), CoreNode::Value(id)),
+                | TermNode::Computation(id) => (origins.computation(id), CoreNode::Computation(id)),
             };
             if let Maybe::Present(origin) = origin {
                 entries.push(Entry {
@@ -393,13 +722,14 @@ impl TypeTable
                     provenance: origin.provenance(),
                     ty: first,
                     last,
+                    within: Some(Within { constant, node }),
                 });
             }
         }
-        let mut bound = BTreeSet::new();
+        let mut binders = BTreeSet::new();
         for &(variable, binder) in origins.bindings() {
-            if let Some(&(first, ..)) = kept.get(&TermNode::Value(variable))
-                && bound.insert(binder)
+            if let Some((first, constant)) = first_of(TermNode::Value(variable))
+                && binders.insert(binder)
             {
                 entries.push(Entry {
                     span: binder,
@@ -407,6 +737,10 @@ impl TypeTable
                     provenance: Provenance::Written,
                     ty: first,
                     last: first,
+                    within: Some(Within {
+                        constant,
+                        node: CoreNode::Value(variable),
+                    }),
                 });
             }
         }
@@ -417,7 +751,30 @@ impl TypeTable
                 provenance: origin.provenance(),
                 ty: universe,
                 last: universe,
+                within: None,
             });
+        }
+        // A description a `ua` names is no core node: it answers at the
+        // universe the statement's path lies in, the carrier of its type.
+        for &(statement, named) in origins.sides() {
+            let Some(TypeNode::Value(path)) = first_type(TermNode::Value(statement))
+            else {
+                continue;
+            };
+            let Some(&ValueType::Path { carrier, .. }) = arena.value_type(path)
+            else {
+                continue;
+            };
+            for origin in named {
+                entries.push(Entry {
+                    span: origin.span(),
+                    subject: Subject::Type,
+                    provenance: origin.provenance(),
+                    ty: TypeNode::Value(carrier),
+                    last: TypeNode::Value(carrier),
+                    within: None,
+                });
+            }
         }
         let mut declared = BTreeMap::new();
         for declaration in module.declarations() {
@@ -426,8 +783,8 @@ impl TypeTable
                 | DeclarationOutcome::Uncompleted { declared_type } => {
                     Held::Typed(TypeNode::Value(declared_type))
                 },
-                | DeclarationOutcome::Bodied { body } => match kept.get(&TermNode::Value(body)) {
-                    | Some(&(first, ..)) => Held::Typed(first),
+                | DeclarationOutcome::Bodied { body } => match first_type(TermNode::Value(body)) {
+                    | Some(first) => Held::Typed(first),
                     | None => continue,
                 },
                 | DeclarationOutcome::Data(index) => match module.data(index) {
@@ -445,12 +802,13 @@ impl TypeTable
                 }
             }
         }
-        let names = constant_names(&module);
         Ok(Self {
             entries,
             declared,
             arena,
             names,
+            naming: Naming::of(&module, source),
+            families: Families::of(&module),
         })
     }
 
@@ -501,8 +859,61 @@ impl TypeTable
         page: PageWidth,
     ) -> Maybe<TypedSpan, typing::Absent>
     {
-        let Some((_, entry)) = self
-            .entries
+        match self.chosen(offset) {
+            | Some(entry) => self.answer(entry, page),
+            | None => Maybe::Absent(typing::Absent::Untyped),
+        }
+    }
+
+    /// The span of the entry [`Self::at`] answers `offset` with, unspelled.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the span of the entry [`Self::at`] chooses at `offset`, or
+    ///   `None` when no entry holds it.
+    /// - provides: the hover's choice, for a sweep that asks it at every byte
+    ///   without spelling a type.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the corpus entry gate asks at every byte of every
+    ///   source and holds the answer to the innermost node there.
+    /// - witness: `entries::entries::every_judged_node_answers_at_its_own_span`
+    #[spec(ensures: |ret| ret.is_none_or(|span| span.start() <= offset && offset < span.end()))]
+    #[inline]
+    #[must_use]
+    pub fn answering(
+        &self,
+        offset: ByteOffset,
+    ) -> Option<ByteSpan>
+    {
+        self.chosen(offset).map(|entry| entry.span)
+    }
+
+    /// The span of every entry, in table order, unspelled.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn spans(&self) -> impl Iterator<Item = ByteSpan> + '_
+    {
+        self.entries.iter().map(|entry| entry.span)
+    }
+
+    /// The entry a reader pointing at `offset` means: among the entries
+    /// holding it, one of the shortest; then a binder before a term before a
+    /// type, a written node before an inserted one, and the entry latest in
+    /// the table.
+    ///
+    /// # Specification
+    /// trivial.
+    fn chosen(
+        &self,
+        offset: ByteOffset,
+    ) -> Option<&Entry>
+    {
+        self.entries
             .iter()
             .enumerate()
             .filter(|&(_, entry)| entry.span.start() <= offset && offset < entry.span.end())
@@ -514,14 +925,69 @@ impl TypeTable
                     core::cmp::Reverse(position),
                 )
             })
-        else {
-            return Maybe::Absent(typing::Absent::Untyped);
-        };
-        let Maybe::Present(ty) = self.spell(entry.ty, page)
+            .map(|(_, entry)| entry)
+    }
+
+    /// Every entry of the table, in the order the typed run finished them,
+    /// each spelled on a page of `page` columns as [`Self::at`] spells the
+    /// entry it answers with.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one answer per entry, in table order: the entry spelled at
+    ///   its type and, for a term whose last kept type is spelled otherwise, at
+    ///   that one as its expected type; absent as [`typing::Absent::Unspelled`]
+    ///   where the printer cannot lay a type out.
+    /// - provides: the whole table, for a sweep that reads every entry.
+    /// - fails: never; an absence names its reason.
+    /// - panics: none.
+    /// - executable: none — the answers are a lazy iterator, spelled only as
+    ///   the caller draws them.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the corpus census reads every entry of every source
+    ///   and finds each `?` the printer writes.
+    /// - witness: `typed::tests::every_kind_of_node_is_typed_where_it_was_written`
+    #[inline]
+    pub fn entries(
+        &self,
+        page: PageWidth,
+    ) -> impl Iterator<Item = Maybe<TypedSpan, typing::Absent>> + '_
+    {
+        self.entries
+            .iter()
+            .map(move |entry| self.answer(entry, page))
+    }
+
+    /// `entry` spelled on a page of `page` columns.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`Self::at`] spells the entry it chose.
+    /// - provides: the one spelling of an entry.
+    /// - fails: never; an absence names its reason.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::at`].
+    /// - witness: `typed::tests::a_mismatched_term_shows_both_types`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(ref answer) => answer.span == entry.span && answer.subject == entry.subject,
+        Maybe::Absent(typing::Absent::Unspelled) => true,
+        Maybe::Absent(typing::Absent::Untyped) => false,
+    })]
+    fn answer(
+        &self,
+        entry: &Entry,
+        page: PageWidth,
+    ) -> Maybe<TypedSpan, typing::Absent>
+    {
+        let binders = self.standing(entry.within);
+        let Maybe::Present(ty) = self.spell(entry.ty, &binders, page)
         else {
             return Maybe::Absent(typing::Absent::Unspelled);
         };
-        let expected = match self.spell(entry.last, page) {
+        let expected = match self.spell(entry.last, &binders, page) {
             | Maybe::Present(other) if entry.last != entry.ty && other != ty => {
                 Maybe::Present(other)
             },
@@ -569,7 +1035,7 @@ impl TypeTable
     ) -> Maybe<Declared, typing::Absent>
     {
         match self.declared.get(&key) {
-            | Some(&Held::Typed(node)) => match self.spell(node, page) {
+            | Some(&Held::Typed(node)) => match self.spell(node, &[], page) {
                 | Maybe::Present(spelled) => Maybe::Present(Declared::Typed(spelled)),
                 | Maybe::Absent(reason) => Maybe::Absent(reason),
             },
@@ -580,14 +1046,44 @@ impl TypeTable
         }
     }
 
+    /// Every declaration's form key with its type or refusal, a type spelled
+    /// on a page of `page` columns, in key order.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one answer per key the table holds, as [`Self::declared`]
+    ///   answers that key.
+    /// - provides: the declarations, for a sweep that reads every one.
+    /// - fails: never; an absence names its reason.
+    /// - panics: none.
+    /// - executable: none — the answers are a lazy iterator, spelled only as
+    ///   the caller draws them.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the corpus census reads every declaration of every
+    ///   source.
+    /// - witness: `typed::tests::both_halves_of_a_declaration_find_its_type`
+    #[inline]
+    pub fn declarations(
+        &self,
+        page: PageWidth,
+    ) -> impl Iterator<Item = (NodeKey, Maybe<Declared, typing::Absent>)> + '_
+    {
+        self.declared
+            .keys()
+            .map(move |&key| (key, self.declared(key, page)))
+    }
+
     /// `node` spelled through the shared printer on a page of `page` columns,
-    /// writing each constant by its name.
+    /// writing each constant by its name and each variable of the context
+    /// whose innermost binder is `context` by the name written for it.
     ///
     /// # Specification
     /// trivial.
     fn spell(
         &self,
         node: TypeNode,
+        binders: &[Option<String>],
         page: PageWidth,
     ) -> Maybe<Presentation, typing::Absent>
     {
@@ -596,11 +1092,69 @@ impl TypeTable
             .iter()
             .map(|name| Name::from(name.as_str()))
             .collect();
-        let printer = CoreSource::new(&self.arena, &names);
+        let binders: Vec<Option<Name<'_>>> = binders
+            .iter()
+            .map(|name| name.as_deref().map(Name::from))
+            .collect();
+        let constructors = self.families.naming(&names);
+        let printer = CoreSource::new(&self.arena, &names)
+            .naming(&constructors)
+            .within(&binders);
         match present_type(&printer, root(node), page) {
             | Ok(spelled) => Maybe::Present(spelled),
             | Err(_) => Maybe::Absent(typing::Absent::Unspelled),
         }
+    }
+
+    /// The names of the intuitionistic binders `within`'s node stands under,
+    /// outermost first, by walking the scopes of its declaration alone.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: for each intuitionistic binder from the outermost to the
+    ///   innermost around the node, the name [`scopes`] gives it; empty for a
+    ///   closed node or one its declaration does not reach.
+    /// - provides: the context an entry's type is spelled in.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as [`scopes`], whose witness spells through it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`scopes`]: a body's terms answer under their
+    ///   binders' names, and an endpoint under its signature's.
+    /// - witness: `census::census::every_typed_entry_spells_without_a_dishonest_question_mark`
+    /// - witness: `typed::tests::every_kind_of_node_is_typed_where_it_was_written`
+    fn standing(
+        &self,
+        within: Option<Within>,
+    ) -> Vec<Option<String>>
+    {
+        let Some(Within { constant, node }) = within
+        else {
+            return Vec::new();
+        };
+        let Some(&(_, roots)) = self
+            .naming
+            .roots
+            .binary_search_by_key(&constant, |&(held, _)| held)
+            .ok()
+            .and_then(|at| self.naming.roots.get(at))
+        else {
+            return Vec::new();
+        };
+        let (scopes, mut bound) = scopes(&self.arena, &self.names, &self.naming, roots);
+        let mut names = Vec::new();
+        let mut at = intuitionistic(&scopes, scopes.innermost(node).flatten());
+        while let Some(index) = at {
+            let Some(binder) = bound.get_mut(usize::from(index))
+            else {
+                break;
+            };
+            names.push(binder.name.take());
+            at = binder.around.filter(|&around| around < index);
+        }
+        names.reverse();
+        names
     }
 }
 

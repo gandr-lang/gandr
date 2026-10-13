@@ -135,6 +135,21 @@ fn a_statement_lowers_to_univalence_at_its_stratum()
             "each translator record keeps its labels"
         );
     }
+    let starts = module
+        .origins()
+        .sides()
+        .iter()
+        .find(|&&(statement, _)| statement == body)
+        .map(|&(_, named)| named.map(|origin| usize::from(origin.span().start())));
+    let first = source
+        .find("(Magma")
+        .expect("the call names its sides")
+        .saturating_add(1);
+    assert_eq!(
+        starts,
+        Some([first, first.saturating_add("Magma, ".len())]),
+        "each description is named where it is written, the source's first"
+    );
     let report = judged(&module, &mut arena);
     assert_accepted(&report);
     assert!(

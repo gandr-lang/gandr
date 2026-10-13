@@ -231,6 +231,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_term::Binders;
+use gandr_core_term::Carried;
 use gandr_core_term::CompType;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::ComponentCount;
@@ -2901,6 +2902,12 @@ impl<'source> Lowerer<'_, 'source>
             let index = DataIndex::from(self.data.len());
             self.data
                 .push(Arc::new(DataSignature::new(parameters, constructors, kind)));
+            self.constructors.push(
+                form.generators
+                    .iter()
+                    .map(|generator| String::from(<&str>::from(self.text_at(generator.named))))
+                    .collect(),
+            );
             let _first = self.signatures.insert(position, index);
         }
     }
@@ -3030,7 +3037,7 @@ impl<'source> Lowerer<'_, 'source>
         }
         let mark = sink.arena.watermark();
         let wrapped = sink.arena.comp_type_returner(ty);
-        let carried = self.relocate(sink.arena, wrapped, frame, Binders::default());
+        let carried = self.relocate(sink.arena, wrapped, frame, Binders::default(), None);
         let result = match sink.arena.comp_type(carried) {
             | Some(&CompType::Returner { result: inner, .. }) => inner,
             | _ => ty,
@@ -3047,20 +3054,24 @@ impl<'source> Lowerer<'_, 'source>
 
     /// `ty`, a computation type read under `from` in a type's telescope,
     /// carried into the term context of `from` and then under `lift` more
-    /// binders.
+    /// binders, each node it rewrote reported into `copies` when given.
     ///
     /// # Specification
     /// - requires: `ty` is minted under `from`, counting only the frames that
     ///   bind in a telescope.
     /// - ensures: a binder inserted at each frame of `from`'s chain that does
-    ///   not bind in a telescope, then every free index raised by `lift`.
+    ///   not bind in a telescope, then every free index raised by `lift`;
+    ///   `copies`, when given, gains each node a shift rewrote beside its
+    ///   source.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a function result and a written answer become the
-    ///   motive of a nested tree.
+    ///   motive of a nested tree; a dependent transport's motive answers where
+    ///   its endpoints are written.
     /// - witness: `lower::native::tests::a_match_takes_its_answer_from_the_function_result`
+    /// - witness: `lower::identity::tests::a_dependent_transport_lowers_to_its_telescope`
     #[spec(ensures: |ret| arena.comp_type(ret).is_some() || ret == ty)]
     pub(super) fn relocate(
         &self,
@@ -3068,21 +3079,24 @@ impl<'source> Lowerer<'_, 'source>
         ty: CompTypeId,
         from: Frame,
         lift: Binders,
+        mut copies: Option<&mut Vec<Carried>>,
     ) -> CompTypeId
     {
+        let mut shift = |arena: &mut CoreArena, subject, scope, amount| match copies.as_deref_mut()
+        {
+            | Some(copies) => {
+                gandr_core_term::shift_comp_type_under_traced(arena, subject, scope, amount, copies)
+            },
+            | None => gandr_core_term::shift_comp_type_under(arena, subject, scope, amount),
+        };
         let mut carried = ty;
         for (position, binds) in self.scope.telescope_binders(from).enumerate() {
             if !binds {
                 let scope = Binders::from(u32::try_from(position).unwrap_or(u32::MAX));
-                carried =
-                    gandr_core_term::shift_comp_type_under(arena, carried, scope, Binders::ONE);
+                carried = shift(arena, carried, scope, Binders::ONE);
             }
         }
-        if lift != Binders::default() {
-            carried = gandr_core_term::shift_comp_type(arena, carried, lift);
-        }
-
-        carried
+        shift(arena, carried, Binders::NONE, lift)
     }
 
     /// Mint the match at `case`: its scrutinee bound once over its decision
@@ -3142,7 +3156,8 @@ impl<'source> Lowerer<'_, 'source>
                             .count()
                             .saturating_sub(self.scope.telescope_binders(answer.frame).count()),
                     );
-                    let base = self.relocate(sink.arena, written, answer.frame, Binders::default());
+                    let base =
+                        self.relocate(sink.arena, written, answer.frame, Binders::default(), None);
                     Maybe::Present((base, gap))
                 },
                 | Maybe::Absent(reason) => Maybe::Absent(reason),

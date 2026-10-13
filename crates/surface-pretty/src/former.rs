@@ -71,6 +71,55 @@ where
     }
 }
 
+/// One move of a recorded run as the printer spells it: its action and, for a
+/// choice, the label it names.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Move<'text>
+{
+    /// What the move does.
+    pub action: gandr_core_term::session::ActionKind,
+    /// The label a selection or an offer names; none for another move.
+    pub label: Option<Name<'text>>,
+}
+
+/// The moves of a recorded run, as the printer spells them.
+pub trait Moves: core::fmt::Debug
+{
+    /// Each move, in order.
+    ///
+    /// # Specification
+    /// trivial.
+    fn moves(&self) -> alloc::vec::Vec<Move<'_>>;
+}
+
+impl<V> Moves for alloc::sync::Arc<[gandr_core_term::session::RecordedMove<V>]>
+where
+    V: Copy + core::fmt::Debug,
+{
+    /// Each move's action, and the label of a selection or an offer.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn moves(&self) -> alloc::vec::Vec<Move<'_>>
+    {
+        self.iter()
+            .map(|step| Move {
+                action: step.kind(),
+                label: match *step {
+                    | gandr_core_term::session::RecordedMove::Selected(ref label)
+                    | gandr_core_term::session::RecordedMove::Offered(ref label) => {
+                        Some(Name::from(label.as_ref()))
+                    },
+                    | gandr_core_term::session::RecordedMove::Sent(_)
+                    | gandr_core_term::session::RecordedMove::Received(_)
+                    | gandr_core_term::session::RecordedMove::Closed => None,
+                },
+            })
+            .collect()
+    }
+}
+
 /// A name a node carries, as its source spells it: an abstract type's or a
 /// constant's.
 #[repr(transparent)]
@@ -264,8 +313,6 @@ pub enum Former<'source, Node>
         /// The level within that family.
         level: &'source Level,
     },
-    /// A universe lift of a value type, which the surface does not write.
-    TypeLift,
     /// The value type a code denotes; the code is a value.
     Element(Node),
     /// A sealed abstract type, by its name.
@@ -359,8 +406,6 @@ pub enum Former<'source, Node>
     /// A suspended computation over its body: `thunk { c }` in a presentation
     /// of a computation, opaque in a presentation of a value.
     Thunk(Node),
-    /// A universe lift of a value, which the surface does not write.
-    ValueLift,
     /// The code of a value type: a type read where a value is.
     Quote(Node),
     /// The code of a computation type.
@@ -419,13 +464,320 @@ pub enum Former<'source, Node>
         /// The backward translator record.
         backward: Node,
     },
-    /// A computation the printer has no spelling for: a case analysis, a
-    /// split, a projection, a fixpoint, a native operation, a transport, an
-    /// effect or a control operator.
-    Computation,
-    /// A handle that names no node, or a node whose name the source cannot
-    /// spell.
-    Unreadable,
+    /// Element identity `Path(A, x, y)`: the carrier and the two endpoints.
+    Path
+    {
+        /// The carrier, a value type.
+        carrier: Node,
+        /// The left endpoint.
+        left: Node,
+        /// The right endpoint.
+        right: Node,
+    },
+    /// A data family applied to its arguments, which the source answers by
+    /// [`Source::component`]: `List(Nat)`, or the bare name at arity zero.
+    Data
+    {
+        /// The family's name; none where the source cannot name it, spelled
+        /// `?` before arguments still spelled.
+        name: Option<Name<'source>>,
+        /// How many arguments it is applied to.
+        arity: Arity,
+    },
+    /// A constructor applied to its fields, which the source answers by
+    /// [`Source::component`]: `Succ(Zero)`, or the bare name with no fields.
+    Constructor
+    {
+        /// The constructor's name; none where the source cannot name it,
+        /// spelled `?` before fields still spelled.
+        name: Option<Name<'source>>,
+        /// How many fields it holds.
+        arity: Arity,
+    },
+    /// Directed identity `Flow(A, x, y)`: the carrier and the two endpoints.
+    Flow
+    {
+        /// The carrier, a value type.
+        carrier: Node,
+        /// The source endpoint.
+        left: Node,
+        /// The target endpoint.
+        right: Node,
+    },
+    /// A recorded run, `recorded(sent(v), selected(l), closed)`: its moves in
+    /// order, each send's and receive's payload a value the source answers by
+    /// [`Source::component`] in move order.
+    Recorded
+    {
+        /// The moves, read for their actions and labels.
+        moves: &'source dyn Moves,
+        /// How many of them carry a payload.
+        payloads: Arity,
+    },
+    /// The value a computation returns, standing where a value is read: the
+    /// computation itself, `n + 1` as `add(n, 1)`.
+    Returned(Node),
+    /// A saturated native operation over its arguments, which the source
+    /// answers by [`Source::component`]: the call `name(a, …)` of the prelude
+    /// function it saturates.
+    Primitive
+    {
+        /// The prelude function's name.
+        name: Name<'source>,
+        /// How many arguments it takes.
+        arity: Arity,
+    },
+    /// Transport along a native universe path, `transport(p, x)`.
+    Transport(Node, Node),
+    /// Transport along an element path, `transport(\a. M, p, x)`: the
+    /// motive, a value type under one binder, the path and the value.
+    PathTransport
+    {
+        /// The motive, under one binder.
+        motive: Node,
+        /// The path.
+        path: Node,
+        /// The value transported.
+        value: Node,
+    },
+    /// Transport over a two-entry telescope, `transport(+U M, p, s, q, x)`:
+    /// the motive, a computation type whose arrows bind the telescope.
+    TelescopeTransport
+    {
+        /// The motive.
+        motive: Node,
+        /// The identity in the carrier.
+        path: Node,
+        /// The family element at the path's source.
+        start: Node,
+        /// The identity over the path.
+        over: Node,
+        /// The value transported.
+        value: Node,
+    },
+    /// Transport along a flow, `ride(\a. M, f, x)`: the motive, a value type
+    /// under one binder, the flow and the value.
+    Ride
+    {
+        /// The motive, under one binder.
+        motive: Node,
+        /// The flow.
+        flow: Node,
+        /// The value moved.
+        value: Node,
+    },
+    /// A fixpoint over its body, which stands under the self binder: `rec f
+    /// { c }`.
+    Fixpoint(Node),
+    /// A sum elimination over its scrutinee and one branch per summand, which
+    /// the source answers by [`Source::component`], each under one binder:
+    /// `case v { +{.0 = a} => c, … }`.
+    Case
+    {
+        /// The scrutinee.
+        scrutinee: Node,
+        /// How many branches it has.
+        arity: Arity,
+    },
+    /// A product elimination, its body under one binder per component:
+    /// `case v { #{a, b} => c }`.
+    Split
+    {
+        /// The scrutinee.
+        scrutinee: Node,
+        /// How many components it binds.
+        arity: Arity,
+        /// The body.
+        body: Node,
+    },
+    /// A nominal elimination over its scrutinee and one branch per
+    /// constructor, which the source answers by [`Source::component`] and
+    /// names by [`Source::constructor`]: `case n { Zero => c, Succ(m) => d }`.
+    DataCase
+    {
+        /// The scrutinee.
+        scrutinee: Node,
+        /// How many branches it has.
+        arity: Arity,
+    },
+    /// A record field's projection, `v.l`.
+    RecordProjection(Node, Name<'source>),
+    /// A tuple component's projection, `v.i`.
+    TupleProjection(Node, Component),
+    /// A pure right fold of a native list: `fold xs { nil => n, cons(h, r)
+    /// => c }`, the cell branch under the head's and the folded result's
+    /// binders.
+    ListFold
+    {
+        /// The list folded.
+        list: Node,
+        /// The empty branch.
+        nil: Node,
+        /// The cell branch.
+        cons: Node,
+    },
+    /// An operation performed on its payload, `op(v)`.
+    Perform
+    {
+        /// The operation's name.
+        operation: Name<'source>,
+        /// The payload.
+        payload: Node,
+    },
+    /// A deep handler, `handle { c } with { pure(x) => r, oper op(p, k) => b,
+    /// … }`: the subject, the return clause under one binder, and the
+    /// operation clauses the source answers by [`Source::component`] and
+    /// names by [`Source::label`], each under the payload's and the
+    /// resumption's binders.
+    Handle
+    {
+        /// The subject.
+        subject: Node,
+        /// The return clause.
+        on_return: Node,
+        /// How many operation clauses it has.
+        clauses: Arity,
+    },
+    /// An operation exercised through a capability, `c.op(v)`.
+    Exercise
+    {
+        /// The capability.
+        capability: Node,
+        /// The operation's name.
+        operation: Name<'source>,
+        /// The payload.
+        payload: Node,
+    },
+    /// A capability scope, `handle c : I { c } with { … }`: a handler whose
+    /// subject stands under the capability's binder.
+    Scope
+    {
+        /// The handled interface's name.
+        interface: Name<'source>,
+        /// The subject, under the capability's binder.
+        subject: Node,
+        /// The return clause.
+        on_return: Node,
+        /// How many operation clauses it has.
+        clauses: Arity,
+    },
+    /// A computation fed to a first-class stack, `resume(k, c)`.
+    Resume(Node, Node),
+    /// A delimited-control boundary, `reset { c }`.
+    Reset(Node),
+    /// A capture to the nearest boundary, its body under the stack's binder:
+    /// `shift k { c }`.
+    Shift(Node),
+    /// A lazy pair of computations, `&{c, d}`.
+    Lazy(Node, Node),
+    /// An observation of one component of a lazy pair, `c.0` or `c.1`.
+    Project(Component, Node),
+    /// A send on a linear endpoint, `send(e, v)`.
+    Send
+    {
+        /// The endpoint, a linear index.
+        endpoint: DeBruijnIndex,
+        /// The payload.
+        payload: Node,
+    },
+    /// A receive on a linear endpoint, `recv(e)`.
+    Receive(DeBruijnIndex),
+    /// A selection on a linear endpoint, `select(e, l)`.
+    Select
+    {
+        /// The endpoint, a linear index.
+        endpoint: DeBruijnIndex,
+        /// The label chosen.
+        label: Name<'source>,
+    },
+    /// An offer on a linear endpoint, `offer(e) { l => c, … }`, one arm per
+    /// label, which the source answers by [`Source::component`] and names by
+    /// [`Source::label`].
+    Offer
+    {
+        /// The endpoint, a linear index.
+        endpoint: DeBruijnIndex,
+        /// How many arms it has.
+        arms: Arity,
+    },
+    /// A close of a linear endpoint, `close(e)`.
+    Close(DeBruijnIndex),
+    /// A fork, `fork (c : S) { t } as d ; u`: the child under its end's
+    /// linear binder, the parent under the dual end's.
+    Fork
+    {
+        /// The session type of the child's end.
+        protocol: Node,
+        /// The child.
+        child: Node,
+        /// The continuation.
+        parent: Node,
+    },
+    /// A node with no former the printer spells, and why.
+    Unreadable(Unreadable),
+}
+
+/// Why a node reads as no former the printer spells: the honest set, whose
+/// every member the printer writes `?`.
+///
+/// The set is closed and each member names its reason. A core former the
+/// surface writes is never here: [`crate::CoreSource`] matches every core
+/// former without a wildcard, so a former added to the core fails to compile
+/// until it is read as a [`Former`] or named here.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Unreadable
+{
+    /// A handle that names no node of its source: a malformed source.
+    Dangling,
+    /// A constant, an abstract type, a data family or a constructor whose
+    /// name the source does not hold: a malformed naming table.
+    Unnamed,
+    /// The unknown value or computation type, what a hole or a mark
+    /// synthesises: the checker knows no more.
+    UnknownType,
+    /// A hole: a term the author has not written.
+    Hole,
+    /// A mark: a term the elaborator could not type, kept as written.
+    Mark,
+    /// A universe lift of a type or a value: the core's explicit cumulativity,
+    /// which the surface grammar has no syntax for and the checker admits only
+    /// where it raises a level.
+    Lift,
+    /// The numeric base atom: the type of a numeric literal, which the surface
+    /// grammar has no name for.
+    NumericAtom,
+}
+
+/// Why the printer wrote `?` at a node: the node read as no former it
+/// spells, or the node and its position or its source disagree.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Unspelled
+{
+    /// The node read as a member of the honest set.
+    Unreadable(Unreadable),
+    /// A node of a sort its position does not admit.
+    Misplaced,
+    /// A component or a field label the source does not answer.
+    Missing,
+    /// A variable past every binder open around it.
+    Unbound,
+    /// A binder the generated names ran out for.
+    Exhausted,
+    /// A name a line cannot hold: empty, or holding a line break or a tab.
+    Unprintable,
+    /// A universe over a sort parameter or at a level that mentions a
+    /// variable.
+    Universe,
+    /// A session type at a state its protocol does not hold.
+    Protocol,
+    /// A source taking more visits than one presentation makes: a cycle.
+    OverBudget,
 }
 
 /// A store of nodes the printer can read.
@@ -465,16 +817,21 @@ pub trait Source
         node: Self::Node,
     ) -> Former<'_, Self::Node>;
 
-    /// The handle of component `index` of the product, the sum, the tuple, the
-    /// record, the record type or the session type `node` names.
+    /// The handle of component `index` of the n-ary former `node` names.
     ///
     /// # Specification
     /// - requires: nothing; any handle and any position are admissible.
     /// - ensures: the handle of the component at `index` when [`read`] answers
     ///   a [`Former::Product`], a [`Former::Sum`], a [`Former::Tuple`], a
-    ///   [`Former::Record`], a [`Former::RecordType`] or a [`Former::Session`]
-    ///   for `node` and `index` is below its arity, a record's fields in label
-    ///   order and a session type's payloads in slot order; none otherwise.
+    ///   [`Former::Record`], a [`Former::RecordType`], a [`Former::Session`], a
+    ///   [`Former::Data`], a [`Former::Constructor`], a [`Former::Primitive`],
+    ///   a [`Former::Case`], a [`Former::DataCase`], a [`Former::Handle`], a
+    ///   [`Former::Scope`] or a [`Former::Offer`] for `node` and `index` is
+    ///   below its arity: a record's fields in label order, a session type's
+    ///   payloads in slot order, a family's arguments and a constructor's
+    ///   fields in telescope order, a primitive's arguments, a case's branches,
+    ///   a handler's operation clauses and an offer's arms in order; none
+    ///   otherwise.
     /// - provides: the children of an n-ary former, which a [`Former`] counts
     ///   but does not hold.
     /// - fails: never; a missing component is an absence, which the printer
@@ -502,16 +859,19 @@ pub trait Source
         index: Component,
     ) -> Option<Self::Node>;
 
-    /// The label of field `index` of the record or the record type `node`
-    /// names.
+    /// The label of entry `index` of the record, the record type, the
+    /// handler or the offer `node` names.
     ///
     /// # Specification
     /// - requires: nothing; any handle and any position are admissible.
-    /// - ensures: the label of the field [`component`] answers at `index` when
-    ///   [`read`] answers a [`Former::Record`] or a [`Former::RecordType`] for
-    ///   `node` and `index` is below its arity; none otherwise.
-    /// - provides: the labels a record's fields are written under, which a
-    ///   [`Former`] counts but does not hold.
+    /// - ensures: the label of the entry [`component`] answers at `index` when
+    ///   [`read`] answers a [`Former::Record`] or a [`Former::RecordType`] —
+    ///   its field's label —, a [`Former::Handle`] or a [`Former::Scope`] — the
+    ///   operation its clause answers — or a [`Former::Offer`] — its arm's
+    ///   label — for `node` and `index` is below its arity; none otherwise.
+    /// - provides: the labels a record's fields, a handler's clauses and an
+    ///   offer's arms are written under, which a [`Former`] counts but does not
+    ///   hold.
     /// - fails: never; a missing label is an absence, which the printer spells
     ///   `?`.
     /// - panics: none.
@@ -522,11 +882,73 @@ pub trait Source
     ///
     /// # Adequacy
     /// - hypothesis: L3 — core-backed records of two fields spell each field
-    ///   under its own label; a shifted or swapped label changes the golden.
+    ///   under its own label, and a handler's clauses each under its operation;
+    ///   a shifted or swapped label changes the golden.
     /// - witness: `goldens::tests::records_spell_their_fields_in_label_order`
+    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
     fn label(
         &self,
         node: Self::Node,
         index: Component,
     ) -> Option<Name<'_>>;
+
+    /// The constructor branch `index` of the data case `node` names matches,
+    /// and how many fields it binds.
+    ///
+    /// # Specification
+    /// - requires: nothing; any handle and any position are admissible.
+    /// - ensures: the name and the field count of the constructor at tag
+    ///   `index` of the family `node`'s scrutinee belongs to, when [`read`]
+    ///   answers a [`Former::DataCase`] and the source knows the family; none
+    ///   otherwise, which the printer spells `?`. The default knows no family.
+    /// - provides: the patterns a data case's branches are written under, which
+    ///   the core, matching by tag, does not hold.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as for [`read`].
+    ///
+    /// [`read`]: Self::read
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a data case over a family of a nullary and a unary
+    ///   constructor spells each branch under its constructor's pattern, its
+    ///   field bound; a shifted tag changes the golden.
+    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+    #[inline]
+    fn constructor(
+        &self,
+        node: Self::Node,
+        index: Component,
+    ) -> Option<(Name<'_>, Arity)>
+    {
+        let _ = (node, index);
+        None
+    }
+
+    /// The names of the intuitionistic binders the presented root stands
+    /// under, outermost first; an entry the source cannot name is none.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one entry per binder enclosing the root, so a variable past
+    ///   every binder the walk opens reads as the entry it counts out to,
+    ///   innermost last. The default is the empty context: a closed root.
+    /// - provides: the names of a typed node's context, which a type at a term
+    ///   inside a body mentions.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as for [`read`].
+    ///
+    /// [`read`]: Self::read
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a type under two named context binders and one
+    ///   unnamed spells each free variable by its own binder's name and the
+    ///   unnamed one `?`; reversed context order changes the golden.
+    /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
+    #[inline]
+    fn context(&self) -> &[Option<Name<'_>>]
+    {
+        &[]
+    }
 }

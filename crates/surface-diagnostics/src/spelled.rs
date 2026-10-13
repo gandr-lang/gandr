@@ -43,7 +43,10 @@ use gandr_core_term::CoreArena;
 use gandr_kernel_term::ConstantIndex;
 use gandr_surface_corpus::Refusal;
 use gandr_surface_corpus::SettleReport;
+use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweredModule;
+use gandr_surface_pretty::Arity;
+use gandr_surface_pretty::Constructors;
 use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::CoreSource;
 use gandr_surface_pretty::Name;
@@ -226,7 +229,9 @@ impl Spellings
         }
         let paths = constant_names(module);
         let names: Vec<Name<'_>> = paths.iter().map(|path| Name::from(path.as_str())).collect();
-        let source = CoreSource::new(arena, &names);
+        let families = Families::of(module);
+        let constructors = families.naming(&names);
+        let source = CoreSource::new(arena, &names).naming(&constructors);
         for node in named {
             if spelled.contains_key(&node) {
                 continue;
@@ -306,4 +311,104 @@ pub fn constant_names(module: &LoweredModule<'_>) -> Vec<String>
         }
     }
     paths
+}
+
+/// The constructors of every data declaration of a module, each family by
+/// its constant's admission position, each constructor by its name and field
+/// count in tag order.
+///
+/// The core names a constructor by its family and its tag, so a printer
+/// reads the names here, owned so a table outliving the lowered module keeps
+/// them.
+#[repr(transparent)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Families(Vec<(usize, Vec<(String, usize)>)>);
+
+impl Families
+{
+    /// The constructors of every data declaration of `module`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one family per data declaration whose signature the module
+    ///   holds, at its constant's position, its constructors named as written
+    ///   in tag order with the field count the signature gives each.
+    /// - provides: the constructor names a [`CoreSource`] spells a constructor
+    ///   value and a data case's patterns with.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a refusal whose type mentions a constructor value
+    ///   spells it by its declared name; a family left out spells `?`, which
+    ///   the test fails on.
+    /// - witness: `diagnostics::diagnostics::a_mismatch_spells_the_constructors_its_type_mentions`
+    #[spec(ensures: |ret| ret.0.len() <= module.declarations().len())]
+    #[inline]
+    #[must_use]
+    pub fn of(module: &LoweredModule<'_>) -> Self
+    {
+        Self(
+            module
+                .declarations()
+                .iter()
+                .filter_map(|declaration| {
+                    let DeclarationOutcome::Data(index) = declaration.outcome()
+                    else {
+                        return None;
+                    };
+                    let Maybe::Present(signature) = module.data(index)
+                    else {
+                        return None;
+                    };
+                    let constructors = module
+                        .constructors(index)
+                        .iter()
+                        .zip(signature.constructors())
+                        .map(|(name, fields)| (name.clone(), fields.len()))
+                        .collect();
+                    Some((usize::from(declaration.constant()), constructors))
+                })
+                .collect(),
+        )
+    }
+
+    /// The constructor table these families make, each family under the
+    /// name `names` gives its constant.
+    ///
+    /// # Specification
+    /// - requires: `names` are the module's constant names by admission
+    ///   position, as [`constant_names`] spells them.
+    /// - ensures: each family whose constant `names` holds answers its
+    ///   constructors by tag, the first family under a name winning.
+    /// - provides: the [`Constructors`] a [`CoreSource`] names through.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the table keeps the first family under a name and
+    ///   lists none, so a predicate over every family would re-derive the
+    ///   shadowing the table itself defines.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::of`].
+    /// - witness: `diagnostics::diagnostics::a_mismatch_spells_the_constructors_its_type_mentions`
+    #[inline]
+    #[must_use]
+    pub fn naming<'names>(
+        &'names self,
+        names: &[Name<'names>],
+    ) -> Constructors<'names>
+    {
+        let mut constructors = Constructors::default();
+        for &(constant, ref members) in &self.0 {
+            if let Some(&family) = names.get(constant) {
+                constructors.family(
+                    family,
+                    members.iter().map(|&(ref name, fields)| {
+                        (Name::from(name.as_str()), Arity::from(fields))
+                    }),
+                );
+            }
+        }
+        constructors
+    }
 }
