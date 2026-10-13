@@ -28,7 +28,15 @@
 //!   data; a declaration the lowering refused keeps its refusal instead, since
 //!   no judgement reached it. Either is keyed by the cross-tree key of each of
 //!   its signature and definition forms, so a face holding either form finds
-//!   the one declaration both halves make.
+//!   the one declaration both halves make. A `data` family's operation is
+//!   declared from the family's own form, so the family's key stays the
+//!   family's.
+//! - **A described member** — a `sign` block's sorts, operations, laws and
+//!   circuits, a `data` family's constructors, operations and rules, each port
+//!   and each node of a rule's sides — is spelled at the type its member states
+//!   ([`LoweredModule::described_types`]): the typed run judges none of them,
+//!   since the description route reads them. A sign's member is read under the
+//!   members before it, named as the sign writes them.
 //!
 //! The table answers a byte offset with the innermost entry whose span holds
 //! it. Among entries of one span a binder comes first, then a written node
@@ -82,6 +90,9 @@ use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::Origin;
 use gandr_surface_lowering::Provenance;
+use gandr_surface_lowering::Role;
+use gandr_surface_lowering::described::ContextIndex;
+use gandr_surface_lowering::described::DescribedRole;
 use gandr_surface_pretty::BinderIndex;
 use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::CoreSource;
@@ -251,9 +262,8 @@ struct Entry
     /// A term's last kept type, the type an outer judgement checked it
     /// against; [`Self::ty`] for any other entry.
     last: TypeNode,
-    /// The declaration whose run typed the node, and the node, whose binders
-    /// name the variables its type mentions; none for a closed node.
-    within: Option<Within>,
+    /// The binders the node's type is read under.
+    standing: Standing,
 }
 
 /// Where a typed node stands: the declaration whose run first typed it, and
@@ -265,6 +275,20 @@ struct Within
     constant: ConstantIndex,
     /// The node.
     node: CoreNode,
+}
+
+/// The binders an entry's type is read under.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Standing
+{
+    /// None: the type is closed.
+    Closed,
+    /// Those around a node a declaration's run typed, named by walking the
+    /// declaration's scopes.
+    Judged(Within),
+    /// Those of a described member's context, named as the description
+    /// route records them.
+    Described(ContextIndex),
 }
 
 /// One intuitionistic binder a typed node stands under: the binder around
@@ -434,6 +458,8 @@ pub struct TypeTable
     naming: Naming,
     /// The constructors of the source's data declarations, by family.
     families: Families,
+    /// The names each described member's context binds, outermost first.
+    contexts: Vec<Vec<String>>,
 }
 
 /// The intuitionistic binder at or around `at`.
@@ -577,7 +603,11 @@ impl TypeTable
     ///   universe; each declaration is keyed by each form key it carries, at
     ///   its declared type, its body's synthesised type, its data universe, or
     ///   a sealed abstract type's kind, or holding the lowering's refusal of it
-    ///   as text. A source the lowering refuses whole types nothing.
+    ///   as text, a `data` family's operations leaving the family's key its
+    ///   own; each node a `sign` block or a `data` family's constructors,
+    ///   operations and rules write is an entry at the type its member states
+    ///   ([`LoweredModule::described_types`]), read under the names of the
+    ///   members before it. A source the lowering refuses whole types nothing.
     /// - provides: what a face answers a reader pointing into the source with.
     /// - fails: [`ComposeFault::Parse`] when the parser cannot commit its tree;
     ///   [`ComposeFault::Lowering`] for a lowering engine fault.
@@ -591,10 +621,13 @@ impl TypeTable
     /// - hypothesis: L3 — a function with a parameter used in its body, a
     ///   signature and its definition, a synthesised definition, a data
     ///   declaration and a mismatched body separate the term, binder, type and
-    ///   declaration entries and the expected type.
+    ///   declaration entries and the expected type; a sign's members and a data
+    ///   family with an operation answer at their own types.
     /// - witness: `typed::tests::every_kind_of_node_is_typed_where_it_was_written`
     /// - witness: `typed::tests::a_mismatched_term_shows_both_types`
     /// - witness: `typed::tests::both_halves_of_a_declaration_find_its_type`
+    /// - witness: `typed::tests::a_sign_member_answers_under_the_sorts_before_it`
+    /// - witness: `typed::tests::a_data_family_is_keyed_at_its_own_type_past_its_operations`
     #[spec(ensures: |ret| ret.as_ref().is_ok_and(|table| table.entries.iter().all(|entry|
         usize::from(entry.span.end()) <= <&str>::from(source).len()
             && (entry.subject == Subject::Term || entry.last == entry.ty)))
@@ -672,6 +705,9 @@ impl TypeTable
                 (origin, TypeNode::Value(universe))
             })
             .collect();
+        // Each described member's written nodes at what the member states,
+        // minted past the typed run, which reads none of them.
+        let described = module.described_types(&mut arena);
         // Each term's first and last type, when its last was kept, and the
         // declaration whose run first typed it: every typing in the order
         // kept, grouped by term with a sort, each group's first and last read
@@ -722,7 +758,7 @@ impl TypeTable
                     provenance: origin.provenance(),
                     ty: first,
                     last,
-                    within: Some(Within { constant, node }),
+                    standing: Standing::Judged(Within { constant, node }),
                 });
             }
         }
@@ -737,7 +773,7 @@ impl TypeTable
                     provenance: Provenance::Written,
                     ty: first,
                     last: first,
-                    within: Some(Within {
+                    standing: Standing::Judged(Within {
                         constant,
                         node: CoreNode::Value(variable),
                     }),
@@ -751,7 +787,7 @@ impl TypeTable
                 provenance: origin.provenance(),
                 ty: universe,
                 last: universe,
-                within: None,
+                standing: Standing::Closed,
             });
         }
         // A description a `ua` names is no core node: it answers at the
@@ -772,12 +808,32 @@ impl TypeTable
                     provenance: origin.provenance(),
                     ty: TypeNode::Value(carrier),
                     last: TypeNode::Value(carrier),
-                    within: None,
+                    standing: Standing::Closed,
                 });
             }
         }
+        for entry in described.entries {
+            let ty = TypeNode::Value(entry.ty);
+            entries.push(Entry {
+                span: entry.span,
+                subject: match entry.role {
+                    | DescribedRole::Name => Subject::Binder,
+                    | DescribedRole::Term => Subject::Term,
+                    | DescribedRole::Type => Subject::Type,
+                },
+                provenance: Provenance::Written,
+                ty,
+                last: ty,
+                standing: Standing::Described(entry.context),
+            });
+        }
         let mut declared = BTreeMap::new();
         for declaration in module.declarations() {
+            // A `data` family's operation is declared from the family's form
+            // and has no form of its own: the family's key is the family's.
+            if declaration.role() == Role::Operation {
+                continue;
+            }
             let held = match declaration.outcome() {
                 | DeclarationOutcome::Completed { declared_type, .. }
                 | DeclarationOutcome::Uncompleted { declared_type } => {
@@ -809,6 +865,16 @@ impl TypeTable
             names,
             naming: Naming::of(&module, source),
             families: Families::of(&module),
+            contexts: described
+                .contexts
+                .iter()
+                .map(|names| {
+                    names
+                        .iter()
+                        .map(|name| String::from(name.as_ref()))
+                        .collect()
+                })
+                .collect(),
         })
     }
 
@@ -982,7 +1048,7 @@ impl TypeTable
         page: PageWidth,
     ) -> Maybe<TypedSpan, typing::Absent>
     {
-        let binders = self.standing(entry.within);
+        let binders = self.standing(entry.standing);
         let Maybe::Present(ty) = self.spell(entry.ty, &binders, page)
         else {
             return Maybe::Absent(typing::Absent::Unspelled);
@@ -1106,13 +1172,16 @@ impl TypeTable
         }
     }
 
-    /// The names of the intuitionistic binders `within`'s node stands under,
-    /// outermost first, by walking the scopes of its declaration alone.
+    /// The names of the intuitionistic binders an entry standing at
+    /// `standing` is read under, outermost first: for a judged node, by
+    /// walking the scopes of its declaration alone; for a described member,
+    /// its context's names.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: for each intuitionistic binder from the outermost to the
-    ///   innermost around the node, the name [`scopes`] gives it; empty for a
+    /// - ensures: for a judged node, for each intuitionistic binder from the
+    ///   outermost to the innermost around the node, the name [`scopes`] gives
+    ///   it; for a described member, each name its context binds; empty for a
     ///   closed node or one its declaration does not reach.
     /// - provides: the context an entry's type is spelled in.
     /// - fails: never.
@@ -1121,17 +1190,26 @@ impl TypeTable
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`scopes`]: a body's terms answer under their
-    ///   binders' names, and an endpoint under its signature's.
+    ///   binders' names, and an endpoint under its signature's; a sign's
+    ///   operation under the sorts before it.
     /// - witness: `census::census::every_typed_entry_spells_without_a_dishonest_question_mark`
     /// - witness: `typed::tests::every_kind_of_node_is_typed_where_it_was_written`
+    /// - witness: `typed::tests::a_sign_member_answers_under_the_sorts_before_it`
     fn standing(
         &self,
-        within: Option<Within>,
+        standing: Standing,
     ) -> Vec<Option<String>>
     {
-        let Some(Within { constant, node }) = within
-        else {
-            return Vec::new();
+        let Within { constant, node } = match standing {
+            | Standing::Closed => return Vec::new(),
+            | Standing::Described(context) => {
+                return self
+                    .contexts
+                    .get(usize::from(context))
+                    .map(|names| names.iter().cloned().map(Some).collect())
+                    .unwrap_or_default();
+            },
+            | Standing::Judged(within) => within,
         };
         let Some(&(_, roots)) = self
             .naming
@@ -1356,6 +1434,64 @@ mod tests
             ["Counter.T", "Counter.T", "Counter.T"],
             "every declaration keyed in the source reads the atom by its path, never the \
              representation; the abstract type itself carries no form key"
+        );
+    }
+
+    #[test]
+    fn a_sign_member_answers_under_the_sorts_before_it()
+    {
+        let source = SourceText::from(
+            "sign Cat {\n  sort Ob : Type;\n  sort Hom(dom : Ob, cod : Ob) : Type;\n  oper id : (a \
+             : Ob) --> Hom(a, a);\n  rule idem : id(a) ==> id(a);\n}\n",
+        );
+        let table = table(source);
+        let rows = [
+            ("Ob :", Subject::Binder, "Type"),
+            ("Hom(dom", Subject::Binder, "+U (Ob -> Ob -> -F Type)"),
+            ("dom", Subject::Binder, "Ob"),
+            ("id :", Subject::Binder, "+U ((a : Ob) -> -F Hom(a, a))"),
+            ("Hom(a, a);", Subject::Type, "Type"),
+            ("id(a) ==>", Subject::Term, "+U ((a : Ob) -> -F Hom(a, a))"),
+            ("(a) ==>", Subject::Term, "Hom(a, a)"),
+        ];
+        for (needle, subject, ty) in rows {
+            assert_eq!(
+                answer(&table, source, SourceText::from(needle)),
+                agreed(subject, SourceText::from(ty)),
+                "{needle}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_data_family_is_keyed_at_its_own_type_past_its_operations()
+    {
+        let source = SourceText::from(
+            "data N : Type {\n  Z : N;\n  S : (n : N) --> N;\n  oper twice(m : N) -> (o : N);\n  \
+             rule twice(Z) ==> Z;\n}\n",
+        );
+        let grammar = built_in().expect("the built-in grammar builds");
+        let tree = gandr_surface_parser::parse(&grammar, source)
+            .expect("the source parses")
+            .into_tree();
+        let table = table(source);
+        let keyed: Vec<String> = tree
+            .positions()
+            .filter_map(|position| tree.key(position))
+            .filter_map(|key| match table.declared(key, PageWidth::from(80_u32)) {
+                | Maybe::Present(Declared::Typed(spelled)) => Some(String::from(spelled.as_ref())),
+                | Maybe::Present(Declared::Refused(_)) | Maybe::Absent(_) => None,
+            })
+            .collect();
+        assert_eq!(
+            keyed,
+            ["Type"],
+            "the family's form, not its operation's type"
+        );
+        assert_eq!(
+            answer(&table, source, SourceText::from("S :")),
+            agreed(Subject::Binder, SourceText::from("+U (N -> -F N)")),
+            "a constructor at its declared type"
         );
     }
 }

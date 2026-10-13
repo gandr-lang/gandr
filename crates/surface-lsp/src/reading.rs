@@ -32,16 +32,21 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_surface_parser::parse;
+use gandr_surface_render_remote::ByteOffset as RenderOffset;
 use gandr_surface_render_remote::HlSpan;
 use gandr_surface_render_remote::LineIndex;
+use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::NodeKey;
+use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SourceText;
+use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
 use crate::outline::Skeleton;
 use crate::outline::declarations;
 use crate::outline::folds;
 use crate::position::Position;
+use crate::position::Range;
 use crate::protocol::DocumentSymbol;
 use crate::protocol::DocumentSymbols;
 use crate::protocol::FoldingRange;
@@ -63,8 +68,8 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// A declaration of a read text: its symbol, and the key of the form that
-/// declares it.
+/// A declaration of a read text: its symbol, the key of the form that
+/// declares it, and the extent of its head.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Declaration
 {
@@ -72,6 +77,40 @@ pub struct Declaration
     pub key: Option<NodeKey>,
     /// The symbol it declares.
     pub symbol: DocumentSymbol,
+    /// Its head: from the symbol's start to the brace opening the form's own
+    /// body, or the whole symbol for a form without one.
+    pub head: Range,
+}
+
+/// The head of the form at `at` declaring `symbol`: from the symbol's start to
+/// the first brace among the form's own tiles, or the symbol's range when the
+/// form has none.
+///
+/// # Specification
+/// trivial.
+fn head(
+    tree: &SyntaxTree<'_>,
+    index: &LineIndex<'_>,
+    at: NodeIndex,
+    symbol: &DocumentSymbol,
+) -> Range
+{
+    let brace = tree.children(at).find_map(|child| {
+        let node = tree.node(child)?;
+        let NodeLabel::Tile(_) = node.label()
+        else {
+            return None;
+        };
+        (tree.fragment(child).map(<&str>::from) == Some("{"))
+            .then(|| {
+                Position::of_byte(index, RenderOffset::from(usize::from(node.span().start()))).ok()
+            })
+            .flatten()
+    });
+    Range {
+        start: symbol.range.start,
+        end: brace.unwrap_or(symbol.range.end),
+    }
 }
 
 /// What one parse of a text answers: its highlighter spans, declarations,
@@ -149,6 +188,7 @@ impl Reading
                 .into_iter()
                 .map(|(at, symbol)| Declaration {
                     key: tree.key(at),
+                    head: head(&tree, &index, at, &symbol),
                     symbol,
                 })
                 .collect(),

@@ -45,9 +45,11 @@ use super::editing::Oracle;
 use super::editing::Session;
 
 /// The share of corpus positions a hover answers, in thousandths, below
-/// which hovering has regressed: the share measured when it was last raised.
-/// A change that answers more positions raises it.
-const ANSWERED_FLOOR: usize = 735;
+/// which hovering has regressed: the share measured when it was last
+/// changed. A change that answers more positions raises it; a position inside
+/// a declaration's body that no entry holds answers nothing, so the
+/// declaration's own answer is not counted there.
+const ANSWERED_FLOOR: usize = 722;
 
 /// The random edit scripts each scenario generates in a whole run.
 const CASES: u32 = 32;

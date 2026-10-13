@@ -1,0 +1,260 @@
+//! Each described node at the role and the type its member states.
+
+use alloc::string::String;
+use alloc::vec::Vec;
+
+use gandr_core_term::CoreArena;
+use gandr_core_term::ValueType;
+use gandr_surface_syntax::ByteOffset;
+use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::SourceText;
+
+use super::DescribedRole;
+use super::DescribedType;
+use super::DescribedTypes;
+use crate::LoweringBudget;
+use crate::fixture::grammar;
+use crate::fixture::parsed;
+use crate::lower_module;
+use crate::namespace::Recognition;
+
+/// The described types of `source`, with the arena they were minted into.
+///
+/// # Specification
+/// trivial.
+fn described(source: SourceText<'_>) -> (DescribedTypes, CoreArena)
+{
+    let grammar = grammar();
+    let tree = parsed(&grammar, source);
+    let mut arena = CoreArena::new();
+    let module = lower_module(
+        &grammar,
+        &tree,
+        &mut arena,
+        LoweringBudget::DEFAULT,
+        Recognition::default(),
+    )
+    .unwrap();
+    let types = module.described_types(&mut arena);
+    (types, arena)
+}
+
+/// The bytes of the first `inner` in the first `around` of `source`.
+///
+/// # Specification
+/// trivial.
+fn at(
+    source: SourceText<'_>,
+    around: SourceText<'_>,
+    inner: SourceText<'_>,
+) -> ByteSpan
+{
+    let text = <&str>::from(source);
+    let around = <&str>::from(around);
+    let inner = <&str>::from(inner);
+    let outer = text.find(around).expect("the surrounding text is written");
+    let start = text
+        .get(outer ..)
+        .and_then(|rest| rest.find(inner))
+        .map(|offset| outer.saturating_add(offset))
+        .expect("the node is written inside it");
+    ByteSpan::new(
+        ByteOffset::from(start),
+        ByteOffset::from(start.saturating_add(inner.len())),
+    )
+    .unwrap()
+}
+
+/// The one entry of `types` at `span` in `role`.
+///
+/// # Specification
+/// trivial.
+fn entry(
+    types: &DescribedTypes,
+    span: ByteSpan,
+    role: DescribedRole,
+) -> DescribedType
+{
+    let found: Vec<&DescribedType> = types
+        .entries
+        .iter()
+        .filter(|entry| entry.span == span && entry.role == role)
+        .collect();
+    let [found] = *found.as_slice()
+    else {
+        panic!("one {role:?} entry at {span:?}: {found:?}");
+    };
+    *found
+}
+
+/// The names of the context `entry` is read in.
+///
+/// # Specification
+/// trivial.
+fn context(
+    types: &DescribedTypes,
+    entry: DescribedType,
+) -> Vec<String>
+{
+    types.contexts[usize::from(entry.context)]
+        .iter()
+        .map(|name| String::from(name.as_ref()))
+        .collect()
+}
+
+#[test]
+fn a_sign_answers_at_every_member()
+{
+    let source = SourceText::from(
+        "sign Cat {\n  sort Ob : Type;\n  sort Hom(dom : Ob, cod : Ob) : Type;\n  oper id : (a \
+         : Ob) --> Hom(a, a);\n  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);\n  \
+         rule unitL : comp(id(a), f) ==> f;\n}\nsign Add {\n  sort Nat : Type;\n  oper add : \
+         (Nat, Nat) --> Nat;\n  rule cong1 : (rule p : x ==> x′, data x : Nat, data y : Nat) \
+         ==> (z : Nat) {\n    node : p(x) ==> (x′);\n    node : add(x′, y) --> (z);\n  };\n}\n",
+    );
+    let span = |around: &'static str, inner: &'static str| {
+        at(source, SourceText::from(around), SourceText::from(inner))
+    };
+    let (types, arena) = described(source);
+    let ty = |entry: DescribedType| arena.value_type(entry.ty).cloned();
+
+    let ob = entry(&types, span("sort Ob", "Ob"), DescribedRole::Name);
+    assert!(
+        matches!(ty(ob), Some(ValueType::Universe { .. })),
+        "an unindexed sort is a type"
+    );
+    assert_eq!(context(&types, ob), Vec::<String>::new());
+    let hom = entry(&types, span("sort Hom", "Hom"), DescribedRole::Name);
+    assert!(
+        matches!(ty(hom), Some(ValueType::Thunk(_))),
+        "an indexed sort is a family"
+    );
+    assert_eq!(context(&types, hom), ["Ob"], "under the sorts before it");
+    let comp = entry(&types, span("oper comp", "comp"), DescribedRole::Name);
+    assert!(matches!(ty(comp), Some(ValueType::Thunk(_))));
+    assert_eq!(context(&types, comp), ["Ob", "Hom", "id"]);
+    let law = entry(&types, span("unitL", "unitL"), DescribedRole::Name);
+    assert!(matches!(ty(law), Some(ValueType::Thunk(_))));
+    assert_eq!(context(&types, law), ["Ob", "Hom", "id", "comp"]);
+
+    let classifier = entry(&types, span("Ob : Type", "Type"), DescribedRole::Type);
+    assert!(matches!(ty(classifier), Some(ValueType::Universe { .. })));
+    assert_ne!(
+        ty(classifier),
+        ty(ob),
+        "the classifier is a universe above the sorts'"
+    );
+    let port = entry(&types, span("(a : Ob)", "a"), DescribedRole::Name);
+    assert!(
+        matches!(ty(port), Some(ValueType::Element { .. })),
+        "decoded from its sort"
+    );
+    let sort = entry(&types, span("(a : Ob)", "Ob"), DescribedRole::Type);
+    assert!(
+        matches!(ty(sort), Some(ValueType::Universe { .. })),
+        "a written sort"
+    );
+
+    let applied = entry(&types, span("id(a)", "id(a)"), DescribedRole::Term);
+    assert!(
+        matches!(ty(applied), Some(ValueType::Element { .. })),
+        "at the result sort"
+    );
+    let head = entry(&types, span("comp(id(a)", "id"), DescribedRole::Term);
+    let declared = entry(&types, span("oper id", "id"), DescribedRole::Name);
+    assert_eq!(ty(head), ty(declared), "a head at its operation's type");
+    assert_eq!(context(&types, head), context(&types, declared));
+    let variable = entry(&types, span("f) ==>", "f"), DescribedRole::Term);
+    assert!(matches!(ty(variable), Some(ValueType::Element { .. })));
+
+    let nat = entry(&types, span("sort Nat", "Nat"), DescribedRole::Name);
+    let wire = entry(&types, span("(x′)", "x′"), DescribedRole::Term);
+    let joined = entry(&types, span("==> x′", "x′"), DescribedRole::Term);
+    let code = |entry: DescribedType| match arena.value_type(entry.ty) {
+        | Some(&ValueType::Element { code, .. }) => arena.value(code).cloned(),
+        | _ => None,
+    };
+    assert!(code(wire).is_some(), "an element of a sort");
+    assert_eq!(code(wire), code(joined), "a rewrite's sides share a sort");
+    assert_eq!(context(&types, wire), ["Nat", "add"]);
+    let output = entry(&types, span("--> (z)", "z"), DescribedRole::Term);
+    assert_eq!(
+        code(output),
+        code(wire),
+        "an operation's output wire at its sort"
+    );
+    assert!(
+        matches!(ty(nat), Some(ValueType::Universe { .. })),
+        "the sort's kind"
+    );
+}
+
+#[test]
+fn a_data_rule_answers_each_node_at_its_sort()
+{
+    let source = SourceText::from(
+        "data NatDiv : Type {\n  Zero : NatDiv;\n  Succ : (n : NatDiv) --> NatDiv;\n  oper \
+         divmod(m : NatDiv, n : NatDiv) -> (quot : NatDiv, rem : NatDiv);\n  rule divmod(m, \
+         Succ(d)) ==> (Zero, m);\n}\n",
+    );
+    let span = |around: &'static str, inner: &'static str| {
+        at(source, SourceText::from(around), SourceText::from(inner))
+    };
+    let (types, arena) = described(source);
+    let ty = |entry: DescribedType| arena.value_type(entry.ty).cloned();
+
+    let zero = entry(&types, span("Zero :", "Zero"), DescribedRole::Name);
+    assert!(
+        matches!(ty(zero), Some(ValueType::Data { .. })),
+        "a constant at its family"
+    );
+    let succ = entry(&types, span("Succ :", "Succ"), DescribedRole::Name);
+    assert!(
+        matches!(ty(succ), Some(ValueType::Thunk(_))),
+        "a constructor over its field"
+    );
+    let field = entry(&types, span("(n : NatDiv) -->", "n"), DescribedRole::Name);
+    assert_eq!(ty(field), ty(zero), "a field at its sort");
+    let operation = entry(&types, span("oper divmod", "divmod"), DescribedRole::Name);
+    assert!(matches!(ty(operation), Some(ValueType::Thunk(_))));
+    let output = entry(&types, span("quot", "quot"), DescribedRole::Name);
+    assert_eq!(ty(output), ty(zero));
+
+    let head = entry(&types, span("rule divmod", "divmod"), DescribedRole::Term);
+    assert_eq!(
+        ty(head),
+        ty(operation),
+        "a rule's head at its operation's type"
+    );
+    let call = entry(
+        &types,
+        span("divmod(m, Succ(d))", "divmod(m, Succ(d))"),
+        DescribedRole::Term,
+    );
+    assert!(
+        matches!(ty(call), Some(ValueType::Product(_))),
+        "at the operation's results"
+    );
+    let pattern = entry(&types, span("(m, Succ", "m"), DescribedRole::Term);
+    assert_eq!(ty(pattern), ty(zero), "a variable at its position's sort");
+    let nested = entry(&types, span("Succ(d)", "d"), DescribedRole::Term);
+    assert_eq!(
+        ty(nested),
+        ty(zero),
+        "under a constructor, at its field's sort"
+    );
+    let results = entry(&types, span("(Zero, m)", "(Zero, m)"), DescribedRole::Term);
+    assert_eq!(ty(results), ty(call), "the right side at the left's sort");
+    let used = entry(&types, span(", m)", "m"), DescribedRole::Term);
+    assert_eq!(
+        ty(used),
+        ty(zero),
+        "a variable used at the sort it was bound at"
+    );
+    assert!(
+        types
+            .entries
+            .iter()
+            .all(|entry| usize::from(entry.context) == 0)
+    );
+}

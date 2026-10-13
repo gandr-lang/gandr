@@ -26,9 +26,12 @@
 //! node under the cursor with its type: a declaration's name its declared
 //! type and documentation, a binder the type its uses were judged at, a term
 //! its type (and the type it was checked against when the two differ), a
-//! written type its universe, and any other position inside a declaration
+//! written type its universe, and any other position in a declaration's head
 //! that declaration. The types come from a typed run over the document's
-//! text, built at the first hover after an edit and kept until the next.
+//! text, built at the first hover after an edit and kept until the next: its
+//! entries are the nodes the run judged, the binders their uses resolve to,
+//! the written types it formed, and the members of `sign` blocks and `data`
+//! families at the types the description route states for them.
 //! A formatting request lays the document out through `gandr-surface-format`
 //! and answers the edits that turn the held text into that layout: one
 //! trimmed edit for the whole document, or one per top-level form a range
@@ -218,7 +221,8 @@
 //! accepted revision, which a fresh connection lacks, so it is held to
 //! answering, not to agreeing. A hover at every byte of every corpus source
 //! answers without a fault, and the share it answers is recorded as a floor
-//! that may only rise. Those sessions name a quiet interval of zero, since
+//! that rises with each position answered and falls only when a hover stops
+//! answering one wrongly. Those sessions name a quiet interval of zero, since
 //! their oracle has no caret and holds nothing; the quiet scenario types one
 //! declaration under the interval and pins every keystroke's publication.
 //!
