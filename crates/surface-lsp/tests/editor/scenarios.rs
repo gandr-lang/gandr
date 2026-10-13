@@ -9,8 +9,10 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::num::NonZeroUsize;
+use core::panic::AssertUnwindSafe;
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
+use std::panic::catch_unwind;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -43,6 +45,7 @@ use super::client::Quiet;
 use super::client::Record;
 use super::editing::Oracle;
 use super::editing::Session;
+use super::editing::panic_message;
 
 /// The share of corpus positions a hover answers, in thousandths, below
 /// which hovering has regressed: the share measured when it was last
@@ -479,7 +482,8 @@ fn apply(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: `visit` ran once on each source; a panic in any visit fails the
-///   caller once every worker has stopped.
+///   caller once every worker has stopped, its message naming the source the
+///   visit was given.
 /// - provides: the corpus scenarios' wall time divided by the cores.
 /// - panics: a visit panics.
 /// - executable: none — the visits' effects are their own assertions, made on
@@ -488,7 +492,8 @@ fn apply(
 /// # Adequacy
 /// - hypothesis: L3 — the corpus scenarios visit through here; one shared index
 ///   hands each source to exactly one worker, and a panic in a worker fails the
-///   scope, so a failing source fails the scenario.
+///   scope, so a failing source fails the scenario, and the daily lane's log
+///   names it.
 /// - witness: `editor::editor::scenarios::typing_each_corpus_source_keeps_every_answer_faithful`
 fn each_in_parallel(
     sources: &[Source],
@@ -503,7 +508,9 @@ fn each_in_parallel(
         for _ in 0_usize .. workers {
             let _worker = scope.spawn(|| {
                 while let Some(source) = ordered.get(next.fetch_add(1_usize, Ordering::Relaxed)) {
-                    visit(source);
+                    if let Err(payload) = catch_unwind(AssertUnwindSafe(|| visit(source))) {
+                        panic!("visiting {}: {}", source.uri, panic_message(&*payload).0);
+                    }
                 }
             });
         }
