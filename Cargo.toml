@@ -800,6 +800,7 @@ features = ["span-locations"]
 # - storage-records (dev)
 # - storage-values (dev)
 # - surface-layout (dev)
+# - surface-lsp (dev)
 # - surface-parser (dev)
 # - surface-session (dev)
 # - theory-cell-complexes (dev)

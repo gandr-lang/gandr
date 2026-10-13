@@ -193,6 +193,22 @@
 //! with the dispatcher and renderer; agreement is evidence over that corpus,
 //! not a proof for all programs.
 //!
+//! The editor simulation (`tests/editor.rs`) drives a connection one
+//! keystroke at a time, in process and in lockstep: a buffer models the
+//! editor's text, cursor, auto-closed pairs and indentation, a typist reaches
+//! each corpus source from an empty buffer and an erasure deletes it line by
+//! line, and random edit scripts are undone to where they started. Every
+//! keystroke's publication carries the latest version and every request is
+//! answered once without an error. The oracle is a fresh connection opening
+//! the same text whole: the published diagnostics, semantic tokens, outline,
+//! folding, selection ranges and inline completion must equal its answers,
+//! at every keystroke of the erasure and the scripts, and at every line of
+//! the corpus typing, where a whole reparse per keystroke would cost minutes
+//! with specifications enforced. A hover reads the session's last accepted
+//! revision, which a fresh connection lacks, so it is held to answering, not
+//! to agreeing. Each recorded session replays message for message through
+//! `serve` over framed streams.
+//!
 //! Two effects cannot be observed by a useful return-value predicate: `serve`
 //! owns opaque generic input/output streams, and `Capabilities::fmt` writes
 //! through an opaque formatter. Their explicit exemptions are witnessed by
