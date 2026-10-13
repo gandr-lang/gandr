@@ -153,7 +153,7 @@ fn a_statement_lowers_to_univalence_at_its_stratum()
     let report = judged(&module, &mut arena);
     assert_accepted(&report);
     assert!(
-        report.universals().contains_key(&body),
+        report.natives().contains_key(&body),
         "the checker derives the statement's path"
     );
 }

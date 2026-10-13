@@ -1570,7 +1570,8 @@ mod tests
     }
 
     /// Native introductions retain endpoint and map order but cannot claim
-    /// surface round-trip fidelity, because the parser has no path syntax.
+    /// surface round-trip fidelity, because the parser has no syntax for them;
+    /// a product over them is as approximate as its components.
     #[test]
     fn native_paths_preserve_ordered_endpoints_and_maps()
     {
@@ -1607,6 +1608,32 @@ mod tests
             assert_eq!(rendered.as_ref(), expected);
             assert_eq!(rendered.fidelity(), Fidelity::Approximate);
         }
+    }
+
+    /// The product of written universe paths spells `pathProduct(p, q)`,
+    /// nested to the right as written, faithful: the lowering reads the call
+    /// back to the same node.
+    #[test]
+    fn a_product_of_written_paths_spells_as_written()
+    {
+        let mut core = CoreArena::new();
+        let keep = core.value_constant(ConstantIndex::from(0_usize));
+        let exchange = core.value_constant(ConstantIndex::from(1_usize));
+        let unit = core.value_type_unit();
+        let unit_code = core.value_quote(unit);
+        let here = core.value_here(unit_code);
+        let kept = core.value_equiv(keep, keep);
+        let exchanged = core.value_equiv(exchange, exchange);
+        let corollas = core.value_path_product(kept, exchanged);
+        let telescope = core.value_path_product(here, corollas);
+        let names = [Name::from("keep"), Name::from("exchange")];
+        let source = CoreSource::new(&core, &names);
+        let rendered = presented(&source, Root::Value(CoreNode::Value(telescope)), wide());
+        assert_eq!(
+            rendered.as_ref(),
+            "pathProduct(here(Unit), pathProduct(equiv(keep, keep), equiv(exchange, exchange)))"
+        );
+        assert_eq!(rendered.fidelity(), Fidelity::Faithful);
     }
 
     /// An elaborated body spells as the grammar writes it, its exits elided:

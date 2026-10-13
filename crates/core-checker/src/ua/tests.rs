@@ -1009,7 +1009,7 @@ fn a_written_statement_derives_the_path_at_its_stratum()
             && matches!(arena.value(right), Some(&Value::Quote(_))),
         "between the quotes of the two telescopes"
     );
-    let Some(&path) = report.universals().get(&statement)
+    let Some(&path) = report.natives().get(&statement)
     else {
         panic!("the checker records the derived path");
     };

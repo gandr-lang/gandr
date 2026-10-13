@@ -1121,7 +1121,7 @@ where
         directed: report.directed(),
         reflexivities: report.reflexivities(),
         relations: report.relations(),
-        universals: report.universals(),
+        natives: report.natives(),
         definitions: report.definitions(),
     };
     for judged in report.judged() {
@@ -1334,9 +1334,9 @@ struct Source<'source>
     /// The path endpoint pairs each accepted declaration's conversions
     /// related, by position.
     relations: &'source BTreeMap<ConstantIndex, Vec<EndpointRelation>>,
-    /// The path each univalence statement the judgement decided derives, by
-    /// node.
-    universals: &'source BTreeMap<ValueId, ValueId>,
+    /// The native path each univalence statement the judgement decided
+    /// derives, and each path product it judged elaborates to, by node.
+    natives: &'source BTreeMap<ValueId, ValueId>,
     /// The body each accepted declaration defines its constant as, elaborated
     /// to the universe it was declared at.
     definitions: &'source BTreeMap<ConstantIndex, ValueId>,
@@ -3484,10 +3484,17 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 Frame::PathRefl { at },
                 CoreNode::Term(TermNode::Value(code)),
             ),
-            | Value::PathProduct(first, second) => (
-                Frame::PathProductFirst { at, second },
-                CoreNode::Term(TermNode::Value(first)),
-            ),
+            | Value::PathProduct(first, second) => match self.source.natives.get(&at) {
+                | Some(&native) if native != at => {
+                    self.memo().values.insert(at, Image::Open);
+                    self.frames.push(Frame::Reduced { at });
+                    return Ok(Step::Descend(CoreNode::Term(TermNode::Value(native))));
+                },
+                | Some(_) | None => (
+                    Frame::PathProductFirst { at, second },
+                    CoreNode::Term(TermNode::Value(first)),
+                ),
+            },
             | Value::PathEquiv {
                 path_type,
                 forward,
@@ -3624,7 +3631,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             },
             | Value::Recorded(_) => return Err(unadmitted(UnadmittedFormer::Run)),
             | Value::Ua { .. } => {
-                let Some(&path) = self.source.universals.get(&at)
+                let Some(&path) = self.source.natives.get(&at)
                 else {
                     return Err(Refusal::MachineInvariant);
                 };
@@ -5935,7 +5942,7 @@ mod tests
             directed: &BTreeMap::new(),
             reflexivities: &BTreeMap::new(),
             relations: &BTreeMap::new(),
-            universals: &BTreeMap::new(),
+            natives: &BTreeMap::new(),
             definitions: &definitions,
         };
         let image = Erasure::new(arena, source, &positions, ConstantIndex::from(0_usize))
@@ -8196,7 +8203,7 @@ mod tests
             directed: &BTreeMap::new(),
             reflexivities: &BTreeMap::new(),
             relations: &BTreeMap::new(),
-            universals: &BTreeMap::new(),
+            natives: &BTreeMap::new(),
             definitions: &definitions,
         };
         assert_eq!(
@@ -8902,7 +8909,7 @@ mod tests
             directed: &BTreeMap::new(),
             reflexivities: &BTreeMap::new(),
             relations: &BTreeMap::new(),
-            universals: &BTreeMap::new(),
+            natives: &BTreeMap::new(),
             definitions: &definitions,
         };
         let base = ConstantIndex::from(3_usize);

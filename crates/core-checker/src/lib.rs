@@ -347,6 +347,7 @@ mod ledger;
 mod module;
 mod nested;
 mod occurrence;
+mod product;
 mod refusal;
 mod seal;
 pub mod session;

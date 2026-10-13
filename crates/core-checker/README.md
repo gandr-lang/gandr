@@ -32,7 +32,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 - `Declaration`, `DeclarationContent` and `OriginToken`: name-free value/data input. Values retain optional signature/body halves; data retain a `DataSignature`.
 - `check_declaration`, `check_module`, `Verdict`, `Judged` and `ModuleReport`: one verdict per declaration, retaining accepted value definitions, native data signatures and recorded lifts.
 - `Nesting`, `NestedElaboration` and `ModuleReport::nested_elaborations`: each computation written where a value is read, run or suspended by the type expected there, and the body rebuilt with every run bound.
-- `Funext`, `FunextStep`, `Evaluation`, `Reading`, `Stalled`, `evaluated::Absent`, `ModuleReport::funexts`, `Equivalence`, `ModuleReport::equivalences`, `Reflexivity`, `converted::Absent`, `ModuleReport::reflexivities`, `EndpointRelation` and `ModuleReport::relations`: function extensionality, `equiv(f, g)`, reflexivity and the path endpoints a type conversion relates decided by computation, each with the traces the kernel replays; `ua::derive` lifts `equiv(f, g)` to `ua_n` at every stratum the site certifies; `ModuleReport::universals`: what `ua[n, k]` derives.
+- `Funext`, `FunextStep`, `Evaluation`, `Reading`, `Stalled`, `evaluated::Absent`, `ModuleReport::funexts`, `Equivalence`, `ModuleReport::equivalences`, `Reflexivity`, `converted::Absent`, `ModuleReport::reflexivities`, `EndpointRelation` and `ModuleReport::relations`: function extensionality, `equiv(f, g)`, reflexivity and the path endpoints a type conversion relates decided by computation, each with the traces the kernel replays; `ua::derive` lifts `equiv(f, g)` to `ua_n` at every stratum the site certifies; `ModuleReport::natives`: what `ua[n, k]` derives and what `pathProduct(p, q)` elaborates to.
 - `check_declaration_supported`, `Supported`, `Support`, `Consulted` and `CheckingContext::adopt`: query-specific value/data answers and adoption into the new prefix.
 - `CheckingContext`, `CheckBudget` and `signature_table::Absent`: context, admission tables and judgment allowance.
 - `Absence`, `ObligationEntry`, `ObligationLedger` and `ObligationCount`: the absence-only ledger.
@@ -57,7 +57,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 
 - **One arena per context.** Every id a declaration carries resolves in the `CoreArena` the `CheckingContext` was built over; an id that does not is refused as a dangling node, never read.
 - **One arena per report.** `bridge::readmit` takes, mutably, the arena the report was judged over: it reads every id there, refusing one that does not resolve as a dangling node, and mints there the reduct of each static step it takes.
-- **One writer per arena.** `CheckingContext::new` holds the arena mutably for the context's life: it mints the unit, integer and string atoms the leaf rules hand out, and the judgement mints the types it rewrites — a codomain shifted under a binder, instantiated at an argument, or decoded from a quote — into the same arena. A caller reads the arena through `CheckingContext::arena` while the context lives.
+- **One writer per arena.** `CheckingContext::new` holds the arena mutably for the context's life, and the judgement mints into it; a caller reads it through `CheckingContext::arena` while the context lives.
 - **Ascending admission positions.** Declarations are offered in admission order; a position not above every one admitted before it is refused.
 - **Closed bodies.** A body is closed over the context's binders, which are empty between judgements; a producer that resolves every binder, as a lowering does, never trips the unbound-index refusal.
 - **`alloc`.** The crate is `no_std` with `alloc`.
@@ -114,7 +114,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 | Topic | Module |
 | ----- | ------ |
 | Modes, static operators, the dependent arrow and the bind, splits, holes in the faces, effects and control, native universe paths, element identity | [`judgement`](src/judgement.rs) |
-| Function extensionality, universe equivalence, `ua_n` | [`funext`](src/funext.rs), [`equiv`](src/equiv.rs), [`ua`](src/ua.rs) |
+| Function extensionality, universe equivalence, the product of universe paths, `ua_n` | [`funext`](src/funext.rs), [`equiv`](src/equiv.rs), [`product`](src/product.rs), [`ua`](src/ua.rs) |
 | Total elaboration and the typed run | [`judgement::elaboration`](src/judgement/elaboration.rs) |
 | Records | [`judgement::native`](src/judgement/native.rs) |
 | The three bridges, consistency, smallness and variance; the fourth, a nested computation run or suspended | [`conversion`](src/conversion.rs), [`nested`](src/nested.rs) |

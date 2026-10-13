@@ -1,0 +1,31 @@
+sign Rig {
+  sort R : Type;
+  oper plus : (x : R, y : R) --> (z : R);
+  oper times : (x : R, y : R) --> (z : R);
+}
+
+/// The binary corolla's code holds `plus`, `plus` with its inputs swapped,
+/// `times` and `times` swapped. `cross` exchanges `plus` and `times` and fixes
+/// both swapped forms: it is its own inverse, so code univalence accepts it and
+/// the hand-built product is a path, but it does not commute with the
+/// corolla's input swap, so `ua` refuses it.
+module Unnatural {
+  type Tel = #{Unit, +{Unit, Unit, Unit, Unit}};
+
+  @[ checks ]
+  def cross(e : +{Unit, Unit, Unit, Unit}) -> -F +{Unit, Unit, Unit, Unit} {
+    case e {
+      +{.0 = u} => return +{.2 = u},
+      +{.1 = u} => return +{.1 = u},
+      +{.2 = u} => return +{.0 = u},
+      +{.3 = u} => return +{.3 = u}
+    }
+  }
+
+  @[ checks ]
+  def crossed_by_hand : Path(Type, Tel, Tel) ;
+  def crossed_by_hand = pathProduct(here(Unit), equiv(cross, cross)) ;
+
+  @[ refuses("NotNatural") ]
+  def crossed = ua[1, 4](Rig, Rig, #{.plus = cross}, #{.plus = cross}) ;
+}
