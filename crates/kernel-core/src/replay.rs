@@ -1179,6 +1179,9 @@ enum Elimination
     Transport(ValueId),
     /// Product transport waiting for a neutral pair operand.
     ProductTransport(ValueId),
+    /// A ride along a neutral flow head; the arena node retains its motive
+    /// and its value.
+    Ride(ComputationId),
     /// The head forced.
     Force,
     /// An application to this argument.
@@ -3088,7 +3091,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - requires: `term` is in weak head form.
     /// - ensures: a value's former, thunk, or head under its static
     ///   applications, innermost first; a computation's lambda, lazy pairing,
-    ///   returner, or head under its spine, innermost first.
+    ///   returner, or head under its spine, innermost first. A transport's path
+    ///   and a ride's flow stand at the head of their elimination.
     /// - provides: what the rule table dispatches on.
     /// - fails: [`ReplayRefusal::Unreadable`] on a dangling id, a head no rule
     ///   reads, or a returned endpoint, which [`Self::settle`] reads first.
@@ -3107,7 +3111,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// # Adequacy
     /// - hypothesis: L3: force/eta traces and neutral case/application spines
     ///   distinguish head classes and the order of their premises; static
-    ///   operator traces cover static application heads. The executable
+    ///   operator traces cover static application heads; a ride over a named
+    ///   flow offers that flow's unfolding on its own side only. The executable
     ///   observer checks root shape and the outermost elimination without
     ///   repeating the head walk.
     /// - witness: `replay::tests::eta_and_force_open_the_suspended_sides`
@@ -3115,6 +3120,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - witness: `replay::tests::an_operator_unfolds_by_instantiating_its_parameters_in_order`
     /// - witness: `path_universe::tests::refl_collapses`
     /// - witness: `replay::tests::a_projection_runs_its_side_of_a_pairing`
+    /// - witness: `replay::tests::a_ride_unfolds_its_flow_where_the_dialogue_names_it`
     #[spec(ensures: |ret| match term {
         Term::Value(value) => match self.arena.value(value) {
             Some(&Value::Variable(index)) => matches!(ret, Ok(Shape::Neutral(Head::Variable(found), ref spine)) if found == index && spine.is_empty()),
@@ -3143,6 +3149,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     Computation::Transport(path, value) => if matches!(self.arena.value(path), Some(&Value::PathProduct(..))) {
                         spine.as_slice() == [Elimination::ProductTransport(path)]
                     } else { spine.as_slice() == [Elimination::Transport(value)] },
+                    Computation::Ride { .. } => spine.as_slice() == [Elimination::Ride(computation)],
                     Computation::Case { .. } => spine.as_slice() == [Elimination::Case(computation)],
                     Computation::DataCase { .. } => spine.as_slice() == [Elimination::DataCase(computation)],
                     Computation::RecordProjection(..) => spine.as_slice() == [Elimination::RecordProjection(computation)],
@@ -3252,6 +3259,13 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     spine.push(Elimination::Transport(value));
                     break self.value_head(path, frozen, side)?;
                 },
+                // A ride stuck at the table stands on its flow: a defined
+                // flow unfolds where the dialogue names it, as a transport's
+                // path does.
+                | Some(&Computation::Ride { flow, .. }) => {
+                    spine.push(Elimination::Ride(focus));
+                    break self.value_head(flow, frozen, side)?;
+                },
                 | Some(&Computation::Lambda(body)) if spine.is_empty() => {
                     return Ok(Shape::Lambda(body));
                 },
@@ -3297,16 +3311,15 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     let head = self.value_head(scrutinee, frozen, side)?;
                     break head;
                 },
-                // A transport, ride or related application that did not reduce
-                // has no trace alphabet of its own: the replay reads it as
-                // unreadable.
+                // A transport in a motive, a telescope ride or a related
+                // application that did not reduce has no trace alphabet of its
+                // own: the replay reads it as unreadable.
                 | Some(
                     &(Computation::Lambda(_)
                     | Computation::With(..)
                     | Computation::Return(_)
                     | Computation::PathTransport { .. }
                     | Computation::TelescopeTransport { .. }
-                    | Computation::Ride { .. }
                     | Computation::TelescopeRide { .. }
                     | Computation::RelatedApplication { .. }),
                 )
@@ -3473,8 +3486,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// # Specification
     /// - requires: `term`'s head is `constant`, defined.
     /// - ensures: a value its δ- or δβ-reduct, as [`Self::unfold_value`] gives
-    ///   it; a computation its spine over the body; of `term`'s polarity either
-    ///   way.
+    ///   it; a computation its spine over the body, a ride's body standing as
+    ///   its flow; of `term`'s polarity either way.
     /// - provides: the term half of [`Self::unfold`], shared with
     ///   [`Self::normalize_returned`].
     /// - fails: as [`Self::unfold`].
@@ -3490,9 +3503,11 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   left while rebuilding.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the trace's named-head unfoldings of [`Self::unfold`]
-    ///   and a definition at a returned endpoint's head, read at a mode switch.
+    /// - hypothesis: L3 — the trace's named-head unfoldings of
+    ///   [`Self::unfold`], a ride's named flow among them, and a definition at
+    ///   a returned endpoint's head, read at a mode switch.
     /// - witness: `replay::tests::an_unfolding_fires_only_where_the_trace_names_its_head`
+    /// - witness: `replay::tests::a_ride_unfolds_its_flow_where_the_dialogue_names_it`
     /// - witness: `element_identity::tests::a_certificate_with_a_returned_endpoint_decodes_checks_and_replays`
     #[spec(ensures: |ret| match ret {
         Ok(reduct) => self.unfoldings.unfolding(constant) != Unfoldable::Opaque
@@ -3556,6 +3571,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         self.arena.computation_transport(body, value)
                     };
                 },
+                | Some(&Computation::Ride { motive, value, .. }) => {
+                    break self.arena.computation_ride(motive, body, value);
+                },
                 | Some(&Computation::Application(head, argument)) => {
                     frames.push(Frame::Apply(argument));
                     focus = head;
@@ -3588,7 +3606,6 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     | Computation::Return(_)
                     | Computation::PathTransport { .. }
                     | Computation::TelescopeTransport { .. }
-                    | Computation::Ride { .. }
                     | Computation::TelescopeRide { .. }
                     | Computation::RelatedApplication { .. }),
                 )
@@ -4651,8 +4668,9 @@ fn bind_rule(
 ///   elimination's kind; else an application's or a static application's
 ///   arguments, a bind's continuations and a sum case's two branches, in spine
 ///   order. A native data case first compares its quoted motive, then its
-///   ordinary branch functions; a force, a matching record projection or a
-///   projection of one lazy-product side contributes none.
+///   ordinary branch functions; a ride compares its quoted motive, then its
+///   value; a force, a matching record projection or a projection of one
+///   lazy-product side contributes none.
 /// - provides: the decomposition of two neutrals over one head.
 /// - fails: unreadable native metadata when a retained source is missing or
 ///   malformed.
@@ -4664,13 +4682,15 @@ fn bind_rule(
 ///
 /// # Adequacy
 /// - hypothesis: L3: case branches followed by an application distinguish
-///   subgoal order; unequal spine lengths and application-versus-bind kinds
-///   refute without a decision; empty spines close positively. The fixtures do
-///   not enumerate all mixed spines.
+///   subgoal order; two rides along one flow refute at their values' subgoal,
+///   not their motives'; unequal spine lengths and application-versus-bind
+///   kinds refute without a decision; empty spines close positively. The
+///   fixtures do not enumerate all mixed spines.
 /// - witness: `replay::tests::neutral_spines_keep_subgoal_order_and_reject_kind_mismatches`
 /// - witness: `replay::tests::a_refutation_follows_its_negative_subgoal`
 /// - witness: `path_universe::tests::refl_collapses`
 /// - witness: `replay::tests::a_lazy_pairing_meets_a_neutral_by_its_projections`
+/// - witness: `replay::tests::a_ride_unfolds_its_flow_where_the_dialogue_names_it`
 #[spec(ensures: |ret| {
     let compatible = left.len() == right.len() && left.iter().zip(right).all(|(one, other)| match (*one,*other) {
         (Elimination::RecordProjection(a),Elimination::RecordProjection(b)) => matches!((arena.computation(a),arena.computation(b)), (Some(Computation::RecordProjection(_,a)),Some(Computation::RecordProjection(_,b))) if a == b),
@@ -4700,6 +4720,10 @@ if let Some(left_node) = arena.computation(a) && let Computation::Case{branches:
 if let Some(matched_left_node) = matched_left_value && let Computation::DataCase{motive:ref a_motive,branches:ref a,..} = *matched_left_node && let Some(matched_right_node) = matched_right_value && let Computation::DataCase{motive:ref b_motive,branches:ref b,..} = *matched_right_node { pending.next().is_some_and(|premise| matches!((premise.left,premise.right),(Term::Value(left),Term::Value(right)) if arena.value(left) == Some(&Value::QuoteComputation(*a_motive)) && arena.value(right) == Some(&Value::QuoteComputation(*b_motive)))) && a.iter().zip(b).all(|(a,b)| pending.next() == Some(&Premise::computations(*a,*b))) }
  else { false }
 },
+                (Elimination::Ride(a), Elimination::Ride(b)) => if let (Some(&Computation::Ride { motive: a_motive, value: a_value, .. }), Some(&Computation::Ride { motive: b_motive, value: b_value, .. })) = (arena.computation(a), arena.computation(b)) {
+                    pending.next().is_some_and(|premise| matches!((premise.left, premise.right), (Term::Value(left), Term::Value(right)) if arena.value(left) == Some(&Value::Quote(a_motive)) && arena.value(right) == Some(&Value::Quote(b_motive))))
+                        && pending.next() == Some(&Premise::values(a_value, b_value))
+                } else { false },
                 (Elimination::Transport(one), Elimination::Transport(other)) | (Elimination::ProductTransport(one), Elimination::ProductTransport(other)) | (Elimination::Apply(one), Elimination::Apply(other)) | (Elimination::StaticApply(one), Elimination::StaticApply(other)) => pending.next() == Some(&Premise::values(one, other)),
                 (Elimination::Bind(one), Elimination::Bind(other)) | (Elimination::Fixpoint(one), Elimination::Fixpoint(other)) => pending.next() == Some(&Premise::computations(one, other)),
                 (Elimination::ListFold(one_left, one_right), Elimination::ListFold(other_left, other_right)) =>
@@ -4838,6 +4862,31 @@ fn spines(
             | (Elimination::StaticApply(a), Elimination::StaticApply(b)) => {
                 premises.push(Premise::values(a, b));
             },
+            // Two rides along one neutral flow compare their motives as
+            // codes, as the engine's spines compare them, then their values.
+            | (Elimination::Ride(a), Elimination::Ride(b)) => {
+                let (
+                    Some(&Computation::Ride {
+                        motive: a_motive,
+                        value: a_value,
+                        ..
+                    }),
+                    Some(&Computation::Ride {
+                        motive: b_motive,
+                        value: b_value,
+                        ..
+                    }),
+                ) = (arena.computation(a), arena.computation(b))
+                else {
+                    return Err(unreadable());
+                };
+                let a_quote = arena.value_quote(a_motive);
+                let b_quote = arena.value_quote(b_motive);
+                premises.extend([
+                    Premise::values(a_quote, b_quote),
+                    Premise::values(a_value, b_value),
+                ]);
+            },
             | (Elimination::Bind(a), Elimination::Bind(b))
             | (Elimination::Fixpoint(a), Elimination::Fixpoint(b)) => {
                 premises.push(Premise::computations(a, b));
@@ -4859,6 +4908,7 @@ fn spines(
                 | Elimination::Project(_)
                 | Elimination::Transport(_)
                 | Elimination::ProductTransport(_)
+                | Elimination::Ride(_)
                 | Elimination::Force
                 | Elimination::Apply(_)
                 | Elimination::Bind(_)
@@ -6418,5 +6468,107 @@ mod tests
             );
             assert_eq!(observed.get(), consumed);
         }
+    }
+
+    #[test]
+    fn a_ride_unfolds_its_flow_where_the_dialogue_names_it()
+    {
+        let mut arena = TermArena::new();
+        let unit_type = arena.value_type_unit();
+        let code = arena.value_quote(unit_type);
+        let stay = arena.value_stay(code);
+        let unfoldings = Unfoldings::new(Vec::from([Unfoldable::Body(stay)]));
+        let named = arena.value_constant(ConstantIndex::from(0_usize));
+        let decoded = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let motive = arena.value_type_element(decoded, Level::zero());
+        let unit = arena.value_unit();
+        let rode = arena.computation_ride(motive, named, unit);
+        let returned = arena.computation_return(unit);
+        let sides = ReplaySides::Computations(rode, returned);
+        let unfold = |reduce: fn(ReplayNode) -> ConversionDecision<ReplayNode>| {
+            [
+                ConversionDecision::Unfold {
+                    constant: ReplayNode::Other,
+                },
+                reduce(ReplayNode::Other),
+            ]
+        };
+        let left = |redex| ConversionDecision::ReduceLeft { redex };
+        let right = |redex| ConversionDecision::ReduceRight { redex };
+
+        // The flow heads the ride: its side's unfolding reaches `stay`, and
+        // the ride returns its value.
+        assert_eq!(
+            run(
+                &mut arena,
+                &unfoldings,
+                sides,
+                EngineClaim::Convertible,
+                &unfold(left)
+            ),
+            KernelVerdict::Convertible
+        );
+        // Read on the other side, or not at all, the unfolding is refused.
+        assert_eq!(
+            run(
+                &mut arena,
+                &unfoldings,
+                sides,
+                EngineClaim::Convertible,
+                &unfold(right)
+            ),
+            refused(ReplayRefusal::Inapplicable {
+                at: TracePosition::from(1)
+            })
+        );
+        assert_eq!(
+            run(&mut arena, &unfoldings, sides, EngineClaim::Convertible, &[
+            ]),
+            refused(ReplayRefusal::Exhausted)
+        );
+
+        // Two rides along one neutral flow compare their motives, then their
+        // values.
+        let flow = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let injected = arena.value_injection(Side::Left.into(), unit);
+        let one = arena.computation_ride(motive, flow, unit);
+        let same = arena.computation_ride(motive, flow, unit);
+        let apart = arena.computation_ride(motive, flow, injected);
+        let negative = |position: u32| ConversionDecision::NegativeSubgoal {
+            position: SubgoalPosition::from(position),
+        };
+        assert_eq!(
+            run(
+                &mut arena,
+                &unfoldings,
+                ReplaySides::Computations(one, same),
+                EngineClaim::Convertible,
+                &[]
+            ),
+            KernelVerdict::Convertible
+        );
+        let rides = ReplaySides::Computations(one, apart);
+        assert_eq!(
+            run(
+                &mut arena,
+                &unfoldings,
+                rides,
+                EngineClaim::NotConvertible,
+                &[negative(1)]
+            ),
+            KernelVerdict::NotConvertible
+        );
+        assert_eq!(
+            run(
+                &mut arena,
+                &unfoldings,
+                rides,
+                EngineClaim::NotConvertible,
+                &[negative(0)]
+            ),
+            refused(ReplayRefusal::Contradicted {
+                at: TracePosition::from(1)
+            })
+        );
     }
 }

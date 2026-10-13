@@ -397,6 +397,17 @@ impl ValueClosure
     }
 }
 
+/// The eliminator a constructorwise continuation applies at the next part:
+/// transport along an element path, or a ride along a flow.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Mover
+{
+    /// Transport along an element path.
+    Transport,
+    /// Ride along a flow.
+    Ride,
+}
+
 /// A suspended body, either source syntax or a native continuation.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum CompBody
@@ -461,6 +472,55 @@ pub enum CompBody
     /// Apply the held thunk, forced, to the bound value: the continuation `a.
     /// force f a`.
     ForceApplied(DomainValueId),
+    /// After a flow product's left component rode, ride the right one along
+    /// the second flow in the same motive and pair them: the continuation `x.
+    /// y ← ride(P, g, b); return (x, y)` the product's reduct binds into.
+    RidePair
+    {
+        /// The ride's motive, `El(x)`, closed over its environment.
+        motive: crate::arena::ValueClosureId,
+        /// The second flow.
+        flow: DomainValueId,
+        /// The right component.
+        value: DomainValueId,
+    },
+    /// After `moved` components moved, move the next in its own part of the
+    /// product motive, or return the tuple of all of them: the continuation
+    /// `xᵢ. xᵢ₊₁ ← step(Pᵢ₊₁, p, vᵢ₊₁); …; return (x₀, …)` a product motive's
+    /// reduct binds each component into. The components moved so far are the
+    /// closure's environment, the latest innermost.
+    Components
+    {
+        /// Transport or ride.
+        mover: Mover,
+        /// The product motive, closed over its environment.
+        motive: crate::arena::ValueClosureId,
+        /// The path or flow every component moves along.
+        along: DomainValueId,
+        /// The tuple moved.
+        source: DomainValueId,
+        /// How many components have moved once this continuation binds.
+        moved: gandr_core_term::ComponentCount,
+    },
+    /// Return the bound value injected at this summand: the continuation `x.
+    /// return inj(x)` a sum motive's reduct binds the payload into.
+    Inject(gandr_kernel_term::Summand),
+    /// After a cell's head moved, move its tail in the list motive and return
+    /// the cell: the continuation `h. t ← step(List E, p, tail); return
+    /// cons(h, t)` a list motive's reduct binds the head into.
+    MoveTail
+    {
+        /// Transport or ride.
+        mover: Mover,
+        /// The list motive, closed over its environment.
+        motive: crate::arena::ValueClosureId,
+        /// The path or flow the tail moves along.
+        along: DomainValueId,
+        /// The cell's tail.
+        tail: DomainValueId,
+    },
+    /// Return the cell of the held head and the newly bound tail.
+    Cons(DomainValueId),
 }
 
 /// A suspended **computation** body with the environment its free variables

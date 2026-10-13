@@ -960,29 +960,35 @@ mod tests
         let transported = core.computation_path_transport(motive, path, operand);
 
         let first = core.computation_path_transport(carrier, path, five);
-        let first = core.value_returned(first);
-        // The unit coordinate is itself a product of no components, so its
-        // transport computes to the empty tuple.
-        let pair = core.value_tuple(&[first, empty]);
-        let expected = core.computation_return(pair);
+        // The first coordinate's transport is stuck on the path, so the second
+        // waits under its bind; the unit coordinate is a product of no
+        // components, so its transport computes to the empty tuple there.
+        let moved = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+        let pair = core.value_tuple(&[moved, empty]);
+        let returned = core.computation_return(pair);
+        let expected = core.computation_bind(first, returned);
         assert_eq!(
             normalises_to(&mut core, transported, expected),
             CertificateEquality::Equal,
-            "each coordinate is transported in its own motive, in order"
+            "each coordinate is transported in its own motive, bound before the next"
         );
-        let second = core.computation_path_transport(unit, path, empty);
-        let second = core.value_returned(second);
-
-        let swapped = core.value_tuple(&[second, first]);
+        let held = core.value_returned(first);
+        let standing = core.value_tuple(&[held, empty]);
+        let standing = core.computation_return(standing);
+        assert_eq!(
+            normalises_to(&mut core, transported, standing),
+            CertificateEquality::Different,
+            "a stuck coordinate holds the tuple rather than standing for what it returns"
+        );
+        let swapped = core.value_tuple(&[empty, moved]);
         let swapped = core.computation_return(swapped);
+        let swapped = core.computation_bind(first, swapped);
         assert_eq!(
             normalises_to(&mut core, transported, swapped),
             CertificateEquality::Different
         );
         let other = core.computation_path_transport(carrier, path, seven);
-        let other = core.value_returned(other);
-        let other = core.value_tuple(&[other, second]);
-        let other = core.computation_return(other);
+        let other = core.computation_bind(other, returned);
         assert_eq!(
             normalises_to(&mut core, transported, other),
             CertificateEquality::Different
@@ -1002,16 +1008,18 @@ mod tests
         let transported = core.computation_path_transport(motive, path, operand);
 
         let payload = core.computation_path_transport(carrier, path, five);
-        let payload = core.value_returned(payload);
-        let injected = core.value_injection(Side::Right.into(), payload);
-        let expected = core.computation_return(injected);
+        let moved = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+        let injected = core.value_injection(Side::Right.into(), moved);
+        let injected = core.computation_return(injected);
+        let expected = core.computation_bind(payload, injected);
         assert_eq!(
             normalises_to(&mut core, transported, expected),
             CertificateEquality::Equal,
-            "the payload is transported in its summand's motive and injected again"
+            "the payload is transported in its summand's motive and bound into its injection"
         );
-        let wrong = core.value_injection(Side::Left.into(), payload);
+        let wrong = core.value_injection(Side::Left.into(), moved);
         let wrong = core.computation_return(wrong);
+        let wrong = core.computation_bind(payload, wrong);
         assert_eq!(
             normalises_to(&mut core, transported, wrong),
             CertificateEquality::Different
@@ -1882,13 +1890,112 @@ mod tests
         let rode = core.computation_ride(identity, open, pair);
         let moved = core.value_injection(Side::Left.into(), six);
         let held = core.computation_ride(identity, flow, five);
-        let held = core.value_returned(held);
-        let both = core.value_tuple(&[held, moved]);
-        let expected = core.computation_return(both);
+        let bound = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+        let both = core.value_tuple(&[bound, moved]);
+        let returned = core.computation_return(both);
+        let expected = core.computation_bind(held, returned);
         assert_eq!(
             normalises_to(&mut core, rode, expected),
             CertificateEquality::Equal,
-            "a component stuck on its flow stands for what it returns while the other rides"
+            "a left component stuck on its flow holds the right one under its bind"
+        );
+        let standing = core.value_returned(held);
+        let standing = core.value_tuple(&[standing, moved]);
+        let standing = core.computation_return(standing);
+        assert_eq!(
+            normalises_to(&mut core, rode, standing),
+            CertificateEquality::Different,
+            "the stuck component does not stand for what it returns"
+        );
+    }
+
+    #[test]
+    fn a_product_motive_binds_each_component_before_the_next()
+    {
+        let mut core = CoreArena::new();
+        let [five, six, seven] =
+            [Word::Five, Word::Six, Word::Seven].map(|word| literal(&mut core, word));
+        let unit = core.value_unit();
+        let identity = decoded(&mut core);
+        let pairing = translator(&mut core, paired);
+        let forward = core.value_forward(pairing);
+        let motive = core.value_type_product(&[identity, identity, identity]);
+        let triple = core.value_tuple(&[five, six, seven]);
+        let rode = core.computation_ride(motive, forward, triple);
+        let image = [five, six, seven].map(|word| core.value_tuple(&[word, unit]));
+        let moved = core.value_tuple(&image);
+        let expected = core.computation_return(moved);
+        assert_eq!(
+            normalises_to(&mut core, rode, expected),
+            CertificateEquality::Equal,
+            "three components ride in order and return in source order"
+        );
+        let [first, second, third] = image;
+        let reversed = core.value_tuple(&[third, second, first]);
+        let reversed = core.computation_return(reversed);
+        assert_eq!(
+            normalises_to(&mut core, rode, reversed),
+            CertificateEquality::Different,
+            "the components are read off their binds in source order"
+        );
+    }
+
+    #[test]
+    fn a_stuck_part_holds_the_parts_after_it()
+    {
+        let mut core = CoreArena::new();
+        let five = literal(&mut core, Word::Five);
+        let six = literal(&mut core, Word::Six);
+        let text = text_type(&mut core);
+        let unit_type = core.value_type_unit();
+        let identity = decoded(&mut core);
+        let flow = stuck(&mut core, ConstantIndex::from(0_usize));
+        let held = core.computation_ride(identity, flow, five);
+        let bound = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+
+        let product = core.value_type_product(&[identity, text]);
+        let pair = core.value_tuple(&[five, six]);
+        let rode = core.computation_ride(product, flow, pair);
+        let tuple = core.value_tuple(&[bound, six]);
+        let tuple = core.computation_return(tuple);
+        let expected = core.computation_bind(held, tuple);
+        assert_eq!(
+            normalises_to(&mut core, rode, expected),
+            CertificateEquality::Equal,
+            "a product motive binds its stuck first component before the second"
+        );
+
+        let sum = core.value_type_sum(&[identity, unit_type]);
+        let injected = core.value_injection(Side::Left.into(), five);
+        let rode = core.computation_ride(sum, flow, injected);
+        let injection = core.value_injection(Side::Left.into(), bound);
+        let injection = core.computation_return(injection);
+        let expected = core.computation_bind(held, injection);
+        assert_eq!(
+            normalises_to(&mut core, rode, expected),
+            CertificateEquality::Equal,
+            "a sum motive binds its stuck payload into the injection"
+        );
+
+        let list = core.value_type_list(identity);
+        let nil = core.value_list_nil();
+        let cell = core.value_list_cons(five, nil);
+        let rode = core.computation_ride(list, flow, cell);
+        let rebuilt = core.value_list_cons(bound, nil);
+        let rebuilt = core.computation_return(rebuilt);
+        let expected = core.computation_bind(held, rebuilt);
+        assert_eq!(
+            normalises_to(&mut core, rode, expected),
+            CertificateEquality::Equal,
+            "a list motive binds its stuck head before its tail"
+        );
+        let standing = core.value_returned(held);
+        let standing = core.value_list_cons(standing, nil);
+        let standing = core.computation_return(standing);
+        assert_eq!(
+            normalises_to(&mut core, rode, standing),
+            CertificateEquality::Different,
+            "the stuck head does not stand for what it returns"
         );
     }
 }

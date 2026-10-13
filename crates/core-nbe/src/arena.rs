@@ -1104,8 +1104,9 @@ impl DomainArena
     /// - requires: nothing; referenced values and closures are checked when the
     ///   body runs.
     /// - ensures: a fresh computation closure holds `body` with no bindings.
-    /// - provides: the continuations of ordered native product transport and of
-    ///   the commuting conversions of `F`.
+    /// - provides: the continuations of ordered native product transport, of
+    ///   the constructorwise rows of transport and ride, and of the commuting
+    ///   conversions of `F`.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -1130,6 +1131,40 @@ impl DomainArena
         let id = CompClosureId(id_index(ArenaLength(self.comp_closures.len())).0);
         self.comp_closures
             .push(CompClosure::new(body, Environment::new()));
+        id
+    }
+
+    /// Hold a native continuation over the values bound before it.
+    ///
+    /// # Specification
+    /// - requires: nothing; referenced values and closures are checked when the
+    ///   body runs.
+    /// - ensures: a fresh computation closure holds `body` over exactly
+    ///   `environment`.
+    /// - provides: the continuation of a componentwise move, whose environment
+    ///   holds the components moved so far, as the binds of the kernel's reduct
+    ///   hold them.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a three-component product motive moves its components
+    ///   in order and returns them in source order; a lost or reordered binding
+    ///   changes the read-back tuple.
+    /// - witness: `identity::tests::a_product_motive_binds_each_component_before_the_next`
+    #[inline]
+    #[spec(captures: [entry_length = self.comp_closures.len(), depth = environment.depth(gandr_core_term::Zone::Intuitionistic)], ensures: |ret|
+        self.comp_closures.len().checked_sub(1) == Some(entry_length)
+            && self.comp_closure(ret).is_some_and(|closure| closure.body() == body
+                && closure.environment().depth(gandr_core_term::Zone::Intuitionistic) == depth))]
+    pub(crate) fn native_continuation_over(
+        &mut self,
+        body: crate::closure::CompBody,
+        environment: Environment,
+    ) -> CompClosureId
+    {
+        let id = CompClosureId(id_index(ArenaLength(self.comp_closures.len())).0);
+        self.comp_closures.push(CompClosure::new(body, environment));
         id
     }
 

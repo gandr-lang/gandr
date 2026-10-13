@@ -34,6 +34,14 @@
 //! the kernel's decoder refuses it at the table by name: two instances sharing
 //! an atom is a refusal at admission, not a convention of the producer.
 //!
+//! `kernel_export::kernel_ride_readmission::a_ride_dialogue_reading_the_wrong_unfolding_is_refused_by_name`
+//! readmits `fixture/model/higher-cells/ua-by-hand.gandr`, whose `rides`
+//! relates a ride along the named flow `opposite_dir_by_hand` to its image by
+//! the dialogue the checker recorded, then tampers that dialogue so it reads
+//! the flow's unfolding on the wrong side: the kernel refuses `rides` at that
+//! decision, naming the endpoint and the replay refusal, rather than finding
+//! the unfolding itself.
+//!
 //! The suite derives its expectations from admission and storage semantics
 //! rather than checked-in sizes, identities, class thresholds or corpus
 //! cardinalities. Exact kernel format goldens belong to `gandr-kernel-term`;
@@ -961,6 +969,129 @@ mod kernel_generative_distinctness
                 slot: ReservedSlot::MintedAtomTable,
             }),
             "a table on which the second application claims the first's atom is refused by name"
+        );
+    }
+}
+
+/// The ride-in-a-type statement readmits by its recorded dialogue alone: a
+/// twin whose dialogue reads the wrong unfolding is refused by name.
+mod kernel_ride_readmission
+{
+    use alloc::sync::Arc;
+    use alloc::vec::Vec;
+    use std::path::PathBuf;
+
+    use gandr_kernel_conversion_trace::ConversionDecision;
+    use gandr_kernel_core::EndpointSide;
+    use gandr_kernel_core::Environment;
+    use gandr_kernel_core::IdentityError;
+    use gandr_kernel_core::KernelError;
+    use gandr_kernel_core::KernelVerdict;
+    use gandr_kernel_core::ReplayDecline;
+    use gandr_kernel_core::ReplayRefusal;
+    use gandr_kernel_core::TracePosition;
+    use gandr_kernel_term::DeclarationBuilder;
+    use gandr_kernel_term::DeclarationContent;
+    use gandr_kernel_term::MarkedDeclaration;
+    use gandr_kernel_term::NameSegment;
+    use gandr_kernel_term::StructuredName;
+    use gandr_kernel_term::Value;
+    use gandr_kernel_term::decode;
+    use gandr_surface_grammar::built_in;
+
+    use super::Root;
+    use super::Swept;
+    use super::export;
+
+    #[test]
+    fn a_ride_dialogue_reading_the_wrong_unfolding_is_refused_by_name()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/fixture/model/higher-cells/ua-by-hand.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("ua-by-hand lowers");
+        };
+        let decoded = decode(exported.artifact.as_image()).expect("ua-by-hand's export decodes");
+        let mut declarations = decoded.declarations().to_vec();
+        let mut arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations)
+            .expect("ua-by-hand readmits, `rides` by the dialogue the checker recorded");
+
+        let rides = StructuredName::from(
+            ["ByHand", "rides"]
+                .into_iter()
+                .filter_map(|segment| NameSegment::from_text(segment.into()))
+                .collect::<Vec<_>>(),
+        );
+        let Some(position) = declarations
+            .iter()
+            .position(|marked| *marked.declaration().name() == rides)
+        else {
+            panic!("`rides` crossed");
+        };
+        let Some(statement) = declarations.get_mut(position)
+        else {
+            panic!("`rides` is a declaration");
+        };
+        let DeclarationContent::Def { declared, body } = *statement.declaration().content()
+        else {
+            panic!("`rides` is a definition");
+        };
+        let Some(Value::Here { point, dialogues }) = arena.value(body).cloned()
+        else {
+            panic!("`rides` crosses as the kernel's reflexivity");
+        };
+        // The ride stands on the left endpoint; the first reduction its
+        // dialogue names is the named flow's unfolding.
+        let mut tampered = (*dialogues).clone();
+        let Some(misread) = tampered.left.iter().position(|decision| {
+            matches!(
+                decision,
+                ConversionDecision::ReduceLeft { .. } | ConversionDecision::ReduceRight { .. }
+            )
+        })
+        else {
+            panic!("the dialogue unfolds `opposite_dir_by_hand`: {dialogues:?}");
+        };
+        if let Some(reduction) = tampered.left.get_mut(misread) {
+            *reduction = match *reduction {
+                | ConversionDecision::ReduceLeft { .. } => {
+                    ConversionDecision::ReduceRight { redex: () }
+                },
+                | _ => ConversionDecision::ReduceLeft { redex: () },
+            };
+        }
+        let forged = arena.value_here_relating(point, Arc::new(tampered));
+        let content = DeclarationBuilder::new(&mut arena).def(
+            statement.declaration().levels().clone(),
+            declared,
+            forged,
+        );
+        *statement = MarkedDeclaration::new(
+            statement.mark(),
+            content.named(statement.declaration().name().clone()),
+        );
+
+        let refusal = Environment::replay(arena, &declarations)
+            .expect_err("the unfolding read on the wrong side is refused");
+        assert_eq!(usize::from(refusal.position()), position);
+        assert!(
+            matches!(
+                *refusal.error(),
+                KernelError::Identity(IdentityError::EndpointsDiffer {
+                    side: EndpointSide::Left,
+                    verdict: KernelVerdict::Declined(ReplayDecline::Refused(
+                        ReplayRefusal::Inapplicable { at }
+                    )),
+                    ..
+                }) if at == TracePosition::from(misread)
+            ),
+            "the kernel names the endpoint and the misread decision: {:?}",
+            refusal.error()
         );
     }
 }

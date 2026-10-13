@@ -285,8 +285,10 @@ use crate::arena::DomainCompId;
 use crate::arena::DomainFault;
 use crate::arena::DomainValueId;
 use crate::arena::NeutralId;
+use crate::closure::CompBody;
 use crate::closure::Environment;
 use crate::closure::EnvironmentDepth;
+use crate::closure::Mover;
 use crate::domain::CompTermFace;
 use crate::domain::DomainComp;
 use crate::domain::DomainValue;
@@ -883,14 +885,6 @@ enum Task
     /// Transport the operand above the identity over the path, the start and
     /// the path on the value stack, along a two-entry telescope in a motive.
     TelescopeTransport(crate::arena::ValueClosureId),
-    /// Return the tuple of this many component transports, the computations
-    /// on top of the computation stack in component order.
-    TransportTuple(gandr_core_term::ComponentCount),
-    /// Return the injection of a component transport's value at a summand.
-    TransportInjection(gandr_kernel_term::Summand),
-    /// Return the cell of a head's transport and its tail's, the two
-    /// computations on top of the computation stack, the head's first.
-    TransportCons,
     /// Assemble reflexivity from its evaluated point.
     Here
     {
@@ -2750,7 +2744,7 @@ fn run(
             Task::Constructor { .. } | Task::Record(_) => machine.comps.len() == entry_comps && machine.tasks.len() == entry_tasks && machine.values.last().is_some_and(|id| domain.value(*id).is_some()),
             Task::DataCase { .. } | Task::DataCaseClosure(_) | Task::Split { .. } | Task::SplitClosure(_) | Task::Projection(_) | Task::Force | Task::Apply | Task::StaticApply | Task::Bind { .. } | Task::Case { .. }
             | Task::BindClosure(_) | Task::CaseBranches(_) | Task::Transport | Task::ProductTransport(_) | Task::FixpointClosure(_) | Task::ListFold { .. }
-            | Task::PathTransport(_) | Task::Ride(_) | Task::TelescopeTransport(_) | Task::TransportTuple(_) | Task::TransportInjection(_) | Task::TransportCons => machine.tasks.len() >= entry_tasks,
+            | Task::PathTransport(_) | Task::Ride(_) | Task::TelescopeTransport(_) => machine.tasks.len() >= entry_tasks,
             Task::Flow { .. } => machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps
                 && machine.values.len() <= entry_values
                 && matches!(machine.values.last().and_then(|value| domain.value(*value)), Some(DomainValue::Flow { .. })),
@@ -2796,6 +2790,27 @@ fn run(
             Task::Body { body: crate::closure::CompBody::ForceApplied(function), .. } => machine.comps.len() == entry_comps
                 && machine.values.len() == entry_values.saturating_add(1)
                 && matches!(machine.tasks.get(entry_tasks..), Some(&[Task::Apply, Task::Force, Task::Supply(held)]) if held == function),
+            Task::Body { body: crate::closure::CompBody::RidePair { motive, flow, value }, .. } => machine.comps.len() == entry_comps
+                && machine.values.len() == entry_values.saturating_add(2) && machine.values.ends_with(&[flow, value])
+                && matches!(machine.tasks.get(entry_tasks..), Some(&[Task::BindClosure(_), Task::Ride(held)]) if held == motive),
+            Task::Body { body: crate::closure::CompBody::Components { mover, .. }, .. } => (machine.values.len() == entry_values
+                && machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps.saturating_add(1)
+                && matches!(machine.comps.last().and_then(|&id| domain.computation(id)), Some(&DomainComp::Return { value, .. }) if domain.value(value).and_then(|held| domain.components(held)).is_some()))
+                || (machine.comps.len() == entry_comps && machine.values.len() == entry_values.saturating_add(2)
+                    && matches!((mover, machine.tasks.get(entry_tasks..)), (crate::closure::Mover::Ride, Some(&[Task::BindClosure(_), Task::Ride(_)])) | (crate::closure::Mover::Transport, Some(&[Task::BindClosure(_), Task::PathTransport(_)])))),
+            Task::Body { body: crate::closure::CompBody::Inject(summand), env } => machine.values.len() == entry_values
+                && machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps.saturating_add(1)
+                && matches!(machine.comps.last().and_then(|&id| domain.computation(id)), Some(&DomainComp::Return { value, .. })
+                    if matches!(domain.value(value), Some(&DomainValue::Injection { summand: held, body, .. })
+                        if held == summand && machine.env(env).is_ok_and(|environment| environment.lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32)) == Some(body)))),
+            Task::Body { body: crate::closure::CompBody::MoveTail { mover, motive, along, tail }, .. } => machine.comps.len() == entry_comps
+                && machine.values.len() == entry_values.saturating_add(2) && machine.values.ends_with(&[along, tail])
+                && matches!((mover, machine.tasks.get(entry_tasks..)), (crate::closure::Mover::Ride, Some(&[Task::BindClosure(_), Task::Ride(held)])) | (crate::closure::Mover::Transport, Some(&[Task::BindClosure(_), Task::PathTransport(held)])) if held == motive),
+            Task::Body { body: crate::closure::CompBody::Cons(head), env } => machine.values.len() == entry_values
+                && machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps.saturating_add(1)
+                && matches!(machine.comps.last().and_then(|&id| domain.computation(id)), Some(&DomainComp::Return { value, .. })
+                    if matches!(domain.value(value), Some(&DomainValue::ListCons { first, second, .. })
+                        if first == head && machine.env(env).is_ok_and(|environment| environment.lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32)) == Some(second)))),
             Task::PathProduct(_) => machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps
                 && entry_values.checked_sub(1) == Some(machine.values.len())
                 && matches!(machine.values.last().and_then(|&id| domain.value(id)), Some(&DomainValue::PathProduct { first, second, .. })
@@ -3001,6 +3016,70 @@ fn step(
                     machine.tasks.push(Task::Supply(function));
                     Ok(())
                 },
+                // `x. y ← ride(P, g, b); return (x, y)`: the right component
+                // rides only once the left one returned.
+                | crate::closure::CompBody::RidePair {
+                    motive,
+                    flow,
+                    value,
+                } => {
+                    let continuation =
+                        domain.native_continuation(crate::closure::CompBody::Pair(bound));
+                    machine.tasks.push(Task::BindClosure(continuation));
+                    machine.tasks.push(Task::Ride(motive));
+                    machine.values.extend([flow, value]);
+                    Ok(())
+                },
+                | crate::closure::CompBody::Components {
+                    mover,
+                    motive,
+                    along,
+                    source,
+                    moved,
+                } => {
+                    let environment = machine.env(env)?.clone();
+                    move_components(
+                        core,
+                        domain,
+                        machine,
+                        Componentwise {
+                            mover,
+                            motive,
+                            along,
+                            source,
+                        },
+                        (environment, moved),
+                    )
+                },
+                | crate::closure::CompBody::Inject(summand) => {
+                    let injected = domain.value_injection(summand, bound, TermFace::Reduced);
+                    machine
+                        .comps
+                        .push(domain.comp_return(injected, CompTermFace::Reduced));
+                    Ok(())
+                },
+                // `h. t ← step(List E, p, tail); return cons(h, t)`: the tail
+                // moves only once the head returned.
+                | crate::closure::CompBody::MoveTail {
+                    mover,
+                    motive,
+                    along,
+                    tail,
+                } => {
+                    let continuation =
+                        domain.native_continuation(crate::closure::CompBody::Cons(bound));
+                    machine.tasks.push(Task::BindClosure(continuation));
+                    machine.tasks.push(moving(mover, motive));
+                    machine.values.extend([along, tail]);
+                    Ok(())
+                },
+                | crate::closure::CompBody::Cons(head) => {
+                    let cell = domain.value_list_cons(head, bound, TermFace::Reduced);
+                    machine
+                        .comps
+                        .push(domain.comp_return(cell, CompTermFace::Reduced));
+                    Ok(())
+                },
             }
         },
         | Task::PathProduct(term) => {
@@ -3065,43 +3144,6 @@ fn step(
         },
         | Task::TelescopeTransport(motive) => {
             step_telescope_transport(core, domain, machine, motive)
-        },
-        | Task::TransportTuple(count) => {
-            let start = machine
-                .comps
-                .len()
-                .checked_sub(usize::from(count))
-                .ok_or(EvalFault::MachineInvariant)?;
-            let mut components = Vec::with_capacity(usize::from(count));
-            for &component in machine.comps.get(start ..).unwrap_or_default() {
-                components.push(returned_value(domain, component)?);
-            }
-            machine.comps.truncate(start);
-            let tuple = domain.value_tuple(components, TermFace::Reduced);
-            machine
-                .comps
-                .push(domain.comp_return(tuple, CompTermFace::Reduced));
-            Ok(())
-        },
-        | Task::TransportInjection(summand) => {
-            let component = machine.pop_comp()?;
-            let body = returned_value(domain, component)?;
-            let injected = domain.value_injection(summand, body, TermFace::Reduced);
-            machine
-                .comps
-                .push(domain.comp_return(injected, CompTermFace::Reduced));
-            Ok(())
-        },
-        | Task::TransportCons => {
-            let tail = machine.pop_comp()?;
-            let head = machine.pop_comp()?;
-            let first = returned_value(domain, head)?;
-            let second = returned_value(domain, tail)?;
-            let cell = domain.value_list_cons(first, second, TermFace::Reduced);
-            machine
-                .comps
-                .push(domain.comp_return(cell, CompTermFace::Reduced));
-            Ok(())
         },
         | Task::Here { term } => {
             let point = machine.pop_value()?;
@@ -4701,15 +4743,17 @@ fn step_transport(
 ///   `motive` closes a value type under one binder over the environment the
 ///   transport was read in.
 /// - ensures: reflexivity returns the operand unchanged; a product motive read
-///   against a tuple of its arity transports each component in its own motive
-///   and returns their tuple; a sum motive read against an injection transports
-///   the payload in its summand's motive and returns it injected; a list motive
-///   returns `nil` unchanged and a cell as the cell of its head transported in
-///   the element's motive and its tail in the list's; the decode of the
-///   motive's own binder hands a universe path to native transport; the
-///   singleton `y. Path(D, l, y)`, its carrier and left endpoint closed over
-///   the binder, read against reflexivity returns the path itself; any other
-///   configuration over a stuck path stacks the transport on the path's spine.
+///   against a tuple of its arity transports each component in its own motive,
+///   binding each before the next, and returns their tuple; a sum motive read
+///   against an injection transports the payload in its summand's motive and
+///   binds it into its injection; a list motive returns `nil` unchanged and
+///   binds a cell's head, transported in the element's motive, before its tail,
+///   transported in the list's — the kernel's reducts, so a component stuck on
+///   a definition holds the components after it; the decode of the motive's own
+///   binder hands a universe path to native transport; the singleton `y.
+///   Path(D, l, y)`, its carrier and left endpoint closed over the binder, read
+///   against reflexivity returns the path itself; any other configuration over
+///   a stuck path stacks the transport on the path's spine.
 /// - provides: transport's computation rules — identity on `here`, through the
 ///   motive's constructors, and the singleton's — and its stuck form.
 /// - fails: [`EvalFault::MachineInvariant`] for a missing operand or a motive
@@ -4736,9 +4780,10 @@ fn step_transport(
 /// - witness: `identity::tests::transport_moves_a_list_through_a_universe_path`
 #[spec(
     captures: [values = machine.values.len(), comps = machine.comps.len(), tasks = machine.tasks.len()],
-    ensures: |ret| ret.is_err() || (machine.values.len() == values.saturating_sub(2_usize)
-        && ((machine.comps.len() == comps.saturating_add(1_usize) && machine.tasks.len() == tasks)
-            || (machine.comps.len() == comps && machine.tasks.len() > tasks))),
+    ensures: |ret| ret.is_err()
+        || (machine.comps.len() == comps.saturating_add(1_usize) && machine.tasks.len() == tasks
+            && machine.values.len() == values.saturating_sub(2_usize))
+        || (machine.comps.len() == comps && machine.tasks.len() > tasks && machine.values.len() <= values),
 )]
 fn step_path_transport(
     core: &CoreArena,
@@ -4768,21 +4813,19 @@ fn step_path_transport(
         *domain.value(value).ok_or(dangling)?,
     ) {
         | (Some(&ValueType::Product(ref components)), DomainValue::Tuple { fields, .. }) => {
-            let fields = domain.fields(fields).map_err(EvalFault::Domain)?.to_vec();
-            if fields.len() == components.len() {
-                machine
-                    .tasks
-                    .push(Task::TransportTuple(ComponentCount::from(fields.len())));
-                for (&component, &field) in components.iter().zip(&fields).rev() {
-                    let motive = domain.value_closure_node(
-                        crate::ValueBody::ValueType(component),
-                        environment.clone(),
-                    );
-                    machine.tasks.push(Task::PathTransport(motive));
-                    machine.tasks.push(Task::Supply(field));
-                    machine.tasks.push(Task::Supply(path));
-                }
-                return Ok(());
+            if domain.fields(fields).map_err(EvalFault::Domain)?.len() == components.len() {
+                return move_components(
+                    core,
+                    domain,
+                    machine,
+                    Componentwise {
+                        mover: Mover::Transport,
+                        motive,
+                        along: path,
+                        source: value,
+                    },
+                    (Environment::new(), ComponentCount::from(0_usize)),
+                );
             }
         },
         | (
@@ -4794,12 +4837,12 @@ fn step_path_transport(
             },
         ) => {
             if let Some(&component) = summands.get(usize::from(summand)) {
-                let motive =
+                let part =
                     domain.value_closure_node(crate::ValueBody::ValueType(component), environment);
-                machine.tasks.push(Task::TransportInjection(summand));
-                machine.tasks.push(Task::PathTransport(motive));
-                machine.tasks.push(Task::Supply(payload));
-                machine.tasks.push(Task::Supply(path));
+                let continuation = domain.native_continuation(CompBody::Inject(summand));
+                machine.tasks.push(Task::BindClosure(continuation));
+                machine.tasks.push(Task::PathTransport(part));
+                machine.values.extend([path, payload]);
                 return Ok(());
             }
         },
@@ -4811,13 +4854,15 @@ fn step_path_transport(
         },
         | (Some(&ValueType::List(element)), DomainValue::ListCons { first, second, .. }) => {
             let head = domain.value_closure_node(crate::ValueBody::ValueType(element), environment);
-            machine.tasks.push(Task::TransportCons);
-            machine.tasks.push(Task::PathTransport(motive));
-            machine.tasks.push(Task::Supply(second));
-            machine.tasks.push(Task::Supply(path));
+            let continuation = domain.native_continuation(CompBody::MoveTail {
+                mover: Mover::Transport,
+                motive,
+                along: path,
+                tail: second,
+            });
+            machine.tasks.push(Task::BindClosure(continuation));
             machine.tasks.push(Task::PathTransport(head));
-            machine.tasks.push(Task::Supply(first));
-            machine.tasks.push(Task::Supply(path));
+            machine.values.extend([path, first]);
             return Ok(());
         },
         // The motive's own binder decoded: the universe path itself carries
@@ -4876,16 +4921,19 @@ fn step_path_transport(
 ///   composite rides its first leg, then its second from the result; a motive
 ///   that ignores its binder returns the value; a product motive over a tuple
 ///   of its arity, a sum motive over an injection and a list motive over a list
-///   cell ride constructorwise, `nil` returning unchanged; at the decode of the
-///   motive's own binder a forward flow applies its translator and a function
-///   flow returns the function wrapped by its boundaries, in a thunk that rides
-///   the argument along the domain flow, applies the function and rides the
-///   result along the codomain flow; at the singleton `y. Flow(D, l, y)` a
-///   `stay` value returns the flow and any other value composes with it. A
-///   session simulation returns the run unchanged — the checker admitted it by
-///   the protocol's simulation, and runs move between related sessions as
-///   themselves. Any other configuration over a stuck flow stacks the ride on
-///   the flow's spine.
+///   cell ride constructorwise, each part bound before the next and the
+///   constructor returned last, `nil` returning unchanged; at the decode of the
+///   motive's own binder a forward flow applies its translator, a function flow
+///   returns the function wrapped by its boundaries, in a thunk that rides the
+///   argument along the domain flow, applies the function and rides the result
+///   along the codomain flow, and a flow product rides a pair's left component
+///   along its first flow, then the right along its second, and pairs them; at
+///   the singleton `y. Flow(D, l, y)` a `stay` value returns the flow and any
+///   other value composes with it. A part stuck on a definition holds every
+///   part after it, as the kernel's reduct binds it. A session simulation
+///   returns the run unchanged — the checker admitted it by the protocol's
+///   simulation, and runs move between related sessions as themselves. Any
+///   other configuration over a stuck flow stacks the ride on the flow's spine.
 /// - provides: the ride's computation rules, the same table the kernel replays,
 ///   and its stuck form.
 /// - fails: [`EvalFault::MachineInvariant`] for a missing operand, a flow of
@@ -4904,10 +4952,12 @@ fn step_path_transport(
 ///   flow at the decode of the binder, the flow singleton, and a stuck flow at
 ///   the identity motive each reach their own row; dropping a row, reordering a
 ///   composite's legs or a function flow's boundaries changes the read-back
-///   term.
+///   term; a stuck left component of a flow product, a product motive, a sum
+///   motive or a list cell holds the parts after it.
 /// - witness: `identity::tests::rides_compute_by_the_kernels_rows`
 /// - witness: `identity::tests::a_function_flow_rides_in_variance_order`
 /// - witness: `identity::tests::a_flow_product_rides_a_pair_componentwise`
+/// - witness: `identity::tests::a_stuck_part_holds_the_parts_after_it`
 #[spec(
     captures: [values = machine.values.len(), comps = machine.comps.len(), tasks = machine.tasks.len()],
     ensures: |ret| ret.is_err() || (machine.comps.len() == comps.saturating_add(1_usize) && machine.tasks.len() == tasks && machine.values.len() == values.saturating_sub(2_usize))
@@ -4984,21 +5034,19 @@ fn step_ride(
         *domain.value(value).ok_or(dangling)?,
     ) {
         | (Some(&ValueType::Product(ref components)), DomainValue::Tuple { fields, .. }) => {
-            let fields = domain.fields(fields).map_err(EvalFault::Domain)?.to_vec();
-            if fields.len() == components.len() {
-                machine
-                    .tasks
-                    .push(Task::TransportTuple(ComponentCount::from(fields.len())));
-                for (&component, &field) in components.iter().zip(&fields).rev() {
-                    let motive = domain.value_closure_node(
-                        crate::ValueBody::ValueType(component),
-                        environment.clone(),
-                    );
-                    machine.tasks.push(Task::Ride(motive));
-                    machine.tasks.push(Task::Supply(field));
-                    machine.tasks.push(Task::Supply(flow));
-                }
-                return Ok(());
+            if domain.fields(fields).map_err(EvalFault::Domain)?.len() == components.len() {
+                return move_components(
+                    core,
+                    domain,
+                    machine,
+                    Componentwise {
+                        mover: Mover::Ride,
+                        motive,
+                        along: flow,
+                        source: value,
+                    },
+                    (Environment::new(), ComponentCount::from(0_usize)),
+                );
             }
         },
         | (
@@ -5010,12 +5058,12 @@ fn step_ride(
             },
         ) => {
             if let Some(&component) = summands.get(usize::from(summand)) {
-                let motive =
+                let part =
                     domain.value_closure_node(crate::ValueBody::ValueType(component), environment);
-                machine.tasks.push(Task::TransportInjection(summand));
-                machine.tasks.push(Task::Ride(motive));
-                machine.tasks.push(Task::Supply(payload));
-                machine.tasks.push(Task::Supply(flow));
+                let continuation = domain.native_continuation(CompBody::Inject(summand));
+                machine.tasks.push(Task::BindClosure(continuation));
+                machine.tasks.push(Task::Ride(part));
+                machine.values.extend([flow, payload]);
                 return Ok(());
             }
         },
@@ -5027,13 +5075,15 @@ fn step_ride(
         },
         | (Some(&ValueType::List(element)), DomainValue::ListCons { first, second, .. }) => {
             let head = domain.value_closure_node(crate::ValueBody::ValueType(element), environment);
-            machine.tasks.push(Task::TransportCons);
-            machine.tasks.push(Task::Ride(motive));
-            machine.tasks.push(Task::Supply(second));
-            machine.tasks.push(Task::Supply(flow));
+            let continuation = domain.native_continuation(CompBody::MoveTail {
+                mover: Mover::Ride,
+                motive,
+                along: flow,
+                tail: second,
+            });
+            machine.tasks.push(Task::BindClosure(continuation));
             machine.tasks.push(Task::Ride(head));
-            machine.tasks.push(Task::Supply(first));
-            machine.tasks.push(Task::Supply(flow));
+            machine.values.extend([flow, first]);
             return Ok(());
         },
         // The motive's own binder decoded: a forward flow applies its
@@ -5077,8 +5127,9 @@ fn step_ride(
                         .push(domain.comp_return(thunk, CompTermFace::Reduced));
                     return Ok(());
                 },
-                // A flow product rides a pair's components along its two
-                // flows, each at the decode of the binder, and pairs them.
+                // A flow product rides a pair's left component along its first
+                // flow, then the right along its second, each at the decode of
+                // the binder, and pairs them.
                 | DomainValue::Flow {
                     former: crate::domain::FlowFormer::Product,
                     parts,
@@ -5091,18 +5142,20 @@ fn step_ride(
                     if let DomainValue::Tuple { fields, .. } =
                         *domain.value(value).ok_or(dangling)?
                     {
-                        let fields = domain.fields(fields).map_err(EvalFault::Domain)?.to_vec();
-                        if let [left, right] = fields[..] {
-                            machine
-                                .tasks
-                                .push(Task::TransportTuple(ComponentCount::from(2_usize)));
-                            for (component, flow) in [(right, second), (left, first)] {
-                                machine.tasks.push(Task::Ride(motive));
-                                machine.tasks.push(Task::Supply(component));
-                                machine.tasks.push(Task::Supply(flow));
-                            }
-                            return Ok(());
-                        }
+                        let fields = domain.fields(fields).map_err(EvalFault::Domain)?;
+                        let &[left, right] = fields
+                        else {
+                            return Err(EvalFault::RodeUncomputed);
+                        };
+                        let continuation = domain.native_continuation(CompBody::RidePair {
+                            motive,
+                            flow: second,
+                            value: right,
+                        });
+                        machine.tasks.push(Task::BindClosure(continuation));
+                        machine.tasks.push(Task::Ride(motive));
+                        machine.values.extend([first, left]);
+                        return Ok(());
                     }
                 },
                 | _ => {},
@@ -5140,6 +5193,148 @@ fn step_ride(
         .comps
         .push(domain.comp_neutral(grown, CompTermFace::Reduced));
     Ok(())
+}
+
+/// The task moving the value above a path or flow on the value stack in a
+/// motive, for a mover.
+///
+/// # Specification
+/// trivial.
+const fn moving(
+    mover: Mover,
+    motive: crate::arena::ValueClosureId,
+) -> Task
+{
+    match mover {
+        | Mover::Transport => Task::PathTransport(motive),
+        | Mover::Ride => Task::Ride(motive),
+    }
+}
+
+/// A tuple moving componentwise through its product motive.
+#[derive(Clone, Copy, Debug)]
+struct Componentwise
+{
+    /// Transport or ride.
+    mover: Mover,
+    /// The product motive, closed over its environment.
+    motive: crate::arena::ValueClosureId,
+    /// The path or flow every component moves along.
+    along: DomainValueId,
+    /// The tuple moved.
+    source: DomainValueId,
+}
+
+/// Move the next component of a tuple in its own part of the product motive,
+/// or return the tuple of every moved component.
+///
+/// # Specification
+/// - requires: `moving_tuple.motive` closes a product motive whose arity is
+///   `moving_tuple.source`'s; `count` components have moved, their results
+///   bound in `bound`, the latest innermost.
+/// - ensures: with a component left, the move of the next component in its part
+///   along `moving_tuple.along`, under a continuation over `bound` that moves
+///   the rest; with none left, the return of the tuple of `bound`'s values in
+///   component order. This is the kernel's `x₀ ← step(P₀, p, v₀); …; return
+///   (x₀, …)`, so a component stuck on a definition holds every component after
+///   it.
+/// - provides: the product row of transport and ride.
+/// - fails: [`EvalFault::MachineInvariant`] for a motive closure holding no
+///   product, a source that is no tuple, an arity mismatch or a binding `bound`
+///   lacks; [`EvalFault::DanglingTerm`] for a motive naming no core node;
+///   domain faults for dangling nodes.
+/// - panics: none.
+///
+/// # Errors
+/// An `EvalFault`, as above.
+///
+/// # Termination
+/// - reason: the `for` loop over the moved components, not recursion; each
+///   later component moves in a later step of the machine.
+/// - measure: the components left to read off `bound`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a three-component product motive moves its components in
+///   order and returns them in source order; a component stuck on its path
+///   holds the components after it; reordering the reads off the environment or
+///   moving the next component before the bind changes the read-back term.
+/// - witness: `identity::tests::a_product_motive_binds_each_component_before_the_next`
+/// - witness: `identity::tests::a_stuck_part_holds_the_parts_after_it`
+#[spec(
+    captures: [values = machine.values.len(), comps = machine.comps.len(), tasks = machine.tasks.len()],
+    ensures: |ret| ret.is_err()
+        || (machine.comps.len() == comps.saturating_add(1_usize) && machine.tasks.len() == tasks && machine.values.len() == values)
+        || (machine.comps.len() == comps && machine.tasks.len() == tasks.saturating_add(2_usize) && machine.values.len() == values.saturating_add(2_usize)),
+)]
+fn move_components(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    moving_tuple: Componentwise,
+    (bound, count): (Environment, ComponentCount),
+) -> Result<(), EvalFault>
+{
+    let dangling = EvalFault::Domain(DomainFault::Dangling);
+    let closure = domain.value_closure(moving_tuple.motive).ok_or(dangling)?;
+    let crate::ValueBody::ValueType(family) = closure.body()
+    else {
+        return Err(EvalFault::MachineInvariant);
+    };
+    let environment = closure.environment().clone();
+    let family = core.value_type(family).ok_or(EvalFault::DanglingTerm)?;
+    let ValueType::Product(ref parts) = *family
+    else {
+        return Err(EvalFault::MachineInvariant);
+    };
+    let moved = usize::from(count);
+    let DomainValue::Tuple { fields, .. } = *domain.value(moving_tuple.source).ok_or(dangling)?
+    else {
+        return Err(EvalFault::MachineInvariant);
+    };
+    let field = domain
+        .fields(fields)
+        .map_err(EvalFault::Domain)?
+        .get(moved)
+        .copied();
+    match (parts.get(moved), field) {
+        | (Some(&part), Some(field)) => {
+            let part = domain.value_closure_node(crate::ValueBody::ValueType(part), environment);
+            let next = moved
+                .checked_add(1_usize)
+                .ok_or(EvalFault::MachineInvariant)?;
+            let continuation = domain.native_continuation_over(
+                CompBody::Components {
+                    mover: moving_tuple.mover,
+                    motive: moving_tuple.motive,
+                    along: moving_tuple.along,
+                    source: moving_tuple.source,
+                    moved: ComponentCount::from(next),
+                },
+                bound,
+            );
+            machine.tasks.push(Task::BindClosure(continuation));
+            machine.tasks.push(moving(moving_tuple.mover, part));
+            machine.values.extend([moving_tuple.along, field]);
+            Ok(())
+        },
+        | (None, None) => {
+            let mut components = Vec::with_capacity(moved);
+            for index in (0 .. moved).rev() {
+                let index =
+                    u32::try_from(index).map_err(|_overflow| EvalFault::MachineInvariant)?;
+                let component = bound
+                    .lookup(Zone::Intuitionistic, DeBruijnIndex::from(index))
+                    .ok_or(EvalFault::MachineInvariant)?;
+                components.push(component);
+            }
+            let tuple = domain.value_tuple(components, TermFace::Reduced);
+            machine
+                .comps
+                .push(domain.comp_return(tuple, CompTermFace::Reduced));
+            Ok(())
+        },
+        | (Some(_), None) | (None, Some(_)) => Err(EvalFault::MachineInvariant),
+    }
 }
 
 /// Transport the operand above an identity over a path, a start and the path
