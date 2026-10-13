@@ -1,0 +1,517 @@
+//! Each budgeted lane's median over the sampled runs, and the report that
+//! compares it with the budget.
+
+extern crate alloc;
+
+use alloc::collections::BTreeMap;
+use core::fmt;
+use core::num::ParseIntError;
+use core::str::FromStr;
+
+use quenchant_shape::shape::Maybe;
+
+use crate::budget::Budget;
+use crate::budget::Lane;
+use crate::budget::Seconds;
+
+/// A workflow run's identifier.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RunId(u64);
+
+impl FromStr for RunId
+{
+    type Err = ParseIntError;
+
+    /// Reads a run identifier written in decimal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from_str(text: &str) -> Result<Self, Self::Err>
+    {
+        text.parse().map(Self)
+    }
+}
+
+impl fmt::Display for RunId
+{
+    /// Writes the identifier in decimal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// One successful job of a sampled run: its name and how long it ran.
+///
+/// # Specification
+/// - provides: one sample of a lane's job time.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Sample
+{
+    /// The job's display name.
+    pub lane: Lane,
+    /// From the job's start to its completion.
+    pub time: Seconds,
+}
+
+/// Why a sample line could not be read.
+///
+/// # Specification
+/// - provides: the one way a line is not a sample.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NotASample
+{
+    /// The line is not whole seconds, a tab, and a name.
+    Shape,
+}
+
+impl FromStr for Sample
+{
+    type Err = NotASample;
+
+    /// Reads `SECONDS<TAB>NAME`, the line the job query prints.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success the time is the decimal before the first tab and
+    ///   the lane the rest of the line, which may hold spaces and tabs.
+    /// - provides: a job's sample from `gh`'s output.
+    /// - fails: [`NotASample::Shape`] without a tab, with an empty name, or
+    ///   when the seconds are not a whole number.
+    /// - panics: none.
+    /// - executable: none — the outcome is the parse itself.
+    ///
+    /// # Errors
+    /// As `fails` lists.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a name with spaces and parentheses, a missing tab, a
+    ///   fraction and an empty name; splitting at the last tab or accepting a
+    ///   fraction changes a parse.
+    /// - witness: `report::tests::a_sample_reads_seconds_then_name`
+    #[inline]
+    fn from_str(line: &str) -> Result<Self, Self::Err>
+    {
+        let (seconds, name) = line.split_once('\t').ok_or(NotASample::Shape)?;
+        if name.is_empty() {
+            return Err(NotASample::Shape);
+        }
+        let time = seconds.parse::<Seconds>().ok().ok_or(NotASample::Shape)?;
+        Ok(Self {
+            lane: Lane::from(name),
+            time,
+        })
+    }
+}
+
+/// Why a lane has no median.
+///
+/// # Specification
+/// - provides: the one reason a budgeted lane goes unmeasured.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Unsampled
+{
+    /// No sampled run holds a successful job of the lane.
+    NoSuccessfulJob,
+}
+
+/// How a lane, or the whole report, stands against its budget.
+///
+/// # Specification
+/// - provides: the verdict the issue is filed or closed by.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Standing
+{
+    /// The median is at or under the budget.
+    Within,
+    /// The median exceeds the budget.
+    Over,
+    /// No sample: neither within nor over.
+    Unmeasured,
+}
+
+impl fmt::Display for Standing
+{
+    /// Writes the standing as the report's last column: `within`, `over` or
+    /// `unmeasured`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(match *self {
+            | Self::Within => "within",
+            | Self::Over => "**over**",
+            | Self::Unmeasured => "unmeasured",
+        })
+    }
+}
+
+/// How many samples a row's median comes from.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct SampleCount(usize);
+
+impl fmt::Display for SampleCount
+{
+    /// Writes the count in decimal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// One budgeted lane's line of the report.
+///
+/// # Specification
+/// - provides: the lane, its median over the samples, how many there were, and
+///   its budget.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Row
+{
+    /// The lane, by its job's name.
+    pub lane: Lane,
+    /// The lower median of its samples.
+    pub median: Maybe<Seconds, Unsampled>,
+    /// How many samples the median comes from.
+    pub samples: SampleCount,
+    /// The budget it is held to.
+    pub limit: Seconds,
+}
+
+impl Row
+{
+    /// How the lane stands against its budget.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Standing::Over`] when the median exceeds the limit,
+    ///   [`Standing::Within`] when it does not, [`Standing::Unmeasured`]
+    ///   without a median.
+    /// - provides: the row's verdict.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the outcome is the comparison itself.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a median one second over, one exactly at and none; a
+    ///   strict comparison flipped or an unmeasured lane counted over changes
+    ///   the verdict.
+    /// - witness: `report::tests::a_lane_over_its_budget_puts_the_report_over`
+    #[inline]
+    #[must_use]
+    pub fn standing(&self) -> Standing
+    {
+        match self.median {
+            | Maybe::Present(median) if median > self.limit => Standing::Over,
+            | Maybe::Present(_) => Standing::Within,
+            | Maybe::Absent(Unsampled::NoSuccessfulJob) => Standing::Unmeasured,
+        }
+    }
+}
+
+/// The lower median of `samples`: the sample at position ⌊(n − 1) / 2⌋ in
+/// ascending order, a time some job actually took.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`Maybe::Present`] holding that sample when any exists.
+/// - provides: a lane's summary, robust to the slowest runs of a window.
+/// - fails: [`Unsampled::NoSuccessfulJob`] for no samples.
+/// - panics: none.
+/// - executable: none — the sort is the clause.
+///
+/// # Adequacy
+/// - hypothesis: L3 — odd and even counts in shuffled order and none; the upper
+///   median, the mean or an unsorted pick changes the value.
+/// - witness: `report::tests::the_median_is_a_time_some_job_took`
+#[inline]
+pub fn lower_median(mut samples: Vec<Seconds>) -> Maybe<Seconds, Unsampled>
+{
+    samples.sort_unstable();
+    let middle = samples
+        .len()
+        .saturating_sub(1)
+        .checked_div(2)
+        .unwrap_or_default();
+    samples
+        .get(middle)
+        .copied()
+        .map_or(Maybe::Absent(Unsampled::NoSuccessfulJob), Maybe::Present)
+}
+
+/// The report: the runs sampled and one row per budgeted lane.
+///
+/// # Specification
+/// - provides: what the nightly run prints and files.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Report
+{
+    /// The runs sampled, newest first.
+    runs: Vec<RunId>,
+    /// One row per budget, in the budget table's order.
+    rows: Vec<Row>,
+}
+
+impl Report
+{
+    /// Each budget's lane summarised over `samples` from `runs`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one row per budget, in order, whose median is the lower
+    ///   median of the samples of its lane and whose count is theirs; samples
+    ///   of lanes without a budget are ignored.
+    /// - provides: the report.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the grouping is the clause.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two budgeted lanes, one sampled three times and one
+    ///   never, beside an unbudgeted lane; grouping by the wrong name or
+    ///   dropping the unsampled row changes the rendered report.
+    /// - witness: `report::tests::the_report_lists_every_budget_in_order`
+    #[inline]
+    #[must_use]
+    pub fn new(
+        budgets: &[Budget],
+        runs: Vec<RunId>,
+        samples: Vec<Sample>,
+    ) -> Self
+    {
+        let mut by_lane: BTreeMap<Lane, Vec<Seconds>> = BTreeMap::new();
+        for sample in samples {
+            by_lane.entry(sample.lane).or_default().push(sample.time);
+        }
+        let rows = budgets
+            .iter()
+            .map(|budget| {
+                let times = by_lane.remove(&budget.lane).unwrap_or_default();
+                Row {
+                    lane: budget.lane.clone(),
+                    samples: SampleCount(times.len()),
+                    median: lower_median(times),
+                    limit: budget.limit,
+                }
+            })
+            .collect();
+        Self { runs, rows }
+    }
+
+    /// How the report stands: over when any lane is over, otherwise within.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Standing::Over`] exactly when some row is over;
+    ///   [`Standing::Within`] otherwise, unmeasured rows included.
+    /// - provides: whether the issue is opened or closed.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause would walk every row, the body itself.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Row::standing`].
+    /// - witness: `report::tests::a_lane_over_its_budget_puts_the_report_over`
+    #[inline]
+    #[must_use]
+    pub fn standing(&self) -> Standing
+    {
+        if self.rows.iter().any(|row| row.standing() == Standing::Over) {
+            Standing::Over
+        }
+        else {
+            Standing::Within
+        }
+    }
+}
+
+impl fmt::Display for Report
+{
+    /// Writes the report as Markdown: a sentence naming the window, a table
+    /// of lane, median, budget, sample count and standing, and the runs.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one table row per budget, in order, an unmeasured median
+    ///   written as `—`.
+    /// - provides: the job summary and the issue body.
+    /// - fails: propagates the formatter's own write failure.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no readable output buffer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Report::new`].
+    /// - witness: `report::tests::the_report_lists_every_budget_in_order`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        writeln!(
+            f,
+            "Median job time over the last {} merge-queue and pull-request runs of `ci.yml`, \
+             against the budgets in `nightly.yml`.\n",
+            self.runs.len()
+        )?;
+        writeln!(f, "| lane | median | budget | jobs | standing |")?;
+        writeln!(f, "| --- | ---: | ---: | ---: | --- |")?;
+        for row in &self.rows {
+            let median = match row.median {
+                | Maybe::Present(median) => median.to_string(),
+                | Maybe::Absent(Unsampled::NoSuccessfulJob) => "—".to_owned(),
+            };
+            writeln!(
+                f,
+                "| {} | {median} | {} | {} | {} |",
+                row.lane,
+                row.limit,
+                row.samples,
+                row.standing()
+            )?;
+        }
+        let runs = self
+            .runs
+            .iter()
+            .map(RunId::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+        writeln!(f, "\nRuns: {runs}.")
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use quenchant_shape::shape::Maybe;
+
+    use super::NotASample;
+    use super::Report;
+    use super::RunId;
+    use super::Sample;
+    use super::Standing;
+    use super::Unsampled;
+    use super::lower_median;
+    use crate::budget::Budget;
+    use crate::budget::Lane;
+    use crate::budget::Seconds;
+
+    #[test]
+    fn a_sample_reads_seconds_then_name()
+    {
+        assert_eq!(
+            "581\ttest enforcing targets (linux)".parse::<Sample>(),
+            Ok(Sample {
+                lane: Lane::from("test enforcing targets (linux)"),
+                time: Seconds::from(581),
+            })
+        );
+        assert_eq!(
+            "7\ta\tb".parse::<Sample>().map(|sample| sample.lane),
+            Ok(Lane::from("a\tb"))
+        );
+        for line in ["581 check", "1.5\tcheck", "7\t", ""] {
+            assert_eq!(line.parse::<Sample>(), Err(NotASample::Shape), "{line:?}");
+        }
+    }
+
+    #[test]
+    fn the_median_is_a_time_some_job_took()
+    {
+        let times = |seconds: &[u64]| seconds.iter().copied().map(Seconds::from).collect();
+        assert_eq!(
+            lower_median(times(&[9, 1, 5])),
+            Maybe::Present(Seconds::from(5))
+        );
+        assert_eq!(
+            lower_median(times(&[9, 1, 5, 7])),
+            Maybe::Present(Seconds::from(5))
+        );
+        assert_eq!(
+            lower_median(Vec::new()),
+            Maybe::Absent(Unsampled::NoSuccessfulJob)
+        );
+    }
+
+    #[test]
+    fn the_report_lists_every_budget_in_order()
+    {
+        let budgets = [
+            "check Clippy wall=300".parse::<Budget>().unwrap(),
+            "test enforcing targets (macos-arm64)=900".parse().unwrap(),
+        ];
+        let sample = |time: u64, lane: &str| Sample {
+            lane: Lane::from(lane),
+            time: Seconds::from(time),
+        };
+        let report = Report::new(
+            &budgets,
+            vec!["12".parse::<RunId>().unwrap(), "11".parse().unwrap()],
+            vec![
+                sample(200, "check Clippy wall"),
+                sample(5, "detect changed-file categories"),
+                sample(240, "check Clippy wall"),
+                sample(181, "check Clippy wall"),
+            ],
+        );
+        assert_eq!(
+            report.to_string(),
+            "Median job time over the last 2 merge-queue and pull-request runs of `ci.yml`, \
+             against the budgets in `nightly.yml`.\n\n\
+             | lane | median | budget | jobs | standing |\n\
+             | --- | ---: | ---: | ---: | --- |\n\
+             | check Clippy wall | 3m 20s | 5m 0s | 3 | within |\n\
+             | test enforcing targets (macos-arm64) | — | 15m 0s | 0 | unmeasured |\n\
+             \nRuns: 12, 11.\n"
+        );
+        assert_eq!(report.standing(), Standing::Within);
+    }
+
+    #[test]
+    fn a_lane_over_its_budget_puts_the_report_over()
+    {
+        let budgets = ["a=100".parse::<Budget>().unwrap(), "b=100".parse().unwrap()];
+        let report = |a: u64, b: u64| {
+            Report::new(&budgets, Vec::new(), vec![
+                Sample {
+                    lane: Lane::from("a"),
+                    time: Seconds::from(a),
+                },
+                Sample {
+                    lane: Lane::from("b"),
+                    time: Seconds::from(b),
+                },
+            ])
+        };
+        assert_eq!(report(100, 100).standing(), Standing::Within);
+        assert_eq!(report(100, 101).standing(), Standing::Over);
+        let unmeasured = Report::new(&budgets, Vec::new(), Vec::new());
+        assert_eq!(unmeasured.standing(), Standing::Within);
+        assert!(
+            unmeasured
+                .to_string()
+                .contains("| a | — | 1m 40s | 0 | unmeasured |")
+        );
+    }
+}

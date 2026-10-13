@@ -51,6 +51,7 @@ members = [
   "crates/theory-spec-combinators",
   "crates/theory-virtual-doctrines",
   "crates/workflow-build-state",
+  "crates/workflow-lane-budget",
   "crates/workflow-spec-cost",
   "crates/workflow-test-timing",
 ]
@@ -155,6 +156,7 @@ default-features = false
 # - theory-spec-combinators
 # - theory-virtual-doctrines
 # - workflow-build-state
+# - workflow-lane-budget
 # - workflow-spec-cost
 # - workflow-test-timing
 [workspace.dependencies.anodized]
@@ -191,6 +193,7 @@ default-features = false
 # consumers:
 # - surface-driver
 # - workflow-build-state
+# - workflow-lane-budget
 # - workflow-spec-cost
 # - workflow-test-timing
 [workspace.dependencies.clap]
@@ -932,6 +935,7 @@ default-features = false
 # - theory-nominal-automata
 # - theory-sites
 # - theory-virtual-doctrines
+# - workflow-lane-budget
 # - workflow-spec-cost
 # - workflow-test-timing
 [workspace.dependencies.quenchant-shape]
@@ -1012,8 +1016,9 @@ default-features = false
 
 # The serialization framework the render-bus wire image, the language
 # server's protocol messages, the diagnostics' JSON image, the
-# specification-cost ranking's reading of nextest's test list and the build
-# state's reading of Cargo's messages derive through.
+# specification-cost ranking's reading of nextest's test list, the build
+# state's reading of Cargo's messages and the lane budget's reading of `gh`'s
+# issue listing derive through.
 # features:
 # - alloc: the owned strings and vectors, and the tagged enums' buffered content
 # - derive: the `Serialize` and `Deserialize` derives
@@ -1023,6 +1028,7 @@ default-features = false
 # - surface-lsp
 # - surface-render-remote
 # - workflow-build-state
+# - workflow-lane-budget
 # - workflow-spec-cost
 [workspace.dependencies.serde]
 version = "1.0.229"
@@ -1032,7 +1038,7 @@ features = ["alloc", "derive"]
 # JSON: the language server's and the Model Context Protocol server's wire
 # format, the diagnostics' JSON verbosity level, the render bus's line format
 # and the format its codec witnesses round-trip through, nextest's
-# machine-readable test list and Cargo's build messages.
+# machine-readable test list, Cargo's build messages and `gh`'s issue listing.
 # features:
 # - alloc: the owned value tree and the string encoder without std
 # consumers:
@@ -1045,6 +1051,7 @@ features = ["alloc", "derive"]
 # - surface-render-terminal (dev)
 # - surface-tui
 # - workflow-build-state
+# - workflow-lane-budget
 # - workflow-spec-cost
 [workspace.dependencies.serde_json]
 version = "1.0.151"

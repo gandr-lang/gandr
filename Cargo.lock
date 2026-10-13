@@ -1128,6 +1128,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-workflow-lane-budget"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "quenchant-anodized",
+ "quenchant-shape",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "gandr-workflow-spec-cost"
 version = "0.0.0"
 dependencies = [

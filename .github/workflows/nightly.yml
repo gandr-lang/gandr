@@ -10,7 +10,8 @@ name: Nightly
 # sweeps over every source in both modes (`mise run ci:sweeps`) and the
 # one-token-drop recovery matrix over every token (`mise run ci:recovery`).
 # Daily on main when main moved since the last successful run; a failure is
-# a red run on main, never a blocked queue. A dispatch always runs.
+# a red run on main, never a blocked queue. A dispatch always runs. Beside
+# them, every day, each CI lane's median job time against its budget.
 on:
   schedule:
     - cron: "0 4 * * *"
@@ -208,3 +209,39 @@ jobs:
       NIGHTLY_TASK: ci:recovery
       NEXTEST_PROFILE: ci
     steps: *nightly-steps
+
+  # Each lane's median job time over the newest ten merge-queue and
+  # pull-request runs of ci.yml against its budget, as the job summary and on
+  # one issue while any lane is over (`mise run ci:lane-budget`). Alerting,
+  # never a gate: nothing waits on this job. A budget changes with its lane's
+  # shape, in the same commit; the name is the job's display name.
+  lane-budget:
+    name: hold each CI lane to its budget
+    needs: ci-image-ref
+    if: ${{ !cancelled() && !failure() }}
+    runs-on: *linux
+    permissions:
+      contents: read
+      packages: read
+      actions: read
+      issues: write
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 15
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *install-policy-tools
+      - *setup-rust
+      - name: compare each lane with its budget
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: >-
+          mise run ci:lane-budget --issue "CI lane budgets"
+          --budget "test enforcing targets (linux)=600"
+          --budget "test enforcing targets (macos-arm64)=720"
+          --budget "test plain-only targets (linux)=240"
+          --budget "check quenchant compiler policy=300"
+          --budget "check Clippy wall=300"
+          --budget "re-verify obligated specifications (linux)=300"
+          >> "$GITHUB_STEP_SUMMARY"

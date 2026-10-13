@@ -75,11 +75,12 @@ crates/
 ├── theory-spec-combinators/       the bounded checks a specification clause makes of accumulated state: what a sequence gained since a mark, one push, order around an insertion point
 ├── theory-virtual-doctrines/      virtual double categories, reflected judgments and directed laws over replayable rewriting evidence
 ├── workflow-build-state/          the `build-state` binary: build state kept to one build's units
+├── workflow-lane-budget/          the `lane-budget` binary: each CI lane's median job time against its budget
 ├── workflow-spec-cost/            the `spec-cost` and `spec-cost-ratio` binaries: what specifications cost the tests
 └── workflow-test-timing/          the `test-timing` binary: nextest priorities from merge-queue timings
 ```
 
-The policy library and the gate binary are not members: they come from [quenchant](https://github.com/gandr-lang/quenchant) at the revision the root `Cargo.toml` pins. Its `specification_present` lint reports open specification debt as warnings (`check:dylint`); every other policy lint denies, `spec_clause_traversal` among them: a specification check costs no more than the function it checks, as [`theory-spec-combinators`](theory-spec-combinators/src/lib.rs) states with its combinators.
+The policy library and the gate binary are not members: they come from [quenchant](https://github.com/gandr-lang/quenchant) at the revision the root `Cargo.toml` pins, and the `check:dylint` task states which of its lints deny and why, `spec_clause_traversal`'s cost rule among them.
 
 ## Crate README shape
 
