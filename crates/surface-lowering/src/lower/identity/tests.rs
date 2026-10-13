@@ -17,6 +17,8 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueType;
 use gandr_core_term::Zone;
+use gandr_core_term::session::RecordedMove;
+use gandr_core_term::session::SessionRelation;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::SourceText;
@@ -716,5 +718,206 @@ fn matching_reflexivity_is_refused_as_k()
             ),
         }),
         "a path is never matched against `here`"
+    );
+}
+
+/// Two protocols, one widening the other's selection, and a copy of the
+/// first, as module type members a statement names bare.
+const PROTOCOLS: &str = "module Evolution {\n  type Old = +{ report : !String. end };\n  type New = +{ report : !String. end, pause : end };\n  type Same = +{ report : !String. end };\n";
+
+#[test]
+fn session_statements_lower_to_their_formers()
+{
+    let mut arena = CoreArena::new();
+    let source = format!(
+        "{PROTOCOLS}  def sub : Flow(Type, Old, New);\n  def sub = sim(Old, New);\n  def eq : Path(Type, Old, Same);\n  def eq = bisim(Old, Same);\n  def kept : Flow(Type, Old, Old);\n  def kept = stay(Old);\n  def widened() -> -F Flow(Type, Old, New) {{\n    become kept then sub\n  }}\n}}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let quoted = |at| matches!(arena.value(at), Some(&Value::Quote(code)) if matches!(arena.value_type(code), Some(&ValueType::Session(_))));
+    let DeclarationOutcome::Completed {
+        declared_type,
+        body,
+    } = outcome_of(&module, "sub".into())
+    else {
+        panic!("the flow and its statement lower");
+    };
+    assert!(
+        matches!(
+            arena.value_type(declared_type),
+            Some(&ValueType::Flow { source, target, .. }) if quoted(source) && quoted(target)
+        ),
+        "`Flow(Type, Old, New)` is the directed identity type over two quoted protocols"
+    );
+    assert!(
+        matches!(
+            arena.value(body),
+            Some(&Value::SessionRelated { relation: SessionRelation::Subtyping, source, target })
+                if quoted(source) && quoted(target) && source != target
+        ),
+        "`sim` reads both protocols as values, in order"
+    );
+    let DeclarationOutcome::Completed { body, .. } = outcome_of(&module, "eq".into())
+    else {
+        panic!("the path and its statement lower");
+    };
+    assert!(
+        matches!(
+            arena.value(body),
+            Some(&Value::SessionRelated {
+                relation: SessionRelation::Equivalence,
+                ..
+            })
+        ),
+        "`bisim` states the equivalence"
+    );
+    let DeclarationOutcome::Completed { body, .. } = outcome_of(&module, "kept".into())
+    else {
+        panic!("the stay lowers");
+    };
+    assert!(
+        matches!(arena.value(body), Some(&Value::Stay(point)) if quoted(point)),
+        "`stay` is the identity flow at its point"
+    );
+    let Some(&Computation::Return(composite)) =
+        arena.computation(tail_of(&module, &arena, "widened".into()))
+    else {
+        panic!("`then` at a flow answer returns the composite");
+    };
+    assert!(
+        matches!(
+            arena.value(composite),
+            Some(&Value::Then(first, second))
+                if matches!(arena.value(first), Some(&Value::Constant(_)))
+                    && matches!(arena.value(second), Some(&Value::Constant(_)))
+                    && first != second
+        ),
+        "the composite reads both flows in order"
+    );
+    assert!(
+        matches!(
+            module.origins().value(composite),
+            Maybe::Present(origin) if origin.provenance() == Provenance::Inserted(Insertion::Identity)
+        ),
+        "the composite is the lowering's insertion"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+
+    let mut arena = CoreArena::new();
+    let source = format!(
+        "{PROTOCOLS}  def sub : Flow(Type, Old, New);\n  def sub = sim(Old, New);\n  def flip() -> -F Flow(Type, New, Old) {{\n    become back(sub)\n  }}\n  def half = sim(Old);\n}}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    assert!(
+        matches!(
+            outcome_of(&module, "flip".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Unannotated,
+                ..
+            })
+        ),
+        "a flow has no reversal for `back` to derive"
+    );
+    assert!(
+        matches!(
+            outcome_of(&module, "half".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Arity(count),
+                ..
+            }) if count == OperandCount::from(1_usize)
+        ),
+        "a statement relates two protocols"
+    );
+}
+
+#[test]
+fn a_run_rides_a_flow_between_sessions()
+{
+    let mut arena = CoreArena::new();
+    let source = format!(
+        "{PROTOCOLS}  def sub : Flow(Type, Old, New);\n  def sub = sim(Old, New);\n}}\ndef served : Run(Evolution.Old);\ndef served = recorded(selected(report), sent(\"progress\"), closed);\ndef forward(receipt: Run(Evolution.Old)) -> -F Run(Evolution.New) {{\n  become ride(\\X. Run(X), Evolution.sub, receipt)\n}}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let DeclarationOutcome::Completed {
+        declared_type,
+        body,
+    } = outcome_of(&module, "served".into())
+    else {
+        panic!("the run and its literal lower");
+    };
+    assert!(
+        matches!(
+            arena.value_type(declared_type),
+            Some(&ValueType::Run(code)) if matches!(arena.value(code), Some(&Value::Quote(_)))
+        ),
+        "`Run(S)` reads its protocol as a value"
+    );
+    let Some(found) = arena.value(body)
+    else {
+        panic!("the literal lowers");
+    };
+    let Value::Recorded(ref moves) = *found
+    else {
+        panic!("`recorded` is the run literal");
+    };
+    assert!(
+        matches!(
+            **moves,
+            [
+                RecordedMove::Selected(ref chosen),
+                RecordedMove::Sent(payload),
+                RecordedMove::Closed,
+            ] if chosen.as_ref() == "report" && matches!(arena.value(payload), Some(&Value::Literal(_)))
+        ),
+        "each move keeps its label or its payload, in order: {moves:?}"
+    );
+    let Some(&Computation::Ride {
+        motive,
+        flow,
+        value,
+    }) = arena.computation(tail_of(&module, &arena, "forward".into()))
+    else {
+        panic!("`ride` lowers to the ride");
+    };
+    assert!(
+        matches!(
+            arena.value_type(motive),
+            Some(&ValueType::Run(code)) if arena.value(code) == Some(&variable(0_u32.into()))
+        ) && matches!(arena.value(flow), Some(&Value::Constant(_)))
+            && arena.value(value) == Some(&variable(0_u32.into())),
+        "the motive is the abstraction's body; the flow and the run follow in order"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
+fn a_move_out_of_shape_is_refused()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "def skipped = recorded(skipped(1));\n",
+            "def bare = recorded(sent);\n",
+            "def twice = recorded(sent(1, 2));\n",
+            "def called = recorded(selected(f(1)));\n",
+            "def named(receipt: Integer) -> -F Integer {\n  become ride(receipt, receipt, receipt)\n}\n",
+        )),
+        &mut arena,
+    );
+    let boundary = |name: &str| match outcome_of(&module, name.into()) {
+        | DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment { boundary, .. }) => {
+            Some(boundary)
+        },
+        | _ => None,
+    };
+    assert_eq!(
+        ["skipped", "bare", "twice", "called", "named"].map(boundary),
+        [
+            Some(FragmentBoundary::Unadmitted),
+            Some(FragmentBoundary::Unadmitted),
+            Some(FragmentBoundary::Arity(OperandCount::from(2_usize))),
+            Some(FragmentBoundary::Unadmitted),
+            Some(FragmentBoundary::Unannotated),
+        ],
+        "an unknown move, a bare send, a send of two, a label that is a call and a named motive"
     );
 }

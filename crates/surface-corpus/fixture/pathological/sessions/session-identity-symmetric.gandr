@@ -1,0 +1,11 @@
+module Evolution {
+  type SeatEnd = ?String. mu turn. +{ report : !String. &{ next : turn, retire : end }, handoff : !String. end };
+  type SeatEnd′ = ?String. mu turn. +{ report : !String. &{ next : turn, retire : end }, handoff : !String. end, pause : !String. turn };
+  @[ checks ]
+  def sub : Flow(Type, SeatEnd, SeatEnd′) ;
+  def sub = sim(SeatEnd, SeatEnd′) ;
+  @[ refuses("NonCovariantMotive") ]
+  def reversed() -> -F Flow(Type, SeatEnd′, SeatEnd) {
+    become ride(\X. Flow(Type, X, SeatEnd), sub, stay(SeatEnd))
+  }
+}

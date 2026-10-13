@@ -351,6 +351,9 @@ pub enum TypeFormer
     Returner,
     /// `List(A)`, the native finite lists over a value type.
     List,
+    /// `Run(S)`, the value type of the complete recorded runs of the session
+    /// code `S`, which is read as a value.
+    Run,
 }
 
 /// The nullary type heads, with the spellings the surface writes them as.
@@ -391,10 +394,11 @@ const TYPE_ATOMS: [(&str, TypeAtom); 5_usize] = [
 ///   near spellings separating the absent branch.
 /// - witness: `resolve::tests::every_unary_type_head_answers_its_former`
 /// - witness: `resolve::tests::a_nullary_head_answers_no_former`
-const TYPE_FORMERS: [(&str, TypeFormer); 3_usize] = [
+const TYPE_FORMERS: [(&str, TypeFormer); 4_usize] = [
     ("+U", TypeFormer::Thunk),
     ("-F", TypeFormer::Returner),
     ("List", TypeFormer::List),
+    ("Run", TypeFormer::Run),
 ];
 
 /// The value-type atom `name` spells, when the nullary table answers it.
@@ -1516,6 +1520,7 @@ mod tests
             ("+U", TypeFormer::Thunk),
             ("-F", TypeFormer::Returner),
             ("List", TypeFormer::List),
+            ("Run", TypeFormer::Run),
         ];
 
         for (spelling, former) in expected {

@@ -28,10 +28,12 @@
 //!
 //! # The identity vocabulary is names nothing else binds
 //!
-//! `here`, `funext`, `equiv`, `transport`, `back` and `cong` are spelled as
-//! ordinary calls and resolved after every binder and every earlier
-//! declaration, so a parameter or a definition of the same name shadows them,
-//! as it shadows a prelude primitive; `then` is the grammar's own infix tile.
+//! `here`, `funext`, `equiv`, `transport`, `back`, `cong`, `bisim`, `sim`,
+//! `stay`, `ride` and `recorded` are spelled as ordinary calls and resolved
+//! after every binder and every earlier declaration, so a parameter or a
+//! definition of the same name shadows them, as it shadows a prelude
+//! primitive; `then` is the grammar's own infix tile, and `Flow` a type head
+//! resolved the same way.
 //! Reserving the names outright was the alternative; it would break every
 //! program that already binds one. Reversal: a namespace for the identity
 //! vocabulary, `Path.here`, once the namespaces carry formers rather than
@@ -103,6 +105,39 @@
 //! as [`LoweringRefusal::WithoutK`]. Reversal: none in this vocabulary — `J`
 //! is derived as transport in the singleton, which is what a match on `here`
 //! with a free endpoint would mean, and is written with `transport`.
+//!
+//! # Session identity names the engine's two relations
+//!
+//! `bisim(A, B)` and `sim(A, B)` read two session codes as values and stand
+//! as values of `Path(Type, A, B)` and of the directed `Flow(Type, A, B)`;
+//! `gandr_core_checker`'s flow rules decide both by the session engine and
+//! record the decisions the kernel replays. `Flow(A, a, b)` is read as
+//! `Path(A, a, b)` is. `stay(a)` is the identity flow, `f then g` composes
+//! two flows where the position answers a written flow type, and
+//! `ride(\X. T, f, v)` moves `v` along `f` in the family its static
+//! abstraction states, as `transport` does; `back` and `cong` have no flow
+//! reading, since a flow is not reversed. The alternatives — an infix
+//! `A <: B`, statements over translators as `equiv` takes — are recorded with
+//! the checker's rules.
+//!
+//! A statement names its protocols bare, as type members of the module it is
+//! written in, which a term position reads as the types they state: the term
+//! grammar projects a module only onto a lowercase member, so a protocol
+//! another module declares is aliased into the statement's own module first.
+//! Reversal: a term projection onto a type member.
+//!
+//! `Run(S)` is a unary type former over a session code, which it reads as a
+//! value, and `recorded(m₀, …, mₙ)` a run's literal: each move is `sent(v)`,
+//! `received(v)`, `selected(l)`, `offered(l)` or `closed`, read by its shape
+//! rather than resolved, a payload read as a value and a label as the name it
+//! is written as. The moves are calls so a run prints back as written; a
+//! nominal move type the prelude declares was the alternative, which needs a
+//! constructor per payload type. Reversal: a run type whose moves are data
+//! the program declares.
+
+use alloc::string::String;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_term::Binders;
@@ -111,7 +146,10 @@ use gandr_core_term::CompTypeId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueType;
+use gandr_core_term::session::RecordedMove;
+use gandr_core_term::session::SessionRelation;
 use gandr_kernel_strata::Level;
+use gandr_kernel_term::FieldLabel;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
 
@@ -156,6 +194,13 @@ pub(super) const HERE: &str = "here";
 /// earlier declaration.
 pub(super) const NIL: &str = "nil";
 
+/// The directed identity type's head, resolved after every binder and
+/// earlier declaration at three arguments.
+pub(super) const FLOW: &str = "Flow";
+
+/// A recorded run's close, a move written as a bare name.
+const CLOSED: &str = "closed";
+
 quenchant_shape::reason_enum! {
     /// Why a call's head names no identity operation.
     pub mod spelled {
@@ -174,8 +219,9 @@ quenchant_shape::reason_enum! {
 ///
 /// # Specification
 /// - ensures: reflexivity, function and universe extensionality, transport in a
-///   one-binder motive or a telescope, the two derived operations, and the
-///   native list cell, spelled as calls.
+///   one-binder motive or a telescope, the two derived operations, the native
+///   list cell, the two session statements, the identity flow, a ride along a
+///   flow and a recorded run, spelled as calls.
 /// - executable: none — a tag holds no head to check its spelling against.
 ///
 /// # Adequacy
@@ -183,6 +229,8 @@ quenchant_shape::reason_enum! {
 /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
 /// - witness: `lower::identity::tests::a_list_moves_along_a_universe_equivalence`
 /// - witness: `lower::identity::tests::a_dependent_transport_lowers_to_its_telescope`
+/// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
+/// - witness: `lower::identity::tests::a_run_rides_a_flow_between_sessions`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) enum Operation
 {
@@ -200,6 +248,16 @@ pub(super) enum Operation
     Cong,
     /// `cons(h, t)`.
     Cons,
+    /// `bisim(A, B)`.
+    Bisim,
+    /// `sim(A, B)`.
+    Sim,
+    /// `stay(a)`.
+    Stay,
+    /// `ride(\X. T, f, v)`.
+    Ride,
+    /// `recorded(m₀, …, mₙ)`.
+    Recorded,
 }
 
 /// The identity operations a call's head spells, by name.
@@ -218,7 +276,9 @@ pub(super) enum Operation
 /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
 /// - witness: `lower::identity::tests::a_list_moves_along_a_universe_equivalence`
 /// - witness: `lower::identity::tests::a_dependent_transport_lowers_to_its_telescope`
-const SPELLED: [(&str, Operation); 7] = [
+/// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
+/// - witness: `lower::identity::tests::a_run_rides_a_flow_between_sessions`
+const SPELLED: [(&str, Operation); 12] = [
     (HERE, Operation::Here),
     ("funext", Operation::Funext),
     ("equiv", Operation::Equiv),
@@ -226,6 +286,11 @@ const SPELLED: [(&str, Operation); 7] = [
     ("back", Operation::Back),
     ("cong", Operation::Cong),
     ("cons", Operation::Cons),
+    ("bisim", Operation::Bisim),
+    ("sim", Operation::Sim),
+    ("stay", Operation::Stay),
+    ("ride", Operation::Ride),
+    ("recorded", Operation::Recorded),
 ];
 
 /// A derived operation's written operands.
@@ -285,6 +350,24 @@ pub(super) struct Derived
     answer: Answer,
     /// The frame the operation stands under.
     frame: Frame,
+}
+
+/// The identity type a derived operation's position answers.
+///
+/// # Specification
+/// - ensures: a written path type or a written flow type.
+/// - executable: none — a tag holds no tree to check its answer against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `then` under each answer plans its own former.
+/// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum Answered
+{
+    /// `Path(A, a, b)`.
+    Path,
+    /// `Flow(A, a, b)`.
+    Flow,
 }
 
 /// A dependent transport's written operands and the frame it stands under.
@@ -379,6 +462,59 @@ impl<'source> Lowerer<'_, 'source>
         Ok(())
     }
 
+    /// Classify a directed identity type, `Flow(A, a, b)`, its three operands
+    /// already read off the application.
+    ///
+    /// # Specification
+    /// - requires: `site` is a type application headed `Flow`, which nothing
+    ///   the scope binds answers, written over `carrier`, `left` and `right`.
+    /// - ensures: the form stands as a value type, reads its carrier as a value
+    ///   type and its two endpoints as endpoints standing inside a type, all
+    ///   under its own frame, and is planned over the three.
+    /// - provides: directed identity's type former.
+    /// - fails: yields the wrong-sort refusal where no value type is read.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The form's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a flow between two session codes read back out of the
+    ///   arena with its carrier and endpoints in order.
+    /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || matches!(
+                    self.plans.get(usize::from(site.at.node)),
+                    Some(&Plan::Flow(carrier, left, right))
+                        if [carrier, left, right] == written
+                            && self.reading(carrier) == Reading::ValueType(site.reading.frame())
+                            && self.reading(left) == Reading::Value(site.reading.frame())
+                            && self.reading(right) == Reading::Value(site.reading.frame())
+                            && self.at_endpoint.contains(&left)
+                            && self.at_endpoint.contains(&right)
+                )
+        },
+    )]
+    pub(super) fn flow_type(
+        &mut self,
+        site: Site,
+        written: [NodeIndex; 3],
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let frame = self.require(site, Produced::ValueType)?;
+        let [carrier, left, right] = written;
+        self.read(carrier, Reading::ValueType(frame));
+        self.read(left, Reading::Value(frame));
+        self.read(right, Reading::Value(frame));
+        self.in_type.extend([left, right]);
+        self.at_endpoint.extend([left, right]);
+        self.plan(site, Plan::Flow(carrier, left, right));
+
+        Ok(())
+    }
+
     /// The identity operation `head`, the head of a call written at `site`,
     /// names.
     ///
@@ -451,19 +587,23 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: `operation` is what the call's head spells.
-    /// - ensures: `here(a)` stands as a value reading its point as a value at
-    ///   an endpoint; `funext(f, g)`, `equiv(f, g)` and `cons(h, t)` stand as
-    ///   values reading both operands as values; `transport(\X. T, p, v)`
-    ///   stands as a computation reading its motive, path and value as values,
-    ///   and `transport(M, p, z₀, q, v)` as a computation reading its motive as
-    ///   a value type and the other four as values; `back(p)` and `cong(f, p)`
-    ///   stand as computations derived as [`Self::derive`] does. Every operand
-    ///   is read under the site's frame.
+    /// - ensures: `here(a)` and `stay(a)` stand as values reading their point
+    ///   as a value at an endpoint; `funext(f, g)`, `equiv(f, g)`, `cons(h,
+    ///   t)`, `bisim(A, B)` and `sim(A, B)` stand as values reading both
+    ///   operands as values; `transport(\X. T, p, v)` and `ride(\X. T, f, v)`
+    ///   stand as computations reading their motive, path or flow and value as
+    ///   values, and `transport(M, p, z₀, q, v)` as a computation reading its
+    ///   motive as a value type and the other four as values; `back(p)` and
+    ///   `cong(f, p)` stand as computations derived as [`Self::derive`] does;
+    ///   `recorded(m₀, …, mₙ)` stands as a value over its moves, each read as
+    ///   [`Self::recorded_move`] reads it. Every operand is read under the
+    ///   site's frame.
     /// - fails: the wrong-sort refusal where the operation's sort is not read;
-    ///   the arity refusal for other than one argument to `here` or `back`, two
-    ///   to `funext`, `equiv`, `cons` or `cong`, and three or five to
-    ///   `transport`; the unannotated refusal for a three-operand transport
-    ///   whose motive is no static abstraction; [`Self::derive`]'s refusal; the
+    ///   the arity refusal for other than one argument to `here`, `stay` or
+    ///   `back`, two to `funext`, `equiv`, `cons`, `cong`, `bisim` or `sim`,
+    ///   three to `ride`, and three or five to `transport`; the unannotated
+    ///   refusal for a three-operand transport or a ride whose motive is no
+    ///   static abstraction; [`Self::derive`]'s refusal; a move's refusal; the
     ///   argument list's fault.
     /// - panics: none.
     ///
@@ -478,16 +618,24 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
     /// - witness: `lower::identity::tests::a_list_moves_along_a_universe_equivalence`
     /// - witness: `lower::identity::tests::a_dependent_transport_lowers_to_its_telescope`
+    /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
+    /// - witness: `lower::identity::tests::a_run_rides_a_flow_between_sessions`
+    /// - witness: `lower::identity::tests::a_move_out_of_shape_is_refused`
     #[spec(
         captures: start = self.operands.len(),
         ensures: |ret| {
             self.operands.len() == start
                 && (ret.is_err()
                     || match (operation, self.plans.get(usize::from(site.at.node))) {
-                        | (Operation::Here, Some(&Plan::Here(point))) => self.at_endpoint.contains(&point),
+                        | (Operation::Here, Some(&Plan::Here(point)))
+                        | (Operation::Stay, Some(&Plan::Stay(point))) => self.at_endpoint.contains(&point),
                         | (Operation::Funext, Some(&Plan::Funext(..)))
                         | (Operation::Equiv, Some(&Plan::Equiv(..)))
                         | (Operation::Cons, Some(&Plan::ListCons(..)))
+                        | (Operation::Bisim, Some(&Plan::SessionRelated(SessionRelation::Equivalence, ..)))
+                        | (Operation::Sim, Some(&Plan::SessionRelated(SessionRelation::Subtyping, ..)))
+                        | (Operation::Ride, Some(&Plan::Ride(..)))
+                        | (Operation::Recorded, Some(&Plan::Recorded(_)))
                         | (Operation::Transport, Some(&(Plan::Transport(..) | Plan::TelescopeTransport(_))))
                         | (Operation::Back | Operation::Cong, Some(&Plan::Derived(_))) => true,
                         | _ => false,
@@ -502,10 +650,17 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let produced = match operation {
-            | Operation::Here | Operation::Funext | Operation::Equiv | Operation::Cons => {
-                Produced::Value
+            | Operation::Here
+            | Operation::Funext
+            | Operation::Equiv
+            | Operation::Cons
+            | Operation::Bisim
+            | Operation::Sim
+            | Operation::Stay
+            | Operation::Recorded => Produced::Value,
+            | Operation::Back | Operation::Cong | Operation::Transport | Operation::Ride => {
+                Produced::Computation
             },
-            | Operation::Back | Operation::Cong | Operation::Transport => Produced::Computation,
         };
         let frame = self.require(site, produced)?;
         let start = self.operands.len();
@@ -518,17 +673,39 @@ impl<'source> Lowerer<'_, 'source>
             .operands
             .get(start ..)
             .and_then(|written| <[NodeIndex; 5]>::try_from(written).ok());
+        let moves = match operation {
+            | Operation::Recorded => self.operands.get(start ..).map(<[NodeIndex]>::to_vec),
+            | Operation::Here
+            | Operation::Funext
+            | Operation::Equiv
+            | Operation::Cons
+            | Operation::Bisim
+            | Operation::Sim
+            | Operation::Stay
+            | Operation::Back
+            | Operation::Cong
+            | Operation::Transport
+            | Operation::Ride => None,
+        };
         self.operands.truncate(start);
         read?;
         match (operation, count, first, second, third) {
-            | (Operation::Here, 1_usize, Some(point), ..) => {
+            | (Operation::Here | Operation::Stay, 1_usize, Some(point), ..) => {
                 self.read(point, Reading::Value(frame));
                 let _marked = self.at_endpoint.insert(point);
-                self.plan(site, Plan::Here(point));
+                let plan = match operation {
+                    | Operation::Stay => Plan::Stay(point),
+                    | _ => Plan::Here(point),
+                };
+                self.plan(site, plan);
                 Ok(())
             },
             | (
-                Operation::Funext | Operation::Equiv | Operation::Cons,
+                Operation::Funext
+                | Operation::Equiv
+                | Operation::Cons
+                | Operation::Bisim
+                | Operation::Sim,
                 2_usize,
                 Some(left),
                 Some(right),
@@ -539,17 +716,42 @@ impl<'source> Lowerer<'_, 'source>
                 let plan = match operation {
                     | Operation::Equiv => Plan::Equiv(left, right),
                     | Operation::Cons => Plan::ListCons(left, right),
+                    | Operation::Bisim => {
+                        Plan::SessionRelated(SessionRelation::Equivalence, left, right)
+                    },
+                    | Operation::Sim => {
+                        Plan::SessionRelated(SessionRelation::Subtyping, left, right)
+                    },
                     | _ => Plan::Funext(left, right),
                 };
                 self.plan(site, plan);
                 Ok(())
             },
-            | (Operation::Transport, 3_usize, Some(motive), Some(path), Some(value)) => {
+            | (
+                Operation::Transport | Operation::Ride,
+                3_usize,
+                Some(motive),
+                Some(path),
+                Some(value),
+            ) => {
                 self.stated_motive(site, motive)?;
                 for operand in [motive, path, value] {
                     self.read(operand, Reading::Value(frame));
                 }
-                self.plan(site, Plan::Transport(motive, path, value));
+                let plan = match operation {
+                    | Operation::Ride => Plan::Ride(motive, path, value),
+                    | _ => Plan::Transport(motive, path, value),
+                };
+                self.plan(site, plan);
+                Ok(())
+            },
+            | (Operation::Recorded, ..) => {
+                let written = moves.unwrap_or_default();
+                let mut planned = Vec::with_capacity(written.len());
+                for movement in written {
+                    planned.push(self.recorded_move(site, frame, movement)?);
+                }
+                self.plan(site, Plan::Recorded(Arc::from(planned)));
                 Ok(())
             },
             | (Operation::Transport, 5_usize, ..) => match written {
@@ -583,12 +785,14 @@ impl<'source> Lowerer<'_, 'source>
         }
     }
 
-    /// Require a transport's motive to be written as a static abstraction.
+    /// Require a transport's or a ride's motive to be written as a static
+    /// abstraction.
     ///
     /// # Specification
-    /// - requires: `motive` is the first operand of the transport at `site`.
+    /// - requires: `motive` is the first operand of the transport or the ride
+    ///   at `site`.
     /// - ensures: `Ok` exactly when the operand is a static abstraction, `\X.
-    ///   T`, whose body is the family the transport moves its value in.
+    ///   T`, whose body is the family the operation moves its value in.
     /// - fails: the unannotated refusal at `site` for any other operand; the
     ///   refusals the tree's molds yield.
     /// - panics: none.
@@ -600,6 +804,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — an abstraction motive lowers and a named one is
     ///   refused.
     /// - witness: `lower::identity::tests::a_list_moves_along_a_universe_equivalence`
+    /// - witness: `lower::identity::tests::a_run_rides_a_flow_between_sessions`
     #[spec(ensures: |ret| ret.is_err() || matches!(
         self.tree.node(motive).map(|node| shape_of(self.pbg, node)),
         Some(Ok(Shape::Form { former: Former::StaticAbstraction, .. }))
@@ -624,16 +829,142 @@ impl<'source> Lowerer<'_, 'source>
         }
     }
 
+    /// Classify one move of the recorded run at `site`, written at
+    /// `movement`.
+    ///
+    /// # Specification
+    /// - requires: `movement` is an argument of the `recorded` call at `site`,
+    ///   which stands under `frame`.
+    /// - ensures: a bare `closed` is the close; `sent(v)` and `received(v)`
+    ///   read `v` as a value under `frame` and carry it; `selected(l)` and
+    ///   `offered(l)` carry the label the bare name `l` spells. The move's own
+    ///   head and a label are read by their shape, never resolved, so no binder
+    ///   shadows them.
+    /// - fails: the unadmitted boundary for a move of any other shape or
+    ///   spelling, or a label that is no bare name; the arity boundary for a
+    ///   move written with other than one argument; the refusals the tree's
+    ///   molds yield and the argument list's fault.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The move's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a run of every move kind read back out of the arena,
+    ///   and an unknown move, a payload-less send and a label that is a call
+    ///   each refused by their boundary.
+    /// - witness: `lower::identity::tests::a_run_rides_a_flow_between_sessions`
+    /// - witness: `lower::identity::tests::a_move_out_of_shape_is_refused`
+    #[spec(
+        captures: start = self.operands.len(),
+        ensures: |ret| self.operands.len() == start && match ret {
+            | Ok(RecordedMove::Sent(payload) | RecordedMove::Received(payload)) => {
+                self.reading(payload) == Reading::Value(frame)
+            },
+            | Ok(RecordedMove::Selected(_) | RecordedMove::Offered(_) | RecordedMove::Closed)
+            | Err(_) => true,
+        },
+    )]
+    fn recorded_move(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        movement: NodeIndex,
+    ) -> Result<RecordedMove<NodeIndex>, LoweringRefusal<'source>>
+    {
+        let unadmitted = site.out(FragmentBoundary::Unadmitted);
+        let Some(node) = self.tree.node(movement)
+        else {
+            return Err(unadmitted);
+        };
+        let written = Placed::of(movement, node);
+        let former = match shape_of(self.pbg, node)? {
+            | Shape::Form { former, .. } => former,
+            | Shape::Root | Shape::Repair(_) | Shape::Layout => return Err(unadmitted),
+        };
+        if matches!(former, Former::Name) {
+            return if self.name_at(written).as_ref() == CLOSED {
+                Ok(RecordedMove::Closed)
+            }
+            else {
+                Err(unadmitted)
+            };
+        }
+        if !matches!(former, Former::Call) {
+            return Err(unadmitted);
+        }
+        let at = Site {
+            at: written,
+            ..site
+        };
+        let start = self.operands.len();
+        let mut scratch = core::mem::take(&mut self.scratch);
+        let read = read_pieces(self.pbg, self.tree, movement, &mut scratch).and_then(|()| {
+            let mut cursor = Cursor::new(&scratch.pieces, written.span);
+            let head = at.one(cursor.operands())?;
+            arguments(at, &mut cursor, &mut self.operands)?;
+            Ok(head)
+        });
+        self.scratch = scratch;
+        let count = self.operands.len().saturating_sub(start);
+        let argument = match self.operands.get(start ..) {
+            | Some(&[argument]) => Some(argument),
+            | Some(_) | None => None,
+        };
+        self.operands.truncate(start);
+        let head = read?;
+        let Some(argument) = argument
+        else {
+            return Err(at.out(FragmentBoundary::Arity(OperandCount::from(count))));
+        };
+        let spelled = self.name_at(head);
+        match spelled.as_ref() {
+            | "sent" | "received" => {
+                self.read(argument, Reading::Value(frame));
+                Ok(if spelled.as_ref() == "sent" {
+                    RecordedMove::Sent(argument)
+                }
+                else {
+                    RecordedMove::Received(argument)
+                })
+            },
+            | "selected" | "offered" => {
+                let label = self
+                    .tree
+                    .node(argument)
+                    .and_then(|labelled| match shape_of(self.pbg, labelled) {
+                        | Ok(Shape::Form {
+                            former: Former::Name,
+                            ..
+                        }) => Some(Placed::of(argument, labelled)),
+                        | Ok(_) | Err(_) => None,
+                    })
+                    .map(|named| FieldLabel::from(String::from(self.name_at(named).as_ref())))
+                    .ok_or(unadmitted)?;
+                Ok(if spelled.as_ref() == "selected" {
+                    RecordedMove::Selected(label)
+                }
+                else {
+                    RecordedMove::Offered(label)
+                })
+            },
+            | _ => Err(unadmitted),
+        }
+    }
+
     /// Classify the derived operation `derivation`, standing as a computation
     /// at `site` under `frame`.
     ///
     /// # Specification
     /// - requires: `site` stands as a computation under `frame`.
     /// - ensures: every operand is read as a value under `frame`, and the
-    ///   operation is planned against the path type its position answers.
+    ///   operation is planned against the path type its position answers; `f
+    ///   then g` where the position answers a written flow type is planned as
+    ///   the returned composite of the two flows.
     /// - fails: the unannotated refusal where the position answers no type, or
-    ///   one that is not a written path type under at most a returner and
-    ///   parentheses; the allowance refusal from that walk.
+    ///   one that is not a written path type, or for `then` a written flow
+    ///   type, under at most a returner and parentheses; the allowance refusal
+    ///   from that walk.
     /// - panics: none.
     ///
     /// # Errors
@@ -644,12 +975,16 @@ impl<'source> Lowerer<'_, 'source>
     ///   answer that is no path type.
     /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
     /// - witness: `lower::identity::tests::a_derived_operation_needs_a_written_path_answer`
+    /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.plans.get(usize::from(site.at.node)),
                     Some(&Plan::Derived(planned)) if planned.derivation == derivation && planned.frame == frame
+                ) || matches!(
+                    (self.plans.get(usize::from(site.at.node)), derivation),
+                    (Some(&Plan::FlowThen(left, right)), Derivation::Then { first, second }) if left == first && right == second
                 )
         },
     )]
@@ -664,7 +999,16 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(site.out(FragmentBoundary::Unannotated));
         };
-        self.answers_path(site, answer.node)?;
+        if self.answers_path(site, answer.node)? == Answered::Flow {
+            let Derivation::Then { first, second } = derivation
+            else {
+                return Err(site.out(FragmentBoundary::Unannotated));
+            };
+            self.read(first, Reading::Value(frame));
+            self.read(second, Reading::Value(frame));
+            self.plan(site, Plan::FlowThen(first, second));
+            return Ok(());
+        }
         match derivation {
             | Derivation::Back { path } => self.read(path, Reading::Value(frame)),
             | Derivation::Then { first, second }
@@ -688,15 +1032,17 @@ impl<'source> Lowerer<'_, 'source>
         Ok(())
     }
 
-    /// Require the type written at `answer` to be a path type, under at most a
-    /// returner and any parentheses.
+    /// Read the identity type written at `answer`: a path type or a flow type,
+    /// under at most a returner and any parentheses.
     ///
     /// # Specification
     /// - requires: `answer` is a node read where a result is read.
-    /// - ensures: `Ok` exactly when the walk from `answer` through
-    ///   parenthesised types and one `-F` reaches a path type.
+    /// - ensures: the path answer exactly when the walk from `answer` through
+    ///   parenthesised types and one `-F` reaches a path type, and the flow
+    ///   answer when it reaches a type application headed `Flow` at three
+    ///   arguments.
     /// - provides: the classification-time guarantee that a derived operation's
-    ///   answer mints as `F (Path(A, a, b))`.
+    ///   answer mints as `F (Path(A, a, b))` or `F (Flow(A, a, b))`.
     /// - fails: the unannotated refusal at `site` when the walk reaches another
     ///   form; [`LoweringRefusal::BudgetExceeded`] when it outruns the
     ///   allowance; the refusals the tree's molds yield.
@@ -710,16 +1056,17 @@ impl<'source> Lowerer<'_, 'source>
     /// operand of the node it read, strictly deeper in a finite tree.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — `-F Path(…)`, a parenthesised `-F(Path(…))`, and an
-    ///   integer answer.
+    /// - hypothesis: L3 — `-F Path(…)`, a parenthesised `-F(Path(…))`, a flow
+    ///   answer, and an integer answer.
     /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
     /// - witness: `lower::identity::tests::a_derived_operation_needs_a_written_path_answer`
+    /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
     #[spec(captures: before = self.fuel.remaining, ensures: self.fuel.remaining <= before)]
     fn answers_path(
         &mut self,
         site: Site,
         answer: NodeIndex,
-    ) -> Result<(), LoweringRefusal<'source>>
+    ) -> Result<Answered, LoweringRefusal<'source>>
     {
         let mut position = answer;
         let mut returned = false;
@@ -734,17 +1081,23 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 return Err(unannotated);
             };
-            let wrapped = match former {
-                | Former::PathType => return Ok(()),
+            let (wrapped, applied) = match former {
+                | Former::PathType => return Ok(Answered::Path),
                 | Former::ReturnerType if !returned => {
                     returned = true;
-                    true
+                    (true, false)
                 },
-                | Former::ParenthesizedType => false,
+                | Former::ParenthesizedType => (false, false),
+                | Former::TypeApplication => (false, true),
                 | _ => return Err(unannotated),
             };
             let mut scratch = core::mem::take(&mut self.scratch);
             let read = read_pieces(self.pbg, self.tree, position, &mut scratch);
+            let written = scratch
+                .pieces
+                .iter()
+                .filter(|piece| matches!(**piece, Piece::Operand(_)))
+                .count();
             let mut operands = scratch.pieces.iter().filter_map(|piece| match *piece {
                 | Piece::Operand(operand) => Some(operand.node),
                 | Piece::Tile { .. } => None,
@@ -759,6 +1112,16 @@ impl<'source> Lowerer<'_, 'source>
             });
             self.scratch = scratch;
             read?;
+            if applied {
+                let flow = written == 3_usize
+                    && keyword.is_some_and(|at| self.name_at(at).as_ref() == FLOW);
+                return if flow {
+                    Ok(Answered::Flow)
+                }
+                else {
+                    Err(unannotated)
+                };
+            }
             let returner = !wrapped
                 || keyword.is_some_and(|at| {
                     type_former(self.name_at(at)) == Maybe::Present(TypeFormer::Returner)
@@ -923,6 +1286,162 @@ impl<'source> Lowerer<'_, 'source>
         record_since(sink, mark, inserted, Maybe::Present((root, origin)));
 
         Maybe::Present(Lowered::Computation(root))
+    }
+
+    /// Mint `ride(\X. T, f, v)`: the ride of the value along the flow in the
+    /// family the abstraction's body denotes under its binder.
+    ///
+    /// # Specification
+    /// - requires: the three operands are already minted or absent.
+    /// - ensures: the ride of the value along the flow in the decode of the
+    ///   motive's body at the fuss-free level — the quoted type itself when the
+    ///   body quotes one, so `\X. Run(X)` is `y. Run(y)`. The ride carries the
+    ///   written origin and the family the inserted identity origin. Nothing
+    ///   when an operand did not lower or the motive minted as no static
+    ///   abstraction.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a run motive over a session flow, read back out of
+    ///   the arena.
+    /// - witness: `lower::identity::tests::a_run_rides_a_flow_between_sessions`
+    #[spec(
+        ensures: |ret| match ret {
+            | Maybe::Present(Lowered::Computation(id)) => sink.origins.computation(id) == Maybe::Present(origin)
+                && matches!(sink.arena.computation(id), Some(&gandr_core_term::Computation::Ride { .. })),
+            | Maybe::Present(_) => false,
+            | Maybe::Absent(_) => true,
+        },
+    )]
+    pub(super) fn mint_ride(
+        &self,
+        (abstraction, flow, value): (NodeIndex, NodeIndex, NodeIndex),
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let (motive, flow, value) = match (
+            self.value_at(abstraction),
+            self.value_at(flow),
+            self.value_at(value),
+        ) {
+            | (Maybe::Present(motive), Maybe::Present(flow), Maybe::Present(value)) => {
+                (motive, flow, value)
+            },
+            | (Maybe::Absent(reason), ..)
+            | (_, Maybe::Absent(reason), _)
+            | (_, _, Maybe::Absent(reason)) => return Maybe::Absent(reason),
+        };
+        let Some(&Value::StaticLambda(body)) = sink.arena.value(motive)
+        else {
+            return Maybe::Absent(lowered::Absent::OtherSort);
+        };
+        let mark = sink.arena.watermark();
+        let family = sink.arena.value_type_element(body, Level::zero());
+        let root = sink.arena.computation_ride(family, flow, value);
+        let inserted = origin.inserted(Insertion::Identity);
+        record_since(sink, mark, inserted, Maybe::Present((root, origin)));
+
+        Maybe::Present(Lowered::Computation(root))
+    }
+
+    /// Mint `f then g` where a flow is answered: the returned composite.
+    ///
+    /// # Specification
+    /// - requires: both operands are already minted or absent.
+    /// - ensures: the return of the composite of the two flows in order, the
+    ///   return carrying the written origin and the composite the inserted
+    ///   identity origin. Nothing when an operand did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a composite of two statements read back out of the
+    ///   arena in order.
+    /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
+    #[spec(
+        ensures: |ret| match ret {
+            | Maybe::Present(Lowered::Computation(id)) => sink.origins.computation(id) == Maybe::Present(origin)
+                && matches!(sink.arena.computation(id), Some(&gandr_core_term::Computation::Return(composite))
+                    if matches!(sink.arena.value(composite), Some(&Value::Then(..)))),
+            | Maybe::Present(_) => false,
+            | Maybe::Absent(_) => true,
+        },
+    )]
+    pub(super) fn mint_flow_then(
+        &self,
+        first: NodeIndex,
+        second: NodeIndex,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let (first, second) = match (self.value_at(first), self.value_at(second)) {
+            | (Maybe::Present(first), Maybe::Present(second)) => (first, second),
+            | (Maybe::Absent(reason), _) | (_, Maybe::Absent(reason)) => {
+                return Maybe::Absent(reason);
+            },
+        };
+        let mark = sink.arena.watermark();
+        let composite = sink.arena.value_then(first, second);
+        let root = sink.arena.computation_return(composite);
+        record_since(
+            sink,
+            mark,
+            origin.inserted(Insertion::Identity),
+            Maybe::Present((root, origin)),
+        );
+
+        Maybe::Present(Lowered::Computation(root))
+    }
+
+    /// Mint `recorded(m₀, …, mₙ)`: the run over its moves in order.
+    ///
+    /// # Specification
+    /// - requires: every payload is already minted or absent.
+    /// - ensures: the recorded run whose moves are the planned moves in order,
+    ///   each payload its minted value and each label kept, carrying the
+    ///   written origin. Nothing when a payload did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// The loop runs once per planned move.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a run of every move kind read back out of the arena.
+    /// - witness: `lower::identity::tests::a_run_rides_a_flow_between_sessions`
+    #[spec(
+        ensures: |ret| match ret {
+            | Maybe::Present(Lowered::Value(id)) => sink.origins.value(id) == Maybe::Present(origin)
+                && matches!(sink.arena.value(id), Some(Value::Recorded(minted))
+                    if minted.len() == moves.len()
+                        && minted.iter().zip(moves.iter()).all(|(made, planned)| made.kind() == planned.kind())),
+            | Maybe::Present(_) => false,
+            | Maybe::Absent(_) => true,
+        },
+    )]
+    pub(super) fn mint_recorded(
+        &self,
+        moves: &[RecordedMove<NodeIndex>],
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let mut minted = Vec::with_capacity(moves.len());
+        for planned in moves {
+            match planned.try_map(|payload| match self.value_at(payload) {
+                | Maybe::Present(value) => Ok(value),
+                | Maybe::Absent(reason) => Err(reason),
+            }) {
+                | Ok(made) => minted.push(made),
+                | Err(reason) => return Maybe::Absent(reason),
+            }
+        }
+        let id = sink.arena.value_recorded(Arc::from(minted));
+
+        Maybe::Present(sink.value(id, origin))
     }
 
     /// Mint the dependent transport `transported`.
