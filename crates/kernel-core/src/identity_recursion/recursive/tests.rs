@@ -164,7 +164,7 @@ fn list_identity_is_lazy()
 }
 
 #[test]
-fn uncertified_stratum_refuses()
+fn an_unbounded_spine_refuses_without_a_verdict()
 {
     let mut arena = TermArena::new();
     let unit_type = arena.value_type_unit();

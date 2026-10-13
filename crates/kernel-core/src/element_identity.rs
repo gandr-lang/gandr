@@ -116,8 +116,15 @@
 //! | the motive ignores its binder       | `return v`                                 |
 //! | a Product motive at a tuple         | each component transported, then the tuple |
 //! | a Sum motive at an injection        | the injection of the summand's transport   |
+//! | a List motive at `nil`              | `return nil`                               |
+//! | a List motive at a cell             | the head transported, then the tail        |
 //! | `El(x)` at level zero               | native universe transport                  |
 //! | `Path(D, l, x)` at a `here` value   | `return p`                                 |
+//!
+//! A cell's tail is transported by a computation the reduct binds after the
+//! head, so one replay step unfolds one cell and a list costs the budget its
+//! length: a list past the budget declines as
+//! [`crate::replay::ReplayDecline::Budget`], never as an inequality.
 //!
 //! Anything else stays neutral. The checker's conversion is structural and
 //! compares a stuck transport childwise; the replay refuses one as unreadable,
@@ -977,11 +984,13 @@ pub(crate) struct ElementTransport
 /// As `fails`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — `here` transports to the value; a product and a sum
-///   motive compute componentwise; the universe clause reaches native
-///   transport; a neutral path over a dependent motive sticks.
+/// - hypothesis: L3 — `here` transports to the value; a product, a sum and a
+///   list motive compute constructorwise, a list one cell per step; the
+///   universe clause reaches native transport; a neutral path over a dependent
+///   motive sticks.
 /// - witness: `element_identity::tests::transport_on_here_is_the_identity_by_replay`
 /// - witness: `element_identity::tests::transport_computes_through_the_fold_clauses`
+/// - witness: `path_universe::tests::recursive_transport_tests::negation_moves_a_list_one_cell_at_a_time`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |reduction| match *reduction {
     Reduction::Reduced(reduct) => arena.computation(reduct).is_some(),
     Reduction::Stuck => true,
@@ -1071,6 +1080,24 @@ where
                 Reduction::Stuck
             })
         },
+        | ValueType::List(element) => {
+            let (head, tail) = match arena.value(value) {
+                | Some(&Value::ListNil) => {
+                    return Ok(Reduction::Reduced(arena.computation_return(value)));
+                },
+                | Some(&Value::ListCons(head, tail)) => (head, tail),
+                | Some(_) => return Ok(Reduction::Stuck),
+                | None => return Err(KernelError::ArenaFault),
+            };
+            Ok(Reduction::Reduced(transport_cell(
+                arena,
+                table,
+                memo,
+                (element, motive),
+                path,
+                (head, tail),
+            )))
+        },
         | _ => Ok(Reduction::Stuck),
     }
 }
@@ -1120,6 +1147,48 @@ where
         reduct = arena.computation_bind(step, reduct);
     }
     Ok(reduct)
+}
+
+/// Transport one list cell: the head in the element motive, then the tail in
+/// the whole list motive, behind the head's bind.
+///
+/// # Specification
+/// - requires: `motive` is the List motive `element` is the element of.
+/// - ensures: `h ← transport(E, p, head); t ← transport(List E, p, tail);
+///   return cons(h, t)`, the tail step's motive, path and tail shifted past the
+///   head's bind. The tail's transport is a computation, reduced only when the
+///   replay reaches it, so one step unfolds one cell.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — negation moves a three-cell Bool list cell by cell; a
+///   list whose cells outrun the replay budget declines, and a variable tail
+///   leaves the computed head before a stuck tail.
+/// - witness: `path_universe::tests::recursive_transport_tests::negation_moves_a_list_one_cell_at_a_time`
+#[spec(ensures: |reduct| arena.computation(reduct).is_some())]
+fn transport_cell<M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable,
+    memo: &mut M,
+    (element, motive): (ValueTypeId, ValueTypeId),
+    path: ValueId,
+    (head, tail): (ValueId, ValueId),
+) -> ComputationId
+where
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    let first = arena.computation_path_transport(element, path, head);
+    let past = BinderDepth::from(1_u32);
+    let motive = shift_value_type(arena, table, memo, motive, past, past);
+    let path = shift_value(arena, table, memo, path, BinderDepth::NONE, past);
+    let tail = shift_value(arena, table, memo, tail, BinderDepth::NONE, past);
+    let rest = arena.computation_path_transport(motive, path, tail);
+    let moved_head = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let moved_tail = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let cell = arena.value_list_cons(moved_head, moved_tail);
+    let returned = arena.computation_return(cell);
+    let rest = arena.computation_bind(rest, returned);
+    arena.computation_bind(first, rest)
 }
 
 /// A family node whose innermost binder may be read.

@@ -1302,3 +1302,32 @@ fn no_k()
         })
     ));
 }
+
+#[test]
+fn a_recursive_code_is_an_uncertified_stratum()
+{
+    let mut environment = Environment::new();
+    let refused = offer(&mut environment, |arena| {
+        let boolean = boolean(arena);
+        let list = arena.value_type_list(boolean.ty);
+        let code = arena.value_quote(list);
+        (
+            arena.value_type_path_universe(code, code),
+            arena.value_path_refl(code),
+        )
+    });
+    assert!(matches!(
+        refused,
+        Err(KernelError::Path(PathError::UncertifiedStratum(_)))
+    ));
+    // The refusal names the recursive node, not the code around it.
+    let mut arena = TermArena::new();
+    let boolean = boolean(&mut arena);
+    let list = arena.value_type_list(boolean.ty);
+    let pair = arena.value_type_product(&[boolean.ty, list]);
+    let code = arena.value_quote(pair);
+    assert_eq!(
+        super::code(&arena, code, ReplayBudget::DEFAULT),
+        Err(PathError::UncertifiedStratum(list))
+    );
+}

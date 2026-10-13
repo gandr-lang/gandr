@@ -32,27 +32,32 @@ use crate::rewrite::shift_value;
 /// - requires: the code root belongs to `arena`.
 /// - ensures: outer formers are Base, Product (the unit among them), a Sum of
 ///   at least one summand, or Session; session graph structure and guards
-///   check. The empty sum is refused, as the retired empty type was. Native
+///   check. The empty sum is refused, as the retired empty type was. A List
+///   code is refused as an uncertified stratum: its inhabitants are unbounded,
+///   so no finite constructor coverage certifies a round trip over it. Native
 ///   formation separately checks session payload codes in an empty term
 ///   context.
 /// - provides: code-shape inspection, never a checking verdict.
-/// - fails: `UnsupportedCode`, `UnsupportedType`, `Session`, `Arena` or
-///   `Budget`.
+/// - fails: `UnsupportedCode`, `UnsupportedType`, `UncertifiedStratum`,
+///   `Session`, `Arena` or `Budget`.
 /// - panics: none.
 ///
 /// # Errors
 /// As `fails`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — Bool and product codes admit; thunk codes refuse.
+/// - hypothesis: L3 — Bool and product codes admit; thunk codes refuse; a list
+///   code refuses by its stratum.
 /// - witness: `path_universe::tests::a_non_equivalence_is_refused`
+/// - witness: `path_universe::tests::a_recursive_code_is_an_uncertified_stratum`
 /// - witness: `session::tests::session_codes_are_closed_and_contractive`
 #[spec(
     captures: before = allowance.0,
     ensures: |ret| allowance.0 <= before && match ret {
         Ok(root) => allowance.0 < before && matches!(arena.value(code), Some(&Value::Quote(quoted)) if root == quoted),
         Err(PathError::UnsupportedCode(named)) => named == code && !matches!(arena.value(code), Some(&Value::Quote(_))),
-        Err(PathError::UnsupportedType(root)) => arena.value_type(root).is_some_and(|node| !matches!(node, &ValueType::Base(_) | &ValueType::Product(..) | &ValueType::Session { .. }) && node.summands().is_none_or(<[_]>::is_empty)),
+        Err(PathError::UnsupportedType(root)) => arena.value_type(root).is_some_and(|node| !matches!(node, &ValueType::Base(_) | &ValueType::Product(..) | &ValueType::Session { .. } | &ValueType::List(_)) && node.summands().is_none_or(<[_]>::is_empty)),
+        Err(PathError::UncertifiedStratum(root)) => matches!(arena.value_type(root), Some(&ValueType::List(_))),
         Err(PathError::Budget) => allowance.0 == 0,
         Err(PathError::Arena | PathError::Session(_)) => true,
         Err(_) => false,
@@ -93,6 +98,7 @@ pub(super) fn code(
             | &ValueType::Sum(ref parts) | &ValueType::Product(ref parts) => {
                 pending.extend(parts.iter().rev().copied());
             },
+            | &ValueType::List(_) => return Err(PathError::UncertifiedStratum(id)),
             | _ => return Err(PathError::UnsupportedType(id)),
         }
     }

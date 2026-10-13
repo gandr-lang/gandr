@@ -13,9 +13,14 @@
 //! `ValueType::PathUniverse(a, b)` forms `Path_U a b` over closed quoted Base
 //! codes, products of any arity (the unit among them), sums of at least one
 //! summand, and finite session codes. The empty sum is outside the
-//! vocabulary. `PathProduct` stays binary: it relates two-component products
-//! only, and transport over it computes on pairs. First-order endpoints remain
-//! level zero; a session forms at its payload telescope's universe level.
+//! vocabulary. A List code is outside it by stratum, and refused by name as
+//! [`PathError::UncertifiedStratum`]: a recursive code's inhabitants are
+//! unbounded, so no finite constructor coverage certifies a round trip over
+//! it. A list still moves along a path at its element code, by element
+//! transport in a List motive, one cell per step. `PathProduct` stays binary:
+//! it relates two-component products only, and transport over it computes on
+//! pairs. First-order endpoints remain level zero; a session forms at its
+//! payload telescope's universe level.
 //! `Value::PathEquiv`, `PathRefl`, `PathProduct` and `SessionPath` introduce
 //! paths. `Computation::Transport` computes for the first three; session
 //! evidence describes recorded action skeletons, not kernel endpoint values.
@@ -208,6 +213,10 @@ pub enum PathError
     UnsupportedCode(ValueId),
     /// A code contains a former outside the closed first-order fragment.
     UnsupportedType(ValueTypeId),
+    /// A recursive code leaves the base stratum: its inhabitants are
+    /// unbounded, so finite round-trip coverage certifies no equivalence over
+    /// it.
+    UncertifiedStratum(ValueTypeId),
     /// An equivalence annotation is not a native path classifier.
     ExpectedPath(ValueTypeId),
     /// Round-trip evidence has the wrong constructor coverage.
@@ -244,6 +253,9 @@ impl fmt::Display for PathError
             | Self::UnsupportedCode(_) => f.write_str("a universe-path endpoint was not quoted"),
             | Self::UnsupportedType(_) => {
                 f.write_str("a code was outside the native path vocabulary")
+            },
+            | Self::UncertifiedStratum(_) => {
+                f.write_str("a recursive code is an uncertified stratum of the universe")
             },
             | Self::ExpectedPath(_) => f.write_str("an equivalence annotation was not Path_U"),
             | Self::Coverage(Direction::Source) => {
@@ -319,24 +331,29 @@ impl Allowance
 ///
 /// # Specification
 /// - ensures: accepts quoted Unit, Base, Sum, Product and guarded Session
-///   shapes. Session payload typing belongs to ordinary native formation; this
-///   inspection is not a certificate or admission capability.
+///   shapes and refuses a List code as an uncertified stratum. Session payload
+///   typing belongs to ordinary native formation; this inspection is not a
+///   certificate or admission capability.
 /// - provides: the callable code walk for consumers of native universe paths.
-/// - fails: unsupported codes, unreadable roots or exhausted budget.
+/// - fails: unsupported codes, recursive codes, unreadable roots or exhausted
+///   budget.
 /// - panics: none.
 ///
 /// # Errors
-/// `UnsupportedCode`, `UnsupportedType`, `Arena`, or `Budget`.
+/// `UnsupportedCode`, `UnsupportedType`, `UncertifiedStratum`, `Arena`, or
+/// `Budget`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — Bool and products admit; thunk codes refuse.
+/// - hypothesis: L3 — Bool and products admit; thunk codes refuse; a list code
+///   refuses by its stratum.
 /// - witness: `path_universe::tests::a_non_equivalence_is_refused`
+/// - witness: `path_universe::tests::a_recursive_code_is_an_uncertified_stratum`
 #[spec(ensures: |ret| match ret {
     Ok(root) => matches!(arena.value(code), Some(&Value::Quote(quoted)) if root == quoted),
     Err(PathError::UnsupportedCode(named)) => named == code && !matches!(arena.value(code), Some(&Value::Quote(_))),
     Err(PathError::Budget | PathError::Arena) => true,
-    Err(PathError::UnsupportedType(root)) => arena.value_type(root).is_some_and(|node| !matches!(node, &ValueType::Base(_) | &ValueType::Product(..)) && node.summands().is_none_or(<[_]>::is_empty)),
-
+    Err(PathError::UnsupportedType(root)) => arena.value_type(root).is_some_and(|node| !matches!(node, &ValueType::Base(_) | &ValueType::Product(..) | &ValueType::List(_)) && node.summands().is_none_or(<[_]>::is_empty)),
+    Err(PathError::UncertifiedStratum(root)) => matches!(arena.value_type(root), Some(&ValueType::List(_))),
     Err(_) => false,
 })]
 #[inline]
