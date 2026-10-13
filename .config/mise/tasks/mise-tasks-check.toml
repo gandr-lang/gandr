@@ -85,9 +85,18 @@ run = "cargo dylint --lib quenchant_dylints --no-deps -- --workspace --all-targe
 # replacing the executable between the dependency task and either gate.
 ["workflow:install"]
 description = "Install the gate binary at the Dylint metadata revision"
-tools.jq = "1.8.1"
 run = '''
-cargo install --git https://github.com/gandr-lang/quenchant --rev "$(cargo metadata --manifest-path Cargo.toml --no-deps --format-version 1 | jq -er '.metadata.dylint.libraries | map(select(.git == "https://github.com/gandr-lang/quenchant" and .pattern == "crates/quenchant-dylints")) | if length == 1 then .[0].rev | select(type == "string" and test("^[0-9a-f]{40}$")) else error("expected one pinned quenchant library") end')" --locked --bin quenchant-gates --root target/workflow-tools quenchant-gates
+cargo install --git https://github.com/gandr-lang/quenchant --rev "$(mise run --quiet workflow:revision)" --locked --bin quenchant-gates --root target/workflow-tools quenchant-gates
+'''
+
+# The one quenchant revision the Dylint metadata pins, read without a
+# toolchain. CI keys the policy caches on it, so a restored library is always
+# this revision's policy.
+["workflow:revision"]
+description = "Print the quenchant revision the Dylint metadata pins"
+tools.yq = "4.54.1"
+run = '''
+yq -e -p toml -o yaml '[.workspace.metadata.dylint.libraries[] | select(.git == "https://github.com/gandr-lang/quenchant" and .pattern == "crates/quenchant-dylints")] | select(length == 1) | .[0].rev | select(test("^[0-9a-f]{40}$"))' Cargo.toml
 '''
 
 ["check:anodized"]
@@ -193,11 +202,17 @@ quenchant-gates obligations --manifest-path Cargo.toml --base "$base" \
 
 # The obligated witnesses, under the enforcing gate's flags and target
 # directory so a restored enforcing build serves them. The selection names
-# each witness's package, so Cargo builds only those packages' tests.
+# each witness's package, so Cargo builds only those packages' tests, with
+# dependency features resolved as for the whole workspace: a narrower
+# selection would change the features of shared dependencies and rebuild
+# every crate above them. Only this task unifies so: elsewhere `-p` keeps
+# its own features, which `cargo tree -p` and the shipped build rely on.
 ["evidence:witnesses"]
 description = "Rerun the obligated witnesses with specifications enforced"
 env.RUSTFLAGS = "--cfg anodized_panic"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
+env.CARGO_UNSTABLE_FEATURE_UNIFICATION = "true"
+env.CARGO_RESOLVER_FEATURE_UNIFICATION = "workspace"
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail

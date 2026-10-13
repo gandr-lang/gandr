@@ -118,10 +118,13 @@ jobs:
           cache: true
           cache_key: mise-ci-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock', 'rust-toolchain.toml') }}
           cache_save: ${{ (env.CI_ENFORCING != 'true' || runner.os == 'macOS') && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && startsWith(github.job, 'cargo-test'))) }}
-      # Policy caches never use a restore prefix: Cargo can consider a library
-      # from another Git revision fresh. The metadata revision is in Cargo.toml.
-      # The specification records the policy run writes travel with its lint
-      # state: a unit Cargo finds fresh keeps the record it wrote.
+      # Every policy cache is keyed on the quenchant revision the Dylint
+      # metadata pins (`workflow:revision`), so a restored library is always
+      # this revision's policy: Cargo can consider a library from another
+      # revision fresh, and no key or restore prefix ever omits it.
+      - &identify-policy
+        name: identify the policy revision
+        run: printf 'CI_POLICY_REVISION=%s\n' "$(mise run --quiet workflow:revision)" >> "$GITHUB_ENV"
       - &restore-dylint-drivers
         name: restore Dylint drivers
         id: dylint-drivers-restore
@@ -130,20 +133,44 @@ jobs:
         with:
           path: &dylint-drivers ~/.dylint_drivers
           key: dylint-drivers-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'mise.toml', 'mise.lock') }}
+      # The gate binary changes only with the revision and the compiler.
+      - &restore-gate-binary
+        name: restore the gate binary
+        id: gate-binary-restore
+        uses: *cache-restore
+        with:
+          path: &gate-binary target/workflow-tools
+          key: &gate-binary-key quenchant-gates-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-${{ env.CI_POLICY_REVISION }}
+          lookup-only: ${{ github.event_name == 'push' }}
+      - &save-gate-binary
+        name: save the gate binary
+        if: ${{ !cancelled() && env.ACT != 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && hashFiles('target/workflow-tools/bin/quenchant-gates') != '' && steps.gate-binary-restore.outputs.cache-hit != 'true' }}
+        uses: &cache-save actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: *gate-binary
+          key: ${{ steps.gate-binary-restore.outputs.cache-primary-key }}
+      # The policy state follows main like the test state: one entry per
+      # landing, restored by the newest of the same compiler, tool pins and
+      # policy revision. It holds the built library, the workspace as the
+      # library last checked it with the specification records that check
+      # wrote, and the rustdoc JSON: a unit Cargo finds fresh keeps its
+      # record, so a pull request lints and documents only what it changed.
       - &restore-policy-state
-        name: restore Dylint library and gate binary
+        name: restore the policy state
         id: policy-state-restore
         uses: *cache-restore
         with:
           path: &policy-state |
             target/dylint
             target/evidence
-            target/workflow-tools
-          key: &policy-state-key policy-state-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'mise.toml', 'mise.lock', 'Cargo.toml', 'Cargo.lock') }}
+          key: policy-state-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'mise.toml', 'mise.lock') }}-${{ env.CI_POLICY_REVISION }}-${{ github.sha }}
+          restore-keys: policy-state-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'mise.toml', 'mise.lock') }}-${{ env.CI_POLICY_REVISION }}-
+          # Promotion already downloads the verified queue artifact.
+          lookup-only: ${{ github.event_name == 'push' }}
       - &save-policy-state
-        name: save Dylint library and gate binary
+        name: save the policy state
         if: ${{ !cancelled() && env.ACT != 'true' && ((github.event_name == 'push' && hashFiles('build-state-cargo-dylint-crate.tar.zst') != '') || (github.event_name == 'workflow_dispatch' && steps.policy-library.outcome == 'success' && steps.invocation-state.outcome == 'success')) && steps.policy-state-restore.outputs.cache-hit != 'true' }}
-        uses: &cache-save actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: *cache-save
         with:
           path: *policy-state
           key: ${{ steps.policy-state-restore.outputs.cache-primary-key }}
@@ -395,13 +422,14 @@ jobs:
         run: mise run "$CI_TEST_TASK"
       # Witness discovery lists the enforcing test inventory, so it runs where
       # that graph is already built: anywhere else it compiles the graph again.
-      # The gate binary comes from the policy lane's exact cache when present.
+      # The gate binary comes from the revision's cache when present.
+      - *identify-policy
       - name: restore the gate binary
         if: ${{ env.CI_WITNESSES == 'true' }}
         uses: *cache-restore
         with:
-          path: *policy-state
-          key: *policy-state-key
+          path: *gate-binary
+          key: *gate-binary-key
       - name: resolve adequacy witnesses
         if: ${{ !cancelled() && env.CI_WITNESSES == 'true' && steps.build-workspace.outcome == 'success' }}
         run: mise run check:witnesses
@@ -558,7 +586,9 @@ jobs:
   # build it would otherwise repeat on every pull request; the obligations lane
   # runs it on a pull request for its records. The image carries its driver;
   # the bare-runner fallback installs the same pinned tools and restores the
-  # exact compiler- and revision-matched policy artifacts.
+  # compiler- and revision-matched policy artifacts. Every landing hands its
+  # policy state to main, the rustdoc JSON included, so the obligations lane
+  # starts from main's records and documentation rather than from nothing.
   cargo-dylint-crate:
     name: check quenchant compiler policy
     needs: *rust-needs
@@ -571,7 +601,9 @@ jobs:
       - *identify-build-state
       - *install-policy-tools
       - *setup-rust
+      - *identify-policy
       - *restore-dylint-drivers
+      - *restore-gate-binary
       - *restore-policy-state
       - name: lint every workspace target
         id: policy-library
@@ -586,14 +618,19 @@ jobs:
         run: mise run check:anodized
       - name: require specification enforcement
         run: mise run check:anodized-enforcing
+      # State, never a gate: the obligations lane builds what is missing.
+      - name: document the workspace for the obligations report
+        continue-on-error: true
+        run: mise run evidence:rustdoc
       # This lane hands over its policy caches, not the dependency cache.
-      - name: archive Dylint library and gate binary
+      - name: archive the policy state and gate binary
         id: build-state-archive
-        if: ${{ !cancelled() && github.event_name == 'merge_group' && steps.policy-library.outcome == 'success' && steps.invocation-state.outcome == 'success' && steps.policy-state-restore.outputs.cache-hit != 'true' }}
+        if: ${{ !cancelled() && github.event_name == 'merge_group' && steps.policy-library.outcome == 'success' && steps.invocation-state.outcome == 'success' }}
         shell: bash
         run: tar -cf - target/dylint target/evidence target/workflow-tools | zstd -T0 -3 -o "build-state-$GITHUB_JOB.tar.zst"
       - *upload-build-state
       - *save-policy-state
+      - *save-gate-binary
       - name: archive Dylint drivers
         if: ${{ !cancelled() && github.event_name == 'merge_group' && steps.policy-library.outcome == 'success' && needs.ci-image-ref.outputs.ref == '' && steps.dylint-drivers-restore.outputs.cache-hit != 'true' }}
         run: tar -cf dylint-drivers.tar -C "$HOME" .dylint_drivers
@@ -655,7 +692,8 @@ jobs:
     outputs:
       comment: ${{ steps.obligations.outcome == 'success' }}
     env:
-      # The witnesses reuse main's enforcing test state; nothing is saved.
+      # The witnesses reuse main's enforcing test state, and the listing main's
+      # policy state: its library, records and rustdoc JSON. Nothing is saved.
       CI_BUILD_STATE: cargo-test-enforcing
       CI_ENFORCING: "true"
       # A pull request checks out its merge commit, whose first parent is the
@@ -668,7 +706,9 @@ jobs:
       - *identify-build-state
       - *install-policy-tools
       - *setup-rust
+      - *identify-policy
       - *restore-dylint-drivers
+      - *restore-gate-binary
       - *restore-policy-state
       - *restore-test-state
       - *unpack-build-state
@@ -928,11 +968,14 @@ jobs:
           name: dylint-drivers
           run-id: ${{ needs.build-state.outputs.run-id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
+      - *identify-policy
       - *restore-dylint-drivers
+      - *restore-gate-binary
       - *restore-policy-state
       - *unpack-build-state
       - name: unpack Dylint drivers
         if: *promote-drivers
         run: tar -xf dylint-drivers.tar -C "$HOME"
       - *save-policy-state
+      - *save-gate-binary
       - *save-dylint-drivers
