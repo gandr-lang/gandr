@@ -1003,6 +1003,11 @@ impl Relation
     /// - hypothesis: L3 — Bool reads first order; a function from functions
     ///   reads higher order beneath its argument.
     /// - witness: `element_identity::tests::a_quantified_evaluation_refuses_what_it_cannot_relate`
+    #[spec(ensures: |ret| match ret {
+        Ok(Order::First) => self.node(relation).is_ok_and(|node| !matches!(node.clause, Clause::Function(..))),
+        Ok(Order::Higher) => true,
+        Err(ref error) => matches!(*error, RelationError::Arena),
+    })]
     fn order(
         &self,
         relation: RelationId,
@@ -1374,6 +1379,10 @@ struct Stuck
 /// - hypothesis: L3 — the premise of the quantified witness reads its thunk
 ///   type; a fibre counting to a function binder refuses by name.
 /// - witness: `element_identity::tests::a_quantified_evaluation_refuses_what_it_cannot_relate`
+#[spec(ensures: |ret| match ret {
+    Ok(domain) => arena.value_type(domain).is_some(),
+    Err(ref error) => matches!(*error, RelationError::QuantifiedStep(found) if found == component),
+})]
 fn premise_classifier(
     arena: &TermArena,
     context: &[ValueTypeId],
@@ -1416,6 +1425,18 @@ fn premise_classifier(
 ///
 /// # Errors
 /// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the quantified witness's premise at index zero names the
+///   functions at two and one; an index swapped or offset by one replays the
+///   wrong function and refuses.
+/// - witness: `element_identity::tests::a_quantified_evaluation_replays_under_the_quantifier`
+/// - witness: `element_identity::tests::a_quantified_evaluation_refuses_what_it_cannot_relate`
+#[spec(ensures: |ret| match ret {
+    Ok((left, right)) => Some(u32::from(left)) == u32::from(fibre).checked_add(2)
+        && Some(u32::from(right)) == u32::from(fibre).checked_add(1),
+    Err(ref error) => matches!(*error, RelationError::QuantifiedStep(found) if found == component),
+})]
 fn premise_functions(
     fibre: DeBruijnIndex,
     component: Component,
@@ -1449,6 +1470,10 @@ fn premise_functions(
 ///   applying the other function refuses by name.
 /// - witness: `element_identity::tests::a_quantified_evaluation_replays_under_the_quantifier`
 /// - witness: `element_identity::tests::a_quantified_evaluation_refuses_what_it_cannot_relate`
+#[spec(ensures: |ret| match ret {
+    Ok(ref found) => arena.value(found.input).is_some(),
+    Err(ref error) => matches!(*error, RelationError::QuantifiedStep(found) if found == component),
+})]
 fn stuck(
     arena: &TermArena,
     normal: ValueId,
@@ -1506,6 +1531,10 @@ fn stuck(
 /// - hypothesis: L3 — a twice-applied body reads its second application at the
 ///   first's output; a misplaced shift changes the replayed claim.
 /// - witness: `element_identity::tests::a_quantified_evaluation_replays_under_the_quantifier`
+#[spec(ensures: |ret| match continuation {
+    Continuation::Tail => arena.computation(ret) == Some(&Computation::Return(output.0)),
+    Continuation::Bind(_) => arena.computation(ret).is_some(),
+})]
 fn resume(
     arena: &mut TermArena,
     table: &mut ContentTable,

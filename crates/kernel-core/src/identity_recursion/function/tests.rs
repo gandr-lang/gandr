@@ -380,6 +380,7 @@ fn engine(
 /// - hypothesis: L1/L3 — a stuck normal form's trace replays, and the trace of
 ///   another form refuses.
 /// - witness: `element_identity::tests::a_quantified_evaluation_replays_under_the_quantifier`
+#[spec(ensures: |ret| ret.0 != MachineVerdict::Convertible || arena.value(target).is_some())]
 pub fn reaches(
     arena: &mut TermArena,
     context: &[ValueTypeId],
@@ -424,6 +425,12 @@ pub fn reaches(
 /// - requires: `computation` returns `value` beneath `context`.
 /// - ensures: the value with the engine's dialogue.
 /// - panics: when the engine does not convert the claim.
+///
+/// # Adequacy
+/// - hypothesis: L1/L3 — each return of the quantified witness replays its
+///   evaluation, and a wrong returned value refuses.
+/// - witness: `element_identity::tests::a_quantified_evaluation_replays_under_the_quantifier`
+#[spec(ensures: |ret| ret.value == value)]
 pub fn evaluation(
     arena: &mut TermArena,
     context: &[ValueTypeId],
@@ -443,6 +450,13 @@ pub fn evaluation(
 /// - requires: `computation`, closed over `context`, converts to `normal`.
 /// - ensures: the normal form with the engine's dialogue.
 /// - panics: when the engine does not convert the claim.
+///
+/// # Adequacy
+/// - hypothesis: L1/L3 — each application of the quantified witness replays its
+///   normal form, and a form applying the other function refuses.
+/// - witness: `element_identity::tests::a_quantified_evaluation_replays_under_the_quantifier`
+/// - witness: `element_identity::tests::a_quantified_evaluation_refuses_what_it_cannot_relate`
+#[spec(ensures: |ret| ret.normal == normal)]
 pub fn normal_form(
     arena: &mut TermArena,
     context: &[ValueTypeId],
