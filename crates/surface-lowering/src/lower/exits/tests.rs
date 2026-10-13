@@ -169,7 +169,8 @@ fn the_paths_of_a_computation_are_surveyed_through_nesting()
          run e <- case n {{ Zero => return n, Succ(p) => case p {{ Zero => return p, Succ(q) => return q }} }} ;\n\
          case n {{ Zero => return n, Succ(p) => return p }}\n\
          }}\n\
-         def g : +U (-F Nat) ;\ndef g = thunk {{ return Zero }} ;\n"
+         def g : +U (-F Nat) ;\ndef g = thunk {{ return Zero }} ;\n\
+         def h : +U (-F Nat & -F Nat) ;\ndef h = thunk {{ &{{.0 => return Succ(Zero), .1 => pure Zero}} }} ;\n"
     );
     assert_surveyed(SourceText::from(source.as_str()), &[
         (
@@ -206,6 +207,7 @@ fn the_paths_of_a_computation_are_surveyed_through_nesting()
         ),
         ("thunk { return Zero }", Leaves::Never),
         ("return Zero", Leaves::Always),
+        ("&{.0 => return Succ(Zero), .1 => pure Zero}", Leaves::Never),
     ].map(|(needle, leaves)| (SourceText::from(needle), leaves)));
 }
 

@@ -444,7 +444,7 @@ fn carried(
         | Produced::Judged(Verdict::Owed(_)) => rows.mark(Row::AddressableObligation),
         | Produced::Judged(Verdict::Refused(refusal)) => checking_row(refusal, lowered, &mut rows),
         | Produced::Unlowered(refusal) => lowering_row(refusal, &mut rows),
-        | Produced::Judged(Verdict::Data) | Produced::Guarded(_) => {},
+        | Produced::Judged(Verdict::Data) | Produced::Guarded(_) | Produced::Unwired { .. } => {},
     }
     rows
 }
@@ -688,7 +688,6 @@ fn lowering_row(
                 | FragmentBoundary::Unannotated
                 | FragmentBoundary::NonUniform
                 | FragmentBoundary::NotInTail
-// refused_by: statement_fold · collision: none (1 contested hunk(s), neither side deleted the other's lines)
                 | FragmentBoundary::JoinsBlock
                 | FragmentBoundary::EmptyList,
             ..
@@ -1053,7 +1052,8 @@ def konst = thunk { fn (x) { fn (y) { return x } } } ;"#,
                 &[(Row::NonSynthesisableDefinition, 1_usize)],
             ),
             (
-                r#"@[ refuses("OutOfFragment") ] def a : -F Integer & -F Integer ;"#,
+                r#"@[ checks ] data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }
+@[ refuses("OutOfFragment") ] def rec ahead(n : Nat) -> -F Nat { case n { Zero => return n, Succ(p) => become ahead[>](p) } }"#,
                 &[(Row::ReservedForm, 1_usize)],
             ),
             (r#"@[ owes(1) ] def a : Integer ;"#, &[(
@@ -1267,5 +1267,3 @@ def d : Integer ;
         }
     }
 }
-// weave: run 'weave explain crates/surface-dispatcher/src/exercised.rs' for
-// per-hunk detail, 'weave check' to verify your resolution

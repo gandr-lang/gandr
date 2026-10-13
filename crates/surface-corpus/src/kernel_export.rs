@@ -143,6 +143,9 @@ enum Class
     /// The checker accepted it with a compound endpoint, which the kernel has
     /// no node for: it crosses nothing until the kernel reads a returned value.
     CompoundEndpoint,
+    /// The checker accepted it, and it holds a former the kernel's wire
+    /// format has no node for, so it crossed nothing.
+    Unwired,
     /// The lowering refused it, under this name, and nothing was offered.
     NeverOffered(RefusalName),
 }
@@ -315,6 +318,7 @@ fn sources(root: Root) -> Vec<PathBuf>
             | bridge::Refusal::Hole { .. }
             | bridge::Refusal::Unknown { .. }
             | bridge::Refusal::CompoundEndpoint { .. }
+            | bridge::Refusal::Unwired { .. }
         )),
     )
     | (
@@ -325,6 +329,7 @@ fn sources(root: Root) -> Vec<PathBuf>
             | bridge::Refusal::Hole { .. }
             | bridge::Refusal::Unknown { .. }
             | bridge::Refusal::CompoundEndpoint { .. }
+            | bridge::Refusal::Unwired { .. }
         )),
     )
     | (Verdict::Data, &bridge::Outcome::Data { .. }) => true,
@@ -349,6 +354,10 @@ fn sources(root: Root) -> Vec<PathBuf>
         _,
         &bridge::Outcome::Refused(bridge::Refusal::CompoundEndpoint { .. }),
         Class::CompoundEndpoint,
+    ) | (
+        _,
+        &bridge::Outcome::Refused(bridge::Refusal::Unwired { .. }),
+        Class::Unwired,
     ) => true,
     (Verdict::Refused(refusal), &bridge::Outcome::Marked(mark), Class::Marked(name)) => {
         refusal == mark && name == Refusal::Checking(refusal).name()
@@ -389,6 +398,10 @@ fn class_of(
             Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Owed(_),
             &bridge::Outcome::Refused(bridge::Refusal::CompoundEndpoint { .. }),
         ) => Class::CompoundEndpoint,
+        | (
+            Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Owed(_),
+            &bridge::Outcome::Refused(bridge::Refusal::Unwired { .. }),
+        ) => Class::Unwired,
         | (verdict, outcome) => panic!(
             "{}: the verdict {verdict:?} and the kernel's outcome {outcome:?} disagree",
             path.display()

@@ -5,8 +5,9 @@
 //!
 //! A **survey**, descending before the classification, records what every
 //! node's paths do with the body it stands in: never leave it, sometimes, or
-//! always. A function, a lambda and a thunk never do, since an exit inside one
-//! leaves it and not the body around it.
+//! always. A function, a lambda, a thunk and a copattern block never do,
+//! since an exit inside one, or inside one of its clauses, leaves it and not
+//! the body around it.
 //!
 //! The **classification** reads the survey at each block a path runs through.
 //! A statement whose computation sometimes leaves distributes the rest of the
@@ -186,11 +187,11 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: nothing; the survey reads the tree alone.
     /// - ensures: every node holds its [`Leaves`], children before parents:
-    ///   `return` and `become` always leave; a function, a lambda and a thunk
-    ///   never do, since an exit inside one leaves it; a form holding no exit
-    ///   outside such a body never does; a block or a grouping does what the
-    ///   child that leaves most does; a match always leaves when every arm
-    ///   does; every other form holding an exit sometimes does.
+    ///   `return` and `become` always leave; a function, a lambda, a thunk and
+    ///   a copattern block never do, since an exit inside one leaves it; a form
+    ///   holding no exit outside such a body never does; a block or a grouping
+    ///   does what the child that leaves most does; a match always leaves when
+    ///   every arm does; every other form holding an exit sometimes does.
     /// - provides: what the classification of a block reads to decide where the
     ///   rest of the block goes, before any statement in it is classified.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] when the sweep outruns the
@@ -271,9 +272,11 @@ impl<'source> Lowerer<'_, 'source>
         };
         match former {
             | Former::Exit | Former::Become => Leaves::Always,
-            | Former::Thunk | Former::Lambda | Former::Declaration | Former::Module => {
-                Leaves::Never
-            },
+            | Former::Thunk
+            | Former::Lambda
+            | Former::LazyRecord
+            | Former::Declaration
+            | Former::Module => Leaves::Never,
             | _ if held == Leaves::Never => Leaves::Never,
             | Former::Block | Former::Parenthesized => held,
             | Former::Case => self.arms_leave(position, pieces),
@@ -398,8 +401,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   `answer` the type the body states, when it states one.
     /// - ensures: the block's last computation is where a path ends, and the
     ///   block's statements as [`Self::paths_through`] marks them.
-    /// - provides: the one opening of a body every function, lambda and thunk
-    ///   shares.
+    /// - provides: the one opening of a body every function, lambda, thunk and
+    ///   copattern clause shares.
     /// - fails: [`LoweringRefusal::Unreachable`], as [`Self::paths_through`].
     /// - panics: none.
     ///
@@ -534,8 +537,8 @@ impl<'source> Lowerer<'_, 'source>
         }
     }
 
-    /// Mint `body`, the block of a function's, a lambda's or a thunk's body,
-    /// with every exit put where the body ends.
+    /// Mint `body`, the block of a function's, a lambda's or a thunk's body or
+    /// a copattern clause, with every exit put where the body ends.
     ///
     /// # Specification
     /// - requires: every node the block names is already minted or absent;
@@ -543,7 +546,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: the block [`Self::mint_block`] mints, commuted by [`commute`]
     ///   once any bind with a distributed rest is minted; nothing when the
     ///   block did not lower.
-    /// - provides: the body half of thunks, lambdas and function tails.
+    /// - provides: the body half of thunks, lambdas, copattern clauses and
+    ///   function tails.
     /// - fails: never.
     /// - panics: none.
     ///

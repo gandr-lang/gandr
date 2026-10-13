@@ -316,6 +316,7 @@ use gandr_surface_corpus::Produced;
 use gandr_surface_dispatcher::Admission;
 use gandr_surface_dispatcher::ComposeFault;
 use gandr_surface_dispatcher::Composed;
+use gandr_surface_dispatcher::Crossed;
 use gandr_surface_dispatcher::Evaluation;
 use gandr_surface_dispatcher::Lowered;
 use gandr_surface_dispatcher::LoweringCount;
@@ -749,7 +750,8 @@ pub enum KernelCheckpoint
 }
 
 /// What one admission produced: the kernel artifact of every declaration that
-/// crossed, and whether it reached the block store.
+/// crossed, the declarations the wire format cannot carry yet, and whether
+/// the artifact reached the block store.
 ///
 /// # Specification
 /// - requires: constructed by [`Session::admit`].
@@ -764,8 +766,8 @@ pub enum KernelCheckpoint
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Admitted
 {
-    /// The kernel artifact the admission exported.
-    kernel: EncodedArtifact,
+    /// What crossed the kernel boundary, and what the wire format left out.
+    crossed: Crossed,
     /// Whether it reached the block store.
     checkpoint: KernelCheckpoint,
 }
@@ -780,7 +782,7 @@ impl Admitted
     #[must_use]
     pub const fn kernel(&self) -> &EncodedArtifact
     {
-        &self.kernel
+        self.crossed.kernel()
     }
 
     /// Whether the artifact reached the block store, and the manifest naming
@@ -793,6 +795,18 @@ impl Admitted
     pub const fn checkpoint(&self) -> &KernelCheckpoint
     {
         &self.checkpoint
+    }
+
+    /// What crossed the kernel boundary, and each declaration the wire format
+    /// left out.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn crossed(&self) -> &Crossed
+    {
+        &self.crossed
     }
 }
 
@@ -976,6 +990,51 @@ impl<'text> Submission<'text>
         &self.obligations
     }
 
+    /// This judged revision as its admission `admitted` leaves it: the
+    /// composition carrying the kernel artifact and each unwired
+    /// declaration's refusal, the standing that composition earns, and the
+    /// kernel checkpoint.
+    ///
+    /// # Specification
+    /// - requires: `admitted` is the admission [`Session::admit`] ran for the
+    ///   judgement of this revision's text.
+    /// - ensures: the composition is [`Composed::admitted`] over `admitted`'s
+    ///   crossing, the standing is the one it earns under the revision's root,
+    ///   and the kernel checkpoint is `admitted`'s; every other part is as it
+    ///   was.
+    /// - provides: the submission [`Session::submit`] returns, and what a face
+    ///   that published a judgement before its admission republishes.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — over every corpus source, the submission's
+    ///   composition and standing are the walk's, unwired lazy records
+    ///   included, and the language server publishes the walk's reports.
+    /// - witness: `tests::corpus::every_source_submits_as_the_walk_composes_it`
+    #[spec(
+        captures: [root = self.root, text = self.text],
+        ensures: |ret| ret.root == root && ret.text == text
+            && ret.standing == Standing::of(ret.root, &ret.composed)
+            && matches!(ret.kernel, Maybe::Present(_)),
+    )]
+    #[inline]
+    #[must_use]
+    pub fn admitted(
+        mut self,
+        admitted: Admitted,
+    ) -> Self
+    {
+        let Admitted {
+            crossed,
+            checkpoint,
+        } = admitted;
+        self.composed = self.composed.admitted(crossed);
+        self.standing = Standing::of(self.root, &self.composed);
+        self.kernel = Maybe::Present(checkpoint);
+        self
+    }
+
     /// The submission as the walk step of a source at `path`: the shape every
     /// renderer of a step reads.
     ///
@@ -1059,7 +1118,8 @@ impl<'text> Submission<'text>
                     }
                     Produced::Judged(Verdict::Refused(_))
                     | Produced::Unlowered(_)
-                    | Produced::Guarded(_) => {
+                    | Produced::Guarded(_)
+                    | Produced::Unwired { .. } => {
                         matches!(ret, Maybe::Absent(evaluation::Absent::Unaccepted))
                     }
                 },
@@ -1129,7 +1189,8 @@ impl<'text> Submission<'text>
     }
     Produced::Judged(Verdict::Refused(_))
     | Produced::Unlowered(_)
-    | Produced::Guarded(_) => {
+    | Produced::Guarded(_)
+    | Produced::Unwired { .. } => {
         matches!(ret, Maybe::Absent(evaluation::Absent::Unaccepted))
     }
 },
@@ -1145,9 +1206,10 @@ pub fn evaluate<'text>(
             Verdict::Data | Verdict::Checked { .. } | Verdict::Synthesised { .. },
         ) => Maybe::Present(program.evaluate(declaration.constant())),
         | Produced::Judged(Verdict::Owed(_)) => Maybe::Absent(evaluation::Absent::Holed),
-        | Produced::Judged(Verdict::Refused(_)) | Produced::Unlowered(_) | Produced::Guarded(_) => {
-            Maybe::Absent(evaluation::Absent::Unaccepted)
-        },
+        | Produced::Judged(Verdict::Refused(_))
+        | Produced::Unlowered(_)
+        | Produced::Guarded(_)
+        | Produced::Unwired { .. } => Maybe::Absent(evaluation::Absent::Unaccepted),
     }
 }
 
@@ -1696,9 +1758,11 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// - requires: `revision` is the whole text of the session's source.
     /// - ensures: as [`judge`](Self::judge), and for a revision the lowering
     ///   reads, the composition then carries the kernel artifact its admission
-    ///   exported and the submission the kernel checkpoint committed into the
-    ///   block store: the composition `gandr check` gives the same text under
-    ///   the same root, kernel artifact included.
+    ///   exported, each declaration the kernel cannot hold refused as unwired,
+    ///   the standing that composition earns, and the submission the kernel
+    ///   checkpoint committed into the block store: the composition and
+    ///   standing `gandr check` gives the same text under the same root, kernel
+    ///   artifact included.
     /// - provides: a report whose verdicts are the batch pipeline's, beside the
     ///   census of what the resume adopted, the manifest of the kernel
     ///   environment it leaves, the edits that led to it and the repairs the
@@ -1722,7 +1786,7 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// - witness: `tests::session::whole_file_submit_carries_definitions_forward`
     /// - witness: `tests::checkpoint::a_reopened_session_reads_its_kernel_checkpoint_through_the_decoder`
     /// - witness: `tests::checkpoint::a_kernel_store_failure_preserves_resume_and_edit_state`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |submission| match submission.composed {
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |submission| submission.standing == Standing::of(self.root, &submission.composed) && match submission.composed {
         Composed::Settled { ref kernel, .. } => matches!(kernel, Maybe::Present(_))
             && matches!(submission.kernel, Maybe::Present(_)),
         Composed::Refused(_) => matches!(submission.kernel, Maybe::Absent(admitted::Absent::RefusedWhole)),
@@ -1736,16 +1800,16 @@ impl<Store, Blocks> Session<Store, Blocks>
         Store: CheckpointStore,
         Blocks: BlockStore,
     {
-        let mut submission = self.judge(revision)?;
-        if let Maybe::Present(admitted) = self
-            .admit()
-            .map_err(|fault| SessionFault::Compose(ComposeFault::Readmission(fault)))?
-        {
-            let Admitted { kernel, checkpoint } = admitted;
-            submission.composed = submission.composed.admitted(kernel);
-            submission.kernel = Maybe::Present(checkpoint);
-        }
-        Ok(submission)
+        let submission = self.judge(revision)?;
+        Ok(
+            match self
+                .admit()
+                .map_err(|fault| SessionFault::Compose(ComposeFault::Readmission(fault)))?
+            {
+                | Maybe::Present(admitted) => submission.admitted(admitted),
+                | Maybe::Absent(_) => submission,
+            },
+        )
     }
 
     /// Judge one revision: parse it through the form store, lower it, judge
@@ -2118,9 +2182,12 @@ impl<Store, Blocks> Session<Store, Blocks>
         else {
             return Ok(Maybe::Absent(admission::Absent::Idle));
         };
-        let kernel = admission.admit()?;
-        let checkpoint = checkpoint_kernel(&kernel, &mut self.blocks);
-        Ok(Maybe::Present(Admitted { kernel, checkpoint }))
+        let crossed = admission.admit()?;
+        let checkpoint = checkpoint_kernel(crossed.kernel(), &mut self.blocks);
+        Ok(Maybe::Present(Admitted {
+            crossed,
+            checkpoint,
+        }))
     }
 
     /// The root the session's source sits under.

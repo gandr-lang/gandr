@@ -3366,7 +3366,7 @@ fn read_site(reader: &mut Reader<'_>) -> Result<Site, CodecError>
 }
 
 /// The tags of the unadmitted formers, in stable wire order.
-const FORMERS: [UnadmittedFormer; 18] = [
+const FORMERS: [UnadmittedFormer; 16] = [
     UnadmittedFormer::ValueLift,
     UnadmittedFormer::NumericLiteral,
     UnadmittedFormer::NumericAtom,
@@ -3383,8 +3383,6 @@ const FORMERS: [UnadmittedFormer; 18] = [
     UnadmittedFormer::Resume,
     UnadmittedFormer::Reset,
     UnadmittedFormer::Shift,
-    UnadmittedFormer::With,
-    UnadmittedFormer::Project,
 ];
 
 /// The shapes a rule can require, in stable wire order.

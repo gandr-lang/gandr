@@ -98,6 +98,7 @@ impl Culprit
                 Self("an expectation the strict root refuses")
             },
             | Refusal::Checking(checking) => checked(checking),
+            | Refusal::Readmission { .. } => Self("checks, but the kernel cannot hold it yet"),
         }
     }
 }
@@ -141,8 +142,6 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
             | FragmentBoundary::Indexed => "a family applied to an index",
             | FragmentBoundary::Unannotated => "needs a stated type",
             | FragmentBoundary::NonUniform => "not the parameter itself",
-            // refused_by: statement_fold · collision: none (1 contested hunk(s), neither side
-            // deleted the other's lines)
             | FragmentBoundary::NotInTail => "not on a path through a body",
             | FragmentBoundary::JoinsBlock => "an answer the arms do not give",
             | FragmentBoundary::EmptyList => "an empty list, not the unit",
@@ -287,5 +286,3 @@ mod tests
         );
     }
 }
-// weave: run 'weave explain crates/surface-diagnostics/src/culprit.rs' for
-// per-hunk detail, 'weave check' to verify your resolution

@@ -13,8 +13,12 @@
 //! After the checker judges a module, the kernel is offered every declaration
 //! it accepted. A declaration the kernel does not re-derive is a disagreement
 //! between the two checkers — an engine fault, never a verdict about the
-//! author's source. What crossed is exported once, as the kernel artifact a
-//! settled composition carries, each declaration under its structured name.
+//! author's source. A declaration holding a former the kernel's wire format
+//! has no node for is no disagreement: the readmission refuses it by the
+//! node's name, and once the module is admitted that refusal stands as the
+//! declaration's verdict, settled against what it states. What crossed is
+//! exported once, as the kernel artifact a settled composition carries, each
+//! declaration under its structured name.
 //!
 //! After the checker judges a module, every declaration it accepted is offered
 //! to the kernel through the checker's bridge. A declaration the kernel
@@ -104,13 +108,16 @@ use core::fmt;
 use anodized::spec;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckingContext;
+use gandr_core_checker::CoreNode;
 use gandr_core_checker::Declaration;
 use gandr_core_checker::ModuleReport;
 use gandr_core_checker::OriginToken;
 use gandr_core_checker::body;
 use gandr_core_checker::bridge;
+use gandr_core_checker::bridge::WireGap;
 use gandr_core_checker::check_module;
 use gandr_core_checker::signature;
+use gandr_core_sequent::FocusRefusal;
 use gandr_core_term::CoreArena;
 use gandr_core_term::FailureClass;
 use gandr_kernel_term::ConstantIndex;
@@ -125,6 +132,7 @@ use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::OriginTable;
+use gandr_surface_lowering::SurfaceName;
 use gandr_surface_lowering::namespace::ShadowedBuiltin;
 use gandr_surface_parser::MeldError;
 use gandr_surface_parser::ObligationInstance;
@@ -235,6 +243,10 @@ pub enum Composed<'source>
         /// declaration the lowering refused at its own form files no half,
         /// so no attribute can be read off it.
         unstatable: Vec<LoweringRefusal<'source>>,
+        /// Each declaration that checks but whose focusing a former the
+        /// command IL lacks refused, in admission order: what a pending
+        /// source holding no unstatable refusal stands pending on.
+        awaiting: Vec<Awaiting<'source>>,
         /// Every core node the lowering minted, mapped back to the syntax
         /// that produced it: the table a checker refusal's node is located
         /// through.
@@ -264,6 +276,81 @@ pub enum Composed<'source>
     Refused(LoweringRefusal<'source>),
 }
 
+/// A declaration that checks but does not focus for want of a command-IL
+/// former.
+///
+/// The former is a record, or the projection of a record or a tuple, which
+/// the IL gains under [#221](https://github.com/gandr-lang/gandr/issues/221).
+///
+/// A pending source holding one stands pending on it. Once the IL holds the
+/// former, the source focuses whole and the walk reports it as no longer
+/// pending, so it moves under the fixture root.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Awaiting<'source>
+{
+    /// The declaration's name.
+    name: SurfaceName<'source>,
+    /// The focusing's refusal: one of the three the IL lacks.
+    refusal: FocusRefusal,
+}
+
+impl fmt::Display for Awaiting<'_>
+{
+    /// Writes the declaration's name and the focusing's refusal, then the
+    /// issue under which the command IL gains the former.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        write!(
+            f,
+            "`{}`: {}, until the command IL holds it (#221)",
+            self.name, self.refusal
+        )
+    }
+}
+
+/// The declarations of `program` whose focusing a former the command IL lacks
+/// refused, in admission order.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: exactly the focusing refusals of a record, a record projection
+///   and a tuple projection, each with its declaration's name, in admission
+///   order; every other focusing refusal is left out.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a pending source holding a record value stands pending on
+///   it, and one whose focusing refuses a code stands lowered.
+/// - witness: `walk::tests::each_root_stands_its_sources`
+#[spec(ensures: |ret| ret.iter().all(|awaiting| matches!(awaiting.refusal,
+    FocusRefusal::Record(_) | FocusRefusal::RecordProjection(_) | FocusRefusal::TupleProjection(_))))]
+fn awaiting<'source>(program: &Program<'source>) -> Vec<Awaiting<'source>>
+{
+    program
+        .focus_refusals()
+        .filter(|&(_, refusal)| {
+            matches!(
+                refusal,
+                FocusRefusal::Record(_)
+                    | FocusRefusal::RecordProjection(_)
+                    | FocusRefusal::TupleProjection(_)
+            )
+        })
+        .map(|(name, refusal)| Awaiting { name, refusal })
+        .collect()
+}
+
 quenchant_shape::reason_enum! {
     /// Why a settled composition carries no kernel artifact.
     pub mod admitted {
@@ -281,21 +368,26 @@ quenchant_shape::reason_enum! {
 
 impl Composed<'_>
 {
-    /// This composition with `kernel` as its kernel artifact.
+    /// This composition with what the kernel took of it: its kernel
+    /// artifact, and the readmission's refusal standing as the verdict of
+    /// each declaration the kernel's wire format has no node for.
     ///
     /// # Specification
-    /// - requires: `kernel` is the export of this composition's admission.
-    /// - ensures: a settled composition carries `kernel` and is otherwise
-    ///   unchanged; a whole refusal, which offered the kernel nothing, is
-    ///   returned as it was.
+    /// - requires: `crossed` is the result of this composition's admission.
+    /// - ensures: a settled composition carries `crossed`'s kernel artifact,
+    ///   and each declaration `crossed` names as unwired produces that refusal;
+    ///   it is otherwise unchanged. A whole refusal, which offered the kernel
+    ///   nothing, is returned as it was.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the composition of a module, judged and then
     ///   admitted, equals the one-step composition, kernel artifact included;
-    ///   dropping or replacing the artifact changes it.
+    ///   dropping or replacing the artifact changes it; a lazy record
+    ///   declaration settles only when it states the readmission's refusal.
     /// - witness: `compose::tests::the_kernel_artifact_holds_what_crossed_under_its_names`
     /// - witness: `compose::tests::a_judged_module_renders_before_its_admission`
+    /// - witness: `compose::tests::a_lazy_record_is_refused_at_the_kernel_boundary`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| match ret {
@@ -304,33 +396,94 @@ impl Composed<'_>
     })]
     pub fn admitted(
         self,
-        kernel: EncodedArtifact,
+        crossed: Crossed,
     ) -> Self
     {
         match self {
             | Self::Settled {
-                report,
+                mut report,
                 exercised,
                 unstatable,
+                awaiting,
                 origins,
                 spellings,
                 trails,
                 shadowed,
                 program,
                 ..
-            } => Self::Settled {
-                report,
-                exercised,
-                unstatable,
-                origins,
-                spellings,
-                trails,
-                shadowed,
-                kernel: Maybe::Present(kernel),
-                program,
+            } => {
+                for &(constant, at, gap) in &crossed.unwired {
+                    report.unwire(constant, at, gap);
+                }
+                Self::Settled {
+                    report,
+                    exercised,
+                    unstatable,
+                    awaiting,
+                    origins,
+                    spellings,
+                    trails,
+                    shadowed,
+                    kernel: Maybe::Present(crossed.kernel),
+                    program,
+                }
             },
             | Self::Refused(refusal) => Self::Refused(refusal),
         }
+    }
+}
+
+/// What the kernel took of an admitted module.
+///
+/// The artifact of every declaration that crossed, and each declaration the
+/// readmission refused because the kernel's wire format has no node for a
+/// former it holds.
+///
+/// # Specification
+/// - requires: constructed by [`Admission::admit`].
+/// - ensures: the unwired declarations ascend by admission position, each with
+///   the node holding the former and the node the wire format lacks.
+/// - panics: none.
+/// - executable: none — this data type has no call boundary;
+///   [`Admission::admit`] carries the executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a lazy record declaration is named here and absent from
+///   the artifact, beside a declaration that crossed.
+/// - witness: `compose::tests::a_lazy_record_is_refused_at_the_kernel_boundary`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Crossed
+{
+    /// The kernel artifact of every declaration that crossed.
+    kernel: EncodedArtifact,
+    /// Each declaration refused for a node the wire format lacks.
+    unwired: Vec<(ConstantIndex, CoreNode, WireGap)>,
+}
+
+impl Crossed
+{
+    /// The kernel artifact of every declaration that crossed.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn kernel(&self) -> &EncodedArtifact
+    {
+        &self.kernel
+    }
+
+    /// Each declaration the readmission refused for a node the kernel's wire
+    /// format lacks: its admission position, the node holding the former, and
+    /// the gap.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn unwired(&self) -> &[(ConstantIndex, CoreNode, WireGap)]
+    {
+        &self.unwired
     }
 }
 
@@ -384,14 +537,16 @@ impl<'source> Judged<'source>
         (self.settled, self.admission)
     }
 
-    /// Run the admission and complete the composition with its kernel
-    /// artifact.
+    /// Run the admission and complete the composition with what the kernel
+    /// took of it.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the settled composition carrying the admission's kernel
-    ///   artifact; a kernel disagreement is reported before a settle fault, so
-    ///   either fault is the one [`judge_module`] has always reported.
+    ///   artifact, each declaration the readmission refused for a node the wire
+    ///   format lacks producing that refusal; a kernel disagreement is reported
+    ///   before a settle fault, so either fault is the one [`judge_module`] has
+    ///   always reported.
     /// - fails: [`ComposeFault::Readmission`] when the kernel does not
     ///   re-derive an acceptance; else [`ComposeFault::Settle`] when the settle
     ///   comparison refused the verdicts.
@@ -413,9 +568,9 @@ impl<'source> Judged<'source>
     })]
     pub fn admit(self) -> Result<Composed<'source>, ComposeFault<'source>>
     {
-        let kernel = self.admission.admit().map_err(ComposeFault::Readmission)?;
+        let crossed = self.admission.admit().map_err(ComposeFault::Readmission)?;
         let composed = self.settled.map_err(ComposeFault::Settle)?;
-        Ok(composed.admitted(kernel))
+        Ok(composed.admitted(crossed))
     }
 }
 
@@ -453,7 +608,9 @@ impl Admission
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the kernel artifact of every declaration that crossed, under
-    ///   its structured name, when the readmission found no disagreement.
+    ///   its structured name, beside each declaration refused for a node the
+    ///   kernel's wire format lacks, in admission order, when the readmission
+    ///   found no disagreement.
     /// - fails: the first declaration the kernel did not re-derive, as the
     ///   readmission reports it.
     /// - panics: none.
@@ -467,6 +624,7 @@ impl Admission
     ///   judged over a foreign arena is a disagreement.
     /// - witness: `compose::tests::the_kernel_artifact_holds_what_crossed_under_its_names`
     /// - witness: `compose::tests::a_kernel_disagreement_is_an_engine_fault`
+    /// - witness: `compose::tests::a_lazy_record_is_refused_at_the_kernel_boundary`
     #[inline]
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -478,12 +636,30 @@ impl Admission
     #[spec(
         captures: [judged = self.verdicts.judged().iter().map(gandr_core_checker::Judged::constant)
             .collect::<alloc::vec::Vec<_>>()],
-        ensures: |ref ret| ret.as_ref().err().is_none_or(|fault| judged.contains(&fault.constant())),
+        ensures: |ref ret| match *ret {
+            Ok(ref crossed) => crossed.unwired.iter().all(|&(constant, _, _)| judged.contains(&constant))
+                && crossed.unwired.is_sorted_by_key(|&(constant, _, _)| constant),
+            Err(ref fault) => judged.contains(&fault.constant()),
+        },
     )]
-    pub fn admit(mut self) -> Result<EncodedArtifact, bridge::Readmitted>
+    pub fn admit(mut self) -> Result<Crossed, bridge::Readmitted>
     {
         let readmission = readmitted(&mut self.arena, &self.verdicts)?;
-        Ok(readmission.export(self.names))
+        let unwired = readmission
+            .readmitted()
+            .iter()
+            .filter_map(|crossed| match *crossed.outcome() {
+                | bridge::Outcome::Refused(bridge::Refusal::Unwired { at, gap }) => {
+                    Some((crossed.constant(), at, gap))
+                },
+                | _ => None,
+            })
+            .collect();
+
+        Ok(Crossed {
+            kernel: readmission.export(self.names),
+            unwired,
+        })
     }
 }
 
@@ -862,6 +1038,7 @@ pub fn judge(
         | Ok(report) => {
             let exercised = Exercised::of(&arena, &module, &report);
             let unstatable = unstatable(&module);
+            let awaiting = awaiting(&program);
             let trails = Trails::of(&verdicts);
             let spellings = Spellings::of(&arena, &module, &report, &trails);
             let shadowed = module.recognition().shadowed().to_vec();
@@ -869,6 +1046,7 @@ pub fn judge(
                 report,
                 exercised,
                 unstatable,
+                awaiting,
                 origins: module.into_origins(),
                 spellings,
                 trails,
@@ -1190,15 +1368,18 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
 /// - requires: `verdicts` was judged over `arena`.
 /// - ensures: succeeds with the readmission when every accepted declaration
 ///   crossed as a definition or an axiom, or stays on the checker's side as a
-///   static definition; a refused declaration crosses as its mark, a reason, a
-///   declaration holding a term hole or the unknown type stays behind as the
-///   user absence it is, and a declaration holding a compound endpoint stays
-///   behind on the checker's side until the kernel reads a returned value, so
-///   none of these is a disagreement.
+///   static definition; a refused declaration crosses as its mark, a
+///   declaration withheld because it names a refused one carries that one's
+///   reason, a declaration holding a term hole or the unknown type stays behind
+///   as the user absence it is, a declaration holding a compound endpoint stays
+///   behind on the checker's side until the kernel reads a returned value, and
+///   a declaration holding a former the kernel's wire format has no node for is
+///   refused by that node's name, so none of these is a disagreement.
 /// - provides: the kernel's repetition of every acceptance a run reports, and
 ///   the environment the run's kernel artifact is exported from.
 /// - fails: the readmission of the first declaration the kernel rejected or the
-///   bridge refused for any reason but a withheld constant.
+///   bridge refused for any reason but a withheld constant, a user absence, a
+///   compound endpoint or a node the wire format lacks.
 /// - panics: none.
 ///
 /// # Errors
@@ -1212,6 +1393,7 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
 ///   refusal or certificate rejection.
 /// - witness: `compose::tests::a_kernel_disagreement_is_an_engine_fault`
 /// - witness: `compose::tests::the_kernel_artifact_holds_what_crossed_under_its_names`
+/// - witness: `compose::tests::a_lazy_record_is_refused_at_the_kernel_boundary`
 #[spec(ensures: |ref ret| match *ret {
     Ok(ref readmission) => readmission.readmitted().len() == verdicts.judged().len()
         && readmission.readmitted().iter().zip(verdicts.judged()).all(|(crossed, judged)|
@@ -1221,7 +1403,8 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
                     | bridge::Outcome::Marked(_) | bridge::Outcome::Static
                     | bridge::Outcome::Refused(bridge::Refusal::Withheld { .. } | bridge::Refusal::WithheldData { .. }
                         | bridge::Refusal::Hole { .. } | bridge::Refusal::Unknown { .. }
-                        | bridge::Refusal::CompoundEndpoint { .. }))),
+                        | bridge::Refusal::CompoundEndpoint { .. }
+                        | bridge::Refusal::Unwired { .. }))),
     Err(ref fault) =>
         verdicts.judged().iter().any(|judged| judged.constant() == fault.constant())
             && matches!(*fault.outcome(), bridge::Outcome::Rejected(_)
@@ -1248,7 +1431,8 @@ fn readmitted(
                 | bridge::Refusal::WithheldData { .. }
                 | bridge::Refusal::Hole { .. }
                 | bridge::Refusal::Unknown { .. }
-                | bridge::Refusal::CompoundEndpoint { .. },
+                | bridge::Refusal::CompoundEndpoint { .. }
+                | bridge::Refusal::Unwired { .. },
             ) => {},
             | bridge::Outcome::Refused(
                 bridge::Refusal::OutOfFragment { .. }
@@ -1274,11 +1458,13 @@ mod tests
     use gandr_core_checker::CheckingContext;
     use gandr_core_checker::Verdict;
     use gandr_core_checker::bridge;
+    use gandr_core_checker::bridge::WireGap;
     use gandr_core_checker::check_module;
     use gandr_core_term::CoreArena;
     use gandr_core_term::FailureClass;
     use gandr_kernel_term::decode;
     use gandr_surface_corpus::CorpusRoot;
+    use gandr_surface_corpus::DeclarationReport;
     use gandr_surface_corpus::Outcome;
     use gandr_surface_corpus::Produced;
     use gandr_surface_corpus::RefusalName;
@@ -1288,8 +1474,10 @@ mod tests
     use gandr_surface_grammar::built_in;
     use gandr_surface_lowering::DeclarationOutcome;
     use gandr_surface_lowering::FragmentBoundary;
+    use gandr_surface_lowering::LoweredDeclaration;
     use gandr_surface_lowering::LoweringBudget;
     use gandr_surface_lowering::LoweringRefusal;
+    use gandr_surface_lowering::SurfaceName;
     use gandr_surface_lowering::lower_module;
     use gandr_surface_lowering::namespace::Recognition;
     use gandr_surface_parser::parse;
@@ -1298,6 +1486,7 @@ mod tests
 
     use super::ComposeFault;
     use super::Composed;
+    use super::Crossed;
     use super::Lowered;
     use super::LoweringCount;
     use super::adapt;
@@ -1745,6 +1934,7 @@ def h = 1 ;"#,
                 report,
                 exercised,
                 unstatable,
+                awaiting: super::awaiting(&program),
                 origins: module.into_origins(),
                 spellings,
                 trails,
@@ -1771,7 +1961,10 @@ def h = 1 ;"#,
                 panic!("the module settles after its readmission");
             };
             assert_eq!(
-                settled.clone().admitted(kernel.clone()),
+                settled.clone().admitted(Crossed {
+                    kernel: kernel.clone(),
+                    unwired: Vec::new(),
+                }),
                 readmitted_first,
                 "settling before the readmission reads what settling after it read"
             );
@@ -1822,6 +2015,100 @@ def h = 1 ;"#,
             names,
             "the definition and the owed axiom cross under their names; the refused declaration \
              and the one withheld for naming it do not"
+        );
+    }
+
+    #[test]
+    fn a_lazy_record_is_refused_at_the_kernel_boundary()
+    {
+        let source = r#"def a : Integer ; def a = 1 ;
+@[ refuses("Unwired") ] def stated(n : Integer) -> &{get : -F Integer, put : -F Integer} { &{.get => return n, .put => return n} }
+@[ checks ] def claimed : +U (-F Integer & -F Integer) ; def claimed = thunk { &{.0 => return 1, .1 => return 2} } ;"#;
+        let grammar = grammar();
+        let mut lowerings = LoweringCount::default();
+        let Lowered::Module { module, arena } =
+            lower_source(&grammar, SourceText::from(source), &mut lowerings)
+                .expect("the module lowers")
+                .into_lowered()
+        else {
+            panic!("the module is not refused whole");
+        };
+        let constants: Vec<_> = module
+            .declarations()
+            .iter()
+            .filter(|declaration| declaration.name() != SurfaceName::from("a"))
+            .map(LoweredDeclaration::constant)
+            .collect();
+        let crossed = judge(CorpusRoot::Fixture, module, arena)
+            .admission
+            .admit()
+            .expect("a former the wire format lacks is no disagreement");
+        assert_eq!(
+            crossed
+                .unwired()
+                .iter()
+                .map(|&(constant, _, gap)| (constant, gap))
+                .collect::<Vec<_>>(),
+            constants
+                .iter()
+                .map(|&constant| (constant, WireGap::LazyRecord))
+                .collect::<Vec<_>>(),
+            "each lazy record declaration is named, in admission order"
+        );
+
+        let Ok(Composed::Settled {
+            kernel: Maybe::Present(ref kernel),
+            ref report,
+            ..
+        }) = compose(
+            &grammar,
+            CorpusRoot::Fixture,
+            SourceText::from(source),
+            &mut lowerings,
+        )
+        else {
+            panic!("a former the wire format lacks is a refusal, not an engine fault");
+        };
+        let row = |name: &str| {
+            report
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.name() == SurfaceName::from(name))
+                .expect("the report carries the name")
+        };
+        assert!(
+            matches!(row("stated").produced().refusal(), Maybe::Present(refusal)
+                if refusal.name() == RefusalName::Unwired
+                    && refusal.classify() == FailureClass::Unrepresentable),
+            "the lazy record is refused by the wire gap's name, as unrepresentable"
+        );
+        assert_eq!(
+            [row("a"), row("stated"), row("claimed")].map(DeclarationReport::settlement),
+            [
+                Settlement::Settled,
+                Settlement::Settled,
+                Settlement::Unsettled
+            ],
+            "a lazy record settles only by stating the refusal"
+        );
+        let decoded = decode(kernel.as_image()).expect("the kernel's own export decodes");
+        let names: Vec<Vec<&str>> = decoded
+            .declarations()
+            .iter()
+            .map(|marked| {
+                marked
+                    .declaration()
+                    .name()
+                    .segments()
+                    .iter()
+                    .map(AsRef::as_ref)
+                    .collect()
+            })
+            .collect();
+        assert_eq!(
+            names,
+            vec![vec!["a"]],
+            "only the declaration that crossed is in the artifact"
         );
     }
     #[test]

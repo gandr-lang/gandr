@@ -1,3 +1,4 @@
+use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -296,7 +297,9 @@ fn reachable(
         seen.push(next);
         match arena.computation(next) {
             | Some(&Computation::Bind(first, second)) => pending.extend([second, first]),
-            | Some(&Computation::Lambda(under)) => pending.push(under),
+            | Some(&Computation::Lambda(under) | &Computation::Split { body: under, .. }) => {
+                pending.push(under);
+            },
             | Some(&Computation::Case { ref branches, .. }) => {
                 pending.extend(branches.iter().rev().copied());
             },
@@ -1250,5 +1253,144 @@ fn a_match_keeps_its_patterns_beside_its_tree()
             .iter()
             .all(|judged| !matches!(judged.verdict(), Verdict::Refused(_))),
         "{report:?}"
+    );
+}
+
+#[test]
+fn telescope_patterns_split_and_project()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "def middle(t : #{Integer, String, Unit}) -> -F String { case t { #{x, y, z} => return y } }\ndef reordered(t : #{Integer, String}) -> -F Integer { case t { #{.1 = b, .0 = a} => return a } }\ndef tupled(t : #{Integer, String}) -> -F String { case t { (a, b) => return b } }\ndef punned(r : #{n : Integer, s : String}) -> -F String { case r { #{.n, .s} => return s } }\ndef renamed(r : #{n : Integer, s : String}) -> -F Integer { case r { #{.n = m} => return m } }\n",
+        ),
+        &mut arena,
+    );
+    let split = |name: &str| -> Vec<usize> {
+        reachable(
+            &arena,
+            tail_of(&arena, body_named(&module, SurfaceName::from(name))),
+        )
+        .into_iter()
+        .filter_map(|at| match arena.computation(at) {
+            | Some(&Computation::Split { arity, .. }) => Some(usize::from(arity)),
+            | _ => None,
+        })
+        .collect()
+    };
+    assert_eq!(
+        split("middle"),
+        [3_usize],
+        "a telescope pattern of three splits once"
+    );
+    assert_eq!(
+        split("reordered"),
+        [2_usize],
+        "an indexed one splits in index order"
+    );
+    assert_eq!(
+        split("tupled"),
+        [2_usize],
+        "a tuple pattern splits as the telescope does"
+    );
+    let projected = |name: &str| -> Vec<String> {
+        reachable(
+            &arena,
+            tail_of(&arena, body_named(&module, SurfaceName::from(name))),
+        )
+        .into_iter()
+        .filter_map(|at| match arena.computation(at) {
+            | Some(&Computation::RecordProjection(_, ref label)) => {
+                Some(String::from(label.as_ref()))
+            },
+            | _ => None,
+        })
+        .collect()
+    };
+    assert_eq!(
+        projected("punned"),
+        ["n", "s"],
+        "a record pattern projects each label it writes"
+    );
+    assert_eq!(projected("renamed"), ["n"], "and only the labels it writes");
+    assert_accepted(&judged(&module, &mut arena));
+
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "def swapped(t : #{Integer, String}) -> -F Integer { case t { #{a, b} => return b } }\n",
+        ),
+        &mut arena,
+    );
+    assert!(
+        judged(&module, &mut arena)
+            .judged()
+            .iter()
+            .any(|judged| matches!(judged.verdict(), Verdict::Refused(_))),
+        "the components are bound in written order, so the second is the string"
+    );
+}
+
+#[test]
+fn sum_patterns_case_on_the_stated_arity()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "def pick(s : +{ok : Integer, err : String, gone : Unit}) -> -F String { case s { +{.ok = n} => return \"ok\", +{.err = e} => return e, +{.gone = u} => return \"gone\" } }\ndef indexed(s : +{String, String, Integer}) -> -F Integer { case s { +{.2 = n} => return n, _ => return 0 } }\ndef nested(t : #{Integer, +{ok : Integer, err : String}}) -> -F String { case t { #{n, +{.ok = m}} => return \"ok\", #{n, +{.err = e}} => return e } }\ndef single(s : +{only : Integer}) -> -F Integer { case s { +{.only = n} => return n } }\n",
+        ),
+        &mut arena,
+    );
+    let summands = |name: &str| -> Vec<usize> {
+        reachable(
+            &arena,
+            tail_of(&arena, body_named(&module, SurfaceName::from(name))),
+        )
+        .into_iter()
+        .filter_map(|at| match arena.computation(at) {
+            | Some(&Computation::Case { ref branches, .. }) => Some(branches.len()),
+            | _ => None,
+        })
+        .collect()
+    };
+    assert_eq!(
+        summands("pick"),
+        [3_usize],
+        "one case over the three summands the type states"
+    );
+    assert_eq!(
+        summands("indexed"),
+        [3_usize],
+        "an index past the binary sum names its summand"
+    );
+    assert_eq!(
+        summands("nested"),
+        [2_usize],
+        "a sum inside a telescope reads its component's type"
+    );
+    assert_eq!(
+        summands("single"),
+        [1_usize],
+        "a sum of one is a case of one branch"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "def unstated(n : Integer) -> -F Integer { case (+{.0 = n} : +{Integer, String}) { +{.0 = m} => return m, +{.1 = s} => return 0 } }\n",
+        ),
+        &mut arena,
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("unstated")),
+            LoweringRefusal::OutOfFragment {
+                form: FormName::LABELLED_SUM_PATTERN,
+                boundary: FragmentBoundary::Unannotated,
+                ..
+            }
+        ),
+        "a scrutinee no name types states no sum, so a label has no index"
     );
 }

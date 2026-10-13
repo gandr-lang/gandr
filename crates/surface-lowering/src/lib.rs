@@ -50,12 +50,14 @@
 //! static lambda over the code of its body, an arrow where a value type is
 //! read is a static Pi, and an operator a binder or a declaration names,
 //! applied to arguments, is a static application — the decode of one where a
-//! type is read. `A * B` and `(a, b)` are the eager product and its pair, and
-//! `(A1, …, An) => B` is exactly `+U (A1 -> … -> An -> -F B)`.
+//! type is read. `A * B` and `(a, b)` are the eager product and its pair,
+//! `(A1, …, An) => B` is exactly `+U (A1 -> … -> An -> -F B)`, and the
+//! arity-shaped formers `#{…}`, `+{…}` and `&{…}` lower to the core's
+//! product, record, sum and lazy product.
 //!
-//! **Reserved forms are declined by name.** The lazy product parses and then
-//! refuses, so the classifier's unrepresentable class keeps a real
-//! inhabitant.
+//! **Reserved forms are declined by name.** A recursive call's claim other
+//! than `<` parses and then refuses, so the classifier's unrepresentable class
+//! keeps a real inhabitant.
 //!
 //! **Origins are carried for types as well as terms.** Every minted core node
 //! records the syntax node that produced it, and a declaration's own origin

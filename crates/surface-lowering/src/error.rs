@@ -64,9 +64,9 @@
 //! # Four ways out of the fragment
 //!
 //! `OutOfFragment` names the boundary a form crossed. `Reserved`: the form
-//! parses and is declined by name — the lazy product, a recursive call's claim
-//! other than `<` — so the classifier's unrepresentable class is inhabited by
-//! design. `Unadmitted`: the grammar reads the form and this fragment does not
+//! parses and is declined by name — a recursive call's claim other than `<` —
+//! so the classifier's unrepresentable class is inhabited by design.
+//! `Unadmitted`: the grammar reads the form and this fragment does not
 //! — a statement other than `run`, an annotated or patterned `run` binder, a
 //! recursive function with no parameter to recurse on, a claim on a name that
 //! is not a recursive function or that heads no call, an explicit parameter
@@ -193,10 +193,10 @@ impl fmt::Display for FragmentSort
 ///   admission policy or actual operands needed to verify the report.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — one reserved former, unadmitted forms, a wrong-sort
+/// - hypothesis: L3 — reserved recursion claims, unadmitted forms, a wrong-sort
 ///   lambda and zero/two-operand refusals distinguish the four boundaries by
 ///   exact typed payloads. The fixtures do not enumerate every grammar form.
-/// - witness: `lower::tests::the_reserved_lazy_product_is_declined`
+/// - witness: `lower::native::tests::only_the_descent_claim_heads_a_recursive_call`
 /// - witness: `lower::native::tests::an_indexed_generator_is_declined`
 /// - witness: `lower::native::tests::a_parameterized_constructor_needs_its_classifier`
 /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
@@ -271,8 +271,8 @@ impl fmt::Display for FragmentBoundary
                  stands; only the last parameter descends",
             ),
             | Self::NotInTail => f.write_str(
-                "stands where no path through a function, a lambda or a thunk body passes; an \
-                 exit leaves only from such a path",
+                "stands where no path through a function, a lambda, a thunk or a copattern \
+                 clause body passes; an exit leaves only from such a path",
             ),
             | Self::JoinsBlock => f.write_str(
                 "has arms that continue the block after it, which answer what the block \
@@ -1172,5 +1172,3 @@ mod tests
         }
     }
 }
-// weave: run 'weave explain crates/surface-lowering/src/error.rs' for per-hunk
-// detail, 'weave check' to verify your resolution

@@ -158,9 +158,10 @@ impl Spellings
             .iter()
             .filter_map(|declaration| match declaration.produced().refusal() {
                 | Maybe::Present(Refusal::Checking(refusal)) => Some(refusal.compared()),
-                | Maybe::Present(Refusal::Lowering(_) | Refusal::Corpus(_)) | Maybe::Absent(_) => {
-                    None
-                },
+                | Maybe::Present(
+                    Refusal::Lowering(_) | Refusal::Corpus(_) | Refusal::Readmission { .. },
+                )
+                | Maybe::Absent(_) => None,
             })
             .flat_map(|compared| [compared.expected, compared.found])
             .filter_map(|side| match side {

@@ -317,8 +317,6 @@ mod tests
                 name: SurfaceName::from("gone"),
             },
             LoweringRefusal::MissingExit { span: empty },
-            // refused_by: container_member · collision: `/// - ensures: the 23 current refusal
-            // variants have distinct` +1 more
             LoweringRefusal::Unreachable { span: empty },
             LoweringRefusal::WithoutK { span: empty },
         ]
@@ -353,8 +351,6 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
-            // refused_by: container_member · collision: none (1 contested hunk(s), neither side
-            // deleted the other's lines)
             FailureClass::MalformedSource,
             FailureClass::Unrepresentable,
         ];
@@ -412,5 +408,3 @@ mod tests
         }
     }
 }
-// weave: run 'weave explain crates/surface-lowering/src/classify.rs' for
-// per-hunk detail, 'weave check' to verify your resolution

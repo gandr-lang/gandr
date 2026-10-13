@@ -56,12 +56,11 @@
 //! Choice: the unit value is a keyword, and `()` is never the unit. A product
 //! of no components and a domain list of no members are both the empty list, so
 //! reading `()` as the unit would make `() => C` and `Unit => C` the same type
-//! and give the eventual n-ary product two spellings of its nullary case.
+//! and give the n-ary product `#{}` two spellings of its nullary case.
 //! Alternatives: `()` as the unit, which conflates the empty domain list with
 //! the one-argument function over `Unit`; and a primitive term table answering
-//! the name `unit`, which a declaration could shadow. Reversal: if the n-ary
-//! product never lands and no source writes `() => C`, `()` may return as a
-//! second spelling of `unit`.
+//! the name `unit`, which a declaration could shadow. Reversal: none while
+//! `#{}` spells the nullary product.
 //!
 //! Binder predicates check backward parent links, fresh frame positions, exact
 //! successful lookup and mention-filtered telescope counts. `ScopeId` is a

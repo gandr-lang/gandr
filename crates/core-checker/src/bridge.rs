@@ -303,6 +303,7 @@
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
+use core::fmt;
 
 use anodized::spec;
 use gandr_core_nbe::TraceNode;
@@ -517,6 +518,59 @@ pub enum Refusal
         /// The endpoint.
         at: ValueId,
     },
+    /// A former the judgement has a rule for and the kernel's wire format has
+    /// no node for: the declaration is refused at the boundary by the gap's
+    /// name and offered nothing, so a declaration naming it is withheld.
+    Unwired
+    {
+        /// The node carrying the former.
+        at: CoreNode,
+        /// The node the wire format lacks.
+        gap: WireGap,
+    },
+}
+
+/// A former the judgement checks that the kernel's wire format has no node
+/// for, named so a declaration holding one is refused at the boundary rather
+/// than faulting it.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: one gap per family of formers the kernel lacks; persisting one
+///   retires its variant without renumbering another.
+/// - executable: none — the name holds no node.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a lazy record type, its pairing and its projection are
+///   each refused by this name at the node that holds them.
+/// - witness: `bridge::tests::effectful_declarations_are_refused_by_name_at_the_pure_boundary`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum WireGap
+{
+    /// The lazy record: the lazy product type `C & D`, its pairing and its
+    /// projections. The kernel's node for it is
+    /// [#203](https://github.com/gandr-lang/gandr/issues/203); a record of
+    /// thunks would cross with no new node and is rejected, since it loses
+    /// the lazy product's η and makes the codata matchable.
+    LazyRecord,
+}
+
+impl fmt::Display for WireGap
+{
+    /// Writes what the wire format lacks.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(match *self {
+            | Self::LazyRecord => "the lazy record has no wire node",
+        })
+    }
 }
 
 impl Refusal
@@ -528,12 +582,12 @@ impl Refusal
     /// - ensures: the class is a function of the variant alone. A withheld
     ///   constant is malformed source, since the declaration it names was
     ///   turned away for a reason its own entry reports; a former outside the
-    ///   fragment and a compound endpoint, which the kernel has no node for,
-    ///   are unrepresentable; a linear variable, a dangling id, a cyclic node,
-    ///   a declined certificate and a machine invariant are engine faults,
-    ///   because a judged term from the judged arena holds none of them and an
-    ///   unfolding holds by definition; a term hole and the unknown type are
-    ///   user absences.
+    ///   fragment, a compound endpoint, which the kernel has no node for, and a
+    ///   former the wire format has no node for are unrepresentable; a linear
+    ///   variable, a dangling id, a cyclic node, a declined certificate and a
+    ///   machine invariant are engine faults, because a judged term from the
+    ///   judged arena holds none of them and an unfolding holds by definition;
+    ///   a term hole and the unknown type are user absences.
     /// - provides: the fact a report groups by, in the same four classes the
     ///   judgement's refusals answer to.
     /// - fails: never.
@@ -548,7 +602,9 @@ impl Refusal
     /// - witness: `bridge::tests::a_hole_is_refused_where_it_stands_and_its_filling_is_admitted`
     #[spec(ensures: |ret| match *self {
         | Self::Withheld { .. } | Self::WithheldData { .. } => matches!(ret, FailureClass::MalformedSource),
-        | Self::OutOfFragment { .. } | Self::CompoundEndpoint { .. } => matches!(ret, FailureClass::Unrepresentable),
+        | Self::OutOfFragment { .. } | Self::CompoundEndpoint { .. } | Self::Unwired { .. } => {
+            matches!(ret, FailureClass::Unrepresentable)
+        },
         | Self::LinearVariable { .. } | Self::DanglingNode { .. } | Self::Cyclic { .. }
             | Self::CertificateDeclined { .. } | Self::MachineInvariant => matches!(ret, FailureClass::EngineFault),
         | Self::Hole { .. } | Self::Unknown { .. } => matches!(ret, FailureClass::UserAbsence),
@@ -559,7 +615,7 @@ impl Refusal
     {
         match *self {
             | Self::Withheld { .. } | Self::WithheldData { .. } => FailureClass::MalformedSource,
-            | Self::OutOfFragment { .. } | Self::CompoundEndpoint { .. } => {
+            | Self::OutOfFragment { .. } | Self::CompoundEndpoint { .. } | Self::Unwired { .. } => {
                 FailureClass::Unrepresentable
             },
             | Self::LinearVariable { .. }
@@ -3249,8 +3305,12 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | Computation::Resume(..) => return Err(unadmitted(UnadmittedFormer::Resume)),
             | Computation::Reset(_) => return Err(unadmitted(UnadmittedFormer::Reset)),
             | Computation::Shift(_) => return Err(unadmitted(UnadmittedFormer::Shift)),
-            | Computation::With(..) => return Err(unadmitted(UnadmittedFormer::With)),
-            | Computation::Project(..) => return Err(unadmitted(UnadmittedFormer::Project)),
+            | Computation::With(..) | Computation::Project(..) => {
+                return Err(Refusal::Unwired {
+                    at: node,
+                    gap: WireGap::LazyRecord,
+                });
+            },
             | Computation::ListFold { element, .. } => {
                 self.memo().computations.insert(at, Image::Open);
                 self.frames.push(Frame::ListElement { at });
@@ -3487,9 +3547,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         }
         let (frame, child) = match comp_type_view(self.arena, at)? {
             | CompTypeView::With(..) => {
-                return Err(Refusal::OutOfFragment {
+                return Err(Refusal::Unwired {
                     at: CoreNode::Type(TypeNode::Computation(at)),
-                    former: UnadmittedFormer::With,
+                    gap: WireGap::LazyRecord,
                 });
             },
             | CompTypeView::Returner { result, effects } => {
@@ -4432,6 +4492,7 @@ mod tests
     use super::Refusal;
     use super::Replayed;
     use super::Source;
+    use super::WireGap;
     use super::fault;
     use super::readmit;
     use super::readmit_with;
@@ -5570,16 +5631,6 @@ mod tests
                 UnadmittedFormer::Stack,
             ),
             (
-                6,
-                CoreNode::Type(TypeNode::Computation(pair_type)),
-                UnadmittedFormer::With,
-            ),
-            (
-                7,
-                CoreNode::Term(TermNode::Computation(projected)),
-                UnadmittedFormer::Project,
-            ),
-            (
                 8,
                 CoreNode::Term(TermNode::Computation(resumed)),
                 UnadmittedFormer::Resume,
@@ -5595,6 +5646,21 @@ mod tests
             assert_eq!(
                 entry.outcome(),
                 &Outcome::Refused(Refusal::OutOfFragment { at, former })
+            );
+        }
+        for (position, at) in [
+            (6_usize, CoreNode::Type(TypeNode::Computation(pair_type))),
+            (7, CoreNode::Term(TermNode::Computation(projected))),
+        ] {
+            let entry = &readmission.readmitted()[position];
+            assert_eq!(entry.constant(), ConstantIndex::from(position));
+            assert_eq!(
+                entry.outcome(),
+                &Outcome::Refused(Refusal::Unwired {
+                    at,
+                    gap: WireGap::LazyRecord,
+                }),
+                "the lazy record is refused by the node the wire format lacks"
             );
         }
         assert!(readmission.audit().axioms().is_empty());

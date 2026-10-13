@@ -95,6 +95,13 @@ impl fmt::Display for Plain<'_>
                      root a declaration states `checks` or `runs`"
                 )
             },
+            | Refusal::Readmission { gap, .. } => {
+                write!(
+                    f,
+                    "{gap}: the declaration checks, but the kernel cannot re-derive it until its \
+                     wire format holds the former"
+                )
+            },
         }
     }
 }
@@ -204,8 +211,8 @@ fn lowered(
                 ),
                 | FragmentBoundary::NotInTail => write!(
                     f,
-                    "a {form} leaves only the body of a function, a lambda or a thunk, and \
-                     cannot stand here"
+                    "a {form} leaves only the body of a function, a lambda, a thunk or a \
+                     copattern clause, and cannot stand here"
                 ),
                 | FragmentBoundary::JoinsBlock => f.write_str(
                     "an arm of this match exits, so its other arms continue the block and answer \
@@ -515,6 +522,7 @@ mod tests
     use gandr_core_checker::TermNode;
     use gandr_core_checker::TypeNode;
     use gandr_core_checker::UnadmittedFormer;
+    use gandr_core_checker::bridge::WireGap;
     use gandr_core_term::BinderDepth;
     use gandr_core_term::CoreArena;
     use gandr_core_term::Zone;
@@ -793,10 +801,14 @@ mod tests
             span,
             schema: ExpectationSchema::Owes,
         });
+        let unwired = Refusal::Readmission {
+            at: CoreNode::Type(TypeNode::Computation(comp_type)),
+            gap: WireGap::LazyRecord,
+        };
         let refusals: Vec<Refusal<'_>> = lowering
             .into_iter()
             .chain(checking)
-            .chain([corpus])
+            .chain([corpus, unwired])
             .collect();
         let named: Vec<RefusalName> = refusals.iter().map(Refusal::name).collect();
         let missing: Vec<RefusalName> = RefusalName::VOCABULARY

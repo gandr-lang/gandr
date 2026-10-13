@@ -307,7 +307,9 @@ pub enum FocusRefusal
     /// Reflexivity or a compound endpoint: the command IL carries no paths,
     /// so neither has a producer to become.
     ElementPath(ValueId),
-    /// A structural record has no command-IL producer form.
+    /// A structural record has no command-IL producer form. It, and the two
+    /// projections below, are the positive record and tuple the IL gains
+    /// under [#221](https://github.com/gandr-lang/gandr/issues/221).
     Record(ValueId),
     /// A record projection has no command-IL destructor.
     RecordProjection(ComputationId),
