@@ -25,8 +25,8 @@
 //! paths. `Computation::Transport` computes for the first three; session
 //! evidence describes recorded action skeletons, not kernel endpoint values.
 //! They participate in ordinary arena traversal, declaration admission,
-//! structural conversion and artifact encoding. The surface parser has no path
-//! syntax.
+//! structural conversion and artifact encoding. The surface writes only the
+//! equivalence, `equiv(f, g)`, which its frontend erases to `PathEquiv`.
 //!
 //! | Rule | Kernel obligation or computation |
 //! | ---- | -------------------------------- |
@@ -58,11 +58,12 @@
 //!
 //! `Environment::add_decl` checks both endpoint codes, checks translators
 //! under an empty term context and replays every source and target round
-//! trip. Decoding and frontend typechecking grant no authority. Portable
-//! evidence participates in artifact content and admission memo keys, but
-//! structural certificate conversion erases evidence only: it does not
-//! normalize translator syntax. A fresh admission owns the memo and rechecks
-//! imported candidates.
+//! trip, unfolding the definitions admitted before it, so a translator may be
+//! a named function. Decoding and frontend typechecking grant no authority.
+//! Portable evidence participates in artifact content and admission memo
+//! keys, but structural certificate conversion erases evidence only: it does
+//! not normalize translator syntax. A fresh admission owns the memo and
+//! rechecks imported candidates.
 //!
 //! `code`, `Dialogue::pair` and `replay_transport` remain callable. Path
 //! operands are ordinary `ValueId`s in `TermArena`; no separate path arena or

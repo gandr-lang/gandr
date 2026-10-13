@@ -27,6 +27,7 @@ use gandr_core_nbe::Problem;
 use gandr_core_nbe::ResharingMemo;
 use gandr_core_term::CoreArena;
 use gandr_core_term::DefinitionalEnvironment;
+use gandr_core_term::Transparency;
 use gandr_core_term::Zone;
 use gandr_kernel_conversion_trace::ConversionDecision;
 use gandr_kernel_conversion_trace::TraceLog;
@@ -35,7 +36,9 @@ use gandr_kernel_term::BaseType;
 use gandr_kernel_term::CompType;
 use gandr_kernel_term::Computation;
 use gandr_kernel_term::ComputationId;
+use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::GlobalIndex;
 use gandr_kernel_term::LevelSignature;
 use gandr_kernel_term::PathEvidence;
 use gandr_kernel_term::Side;
@@ -349,10 +352,12 @@ fn portable<Node>(decision: ConversionDecision<Node>) -> ConversionDecision<()>
     decision.map(|_| ())
 }
 
-/// Translate the reachable native graph without running a kernel reduction.
+/// Translate the reachable native graph without running a kernel reduction,
+/// with each of `bodies` beside the two computations.
 ///
 /// # Specification
-/// - ensures: every former, binder and translator body is preserved.
+/// - ensures: every former, binder and translator body is preserved; the
+///   translated bodies follow in the order given.
 /// - panics: on a dangling fixture node.
 ///
 /// # Termination
@@ -363,15 +368,17 @@ fn portable<Node>(decision: ConversionDecision<Node>) -> ConversionDecision<()>
 /// - hypothesis: L3 — independently evaluated native computations distinguish
 ///   Bool outputs, product order and intensional path identity.
 /// - witness: `path_universe::tests::a_wrong_answer_is_caught`
-#[spec(ensures: |ret| ret.0.computation(ret.1).is_some() && ret.0.computation(ret.2).is_some() && (left != right || ret.1 == ret.2))]
+/// - witness: `path_universe::tests::a_translator_may_name_an_admitted_definition`
+#[spec(ensures: |ret| ret.0.computation(ret.1).is_some() && ret.0.computation(ret.2).is_some() && (left != right || ret.1 == ret.2) && ret.3.len() == bodies.len())]
 fn translate(
     arena: &TermArena,
-    left: ComputationId,
-    right: ComputationId,
+    (left, right): (ComputationId, ComputationId),
+    bodies: &[ValueId],
 ) -> (
     CoreArena,
     gandr_core_term::ComputationId,
     gandr_core_term::ComputationId,
+    Vec<gandr_core_term::ValueId>,
 )
 {
     let mut core = CoreArena::new();
@@ -384,6 +391,7 @@ fn translate(
         (AnyNode::Computation(right), false),
         (AnyNode::Computation(left), false),
     ];
+    pending.extend(bodies.iter().map(|&body| (AnyNode::Value(body), false)));
     while let Some((node, expanded)) = pending.pop() {
         if !expanded {
             if !seen.insert(node) {
@@ -588,7 +596,8 @@ fn translate(
             },
         }
     }
-    (core, computations[&left], computations[&right])
+    let bodies = bodies.iter().map(|body| values[body]).collect();
+    (core, computations[&left], computations[&right], bodies)
 }
 
 /// Run `NbE` and retain its untrusted verdict and complete trace.
@@ -618,8 +627,51 @@ fn engine(
     right: ComputationId,
 ) -> (EngineClaim, Dialogue)
 {
-    let (core, left, right) = translate(arena, left, right);
-    let chain = LoweredChain::new();
+    defining_engine(arena, (left, right), &[])
+}
+
+/// Run `NbE` as [`engine`] does with each of `definitions` unfolding, in
+/// admission order, to its body.
+///
+/// # Specification
+/// - requires: as [`engine`]; every body is closed and in the fixture fragment.
+/// - ensures: as [`engine`], the constants unfolding as the machine decides.
+/// - provides: the dialogue a translator naming an admitted definition carries.
+/// - panics: on an operational fixture failure.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a path naming admitted negation replays only with the
+///   unfoldings recorded.
+/// - witness: `path_universe::tests::a_translator_may_name_an_admitted_definition`
+#[spec(ensures: |ret| ret.1.0.iter().all(|step| match *step {
+    ConversionDecision::ReduceLeft { redex } | ConversionDecision::ReduceRight { redex } => redex == ReplayNode::Other,
+    ConversionDecision::ConstShortcut { constant } | ConversionDecision::Unfold { constant } | ConversionDecision::Postpone { constant } | ConversionDecision::Freeze { constant, .. } => constant == ReplayNode::Other,
+    ConversionDecision::EtaExpand { variable, .. } => variable == ReplayNode::Other,
+    ConversionDecision::Force { thunk } => thunk == ReplayNode::Other,
+    ConversionDecision::ComparedShared { left, right } => left == ReplayNode::Other && right == ReplayNode::Other,
+    ConversionDecision::Decompose | ConversionDecision::NegativeSubgoal { .. } | ConversionDecision::ReturnEta { .. } | ConversionDecision::Reassociate { .. } => true,
+}))]
+fn defining_engine(
+    arena: &TermArena,
+    (left, right): (ComputationId, ComputationId),
+    definitions: &[(ConstantIndex, ValueId)],
+) -> (EngineClaim, Dialogue)
+{
+    let bodies: Vec<ValueId> = definitions.iter().map(|&(_, body)| body).collect();
+    let (core, left, right, lowered) = translate(arena, (left, right), &bodies);
+    let mut chain = LoweredChain::new();
+    for (entry, (&(constant, _), body)) in definitions.iter().zip(lowered).enumerate() {
+        let entry = u32::try_from(entry).expect("a small fixture chain");
+        chain
+            .define(
+                constant,
+                GlobalIndex::from(entry),
+                Transparency::Manifest,
+                &[],
+                body,
+            )
+            .expect("a fixture definition");
+    }
     let environment = DefinitionalEnvironment::new();
     let definitions = Definitions::new(&chain, &environment, environment.root());
     let mut domain = DomainArena::new();
@@ -1300,6 +1352,56 @@ fn no_k()
             expected: ExpectedValueShape::Sum,
             ..
         })
+    ));
+}
+
+#[test]
+fn a_translator_may_name_an_admitted_definition()
+{
+    // Negation is admitted as a definition, and the path names it as both
+    // translators. Each round trip unfolds it by replay against what the
+    // environment admitted; the same path whose dialogues read negation as
+    // rigid is refused at its first pattern.
+    let mut environment = Environment::new();
+    let negation = offer(&mut environment, |arena| {
+        let boolean = boolean(arena);
+        let result = arena.comp_type_returner(boolean.ty);
+        let arrow = arena.comp_type_arrow(boolean.ty, result);
+        (arena.value_type_thunk(arrow), boolean.not)
+    })
+    .expect("negation")
+    .position();
+    let named = |environment: &mut Environment, unfolding: bool| {
+        offer(environment, |arena| {
+            let boolean = boolean(arena);
+            let constant = arena.value_constant(negation);
+            let definitions = [(negation, boolean.not)];
+            let definitions = if unfolding { &definitions[..] } else { &[] };
+            let mut evidence = PathEvidence::default();
+            for dialogues in [&mut evidence.source, &mut evidence.target] {
+                for value in [boolean.truth, boolean.falsity] {
+                    let first = apply(arena, constant, value);
+                    let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
+                    let second = apply(arena, constant, variable);
+                    let composite = arena.computation_bind(first, second);
+                    let identity = arena.computation_return(value);
+                    let (_, dialogue) = defining_engine(arena, (composite, identity), definitions);
+                    dialogues.push(dialogue.0.into_iter().map(portable).collect());
+                }
+            }
+            let classifier = arena.value_type_path_universe(boolean.code, boolean.code);
+            let path = arena.value_path_equiv(classifier, constant, constant, Arc::new(evidence));
+            (classifier, path)
+        })
+    };
+    named(&mut environment, true).expect("each round trip unfolds the admitted negation");
+    assert!(matches!(
+        named(&mut environment, false),
+        Err(KernelError::Path(PathError::RoundTrip {
+            direction: Direction::Source,
+            pattern: PatternPosition(0),
+            ..
+        }))
     ));
 }
 

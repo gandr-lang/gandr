@@ -1898,15 +1898,18 @@ fn resolve_constant(
 /// - ensures: [`Unfoldable::Body`] at each definition's position and
 ///   [`Unfoldable::Opaque`] at every data declaration, axiom and abstract type,
 ///   one entry per admitted declaration.
-/// - provides: the unfoldings a persisted higher evaluation replays under, so a
-///   function the evaluation relates may name what was admitted before it.
+/// - provides: the unfoldings a persisted higher evaluation and a universe
+///   path's round trips replay under, so a function either relates may name
+///   what was admitted before it.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a composition of two admitted definitions replays its
-///   anchor-free δ-steps against their bodies.
+///   anchor-free δ-steps against their bodies, and so does negation named as a
+///   universe path's translator.
 /// - witness: `element_identity::tests::a_higher_evaluation_unfolds_what_the_environment_admitted`
+/// - witness: `path_universe::tests::a_translator_may_name_an_admitted_definition`
 #[spec(ensures: |ret| entries.iter().enumerate().all(|(position, entry)| {
     ret.unfolding(ConstantIndex::from(position)) == match *entry.content() {
         | DeclarationContent::Def { body, .. } => Unfoldable::Body(body),
@@ -2923,25 +2926,26 @@ where
                         return Err(KernelError::ArenaFault);
                     };
                     // Replay mutates the arena; retain only the evidence across that borrow.
+                    // A translator may name what the environment admitted
+                    // before it, so both round trips unfold its definitions.
                     let evidence = alloc::sync::Arc::clone(evidence);
+                    let unfoldings = admitted_unfoldings(judgement.entries);
                     let watermark = arena.watermark();
                     let source = crate::path_universe::coverage::round_trip(
                         arena,
-                        endpoints.source,
-                        forward,
-                        backward,
+                        &unfoldings,
+                        (endpoints.source, crate::path_universe::Direction::Source),
+                        (forward, backward),
                         &evidence.source,
-                        crate::path_universe::Direction::Source,
                         crate::replay::ReplayBudget::DEFAULT,
                     );
                     let result = source.and_then(|()| {
                         crate::path_universe::coverage::round_trip(
                             arena,
-                            endpoints.target,
-                            backward,
-                            forward,
+                            &unfoldings,
+                            (endpoints.target, crate::path_universe::Direction::Target),
+                            (backward, forward),
                             &evidence.target,
-                            crate::path_universe::Direction::Target,
                             crate::replay::ReplayBudget::DEFAULT,
                         )
                     });

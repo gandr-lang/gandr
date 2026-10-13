@@ -258,9 +258,12 @@ fn patterns(
 /// Construct and replay every component of one universal round-trip claim.
 ///
 /// # Specification
-/// - requires: the translators are closed and checked at opposite arrows.
-/// - ensures: every code-generated pattern replays `Convertible`; no supplied
-///   dialogue chooses its own boundary, suppresses a pattern, or adds one.
+/// - requires: the translators are closed and checked at opposite arrows; every
+///   body `unfoldings` defines lives in `arena`.
+/// - ensures: every code-generated pattern replays `Convertible` under
+///   `unfoldings`, so a translator may name a definition admitted before it; no
+///   supplied dialogue chooses its own boundary, suppresses a pattern, or adds
+///   one.
 /// - provides: formation evidence derived by the existing kernel replay.
 /// - fails: `Coverage` on dialogue cardinality, `RoundTrip` on failed replay,
 ///   or the code-pattern construction error.
@@ -271,8 +274,10 @@ fn patterns(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — constant true fails on the false branch; missing,
-///   additional and forged dialogues cannot make formation succeed.
+///   additional and forged dialogues cannot make formation succeed; negation
+///   named by an admitted definition replays its δ-steps.
 /// - witness: `path_universe::tests::a_non_equivalence_is_refused`
+/// - witness: `path_universe::tests::a_translator_may_name_an_admitted_definition`
 #[spec(ensures: |ret| match ret {
     Ok(()) => u64::from(budget) > 0 && !dialogues.is_empty(),
     Err(PathError::Coverage(found)) => found == direction,
@@ -282,11 +287,10 @@ fn patterns(
 })]
 pub fn round_trip(
     arena: &mut TermArena,
-    source: ValueTypeId,
-    forward: ValueId,
-    backward: ValueId,
+    unfoldings: &Unfoldings,
+    (source, direction): (ValueTypeId, Direction),
+    (forward, backward): (ValueId, ValueId),
     dialogues: &[Vec<gandr_kernel_conversion_trace::ConversionDecision<()>>],
-    direction: Direction,
     budget: ReplayBudget,
 ) -> Result<(), PathError>
 {
@@ -294,7 +298,6 @@ pub fn round_trip(
     if patterns.len() != dialogues.len() {
         return Err(PathError::Coverage(direction));
     }
-    let unfoldings = Unfoldings::new(Vec::new());
     for (position, (pattern, dialogue)) in patterns.into_iter().zip(dialogues).enumerate() {
         let first = arena.computation_force(forward);
         let first = arena.computation_application(first, pattern.value);
@@ -305,7 +308,7 @@ pub fn round_trip(
         let identity = arena.computation_return(pattern.value);
         let verdict = crate::replay::replay(
             arena,
-            &unfoldings,
+            unfoldings,
             ReplaySides::Computations(composite, identity),
             EngineClaim::Convertible,
             dialogue.iter().copied().map(super::anchor),
