@@ -474,8 +474,17 @@ fn worst(
                 ) => {
                     pending.push((AnyNode::Value(body), reach));
                 },
-                | Some(&Value::Higher { ref evidence, .. }) => {
-                    pending.extend(evidence.iter().map(|&layer| (AnyNode::Value(layer), reach)));
+                | Some(
+                    &Value::Higher {
+                        evidence: ref values,
+                        ..
+                    }
+                    | &Value::QuantifiedEvaluation {
+                        children: ref values,
+                        ..
+                    },
+                ) => {
+                    pending.extend(values.iter().map(|&layer| (AnyNode::Value(layer), reach)));
                 },
                 | Some(&Value::HigherEvaluation { ref components, .. }) => {
                     pending.extend(components.iter().flat_map(|component| {

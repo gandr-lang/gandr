@@ -779,6 +779,7 @@ ensures: |ret| ret.0.as_image().as_ref().first().copied()
             Some(&Value::Returned(_)) => tags::NODE_V_RETURNED,
             Some(&Value::Higher { .. }) => tags::NODE_V_HIGHER,
             Some(&Value::HigherEvaluation { .. }) => tags::NODE_V_HIGHER_EVALUATION,
+            Some(&Value::QuantifiedEvaluation { .. }) => tags::NODE_V_QUANTIFIED_EVALUATION,
             Some(&Value::Variable(_)) => tags::NODE_V_VARIABLE,
             Some(&Value::Constant(_)) => tags::NODE_V_CONSTANT,
             Some(&Value::Literal(_)) => tags::NODE_V_LITERAL,
@@ -956,6 +957,12 @@ fn encode_entry(
                 | Value::HigherEvaluation { ref dialogues, .. } => {
                     out.put_tag(tags::NODE_V_HIGHER_EVALUATION);
                     for word in crate::identity::evaluation_words(dialogues) {
+                        out.put_uvarint(WireU64::from(word.0));
+                    }
+                },
+                | Value::QuantifiedEvaluation { ref steps, .. } => {
+                    out.put_tag(tags::NODE_V_QUANTIFIED_EVALUATION);
+                    for word in crate::identity::quantified_words(steps) {
                         out.put_uvarint(WireU64::from(word.0));
                     }
                 },

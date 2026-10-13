@@ -302,7 +302,8 @@ pub enum NonInferableForm
     List,
     /// A higher field carries no record of the identities it relates.
     HigherField,
-    /// A higher evaluation carries no record of the functions it relates.
+    /// A higher or quantified evaluation carries no record of the functions it
+    /// relates.
     HigherEvaluation,
 }
 

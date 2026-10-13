@@ -64,7 +64,7 @@
 //! path operations; record unfolding requires `PathEquiv`.
 //!
 //! `Identity::native_evidence` projects native fibre inhabitants only.
-//! Quantified function evidence returns `HigherEvaluationRequired`,
+//! Pointwise function evidence returns `HigherEvaluationRequired`,
 //! preserving the distinction between a higher-evaluation program and a
 //! native value; suspended diagonals retain `NeutralFiber`. Function consumers
 //! borrow identities and replay their raw evidence.

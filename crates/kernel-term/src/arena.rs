@@ -835,6 +835,7 @@ impl TermArena
             Value::Injection(_, body) | Value::Lift { body, .. } | Value::PathRefl(body) | Value::Here { point: body, .. } => self.value(body).is_some(),
             Value::Higher { ref evidence, .. } => evidence.iter().all(|item| self.value(*item).is_some()),
             Value::HigherEvaluation { ref components, .. } => components.iter().all(|component| self.value(component.left).is_some() && self.value(component.right).is_some() && self.value(component.evidence).is_some()),
+            Value::QuantifiedEvaluation { ref children, .. } => children.iter().all(|item| self.value(*item).is_some()),
             Value::PathEquiv { path_type, forward, backward, .. } => self.value_type(path_type).is_some() && self.value(forward).is_some() && self.value(backward).is_some(),
             Value::SessionPath { path_type, payload_paths, .. } => self.value_type(path_type).is_some() && self.value(payload_paths).is_some(),
             Value::Thunk(body) | Value::Returned(body) => self.computation(body).is_some(),
@@ -2561,6 +2562,21 @@ impl TermArena
         })
     }
 
+    /// Mint a quantified-evaluation introduction over untrusted steps and
+    /// their value children.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_quantified_evaluation(
+        &mut self,
+        steps: alloc::sync::Arc<[crate::QuantifiedStep]>,
+        children: alloc::boxed::Box<[ValueId]>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::QuantifiedEvaluation { steps, children })
+    }
+
     /// Mint dependent transport along an element path; admission derives its
     /// source and result types from the motive.
     ///
@@ -2663,6 +2679,7 @@ Value::SessionPath { path_type, payload_paths, .. } => ret.as_slice() == [AnyNod
 Value::PathRefl(code) | Value::Here { point: code, .. } => ret.as_slice() == [AnyNode::Value(code)],
 Value::Higher { ref evidence, .. } => ret.iter().copied().eq(evidence.iter().copied().map(AnyNode::Value)),
 Value::HigherEvaluation { ref components, .. } => ret.iter().copied().eq(components.iter().flat_map(|component| [AnyNode::Value(component.left), AnyNode::Value(component.right), AnyNode::Value(component.evidence)])),
+Value::QuantifiedEvaluation { ref children, .. } => ret.iter().copied().eq(children.iter().copied().map(AnyNode::Value)),
 Value::ListCons(first, second) | Value::PathProduct(first, second) | Value::StaticApplication(first, second) =>
                 ret.as_slice() == [AnyNode::Value(first), AnyNode::Value(second)],
 Value::Injection(_, body) | Value::Lift { body, .. } =>
@@ -2764,8 +2781,17 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                 | Some(&Value::PathRefl(code) | &Value::Here { point: code, .. }) => {
                     children.push(AnyNode::Value(code));
                 },
-                | Some(&Value::Higher { ref evidence, .. }) => {
-                    children.extend(evidence.iter().copied().map(AnyNode::Value));
+                | Some(
+                    &Value::Higher {
+                        evidence: ref values,
+                        ..
+                    }
+                    | &Value::QuantifiedEvaluation {
+                        children: ref values,
+                        ..
+                    },
+                ) => {
+                    children.extend(values.iter().copied().map(AnyNode::Value));
                 },
                 | Some(&Value::HigherEvaluation { ref components, .. }) => {
                     for component in components {

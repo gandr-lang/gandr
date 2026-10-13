@@ -83,7 +83,7 @@
 //! | `synth_value` Lift                     | `SynthValue(body)`           | `SynthLift`                                         |
 //! | `synth_value` Injection                | leaf, not inferable          | —                                                   |
 //! | `synth_value` Here                     | `SynthValue(point)`          | `SynthHere`, closed domain                          |
-//! | `synth_value` Higher / `HigherEvaluation` | leaf, not inferable      | —                                                   |
+//! | `synth_value` Higher / `HigherEvaluation` / `QuantifiedEvaluation` | leaf, not inferable | — |
 //! | `synth_value` Quote, either family     | leaf, formation then universe | —                                                  |
 //! | `synth_comp` Absurd                    | leaf, not inferable          | —                                                   |
 //! | `check_comp` Absurd                    | `CheckValue(body, Empty)`    | —                                                   |
@@ -94,6 +94,7 @@
 //! | `check_value` Here                     | `CheckValue(point, domain)`  | `CheckHere`                                         |
 //! | `check_value` Higher                   | one `CheckValue` per guard   | `Pending`                                           |
 //! | `check_value` `HigherEvaluation`       | per component, in its telescope | `Components`, then `Pending`                     |
+//! | `check_value` `QuantifiedEvaluation`   | per telescope of each step tree | `Components`, then `Pending`                     |
 //! | `check_value` synth fallthrough        | `SynthValue(value)`          | `ConvertValue`                                      |
 //! | `synth_comp` Application, Arrow head   | `SynthComp(head)`            | `SynthApply`, then `ProduceComp`                    |
 //! | `synth_comp` Application, Pi head      | `SynthComp(head)`            | `SynthApply`, then `ProduceComp` at the instance    |
@@ -2309,7 +2310,7 @@ where
                             form: NonInferableForm::HigherField,
                         });
                     },
-                    | Value::HigherEvaluation { .. } => {
+                    | Value::HigherEvaluation { .. } | Value::QuantifiedEvaluation { .. } => {
                         return Err(KernelError::NotInferable {
                             form: NonInferableForm::HigherEvaluation,
                         });
@@ -2510,6 +2511,30 @@ where
                             expected,
                             &dialogues,
                             &components,
+                        )?;
+                        remaining.reverse();
+                        frames.push(Frame::Components {
+                            outer: core::mem::take(&mut context),
+                            remaining,
+                        });
+                        Produced::Checked
+                    },
+                    // A quantified evaluation replays every step's dialogues
+                    // here, as a higher evaluation does, and owes each
+                    // telescope's checks: the premise evidence, each applied
+                    // input and each return's values and output evidence.
+                    | Value::QuantifiedEvaluation {
+                        ref steps,
+                        ref children,
+                    } => {
+                        let steps = alloc::sync::Arc::clone(steps);
+                        let children = children.clone();
+                        let mut remaining = crate::element_identity::quantified_obligations(
+                            arena,
+                            &admitted_unfoldings(judgement.entries),
+                            expected,
+                            &steps,
+                            &children,
                         )?;
                         remaining.reverse();
                         frames.push(Frame::Components {
@@ -3052,14 +3077,19 @@ where
                     };
                     context = component.context;
                     frames.push(Frame::Components { outer, remaining });
-                    let [first, rest @ ..] = component.checks;
-                    let goals = rest
+                    let mut goals = component
+                        .checks
                         .into_iter()
                         .rev()
                         .map(|(value, ty)| Goal::CheckValue(value, ty))
                         .collect::<Vec<_>>();
+                    let Some(next) = goals.pop()
+                    else {
+                        produced = Produced::Checked;
+                        continue;
+                    };
                     frames.push(Frame::Pending(goals, Produced::Checked));
-                    goal = Goal::CheckValue(first.0, first.1);
+                    goal = next;
                     continue 'expand;
                 },
                 // Transport's input checks at the motive instantiated at the

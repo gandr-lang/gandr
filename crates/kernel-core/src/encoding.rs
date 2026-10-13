@@ -871,6 +871,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Value::PathRefl(body) | Value::Here { point: body, .. } | Value::Injection(_, body) | Value::Lift { body, .. } => self.placed.contains_key(&AnyNode::Value(body)),
             Value::Higher { ref evidence, .. } => evidence.iter().all(|id| self.placed.contains_key(&AnyNode::Value(*id))),
             Value::HigherEvaluation { ref components, .. } => components.iter().all(|component| [component.left, component.right, component.evidence].iter().all(|id| self.placed.contains_key(&AnyNode::Value(*id)))),
+            Value::QuantifiedEvaluation { ref children, .. } => children.iter().all(|id| self.placed.contains_key(&AnyNode::Value(*id))),
             Value::Thunk(body) | Value::Returned(body) => self.placed.contains_key(&AnyNode::Computation(body)),
             Value::Quote(quoted) => self.placed.contains_key(&AnyNode::ValueType(quoted)),
             Value::QuoteComputation(quoted) => self.placed.contains_key(&AnyNode::CompType(quoted)),
@@ -887,6 +888,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Value::Returned(_) => gandr_kernel_term::NODE_V_RETURNED,
             Value::Higher { .. } => gandr_kernel_term::NODE_V_HIGHER,
             Value::HigherEvaluation { .. } => gandr_kernel_term::NODE_V_HIGHER_EVALUATION,
+            Value::QuantifiedEvaluation { .. } => gandr_kernel_term::NODE_V_QUANTIFIED_EVALUATION,
             Value::Variable(..) => gandr_kernel_term::NODE_V_VARIABLE,
             Value::Constant(..) => gandr_kernel_term::NODE_V_CONSTANT,
             Value::ListNil => gandr_kernel_term::NODE_V_LIST_NIL,
@@ -1006,6 +1008,18 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                     for child in [component.left, component.right, component.evidence] {
                         record.put_content(self.content_of(AnyNode::Value(child)));
                     }
+                }
+            },
+            | Value::QuantifiedEvaluation {
+                ref steps,
+                ref children,
+            } => {
+                record.put_tag(gandr_kernel_term::NODE_V_QUANTIFIED_EVALUATION);
+                for word in gandr_kernel_term::quantified_words(steps) {
+                    record.put_word(EncodedWord(word.0));
+                }
+                for child in children {
+                    record.put_content(self.content_of(AnyNode::Value(*child)));
                 }
             },
             | Value::Variable(index) => {
@@ -1546,6 +1560,7 @@ Value::ListCons(a,b) | Value::PathProduct(a,b) | Value::StaticApplication(a,b) =
 Value::PathRefl(body) | Value::Here { point: body, .. } | Value::Injection(_,body) | Value::Lift {body,..} => opened.eq((core::iter::once(AnyNode::Value(body))).map(Some)),
 Value::Higher { ref evidence, .. } => opened.eq((evidence.iter().copied().map(AnyNode::Value)).map(Some)),
 Value::HigherEvaluation { ref components, .. } => opened.eq((components.iter().flat_map(|component| [component.left, component.right, component.evidence]).map(AnyNode::Value)).map(Some)),
+Value::QuantifiedEvaluation { ref children, .. } => opened.eq((children.iter().copied().map(AnyNode::Value)).map(Some)),
 Value::Thunk(body) | Value::Returned(body) => opened.eq((core::iter::once(AnyNode::Computation(body))).map(Some)),
 Value::Quote(quoted) => opened.eq((core::iter::once(AnyNode::ValueType(quoted))).map(Some)),
 Value::QuoteComputation(quoted) => opened.eq((core::iter::once(AnyNode::CompType(quoted))).map(Some)),
@@ -1645,9 +1660,18 @@ fn push_children(
             | Some(&Value::PathRefl(code) | &Value::Here { point: code, .. }) => {
                 tasks.push(EncodeTask::Open(AnyNode::Value(code)));
             },
-            | Some(&Value::Higher { ref evidence, .. }) => {
+            | Some(
+                &Value::Higher {
+                    evidence: ref values,
+                    ..
+                }
+                | &Value::QuantifiedEvaluation {
+                    children: ref values,
+                    ..
+                },
+            ) => {
                 tasks.extend(
-                    evidence
+                    values
                         .iter()
                         .copied()
                         .map(AnyNode::Value)

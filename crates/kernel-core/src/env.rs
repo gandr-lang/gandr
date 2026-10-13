@@ -1813,8 +1813,17 @@ fn collect_reachable(
                 | Some(&Value::PathRefl(code) | &Value::Here { point: code, .. }) => {
                     pending.push(AnyNode::Value(code));
                 },
-                | Some(&Value::Higher { ref evidence, .. }) => {
-                    pending.extend(evidence.iter().copied().map(AnyNode::Value));
+                | Some(
+                    &Value::Higher {
+                        evidence: ref values,
+                        ..
+                    }
+                    | &Value::QuantifiedEvaluation {
+                        children: ref values,
+                        ..
+                    },
+                ) => {
+                    pending.extend(values.iter().copied().map(AnyNode::Value));
                 },
                 | Some(&Value::HigherEvaluation { ref components, .. }) => pending.extend(
                     components

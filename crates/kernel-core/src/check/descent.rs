@@ -385,9 +385,18 @@ fn walk(
                 ) => {
                     pending.push((AnyNode::Value(body), depth, results));
                 },
-                | Some(&Value::Higher { ref evidence, .. }) => {
+                | Some(
+                    &Value::Higher {
+                        evidence: ref values,
+                        ..
+                    }
+                    | &Value::QuantifiedEvaluation {
+                        children: ref values,
+                        ..
+                    },
+                ) => {
                     pending.extend(
-                        evidence
+                        values
                             .iter()
                             .map(|&layer| (AnyNode::Value(layer), depth, results)),
                     );

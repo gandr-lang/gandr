@@ -824,8 +824,15 @@ impl LooseDepths
                         | Value::PathRefl(code) | Value::Here { point: code, .. } => {
                             tasks.push(ReachTask::OpenValue(code));
                         },
-                        | Value::Higher { ref evidence, .. } => {
-                            tasks.extend(evidence.iter().copied().map(ReachTask::OpenValue));
+                        | Value::Higher {
+                            evidence: ref values,
+                            ..
+                        }
+                        | Value::QuantifiedEvaluation {
+                            children: ref values,
+                            ..
+                        } => {
+                            tasks.extend(values.iter().copied().map(ReachTask::OpenValue));
                         },
                         | Value::HigherEvaluation { ref components, .. } => tasks.extend(
                             components
@@ -1360,7 +1367,7 @@ Value::Tuple(ref components) => components.iter().fold(LooseDepth(0), |depth, id
 Value::PathEquiv { path_type, forward, backward, .. } => self.cached_value_type(path_type).join(self.cached_value(forward)).join(self.cached_value(backward)),
 Value::SessionPath { path_type, payload_paths, .. } => self.cached_value_type(path_type).join(self.cached_value(payload_paths)),
 Value::PathRefl(body) | Value::Here { point: body, .. } | Value::Injection(_, body) | Value::Lift { body, .. } => self.cached_value(body),
-Value::Higher { ref evidence, .. } => evidence.iter().fold(LooseDepth(0), |depth, id| depth.join(self.cached_value(*id))),
+Value::Higher { evidence: ref values, .. } | Value::QuantifiedEvaluation { children: ref values, .. } => values.iter().fold(LooseDepth(0), |depth, id| depth.join(self.cached_value(*id))),
 Value::HigherEvaluation { ref components, .. } => components.iter().fold(LooseDepth(0), |depth, component| depth.join(self.cached_value(component.left)).join(self.cached_value(component.right)).join(self.cached_value(component.evidence))),
 Value::ListCons(a, b) | Value::PathProduct(a, b) | Value::StaticApplication(a, b) => self.cached_value(a).join(self.cached_value(b)),
 Value::Thunk(body) | Value::Returned(body) => self.cached_comp(body),
@@ -1418,11 +1425,16 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
                 .cached_value_type(path_type)
                 .join(self.cached_value(payload_paths)),
             | Value::PathRefl(code) | Value::Here { point: code, .. } => self.cached_value(code),
-            | Value::Higher { ref evidence, .. } => {
-                evidence.iter().fold(LooseDepth(0), |depth, id| {
-                    depth.join(self.cached_value(*id))
-                })
-            },
+            | Value::Higher {
+                evidence: ref values,
+                ..
+            }
+            | Value::QuantifiedEvaluation {
+                children: ref values,
+                ..
+            } => values.iter().fold(LooseDepth(0), |depth, id| {
+                depth.join(self.cached_value(*id))
+            }),
             | Value::HigherEvaluation { ref components, .. } => {
                 components.iter().fold(LooseDepth(0), |depth, component| {
                     depth

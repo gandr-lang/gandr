@@ -1263,6 +1263,7 @@ fn carried_occurrence(
         | Value::Returned(_)
         | Value::Higher { .. }
         | Value::HigherEvaluation { .. }
+        | Value::QuantifiedEvaluation { .. }
         | Value::Variable(_)
         | Value::Constant(_)
         | Value::Literal(_)
@@ -1331,7 +1332,7 @@ const fn outcome_of(node: AnyNode) -> RewriteOutcome
 /// - witness: `rewrite::tests::session_rewrites_preserve_graph_evidence_and_native_children`
 #[spec(captures: before = tasks.len(),
     ensures: tasks.get(before ..).is_some_and(|added| added.len() == match node {
-    AnyNode::Value(id) => arena.value(id).map_or(0, |source| match *source { Value::Constructor { ref fields, .. } => fields.len().saturating_add(1), Value::Record(ref fields) => fields.len(), Value::Tuple(ref components) => components.len(), Value::Higher { ref evidence, .. } => evidence.len(), Value::HigherEvaluation { ref components, .. } => components.len().saturating_mul(3), Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => 0, Value::PathEquiv { .. } => 3, Value::ListCons(..) | Value::SessionPath { .. } | Value::PathProduct(..) | Value::StaticApplication(..) => 2, _ => 1 }),
+    AnyNode::Value(id) => arena.value(id).map_or(0, |source| match *source { Value::Constructor { ref fields, .. } => fields.len().saturating_add(1), Value::Record(ref fields) => fields.len(), Value::Tuple(ref components) => components.len(), Value::Higher { ref evidence, .. } => evidence.len(), Value::HigherEvaluation { ref components, .. } => components.len().saturating_mul(3), Value::QuantifiedEvaluation { ref children, .. } => children.len(), Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => 0, Value::PathEquiv { .. } => 3, Value::ListCons(..) | Value::SessionPath { .. } | Value::PathProduct(..) | Value::StaticApplication(..) => 2, _ => 1 }),
     AnyNode::Computation(id) => arena.computation(id).map_or(0, |source| match *source { Computation::ListFold { .. } | Computation::RelatedApplication { .. } | Computation::TelescopeTransport { .. } => 5, Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2), Computation::Case { ref branches, .. } => branches.len().saturating_add(1), Computation::PathTransport { .. } => 3, Computation::Transport(..) | Computation::Application(..) | Computation::Bind(..) | Computation::With(..) => 2, _ => 1 }),
     AnyNode::ValueType(id) => arena.value_type(id).map_or(0, |source| match *source { ValueType::Data { ref arguments, .. } => arguments.len(), ValueType::Record(ref fields) => fields.len(), ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.len(), ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => 0, ValueType::Path { .. } => 3, ValueType::PathUniverse(..) | ValueType::StaticPi { .. } => 2, _ => 1 }),
     AnyNode::CompType(id) => arena.comp_type(id).map_or(0, |source| match *source { CompType::Arrow { .. } | CompType::Pi { .. } | CompType::With(..) => 2, _ => 1 }),
@@ -1408,8 +1409,17 @@ fn push_rewrite_children(
             | Some(&Value::PathRefl(code) | &Value::Here { point: code, .. }) => {
                 tasks.push(RewriteTask::Open(AnyNode::Value(code), depth, rewrite));
             },
-            | Some(&Value::Higher { ref evidence, .. }) => tasks.extend(
-                evidence
+            | Some(
+                &Value::Higher {
+                    evidence: ref values,
+                    ..
+                }
+                | &Value::QuantifiedEvaluation {
+                    children: ref values,
+                    ..
+                },
+            ) => tasks.extend(
+                values
                     .iter()
                     .rev()
                     .map(|id| RewriteTask::Open(AnyNode::Value(*id), depth, rewrite)),
@@ -1850,6 +1860,7 @@ Value::PathEquiv { .. } => 3,
 Value::Tuple(ref components) => components.len(),
 Value::Higher { ref evidence, .. } => evidence.len(),
 Value::HigherEvaluation { ref components, .. } => components.len().saturating_mul(3),
+Value::QuantifiedEvaluation { ref children, .. } => children.len(),
 Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::SessionPath { .. } => 2,
 Value::Injection(..) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::PathRefl(_) | Value::Here { .. } | Value::Returned(_) => 1,
 _ => 0,
@@ -2011,6 +2022,28 @@ fn close_value(
             match rewritten {
                 | Some(components) => {
                     arena.value_higher_evaluation(alloc::sync::Arc::clone(dialogues), components)
+                },
+                | None => id,
+            }
+        },
+        | Value::QuantifiedEvaluation {
+            ref steps,
+            ref children,
+        } => {
+            let mut rewritten = None;
+            for (index, original) in children.iter().copied().enumerate().rev() {
+                let result = popped(results, AnyNode::Value(original)).value_or(original);
+                if result != original
+                    && let Some(slot) = rewritten
+                        .get_or_insert_with(|| children.clone())
+                        .get_mut(index)
+                {
+                    *slot = result;
+                }
+            }
+            match rewritten {
+                | Some(children) => {
+                    arena.value_quantified_evaluation(alloc::sync::Arc::clone(steps), children)
                 },
                 | None => id,
             }

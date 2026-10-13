@@ -39,9 +39,9 @@
 //!   relation, which hands fibre selection to an untrusted party.
 //! - reversal: a type the fold does not cover (dependent arrows) needs a fold
 //!   clause first. A higher-order argument needed none: higher evaluation's own
-//!   coverage binds it, two functions and their identity. The evidence tag
-//!   `0x3A` stays reserved for the quantified evaluation a body applying that
-//!   argument needs, and `0x3B` for the dependent one.
+//!   coverage binds it, two functions and their identity, and the quantified
+//!   evaluation (`0x3A`) decides a body that applies it. The evidence tag
+//!   `0x3B` stays reserved for the dependent evaluation.
 //!
 //! **Identity at an open type is a neutral fibre.** A domain that mentions a
 //! bound variable or reaches a sealed atom has no fold clause: its fibre would
@@ -52,11 +52,10 @@
 //! conversion as at a closed domain; transport along it is stuck except on
 //! `here`, where the first row of the table below reduces it; two such
 //! identities convert structurally, childwise. An introduction that needs the
-//! fold, native evidence, a higher field or a higher evaluation, refuses there
-//! as [`IdentityError::NeutralFibre`], the refusal a neutral fibre at a closed
-//! domain already gives. No wire node is needed: the neutral fibre is the
-//! persisted `Path` node over an open domain, so `0x3A` stays reserved for the
-//! quantified evaluation alone.
+//! fold, native evidence, a higher field or a higher or quantified evaluation,
+//! refuses there as [`IdentityError::NeutralFibre`], the refusal a neutral
+//! fibre at a closed domain already gives. No wire node is needed: the neutral
+//! fibre is the persisted `Path` node over an open domain.
 //!
 //! - alternatives: refusing identity at formation and at `here`'s synthesis,
 //!   which left every law over an abstract carrier unstatable; refusing it at
@@ -193,8 +192,12 @@
 //! `here(f)` and the arguments convert: the body sees one result twice and its
 //! reflexivity. A higher evaluation is the function clause's introduction; its
 //! check replays every component's dialogues over the kernel-generated
-//! coverage. Its elimination stays neutral, because the application site
-//! carries no pointwise evaluation; the fold's own reading of that case is
+//! coverage. A quantified evaluation is the same introduction for a body that
+//! applies its function argument: it replays each application step's
+//! dialogues to the normal forms it carries, reads the applied premise from
+//! them, and checks every branch beneath it over the inner result's coverage.
+//! Their elimination stays neutral, because the application site carries no
+//! pointwise evaluation; the fold's own reading of that case is
 //! [`crate::identity_recursion::Application::Suspended`].
 //!
 //! **The bridge reading stays in memory.**
@@ -220,6 +223,7 @@ use gandr_kernel_term::EvaluationDialogues;
 use gandr_kernel_term::HigherLayer;
 use gandr_kernel_term::HigherProgram;
 use gandr_kernel_term::LayerPosition;
+use gandr_kernel_term::QuantifiedStep;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
@@ -251,7 +255,9 @@ use crate::identity_recursion::Fibers;
 use crate::identity_recursion::HigherEvaluation;
 use crate::identity_recursion::Interpretation;
 use crate::identity_recursion::Mode;
+use crate::identity_recursion::NormalForm;
 use crate::identity_recursion::Pointwise;
+use crate::identity_recursion::Quantified;
 use crate::identity_recursion::RelationError;
 use crate::identity_recursion::interpret;
 use crate::path_universe::Dialogue;
@@ -348,6 +354,21 @@ pub enum IdentityError
     },
     /// A higher evaluation relates functions that mention bound variables.
     OpenFunctions,
+    /// A quantified evaluation's step does not apply the two functions its
+    /// premise relates at one input.
+    QuantifiedStep
+    {
+        /// The component, in coverage order.
+        component: Component,
+    },
+    /// A quantified evaluation applies a function whose own domain binds a
+    /// function: the fragment boundary, since related inputs there would need
+    /// function identity between them.
+    HigherOrderDomain
+    {
+        /// The component, in coverage order.
+        component: Component,
+    },
     /// A returned endpoint's computation synthesizes no returner.
     ReturnedNonReturner(CompTypeWitness),
     /// A telescope transport's second identity does not lie over its first:
@@ -409,6 +430,12 @@ impl fmt::Display for IdentityError
                 f.write_str("a higher evaluation's dialogue did not replay")
             },
             | Self::OpenFunctions => f.write_str("a higher evaluation relates open functions"),
+            | Self::QuantifiedStep { .. } => {
+                f.write_str("a quantified step does not apply its premise's functions at one input")
+            },
+            | Self::HigherOrderDomain { .. } => f.write_str(
+                "a quantified evaluation applies a function whose domain is higher order",
+            ),
             | Self::ReturnedNonReturner(_) => {
                 f.write_str("a returned endpoint over a non-returner")
             },
@@ -875,6 +902,98 @@ pub(crate) fn evaluation_obligations(
         .map_err(|error| relation_refusal(arena, error))
 }
 
+/// The goals a persisted quantified evaluation owes, grouped by telescope.
+///
+/// # Specification
+/// - requires: as [`evaluation_obligations`].
+/// - ensures: the obligations the function relation's quantified reading owes,
+///   after every step's two dialogues replayed positively, unfolding only what
+///   `unfoldings` defines; each step takes its children in step order, three
+///   for a return and two for an application.
+/// - provides: the checking machine's reading of a quantified evaluation, with
+///   no nested check.
+/// - fails: as [`evaluation_obligations`]; coverage when the children do not
+///   match the steps; a quantified step that does not apply its premise's
+///   functions at one input, and a higher-order domain, by name.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`, and `ArenaFault` on an unreadable node.
+///
+/// # Adequacy
+/// - hypothesis: L1/L3 — `λf. f(true)` relates to itself and to its bind form,
+///   a twice-applied body nests its branches, differing inputs, a higher-order
+///   domain and a missing child each refuse by name.
+/// - witness: `element_identity::tests::a_quantified_evaluation_replays_under_the_quantifier`
+/// - witness: `element_identity::tests::a_quantified_evaluation_refuses_what_it_cannot_relate`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |owed| !owed.is_empty()))]
+pub(crate) fn quantified_obligations(
+    arena: &mut TermArena,
+    unfoldings: &Unfoldings,
+    expected: ValueTypeId,
+    steps: &[QuantifiedStep],
+    children: &[ValueId],
+) -> Result<Vec<ComponentObligation>, KernelError>
+{
+    let (domain, left, right) = path_parts(arena, expected)?;
+    require_folded(arena, domain)?;
+    let mut reach = LooseDepths::new();
+    if u32::from(reach.value_reach(arena, left)) != 0
+        || u32::from(reach.value_reach(arena, right)) != 0
+    {
+        return Err(KernelError::Identity(IdentityError::OpenFunctions));
+    }
+    let coverage = || KernelError::Identity(IdentityError::Coverage);
+    let mut values = children.iter().copied();
+    let mut quantified = Vec::with_capacity(steps.len());
+    for step in steps {
+        let dialogues = step.dialogues();
+        let left_dialogue = Dialogue(dialogues.left.iter().copied().map(anchor).collect());
+        let right_dialogue = Dialogue(dialogues.right.iter().copied().map(anchor).collect());
+        let first = values.next().ok_or_else(coverage)?;
+        let second = values.next().ok_or_else(coverage)?;
+        quantified.push(match *step {
+            | QuantifiedStep::Return(_) => Quantified::Return {
+                left: Evaluation {
+                    value: first,
+                    dialogue: left_dialogue,
+                },
+                right: Evaluation {
+                    value: second,
+                    dialogue: right_dialogue,
+                },
+                proof: values.next().ok_or_else(coverage)?,
+            },
+            | QuantifiedStep::Apply { fibre, .. } => Quantified::Apply {
+                fibre,
+                left: NormalForm {
+                    normal: first,
+                    dialogue: left_dialogue,
+                },
+                right: NormalForm {
+                    normal: second,
+                    dialogue: right_dialogue,
+                },
+            },
+        });
+    }
+    if values.next().is_some() {
+        return Err(coverage());
+    }
+    let code = arena.value_quote(domain);
+    interpret(arena, Mode::Identity, Domain::Elements(code))
+        .and_then(Interpretation::elements)
+        .and_then(|relation| {
+            relation.quantified_obligations(
+                arena,
+                (left, right),
+                &quantified,
+                (unfoldings, ReplayBudget::DEFAULT),
+            )
+        })
+        .map_err(|error| relation_refusal(arena, error))
+}
+
 /// How a checking goal against an identity reads its value.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GoalReading
@@ -920,6 +1039,7 @@ pub(crate) fn goal_reading(
                 &(Value::Here { .. }
                     | Value::Higher { .. }
                     | Value::HigherEvaluation { .. }
+                    | Value::QuantifiedEvaluation { .. }
                     | Value::Variable(_)
                     | Value::Constant(_)
                     | Value::StaticApplication(..))
@@ -1009,6 +1129,10 @@ fn relation_refusal(
             component,
             side,
             verdict,
+        },
+        | RelationError::QuantifiedStep(component) => IdentityError::QuantifiedStep { component },
+        | RelationError::HigherOrderDomain(component) => {
+            IdentityError::HigherOrderDomain { component }
         },
         | RelationError::Arena
         | RelationError::UnsupportedCode(_)

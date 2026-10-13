@@ -1,14 +1,18 @@
-//! Related-input products and replayed higher evaluation at pure thunk codes.
+//! Related-input products and replayed higher and quantified evaluation at
+//! pure thunk codes.
 
 use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_kernel_check_memo::NullMemo;
+use gandr_kernel_term::Computation;
 use gandr_kernel_term::ComputationId;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::TermArena;
+use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
+use gandr_kernel_term::ValueType;
 use gandr_kernel_term::ValueTypeId;
 
 use super::Clause;
@@ -21,6 +25,8 @@ use super::RelationError;
 use super::RelationId;
 use super::check_value;
 use super::same_type;
+use crate::conv::Convertibility;
+use crate::conv::equal_values;
 use crate::encoding::ContentTable;
 use crate::path_universe::Dialogue;
 use crate::replay::EngineClaim;
@@ -29,7 +35,9 @@ use crate::replay::ReplayBudget;
 use crate::replay::ReplaySides;
 use crate::replay::Unfoldings;
 use crate::rewrite::BinderDepth;
+use crate::rewrite::shift_computation;
 use crate::rewrite::shift_value;
+use crate::rewrite::substitute_computation;
 
 #[cfg(test)]
 pub mod tests;
@@ -211,21 +219,13 @@ impl Relation
     /// Generate exhaustive related-input patterns for higher evaluation.
     ///
     /// # Specification
-    /// - ensures: Unit has one pattern; Sum has matching injections only;
-    ///   Product has all component combinations; discrete Base shares a fresh
-    ///   rigid variable after eliminating its equality premise; a function
-    ///   coordinate at a thunk type `T` binds two functions and their identity,
-    ///   `f₀ f₁ : T` and `p : Path(T, f₀, f₁)`, and relates `f₀` to `f₁` by
-    ///   `p`. No Base inhabitants and no functions are sampled.
+    /// - ensures: the patterns [`Self::patterns_at`] generates at the function
+    ///   clause's argument relation.
     /// - provides: a universal introduction boundary for first-order and
-    ///   higher-order arguments. The function coordinate's premise is the
-    ///   persisted identity, so its relation stays the inner fibre rather than
-    ///   a case split.
-    /// - fails: `NeutralFiber` for a function coordinate in bridge mode, which
-    ///   has no persisted relation to bind; Classifier outside a function
-    ///   clause; Arena or Budget on invalid or excessive work.
+    ///   higher-order arguments, in either mode.
+    /// - fails: Classifier outside a function clause; as [`Self::patterns_at`]
+    ///   otherwise.
     /// - panics: none.
-    /// - intension: sums are left-first; products are lexicographic.
     ///
     /// # Errors
     /// As `fails`.
@@ -233,24 +233,10 @@ impl Relation
     /// # Adequacy
     /// - hypothesis: L3 — both Bool constructors and independent product Base
     ///   variables must be covered; a function argument binds both functions
-    ///   and their identity, never a sample.
+    ///   and their identity, never a sample, in identity and bridge mode alike.
     /// - witness: `identity_recursion::function::tests::symbolic_coverage_keeps_base_variables_independent`
     /// - witness: `identity_recursion::function::tests::a_higher_order_argument_binds_its_inner_fibre`
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            spec_clause_traversal,
-            reason = "the refusal arms read the program's clauses, one per node of the relation the declaration compiled; the body walks the argument relation through the same table and every pattern it returns, which the success arm reads once"
-        )
-    )]
-    #[spec(ensures: |ret| match ret {
-        Ok(ref patterns) => u64::from(budget) > 0 && !patterns.is_empty() && patterns.iter().all(|pattern| pattern.context.iter().all(|&ty| matches!(arena.value_type(ty), Some(&gandr_kernel_term::ValueType::Base(_) | &gandr_kernel_term::ValueType::Thunk(_) | &gandr_kernel_term::ValueType::Path { .. })))),
-        Err(RelationError::NeutralFiber) => self.mode == Mode::Bridge && self.nodes.iter().any(|node| matches!(node.clause, Clause::Function(..))),
-        Err(RelationError::RecursiveObservationRequired) => self.nodes.iter().any(|node| matches!(node.clause, Clause::List(_))),
-        Err(RelationError::CertificateOperationRequired) => self.nodes.iter().any(|node| matches!(node.clause, Clause::Universe)),
-        Err(RelationError::HigherFieldRequired) => self.nodes.iter().any(|node| matches!(node.clause, Clause::Certificate)),
-        Err(_) => true,
-    })]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |patterns| u64::from(budget) > 0 && !patterns.is_empty()))]
     #[inline]
     pub fn related_patterns(
         &self,
@@ -259,7 +245,59 @@ impl Relation
     ) -> Result<Vec<RelatedPattern>, RelationError>
     {
         let (argument, _) = self.function()?;
-        let mut pending = Vec::from([(argument, false)]);
+        self.patterns_at(arena, argument, budget)
+    }
+
+    /// Generate exhaustive related patterns of the relation at `relation`.
+    ///
+    /// # Specification
+    /// - requires: `relation` addresses a node of this program.
+    /// - ensures: Unit has one pattern; Sum has matching injections only;
+    ///   Product has all component combinations; discrete Base shares a fresh
+    ///   rigid variable after eliminating its equality premise; a function
+    ///   coordinate at a thunk type `T` binds two functions and their identity,
+    ///   `f₀ f₁ : T` and `p : Path(T, f₀, f₁)`, and relates `f₀` to `f₁` by
+    ///   `p`. No Base inhabitants and no functions are sampled.
+    /// - provides: the coverage both the argument of a higher evaluation and
+    ///   the result of a function a quantified evaluation applies are split by.
+    ///   The function coordinate's premise is the persisted identity in either
+    ///   mode, so its relation stays the inner fibre rather than a case split.
+    /// - fails: Arena or Budget on invalid or excessive work; the named
+    ///   requirement of a list, universe or certificate coordinate.
+    /// - panics: none.
+    /// - intension: sums are left-first; products are lexicographic.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::related_patterns`], and the Bool result of
+    ///   an applied function splits into its two constructors.
+    /// - witness: `identity_recursion::function::tests::symbolic_coverage_keeps_base_variables_independent`
+    /// - witness: `identity_recursion::function::tests::a_higher_order_argument_binds_its_inner_fibre`
+    /// - witness: `element_identity::tests::a_quantified_evaluation_replays_under_the_quantifier`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "the refusal arms read the program's clauses, one per node of the relation the declaration compiled; the body walks the relation through the same table and every pattern it returns, which the success arm reads once"
+        )
+    )]
+    #[spec(ensures: |ret| match ret {
+        Ok(ref patterns) => u64::from(budget) > 0 && !patterns.is_empty() && patterns.iter().all(|pattern| pattern.context.iter().all(|&ty| matches!(arena.value_type(ty), Some(&gandr_kernel_term::ValueType::Base(_) | &gandr_kernel_term::ValueType::Thunk(_) | &gandr_kernel_term::ValueType::Path { .. })))),
+        Err(RelationError::RecursiveObservationRequired) => self.nodes.iter().any(|node| matches!(node.clause, Clause::List(_))),
+        Err(RelationError::CertificateOperationRequired) => self.nodes.iter().any(|node| matches!(node.clause, Clause::Universe)),
+        Err(RelationError::HigherFieldRequired) => self.nodes.iter().any(|node| matches!(node.clause, Clause::Certificate)),
+        Err(_) => true,
+    })]
+    fn patterns_at(
+        &self,
+        arena: &mut TermArena,
+        relation: RelationId,
+        budget: ReplayBudget,
+    ) -> Result<Vec<RelatedPattern>, RelationError>
+    {
+        let mut pending = Vec::from([(relation, false)]);
         let mut values = Vec::<Vec<RelatedPattern>>::new();
         let mut table = ContentTable::new();
         let mut allowance = Allowance(u64::from(budget));
@@ -286,9 +324,6 @@ impl Relation
                     }])
                 },
                 | Clause::Function(..) => {
-                    if self.mode == Mode::Bridge {
-                        return Err(RelationError::NeutralFiber);
-                    }
                     let source = arena.value_variable(DeBruijnIndex::from(1_u32));
                     let target = arena.value_variable(DeBruijnIndex::from(0_u32));
                     let premise = arena.value_type_path(node.source, source, target);
@@ -683,15 +718,317 @@ impl Relation
                 .native(arena)?;
             owed.push(ComponentObligation {
                 context: pattern.context,
-                checks: [
+                checks: Vec::from([
                     (pattern.proof, premise),
                     (left_result.value, result_type),
                     (right_result.value, result_type),
                     (proof, output),
-                ],
+                ]),
             });
         }
         Ok(owed)
+    }
+
+    /// Read a quantified evaluation as the checking obligations it owes,
+    /// replaying every step's dialogues without a nested check.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::evaluation_obligations`].
+    /// - ensures: per generated related-input pattern, in coverage order, a
+    ///   pre-order walk of one tree of steps. The walk starts at the pattern's
+    ///   telescope with `force f₀ v₀` and `force f₁ v₁`. A return step owes, as
+    ///   a higher-evaluation component does, both returned values at the result
+    ///   type and the output evidence at their result fibre, after both of its
+    ///   dialogues replayed the current computations as returning them. An
+    ///   application step's dialogues replay each current computation, closed
+    ///   under the telescope, as its closed normal form; each form is a thunk
+    ///   of one lambda per telescope entry over `force f a` or `x ← force f a;
+    ///   K`, whose head is the left or the right function the premise at the
+    ///   step's fibre binds — that premise the persisted `Path(T, f₀, f₁)` a
+    ///   function coordinate's coverage bound — at one input up to conversion,
+    ///   owed at `T`'s argument type. The step then opens one branch per
+    ///   pattern [`Self::patterns_at`] generates for `T`'s result relation,
+    ///   extending the telescope by the pattern's binders and continuing each
+    ///   side at its own output: `return o`, or `K` with `x` instantiated at
+    ///   `o`. The pattern's premise evidence is owed first, at the argument
+    ///   fibre, in the pattern's telescope.
+    /// - provides: the checking machine's reading of a persisted quantified
+    ///   evaluation. An application step is sound because `p` relates the two
+    ///   functions at related inputs, and one input up to conversion is related
+    ///   to itself; their outputs then fall in exactly one covering pattern of
+    ///   the result relation, the branch whose continuations the tree proves.
+    /// - fails: Coverage when steps are missing or left over; `QuantifiedStep`
+    ///   with its component for a normal form that is not stuck at the
+    ///   premise's functions at one input; `HigherOrderDomain` with its
+    ///   component when the applied function's own domain binds a function;
+    ///   Evaluation with its component and side; fibre refusals.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Termination
+    /// - reason: the `while let` loop drains a worklist, not recursion.
+    /// - measure: the untrusted steps not yet read: each iteration reads one,
+    ///   and a branch is pushed only by an application step.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1/L3 — `λf. f(true)` relates to itself and to its bind
+    ///   form through both output branches, a body applying its argument twice
+    ///   nests its branches, differing inputs and a function whose domain is a
+    ///   function refuse by name, and a step past the tree refuses as coverage.
+    /// - witness: `element_identity::tests::a_quantified_evaluation_replays_under_the_quantifier`
+    /// - witness: `element_identity::tests::a_quantified_evaluation_refuses_what_it_cannot_relate`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |owed| !owed.is_empty()))]
+    pub(crate) fn quantified_obligations(
+        &self,
+        arena: &mut TermArena,
+        functions: (ValueId, ValueId),
+        steps: &[Quantified],
+        replay: (&Unfoldings, ReplayBudget),
+    ) -> Result<Vec<ComponentObligation>, RelationError>
+    {
+        let (unfoldings, budget) = replay;
+        let (argument, result) = self.function()?;
+        let result_type = self.node(result)?.source;
+        let patterns = self.related_patterns(arena, budget)?;
+        let mut table = ContentTable::new();
+        let mut allowance = Allowance(u64::from(budget));
+        let mut steps = steps.iter();
+        let mut owed = Vec::new();
+        for (position, pattern) in patterns.into_iter().enumerate() {
+            let component = Component(position);
+            let premise = self
+                .evaluate_at(arena, argument, pattern.left, pattern.right)?
+                .native(arena)?;
+            let left = apply(arena, functions.0, pattern.left);
+            let right = apply(arena, functions.1, pattern.right);
+            owed.push(ComponentObligation {
+                context: pattern.context.clone(),
+                checks: Vec::from([(pattern.proof, premise)]),
+            });
+            let mut pending = Vec::from([Branch {
+                context: pattern.context,
+                left,
+                right,
+            }]);
+            while let Some(branch) = pending.pop() {
+                allowance.charge()?;
+                let step = steps.next().ok_or(RelationError::Coverage)?;
+                match *step {
+                    | Quantified::Return {
+                        left: ref left_result,
+                        right: ref right_result,
+                        proof,
+                    } => {
+                        for (side, computation, evaluation) in [
+                            (EvaluationSide::Left, branch.left, left_result),
+                            (EvaluationSide::Right, branch.right, right_result),
+                        ] {
+                            let verdict = replay_evaluation(
+                                arena,
+                                &branch.context,
+                                computation,
+                                evaluation,
+                                (unfoldings, budget),
+                            );
+                            if verdict != KernelVerdict::Convertible {
+                                return Err(RelationError::Evaluation(component, side, verdict));
+                            }
+                        }
+                        let output = self
+                            .evaluate_at(arena, result, left_result.value, right_result.value)?
+                            .native(arena)?;
+                        owed.push(ComponentObligation {
+                            context: branch.context,
+                            checks: Vec::from([
+                                (left_result.value, result_type),
+                                (right_result.value, result_type),
+                                (proof, output),
+                            ]),
+                        });
+                    },
+                    | Quantified::Apply {
+                        fibre,
+                        left: ref left_reduction,
+                        right: ref right_reduction,
+                    } => {
+                        for (side, computation, reduction) in [
+                            (EvaluationSide::Left, branch.left, left_reduction),
+                            (EvaluationSide::Right, branch.right, right_reduction),
+                        ] {
+                            let verdict = replay_claim(
+                                arena,
+                                &branch.context,
+                                computation,
+                                (reduction.normal, &reduction.dialogue),
+                                (unfoldings, budget),
+                            );
+                            if verdict != KernelVerdict::Convertible {
+                                return Err(RelationError::Evaluation(component, side, verdict));
+                            }
+                        }
+                        let classifier =
+                            premise_classifier(arena, &branch.context, fibre, component)?;
+                        let (inner_argument, inner_result) =
+                            self.function_at(classifier, component)?;
+                        if self.order(inner_argument)? == Order::Higher {
+                            return Err(RelationError::HigherOrderDomain(component));
+                        }
+                        let heads = premise_functions(fibre, component)?;
+                        let left_stuck = stuck(
+                            arena,
+                            left_reduction.normal,
+                            (&branch.context, heads.0),
+                            component,
+                        )?;
+                        let right_stuck = stuck(
+                            arena,
+                            right_reduction.normal,
+                            (&branch.context, heads.1),
+                            component,
+                        )?;
+                        if equal_values(arena, left_stuck.input, right_stuck.input)
+                            != Convertibility::Convertible
+                        {
+                            return Err(RelationError::QuantifiedStep(component));
+                        }
+                        owed.push(ComponentObligation {
+                            context: branch.context.clone(),
+                            checks: Vec::from([(
+                                left_stuck.input,
+                                self.node(inner_argument)?.source,
+                            )]),
+                        });
+                        let outputs = self.patterns_at(arena, inner_result, budget)?;
+                        for output in outputs.into_iter().rev() {
+                            allowance.charge()?;
+                            let extension = BinderDepth::from(
+                                u32::try_from(output.context.len())
+                                    .map_err(|_error| RelationError::Budget)?,
+                            );
+                            let left = resume(
+                                arena,
+                                &mut table,
+                                left_stuck.continuation,
+                                (output.left, extension),
+                            );
+                            let right = resume(
+                                arena,
+                                &mut table,
+                                right_stuck.continuation,
+                                (output.right, extension),
+                            );
+                            let mut context = Vec::with_capacity(
+                                branch.context.len().saturating_add(output.context.len()),
+                            );
+                            context.extend_from_slice(&branch.context);
+                            context.extend_from_slice(&output.context);
+                            pending.push(Branch {
+                                context,
+                                left,
+                                right,
+                            });
+                        }
+                    },
+                }
+            }
+        }
+        if steps.next().is_some() {
+            return Err(RelationError::Coverage);
+        }
+        Ok(owed)
+    }
+
+    /// The argument and result relations of the function clause at the thunk
+    /// type `classifier`.
+    ///
+    /// # Specification
+    /// - ensures: the two premises of the program's function clause whose node
+    ///   classifies `classifier`.
+    /// - provides: the relation a quantified step's premise relates its
+    ///   functions by, read from the program that bound the premise, so the
+    ///   fold is not run again.
+    /// - fails: `QuantifiedStep` naming `component` when no function clause
+    ///   classifies `classifier`.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the higher-order argument of the quantified witness
+    ///   finds its clause; a fibre naming a Base binder never reaches here.
+    /// - witness: `element_identity::tests::a_quantified_evaluation_replays_under_the_quantifier`
+    #[spec(ensures: |ret| match ret {
+        Ok((argument, result)) => self.nodes.iter().any(|node| node.source == classifier && node.clause == Clause::Function(argument, result)),
+        Err(_) => !self.nodes.iter().any(|node| node.source == classifier && matches!(node.clause, Clause::Function(..))),
+    })]
+    fn function_at(
+        &self,
+        classifier: ValueTypeId,
+        component: Component,
+    ) -> Result<(RelationId, RelationId), RelationError>
+    {
+        self.nodes
+            .iter()
+            .find_map(|node| match node.clause {
+                | Clause::Function(argument, result) if node.source == classifier => {
+                    Some((argument, result))
+                },
+                | _ => None,
+            })
+            .ok_or(RelationError::QuantifiedStep(component))
+    }
+
+    /// Whether the relation at `relation` binds a function anywhere.
+    ///
+    /// # Specification
+    /// - requires: `relation` addresses a node of this program.
+    /// - ensures: [`Order::Higher`] exactly when a function clause is reachable
+    ///   from `relation` through product, sum, list and case premises, itself
+    ///   included; [`Order::First`] otherwise.
+    /// - provides: the first-order test of a quantified step's argument type.
+    /// - fails: Arena on an address outside the program.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Termination
+    /// - reason: the `while let` loop drains a worklist, not recursion.
+    /// - measure: the program's nodes not yet visited; each is visited once.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — Bool reads first order; a function from functions
+    ///   reads higher order beneath its argument.
+    /// - witness: `element_identity::tests::a_quantified_evaluation_refuses_what_it_cannot_relate`
+    fn order(
+        &self,
+        relation: RelationId,
+    ) -> Result<Order, RelationError>
+    {
+        let mut pending = Vec::from([relation]);
+        let mut visited = alloc::collections::BTreeSet::new();
+        while let Some(id) = pending.pop() {
+            if !visited.insert(id) {
+                continue;
+            }
+            match self.node(id)?.clause {
+                | Clause::Function(..) => return Ok(Order::Higher),
+                | Clause::Product(first, second)
+                | Clause::Sum(first, second)
+                | Clause::CaseLeft(first, second)
+                | Clause::CaseRight(first, second) => pending.extend([first, second]),
+                | Clause::List(element) => pending.push(element),
+                | Clause::Unit
+                | Clause::Empty
+                | Clause::Discrete
+                | Clause::Universe
+                | Clause::Certificate => {},
+            }
+        }
+        Ok(Order::First)
     }
 
     /// Introduce function identity by its computed related-input product.
@@ -870,32 +1207,325 @@ fn replay_evaluation(
     replay: (&Unfoldings, ReplayBudget),
 ) -> KernelVerdict
 {
-    let (unfoldings, budget) = replay;
     let mut returned = arena.computation_return(evaluation.value);
+    for _ in context {
+        returned = arena.computation_lambda(returned);
+    }
+    let returned = arena.value_thunk(returned);
+    replay_claim(
+        arena,
+        context,
+        computation,
+        (returned, &evaluation.dialogue),
+        replay,
+    )
+}
+
+/// Replay a computation, closed over its telescope, against a closed value.
+///
+/// # Specification
+/// - requires: every body `replay.0` holds is closed; `target.0` is closed.
+/// - ensures: the verdict of replaying `thunk(λⁿ. computation) = target.0`
+///   along the dialogue `target.1`, with one lambda per telescope entry,
+///   unfolding exactly the constants `replay.0` defines.
+/// - provides: the one replay a returned value and a stuck normal form share.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L1/L3 — as [`replay_evaluation`], and a stuck normal form
+///   replays against the claim that reaches it.
+/// - witness: `identity_recursion::function::tests::funext_computes_and_refuses_wrong_components`
+/// - witness: `element_identity::tests::a_quantified_evaluation_replays_under_the_quantifier`
+#[spec(ensures: |ret| ret != KernelVerdict::NotConvertible
+    && (ret != KernelVerdict::Convertible || u64::from(replay.1) > 0))]
+fn replay_claim(
+    arena: &mut TermArena,
+    context: &[ValueTypeId],
+    computation: ComputationId,
+    target: (ValueId, &Dialogue),
+    replay: (&Unfoldings, ReplayBudget),
+) -> KernelVerdict
+{
+    let (unfoldings, budget) = replay;
+    let (target, dialogue) = target;
     let mut computation = computation;
     for _ in context {
         computation = arena.computation_lambda(computation);
-        returned = arena.computation_lambda(returned);
     }
     let computation = arena.value_thunk(computation);
-    let returned = arena.value_thunk(returned);
     crate::replay::replay(
         arena,
         unfoldings,
-        ReplaySides::Values(computation, returned),
+        ReplaySides::Values(computation, target),
         EngineClaim::Convertible,
-        evaluation.dialogue.0.iter().copied(),
+        dialogue.0.iter().copied(),
         budget,
     )
 }
 
-/// The checks one higher-evaluation component owes, in its closed telescope.
+/// The checks one evaluation owes in one closed telescope.
 #[derive(Clone, Debug)]
 pub struct ComponentObligation
 {
-    /// The component's pattern telescope, outermost first.
+    /// The telescope the checks stand in, outermost first.
     pub context: Vec<ValueTypeId>,
-    /// Premise evidence, both returned values, then output evidence, each
-    /// with the type it must inhabit.
-    pub checks: [(ValueId, ValueTypeId); 4],
+    /// Each value with the type it must inhabit, in checking order: for a
+    /// higher-evaluation component the premise evidence, both returned values
+    /// and the output evidence; a quantified evaluation owes the premise
+    /// evidence, each applied input and each return's three checks as
+    /// obligations of their own telescopes.
+    pub checks: Vec<(ValueId, ValueTypeId)>,
+}
+
+/// One untrusted step of a quantified evaluation, its dialogues anchored for
+/// replay, in its tree's pre-order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Quantified
+{
+    /// Both sides return, as a higher-evaluation component does.
+    Return
+    {
+        /// Source evaluation, supplied by an untrusted producer.
+        left: Evaluation,
+        /// Target evaluation, supplied by an untrusted producer.
+        right: Evaluation,
+        /// An inhabitant of the output relation, not an equality verdict.
+        proof: ValueId,
+    },
+    /// Both sides reach closed normal forms stuck at an application of the
+    /// functions the premise at `fibre` relates.
+    Apply
+    {
+        /// The premise's de Bruijn index in the step's telescope.
+        fibre: DeBruijnIndex,
+        /// The source side's stuck normal form.
+        left: NormalForm,
+        /// The target side's stuck normal form.
+        right: NormalForm,
+    },
+}
+
+/// An untrusted closed normal form and the engine trace that must reach it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NormalForm
+{
+    /// The claimed normal form, closed: a thunk of one lambda per telescope
+    /// entry.
+    pub normal: ValueId,
+    /// Replay must certify `thunk(λⁿ. computation) = normal`.
+    pub dialogue: Dialogue,
+}
+
+/// One node of a quantified evaluation's pre-order walk: the telescope a step
+/// stands in and the two computations it relates there.
+struct Branch
+{
+    /// The telescope, outermost first.
+    context: Vec<ValueTypeId>,
+    /// The source side's current computation.
+    left: ComputationId,
+    /// The target side's current computation.
+    right: ComputationId,
+}
+
+/// Whether a relation binds a function anywhere beneath it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Order
+{
+    /// No function clause is reachable.
+    First,
+    /// A function clause is reachable.
+    Higher,
+}
+
+/// What a stuck application's result flows into.
+#[derive(Clone, Copy, Debug)]
+enum Continuation
+{
+    /// The application is the whole computation.
+    Tail,
+    /// The application is bound, and this body awaits its result.
+    Bind(ComputationId),
+}
+
+/// A stuck normal form read under its telescope.
+struct Stuck
+{
+    /// The input the function is applied at, under the telescope.
+    input: ValueId,
+    /// What the application's result flows into.
+    continuation: Continuation,
+}
+
+/// The thunk type the premise at `fibre` relates two functions of.
+///
+/// # Specification
+/// - ensures: `T` when the telescope entry `fibre` counts to is `Path(T, x₁,
+///   x₀)` over the two entries just before it — the premise a function
+///   coordinate's coverage binds.
+/// - fails: `QuantifiedStep` naming `component` when the entry is past the
+///   telescope or is not such a premise.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the premise of the quantified witness reads its thunk
+///   type; a fibre counting to a function binder refuses by name.
+/// - witness: `element_identity::tests::a_quantified_evaluation_refuses_what_it_cannot_relate`
+fn premise_classifier(
+    arena: &TermArena,
+    context: &[ValueTypeId],
+    fibre: DeBruijnIndex,
+    component: Component,
+) -> Result<ValueTypeId, RelationError>
+{
+    let refusal = || RelationError::QuantifiedStep(component);
+    let distance = usize::try_from(u32::from(fibre)).map_err(|_error| refusal())?;
+    let position = context
+        .len()
+        .checked_sub(distance.checked_add(1).ok_or_else(refusal)?)
+        .ok_or_else(refusal)?;
+    let entry = *context.get(position).ok_or_else(refusal)?;
+    let Some(&ValueType::Path {
+        domain,
+        left,
+        right,
+    }) = arena.value_type(entry)
+    else {
+        return Err(refusal());
+    };
+    let binds =
+        |value: ValueId, index: DeBruijnIndex| arena.value(value) == Some(&Value::Variable(index));
+    if binds(left, DeBruijnIndex::from(1_u32)) && binds(right, DeBruijnIndex::from(0_u32)) {
+        Ok(domain)
+    }
+    else {
+        Err(refusal())
+    }
+}
+
+/// The indices of the two functions the premise at `fibre` relates.
+///
+/// # Specification
+/// - ensures: the left function two entries outside the premise, the right one
+///   entry outside it, both counted from the step's telescope.
+/// - fails: `QuantifiedStep` naming `component` past the index range.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+fn premise_functions(
+    fibre: DeBruijnIndex,
+    component: Component,
+) -> Result<(DeBruijnIndex, DeBruijnIndex), RelationError>
+{
+    let distance = u32::from(fibre);
+    let left = distance
+        .checked_add(2)
+        .ok_or(RelationError::QuantifiedStep(component))?;
+    let right = distance
+        .checked_add(1)
+        .ok_or(RelationError::QuantifiedStep(component))?;
+    Ok((DeBruijnIndex::from(left), DeBruijnIndex::from(right)))
+}
+
+/// Read a closed normal form as an application of the function at `under.1`,
+/// stuck beneath the telescope `under.0`.
+///
+/// # Specification
+/// - ensures: the input and continuation when `normal` is a thunk of one lambda
+///   per telescope entry over `force f a` or `x ← force f a; K` with `f` the
+///   variable `under.1`.
+/// - fails: `QuantifiedStep` naming `component` for any other form.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a tail application and a bound one both read; a form
+///   applying the other function refuses by name.
+/// - witness: `element_identity::tests::a_quantified_evaluation_replays_under_the_quantifier`
+/// - witness: `element_identity::tests::a_quantified_evaluation_refuses_what_it_cannot_relate`
+fn stuck(
+    arena: &TermArena,
+    normal: ValueId,
+    under: (&[ValueTypeId], DeBruijnIndex),
+    component: Component,
+) -> Result<Stuck, RelationError>
+{
+    let (context, head) = under;
+    let refusal = RelationError::QuantifiedStep(component);
+    let Some(&Value::Thunk(mut body)) = arena.value(normal)
+    else {
+        return Err(refusal);
+    };
+    for _ in context {
+        let Some(&Computation::Lambda(inner)) = arena.computation(body)
+        else {
+            return Err(refusal);
+        };
+        body = inner;
+    }
+    let (application, continuation) = match arena.computation(body) {
+        | Some(&Computation::Bind(bound, rest)) => (bound, Continuation::Bind(rest)),
+        | _ => (body, Continuation::Tail),
+    };
+    let Some(&Computation::Application(forced, input)) = arena.computation(application)
+    else {
+        return Err(refusal);
+    };
+    let Some(&Computation::Force(function)) = arena.computation(forced)
+    else {
+        return Err(refusal);
+    };
+    if arena.value(function) != Some(&Value::Variable(head)) {
+        return Err(refusal);
+    }
+    Ok(Stuck {
+        input,
+        continuation,
+    })
+}
+
+/// The computation a stuck side continues as once its application returns
+/// `output.0`, beneath `output.1` more binders.
+///
+/// # Specification
+/// - requires: `output.0` stands under the step's telescope extended by
+///   `output.1` binders; a bound continuation stands under the telescope and
+///   its own binder.
+/// - ensures: `return o` for a tail application; for a bound one, its body
+///   weakened past the extension above its own binder, then instantiated at
+///   `o`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a twice-applied body reads its second application at the
+///   first's output; a misplaced shift changes the replayed claim.
+/// - witness: `element_identity::tests::a_quantified_evaluation_replays_under_the_quantifier`
+fn resume(
+    arena: &mut TermArena,
+    table: &mut ContentTable,
+    continuation: Continuation,
+    output: (ValueId, BinderDepth),
+) -> ComputationId
+{
+    let (value, extension) = output;
+    match continuation {
+        | Continuation::Tail => arena.computation_return(value),
+        | Continuation::Bind(body) => {
+            let weakened = shift_computation(
+                arena,
+                table,
+                &mut NullMemo,
+                body,
+                BinderDepth::from(1_u32),
+                extension,
+            );
+            substitute_computation(arena, table, &mut NullMemo, weakened, value)
+        },
+    }
 }

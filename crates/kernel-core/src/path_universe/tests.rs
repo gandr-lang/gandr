@@ -134,7 +134,8 @@ fn children(
             | Value::Here { .. }
             | Value::Returned(_)
             | Value::Higher { .. }
-            | Value::HigherEvaluation { .. } => {
+            | Value::HigherEvaluation { .. }
+            | Value::QuantifiedEvaluation { .. } => {
                 panic!("element identity is outside the universe-path fixture fragment")
             },
             | Value::PathEquiv {
@@ -432,7 +433,8 @@ fn translate(
                     | Value::Here { .. }
                     | Value::Returned(_)
                     | Value::Higher { .. }
-                    | Value::HigherEvaluation { .. } => {
+                    | Value::HigherEvaluation { .. }
+                    | Value::QuantifiedEvaluation { .. } => {
                         panic!("element identity is outside the universe-path fixture fragment")
                     },
                     | Value::PathRefl(code) => core.value_path_refl(values[&code]),
