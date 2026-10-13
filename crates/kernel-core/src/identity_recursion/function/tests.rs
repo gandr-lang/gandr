@@ -601,7 +601,7 @@ fn lambda_reflexivity_replays_higher_evaluation()
         .expect("function reflexivity");
     assert!(matches!(
         reflexive.native_evidence().map(|proof| arena.value(proof)),
-        Ok(Some(&Value::Here(point))) if point == boolean.not
+        Ok(Some(&Value::Here { point, .. })) if point == boolean.not
     ));
     assert_eq!(
         family

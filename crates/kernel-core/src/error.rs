@@ -906,6 +906,7 @@ mod tests
     use super::NonInferableForm;
     use super::RegisterFault;
     use super::ValueTypeMismatch;
+    use crate::element_identity::EndpointSide;
     use crate::element_identity::IdentityError;
     use crate::env::Environment;
     use crate::env::OutstandingCount;
@@ -1015,6 +1016,8 @@ mod tests
             KernelError::Identity(IdentityError::EndpointsDiffer {
                 left: ContentDigest::default(),
                 right: ContentDigest::default(),
+                side: EndpointSide::Left,
+                verdict: KernelVerdict::NotConvertible,
             }),
             KernelError::Identity(IdentityError::NeutralFibre),
             KernelError::Identity(IdentityError::EmptyFibre),
@@ -1037,10 +1040,6 @@ mod tests
             }),
             KernelError::Identity(IdentityError::OpenFunctions),
             KernelError::Identity(IdentityError::ReturnedNonReturner(unit_returner)),
-            KernelError::Identity(IdentityError::EndpointsUnreplayed {
-                left: ContentDigest::default(),
-                right: ContentDigest::default(),
-            }),
             KernelError::Identity(IdentityError::NotOver {
                 expected: unit,
                 actual: unit,

@@ -108,7 +108,6 @@ use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::ArenaWatermark;
 use gandr_kernel_term::CompType;
 use gandr_kernel_term::Computation;
-use gandr_kernel_term::ComputationId;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::Declaration;
 use gandr_kernel_term::DeclarationBuilder;
@@ -1811,7 +1810,7 @@ fn collect_reachable(
                     pending.push(AnyNode::ValueType(path_type));
                     pending.push(AnyNode::Value(payload_paths));
                 },
-                | Some(&Value::PathRefl(code) | &Value::Here(code)) => {
+                | Some(&Value::PathRefl(code) | &Value::Here { point: code, .. }) => {
                     pending.push(AnyNode::Value(code));
                 },
                 | Some(&Value::Higher { ref evidence, .. }) => {
@@ -2081,32 +2080,6 @@ pub(crate) fn projected_atoms(
 ) -> BTreeSet<ConstantIndex>
 {
     collect_reachable(arena, AnyNode::ValueType(root), CodeEdges::Stop)
-}
-
-/// The constants a computation names, codes not followed.
-///
-/// # Specification
-/// - requires: nothing — an unreadable id contributes nothing.
-/// - ensures: every constant and sealed atom reachable from `root`, the walk
-///   not crossing from a decoding former into its code.
-/// - provides: the definitions a suspended endpoint reading would still have to
-///   unfold.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a thunk body naming a defined constant owes its unfolding
-///   and one naming only an axiom does not, which separates the reflexivity
-///   decline from a refutation.
-/// - witness: `element_identity::tests::an_endpoint_owing_an_unfolding_under_a_thunk_is_declined_by_name`
-#[spec(ensures: |ret| arena.computation(root).is_some() || ret.is_empty())]
-#[inline]
-pub(crate) fn computation_constants(
-    arena: &TermArena,
-    root: ComputationId,
-) -> BTreeSet<ConstantIndex>
-{
-    collect_reachable(arena, AnyNode::Computation(root), CodeEdges::Stop)
 }
 
 #[cfg(test)]

@@ -468,7 +468,7 @@ fn worst(
                 },
                 | Some(
                     &(Value::PathRefl(body)
-                    | Value::Here(body)
+                    | Value::Here { point: body, .. }
                     | Value::Injection(_, body)
                     | Value::Lift { body, .. }),
                 ) => {

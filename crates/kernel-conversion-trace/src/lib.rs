@@ -58,7 +58,8 @@
 //! pair.
 //!
 //! **Choice.** One decision alphabet for ordinary conversion and the
-//! computations that native paths, higher fields, funext and `Flow_U` replay.
+//! computations that native paths, higher fields, funext, reflexivity's
+//! endpoints and `Flow_U` replay.
 //! **Alternative.** A separate certificate protocol, which would duplicate
 //! side, decomposition and negative-premise semantics. **Reversal.** A
 //! consumer needing a new payload defines its replay rule and framing without

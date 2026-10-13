@@ -95,6 +95,7 @@ use gandr_kernel_term::ConstantIndex;
 use quenchant_shape::shape::Maybe;
 
 use crate::code::Lift;
+use crate::code::Reflexivity;
 use crate::context::CheckingContext;
 use crate::declaration::AbstractType;
 use crate::declaration::Declaration;
@@ -219,6 +220,8 @@ pub struct ModuleReport
     funexts: BTreeMap<ValueId, Funext>,
     /// The universe equivalences the run decided, by node.
     equivalences: BTreeMap<ValueId, Equivalence>,
+    /// The reflexivities the run checked, by node.
+    reflexivities: BTreeMap<ValueId, Reflexivity>,
     /// The body each accepted declaration defines its constant as, elaborated
     /// to the universe it was declared at, by position.
     definitions: BTreeMap<ConstantIndex, ValueId>,
@@ -326,6 +329,18 @@ impl ModuleReport
     pub const fn equivalences(&self) -> &BTreeMap<ValueId, Equivalence>
     {
         &self.equivalences
+    }
+
+    /// The reflexivities the run checked, by node, with the dialogues relating
+    /// each point to its endpoints.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn reflexivities(&self) -> &BTreeMap<ValueId, Reflexivity>
+    {
+        &self.reflexivities
     }
 
     /// The body each accepted declaration defines its constant as: its body,
@@ -683,6 +698,7 @@ pub fn check_declaration_supported(
     && &ret.lifts == context.lifts()
     && &ret.funexts == context.funexts()
     && &ret.equivalences == context.equivalences()
+    && &ret.reflexivities == context.reflexivities()
     && ret.definitions.iter().map(|(&constant, &body)| (constant, body))
         .eq(context.definitions().definitions())
     && ret.failures.iter().all(|(constant, failure)|
@@ -718,6 +734,7 @@ pub fn check_module(
         lifts: context.lifts().clone(),
         funexts: context.funexts().clone(),
         equivalences: context.equivalences().clone(),
+        reflexivities: context.reflexivities().clone(),
         definitions: context.definitions().definitions().collect(),
         data_signatures: context.data_signatures().clone(),
         abstract_types: context.abstract_types().collect(),

@@ -1,7 +1,8 @@
 //! Inline payloads of the persisted identity nodes: the guarded program of a
-//! higher field and the replay dialogues of a higher evaluation.
+//! higher field, the replay dialogues of a higher evaluation and the endpoint
+//! dialogues of a reflexivity.
 //!
-//! Both are untrusted data. The reader checks their framing, never their
+//! All three are untrusted data. The reader checks their framing, never their
 //! meaning: a guard's evidence is checked, a cycle's productivity decided and a
 //! dialogue replayed by the kernel, which owns every verdict.
 
@@ -163,4 +164,60 @@ pub struct EvaluationComponent
     pub right: crate::ValueId,
     /// An inhabitant of the output identity between the two.
     pub evidence: crate::ValueId,
+}
+
+/// The two replay dialogues of a reflexivity: its point against each endpoint
+/// of the identity it is checked at.
+///
+/// # Specification
+/// - provides: the conversion trace the checker kept between the point and the
+///   left endpoint, then the right one; empty where the two are the same term.
+/// - panics: none.
+/// - executable: none — framing data; the kernel replays each dialogue and owns
+///   the verdict.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the round trip retains both sides and every decision, and
+///   a dialogue naming an unfolding the endpoint does not hold is refused by
+///   the kernel's replay.
+/// - witness: `decode::tests::identity_nodes_round_trip_and_refuse_their_malformed_sites`
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+pub struct EndpointDialogues
+{
+    /// Certifies that the point converts with the left endpoint.
+    pub left: Dialogue,
+    /// Certifies that the point converts with the right endpoint.
+    pub right: Dialogue,
+}
+
+/// Stream a reflexivity's canonical inline payload without allocating an
+/// image.
+///
+/// # Specification
+/// - requires: nothing; the dialogues are still untrusted.
+/// - ensures: the left dialogue, then the right, each as a decision count
+///   followed by the decision words of the universe-path evidence alphabet.
+/// - provides: identical payload content for the wire and memo encoders.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — framing is a law of subsequent iterator consumption;
+///   checking the opaque iterator here would consume it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the round trip retains both sides, an empty dialogue
+///   beside a non-empty one, and every decision.
+/// - witness: `decode::tests::identity_nodes_round_trip_and_refuse_their_malformed_sites`
+#[inline]
+pub fn endpoint_words(
+    dialogues: &EndpointDialogues
+) -> impl Iterator<Item = crate::EvidenceWord> + '_
+{
+    [&dialogues.left, &dialogues.right]
+        .into_iter()
+        .flat_map(|dialogue| {
+            core::iter::once(crate::EvidenceWord(u64::from(crate::wire::WireU64::from(
+                crate::wire::WireUsize::from(dialogue.len()),
+            ))))
+            .chain(dialogue.iter().copied().map(crate::term::decision_word))
+        })
 }

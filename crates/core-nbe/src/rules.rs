@@ -170,8 +170,12 @@ pub enum Head
     Frozen(ConstantIndex),
     /// A defined constant the goal may unfold.
     Defined(ConstantIndex),
-    /// A hole or a mark: what it stands for is not decided, so nothing the
-    /// goal finds is a verdict.
+    /// A held endpoint whose computation is stuck on a defined constant the
+    /// goal may unfold: the endpoint's only rule is that unfolding.
+    Endpoint(ConstantIndex),
+    /// A hole or a mark, or an endpoint with no unfolding left to the goal:
+    /// what it stands for is not decided here, so nothing the goal finds is a
+    /// verdict.
     Indeterminate,
 }
 
@@ -623,8 +627,9 @@ pub const fn other(side: ConversionSide) -> ConversionSide
 /// - requires: nothing.
 /// - ensures: [`Head::Indeterminate`] for a hole or a mark; [`Head::Rigid`] for
 ///   a variable, a module form, or a constant with a rigid unfolding face;
-///   otherwise [`Head::Frozen`] when the goal froze the constant on `side` and
-///   [`Head::Defined`] when it did not.
+///   [`Head::Frozen`] when the goal froze the constant on `side` and
+///   [`Head::Defined`] when it did not; for a returned endpoint, the reading
+///   [`endpoint_head`] gives its computation.
 /// - provides: the one reading of "may this goal unfold this head".
 /// - fails: [`ConversionFault::Domain`] when the neutral does not resolve.
 /// - panics: none.
@@ -637,9 +642,10 @@ pub const fn other(side: ConversionSide) -> ConversionSide
 ///   the other; an opaque occurrence of the same constant remains rigid, and
 ///   truncation refuses the head. Confusing side-local freezing with the
 ///   unfolding face changes classification. A hole head reads as indeterminate,
-///   never rigid.
+///   never rigid, and a held endpoint reads as the definition it is stuck on.
 /// - witness: `rules::tests::freezing_is_idempotent_and_local_to_one_side`
 /// - witness: `live::tests::a_comparison_that_meets_a_hole_declines`
+/// - witness: `machine::tests::a_held_endpoint_unfolds_by_a_recorded_step`
 #[spec(ensures: |ret| domain.neutral(neutral).map_or_else(
     || ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
     |node| match (node.head(), node.unfolding()) {
@@ -647,7 +653,8 @@ pub const fn other(side: ConversionSide) -> ConversionSide
             ret == Ok(if frozen.holds(side, constant) == Membership::Held {
                 Head::Frozen(constant)
             } else { Head::Defined(constant) }),
-        (NeutralHead::Hole { .. } | NeutralHead::Mark { .. } | NeutralHead::Returned(_), _) => ret == Ok(Head::Indeterminate),
+        (NeutralHead::Hole { .. } | NeutralHead::Mark { .. }, _) => ret == Ok(Head::Indeterminate),
+        (NeutralHead::Returned(computation), _) => ret == endpoint_head(domain, frozen, side, computation),
         _ => ret == Ok(Head::Rigid),
     },
 ))]
@@ -670,9 +677,72 @@ pub fn head(
         },
         | (NeutralHead::Constant(_), Unfolding::Rigid)
         | (NeutralHead::Variable { .. } | NeutralHead::Module(_), _) => Head::Rigid,
-        | (NeutralHead::Hole { .. } | NeutralHead::Mark { .. } | NeutralHead::Returned(_), _) => {
-            Head::Indeterminate
+        | (NeutralHead::Hole { .. } | NeutralHead::Mark { .. }, _) => Head::Indeterminate,
+        | (NeutralHead::Returned(computation), _) => {
+            return endpoint_head(domain, frozen, side, computation);
         },
+    })
+}
+
+/// What a returned endpoint over `computation` is to a goal with `frozen` on
+/// `side`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`Head::Endpoint`] when `computation` is a neutral headed by a
+///   constant whose body is at hand — unforced, or forced to a value — and the
+///   goal has not frozen it on `side`; [`Head::Indeterminate`] otherwise.
+/// - provides: the held endpoint's reading: only a [`crate::Endpoints::Hold`]
+///   run leaves a computation stuck on a definition it could unfold, and the
+///   goal's one rule there is that unfolding. An endpoint stuck where no
+///   unfolding of this goal reaches decides nothing.
+/// - fails: [`ConversionFault::Domain`] when a node does not resolve.
+/// - panics: none.
+///
+/// # Errors
+/// - [`ConversionFault::Domain`] — a node does not resolve.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an endpoint held at a definition unfolds by a recorded
+///   step the kernel replays, while an endpoint stuck on a hole still declines;
+///   reading the first as indeterminate declines the conversion, and reading
+///   the second as an endpoint unfolds what has no body.
+/// - witness: `machine::tests::a_held_endpoint_unfolds_by_a_recorded_step`
+/// - witness: `live::tests::a_comparison_that_meets_a_hole_declines`
+#[spec(ensures: |ret| match domain.computation(computation) {
+    | None => ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
+    | Some(&DomainComp::Neutral { neutral, .. }) => match domain.neutral(neutral) {
+        | None => ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
+        | Some(node) => match (node.head(), node.unfolding()) {
+            (NeutralHead::Constant(constant), Unfolding::Unforced(_) | Unfolding::Forced(Glued::Value(_)))
+                if frozen.holds(side, constant) == Membership::Absent => ret == Ok(Head::Endpoint(constant)),
+            _ => ret == Ok(Head::Indeterminate),
+        },
+    },
+    | Some(_) => ret == Ok(Head::Indeterminate),
+})]
+fn endpoint_head(
+    domain: &DomainArena,
+    frozen: &Frozen,
+    side: ConversionSide,
+    computation: DomainCompId,
+) -> Result<Head, ConversionFault>
+{
+    let DomainComp::Neutral { neutral, .. } = *domain
+        .computation(computation)
+        .ok_or(ConversionFault::Domain(DomainFault::Dangling))?
+    else {
+        return Ok(Head::Indeterminate);
+    };
+    let held = domain
+        .neutral(neutral)
+        .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
+    Ok(match (held.head(), held.unfolding()) {
+        | (
+            NeutralHead::Constant(constant),
+            Unfolding::Unforced(_) | Unfolding::Forced(Glued::Value(_)),
+        ) if frozen.holds(side, constant) == Membership::Absent => Head::Endpoint(constant),
+        | _ => Head::Indeterminate,
     })
 }
 
@@ -1005,11 +1075,15 @@ enum Constants
 /// # Specification
 /// - requires: `lambda` names the side holding a lambda when the pair is a
 ///   computation pair with one; [`Lambda::Neither`] otherwise.
-/// - ensures: [`Constants::Planned`] with the §6.1 rule for the two heads when
-///   either is [`Head::Defined`], the §6.2 choice for a lambda against a
-///   defined computation, and a forced unfolding of the defined side against
-///   anything else; [`Constants::NoneDefined`] when neither head is defined.
-/// - provides: the constant half of the table, shared by both polarities.
+/// - ensures: [`Constants::Planned`] with a forced unfolding of a held
+///   endpoint's definition, the left before the right, when either head is
+///   [`Head::Endpoint`]; otherwise the §6.1 rule for the two heads when either
+///   is [`Head::Defined`], the §6.2 choice for a lambda against a defined
+///   computation, and a forced unfolding of the defined side against anything
+///   else; [`Constants::NoneDefined`] when neither head is defined or held.
+/// - provides: the constant half of the table, shared by both polarities. A
+///   held endpoint offers no choice: its computation runs only by that
+///   unfolding, so the step is forced and recorded as one.
 /// - fails: [`ConversionFault::Domain`] when a neutral does not resolve.
 /// - panics: none.
 ///
@@ -1018,14 +1092,22 @@ enum Constants
 ///
 /// # Adequacy
 /// - hypothesis: L2 — equal and different defined heads select different
-///   unfolding choices, a defined head meets a lambda through frozen eta, and a
-///   defined head against a former must unfold; ignoring a defined side or
-///   choosing the wrong side changes the winning trace.
+///   unfolding choices, a defined head meets a lambda through frozen eta, a
+///   defined head against a former must unfold, and a held endpoint unfolds
+///   before any choice; ignoring a defined side or choosing the wrong side
+///   changes the winning trace.
 /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
 /// - witness: `machine::tests::a_lambda_meets_a_defined_function_by_eta`
+/// - witness: `machine::tests::a_held_endpoint_unfolds_by_a_recorded_step`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |planned|
     matches!(planned, Constants::NoneDefined) != matches!(heads,
-        (Neutrality::Neutral(_, Head::Defined(_)), _) | (_, Neutrality::Neutral(_, Head::Defined(_))))))]
+        (Neutrality::Neutral(_, Head::Defined(_) | Head::Endpoint(_)), _)
+        | (_, Neutrality::Neutral(_, Head::Defined(_) | Head::Endpoint(_))))
+    && match heads {
+        (Neutrality::Neutral(_, Head::Endpoint(_)), _) => *planned == Constants::Planned(Plan::Step(Step::Unfold(ConversionSide::Left))),
+        (_, Neutrality::Neutral(_, Head::Endpoint(_))) => *planned == Constants::Planned(Plan::Step(Step::Unfold(ConversionSide::Right))),
+        _ => true,
+    }))]
 fn plan_constants(
     domain: &DomainArena,
     heads: (Neutrality, Neutrality),
@@ -1040,6 +1122,12 @@ fn plan_constants(
         arity = same_arity(domain, left_neutral, right_neutral)?;
     }
     let planned = match (left, right) {
+        | (Neutrality::Neutral(_, Head::Endpoint(_)), _) => {
+            Plan::Step(Step::Unfold(ConversionSide::Left))
+        },
+        | (_, Neutrality::Neutral(_, Head::Endpoint(_))) => {
+            Plan::Step(Step::Unfold(ConversionSide::Right))
+        },
         | (
             Neutrality::Neutral(_, Head::Defined(one)),
             Neutrality::Neutral(_, Head::Defined(other)),
@@ -1387,9 +1475,15 @@ const fn determinacy(
         | (_, Neutrality::Neutral(_, Head::Indeterminate)) => Determinacy::Indeterminate,
         | (
             Neutrality::Former
-            | Neutrality::Neutral(_, Head::Rigid | Head::Frozen(_) | Head::Defined(_)),
+            | Neutrality::Neutral(
+                _,
+                Head::Rigid | Head::Frozen(_) | Head::Defined(_) | Head::Endpoint(_),
+            ),
             Neutrality::Former
-            | Neutrality::Neutral(_, Head::Rigid | Head::Frozen(_) | Head::Defined(_)),
+            | Neutrality::Neutral(
+                _,
+                Head::Rigid | Head::Frozen(_) | Head::Defined(_) | Head::Endpoint(_),
+            ),
         ) => Determinacy::Determinate,
     }
 }

@@ -47,6 +47,29 @@
 //! *head's* body, and forcing it means unfolding the head and re-applying the
 //! spine, which stays well defined however long the spine grows.
 //!
+//! # Compound endpoints run, or hold for the conversion
+//!
+//! A compound endpoint — a computation standing where a value is read —
+//! stands for what it returns, so under [`Endpoints::Run`] its computation
+//! runs through every manifest definition it is stuck on, inside evaluation.
+//! Under [`Endpoints::Hold`] a computation stuck on a manifest definition stops
+//! there: the endpoint stays a neutral headed by that definition, and the
+//! conversion machine unfolds it as it unfolds any constant, by a recorded
+//! `Unfold` and the reduction naming its side.
+//!
+//! **Choice.** A conversion whose trace a kernel replays holds its endpoints:
+//! a δ-step taken inside evaluation leaves no decision, and the kernel unfolds
+//! only what a decision names, so a run would admit an endpoint the replay
+//! refuses — every δ-step under a binder of an endpoint among them.
+//! **Alternatives.** Re-emitting the steps evaluation took as decisions, which
+//! records a derivation the machine did not perform; δ-steps under binders in
+//! the kernel's own conversion, a search the trusted base does not take.
+//! **Reversal.** A kernel that runs compound endpoints by its own evaluator at
+//! every position, binders included, would read the run's steps itself, and
+//! the stance would serve only the runs that keep no trace. The witnesses are
+//! `eval::tests::a_held_endpoint_stays_at_its_definition` and
+//! `machine::tests::a_held_endpoint_unfolds_by_a_recorded_step`.
+//!
 //! # Source sharing is expanded unless the policy handed a leg over
 //!
 //! A core term is a DAG, and this machine walks it as a tree: a node reached
@@ -566,7 +589,8 @@ impl LoweredChain
 ///
 /// The three travel together because the answer to "is this definition manifest
 /// here" needs all three, and splitting them across parameters is how a call
-/// site ends up asking the root scope by accident.
+/// site ends up asking the root scope by accident. The endpoint stance travels
+/// with them because it, too, decides where a definition unfolds.
 #[derive(Clone, Copy, Debug)]
 pub struct Definitions<'run>
 {
@@ -576,17 +600,34 @@ pub struct Definitions<'run>
     environment: &'run DefinitionalEnvironment,
     /// The scope this run reads from.
     scope: ScopeId,
+    /// How a compound endpoint's computation reads.
+    endpoints: Endpoints,
+}
+
+/// How a run reads a compound endpoint's computation.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Endpoints
+{
+    /// The computation runs on through every manifest definition it is stuck
+    /// on, until it returns or sticks on a rigid head.
+    Run,
+    /// The computation holds at the first manifest definition it is stuck on:
+    /// the endpoint stays a neutral until a conversion unfolds that
+    /// definition, as a step its trace records.
+    Hold,
 }
 
 impl<'run> Definitions<'run>
 {
-    /// Read `chain` from `scope` of `environment`.
+    /// Read `chain` from `scope` of `environment`, running compound endpoints
+    /// through their definitions.
     ///
     /// # Specification
     /// - requires: `environment` was built over `chain`; every scope id is
     ///   admissible, and an unknown scope reads as unfolding nothing.
     /// - ensures: the three travel together thereafter, so no later call can
-    ///   pair a chain with another run's scope.
+    ///   pair a chain with another run's scope; the endpoint stance is
+    ///   [`Endpoints::Run`].
     /// - provides: the one bundle every unfolding question is asked of, which
     ///   is what keeps a call site from reaching the root scope by accident.
     /// - fails: never.
@@ -603,7 +644,7 @@ impl<'run> Definitions<'run>
     #[spec(
         ensures: |ret| core::ptr::eq(core::ptr::from_ref(ret.chain), core::ptr::from_ref(chain))
             && core::ptr::eq(core::ptr::from_ref(ret.environment), core::ptr::from_ref(environment))
-            && ret.scope == scope,
+            && ret.scope == scope && ret.endpoints == Endpoints::Run,
     )]
     pub fn new(
         chain: &'run LoweredChain,
@@ -615,7 +656,51 @@ impl<'run> Definitions<'run>
             chain,
             environment,
             scope,
+            endpoints: Endpoints::Run,
         }
+    }
+
+    /// The same definitions, reading compound endpoints in `endpoints`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the chain, the environment and the scope unchanged, the
+    ///   endpoint stance `endpoints`.
+    /// - provides: the stance a traced endpoint comparison runs in: under
+    ///   [`Endpoints::Hold`] every δ-step an endpoint takes is a conversion's
+    ///   recorded `Unfold`, never an evaluation's silent one.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one endpoint applying a definition to a variable
+    ///   evaluates to the variable under the running stance and to a held
+    ///   neutral under the holding one; a stance that does not reach the
+    ///   evaluation loses that distinction.
+    /// - witness: `eval::tests::a_held_endpoint_stays_at_its_definition`
+    #[inline]
+    #[must_use]
+    #[spec(
+        ensures: |ret| core::ptr::eq(core::ptr::from_ref(ret.chain), core::ptr::from_ref(self.chain))
+            && core::ptr::eq(core::ptr::from_ref(ret.environment), core::ptr::from_ref(self.environment))
+            && ret.scope == self.scope && ret.endpoints == endpoints,
+    )]
+    pub fn reading_endpoints(
+        self,
+        endpoints: Endpoints,
+    ) -> Self
+    {
+        Self { endpoints, ..self }
+    }
+
+    /// How this run reads a compound endpoint's computation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn endpoints(&self) -> Endpoints
+    {
+        self.endpoints
     }
 
     /// Each body's core value, keyed by its canonical entry index.
@@ -2287,6 +2372,59 @@ impl<'run> Evaluation<'run>
     {
         let mut machine = Machine::new(definitions, Fuel(0_u32));
         let answer = push_eliminations(&mut machine, spine);
+        machine.values.push(head);
+        Self { machine, answer }
+    }
+
+    /// An evaluation of a held endpoint once the definition its computation
+    /// is stuck on unfolds: `inner` re-applied to `head`, the computation that
+    /// gives delivered as the endpoint's value, and `outer` applied to that.
+    ///
+    /// # Specification
+    /// - requires: `inner` is the spine of the neutral computation the endpoint
+    ///   holds, so it is non-empty, its first elimination eliminates a value
+    ///   and the last leaves a computation; `outer` is the endpoint's own
+    ///   spine.
+    /// - ensures: an evaluation whose stacks hold `head` alone and whose tasks
+    ///   run `inner`'s eliminations, then one delivery of the returned value,
+    ///   then `outer`'s; its answer is a value when every elimination of
+    ///   `outer` is a static application, a computation otherwise.
+    /// - provides: the unfolding of a held endpoint, `E[c]` with `c` stuck on a
+    ///   definition: the definition's body stands where it stood, the endpoint
+    ///   delivers what `c` then returns, and `E` runs on it.
+    /// - fails: never here; an ill-shaped spine is refused by the slice that
+    ///   reaches it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a held endpoint nested under a force and an
+    ///   application unfolds to the value its definition returns and runs the
+    ///   force on it, and the kernel replays the recorded unfolding at the
+    ///   endpoint's head; dropping the delivery or the outer spine changes the
+    ///   verdict or the replay.
+    /// - witness: `machine::tests::a_held_endpoint_unfolds_by_a_recorded_step`
+    #[spec(
+        requires: matches!(inner.first(), Some(Elimination::ListFold { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::Force | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint(_))),
+        ensures: |ret| ret.machine.values.as_slice() == [head] && ret.machine.comps.is_empty()
+            && ret.machine.fuel.0 == 0_u32
+            && ret.machine.tasks.iter().filter(|task| matches!(task, Task::Returned)).count() == 1_usize
+            && ret.answer == if outer.iter().all(|elimination| matches!(elimination, Elimination::StaticApply(_))) {
+                Answer::Value
+            } else {
+                Answer::Computation
+            },
+    )]
+    pub(crate) fn endpoint(
+        definitions: Definitions<'run>,
+        head: DomainValueId,
+        inner: &[Elimination],
+        outer: &[Elimination],
+    ) -> Self
+    {
+        let mut machine = Machine::new(definitions, Fuel(0_u32));
+        let answer = push_eliminations(&mut machine, outer);
+        machine.tasks.push(Task::Returned);
+        let _computation = push_eliminations(&mut machine, inner);
         machine.values.push(head);
         Self { machine, answer }
     }
@@ -4777,19 +4915,22 @@ fn push_eliminations(
 }
 
 /// Deliver the value a compound endpoint's computation returns, running a
-/// computation stuck on a manifest definition on through that definition.
+/// computation stuck on a manifest definition on through that definition
+/// when the run's stance is [`Endpoints::Run`].
 ///
 /// # Specification
 /// - requires: nothing; a dangling id is refused.
-/// - ensures: a computation stuck on a neutral whose head has a body here —
-///   forced already, or lowered in this run's chain — queues the head's body,
-///   the neutral's spine over it and this delivery again, so the endpoint runs
-///   on until it returns or sticks on a rigid head; any other computation
+/// - ensures: under [`Endpoints::Run`], a computation stuck on a neutral whose
+///   head has a body here — forced already, or lowered in this run's chain —
+///   queues the head's body, the neutral's spine over it and this delivery
+///   again, so the endpoint runs on until it returns or sticks on a rigid head;
+///   any other computation, and every computation under [`Endpoints::Hold`],
 ///   delivers [`returned_value`] at once.
 /// - provides: the reading of a compound endpoint as what its computation
 ///   returns: `dbl(x)` and `x + x` are one endpoint once `dbl` unfolds. The run
 ///   is strict where a value position is lazy, because an endpoint is compared
-///   by its returned value, and the driver's fuel bounds it.
+///   by its returned value, and the driver's fuel bounds it. A held endpoint
+///   leaves that unfolding to the conversion, which records it.
 /// - fails: as [`returned_value`].
 /// - panics: none.
 ///
@@ -4800,14 +4941,16 @@ fn push_eliminations(
 /// - hypothesis: L3 — an endpoint applying a definition to a variable runs to
 ///   the variable, and an endpoint stuck on native addition over a variable
 ///   stays the compound endpoint; skipping the unfolding or the spine changes
-///   the read-back term.
+///   the read-back term. Under the holding stance the same definition stays the
+///   endpoint's head.
 /// - witness: `identity::tests::a_compound_endpoint_runs_through_a_definition`
 /// - witness: `identity::tests::a_compound_endpoint_stands_for_what_it_returns`
+/// - witness: `eval::tests::a_held_endpoint_stays_at_its_definition`
 #[spec(
     captures: [entry_tasks = machine.tasks.len(), entry_values = machine.values.len()],
     ensures: |ret| ret.is_err()
         || (machine.tasks.len() == entry_tasks && machine.values.len() == entry_values.saturating_add(1_usize))
-        || machine.tasks.len() > entry_tasks,
+        || (machine.definitions.endpoints() == Endpoints::Run && machine.tasks.len() > entry_tasks),
 )]
 fn resume_returned(
     domain: &mut DomainArena,
@@ -4815,9 +4958,10 @@ fn resume_returned(
     produced: DomainCompId,
 ) -> Result<(), EvalFault>
 {
-    if let DomainComp::Neutral { neutral, .. } = *domain
-        .computation(produced)
-        .ok_or(EvalFault::Domain(DomainFault::Dangling))?
+    if machine.definitions.endpoints() == Endpoints::Run
+        && let DomainComp::Neutral { neutral, .. } = *domain
+            .computation(produced)
+            .ok_or(EvalFault::Domain(DomainFault::Dangling))?
     {
         let held = domain
             .neutral(neutral)
@@ -5263,6 +5407,7 @@ mod tests
 
     use super::Bound;
     use super::Definitions;
+    use super::Endpoints;
     use super::EvalFault;
     use super::Evaluation;
     use super::Fuel;
@@ -6177,6 +6322,77 @@ mod tests
         assert!(
             held.spine().is_empty(),
             "and stands in a value position, so it carries no spine"
+        );
+    }
+
+    #[test]
+    fn a_held_endpoint_stays_at_its_definition()
+    {
+        // `ident(unit)` as a compound endpoint, `ident` the manifest identity.
+        let mut core = CoreArena::new();
+        let constant = ConstantIndex::from(0_usize);
+        let reference = core.value_constant(constant);
+        let variable = core.value_variable(Zone::Intuitionistic, innermost());
+        let returned = core.computation_return(variable);
+        let lambda = core.computation_lambda(returned);
+        let identity = core.value_thunk(lambda);
+        let unit = core.value_unit();
+        let forced = core.computation_force(reference);
+        let applied = core.computation_application(forced, unit);
+        let endpoint = core.value_returned(applied);
+
+        let mut chain = DefinitionChain::new();
+        let defined = chain.define(
+            constant,
+            GlobalIndex::from(9_u32),
+            Transparency::Manifest,
+            &[],
+        );
+        assert!(defined.is_ok());
+        let chain = lowered_to(chain, identity);
+        let environment = DefinitionalEnvironment::new();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+
+        let mut domain = DomainArena::new();
+        let ran = eval_value(&core, &mut domain, definitions, ample(), endpoint)
+            .expect("the running endpoint evaluates");
+        assert_eq!(
+            Some(TermFace::Source(unit)),
+            domain.value(ran).map(DomainValue::face),
+            "run, the endpoint unfolds `ident` and stands for the unit it returns"
+        );
+
+        let held = eval_value(
+            &core,
+            &mut domain,
+            definitions.reading_endpoints(Endpoints::Hold),
+            ample(),
+            endpoint,
+        )
+        .expect("the held endpoint evaluates");
+        let Some(&DomainValue::Neutral { neutral, .. }) = domain.value(held)
+        else {
+            panic!("a held endpoint is a neutral");
+        };
+        let Some(NeutralHead::Returned(computation)) =
+            domain.neutral(neutral).map(crate::domain::Neutral::head)
+        else {
+            panic!("headed by the computation it holds");
+        };
+        let Some(&DomainComp::Neutral { neutral: inner, .. }) = domain.computation(computation)
+        else {
+            panic!("which is stuck");
+        };
+        let inner = domain
+            .neutral(inner)
+            .expect("the computation's neutral resolves");
+        assert_eq!(
+            (
+                NeutralHead::Constant(constant),
+                Unfolding::Unforced(GlobalIndex::from(9_u32))
+            ),
+            (inner.head(), inner.unfolding()),
+            "held, the endpoint waits on `ident`, its body unforced"
         );
     }
 

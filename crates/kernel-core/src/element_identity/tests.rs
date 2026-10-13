@@ -18,6 +18,7 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::DeclarationContent;
 use gandr_kernel_term::DecodedArtifact;
+use gandr_kernel_term::EndpointDialogues;
 use gandr_kernel_term::EvaluationComponent;
 use gandr_kernel_term::EvaluationDialogues;
 use gandr_kernel_term::GroundSort;
@@ -37,6 +38,7 @@ use gandr_kernel_term::ValueType;
 use gandr_kernel_term::ValueTypeId;
 
 use super::ElementTransport;
+use super::EndpointSide;
 use super::IdentityError;
 use super::RelatedStep;
 use super::TelescopeStep;
@@ -76,8 +78,11 @@ use crate::replay::EndpointReading;
 use crate::replay::EngineClaim;
 use crate::replay::KernelVerdict;
 use crate::replay::ReplayBudget;
+use crate::replay::ReplayDecline;
 use crate::replay::ReplayNode;
+use crate::replay::ReplayRefusal;
 use crate::replay::ReplaySides;
+use crate::replay::TracePosition;
 use crate::replay::Unfoldable;
 use crate::replay::Unfoldings;
 use crate::replay::read_endpoints;
@@ -422,19 +427,21 @@ fn reflexivity_converts_its_endpoints_by_the_laws_of_bind()
     reflexive(&mut arena, nested, reassociated).expect("reflexivity across associativity");
 
     // Not pointwise: `λ b. force g b to x. return true` is not `r`, and the
-    // refusal names both endpoints.
+    // refusal names both endpoints and the one the point did not reach.
     let constant = arena.computation_return(boolean.truth);
     let apart = arena.computation_bind(direct, constant);
     let apart = suspended(&mut arena, apart);
     let left = content_digest(&arena, AnyNode::Value(apart));
     let right = content_digest(&arena, AnyNode::Value(point));
-    assert_eq!(
+    assert!(matches!(
         reflexive(&mut arena, apart, point),
         Err(KernelError::Identity(IdentityError::EndpointsDiffer {
-            left,
-            right
-        }))
-    );
+            left: refused_left,
+            right: refused_right,
+            side: EndpointSide::Left,
+            verdict: KernelVerdict::Declined(ReplayDecline::Refused(_)),
+        })) if refused_left == left && refused_right == right
+    ));
 }
 
 #[test]
@@ -463,13 +470,15 @@ fn native_evidence_checks_against_the_fold_fibre()
     let left = content_digest(&arena, AnyNode::Value(boolean.truth));
     let right = content_digest(&arena, AnyNode::Value(boolean.falsity));
     let refused = check_closed_value(&mut arena, here, apart);
-    assert_eq!(
+    assert!(matches!(
         refused,
         Err(KernelError::Identity(IdentityError::EndpointsDiffer {
-            left,
-            right
-        }))
-    );
+            left: refused_left,
+            right: refused_right,
+            side: EndpointSide::Right,
+            verdict: KernelVerdict::Declined(ReplayDecline::Refused(_)),
+        })) if refused_left == left && refused_right == right
+    ));
     // `here` synthesizes only where its point does, as every annotation-free
     // introduction: a literal's diagonal is inferable, an injection's is not.
     let text = arena.value_literal(Literal::Text(StringLiteral::new("a".into())));
@@ -1425,7 +1434,8 @@ fn applied(
 
 /// Stage `law : U(Π x : Bool. F Path(Bool, ⟨mul a b⟩, x)) = thunk { λx.
 /// return here(⟨mul a b⟩) }` at `(a, b) = (neutral, x)` for the left unit, or
-/// at `(x, neutral)` for the right.
+/// at `(x, neutral)` for the right, the `here` relating its point to `x` by
+/// `dialogue`.
 ///
 /// # Specification
 /// trivial.
@@ -1433,6 +1443,7 @@ fn unit_law(
     environment: &mut Environment,
     monoid: &Conjunction,
     unit: Unit,
+    dialogue: &[ConversionDecision<()>],
 ) -> StagedDeclaration
 {
     let mut staging = environment.stage();
@@ -1448,12 +1459,28 @@ fn unit_law(
     let returns = arena.comp_type_returner(identity);
     let family = arena.comp_type_pi(monoid.ty, returns);
     let declared = arena.value_type_thunk(family);
-    let here = arena.value_here(endpoint);
+    let here = arena.value_here_relating(
+        endpoint,
+        Arc::new(EndpointDialogues {
+            left: Vec::new(),
+            right: dialogue.to_vec(),
+        }),
+    );
     let body = arena.computation_return(here);
     let body = arena.computation_lambda(body);
     let body = arena.value_thunk(body);
     staging.def(LevelSignature::monomorphic(), declared, body)
 }
+
+/// The dialogue relating `⟨mul neutral x⟩` to `x`: `mul` unfolds on the left,
+/// β binds both arguments, then `neutral` unfolds under the case and the case
+/// selects `x`.
+const LEFT_UNIT: [ConversionDecision<()>; 4] = [
+    ConversionDecision::Unfold { constant: () },
+    ConversionDecision::ReduceLeft { redex: () },
+    ConversionDecision::Unfold { constant: () },
+    ConversionDecision::ReduceLeft { redex: () },
+];
 
 /// Admit a decoded artifact's declarations, in order, into a fresh
 /// environment that starts from the artifact's arena.
@@ -1487,7 +1514,7 @@ fn a_certificate_with_a_returned_endpoint_decodes_checks_and_replays()
     let mut environment = Environment::new();
     let mut declarations = Vec::new();
     let monoid = conjunction(&mut environment, &mut declarations, Admitted::Defined);
-    let declaration = unit_law(&mut environment, &monoid, Unit::Left);
+    let declaration = unit_law(&mut environment, &monoid, Unit::Left, &LEFT_UNIT);
     let law = admit(&mut environment, &mut declarations, declaration)
         .expect("the endpoint reads as `x` through both definitions");
     assert!(environment.audit(law).axioms().is_empty());
@@ -1559,19 +1586,28 @@ fn a_certificate_with_a_returned_endpoint_decodes_checks_and_replays()
     assert_eq!(replayed(&mut arena, dropped), EndpointReading::Apart);
 
     // Swap the arguments: the case stands on `x` and refuses by name.
-    let declaration = unit_law(&mut environment, &monoid, Unit::Right);
+    let declaration = unit_law(&mut environment, &monoid, Unit::Right, &LEFT_UNIT);
     assert!(matches!(
         environment.add_decl(declaration),
-        Err(KernelError::Identity(IdentityError::EndpointsDiffer { .. }))
+        Err(KernelError::Identity(IdentityError::EndpointsDiffer {
+            side: EndpointSide::Right,
+            ..
+        }))
     ));
-    // Withhold `neutral`'s definition: admission drops the same δ-step.
+    // Withhold `neutral`'s definition: the case stands on an axiom, so the
+    // goal closes apart with the dialogue's second unfolding unread.
     let mut withheld = Environment::new();
     let opaque = conjunction(&mut withheld, &mut Vec::new(), Admitted::Assumed);
-    let declaration = unit_law(&mut withheld, &opaque, Unit::Left);
-    assert!(matches!(
-        withheld.add_decl(declaration),
-        Err(KernelError::Identity(IdentityError::EndpointsDiffer { .. }))
-    ));
+    let declaration = unit_law(&mut withheld, &opaque, Unit::Left, &LEFT_UNIT);
+    assert_eq!(
+        endpoint_refusal(&withheld.add_decl(declaration)),
+        Some((
+            EndpointSide::Right,
+            KernelVerdict::Declined(ReplayDecline::Refused(ReplayRefusal::Contradicted {
+                at: TracePosition::from(2_usize),
+            })),
+        ))
+    );
 }
 
 #[test]
@@ -1620,71 +1656,146 @@ fn a_stuck_returned_endpoint_compares_structurally()
     }
 }
 
-#[test]
-fn an_endpoint_owing_an_unfolding_under_a_thunk_is_declined_by_name()
+/// `law : Path(U(Bool → F Bool), ⟨force delay⟩, k) = here(k)` over `def k :
+/// U(Bool → F Bool) = thunk { λx. return x }`, `j = k` (a definition, or an
+/// axiom in the control) and `def delay : U(F U(Bool → F Bool)) = thunk {
+/// return thunk { force j } }`, the `here` relating `k` to `⟨force delay⟩` by
+/// `dialogue`. `⟨force delay⟩` reduces to `thunk { force j }`, so relating it
+/// to `k` unfolds `j` under the thunk.
+///
+/// # Specification
+/// trivial.
+fn delayed_law(
+    alias: Admitted,
+    dialogue: &[ConversionDecision<()>],
+) -> Result<CheckedId, KernelError>
 {
-    // def k : U(Bool → F Bool) = thunk { λx. return x } ;
-    // def j : U(Bool → F Bool) = k ;            (an axiom in the control)
-    // def delay : U(F U(Bool → F Bool)) = thunk { return thunk { force j } } ;
-    // def law : Path(U(Bool → F Bool), ⟨force delay⟩, k) = here(k) ;
-    // `⟨force delay⟩` reads to `thunk { force j }`; relating it to `k` needs
-    // `j` to unfold under the thunk, which only a replayed trace may do.
-    let law = |alias: Admitted| {
-        let mut environment = Environment::new();
-        let mut staging = environment.stage();
-        let boolean = boolean(staging.arena());
-        let declaration = staging.def(
-            LevelSignature::monomorphic(),
-            boolean.function,
-            boolean.identity,
-        );
-        let k = environment.add_decl(declaration).expect("k").position();
-        let mut staging = environment.stage();
-        let named_k = staging.arena().value_constant(k);
-        let declaration = match alias {
-            | Admitted::Defined => {
-                staging.def(LevelSignature::monomorphic(), boolean.function, named_k)
-            },
-            | Admitted::Assumed => staging.axiom(LevelSignature::monomorphic(), boolean.function),
-        };
-        let j = environment.add_decl(declaration).expect("j").position();
-        let mut staging = environment.stage();
-        let arena = staging.arena();
-        let named_j = arena.value_constant(j);
-        let forced = arena.computation_force(named_j);
-        let inner = arena.value_thunk(forced);
-        let returned = arena.computation_return(inner);
-        let body = arena.value_thunk(returned);
-        let returns = arena.comp_type_returner(boolean.function);
-        let declared = arena.value_type_thunk(returns);
-        let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
-        let delay = environment.add_decl(declaration).expect("delay").position();
-        let mut staging = environment.stage();
-        let arena = staging.arena();
-        let endpoint = applied(arena, delay, &[]);
-        let named_k = arena.value_constant(k);
-        let identity = arena.value_type_path(boolean.function, endpoint, named_k);
-        let here = arena.value_here(named_k);
-        let declaration = staging.def(LevelSignature::monomorphic(), identity, here);
-        environment.add_decl(declaration)
-    };
-    let Err(declined) = law(Admitted::Defined)
-    else {
-        panic!("an endpoint owing an unfolding under a thunk admitted");
-    };
-    assert!(matches!(
-        declined,
-        KernelError::Identity(IdentityError::EndpointsUnreplayed { .. })
-    ));
-    assert_eq!(
-        declined.to_string(),
-        "reflexivity whose endpoints relate only by unfolding under a thunk"
+    let mut environment = Environment::new();
+    let mut staging = environment.stage();
+    let boolean = boolean(staging.arena());
+    let declaration = staging.def(
+        LevelSignature::monomorphic(),
+        boolean.function,
+        boolean.identity,
     );
-    // Over an axiom nothing is owed: the endpoints differ.
-    assert!(matches!(
-        law(Admitted::Assumed),
-        Err(KernelError::Identity(IdentityError::EndpointsDiffer { .. }))
-    ));
+    let k = environment.add_decl(declaration)?.position();
+    let mut staging = environment.stage();
+    let named_k = staging.arena().value_constant(k);
+    let declaration = match alias {
+        | Admitted::Defined => {
+            staging.def(LevelSignature::monomorphic(), boolean.function, named_k)
+        },
+        | Admitted::Assumed => staging.axiom(LevelSignature::monomorphic(), boolean.function),
+    };
+    let j = environment.add_decl(declaration)?.position();
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let named_j = arena.value_constant(j);
+    let forced = arena.computation_force(named_j);
+    let inner = arena.value_thunk(forced);
+    let returned = arena.computation_return(inner);
+    let body = arena.value_thunk(returned);
+    let returns = arena.comp_type_returner(boolean.function);
+    let declared = arena.value_type_thunk(returns);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+    let delay = environment.add_decl(declaration)?.position();
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let endpoint = applied(arena, delay, &[]);
+    let named_k = arena.value_constant(k);
+    let identity = arena.value_type_path(boolean.function, endpoint, named_k);
+    let here = arena.value_here_relating(
+        named_k,
+        Arc::new(EndpointDialogues {
+            left: dialogue.to_vec(),
+            right: Vec::new(),
+        }),
+    );
+    let declaration = staging.def(LevelSignature::monomorphic(), identity, here);
+    environment.add_decl(declaration)
+}
+
+/// The dialogue relating `k` to `⟨force delay⟩`: `delay` unfolds on the right
+/// and returns its thunk; `k` unfolds on the left; both thunks are forced;
+/// then `j` and `k` unfold on the right, under the thunk `delay` returned.
+const DELAYED: [ConversionDecision<()>; 10] = [
+    ConversionDecision::Unfold { constant: () },
+    ConversionDecision::ReduceRight { redex: () },
+    ConversionDecision::Unfold { constant: () },
+    ConversionDecision::ReduceLeft { redex: () },
+    ConversionDecision::Force { thunk: () },
+    ConversionDecision::Force { thunk: () },
+    ConversionDecision::Unfold { constant: () },
+    ConversionDecision::ReduceRight { redex: () },
+    ConversionDecision::Unfold { constant: () },
+    ConversionDecision::ReduceRight { redex: () },
+];
+
+/// The side and replay verdict a reflexivity refusal names, if `admitted` is
+/// one.
+///
+/// # Specification
+/// trivial.
+fn endpoint_refusal(
+    admitted: &Result<CheckedId, KernelError>
+) -> Option<(EndpointSide, KernelVerdict)>
+{
+    match *admitted {
+        | Err(KernelError::Identity(IdentityError::EndpointsDiffer { side, verdict, .. })) => {
+            Some((side, verdict))
+        },
+        | _ => None,
+    }
+}
+
+#[test]
+fn an_endpoint_unfolding_under_a_thunk_replays_its_dialogue()
+{
+    delayed_law(Admitted::Defined, &DELAYED).expect("the dialogue unfolds `j` under the thunk");
+    // No dialogue: the forced conversion unfolds nothing, and the empty
+    // dialogue names no unfolding.
+    assert_eq!(
+        endpoint_refusal(&delayed_law(Admitted::Defined, &[])),
+        Some((
+            EndpointSide::Left,
+            KernelVerdict::Declined(ReplayDecline::Refused(ReplayRefusal::Exhausted)),
+        ))
+    );
+}
+
+#[test]
+fn a_dialogue_naming_the_wrong_unfolding_is_refused_by_name()
+{
+    let refused = |alias: Admitted, dialogue: &[ConversionDecision<()>]| {
+        endpoint_refusal(&delayed_law(alias, dialogue))
+    };
+    let at = |position: usize| {
+        Some((
+            EndpointSide::Left,
+            KernelVerdict::Declined(ReplayDecline::Refused(ReplayRefusal::Inapplicable {
+                at: TracePosition::from(position),
+            })),
+        ))
+    };
+    // The wrong side: `delay` is the right side's head, not the left's.
+    let mut wrong_side = DELAYED;
+    if let Some(reduction) = wrong_side.get_mut(1) {
+        *reduction = ConversionDecision::ReduceLeft { redex: () };
+    }
+    assert_eq!(refused(Admitted::Defined, &wrong_side), at(1));
+    // The wrong constant: the wire names a constant by its side's head, so
+    // the dialogue's unfolding of `j` names an axiom in the control.
+    assert_eq!(refused(Admitted::Assumed, &DELAYED), at(6));
+    // Fewer unfoldings than the endpoint needs: without `k`'s second
+    // unfolding, `force k` stays apart from `λx. return x`.
+    let short = DELAYED.get(.. 8).expect("a prefix");
+    assert_eq!(
+        refused(Admitted::Defined, short),
+        Some((
+            EndpointSide::Left,
+            KernelVerdict::Declined(ReplayDecline::Refused(ReplayRefusal::Exhausted)),
+        ))
+    );
 }
 
 #[test]

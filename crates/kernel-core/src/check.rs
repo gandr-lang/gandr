@@ -473,19 +473,18 @@ fn comp_shape_mismatch(
 ///   unfoldings of `entries`' definitions, every other entry opaque. `arena`
 ///   holds what it held on entry.
 /// - provides: the one place the checker reads a returned endpoint, shared by
-///   reflexivity and both mode switches; the unfoldings are built only when a
-///   pair is set aside.
+///   both mode switches; the unfoldings are built only when a pair is set
+///   aside. Reflexivity relates its endpoints by the dialogue it carries
+///   instead ([`crate::element_identity::reflexive_endpoints`]).
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a path type whose endpoint returns its value through a
 ///   definition converts at a mode switch, and one returning a different value
-///   does not; reflexivity at a returned endpoint reads it, and one that reads
-///   to a thunk over a definition owes a trace.
+///   does not.
 /// - witness: `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`
 /// - witness: `element_identity::tests::a_certificate_with_a_returned_endpoint_decodes_checks_and_replays`
-/// - witness: `element_identity::tests::an_endpoint_owing_an_unfolding_under_a_thunk_is_declined_by_name`
 #[spec(captures: before = arena.watermark(), ensures: arena.watermark() == before)]
 fn read_returned(
     arena: &mut TermArena,
@@ -1477,7 +1476,8 @@ enum Frame
     /// must synthesize a returner.
     SynthReturned,
     /// A `here` check: the point checked at the domain; it must convert with
-    /// both held endpoints.
+    /// both held endpoints, by the forced conversion or the dialogue it
+    /// carries for each.
     CheckHere
     {
         /// The reflexivity's point.
@@ -1486,6 +1486,8 @@ enum Frame
         left: ValueId,
         /// The target endpoint.
         right: ValueId,
+        /// The dialogue relating the point to each endpoint.
+        dialogues: alloc::sync::Arc<gandr_kernel_term::EndpointDialogues>,
     },
     /// A higher evaluation's component checks, each in its own pattern
     /// telescope, then the enclosing context restored.
@@ -2290,7 +2292,7 @@ where
                     },
                     // `here(c)` synthesizes the diagonal identity at the type
                     // `c` synthesizes, a neutral fibre where that type is open.
-                    | Value::Here(point) => {
+                    | Value::Here { point, .. } => {
                         frames.push(Frame::SynthHere(point));
                         goal = Goal::SynthValue(point);
                         continue 'expand;
@@ -2454,10 +2456,19 @@ where
                             ));
                         },
                     },
-                    | Value::Here(point) => {
+                    | Value::Here {
+                        point,
+                        ref dialogues,
+                    } => {
+                        let dialogues = alloc::sync::Arc::clone(dialogues);
                         let (domain, left, right) =
                             crate::element_identity::path_parts(arena, expected)?;
-                        frames.push(Frame::CheckHere { point, left, right });
+                        frames.push(Frame::CheckHere {
+                            point,
+                            left,
+                            right,
+                            dialogues,
+                        });
                         goal = Goal::CheckValue(point, domain);
                         continue 'expand;
                     },
@@ -3010,36 +3021,23 @@ where
                     };
                     produced = Produced::ValueType(result);
                 },
-                // Reflexivity is decided by the kernel's term conversion:
-                // α-equality first, then the rules a conversion is forced to
-                // fire, the laws of bind among them; a returned endpoint they
-                // leave apart is read by its own reduction. One that reads to a
-                // thunk over a definition is declined, not refuted.
-                | Frame::CheckHere { point, left, right } => {
-                    for endpoint in [left, right] {
-                        if crate::conv::convert_values(arena, point, endpoint)
-                            == Convertibility::Convertible
-                        {
-                            continue;
-                        }
-                        match read_returned(
-                            arena,
-                            judgement.entries,
-                            ConversionGoal::Value(point, endpoint),
-                        ) {
-                            | EndpointReading::Converts => {},
-                            | EndpointReading::Apart => {
-                                return Err(crate::element_identity::endpoints_differ(
-                                    arena, left, right,
-                                ));
-                            },
-                            | EndpointReading::OwesTrace => {
-                                return Err(crate::element_identity::endpoints_unreplayed(
-                                    arena, left, right,
-                                ));
-                            },
-                        }
-                    }
+                // Reflexivity is decided by the kernel's term conversion,
+                // the laws of bind among its forced rules; an endpoint it
+                // leaves apart is related by the dialogue the `here` carries,
+                // unfolding only the admitted definitions the dialogue names.
+                | Frame::CheckHere {
+                    point,
+                    left,
+                    right,
+                    dialogues,
+                } => {
+                    crate::element_identity::reflexive_endpoints(
+                        arena,
+                        &admitted_unfoldings(judgement.entries),
+                        point,
+                        (left, right),
+                        &dialogues,
+                    )?;
                     produced = Produced::Checked;
                 },
                 | Frame::Components {

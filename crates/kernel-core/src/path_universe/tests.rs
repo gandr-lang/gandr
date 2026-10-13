@@ -131,7 +131,7 @@ fn children(
             | Value::ListNil | Value::ListCons(..) | Value::SessionPath { .. } => {
                 panic!("session evidence has a separate finite producer")
             },
-            | Value::Here(_)
+            | Value::Here { .. }
             | Value::Returned(_)
             | Value::Higher { .. }
             | Value::HigherEvaluation { .. } => {
@@ -429,7 +429,7 @@ fn translate(
                     | Value::ListNil | Value::ListCons(..) | Value::SessionPath { .. } => {
                         panic!("session evidence has a separate finite producer")
                     },
-                    | Value::Here(_)
+                    | Value::Here { .. }
                     | Value::Returned(_)
                     | Value::Higher { .. }
                     | Value::HigherEvaluation { .. } => {

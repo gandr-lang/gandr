@@ -351,7 +351,6 @@ use gandr_kernel_core::AxiomReport;
 use gandr_kernel_core::CheckedId;
 use gandr_kernel_core::EngineClaim;
 use gandr_kernel_core::Environment;
-use gandr_kernel_core::IdentityError;
 use gandr_kernel_core::KernelError;
 use gandr_kernel_core::KernelVerdict;
 use gandr_kernel_core::ParameterCount;
@@ -371,6 +370,7 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Declaration as KernelDeclaration;
 use gandr_kernel_term::EncodedArtifact;
+use gandr_kernel_term::EndpointDialogues;
 use gandr_kernel_term::EvaluationComponent;
 use gandr_kernel_term::EvaluationDialogues;
 use gandr_kernel_term::GroundSort;
@@ -386,6 +386,7 @@ use quenchant_shape::shape::Maybe;
 use crate::code::Certificate;
 use crate::code::CodeDefinitions;
 use crate::code::Lift;
+use crate::code::Reflexivity;
 use crate::code::Unfolded;
 use crate::code::loose_reach;
 use crate::code::unfolding;
@@ -669,11 +670,6 @@ pub enum Outcome
     /// The kernel rejected the erased declaration: the judgement accepted what
     /// the kernel does not, the disagreement the oracle exists to report.
     Rejected(KernelError),
-    /// The kernel declined the erased declaration: a reflexivity relates its
-    /// endpoints only by unfolding a definition under a thunk, which the kernel
-    /// relates from a replayed engine trace alone. Always
-    /// [`IdentityError::EndpointsUnreplayed`]; a decline, not a disagreement.
-    Declined(KernelError),
 }
 
 /// One certificate the kernel replayed for a declaration: what its step
@@ -1026,15 +1022,14 @@ impl Readmission
 ///   [`Outcome::Marked`] with its refusal, and the kernel is offered nothing
 ///   for it. An offer whose erasure refuses, or one of whose certificates the
 ///   kernel does not replay to convertible, is [`Outcome::Refused`], one the
-///   kernel rejects [`Outcome::Rejected`], one whose reflexivity the kernel
-///   declines [`Outcome::Declined`], and each leaves the environment as it was.
-///   A constant naming a declaration that crossed is erased to the kernel
-///   position that declaration took; a code recorded with a lift is erased to
-///   the kernel's lift of its decode; a decode of a constant that crossed as a
-///   definition is erased as the decode of its body; a static application at a
-///   saturated instance of a static definition or at a static lambda is erased
-///   as its reduct, minted into `arena`, until none remains — each step
-///   certified and replayed once per distinct instance.
+///   kernel rejects [`Outcome::Rejected`], and each leaves the environment as
+///   it was. A constant naming a declaration that crossed is erased to the
+///   kernel position that declaration took; a code recorded with a lift is
+///   erased to the kernel's lift of its decode; a decode of a constant that
+///   crossed as a definition is erased as the decode of its body; a static
+///   application at a saturated instance of a static definition or at a static
+///   lambda is erased as its reduct, minted into `arena`, until none remains —
+///   each step certified and replayed once per distinct instance.
 /// - provides: the declarations that crossed, the native signatures present in
 ///   the arena, and an audit exposing every source-hole or native assumption on
 ///   which an admitted source declaration depends.
@@ -1121,6 +1116,7 @@ where
         lifts: report.lifts(),
         funexts: report.funexts(),
         equivalences: report.equivalences(),
+        reflexivities: report.reflexivities(),
         definitions: report.definitions(),
     };
     for judged in report.judged() {
@@ -1301,8 +1297,8 @@ fn close_seals(
 }
 
 /// What every erasure reads besides the arena and the positions: the lifts,
-/// function extensionalities and universe equivalences the judgement recorded
-/// and the bodies it defined its constants as.
+/// function extensionalities, universe equivalences and reflexivities the
+/// judgement recorded and the bodies it defined its constants as.
 #[derive(Clone, Copy, Debug)]
 struct Source<'source>
 {
@@ -1312,6 +1308,8 @@ struct Source<'source>
     funexts: &'source BTreeMap<ValueId, Funext>,
     /// The universe equivalences the judgement decided, by node.
     equivalences: &'source BTreeMap<ValueId, crate::equiv::Equivalence>,
+    /// The reflexivities the judgement checked against a path type, by node.
+    reflexivities: &'source BTreeMap<ValueId, Reflexivity>,
     /// The body each accepted declaration defines its constant as, elaborated
     /// to the universe it was declared at.
     definitions: &'source BTreeMap<ConstantIndex, ValueId>,
@@ -1400,9 +1398,8 @@ enum Erased
 ///   erasure or a declined certificate discards the session and a rejection is
 ///   truncated by the kernel, so the environment is as it was on every outcome
 ///   but an admission. The replayed verdicts are returned beside the outcome.
-/// - fails: never; a refusal is [`Outcome::Refused`], a rejection
-///   [`Outcome::Rejected`] and the kernel's reflexivity decline
-///   [`Outcome::Declined`].
+/// - fails: never; a refusal is [`Outcome::Refused`] and a rejection
+///   [`Outcome::Rejected`].
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1423,11 +1420,10 @@ enum Erased
             && positions.admitted.get(&constant) == Some(&admitted.position())
             && matches!((offer, &ret.0), (Offer::Definition { .. }, &Outcome::Defined { .. }) | (Offer::Data(_) | Offer::Abstract(_), &Outcome::Data { .. }) | (Offer::Axiom { .. }, &Outcome::Assumed { .. }))
             && ret.1.iter().all(|replay| replay.verdict() == KernelVerdict::Convertible),
-        | Outcome::Refused(_) | Outcome::Rejected(_)
-        | Outcome::Declined(KernelError::Identity(IdentityError::EndpointsUnreplayed { .. })) =>
+        | Outcome::Refused(_) | Outcome::Rejected(_) =>
             environment.entries().len() == entries
             && positions.exports.len() == exports && positions.admitted.len() == crossed,
-        | Outcome::Marked(_) | Outcome::Static | Outcome::Declined(_) => false,
+        | Outcome::Marked(_) | Outcome::Static => false,
     },
 )]
 fn cross<Vouch>(
@@ -1498,9 +1494,6 @@ where
     let staged_as = staged.declaration().clone();
     let admitted = match environment.add_decl(staged) {
         | Ok(admitted) => admitted,
-        | Err(error @ KernelError::Identity(IdentityError::EndpointsUnreplayed { .. })) => {
-            return (Outcome::Declined(error), replayed);
-        },
         | Err(error) => return (Outcome::Rejected(error), replayed),
     };
     positions.exports.push(staged_as);
@@ -4418,8 +4411,29 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | (Frame::PathRight { at, carrier, left }, AnyNode::Value(right)) => {
                 Ok(self.erased_value_type(at, target.value_type_path(carrier, left, right)))
             },
+            // A reflexivity checked against a path type carries the
+            // dialogues relating its point to each endpoint; one only
+            // synthesised relates it to itself and carries none.
             | (Frame::Here { at }, AnyNode::Value(point)) => {
-                Ok(self.erased_value(at, target.value_here(point)))
+                let image = match self.source.reflexivities.get(&at) {
+                    | Some(reflexivity) => target.value_here_relating(
+                        point,
+                        alloc::sync::Arc::new(EndpointDialogues {
+                            left: reflexivity
+                                .left()
+                                .iter()
+                                .map(|decision| decision.map(|_| ()))
+                                .collect(),
+                            right: reflexivity
+                                .right()
+                                .iter()
+                                .map(|decision| decision.map(|_| ()))
+                                .collect(),
+                        }),
+                    ),
+                    | None => target.value_here(point),
+                };
+                Ok(self.erased_value(at, image))
             },
             | (Frame::PathTransportMotive { at, path, value }, AnyNode::ValueType(motive)) => {
                 self.frames
@@ -5178,6 +5192,7 @@ mod tests
             lifts: &lifts,
             funexts: &BTreeMap::new(),
             equivalences: &BTreeMap::new(),
+            reflexivities: &BTreeMap::new(),
             definitions: &definitions,
         };
         let image = Erasure::new(arena, source, &positions, ConstantIndex::from(0_usize))
@@ -5250,11 +5265,7 @@ mod tests
             | Outcome::Defined { admitted, .. }
             | Outcome::Assumed { admitted, .. }
             | Outcome::Data { admitted, .. } => admitted.position(),
-            | Outcome::Marked(_)
-            | Outcome::Static
-            | Outcome::Refused(_)
-            | Outcome::Rejected(_)
-            | Outcome::Declined(_) => {
+            | Outcome::Marked(_) | Outcome::Static | Outcome::Refused(_) | Outcome::Rejected(_) => {
                 panic!("the declaration at this position crosses")
             },
         }
@@ -6594,7 +6605,7 @@ mod tests
         );
         assert!(
             matches!(*compounded.outcome(), Outcome::Defined { .. }),
-            "a compound endpoint crosses, and the kernel reads it through `id`: {:?}",
+            "a compound endpoint crosses, and the kernel replays its dialogue through `id`: {:?}",
             compounded.outcome()
         );
         assert_eq!(
@@ -6698,6 +6709,68 @@ mod tests
                     )
             }),
             "each input returns itself on both sides, with the unit as its identity"
+        );
+    }
+
+    #[test]
+    fn a_reflexivity_crosses_with_the_dialogues_relating_its_endpoints()
+    {
+        // def k : U (Integer -> F Integer) = thunk { \x. return x } ;
+        // def j : U (Integer -> F Integer) = k ;
+        // def law : Path(U (…), thunk { force j }, k) = here(k) ;
+        // Relating `k` to `thunk { force j }` unfolds `j` under the thunk, a
+        // step only the recorded dialogue names.
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let returns = arena.comp_type_returner(integer);
+        let arrow = arena.comp_type_arrow(integer, returns);
+        let function = arena.value_type_thunk(arrow);
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let returned = arena.computation_return(bound);
+        let lambda = arena.computation_lambda(returned);
+        let identity = arena.value_thunk(lambda);
+        let [k, j] = [0_usize, 1_usize].map(|at| arena.value_constant(ConstantIndex::from(at)));
+        let forced = arena.computation_force(j);
+        let delayed = arena.value_thunk(forced);
+        let path = arena.value_type_path(function, delayed, k);
+        let here = arena.value_here(k);
+        let declared = Maybe::Present(function);
+        let (_, readmission) = judge_and_readmit(&mut arena, &[
+            declaration(At(0), declared, Maybe::Present(identity)),
+            declaration(At(1), declared, Maybe::Present(k)),
+            declaration(At(2), Maybe::Present(path), Maybe::Present(here)),
+        ]);
+        assert!(
+            readmission
+                .readmitted()
+                .iter()
+                .all(|entry| matches!(entry.outcome(), Outcome::Defined { .. })),
+            "the kernel replays the dialogue unfolding `j` under the thunk: {:?}",
+            readmission.readmitted()
+        );
+        let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+        let Some(&DeclarationContent::Def { body, .. }) = artifact
+            .declarations()
+            .last()
+            .map(|marked| marked.declaration().content())
+        else {
+            panic!("the law is the last definition");
+        };
+        let Some(KernelValue::Here { dialogues, .. }) = artifact.arena().value(body).cloned()
+        else {
+            panic!("the law crosses as the kernel's reflexivity");
+        };
+        assert!(
+            !dialogues.left.is_empty() && dialogues.right.is_empty(),
+            "the delayed endpoint carries its dialogue and the point's own syntax none: \
+             {dialogues:?}"
+        );
+        assert!(
+            dialogues
+                .left
+                .iter()
+                .any(|decision| matches!(decision, ConversionDecision::Unfold { .. })),
+            "the dialogue names the unfoldings the kernel replays"
         );
     }
 
@@ -7014,8 +7087,7 @@ mod tests
                 | Outcome::Marked(_)
                 | Outcome::Static
                 | Outcome::Refused(_)
-                | Outcome::Rejected(_)
-                | Outcome::Declined(_) => {
+                | Outcome::Rejected(_) => {
                     panic!("every declaration crosses")
                 },
             })
@@ -7187,6 +7259,7 @@ mod tests
             lifts: &lifts,
             funexts: &BTreeMap::new(),
             equivalences: &BTreeMap::new(),
+            reflexivities: &BTreeMap::new(),
             definitions: &definitions,
         };
         assert_eq!(
@@ -7888,6 +7961,7 @@ mod tests
             lifts: &lifts,
             funexts: &BTreeMap::new(),
             equivalences: &BTreeMap::new(),
+            reflexivities: &BTreeMap::new(),
             definitions: &definitions,
         };
         let base = ConstantIndex::from(3_usize);

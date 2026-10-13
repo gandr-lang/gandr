@@ -907,8 +907,13 @@ fn converge(
                         stack.push(ConversionGoal::ValueType(one_type, other_type));
                         stack.push(ConversionGoal::Value(one_paths, other_paths));
                     },
+                    // Two reflexivities compare by their points: the dialogues
+                    // relating a point to its endpoints are evidence about the
+                    // term, not part of what it means.
                     | (&Value::PathRefl(one), &Value::PathRefl(other))
-                    | (&Value::Here(one), &Value::Here(other)) => stack.push(ConversionGoal::Value(one, other)),
+                    | (&Value::Here { point: one, .. }, &Value::Here { point: other, .. }) => {
+                        stack.push(ConversionGoal::Value(one, other));
+                    },
                     // Two returned endpoints compare by their computations, as
                     // two thunks do; what either returns is a reduction.
                     | (&Value::Returned(one), &Value::Returned(other)) => {
@@ -1028,7 +1033,7 @@ fn converge(
                     },
                     | (
                         &Value::Constructor { .. } | &Value::Record(_) | &Value::SessionPath { .. } | &Value::PathRefl(_) | &Value::PathProduct(..) | &Value::PathEquiv { .. }
-                        | &Value::Here(_) | &Value::Returned(_) | &Value::Higher { .. } | &Value::HigherEvaluation { .. }
+                        | &Value::Here { .. } | &Value::Returned(_) | &Value::Higher { .. } | &Value::HigherEvaluation { .. }
                         | &Value::Variable(_)
                         | &Value::Constant(_)
                         | &Value::ListNil | &Value::ListCons(..)

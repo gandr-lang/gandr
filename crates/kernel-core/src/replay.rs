@@ -60,15 +60,24 @@
 //!
 //! A decision anchored at [`ReplayNode::Other`] names no constant, which is
 //! how persisted evidence carries its dialogues: the wire keeps a decision's
-//! kind and side but no identifier. An anchor-free `Unfold`, with the
-//! reduction naming its side anchor-free too, unfolds the defined constant the
-//! side's head holds; a side headed by anything else refuses it. The step is
-//! the one an anchored decision would name, since a side has one head, so the
-//! trace still chooses only whether and where δ fires. `Postpone`, `Freeze`
-//! and `ConstShortcut` stay anchored: each names a constant the opposite side
-//! or a later decision must meet. The alternative, persisting the constant's
-//! position in every decision, widens the evidence wire for a name the term
-//! already holds.
+//! kind and side but no identifier. Every constant decision reads its constant
+//! off the shapes where an anchored one would name it. An anchor-free
+//! `Unfold`, with the reduction naming its side anchor-free too, unfolds the
+//! defined constant the side's head holds; a `Freeze` freezes the defined
+//! head of the side it names; a `ConstShortcut` takes the head both sides
+//! share, and refuses when they differ; a `Postpone` defers to the `Unfold`
+//! that follows it, whose opposite side must hold a defined head. A side
+//! headed by anything else refuses the decision. Each step is the one an
+//! anchored decision would name, since a side has one head, so the trace
+//! still chooses only whether, where and how δ fires.
+//!
+//! **Alternatives.** Persisting the constant's position in every decision
+//! widens the evidence wire for a name the term already holds; keeping
+//! `Postpone`, `Freeze` and `ConstShortcut` anchored strands every persisted
+//! dialogue that compares two applications of one definition, as an
+//! associativity law does. **Reversal.** A decision whose constant the shapes
+//! do not determine — a rule over two heads at once that names only one —
+//! takes the constant's position on the wire.
 //!
 //! # The lazy product's η
 //!
@@ -100,28 +109,31 @@
 //! names them and the vocabulary is unchanged.
 //!
 //! [`convert`] fires both steps unread and unfolds no constant: the forced loop
-//! stays δ-free. A returned endpoint it leaves apart from a value at
-//! reflexivity, and one a mode switch's structural type comparison leaves
-//! apart, is read rather than compared: [`read_endpoints`] normalizes it by
-//! the kernel's own evaluator, this module's weak head reduction with one
+//! stays δ-free. A returned endpoint a mode switch's structural type comparison
+//! leaves apart is read rather than compared: [`read_endpoints`] normalizes it
+//! by the kernel's own evaluator, this module's weak head reduction with one
 //! δ-step wherever the computation is stuck at a head naming an admitted
-//! definition, and the normal forms go back through [`convert_values`], the
-//! one conversion. The reading takes no trace: the reduction of one
-//! computation to `return v` chooses nothing — β and the forced steps are
-//! determined, and a stuck defined head admits exactly its own δ-step — so a
-//! trace could only restate the term. That δ-step is the kernel's own, as
-//! readmission's unfolding of a crossed definition is.
+//! definition, and the normal forms go back through [`convert_values`], the one
+//! conversion. The reading takes no trace: the reduction of one computation to
+//! `return v` chooses nothing — β and the forced steps are determined, and a
+//! stuck defined head admits exactly its own δ-step — so a trace could only
+//! restate the term. That δ-step is the kernel's own, as readmission's
+//! unfolding of a crossed definition is.
 //!
-//! **Alternatives.** An engine trace persisted beside each endpoint would
-//! record a derivation the term already fixes, and the node has no payload to
-//! hold it. A reading without δ would leave every endpoint over a named
-//! function — `cong(f, p)` for a defined `f`, every law a model proves —
-//! apart from its value. A δ rule inside [`convert`] would make the forced
-//! loop choose where to unfold, which is the engine's to say. Normalising the
+//! At reflexivity the endpoint's relation to the point is replayed instead:
+//! the `here` carries the engine's dialogue for each endpoint, and [`replay()`]
+//! runs it with the admitted definitions unfoldable. The engine holds a
+//! returned endpoint at the definition it calls, so the dialogue names each
+//! δ-step, the ones under a binder that evaluation never reaches among them.
+//!
+//! **Alternatives.** A reading without δ would leave every endpoint over a
+//! named function — `cong(f, p)` for a defined `f`, every law a model proves —
+//! apart from its value. A δ rule inside [`convert`] would make the forced loop
+//! choose where to unfold, which is the engine's to say. Normalising the
 //! endpoint in the producer would make the producer's normaliser trusted
-//! computation. **Reversal.** A comparison the reading cannot settle by
-//! normalizing one side — two stuck neutrals equal only after unfolding — is
-//! a choice, and moves from the reading to a replayed trace.
+//! computation. **Reversal.** A mode switch whose comparison the reading cannot
+//! settle by normalizing one side — two stuck neutrals equal only after
+//! unfolding — carries a dialogue as reflexivity does.
 //!
 //! # The kernel's own conversion
 //!
@@ -242,7 +254,6 @@ use crate::conv::convert_values;
 use crate::conv::equal_computations;
 use crate::conv::equal_values;
 use crate::encoding::ContentTable;
-use crate::env::computation_constants;
 use crate::rewrite::BinderDepth;
 use crate::rewrite::shift_computation;
 use crate::rewrite::shift_value;
@@ -810,12 +821,8 @@ pub(crate) enum EndpointReading
 {
     /// Every pair converts once its returned endpoints are read.
     Converts,
-    /// Some pair stays apart, and no returned endpoint owes an unfolding the
-    /// reading leaves under a thunk.
+    /// Some pair stays apart.
     Apart,
-    /// Some pair stays apart, and some returned endpoint reads to a thunk over
-    /// a definition: only a replayed engine trace could relate it.
-    OwesTrace,
 }
 
 /// What `pending` comes to once its returned endpoints are normalized: each
@@ -828,14 +835,9 @@ pub(crate) enum EndpointReading
 /// - ensures: [`EndpointReading::Converts`] exactly when, within `budget`,
 ///   every pair's normal forms convert under [`convert_values`]; a
 ///   normalization that stops short of a value — budget, a partial fixpoint, an
-///   unreadable node — leaves its pair apart. At the first pair whose normal
-///   forms do not convert, [`EndpointReading::OwesTrace`] when one of its sides
-///   is a returned endpoint whose normal form is a thunk whose body reaches a
-///   constant with a body in `unfoldings` — a δ-step under a binder, which
-///   neither the reading nor [`convert`] takes — and [`EndpointReading::Apart`]
-///   otherwise. `arena` holds what it held on entry.
-/// - provides: the checker's reading of a returned endpoint at a mode switch
-///   and at reflexivity, and the narrow shape of the reflexivity decline.
+///   unreadable node — leaves its pair apart, and so does a pair whose normal
+///   forms do not convert. `arena` holds what it held on entry.
+/// - provides: the checker's reading of a returned endpoint at a mode switch.
 /// - fails: never — a normalization that stops is an apart answer.
 /// - panics: none.
 ///
@@ -846,12 +848,10 @@ pub(crate) enum EndpointReading
 /// # Adequacy
 /// - hypothesis: L3 — an endpoint returning its value through a definition
 ///   converts, a stuck endpoint converts only with an equal one, and an
-///   endpoint returning a different value stays apart; one reading to a thunk
-///   over a defined constant owes a trace, the same thunk over an axiom does
-///   not; the arena's watermark is restored.
+///   endpoint returning a different value stays apart; the arena's watermark is
+///   restored.
 /// - witness: `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`
 /// - witness: `element_identity::tests::a_certificate_with_a_returned_endpoint_decodes_checks_and_replays`
-/// - witness: `element_identity::tests::an_endpoint_owing_an_unfolding_under_a_thunk_is_declined_by_name`
 #[spec(captures: before = arena.watermark(), ensures: arena.watermark() == before)]
 #[must_use]
 pub(crate) fn read_endpoints(
@@ -882,20 +882,7 @@ pub(crate) fn read_endpoints(
             break;
         };
         if convert_values(run.arena, left_normal, right_normal) != Convertibility::Convertible {
-            let arena: &TermArena = run.arena;
-            let owes = [(left, left_normal), (right, right_normal)].into_iter().any(|(side, normal)| {
-                matches!(arena.value(side), Some(&Value::Returned(_)))
-                    && matches!(arena.value(normal), Some(&Value::Thunk(body))
-                        if computation_constants(arena, body)
-                            .into_iter()
-                            .any(|constant| matches!(unfoldings.unfolding(constant), Unfoldable::Body(_))))
-            });
-            reading = if owes {
-                EndpointReading::OwesTrace
-            }
-            else {
-                EndpointReading::Apart
-            };
+            reading = EndpointReading::Apart;
             break;
         }
     }
@@ -1325,6 +1312,10 @@ enum Postponed
     Nothing,
     /// The other side's head constant was postponed.
     Constant(ConstantIndex),
+    /// An anchor-free postponement: the unfolding that follows names its
+    /// side, and the other side's head, whichever defined constant it holds,
+    /// is the one postponed.
+    Opposite,
 }
 
 /// The next decision, or the trace's end.
@@ -1718,7 +1709,11 @@ where
     /// - ensures: an `Unfold` and its reduction replace that side's head by its
     ///   body; a `Postpone` waits for the unfolding on the other side; a
     ///   `Freeze` freezes a defined head; a `ConstShortcut` over one constant
-    ///   with agreeing spines pushes the spines' premises into `goals`.
+    ///   with agreeing spines pushes the spines' premises into `goals`. An
+    ///   anchor-free decision names the constant the shapes hold where an
+    ///   anchored one would name it: the unfolded or frozen side's head, the
+    ///   head the two shortcut sides share, and for a `Postpone` the head
+    ///   opposite the unfolding that follows.
     /// - provides: the replay of every two-sided constant rule.
     /// - fails: a refusal when the decision does not apply, or would refute
     ///   through a freeze or a shortcut.
@@ -1730,10 +1725,13 @@ where
     /// # Adequacy
     /// - hypothesis: L3: named-head unfolding and postponed-head traces
     ///   distinguish side and name mismatches; freeze and shortcut traces
-    ///   reject negative authority before consumption. These fixtures bound
+    ///   reject negative authority before consumption; anchor-free freeze,
+    ///   postponement and shortcut replay the anchored chain and refuse a side
+    ///   with no defined head or two heads that differ. These fixtures bound
     ///   dispatch, not every possible spine.
     /// - witness: `replay::tests::an_unfolding_fires_only_where_the_trace_names_its_head`
     /// - witness: `replay::tests::a_frozen_branch_cannot_carry_a_refutation`
+    /// - witness: `replay::tests::anchor_free_constant_decisions_read_their_constant_off_the_shapes`
     #[spec(
         requires: shapes.iter().any(|shape| matches!(shape, &&Shape::Neutral(Head::Constant(_, Status::Defined), _))),
         captures: before = (self.position, goals.len()),
@@ -1801,6 +1799,10 @@ where
                         shape_of(opposite(side)),
                         &Shape::Neutral(Head::Constant(head, Status::Defined), _) if head == other
                     ),
+                    | Postponed::Opposite => matches!(
+                        shape_of(opposite(side)),
+                        &Shape::Neutral(Head::Constant(_, Status::Defined), _)
+                    ),
                 };
                 if !(unfolds && waits) {
                     return Err(self.refuse(reduction));
@@ -1810,33 +1812,32 @@ where
                 *postponed = Postponed::Nothing;
                 Ok(Flow::Continue)
             },
-            | ConversionDecision::Postpone {
-                constant: ReplayNode::Constant(name),
-            } if *postponed == Postponed::Nothing => {
+            | ConversionDecision::Postpone { constant } if *postponed == Postponed::Nothing => {
                 self.take();
-                *postponed = Postponed::Constant(name);
+                *postponed = match constant {
+                    | ReplayNode::Constant(name) => Postponed::Constant(name),
+                    | ReplayNode::Other => Postponed::Opposite,
+                };
                 Ok(Flow::Continue)
             },
-            | ConversionDecision::Freeze {
-                constant: ReplayNode::Constant(name),
-                side,
-            } => {
+            | ConversionDecision::Freeze { constant, side } => {
                 if goal.expect == Expect::NotConvertible {
                     return Err(Stop::Refused(ReplayRefusal::NonAuthoritative {
                         at: self.at(),
                     }));
                 }
-                if !matches!(shape_of(side), &Shape::Neutral(Head::Constant(head, Status::Defined), _) if head == name)
-                {
+                let &Shape::Neutral(Head::Constant(head, Status::Defined), _) = shape_of(side)
+                else {
+                    return Err(self.refuse(next));
+                };
+                if matches!(constant, ReplayNode::Constant(name) if name != head) {
                     return Err(self.refuse(next));
                 }
                 self.take();
-                goal.frozen.freeze(side, name);
+                goal.frozen.freeze(side, head);
                 Ok(Flow::Continue)
             },
-            | ConversionDecision::ConstShortcut {
-                constant: ReplayNode::Constant(name),
-            } => {
+            | ConversionDecision::ConstShortcut { constant } => {
                 if goal.expect == Expect::NotConvertible {
                     return Err(Stop::Refused(ReplayRefusal::NonAuthoritative {
                         at: self.at(),
@@ -1855,7 +1856,11 @@ where
                 else {
                     return Err(self.refuse(next));
                 };
-                if left_head != name || right_head != name {
+                let named = match constant {
+                    | ReplayNode::Constant(name) => name == left_head,
+                    | ReplayNode::Other => true,
+                };
+                if !named || left_head != right_head {
                     return Err(self.refuse(next));
                 }
                 self.take();
@@ -1875,9 +1880,7 @@ where
             },
             | ConversionDecision::ReduceLeft { .. }
             | ConversionDecision::ReduceRight { .. }
-            | ConversionDecision::ConstShortcut { .. }
             | ConversionDecision::Postpone { .. }
-            | ConversionDecision::Freeze { .. }
             | ConversionDecision::EtaExpand { .. }
             | ConversionDecision::ReturnEta { .. }
             | ConversionDecision::Reassociate { .. }
@@ -1985,7 +1988,7 @@ where
                 | Value::PathProduct(..)
                 | Value::SessionPath { .. }
                 | Value::PathEquiv { .. }
-                | Value::Here(_)
+                | Value::Here { .. }
                 | Value::Higher { .. }
                 | Value::HigherEvaluation { .. }
                 | Value::Literal(_)
@@ -2615,7 +2618,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             if a.keys().eq(b.keys()) { ret == Ok(Structure::of(a.values().zip(b.values()).map(|(a,b)| Premise::values(*a,*b)).collect())) } else { ret == Ok(Structure::Leaf(Expect::NotConvertible)) }
         } }
  else if matched_left_value.is_none() || matched_right_value.is_none() || matches!(matched_left_value, Some(&Value::Returned(_))) || matches!(matched_right_value, Some(&Value::Returned(_))) { ret == Err(unreadable()) }
- else if let Some(matched_left_node) = matched_left_value && let ref one @ (Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Higher { .. } | Value::HigherEvaluation { .. }) = *matched_left_node && let Some(other) = matched_right_value { matches!(ret, Ok(Structure::Leaf(verdict)) if (left != right || verdict == Expect::Convertible)
+ else if let Some(matched_left_node) = matched_left_value && let ref one @ (Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here { .. } | Value::Higher { .. } | Value::HigherEvaluation { .. }) = *matched_left_node && let Some(other) = matched_right_value { matches!(ret, Ok(Structure::Leaf(verdict)) if (left != right || verdict == Expect::Convertible)
                 && (core::mem::discriminant(one) == core::mem::discriminant(other) || verdict == Expect::NotConvertible)) }
  else if matches!((matched_left_value, matched_right_value), (Some(&Value::ListNil), Some(&Value::ListNil))) { ret == Ok(Structure::Leaf(Expect::Convertible)) }
  else if let (Some(one), Some(other)) = (matched_left_value.and_then(Value::components), matched_right_value.and_then(Value::components)) { if one.len() == other.len() { ret == Ok(Structure::of(one.iter().zip(other.iter()).map(|(&a, &b)| Premise::values(a, b)).collect())) } else { ret == Ok(Structure::Leaf(Expect::NotConvertible)) } }
@@ -2703,7 +2706,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 | Value::PathProduct(..)
                 | Value::SessionPath { .. }
                 | Value::PathEquiv { .. }
-                | Value::Here(_)
+                | Value::Here { .. }
                 | Value::Higher { .. }
                 | Value::HigherEvaluation { .. }),
                 _,
@@ -2884,7 +2887,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - witness: `path_universe::tests::certificate_identity_stays_out_of_conversion`
     #[spec(ensures: |ret| match term {
         Term::Value(value) => match self.arena.value(value) {
-            Some(&(Value::Literal(_) | Value::Variable(_) | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Higher { .. } | Value::HigherEvaluation { .. })) => ret == Rigidity::Rigid,
+            Some(&(Value::Literal(_) | Value::Variable(_) | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here { .. } | Value::Higher { .. } | Value::HigherEvaluation { .. })) => ret == Rigidity::Rigid,
             Some(held) if held.components() == Some(&[]) => ret == Rigidity::Rigid,
             Some(&Value::Constant(constant)) => (ret == Rigidity::Rigid) == (self.unfoldings.unfolding(constant) == Unfoldable::Opaque),
             Some(&(Value::Thunk(_) | Value::Returned(_))) | None => ret == Rigidity::Flexible,
@@ -2926,7 +2929,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         | Value::PathProduct(..)
                         | Value::SessionPath { .. }
                         | Value::PathEquiv { .. }
-                        | Value::Here(_)
+                        | Value::Here { .. }
                         | Value::Higher { .. }
                         | Value::HigherEvaluation { .. }),
                     ) => {},
@@ -3168,7 +3171,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         | Value::Lift { .. }
                         | Value::Quote(_)
                         | Value::QuoteComputation(_)
-                        | Value::Here(_)
+                        | Value::Here { .. }
                         | Value::Higher { .. }
                         | Value::HigherEvaluation { .. }),
                     ) => Ok(Shape::Former),
@@ -3325,7 +3328,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 | Value::Quote(_)
                 | Value::QuoteComputation(_)
                 | Value::StaticApplication(..)
-                | Value::Here(_)
+                | Value::Here { .. }
                 | Value::Higher { .. }
                 | Value::HigherEvaluation { .. }
                 | Value::Returned(_)),
@@ -5369,6 +5372,103 @@ mod tests
                 &unfolded
             ),
             KernelVerdict::NotConvertible
+        );
+    }
+
+    #[test]
+    fn anchor_free_constant_decisions_read_their_constant_off_the_shapes()
+    {
+        let mut arena = TermArena::new();
+        let unit = arena.value_unit();
+        let pair = arena.value_tuple(&[unit, unit]);
+        let first = ConstantIndex::from(0_usize);
+        let second = ConstantIndex::from(1_usize);
+        let third = ConstantIndex::from(2_usize);
+        let named_first = arena.value_constant(first);
+        let named_second = arena.value_constant(second);
+        let named_third = arena.value_constant(third);
+        let unfoldings = Unfoldings::new(Vec::from([
+            Unfoldable::Body(unit),
+            Unfoldable::Body(named_first),
+            Unfoldable::Body(pair),
+        ]));
+        let other = ReplayNode::Other;
+        let unfold_left = [
+            ConversionDecision::Unfold { constant: other },
+            ConversionDecision::ReduceLeft { redex: other },
+        ];
+        let shortcut = ConversionDecision::ConstShortcut { constant: other };
+        let postpone = ConversionDecision::Postpone { constant: other };
+        let freeze = |side| ConversionDecision::Freeze {
+            constant: other,
+            side,
+        };
+        let at = |position| {
+            refused(ReplayRefusal::Inapplicable {
+                at: TracePosition::from(position),
+            })
+        };
+        let chain = ReplaySides::Values(named_second, named_first);
+
+        // Both branches of the anchored chain replay with no constant named:
+        // the freeze takes the right's head, the postponement the head
+        // opposite the unfolding, the shortcut the head both sides share.
+        for branch in [freeze(ConversionSide::Right), postpone] {
+            let trace = [branch, unfold_left[0], unfold_left[1], shortcut];
+            assert_eq!(
+                run(
+                    &mut arena,
+                    &unfoldings,
+                    chain,
+                    EngineClaim::Convertible,
+                    &trace
+                ),
+                KernelVerdict::Convertible
+            );
+        }
+
+        // Freezing the left leaves its head no unfolding: the reduction that
+        // names it refuses.
+        let wrong_freeze = [freeze(ConversionSide::Left), unfold_left[0], unfold_left[1]];
+        assert_eq!(
+            run(
+                &mut arena,
+                &unfoldings,
+                chain,
+                EngineClaim::Convertible,
+                &wrong_freeze
+            ),
+            at(2)
+        );
+
+        // A side with no defined head offers no constant to freeze, to
+        // postpone against, or to share.
+        let bare = ReplaySides::Values(named_first, unit);
+        assert_eq!(
+            run(&mut arena, &unfoldings, bare, EngineClaim::Convertible, &[
+                freeze(ConversionSide::Right)
+            ]),
+            at(0)
+        );
+        assert_eq!(
+            run(&mut arena, &unfoldings, bare, EngineClaim::Convertible, &[
+                postpone,
+                unfold_left[0],
+                unfold_left[1]
+            ]),
+            at(2)
+        );
+
+        // Two different defined heads share no constant to shortcut.
+        assert_eq!(
+            run(
+                &mut arena,
+                &unfoldings,
+                ReplaySides::Values(named_second, named_third),
+                EngineClaim::Convertible,
+                &[shortcut]
+            ),
+            at(0)
         );
     }
 

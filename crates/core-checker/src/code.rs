@@ -58,6 +58,7 @@ use anodized::spec;
 use gandr_core_nbe::BinderLevel;
 use gandr_core_nbe::Definitions;
 use gandr_core_nbe::DomainArena;
+use gandr_core_nbe::Endpoints;
 use gandr_core_nbe::Environment;
 use gandr_core_nbe::Fuel;
 use gandr_core_nbe::LoweredChain;
@@ -129,11 +130,12 @@ quenchant_shape::reason_enum! {
 quenchant_shape::reason_enum! {
     /// Why a traced conversion gave no trace.
     pub mod converted {
-        /// The reason the two computations were not shown convertible.
+        /// The reason the two sides were not shown convertible.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
-            /// The machine refuted the pair or declined it: a variable, an
-            /// opaque constant or an effect stood where a value was owed.
+            /// The machine refuted the pair or declined it: the sides differ,
+            /// or a variable, an opaque constant or an effect stood where a
+            /// value was owed.
             Apart,
         }
     }
@@ -470,6 +472,63 @@ impl Evaluation
     }
 }
 
+/// The normaliser's reading of one reflexivity: the derivation relating its
+/// point to each endpoint of the path type it was checked against.
+///
+/// Each dialogue is the machine's convertible trace from the point to that
+/// endpoint, recorded with returned endpoints held at the definitions they
+/// call ([`gandr_core_nbe::Endpoints::Hold`]), so every δ-step an endpoint
+/// needs, under a binder or not, is one of its decisions. An endpoint that is
+/// the point's own node or syntax relates by the empty dialogue.
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+pub struct Reflexivity
+{
+    /// The derivation from the point to the left endpoint, in order.
+    left: Vec<ConversionDecision<TraceNode>>,
+    /// The derivation from the point to the right endpoint, in order.
+    right: Vec<ConversionDecision<TraceNode>>,
+}
+
+impl Reflexivity
+{
+    /// The reading relating the point to `left` and to `right` by these
+    /// derivations.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) const fn new(
+        left: Vec<ConversionDecision<TraceNode>>,
+        right: Vec<ConversionDecision<TraceNode>>,
+    ) -> Self
+    {
+        Self { left, right }
+    }
+
+    /// The derivation from the point to the left endpoint.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn left(&self) -> &[ConversionDecision<TraceNode>]
+    {
+        &self.left
+    }
+
+    /// The derivation from the point to the right endpoint.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn right(&self) -> &[ConversionDecision<TraceNode>]
+    {
+        &self.right
+    }
+}
+
 impl CodeDefinitions
 {
     /// No definition: every constant is rigid.
@@ -800,9 +859,9 @@ impl CodeDefinitions
     /// - ensures: the machine's verdict on the pair, each side evaluated in one
     ///   environment of rigid variables, one per binder the farther side
     ///   reaches.
-    /// - provides: the conversion a path type's endpoints meet: reflexivity
-    ///   checks against a path type exactly when its point converts to both
-    ///   endpoints.
+    /// - provides: the conversion two terms meet where no derivation is kept:
+    ///   function extensionality's pointwise results and a type comparison's
+    ///   term pairs.
     /// - fails: [`CheckRefusal::Undecided`] at `left` when either side does not
     ///   evaluate or the machine faults; [`CheckRefusal::DanglingNode`] for a
     ///   node `core` does not hold.
@@ -812,17 +871,10 @@ impl CodeDefinitions
     /// - [`CheckRefusal::Undecided`], [`CheckRefusal::DanglingNode`] — as
     ///   above.
     ///
-    /// # Termination
-    /// - reason: the `for` loop binds one rigid variable per binder the sides
-    ///   reach, not recursion; the machine runs under its own fuel.
-    /// - measure: the binders left to bind.
-    ///
     /// # Adequacy
-    /// - hypothesis: L3 — a definition applied to a variable converts with the
-    ///   body it unfolds to, two distinct literals are apart, and an arithmetic
-    ///   redex over a variable is apart from the variable; skipping the
-    ///   unfolding or the rigid environment changes a verdict.
-    /// - witness: `judgement::tests::reflexivity_checks_by_endpoint_conversion`
+    /// - hypothesis: L3 — a function extensionality whose pointwise results
+    ///   differ is refused, and one whose results agree is decided.
+    /// - witness: `funext::tests::pointwise_equal_functions_relate_by_computation`
     #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::Undecided { at } ) if at == left)
         || matches!(ret, Err(CheckRefusal::DanglingNode { .. } | CheckRefusal::MachineInvariant)))]
     #[inline]
@@ -837,44 +889,86 @@ impl CodeDefinitions
         let definitions =
             Definitions::new(&self.lowered, &self.environment, self.environment.root());
         let mut domain = DomainArena::new();
-        let mut environment = Environment::new();
-        let reach = |endpoint| loose_reach(core, CoreNode::Term(TermNode::Value(endpoint)));
-        let reach = usize::from(reach(left)?).max(usize::from(reach(right)?));
-        let open = u32::try_from(reach).map_err(|_overflow| CheckRefusal::MachineInvariant)?;
-        for level in 0 .. open {
-            let neutral = domain
-                .neutral_node(
-                    NeutralHead::Variable {
-                        zone: Zone::Intuitionistic,
-                        level: BinderLevel::from(level),
-                    },
-                    Vec::new(),
-                    Unfolding::Rigid,
-                )
-                .map_err(|_fault| undecided)?;
-            let bound = domain
-                .value_neutral(neutral, TermFace::Reduced)
-                .map_err(|_fault| undecided)?;
-            environment.extend(Zone::Intuitionistic, bound);
-        }
-        let fuel = Fuel::from(CODE_FUEL);
-        let evaluate = |domain: &mut DomainArena, term: ValueId| {
-            eval_value_within(core, domain, definitions, fuel, term, environment.clone())
-                .map(|(value, _remaining)| value)
-                .map_err(|_fault| undecided)
-        };
-        let one = evaluate(&mut domain, left)?;
-        let other = evaluate(&mut domain, right)?;
+        let problem = rigid_problem(core, &mut domain, definitions, left, right)?;
         decide::<NullSink, ResharingMemo>(
             core,
             &mut domain,
             definitions,
             MachineSettings::default(),
-            Problem::values(one, other).under(BinderLevel::from(open)),
+            problem,
             &mut NullSink,
         )
         .map(|report| report.verdict())
         .map_err(|_fault| undecided)
+    }
+
+    /// Relate a reflexivity's point to one endpoint standing under the same
+    /// binders, recording the derivation: each evaluated with the free
+    /// binders either reaches read as rigid variables, every definition this
+    /// table holds unfolding, and a returned endpoint held at the definition
+    /// it calls.
+    ///
+    /// # Specification
+    /// - requires: every body this table holds, and both values, live in
+    ///   `core`; the two values stand under the same binders.
+    /// - ensures: the machine's convertible trace from `point` to `endpoint`,
+    ///   each side evaluated in one environment of rigid variables, one per
+    ///   binder the farther side reaches, under
+    ///   [`gandr_core_nbe::Endpoints::Hold`]; [`converted::Absent::Apart`] when
+    ///   the machine refutes or declines the pair.
+    /// - provides: the endpoint condition of reflexivity's rule and the
+    ///   dialogue the kernel replays for it. Holding returned endpoints puts
+    ///   every δ-step an endpoint needs in the trace as an `Unfold`, where
+    ///   evaluation would otherwise take it silently.
+    /// - fails: [`CheckRefusal::Undecided`] at `point` when either side does
+    ///   not evaluate or the machine faults; [`CheckRefusal::DanglingNode`] for
+    ///   a node `core` does not hold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal::Undecided`], [`CheckRefusal::DanglingNode`] — as
+    ///   above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a definition applied to a variable converts with the
+    ///   body it unfolds to, two distinct literals are apart, and an arithmetic
+    ///   redex over a variable is apart from the variable; skipping the
+    ///   unfolding or the rigid environment changes a verdict. The recorded
+    ///   dialogue replays in the kernel against the admitted definitions.
+    /// - witness: `judgement::tests::reflexivity_checks_by_endpoint_conversion`
+    /// - witness: `bridge::tests::a_reflexivity_crosses_with_the_dialogues_relating_its_endpoints`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::Undecided { at } ) if at == point)
+        || matches!(ret, Err(CheckRefusal::DanglingNode { .. } | CheckRefusal::MachineInvariant)))]
+    #[inline]
+    pub fn relate_terms(
+        &self,
+        core: &CoreArena,
+        point: ValueId,
+        endpoint: ValueId,
+    ) -> Result<Maybe<Vec<ConversionDecision<TraceNode>>, converted::Absent>, CheckRefusal>
+    {
+        let undecided = CheckRefusal::Undecided { at: point };
+        let definitions =
+            Definitions::new(&self.lowered, &self.environment, self.environment.root())
+                .reading_endpoints(Endpoints::Hold);
+        let mut domain = DomainArena::new();
+        let problem = rigid_problem(core, &mut domain, definitions, point, endpoint)?;
+        let mut log = TraceLog::new();
+        let report = decide::<TraceLog<TraceNode>, ResharingMemo>(
+            core,
+            &mut domain,
+            definitions,
+            MachineSettings::default(),
+            problem,
+            &mut log,
+        )
+        .map_err(|_fault| undecided)?;
+        Ok(match report.verdict() {
+            | MachineVerdict::Convertible => Maybe::Present(log.decisions().copied().collect()),
+            | MachineVerdict::NotConvertible | MachineVerdict::Declined(_) => {
+                Maybe::Absent(converted::Absent::Apart)
+            },
+        })
     }
 
     /// Decide that two computations standing under `open` binders convert,
@@ -1086,6 +1180,77 @@ impl CodeDefinitions
             decisions: log.decisions().copied().collect(),
         }))
     }
+}
+
+/// The machine problem relating two values standing under the same binders:
+/// each evaluated under `definitions` in one environment of rigid variables,
+/// one per binder the farther side reaches.
+///
+/// # Specification
+/// - requires: every body `definitions` holds, and both values, live in `core`;
+///   the two values stand under the same binders.
+/// - ensures: the problem between both evaluations, under as many binders as
+///   the environment binds.
+/// - provides: the shared preamble of [`CodeDefinitions::convert_terms`] and
+///   [`CodeDefinitions::relate_terms`], which differ only in the reading of a
+///   returned endpoint and in the sink.
+/// - fails: [`CheckRefusal::Undecided`] at `left` when either side does not
+///   evaluate; [`CheckRefusal::DanglingNode`] for a node `core` does not hold;
+///   [`CheckRefusal::MachineInvariant`] for a reach past the address space.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Termination
+/// - reason: the `for` loop binds one rigid variable per binder the sides
+///   reach, not recursion; evaluation runs under its own fuel.
+/// - measure: the binders left to bind.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a definition applied to a variable converts with the body
+///   it unfolds to, which needs the rigid environment.
+/// - witness: `judgement::tests::reflexivity_checks_by_endpoint_conversion`
+#[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::Undecided { at } ) if at == left)
+    || matches!(ret, Err(CheckRefusal::DanglingNode { .. } | CheckRefusal::MachineInvariant)))]
+fn rigid_problem(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    definitions: Definitions<'_>,
+    left: ValueId,
+    right: ValueId,
+) -> Result<Problem, CheckRefusal>
+{
+    let undecided = CheckRefusal::Undecided { at: left };
+    let mut environment = Environment::new();
+    let reach = |endpoint| loose_reach(core, CoreNode::Term(TermNode::Value(endpoint)));
+    let reach = usize::from(reach(left)?).max(usize::from(reach(right)?));
+    let open = u32::try_from(reach).map_err(|_overflow| CheckRefusal::MachineInvariant)?;
+    for level in 0 .. open {
+        let neutral = domain
+            .neutral_node(
+                NeutralHead::Variable {
+                    zone: Zone::Intuitionistic,
+                    level: BinderLevel::from(level),
+                },
+                Vec::new(),
+                Unfolding::Rigid,
+            )
+            .map_err(|_fault| undecided)?;
+        let bound = domain
+            .value_neutral(neutral, TermFace::Reduced)
+            .map_err(|_fault| undecided)?;
+        environment.extend(Zone::Intuitionistic, bound);
+    }
+    let fuel = Fuel::from(CODE_FUEL);
+    let mut evaluate = |term: ValueId| {
+        eval_value_within(core, domain, definitions, fuel, term, environment.clone())
+            .map(|(value, _remaining)| value)
+            .map_err(|_fault| undecided)
+    };
+    let one = evaluate(left)?;
+    let other = evaluate(right)?;
+    Ok(Problem::values(one, other).under(BinderLevel::from(open)))
 }
 
 /// How many binders outside `root` its free intuitionistic variables reach:

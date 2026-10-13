@@ -140,10 +140,6 @@ enum Class
     /// The checker accepted it with a hole or the unknown type, which the
     /// kernel has no image of: an unfinished program crosses nothing.
     Unfinished,
-    /// The checker accepted it and the kernel declined it: a reflexivity whose
-    /// endpoint relates to its point only by unfolding a definition under a
-    /// thunk, which the kernel relates from a replayed engine trace alone.
-    Declined,
     /// The lowering refused it, under this name, and nothing was offered.
     NeverOffered(RefusalName),
 }
@@ -289,20 +285,18 @@ fn sources(root: Root) -> Vec<PathBuf>
 /// # Specification
 /// - requires: the checker verdict and kernel readmission agree: accepted
 ///   definitions or static operators, owed assumptions, matching refusal marks,
-///   accepted/owed declarations withheld by a dependency, accepted/owed
-///   declarations holding a hole or the unknown type, or accepted declarations
-///   the kernel declines.
+///   accepted/owed declarations withheld by a dependency, or accepted/owed
+///   declarations holding a hole or the unknown type.
 /// - ensures: returns exactly the corresponding boundary class, retaining the
 ///   checker refusal’s canonical name for a mark.
 /// - panics: when the fixture’s verdict and readmission disagree.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the current corpus supplies readmitted definitions,
-///   assumptions, refusal marks, static declarations, withheld dependencies,
-///   holed declarations and kernel-declined reflexivities. Exact
-///   partition-to-artifact membership distinguishes admitting excluded
-///   declarations or losing admitted names; the predicate additionally states
-///   pair compatibility and exact class selection.
+///   assumptions, refusal marks, static declarations, withheld dependencies and
+///   holed declarations. Exact partition-to-artifact membership distinguishes
+///   admitting excluded declarations or losing admitted names; the predicate
+///   additionally states pair compatibility and exact class selection.
 /// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds`
 /// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest`
 #[spec(
@@ -315,8 +309,7 @@ fn sources(root: Root) -> Vec<PathBuf>
             bridge::Refusal::Withheld { .. }
             | bridge::Refusal::Hole { .. }
             | bridge::Refusal::Unknown { .. }
-        )
-        | bridge::Outcome::Declined(_)),
+        )),
     )
     | (
         Verdict::Owed(_),
@@ -345,8 +338,7 @@ fn sources(root: Root) -> Vec<PathBuf>
         _,
         &bridge::Outcome::Refused(bridge::Refusal::Hole { .. } | bridge::Refusal::Unknown { .. }),
         Class::Unfinished,
-    )
-    | (_, &bridge::Outcome::Declined(_), Class::Declined) => true,
+    ) => true,
     (Verdict::Refused(refusal), &bridge::Outcome::Marked(mark), Class::Marked(name)) => {
         refusal == mark && name == Refusal::Checking(refusal).name()
     }
@@ -382,10 +374,6 @@ fn class_of(
                 bridge::Refusal::Hole { .. } | bridge::Refusal::Unknown { .. },
             ),
         ) => Class::Unfinished,
-        | (
-            Verdict::Checked { .. } | Verdict::Synthesised { .. },
-            &bridge::Outcome::Declined(_),
-        ) => Class::Declined,
         | (verdict, outcome) => panic!(
             "{}: the verdict {verdict:?} and the kernel's outcome {outcome:?} disagree",
             path.display()

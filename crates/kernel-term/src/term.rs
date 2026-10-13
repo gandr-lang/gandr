@@ -264,8 +264,15 @@ pub enum Value
         /// Untrusted dialogue data, never a formation verdict.
         evidence: alloc::sync::Arc<PathEvidence>,
     },
-    /// The diagonal `here(a)`, inhabiting `Path(A, a, a)`.
-    Here(ValueId),
+    /// The diagonal `here(a)`, inhabiting `Path(A, a, a)` and every identity
+    /// whose endpoints convert with `a`.
+    Here
+    {
+        /// The point `a`.
+        point: ValueId,
+        /// The dialogue relating the point to each endpoint, untrusted.
+        dialogues: alloc::sync::Arc<crate::EndpointDialogues>,
+    },
     /// A returned endpoint: the value the pure computation returns, standing
     /// where a value is read, such as `mul(neutral, x)` at a path endpoint.
     /// It inhabits `A` when the computation returns `A`, and reads as the
