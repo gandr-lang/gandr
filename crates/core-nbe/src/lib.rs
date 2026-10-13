@@ -85,7 +85,8 @@
 //!   conversion machine shares evaluations, `Skeleton` by default and `Spinal`
 //!   refused with `PolicyRefusal::GranularityGated`.
 //! - `Definitions`: the lowered chain, the definitional environment and the
-//!   scope a run reads unfoldings through, and `Fuel`, the run's budget.
+//!   scope a run reads unfoldings through, with the `Endpoints` stance a
+//!   compound endpoint reads in, and `Fuel`, the run's budget.
 //! - `LoweredChain`: a definition chain with every body lowered into the run's
 //!   core arena in one pass, so `ReadbackMode::Unfolding` forces any body the
 //!   chain holds — evaluating its lowering closed and recording it with
@@ -395,6 +396,7 @@ pub use crate::duplicate::DuplicationFault;
 pub use crate::duplicate::duplicate_computation;
 pub use crate::duplicate::duplicate_value;
 pub use crate::eval::Definitions;
+pub use crate::eval::Endpoints;
 pub use crate::eval::EvalFault;
 pub use crate::eval::Fuel;
 pub use crate::eval::LoweredChain;

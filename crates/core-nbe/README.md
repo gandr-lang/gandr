@@ -25,7 +25,7 @@ Normalization by evaluation for the core language: the glued value domain, the p
 - **Readback.** `readback_value` and `readback_computation` under a `ReadbackMode`, refusing with `ReadbackFault`.
 - **The glued domain.** `DomainArena` with its id families and watermark; `DomainValue`, `DomainComp`, `Neutral` and the faces they carry; `ValueClosure`, `CompClosure` and the two-zone `Environment`.
 - **Policies.** `SchedulingPolicy`, `DuplicationPolicy` and `GranularityPolicy`, with the stances each admits or gates.
-- **Definitions.** `Definitions`, `LoweredChain` and `Fuel`: the lowered chain a run unfolds through and the run's budget.
+- **Definitions.** `Definitions`, `LoweredChain` and `Fuel`: the lowered chain a run unfolds through and the run's budget; `Endpoints` and `Definitions::reading_endpoints`: whether a compound endpoint runs through its definitions or holds at them for the conversion to unfold by a recorded step.
 - **Conversion.** `convert_values` and `convert_computations`, the three search-free steps; `decide`, the lazy concurrent conversion machine, with its trace, its `Guard` read and its process re-sharing through `GoalSupport` and `ResharingMemo`.
 - **Sharing.** `Overlay` and `Overlay::validate`; the `erase_*` functions; `SharingMeasure`; `eval_overlay_value` and `eval_overlay_computation`; `duplicate_value` and `duplicate_computation`; `TracedDuplication`.
 - **Native formers.** Native lists and their folds, nominal data, records, fixpoints and universe paths through evaluation, readback and conversion.

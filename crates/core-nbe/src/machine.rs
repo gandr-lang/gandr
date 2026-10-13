@@ -1075,6 +1075,11 @@ enum Opening
 }
 
 /// A channel: one evaluation goals demand.
+#[expect(
+    clippy::large_enum_variant,
+    reason = "one per demanded evaluation, which runs in place; boxing the running evaluation \
+              would allocate once per channel to shrink the brief wait for a body"
+)]
 enum Channel<'run>
 {
     /// Waiting for a definition body, to re-apply a neutral's spine to it.
@@ -2214,12 +2219,7 @@ where
                 match answered {
                     | Outcome::Pending => Ok(Turn::Wait),
                     | Outcome::Evaluated(Glued::Value(head)) => {
-                        let held = self
-                            .domain
-                            .neutral(neutral)
-                            .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
-                        let evaluation =
-                            Evaluation::eliminate(self.definitions, head, held.spine());
+                        let evaluation = self.reapplication(neutral, head)?;
                         *channel = Channel::Running(evaluation);
                         Ok(Turn::Again)
                     },
@@ -3025,12 +3025,15 @@ where
     /// neutral's unfolding channel.
     ///
     /// # Specification
-    /// - requires: `side` holds a neutral headed by a defined constant.
+    /// - requires: `side` holds a neutral headed by a defined constant, or a
+    ///   held endpoint whose computation is.
     /// - ensures: [`Advance::Cycle`] with nothing recorded when the side's
     ///   chain already holds this definition over this spine; otherwise the
     ///   chain holds it, the derivation records `Unfold` and the side's
     ///   reduction, the goal's support holds the definition, the side waits on
-    ///   the neutral's unfolding, and the answer is [`Advance::Unfolding`].
+    ///   the neutral's unfolding, and the answer is [`Advance::Unfolding`]. For
+    ///   a held endpoint, the definition and spine are those of the computation
+    ///   it holds.
     /// - provides: the red-l and red-r rules, and the cycle check every
     ///   unfolding passes through.
     /// - fails: every fault the channel raises, and
@@ -3046,10 +3049,12 @@ where
     ///   and full spine; a repeated key declines without replacing either slot.
     ///   The observer is the ordered unfolding/reduction trace and resulting
     ///   verdict, separating wrong-side replacement, lost spine arguments and a
-    ///   constant-only cycle key.
+    ///   constant-only cycle key. A held endpoint's step names the definition
+    ///   its computation waits on, which the kernel's replay unfolds.
     /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
     /// - witness: `machine::tests::unfolding_one_function_twice_is_not_a_cycle`
     /// - witness: `machine::tests::a_definition_cycle_declines_rather_than_unfolding_forever`
+    /// - witness: `machine::tests::a_held_endpoint_unfolds_by_a_recorded_step`
     #[spec(
         captures: [left = goal.left, right = goal.right],
         ensures: |ret| match ret {
@@ -3070,10 +3075,11 @@ where
     ) -> Result<Advance, ConversionFault>
     {
         let neutral = self.neutral_of(Self::side_of(pair, side))?;
-        let constant = self.head_constant(neutral)?;
+        let defined = self.unfolded_neutral(neutral)?;
+        let constant = self.head_constant(defined)?;
         let held = self
             .domain
-            .neutral(neutral)
+            .neutral(defined)
             .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
         let unfolded = Unfolded {
             constant,
@@ -3980,11 +3986,13 @@ where
     /// The channel giving a neutral's unfolding, minted once per neutral.
     ///
     /// # Specification
-    /// - requires: `neutral` is headed by a constant with a body here.
-    /// - ensures: for an empty spine, the body's own channel — or a channel
-    ///   already answered with a forced body; otherwise a channel re-applying
-    ///   the spine to the body once the body's channel answers. The same
-    ///   channel for every request naming `neutral`.
+    /// - requires: `neutral` is headed by a constant with a body here, or is a
+    ///   held endpoint whose computation is stuck on one.
+    /// - ensures: for a constant over an empty spine, the body's own channel —
+    ///   or a channel already answered with a forced body; otherwise a channel
+    ///   re-applying the spine to the body once the body's channel answers, a
+    ///   held endpoint's re-application running as [`Scheduler::reapplication`]
+    ///   builds it. The same channel for every request naming `neutral`.
     /// - provides: δ, shared: every goal unfolding one neutral reads one
     ///   evaluation.
     /// - fails: [`ConversionFault::MachineInvariant`] for a rigid neutral or a
@@ -4001,11 +4009,14 @@ where
     ///   and a forced or unforced value body; rigid, wrong-polarity and missing
     ///   heads refuse. Trace replay, shared-body counts and repeated
     ///   applications distinguish a lost spine, repeated evaluation and a body
-    ///   channel mistaken for a reapplied one.
+    ///   channel mistaken for a reapplied one. A held endpoint over a bare
+    ///   definition still re-applies, since its computation's spine and its own
+    ///   follow the body.
     /// - witness: `machine::tests::one_body_is_evaluated_once_for_two_definitions`
     /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
     /// - witness: `machine::tests::unfolding_one_function_twice_is_not_a_cycle`
     /// - witness: `machine::tests::malformed_heads_and_channel_entries_are_refused`
+    /// - witness: `machine::tests::a_held_endpoint_unfolds_by_a_recorded_step`
     #[spec(
         captures: [entries = self.unfoldings.len(), processes = self.processes.len()],
         ensures: |ret| ret.as_ref().map_or(true, |channel| self.unfoldings.get(&neutral) == Some(channel)
@@ -4021,12 +4032,13 @@ where
         if let Some(&channel) = self.unfoldings.get(&neutral) {
             return Ok(channel);
         }
+        let defined = self.unfolded_neutral(neutral)?;
         let held = self
             .domain
-            .neutral(neutral)
+            .neutral(defined)
             .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
         let unfolding = held.unfolding();
-        let bare = held.spine().is_empty();
+        let bare = defined == neutral && held.spine().is_empty();
         let height = match held.head() {
             | NeutralHead::Constant(constant) => self.definitions.height(constant),
             | NeutralHead::Variable { .. }
@@ -4046,7 +4058,7 @@ where
                 self.start(Work::Spent, Outcome::Evaluated(Glued::Value(body)), share)?
             },
             | (Unfolding::Forced(Glued::Value(body)), false) => {
-                let evaluation = Evaluation::eliminate(self.definitions, body, held.spine());
+                let evaluation = self.reapplication(neutral, body)?;
                 self.start(
                     Work::Channel(Channel::Running(evaluation)),
                     Outcome::Pending,
@@ -4067,6 +4079,115 @@ where
         };
         self.unfoldings.insert(neutral, channel);
         Ok(channel)
+    }
+
+    /// The neutral whose head unfolding `neutral` unfolds: `neutral` itself,
+    /// or the neutral computation a held endpoint's computation is stuck on.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `neutral` for every head but a returned endpoint's; for a
+    ///   returned endpoint, the neutral its computation is.
+    /// - provides: the one place an endpoint's unfolding is read through to the
+    ///   definition it waits on, so the cycle key, the recorded constant and
+    ///   the channel all name that definition.
+    /// - fails: [`ConversionFault::Domain`] for a dangling node;
+    ///   [`ConversionFault::MachineInvariant`] for an endpoint over a
+    ///   computation that is not neutral.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a held endpoint unfolds the definition its
+    ///   computation waits on and the kernel replays that unfolding at the same
+    ///   head; reading the endpoint's own head instead refuses the unfolding.
+    /// - witness: `machine::tests::a_held_endpoint_unfolds_by_a_recorded_step`
+    #[spec(ensures: |ret| match self.domain.neutral(neutral) {
+        | None => ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
+        | Some(node) => match node.head() {
+            | NeutralHead::Returned(computation) => match self.domain.computation(computation) {
+                | Some(&DomainComp::Neutral { neutral: inner, .. }) => ret == Ok(inner),
+                | Some(_) => ret == Err(ConversionFault::MachineInvariant),
+                | None => ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
+            },
+            | _ => ret == Ok(neutral),
+        },
+    })]
+    fn unfolded_neutral(
+        &self,
+        neutral: NeutralId,
+    ) -> Result<NeutralId, ConversionFault>
+    {
+        let held = self
+            .domain
+            .neutral(neutral)
+            .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
+        let NeutralHead::Returned(computation) = held.head()
+        else {
+            return Ok(neutral);
+        };
+        match *self
+            .domain
+            .computation(computation)
+            .ok_or(ConversionFault::Domain(DomainFault::Dangling))?
+        {
+            | DomainComp::Neutral { neutral: inner, .. } => Ok(inner),
+            | DomainComp::Lambda { .. }
+            | DomainComp::Return { .. }
+            | DomainComp::Fixpoint { .. } => Err(ConversionFault::MachineInvariant),
+        }
+    }
+
+    /// The evaluation re-applying `neutral`'s spine to `head`, the body of the
+    /// definition its unfolding unfolds.
+    ///
+    /// # Specification
+    /// - requires: `head` is the body of the constant heading
+    ///   [`Scheduler::unfolded_neutral`] of `neutral`.
+    /// - ensures: for a constant-headed neutral, [`Evaluation::eliminate`] over
+    ///   its spine; for a held endpoint, [`Evaluation::endpoint`] over its
+    ///   computation's spine and its own.
+    /// - provides: the second half of δ for both kinds of unfoldable neutral.
+    /// - fails: as [`Scheduler::unfolded_neutral`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Scheduler::unfolded_neutral`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a held endpoint under a force runs its definition,
+    ///   delivers the returned value and forces it, so the conversion meets
+    ///   what the kernel's replay meets; re-applying only the endpoint's own
+    ///   spine refuses in evaluation.
+    /// - witness: `machine::tests::a_held_endpoint_unfolds_by_a_recorded_step`
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
+    #[spec(ensures: |ret| ret.is_ok() == self.unfolded_neutral(neutral).is_ok())]
+    fn reapplication(
+        &self,
+        neutral: NeutralId,
+        head: DomainValueId,
+    ) -> Result<Evaluation<'run>, ConversionFault>
+    {
+        let defined = self.unfolded_neutral(neutral)?;
+        let held = self
+            .domain
+            .neutral(neutral)
+            .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
+        if defined == neutral {
+            return Ok(Evaluation::eliminate(self.definitions, head, held.spine()));
+        }
+        let inner = self
+            .domain
+            .neutral(defined)
+            .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
+        Ok(Evaluation::endpoint(
+            self.definitions,
+            head,
+            inner.spine(),
+            held.spine(),
+        ))
     }
 
     /// The channel opening a closure at `level` under `arity` fresh variables,
@@ -4286,6 +4407,7 @@ mod tests
     use super::decide;
     use crate::arena::DomainArena;
     use crate::eval::Definitions;
+    use crate::eval::Endpoints;
     use crate::eval::Fuel;
     use crate::eval::LoweredChain;
     use crate::eval::eval_computation;
@@ -4333,6 +4455,8 @@ mod tests
         environment: DefinitionalEnvironment,
         /// Every constant's body, at its admission position.
         bodies: Vec<ValueId>,
+        /// How the world's runs read a compound endpoint.
+        endpoints: Endpoints,
     }
 
     /// Which earlier definitions a fixture's definition declares it mentions.
@@ -4526,6 +4650,30 @@ mod tests
                 chain,
                 environment: DefinitionalEnvironment::new(),
                 bodies: bodies.iter().map(|&(_, body)| body).collect(),
+                endpoints: Endpoints::Run,
+            }
+        }
+
+        /// The same world, its runs holding compound endpoints.
+        ///
+        /// # Specification
+        /// - requires: nothing.
+        /// - ensures: the same terms and definitions, read under
+        ///   [`Endpoints::Hold`].
+        /// - provides: the stance a traced endpoint comparison runs in.
+        /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — one nested endpoint traced in both stances
+        ///   records its unfoldings only when held; a world that ignored the
+        ///   stance would record the same trace twice.
+        /// - witness: `machine::tests::a_held_endpoint_unfolds_by_a_recorded_step`
+        #[spec(ensures: |ret| ret.endpoints == Endpoints::Hold)]
+        fn holding(self) -> Self
+        {
+            Self {
+                endpoints: Endpoints::Hold,
+                ..self
             }
         }
 
@@ -4644,7 +4792,8 @@ mod tests
             M: CheckMemo<GoalSupport, ProcessId> + Default,
         {
             let definitions =
-                Definitions::new(&self.chain, &self.environment, self.environment.root());
+                Definitions::new(&self.chain, &self.environment, self.environment.root())
+                    .reading_endpoints(self.endpoints);
             let mut domain = DomainArena::new();
             let fuel = Fuel::from(4_096_u32);
             let problem = match sides {
@@ -5978,7 +6127,7 @@ mod tests
              Node::Value(id) => core.value(id).is_some_and(|value| match *value {
               Value::Constructor {datatype,ref fields,..} => ret.iter().copied().eq(core::iter::once(Node::ValueType(datatype)).chain(fields.iter().copied().map(Node::Value))),
               Value::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(Node::Value)),
-          Value::Reify(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Returned(_) => false,
+          Value::Reify(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) => false,
               Value::PathRefl(code) => ret.as_slice() == [Node::Value(code)],
               Value::PathProduct(first, second) => ret.as_slice() == [Node::Value(first), Node::Value(second)],
               Value::PathEquiv { path_type, forward, backward, .. } => ret.as_slice() == [Node::ValueType(path_type), Node::Value(forward), Node::Value(backward)],
@@ -5986,7 +6135,7 @@ mod tests
               Value::Tuple(ref components) => ret.iter().copied().eq(components.iter().copied().map(Node::Value)),
               Value::ListNil | Value::Primitive { .. } | Value::Variable{..} | Value::Constant(_) | Value::Literal(_) | Value::Hole(_) => ret.is_empty(),
               Value::StaticLambda(body) | Value::Injection(_,body) | Value::Lift{body,..} | Value::Mark{body,..} => ret.as_slice() == [Node::Value(body)],
-              Value::Thunk(body) => ret.as_slice() == [Node::Computation(body)],
+              Value::Thunk(body) | Value::Returned(body) => ret.as_slice() == [Node::Computation(body)],
              Value::Quote(id) => ret.as_slice() == [Node::ValueType(id)],
              Value::QuoteComputation(id) => ret.as_slice() == [Node::CompType(id)],
               }),
@@ -6050,7 +6199,6 @@ mod tests
                         | Value::Here(_)
                         | Value::Funext(..)
                         | Value::Equiv(..)
-                        | Value::Returned(_)
                         | Value::Reify(_) => {
                             panic!("the pure fixture language has no reified stacks")
                         },
@@ -6077,7 +6225,9 @@ mod tests
                         | Value::Injection(_, body)
                         | Value::Lift { body, .. }
                         | Value::Mark { body, .. } => Vec::from([Node::Value(body)]),
-                        | Value::Thunk(body) => Vec::from([Node::Computation(body)]),
+                        | Value::Thunk(body) | Value::Returned(body) => {
+                            Vec::from([Node::Computation(body)])
+                        },
                         | Value::Quote(quoted) => Vec::from([Node::ValueType(quoted)]),
                         | Value::QuoteComputation(quoted) => Vec::from([Node::CompType(quoted)]),
                         | Value::Primitive { .. }
@@ -6290,9 +6440,12 @@ mod tests
                         | Value::Here(_)
                         | Value::Funext(..)
                         | Value::Equiv(..)
-                        | Value::Returned(_)
                         | Value::Reify(_) => {
                             panic!("the pure fixture language has no reified stacks")
+                        },
+                        | Value::Returned(body) => {
+                            let body = computation(self, body);
+                            self.arena.value_returned(body)
                         },
                         | Value::Primitive { .. } => panic!("the kernel has no native operation"),
                         | Value::Variable {
@@ -7411,6 +7564,63 @@ mod tests
             MachineVerdict::Convertible,
             verdict,
             "the cycle does not hide that the two constants unfold to each other"
+        );
+    }
+
+    #[test]
+    fn a_held_endpoint_unfolds_by_a_recorded_step()
+    {
+        // `ident(ident(unit))` as a compound endpoint, the inner endpoint an
+        // argument of the outer, against `unit`. Run, both unfold inside
+        // evaluation and the trace names neither, so the kernel, which unfolds
+        // only what a trace names, refuses it. Held, each waits on `ident`
+        // until the conversion unfolds it by a step the trace records.
+        let mut core = CoreArena::new();
+        let function = identity(&mut core);
+        let head = core.value_constant(Name::Zero.constant());
+        let unit = core.value_unit();
+        let inner = call(&mut core, head, &[unit]);
+        let inner = core.value_returned(inner);
+        let outer = call(&mut core, head, &[inner]);
+        let endpoint = core.value_returned(outer);
+        let sides = Sides::Values(unit, endpoint);
+        let run = World::new(core, &[(Name::Zero, function)]);
+
+        let (verdict, decisions) = run.traced(sides);
+        assert_eq!(MachineVerdict::Convertible, verdict);
+        assert!(
+            !decisions
+                .iter()
+                .any(|decision| matches!(decision, ConversionDecision::Unfold { .. })),
+            "a running endpoint unfolds inside evaluation: {decisions:?}"
+        );
+        assert!(
+            matches!(
+                run.replayed(sides, verdict, &decisions),
+                KernelVerdict::Declined(ReplayDecline::Refused(_))
+            ),
+            "the kernel takes no unfolding the trace does not name"
+        );
+
+        let held = run.holding();
+        let (verdict, decisions) = held.traced(sides);
+        assert_eq!(MachineVerdict::Convertible, verdict);
+        let named = TraceNode::Constant(Name::Zero.constant());
+        let steps = decisions
+            .windows(2)
+            .filter(|pair| {
+                matches!(*pair, [ConversionDecision::Unfold { constant }, ConversionDecision::ReduceRight { redex }]
+                    if *constant == named && *redex == named)
+            })
+            .count();
+        assert_eq!(
+            2_usize, steps,
+            "each endpoint unfolds `ident` on its own side by a recorded step: {decisions:?}"
+        );
+        assert_eq!(
+            KernelVerdict::Convertible,
+            held.replayed(sides, verdict, &decisions),
+            "the kernel replays both unfoldings where the endpoints hold them"
         );
     }
 
