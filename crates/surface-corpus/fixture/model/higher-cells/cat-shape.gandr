@@ -10,3 +10,41 @@ sign CatShape {
   rule unitR : comp(f, id(b)) ==> f;
   rule assoc : comp(comp(f, g), h) ==> comp(f, comp(g, h));
 }
+
+module SetoidCat : Model(CatShape) {
+  type Ob = Type;
+  type Hom(a : Ob, b : Ob) = +U[ω] (a -> -F b);
+
+  @[ runs("<fun>") ]
+  def ident(t : Type, x : t) -> -F t { return x }
+
+  @[ runs("<fun>") ]
+  def compose(t : Type, u : Type, v : Type, f : +U[ω] (t -> -F u), g : +U[ω] (u -> -F v), x : t) -> -F v {
+    run y <- f(x);
+    become g(y)
+  }
+
+  @[ runs("<fun>") ]
+  def id(t : Type) -> -F (+U[ω] (t -> -F t)) { return thunk { become ident(t) } }
+
+  @[ runs("<fun>") ]
+  def comp(t : Type, u : Type, v : Type, f : +U[ω] (t -> -F u), g : +U[ω] (u -> -F v)) -> -F (+U[ω] (t -> -F v)) {
+    return thunk { become compose(t, u, v, f, g) }
+  }
+
+  @[ checks ]
+  def unitL(p : Type, q : Type, f : +U[ω] (p -> -F q)) -> -F Path((+U[ω] (p -> -F q)), comp(p, p, q, id(p), f), f) {
+    return here(f)
+  }
+
+  @[ checks ]
+  def unitR(p : Type, q : Type, f : +U[ω] (p -> -F q)) -> -F Path((+U[ω] (p -> -F q)), comp(p, q, q, f, id(q)), f) {
+    return here(f)
+  }
+
+  @[ checks ]
+  def assoc(p : Type, q : Type, r : Type, s : Type, f : +U[ω] (p -> -F q), g : +U[ω] (q -> -F r), h : +U[ω] (r -> -F s)) -> -F Path((+U[ω] (p -> -F s)), comp(p, r, s, comp(p, q, r, f, g), h), comp(p, q, s, f, comp(q, r, s, g, h))) {
+    return here(thunk { become compose(p, q, s, f, thunk { become compose(q, r, s, g, h) }) })
+  }
+
+}

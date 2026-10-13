@@ -117,9 +117,9 @@
 //! The alternative was a dependent arrow for every parameter, which is one rule
 //! and is correct; it was declined because the core keeps the two arrows
 //! distinct nodes so that a codomain's scope is never a payload's question, and
-//! an arrow whose binder nothing names should say so. Reversal: a surface
-//! spelling of the dependent arrow, `(x : A) -> C` in type position, would make
-//! the choice the author's, and the lowering would read it as written.
+//! an arrow whose binder nothing names should say so. The surface's spelling of
+//! the dependent arrow, `(x : A) -> C`, reads by this rule rather than as
+//! written (the decision and the choice it reverses are in `lower::arity`).
 //!
 //! # One order of checks, the same at every form
 //!
@@ -530,6 +530,7 @@ use crate::module::DeclarationOutcome;
 use crate::module::DeclarationParts;
 use crate::module::DeclarationSlot;
 use crate::module::DecoratedModule;
+use crate::module::FamilyIndex;
 use crate::module::Half;
 use crate::module::LoweredDeclaration;
 use crate::module::LoweredModule;
@@ -587,6 +588,8 @@ pub use exits::Explicitness;
 pub use exits::InferredExit;
 
 mod identity;
+
+mod model;
 
 mod native;
 
@@ -1888,6 +1891,10 @@ enum Plan
     /// The nominal family declared at this admission position, over the
     /// arguments in the lowerer's operand store, left to right.
     Data(ConstantIndex, Stretch),
+    /// The type family member at this place of the collection's family list,
+    /// its type expanded over the arguments in the lowerer's operand store,
+    /// left to right.
+    Expansion(FamilyIndex, Stretch),
     /// A constructor applied to its fields.
     Constructor(native::Constructed),
     /// A match, compiled to the decision tree at this position of the
@@ -2262,6 +2269,13 @@ struct Lowerer<'run, 'source>
     /// Each kind witness's declared kind and body, the code of the type
     /// member it checks.
     kind_checks: BTreeMap<SlotIndex, (ValueTypeId, ValueId)>,
+    /// Each slot whose signature a model derives, with the type minted for
+    /// it.
+    modelled: BTreeMap<SlotIndex, ValueTypeId>,
+    /// Each slot a check after minting refused: a derived component that
+    /// names one that did not lower, or a family whose parameters disagree
+    /// with its indices.
+    faults: BTreeMap<SlotIndex, LoweringRefusal<'source>>,
     /// The arguments every planned application reads, stretch by stretch.
     operands: Vec<NodeIndex>,
     /// The statements every planned block reads, stretch by stretch.
@@ -2610,6 +2624,8 @@ pub fn lower_module<'source>(
     };
     lowerer.mint(&mut sink)?;
     lowerer.mint_abstracts(&mut sink);
+    lowerer.mint_models(&mut sink);
+    lowerer.check_families(&mut sink);
     lowerer.mint_data(&mut sink);
     lowerer.mint_descriptions(&mut sink)?;
     lowerer.mint_operations(&mut sink);
@@ -2749,6 +2765,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             witnessed: BTreeMap::new(),
             sealings: BTreeMap::new(),
             kind_checks: BTreeMap::new(),
+            modelled: BTreeMap::new(),
+            faults: BTreeMap::new(),
             operands: Vec::new(),
             statements: Vec::new(),
             parameters: Vec::new(),
@@ -3171,7 +3189,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     | Operand::Member(_)
                     | Operand::Data(_)
                     | Operand::Operation
-                    | Operand::Signature => {},
+                    | Operand::Signature
+                    | Operand::Model(_) => {},
                 }
             }
         }
@@ -3198,6 +3217,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
         }
         self.seed_data(&mut seeds);
+        self.seed_families(&mut seeds);
         self.seed_descriptions(&mut seeds)?;
         for (position, reading) in seeds {
             self.read(position, reading);
@@ -5915,34 +5935,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let name = self.name_at(site.at);
-        let in_signature =
-            if let Some(&Maybe::Present(seen)) = self.scopes.get(usize::from(site.at.node)) {
-                let visible = self
-                    .collected
-                    .structures
-                    .get(usize::from(seen.structure))
-                    .and_then(|structure| structure.types.get(.. seen.before))
-                    .and_then(|visible| visible.iter().rev().find(|stated| stated.name == name))
-                    .copied();
-                if let Some(stated) = visible {
-                    return self.stated_type(site, stated);
-                }
-                true
-            }
-            else {
-                false
-            };
-        let from = site.reading.frame();
-        let bound = matches!(
-            self.scope.resolve(from, name, &mut self.fuel)?,
-            Maybe::Present(_)
-        );
-        if !in_signature
-            && !bound
-            && let Maybe::Present(member) = self.type_member_named(site, name)?
-        {
-            return self.stated_type(site, member);
+        if let Maybe::Present(stated) = self.stated_named(site, name)? {
+            return self.stated_type(site, stated);
         }
+        let from = site.reading.frame();
         if let Maybe::Present(resolved) = self.resolve_name(site, from, name)? {
             let none = Stretch {
                 start: self.operands.len(),
@@ -6001,6 +5997,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     && match stated.meaning {
                         | TypeMeaning::Manifest(defined) => matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Transparent(node)) if node == defined.node),
                         | TypeMeaning::Sealed => matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Sealed(atom)) if usize::from(atom) == usize::from(stated.held)),
+                        | TypeMeaning::Family(_) => false,
                     })
         },
     )]
@@ -6029,11 +6026,69 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 }
                 Plan::Sealed(atom.constant)
             },
+            | TypeMeaning::Family(_) => {
+                return Err(site.out(FragmentBoundary::Arity(OperandCount::from(0_usize))));
+            },
         };
         self.manifests.push((stated.held, site.at.node));
         self.plan(site, plan);
 
         Ok(())
+    }
+
+    /// The type component or type member `name` names at `site`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: inside a signature type, the latest of the type components
+    ///   written before the type's own component that bears the name, and
+    ///   nothing else; elsewhere, nothing where a binder answers the name, and
+    ///   otherwise the type member [`Self::type_member_named`] answers.
+    /// - provides: the one scope a stated type is named in, bare or applied.
+    /// - fails: [`LoweringRefusal::BudgetExceeded`] when a walk outruns the
+    ///   allowance.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::BudgetExceeded`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a component named in a signature, a member named in a
+    ///   body and a binder shadowing a member each resolve as stated.
+    /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
+    /// - witness: `modules::modules::a_type_member_is_named_only_after_it_is_written`
+    /// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
+    #[spec(
+        ensures: |ret| match ret {
+            | Ok(Maybe::Present(stated)) => stated.name == name,
+            | Ok(Maybe::Absent(_)) | Err(_) => true,
+        },
+    )]
+    fn stated_named(
+        &mut self,
+        site: Site,
+        name: SurfaceName<'source>,
+    ) -> Result<Maybe<TypeComponent<'source>, named::Absent>, LoweringRefusal<'source>>
+    {
+        let unresolved = Maybe::Absent(named::Absent::Unresolved);
+        if let Some(&Maybe::Present(seen)) = self.scopes.get(usize::from(site.at.node)) {
+            return Ok(self
+                .collected
+                .structures
+                .get(usize::from(seen.structure))
+                .and_then(|structure| structure.types.get(.. seen.before))
+                .and_then(|visible| visible.iter().rev().find(|stated| stated.name == name))
+                .copied()
+                .map_or(unresolved, Maybe::Present));
+        }
+        if let Maybe::Present(_) = self
+            .scope
+            .resolve(site.reading.frame(), name, &mut self.fuel)?
+        {
+            return Ok(unresolved);
+        }
+
+        self.type_member_named(site, name)
     }
 
     /// The type member `name` names at `site`: one written before it in the
@@ -6507,11 +6562,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: `site` is a type application in type position, or in value
     ///   position where a type is quoted.
-    /// - ensures: a head a binder or an earlier declaration answers is read as
-    ///   the static application of that code to the arguments, left to right;
-    ///   any other head applied to one argument resolves against the unary
-    ///   table, stands at the sort its former produces, reads its argument at
-    ///   the sort the former takes, and is planned over it.
+    /// - ensures: a head naming a type family, as a component or a member,
+    ///   expands to the family's type over the arguments; a head a binder or an
+    ///   earlier declaration answers is read as the static application of that
+    ///   code to the arguments, left to right; any other head applied to one
+    ///   argument resolves against the unary table, stands at the sort its
+    ///   former produces, reads its argument at the sort the former takes, and
+    ///   is planned over it.
     /// - provides: the applied half of type-head resolution.
     /// - fails: yields the unresolved-head refusal for a head nothing answers
     ///   and no former takes at the arity it was written with, the wrong-sort
@@ -6535,7 +6592,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(usize::from(site.at.node)),
-                    Some(&(Plan::Former(..) | Plan::Decode(..) | Plan::StaticApplication(..) | Plan::Data(..)))
+                    Some(&(Plan::Former(..) | Plan::Decode(..) | Plan::StaticApplication(..) | Plan::Data(..) | Plan::Expansion(..)))
                 )
         },
     )]
@@ -6559,6 +6616,24 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let name = self.name_at(head);
         let start = self.operands.len();
         let read = arguments(site, &mut cursor, &mut self.operands);
+        match read.and_then(|()| self.stated_named(site, name)) {
+            | Ok(Maybe::Present(TypeComponent {
+                meaning: TypeMeaning::Family(family),
+                held,
+                ..
+            })) => {
+                let applied = Stretch {
+                    start,
+                    end: self.operands.len(),
+                };
+                return self.expansion(site, family, held, applied);
+            },
+            | Ok(Maybe::Present(_) | Maybe::Absent(_)) => {},
+            | Err(refusal) => {
+                self.operands.truncate(start);
+                return Err(refusal);
+            },
+        }
         let resolved = read.and_then(|()| {
             let named = Site { at: head, ..site };
             self.resolve_name(named, site.reading.frame(), name)
@@ -7590,8 +7665,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
             .flat_map(|structure| structure.types.iter().chain(&structure.type_members))
             .filter_map(|component| match component.meaning {
                 | TypeMeaning::Manifest(defined) => Some(defined),
-                | TypeMeaning::Sealed => None,
+                | TypeMeaning::Sealed | TypeMeaning::Family(_) => None,
             })
+            .chain(self.collected.families.iter().flat_map(|family| {
+                family
+                    .parameters
+                    .iter()
+                    .map(|parameter| parameter.classifier)
+                    .chain(core::iter::once(family.defined))
+            }))
             .collect();
         stated.sort_unstable_by_key(|defined| (defined.span.start(), defined.node));
         stated.dedup();
@@ -7823,7 +7905,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Sum(_)
                 | Plan::Former(TypeFormer::Thunk | TypeFormer::List, _)
                 | Plan::Path(..)
-                | Plan::Data(..) => Some(Produced::ValueType),
+                | Plan::Data(..)
+                | Plan::Expansion(..) => Some(Produced::ValueType),
                 | Plan::Arrow(..) | Plan::DependentArrow(..) | Plan::With(_) | Plan::Former(TypeFormer::Returner, _) => {
                     Some(Produced::CompType)
                 },
@@ -7994,6 +8077,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Function(function) => self.mint_function(&function, sink, origin),
             | Plan::Data(constant, arguments) => {
                 self.mint_family(constant, arguments, sink, origin)
+            },
+            | Plan::Expansion(family, arguments) => {
+                self.mint_expansion(family, arguments, sink, origin)
             },
             | Plan::Constructor(constructed) => self.mint_constructor(constructed, sink, origin),
             | Plan::Case(case) => self.mint_case(case, sink, origin),
@@ -8641,6 +8727,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Application(..)
             | Plan::Function(_)
             | Plan::Data(..)
+            | Plan::Expansion(..)
             | Plan::Constructor(_)
             | Plan::Case(_)
             | Plan::EmptyCase(_)
@@ -10000,12 +10087,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: the slot and its member coordinates are interpreted in this
     ///   lowering run.
-    /// - ensures: a stored refusal takes precedence; a data declaration, or a
-    ///   described family the decoder admitted, is the index of its minted
-    ///   signature; an abstract slot is the abstract type it lowered to, and a
-    ///   kind witness the check of its type member's code at the kind;
-    ///   otherwise the available signature and body select Completed,
-    ///   Uncompleted or Bodied.
+    /// - ensures: a stored refusal takes precedence, then a refusal a check
+    ///   after minting filed; a data declaration, or a described family the
+    ///   decoder admitted, is the index of its minted signature; an abstract
+    ///   slot is the abstract type it lowered to, and a kind witness the check
+    ///   of its type member's code at the kind; otherwise the available
+    ///   signature — written, a function tail's, or the type a model derives —
+    ///   and body select Completed, Uncompleted or Bodied.
     /// - provides: the declaration outcome without manufacturing absent halves.
     /// - fails: a refused member witness is Unminted; if neither half exists,
     ///   the signature’s absence is preserved.
@@ -10027,6 +10115,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     #[spec(
         ensures: |ret| {
             if let Maybe::Present((_at, refusal)) = slot.refusal {
+                ret == Maybe::Present(DeclarationOutcome::Refused(refusal))
+            }
+            else if let Some(&refusal) = self.faults.get(&position) {
                 ret == Maybe::Present(DeclarationOutcome::Refused(refusal))
             }
             else if let Maybe::Present(Half { operand: Operand::Data(form), .. }) = slot.definition {
@@ -10053,6 +10144,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     | Maybe::Present(half) => match half.operand {
                         | Operand::Written(written) => self.value_type_at(written.node),
                         | Operand::Function => self.signature_at(half.declaration.node),
+                        | Operand::Model(_) => self.modelled.get(&position).copied().map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
                         | Operand::Member(_) | Operand::Data(_) | Operand::Operation | Operand::Signature => Maybe::Absent(lowered::Absent::Unminted),
                     },
                     | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
@@ -10066,7 +10158,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             .get(&position)
                             .copied()
                             .map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
-                        | Operand::Data(_) | Operand::Operation | Operand::Signature => Maybe::Absent(lowered::Absent::Unminted),
+                        | Operand::Data(_) | Operand::Operation | Operand::Signature | Operand::Model(_) => Maybe::Absent(lowered::Absent::Unminted),
                     },
                     | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
                 };
@@ -10099,6 +10191,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Maybe<DeclarationOutcome<'source>, lowered::Absent>
     {
         if let Maybe::Present((_at, refusal)) = slot.refusal {
+            return Maybe::Present(DeclarationOutcome::Refused(refusal));
+        }
+        if let Some(&refusal) = self.faults.get(&position) {
             return Maybe::Present(DeclarationOutcome::Refused(refusal));
         }
         if let Maybe::Present(Half {
@@ -10156,6 +10251,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Maybe::Present(half) => match half.operand {
                 | Operand::Written(written) => self.value_type_at(written.node),
                 | Operand::Function => self.signature_at(half.declaration.node),
+                | Operand::Model(_) => self
+                    .modelled
+                    .get(&position)
+                    .copied()
+                    .map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
                 | Operand::Member(_)
                 | Operand::Data(_)
                 | Operand::Operation
@@ -10172,9 +10272,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     .get(&position)
                     .copied()
                     .map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
-                | Operand::Data(_) | Operand::Operation | Operand::Signature => {
-                    Maybe::Absent(lowered::Absent::Unminted)
-                },
+                | Operand::Data(_)
+                | Operand::Operation
+                | Operand::Signature
+                | Operand::Model(_) => Maybe::Absent(lowered::Absent::Unminted),
             },
             | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
         };
@@ -10335,6 +10436,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                                 lowered.name == component.name
                                     && usize::from(lowered.atom) == usize::from(component.held)
                             }),
+                            | TypeMeaning::Family(_) => true,
                         });
                         stated
                             && values.next().is_none()
@@ -10389,6 +10491,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             });
                         }
                     },
+                    | TypeMeaning::Family(_) => {},
                 }
             }
             lowered.push(LoweredStructure::new(

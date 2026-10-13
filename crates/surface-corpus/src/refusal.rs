@@ -371,6 +371,11 @@ pub enum RefusalName
     UnknownMember,
     /// A module ascription form the fragment does not read yet.
     UnreadAscription,
+    /// A model signature component the derivation cannot state.
+    UnstatedComponent,
+    /// A type family whose parameters disagree with the indices its kind
+    /// states.
+    FamilyTelescope,
     /// A top-level module named with a lowercase initial.
     LowercaseModuleName,
     /// A match some scrutinee value reaches no arm of.
@@ -442,7 +447,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 78_usize] = [
+    pub const VOCABULARY: [Self; 80_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -491,6 +496,8 @@ impl RefusalName
         Self::ForwardMemberReference,
         Self::UnknownMember,
         Self::UnreadAscription,
+        Self::UnstatedComponent,
+        Self::FamilyTelescope,
         Self::LowercaseModuleName,
         Self::NonExhaustiveMatch,
         Self::UnmarkedSelfReference,
@@ -556,7 +563,9 @@ impl RefusalName
         (Self::NonValuePayload, b"NonValuePayload") | (Self::IllTypedPayload,
         b"IllTypedPayload") | (Self::ForwardMemberReference, b"ForwardMemberReference") |
         (Self::UnknownMember, b"UnknownMember") | (Self::UnreadAscription,
-        b"UnreadAscription") | (Self::LowercaseModuleName, b"LowercaseModuleName") |
+        b"UnreadAscription") | (Self::UnstatedComponent, b"UnstatedComponent") |
+        (Self::FamilyTelescope, b"FamilyTelescope") | (Self::LowercaseModuleName,
+        b"LowercaseModuleName") |
         (Self::NonExhaustiveMatch, b"NonExhaustiveMatch") |
         (Self::UnmarkedSelfReference, b"UnmarkedSelfReference") |
         (Self::Unreachable, b"Unreachable") |
@@ -667,6 +676,8 @@ impl RefusalName
             | Self::ForwardMemberReference => "ForwardMemberReference",
             | Self::UnknownMember => "UnknownMember",
             | Self::UnreadAscription => "UnreadAscription",
+            | Self::UnstatedComponent => "UnstatedComponent",
+            | Self::FamilyTelescope => "FamilyTelescope",
             | Self::LowercaseModuleName => "LowercaseModuleName",
             | Self::NonExhaustiveMatch => "NonExhaustiveMatch",
             | Self::UnmarkedSelfReference => "UnmarkedSelfReference",
@@ -846,6 +857,10 @@ impl Refusal<'_>
         (Self::Lowering(LoweringRefusal::UnknownMember { .. }),
         RefusalName::UnknownMember) | (Self::Lowering(LoweringRefusal::UnreadAscription {
         .. }), RefusalName::UnreadAscription) |
+        (Self::Lowering(LoweringRefusal::UnstatedComponent { .. }),
+        RefusalName::UnstatedComponent) |
+        (Self::Lowering(LoweringRefusal::FamilyTelescope { .. }),
+        RefusalName::FamilyTelescope) |
         (Self::Lowering(LoweringRefusal::LowercaseModuleName { .. }),
         RefusalName::LowercaseModuleName) |
         (Self::Lowering(LoweringRefusal::NonExhaustiveMatch { .. }),
@@ -1008,7 +1023,9 @@ impl Refusal<'_>
         RefusalName::IllTypedPayload) | (LoweringRefusal::ForwardMemberReference { .. },
         RefusalName::ForwardMemberReference) | (LoweringRefusal::UnknownMember { .. },
         RefusalName::UnknownMember) | (LoweringRefusal::UnreadAscription { .. },
-        RefusalName::UnreadAscription) | (LoweringRefusal::LowercaseModuleName { .. },
+        RefusalName::UnreadAscription) | (LoweringRefusal::UnstatedComponent { .. },
+        RefusalName::UnstatedComponent) | (LoweringRefusal::FamilyTelescope { .. },
+        RefusalName::FamilyTelescope) | (LoweringRefusal::LowercaseModuleName { .. },
         RefusalName::LowercaseModuleName) | (LoweringRefusal::NonExhaustiveMatch { .. },
         RefusalName::NonExhaustiveMatch) | (LoweringRefusal::UnmarkedSelfReference { .. },
         RefusalName::UnmarkedSelfReference) | (LoweringRefusal::Unreachable { .. },
@@ -1042,6 +1059,8 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | LoweringRefusal::ForwardMemberReference { .. } => RefusalName::ForwardMemberReference,
         | LoweringRefusal::UnknownMember { .. } => RefusalName::UnknownMember,
         | LoweringRefusal::UnreadAscription { .. } => RefusalName::UnreadAscription,
+        | LoweringRefusal::UnstatedComponent { .. } => RefusalName::UnstatedComponent,
+        | LoweringRefusal::FamilyTelescope { .. } => RefusalName::FamilyTelescope,
         | LoweringRefusal::LowercaseModuleName { .. } => RefusalName::LowercaseModuleName,
         | LoweringRefusal::NonExhaustiveMatch { .. } => RefusalName::NonExhaustiveMatch,
         | LoweringRefusal::UnmarkedSelfReference { .. } => RefusalName::UnmarkedSelfReference,

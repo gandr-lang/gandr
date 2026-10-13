@@ -843,7 +843,9 @@ fn a_telescope_binds_each_entry_in_the_ones_after_it()
     let mut arena = CoreArena::new();
     let module = lowered(
         "def dependent : (a : Type, x : a) => a ; def mixed : (x : Integer, String) => Integer ; \
-         def plain : (Integer, String) => Integer ;",
+         def plain : (Integer, String) => Integer ; def endpoint : (n : Integer) => Path(Integer, \
+         n, n) ; def tail(n : Integer) -> -F Integer { return n }\ndef spelled : (n : Integer) \
+         => Integer ;",
         &mut arena,
     );
 
@@ -853,16 +855,24 @@ fn a_telescope_binds_each_entry_in_the_ones_after_it()
         "a named entry a later entry mentions binds a dependent arrow"
     );
     assert_eq!(
-        declared(&arena, &module, "mixed")
-            .first()
-            .map(String::as_str),
-        Some("U"),
-        "an unnamed entry in a telescope binds a name no source can write"
+        declared(&arena, &module, "mixed"),
+        ["U", "->", "Integer", "->", "String", "F", "Integer"],
+        "a named entry nothing after it names is a plain arrow"
     );
     assert_eq!(
         declared(&arena, &module, "plain"),
         ["U", "->", "Integer", "->", "String", "F", "Integer"],
         "a list of unnamed entries stays the plain function space"
+    );
+    assert_eq!(
+        declared(&arena, &module, "endpoint").get(.. 2_usize),
+        Some(&[String::from("U"), String::from("Pi")][..]),
+        "an entry the codomain names as a value binds a dependent arrow"
+    );
+    assert_eq!(
+        declared(&arena, &module, "spelled"),
+        declared(&arena, &module, "tail"),
+        "a telescope and a function tail writing one signature declare one type"
     );
     let source = "def twice : (x : Integer, x : String) => Integer ;";
     assert!(
@@ -877,13 +887,14 @@ fn a_dependent_arrow_is_the_telescope_the_alias_abbreviates()
     let mut arena = CoreArena::new();
     let module = lowered(
         "def spelled : +U ((a : Type) -> (x : a) -> -F a) ; def aliased : (a : Type, x : a) => a \
-         ; def ignored : +U ((n : Integer) -> -F Integer) ;",
+         ; def ignored : +U ((n : Integer) -> -F Integer) ; def tail(n : Integer) -> -F Integer { \
+         return n }",
         &mut arena,
     );
     assert_eq!(
         declared(&arena, &module, "spelled").get(.. 2_usize),
         Some(&[String::from("U"), String::from("Pi")][..]),
-        "a computation arrow whose domain names its binder is dependent"
+        "a computation arrow whose codomain names its binder is dependent"
     );
     let signature = |name: &str| match outcome(&module, name) {
         | DeclarationOutcome::Uncompleted { declared_type } => declared_type,
@@ -898,7 +909,12 @@ fn a_dependent_arrow_is_the_telescope_the_alias_abbreviates()
     );
     assert_eq!(
         declared(&arena, &module, "ignored"),
-        ["U", "Pi", "Integer", "F", "Integer"],
-        "a named binder binds whether or not the codomain mentions it"
+        ["U", "->", "Integer", "F", "Integer"],
+        "a binder nothing names is the plain arrow"
+    );
+    assert_eq!(
+        declared(&arena, &module, "ignored"),
+        declared(&arena, &module, "tail"),
+        "the type the function tail writing the same signature declares"
     );
 }

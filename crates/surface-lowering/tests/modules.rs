@@ -12,6 +12,8 @@ extern crate alloc;
 #[cfg(test)]
 mod modules
 {
+    mod models;
+
     use alloc::sync::Arc;
     use core::fmt::Write as _;
 

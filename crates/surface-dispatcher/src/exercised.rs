@@ -719,6 +719,8 @@ fn lowering_row(
         | LoweringRefusal::ForwardMemberReference { .. }
         | LoweringRefusal::UnknownMember { .. }
         | LoweringRefusal::UnreadAscription { .. }
+        | LoweringRefusal::UnstatedComponent { .. }
+        | LoweringRefusal::FamilyTelescope { .. }
         | LoweringRefusal::LowercaseModuleName { .. }
         | LoweringRefusal::NonExhaustiveMatch { .. }
         | LoweringRefusal::UnmarkedSelfReference { .. }

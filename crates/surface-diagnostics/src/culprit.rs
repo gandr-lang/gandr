@@ -172,6 +172,8 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         | LoweringRefusal::ForwardMemberReference { .. } => "named before it is declared",
         | LoweringRefusal::UnknownMember { .. } => "no member of this name",
         | LoweringRefusal::UnreadAscription { .. } => "not read by the fragment yet",
+        | LoweringRefusal::UnstatedComponent { .. } => "the signature this model derives",
+        | LoweringRefusal::FamilyTelescope { .. } => "parameters its kind does not state",
         | LoweringRefusal::LowercaseModuleName { .. } => "a lowercase initial",
         | LoweringRefusal::NonExhaustiveMatch { .. } => "some value matches no arm",
         | LoweringRefusal::UnmarkedSelfReference { .. } => "recursion without a claim",

@@ -3017,7 +3017,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a closed annotation is carried unchanged.
     /// - witness: `lower::native::tests::a_parameterized_constructor_needs_its_classifier`
     #[spec(ensures: |ret| sink.arena.value_type(ret).is_some() || ret == ty)]
-    fn relocate_value_type(
+    pub(super) fn relocate_value_type(
         &self,
         ty: ValueTypeId,
         frame: Frame,

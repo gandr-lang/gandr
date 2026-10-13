@@ -242,6 +242,9 @@ pub struct DescribedDeclaration
     pub parameters: Vec<FamilyParameter>,
     /// The written native family classifier; a `sign` block has none.
     pub classifier: Maybe<Placed, family_classifier::Absent>,
+    /// What a `sign` block presents to the signature of its models; a family
+    /// or a top-level operation presents none.
+    pub presentation: crate::model::Presented,
 }
 
 /// Descriptions and member-local refusals in declaration order.
@@ -682,6 +685,7 @@ impl Reader<'_, '_>
             operation_spans,
             parameters,
             classifier: Maybe::Present(classifier),
+            presentation: Maybe::Absent(crate::model::presentation::Absent::Family),
         })
     }
 

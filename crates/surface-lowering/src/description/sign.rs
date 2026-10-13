@@ -39,8 +39,11 @@
 //! check, and refusals with no half, which no expectation can state and which
 //! kept every refused block's source pending. A decoration on a block that
 //! refuses nothing decorates no declaration and refuses the source as a stray
-//! block. The choice reverses when a block lowers to the signature its models
-//! are checked against: it then takes its slot whether or not a member refuses.
+//! block. A sign's models are checked against `Model(S)`, which the lowering
+//! derives from the block's presentation where a module names it, so the block
+//! still takes no slot (the decision is in `module::model`). The choice
+//! reverses when the derived signature becomes a core declaration: the block
+//! then takes its slot whether or not a member refuses.
 //! Witnesses:
 //! `description::sign::tests::a_refused_sign_block_states_its_refusal`,
 //! `description::sign::tests::a_top_level_operation_declines_its_filler_by_name`.
@@ -89,6 +92,14 @@ use crate::circuit::OutputCount;
 use crate::circuit::SignatureFault;
 use crate::form::Piece;
 use crate::form::Placed;
+use crate::model::Port;
+use crate::model::Presentation;
+use crate::model::PresentedCircuit;
+use crate::model::PresentedLaw;
+use crate::model::PresentedOperation;
+use crate::model::PresentedSort;
+use crate::model::SortTerm;
+use crate::model::presentation;
 
 /// The two sides of a signature and its rewrite-sorted binders.
 struct Boundary
@@ -97,6 +108,10 @@ struct Boundary
     inputs: Vec<SortRef>,
     /// Ports at which the interface returns its result.
     outputs: Vec<SortRef>,
+    /// Each input port's written sort, in order.
+    input_sorts: Vec<Placed>,
+    /// Each output port's written sort, in order.
+    output_sorts: Vec<Placed>,
     /// The rewrite heads in scope in the body.
     rewrites: Vec<RewritePort>,
 }
@@ -128,13 +143,14 @@ impl HeadKind
     }
 }
 
-/// A sign block's rule member: a face it writes or a circuit it wires.
+/// A sign block's rule member: a face it writes or a circuit it wires, each
+/// with what it presents to the model signature.
 enum RuleMember
 {
     /// A written face `rule name : lhs ==> rhs`.
-    Face(RuleFace),
+    Face(RuleFace, PresentedLaw),
     /// A circuit rule whose sphere its wiring derives.
-    Circuit(CircuitRule),
+    Circuit(CircuitRule, PresentedCircuit),
 }
 
 impl Reader<'_, '_>
@@ -171,6 +187,7 @@ impl Reader<'_, '_>
         let members = split_members(run.remaining());
         let mut sorts = Vec::new();
         let mut scope = BTreeMap::new();
+        let mut presentation = Presentation::default();
         for member in &members {
             let span = member_span(member, at.span);
             let mut reading = Run::new(member, span);
@@ -196,7 +213,10 @@ impl Reader<'_, '_>
                 continue;
             }
             match self.signature_sort(&mut reading) {
-                | Ok(sort) => sorts.push(sort),
+                | Ok((sort, presented)) => {
+                    sorts.push(sort);
+                    presentation.sorts.push(presented);
+                },
                 | Err(diagnostic) => diagnostics.push(diagnostic),
             }
         }
@@ -215,16 +235,23 @@ impl Reader<'_, '_>
             }
             else if reading.eat(Spelling("oper")).0 {
                 self.signature_operation(&mut reading, &sorts)
-                    .map(|operation| {
+                    .map(|(operation, presented)| {
                         operations.push(operation);
                         operation_spans.push(span);
+                        presentation.operations.push(presented);
                     })
             }
             else if reading.eat(Spelling("rule")).0 {
                 self.signature_rule(&mut reading, &sorts, &scope)
                     .map(|member| match member {
-                        | RuleMember::Circuit(rule) => circuits.push(rule),
-                        | RuleMember::Face(face) => faces.push(face),
+                        | RuleMember::Circuit(rule, presented) => {
+                            circuits.push(rule);
+                            presentation.circuits.push(presented);
+                        },
+                        | RuleMember::Face(face, presented) => {
+                            faces.push(face);
+                            presentation.laws.push(presented);
+                        },
                     })
             }
             else {
@@ -254,6 +281,7 @@ impl Reader<'_, '_>
             operation_spans,
             parameters: Vec::new(),
             classifier: Maybe::Absent(family_classifier::Absent::Signature),
+            presentation: Maybe::Present(presentation),
         })
     }
 
@@ -295,7 +323,7 @@ impl Reader<'_, '_>
         let mut operations = Vec::new();
         let mut operation_spans = Vec::new();
         match self.signature_operation(run, &[]) {
-            | Ok(operation) => {
+            | Ok((operation, _presented)) => {
                 operations.push(operation);
                 operation_spans.push(at.span);
             },
@@ -316,13 +344,16 @@ impl Reader<'_, '_>
             operation_spans,
             parameters: Vec::new(),
             classifier: Maybe::Absent(family_classifier::Absent::Circuit),
+            presentation: Maybe::Absent(presentation::Absent::Circuit),
         })
     }
 
     /// Read an indexed or unindexed sort without erasing its telescope.
     ///
     /// # Specification
-    /// - ensures: indices retain their written order and sort names.
+    /// - ensures: indices retain their written order and sort names, beside the
+    ///   sort as it presents itself to a model signature: its name tile and
+    ///   each index's sort read as a sort over index terms.
     /// - fails: an incomplete judgment earns a member-local refusal.
     /// - panics: none.
     /// - executable: none — the written telescope is source syntax the result
@@ -336,20 +367,35 @@ impl Reader<'_, '_>
     ///   two unseparated sorts are declined rather than read as one.
     /// - witness: `description::sign::tests::a_terminated_block_is_not_told_it_lacks_terminators`
     /// - witness: `description::sign::tests::unseparated_members_are_declined_rather_than_dropped`
+    /// - witness: `model::tests::the_cat_shape_sorts_are_a_type_and_a_family`
     fn signature_sort(
         &self,
         run: &mut Run<'_>,
-    ) -> Result<SortDesc, DescriptionDiagnostic>
+    ) -> Result<(SortDesc, PresentedSort), DescriptionDiagnostic>
     {
         let name = run.take()?;
-        let indices = if run.eat(Spelling("(")).0 {
-            self.ports(run)?
-                .into_iter()
-                .map(|port| SortIndex::new(port.name, port.sort))
-                .collect()
+        let (indices, presented) = if run.eat(Spelling("(")).0 {
+            let mut indices = Vec::new();
+            let mut presented = Vec::new();
+            while !run.eat(Spelling(")")).0 {
+                let index = run.take()?;
+                if !run.eat(Spelling(":")).0 {
+                    return Err(run.fault(DescriptionFault::Malformed));
+                }
+                let sort = run.take()?;
+                indices.push(SortIndex::new(self.text(index).0, self.text(sort).0));
+                presented.push(Port {
+                    name: self.text(index).0.into(),
+                    sort: self.sort_term(sort)?,
+                });
+                if !run.eat(Spelling(",")).0 && !run.at(Spelling(")")).0 {
+                    return Err(run.fault(DescriptionFault::Malformed));
+                }
+            }
+            (indices, presented)
         }
         else {
-            Vec::new()
+            (Vec::new(), Vec::new())
         };
         if !run.eat(Spelling(":")).0 {
             return Err(run.signature_fault(SignatureFault::MissingJudgment));
@@ -359,10 +405,13 @@ impl Reader<'_, '_>
             return Err(run.fault(DescriptionFault::TypeShape));
         }
         run.end()?;
-        Ok(SortDesc::family(
-            self.text(name).0,
-            DeclPolarity::Data,
-            indices,
+        Ok((
+            SortDesc::family(self.text(name).0, DeclPolarity::Data, indices),
+            PresentedSort {
+                name: self.text(name).0.into(),
+                named: name,
+                indices: presented,
+            },
         ))
     }
 
@@ -370,7 +419,9 @@ impl Reader<'_, '_>
     ///
     /// # Specification
     /// - ensures: admitted operations retain every input and every output, in
-    ///   order, one monomial per output.
+    ///   order, one monomial per output, beside the operation as it presents
+    ///   itself to a model signature: its name tile and each port's sort read
+    ///   as a sort over index terms.
     /// - fails: a filler is an explicit decline; a port name written twice on
     ///   the boundary is two ports, not one wire, and is refused by name.
     /// - panics: none.
@@ -388,11 +439,12 @@ impl Reader<'_, '_>
     /// - witness: `description::sign::tests::a_data_spelled_sign_oper_declines_before_no_output_can_be_fabricated`
     /// - witness: `description::sign::tests::a_two_output_operation_keeps_both_ports_in_order`
     /// - witness: `description::sign::tests::a_port_name_on_both_sides_is_two_ports`
+    /// - witness: `model::tests::the_cat_shape_operations_bind_their_free_sorts_first`
     fn signature_operation(
         &self,
         run: &mut Run<'_>,
         sorts: &[SortDesc],
-    ) -> Result<OperDesc, DescriptionDiagnostic>
+    ) -> Result<(OperDesc, PresentedOperation), DescriptionDiagnostic>
     {
         let name = run.take()?;
         if !run.eat(Spelling(":")).0 {
@@ -417,8 +469,99 @@ impl Reader<'_, '_>
         {
             return Err(run.signature_fault(SignatureFault::SharedPort(shared.name.clone())));
         }
+        let presented = PresentedOperation {
+            name: self.text(name).0.into(),
+            named: name,
+            inputs: self.presented_ports(&boundary.inputs, &boundary.input_sorts)?,
+            outputs: self.presented_ports(&boundary.outputs, &boundary.output_sorts)?,
+        };
         let arity = BridgeArity::tupled(boundary.inputs, boundary.outputs);
-        Ok(OperDesc::new(self.text(name).0, arity, Attrs::empty()))
+        Ok((
+            OperDesc::new(self.text(name).0, arity, Attrs::empty()),
+            presented,
+        ))
+    }
+
+    /// Each port of one side with its written sort read as a sort over index
+    /// terms.
+    ///
+    /// # Specification
+    /// - ensures: one port per entry of `ports`, in order, under its name.
+    /// - fails: as [`Self::sort_term`].
+    /// - panics: none.
+    /// - executable: none — the sorts read are source syntax.
+    ///
+    /// # Errors
+    /// Returns `Malformed` for a sort that is neither a name nor an
+    /// application.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::signature_operation`].
+    /// - witness: `model::tests::the_cat_shape_operations_bind_their_free_sorts_first`
+    fn presented_ports(
+        &self,
+        ports: &[SortRef],
+        sorts: &[Placed],
+    ) -> Result<Vec<Port>, DescriptionDiagnostic>
+    {
+        let mut presented = Vec::with_capacity(ports.len());
+        for (port, &sort) in ports.iter().zip(sorts) {
+            presented.push(Port {
+                name: port.name.clone(),
+                sort: self.sort_term(sort)?,
+            });
+        }
+        Ok(presented)
+    }
+
+    /// Read a written sort as a sort name over index terms: `Ob` with none,
+    /// `Hom(a, b)` with two.
+    ///
+    /// # Specification
+    /// - ensures: a single name tile is its sort with no indices; an
+    ///   application is its head's spelling over each argument read as a free
+    ///   term, in order.
+    /// - fails: a form that is neither is malformed.
+    /// - panics: none.
+    /// - executable: none — the sort read is source syntax.
+    ///
+    /// # Errors
+    /// Returns `Malformed` for a sort that is neither a name nor an
+    /// application.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the `CatShape` ports read their indexed and unindexed
+    ///   sorts.
+    /// - witness: `model::tests::the_cat_shape_operations_bind_their_free_sorts_first`
+    fn sort_term(
+        &self,
+        at: Placed,
+    ) -> Result<SortTerm, DescriptionDiagnostic>
+    {
+        let pieces = self.pieces(at)?;
+        if let [Piece::Tile { .. }] = *pieces.as_slice() {
+            return Ok(SortTerm {
+                sort: self.text(at).0.into(),
+                indices: Vec::new(),
+            });
+        }
+        let mut run = Run::new(&pieces, at.span);
+        let head = run.take()?;
+        if !run.eat(Spelling("(")).0 {
+            return Err(run.fault(DescriptionFault::Malformed));
+        }
+        let mut indices = Vec::new();
+        while !run.eat(Spelling(")")).0 {
+            indices.push(self.free_term(run.take()?)?);
+            if !run.eat(Spelling(",")).0 && !run.at(Spelling(")")).0 {
+                return Err(run.fault(DescriptionFault::Malformed));
+            }
+        }
+        run.end()?;
+        Ok(SortTerm {
+            sort: self.text(head).0.into(),
+            indices,
+        })
     }
 
     /// Read a rule member: a written face between two terms, or a circuit
@@ -483,12 +626,16 @@ impl Reader<'_, '_>
             let lhs = self.free_term(lhs)?;
             let rhs = self.free_term(rhs)?;
             let variables = derive_cell_var_meta(&lhs);
-            return Ok(RuleMember::Face(RuleFace::new(
-                lhs,
-                rhs,
-                variables,
-                surface_span(run.span),
-            )));
+            let presented = PresentedLaw {
+                name: self.text(name).0.into(),
+                named: name,
+                left: lhs.clone(),
+                right: rhs.clone(),
+            };
+            return Ok(RuleMember::Face(
+                RuleFace::new(lhs, rhs, variables, surface_span(run.span)),
+                presented,
+            ));
         }
         let boundary = self.boundary(run, sorts, ArrowRow::Face)?;
         if boundary.outputs.is_empty() {
@@ -575,6 +722,10 @@ impl Reader<'_, '_>
         let sphere = RuleFace::new(derived.source, derived.target, vars, surface_span(run.span));
         Ok(RuleMember::Circuit(
             CircuitRule::new(self.text(name).0, sphere, body).with_ports(boundary.rewrites),
+            PresentedCircuit {
+                name: self.text(name).0.into(),
+                named: name,
+            },
         ))
     }
 
@@ -606,16 +757,18 @@ impl Reader<'_, '_>
     {
         let mut rewrites = Vec::new();
         let first = self.port_side(run, sorts, &mut rewrites)?;
-        let (inputs, outputs) = if run.has_arrow().0 {
+        let ((inputs, input_sorts), (outputs, output_sorts)) = if run.has_arrow().0 {
             run.arrow(Some(row))?;
             (first, self.port_side(run, sorts, &mut rewrites)?)
         }
         else {
-            (Vec::new(), first)
+            ((Vec::new(), Vec::new()), first)
         };
         Ok(Boundary {
             inputs,
             outputs,
+            input_sorts,
+            output_sorts,
             rewrites,
         })
     }
@@ -625,7 +778,7 @@ impl Reader<'_, '_>
     ///
     /// # Specification
     /// - ensures: typed ports and rewrite binders retain source order and
-    ///   names.
+    ///   names, and each port its written sort.
     /// - fails: a parenthesized expression is not coerced to a circuit
     ///   interface.
     /// - panics: none.
@@ -645,10 +798,11 @@ impl Reader<'_, '_>
         run: &mut Run<'_>,
         sorts: &[SortDesc],
         rewrites: &mut Vec<RewritePort>,
-    ) -> Result<Vec<SortRef>, DescriptionDiagnostic>
+    ) -> Result<(Vec<SortRef>, Vec<Placed>), DescriptionDiagnostic>
     {
         let grouped = run.eat(Spelling("(")).0;
         let mut ports = Vec::new();
+        let mut written = Vec::new();
         loop {
             if grouped && run.eat(Spelling(")")).0 {
                 break;
@@ -693,6 +847,7 @@ impl Reader<'_, '_>
                     (fresh_port(first), first)
                 };
                 ports.push(SortRef::new(name, self.text(sort).0));
+                written.push(sort);
             }
             if !grouped {
                 break;
@@ -701,7 +856,7 @@ impl Reader<'_, '_>
                 return Err(run.fault(DescriptionFault::Malformed));
             }
         }
-        Ok(ports)
+        Ok((ports, written))
     }
 
     /// Read a node's literal tuple of port names.

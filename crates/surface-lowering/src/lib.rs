@@ -19,7 +19,7 @@
 //! where the source wrote no term, a closing delimiter the source never wrote —
 //! is reported where it stands rather than lowered around.
 //!
-//! # Eight decisions that interlock
+//! # Ten decisions that interlock
 //!
 //! **Names resolve through tables with no fallthrough.** `Unit`, `Integer`,
 //! `String`, `+U` and `-F` answer from a type-head table indexed by arity, and
@@ -48,6 +48,23 @@
 //! name — and exports every type naming `T` at that atom, which past the
 //! module relates to nothing but itself; `:` keeps `τ` visible (the decisions
 //! are in `module::sealing`).
+//!
+//! **`Model(S)` is derived, never written.** `module M : Model(S) { … }` is
+//! checked against the signature the lowering derives from the presentation
+//! of the `sign S` declared before it: a type component per sort, a type
+//! family per indexed sort over its index telescope, a member per operation
+//! binding its free sorts first, and a `Path`-typed member per rule — node for
+//! node what the hand-written spelling lowers to. A type member with
+//! parameters, `type Hom(a : Ob, b : Ob) = τ`, expands where it is applied
+//! (the decisions are in `model` and `module::model`). For a member written as
+//! a `def` to meet its component, a telescope entry and a dependent arrow
+//! `(x : A) -> C` bind exactly where a later type names their binder, as a
+//! function's parameters do. This reverses the recorded choice of #266, which
+//! read every named binder of `(x : A) -> C` as dependent, the spelling taken
+//! as written; that made `(n : Integer) => Integer` and `def g(n : Integer) ->
+//! -F Integer` two types, because the kernel keeps a Π that ignores its binder
+//! apart from the plain arrow. Transport motives still read, the motive reader
+//! taking either arrow (the decision is in `lower::arity`).
 //!
 //! **A signature no definition completes is what an artifact owes.** That case
 //! is its own outcome, because it is the producer an obligation ledger reads —
@@ -153,7 +170,7 @@
 //! # Ok::<(), Box<dyn core::error::Error>>(())
 //! ```
 //!
-//! Each of the eight decisions, with the alternative it was chosen over and
+//! Each of the ten decisions, with the alternative it was chosen over and
 //! what would reverse it, is in the module that owns it.
 //!
 //! # References
@@ -221,6 +238,7 @@ mod fixture;
 mod form;
 mod import;
 mod lower;
+pub mod model;
 mod module;
 pub mod namespace;
 mod operation;
@@ -248,6 +266,7 @@ pub use crate::error::FormFault;
 pub use crate::error::FragmentBoundary;
 pub use crate::error::FragmentSort;
 pub use crate::error::LoweringRefusal;
+pub use crate::error::TelescopeFault;
 pub use crate::form::Ending;
 pub use crate::form::FormName;
 pub use crate::form::Former;
