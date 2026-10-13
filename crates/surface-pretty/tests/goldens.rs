@@ -1231,6 +1231,32 @@ mod tests
             "a lift, which the surface does not write, spells `?`"
         );
     }
+    /// Element identity spells `here(a)`, and a pair inside it uses the
+    /// grammar's tuple spelling, not the binary sugar.
+    #[test]
+    fn here_witness_pins_identity_notation()
+    {
+        let mut core = CoreArena::new();
+        let two = integer(&mut core, Sign::NonNegative, Written("2"));
+        let pair = core.value_tuple(&[two, two]);
+        let witness = core.value_here(pair);
+        let source = CoreSource::new(&core, &[]);
+        let root = Root::Value(CoreNode::Value(witness));
+        for page in [narrow(), wide()] {
+            let rendered = presented(&source, root, page);
+            assert_eq!(
+                rendered.as_ref(),
+                "here(#{2, 2})",
+                "identity notation is `here` around the point, at {page:?}"
+            );
+            assert_eq!(
+                rendered.fidelity(),
+                Fidelity::Faithful,
+                "the grammar parses `here`, so the spelling is faithful"
+            );
+        }
+    }
+
     /// Native introductions retain endpoint and map order but cannot claim
     /// surface round-trip fidelity, because the parser has no path syntax.
     #[test]

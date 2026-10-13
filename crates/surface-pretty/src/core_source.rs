@@ -135,13 +135,14 @@ impl<'arena> CoreSource<'arena>
         | (Some(&Value::ListCons(head, tail)), Former::ListCons(h, t)) => h == CoreNode::Value(head) && t == CoreNode::Value(tail),
         | (Some(&Value::Primitive { primitive, .. }), Former::Constant(name)) => name.as_ref() == primitive.name().as_ref(),
         | (Some(&Value::PathRefl(code)), Former::PathRefl(actual)) => actual == CoreNode::Value(code),
+        | (Some(&Value::Here(point)), Former::Here(actual)) => actual == CoreNode::Value(point),
         | (Some(&Value::PathEquiv { forward, backward, .. }), Former::PathEquiv(actual_forward, actual_backward)) => actual_forward == CoreNode::Value(forward) && actual_backward == CoreNode::Value(backward),
         | (Some(&Value::Variable { zone, index }), Former::Variable { zone: actual_zone, index: actual_index }) =>
             zone == actual_zone && index == actual_index,
         | (Some(&Value::Constant(index)), Former::Constant(name)) => self.names.get(usize::from(index))
             .is_some_and(|held| held.as_ref() == name.as_ref()),
         | (Some(&Value::Constant(index)), Former::Unreadable) => usize::from(index) >= self.names.len(),
-        (Some(&Value::Constructor { .. } | &Value::Hole(_) | &Value::Mark { .. } | &Value::Here(_) | &Value::Returned(_)) | None,
+        (Some(&Value::Constructor { .. } | &Value::Hole(_) | &Value::Mark { .. } | &Value::Returned(_)) | None,
 Former::Unreadable) | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::ListNil), Former::ListNil) |
 (Some(&Value::Thunk(_)), Former::Thunk) |
 (Some(&Value::Lift { .. }), Former::ValueLift) => true,
@@ -172,15 +173,15 @@ Former::Unreadable) | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::Li
             return Former::Unreadable;
         };
         match *value {
-            // The source grammar has no native data reader, a hole or a mark
-            // is displayed by the session, not spelled here, reflexivity and a
-            // compound endpoint have no former of their own, and the surface
-            // writes no empty record: `#{}` is the unit.
+            // The source grammar has no native data reader. A hole or a mark
+            // is displayed by the session, not spelled here, a compound
+            // endpoint has no former of its own, and the surface writes no
+            // empty record: `#{}` is the unit. Element identity is `here`.
             | Value::Constructor { .. }
             | Value::Hole(_)
             | Value::Mark { .. }
-            | Value::Here(_)
             | Value::Returned(_) => Former::Unreadable,
+            | Value::Here(point) => Former::Here(CoreNode::Value(point)),
             | Value::Record(ref fields) if fields.is_empty() => Former::Unreadable,
             | Value::Record(ref fields) => Former::Record(Arity::from(fields.len())),
             | Value::Reify(_) => Former::Reify,
@@ -418,7 +419,7 @@ impl Source for CoreSource<'_>
             | Former::Literal(_) | Former::Tuple(_) | Former::Record(_) | Former::Injection(..) | Former::Thunk
             | Former::ValueLift | Former::Reify | Former::ListNil | Former::ListCons(..)
             | Former::Quote(_) | Former::QuoteComputation(_) | Former::StaticLambda(_) | Former::StaticApplication(..)
-            | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Unreadable),
+            | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_) | Former::Unreadable),
         | CoreNode::ValueType(_) => matches!(ret, Former::BaseType(_) | Former::Product(_) | Former::RecordType(_)
             | Former::Stack(..) | Former::List(_)
             | Former::Sum(_) | Former::ThunkType(_) | Former::Universe { .. } | Former::TypeLift
