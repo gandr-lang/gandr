@@ -81,6 +81,7 @@
 //! lowering inserts, and one whose binder the source names nothing, records
 //! none. Witness: `lower::tests::a_variable_keeps_its_binder`.
 
+use alloc::string::String;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -433,6 +434,9 @@ pub struct OriginTable
     /// Each element transport with where its motive is written, in the order
     /// lowered; the arena shares a transport written twice alike.
     motives: Vec<(ComputationId, Origin)>,
+    /// Each label written against an entry, with what it labels, in the
+    /// order lowered.
+    labels: Vec<Label>,
 }
 
 /// Record one family's origin, keeping the vector ascending by id.
@@ -1193,6 +1197,85 @@ impl OriginTable
     {
         &self.motives
     }
+
+    /// Record that the label written at `label.span` names an entry.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the label is appended, so [`Self::labels`] holds it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a record type's, a record's and a dependent arrow's
+    ///   labels are each recorded with what they label.
+    /// - witness: `lower::arity::tests::each_label_names_what_it_labels`
+    #[spec(
+        captures: before = self.labels.len(),
+        ensures: self.labels.len() == before.saturating_add(1),
+    )]
+    #[inline]
+    pub fn record_label(
+        &mut self,
+        label: Label,
+    )
+    {
+        self.labels.push(label);
+    }
+
+    /// Each label written against an entry, in the order lowered.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn labels(&self) -> &[Label]
+    {
+        &self.labels
+    }
+}
+
+/// A label the source writes against an entry: a field of a record or sum
+/// type, an observation of a lazy record, a binder of a telescope or of a
+/// dependent arrow, a field of a record.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Label
+{
+    /// The label's bytes.
+    pub span: ByteSpan,
+    /// What the label names.
+    pub labelled: Labelled,
+}
+
+/// What a label names: the type of its entry, or the term its entry holds.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Labelled
+{
+    /// A field's or a binder's value type, read in `context`: the names of
+    /// the binders it stands under, outermost first.
+    ValueType
+    {
+        /// The type.
+        ty: ValueTypeId,
+        /// The binders' names, outermost first.
+        context: Vec<String>,
+    },
+    /// An observation's computation type, read in `context`.
+    CompType
+    {
+        /// The type.
+        ty: CompTypeId,
+        /// The binders' names, outermost first.
+        context: Vec<String>,
+    },
+    /// A record field's value, whose type the typed run judges.
+    Value(ValueId),
 }
 
 /// One alternative of one arm of a lowered match.

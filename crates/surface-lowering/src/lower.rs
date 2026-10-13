@@ -580,6 +580,8 @@ use crate::namespace::Recognized;
 use crate::namespace::Segment;
 use crate::namespace::Trie;
 use crate::origin::Insertion;
+use crate::origin::Label;
+use crate::origin::Labelled;
 use crate::origin::Origin;
 use crate::origin::OriginTable;
 use crate::resolve::Bound;
@@ -1679,6 +1681,45 @@ struct Parameter
     declared: Maybe<NodeIndex, stated::Absent>,
 }
 
+/// A label the source writes against an entry, kept while the lowering plans
+/// so the label can answer what its entry lowers to.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: the label's bytes, the node of the entry it names, and how that
+///   entry is read.
+/// - executable: none — the record holds neither the tree nor the scope its
+///   coordinates are read in.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Lowerer::labelled`].
+/// - witness: `lower::arity::tests::each_label_names_what_it_labels`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct LabelSite
+{
+    /// The label's bytes.
+    written: ByteSpan,
+    /// The entry the label names.
+    held: NodeIndex,
+    /// How the entry is read.
+    read: LabelRead,
+}
+
+/// How the entry a label names is read.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LabelRead
+{
+    /// As a value type under the frame: the label answers at that type.
+    ValueType(Frame),
+    /// As a computation type under the frame.
+    CompType(Frame),
+    /// As a term: the label answers at the term's type.
+    Term,
+}
+
 /// A universe as the source wrote it: its sort and its level, each defaulted
 /// when left off.
 ///
@@ -2502,6 +2543,8 @@ struct Lowerer<'run, 'source>
     /// Each constructor written under an annotation, with the annotation's
     /// type.
     classifiers: BTreeMap<NodeIndex, NodeIndex>,
+    /// Each label written against an entry, in the order planned.
+    labels: Vec<LabelSite>,
     /// The type each computation position answers, where a function's result
     /// or a match's answer states it, or the block a statement's local ends
     /// continue answers.
@@ -3059,6 +3102,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             pieces: Pieces::new(),
             scratch: Pieces::new(),
             classifiers: BTreeMap::new(),
+            labels: Vec::new(),
             answers: BTreeMap::new(),
             in_type: BTreeSet::new(),
             at_endpoint: BTreeSet::new(),
@@ -8344,8 +8388,84 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 let _replaced = self.witnessed.insert(SlotIndex::from(position), id);
             }
         }
+        self.record_labels(sink);
 
         Ok(())
+    }
+
+    /// Record every label planned against an entry that lowered, with what
+    /// it names.
+    ///
+    /// # Specification
+    /// - requires: every node is minted or absent.
+    /// - ensures: one label per planned site whose entry lowered: a type's at
+    ///   the type, with the names of the frames its entry is read under that
+    ///   bind in a telescope, outermost first; a term's at the term.
+    /// - fails: never; a site whose entry did not lower records nothing.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a record type's, a record's and a dependent arrow's
+    ///   labels are each recorded with what they label.
+    /// - witness: `lower::arity::tests::each_label_names_what_it_labels`
+    #[spec(captures: before = sink.origins.labels().len(), ensures: sink.origins.labels().len() <= before.saturating_add(self.labels.len()))]
+    fn record_labels(
+        &self,
+        sink: &mut Sink<'_>,
+    )
+    {
+        let named = |frame: Frame| -> Vec<String> {
+            self.scope
+                .telescope_names(frame)
+                .into_iter()
+                .map(|name| String::from(name.as_ref()))
+                .collect()
+        };
+        for site in &self.labels {
+            let labelled = match site.read {
+                | LabelRead::ValueType(frame) => match self.value_type_at(site.held) {
+                    | Maybe::Present(ty) => Labelled::ValueType {
+                        ty,
+                        context: named(frame),
+                    },
+                    | Maybe::Absent(_) => continue,
+                },
+                | LabelRead::CompType(frame) => match self.comp_type_at(site.held) {
+                    | Maybe::Present(ty) => Labelled::CompType {
+                        ty,
+                        context: named(frame),
+                    },
+                    | Maybe::Absent(_) => continue,
+                },
+                | LabelRead::Term => match self.value_at(site.held) {
+                    | Maybe::Present(value) => Labelled::Value(value),
+                    | Maybe::Absent(_) => continue,
+                },
+            };
+            sink.origins.record_label(Label {
+                span: site.written,
+                labelled,
+            });
+        }
+    }
+
+    /// Keep the label written at `written` against the entry at `held`, read
+    /// as `read`, for [`Self::record_labels`].
+    ///
+    /// # Specification
+    /// trivial.
+    fn labelled(
+        &mut self,
+        written: ByteSpan,
+        held: NodeIndex,
+        read: LabelRead,
+    )
+    {
+        self.labels.push(LabelSite {
+            written,
+            held,
+            read,
+        });
     }
 
     /// Mint the node at `position` by its plan, once.

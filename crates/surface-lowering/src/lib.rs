@@ -390,6 +390,8 @@ pub use crate::module::manifest_type;
 pub use crate::origin::ArmOrigin;
 pub use crate::origin::CaseOrigin;
 pub use crate::origin::Insertion;
+pub use crate::origin::Label;
+pub use crate::origin::Labelled;
 pub use crate::origin::Origin;
 pub use crate::origin::OriginCount;
 pub use crate::origin::OriginTable;

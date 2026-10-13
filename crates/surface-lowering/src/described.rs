@@ -31,6 +31,10 @@
 //!   an application of an operation at its result, of a constructor at its
 //!   family, a variable at the sort of the position it is first written in —
 //!   and an operation's head at its type.
+//! - **A parameterised data family's** constructors read under its parameters:
+//!   each name at the type above with `F` applied to them, each field's name at
+//!   its type, the written result at the family's universe and each argument
+//!   naming a parameter at that parameter's classifier.
 //!
 //! A component the derivation cannot state answers nowhere, and neither does
 //! a node no position sorts.
@@ -47,7 +51,9 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::Binders;
 use gandr_core_term::CoreArena;
+use gandr_core_term::DataSignature;
 use gandr_core_term::Sort;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
@@ -55,6 +61,7 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
+use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GroundSort;
 use gandr_surface_syntax::ByteSpan;
@@ -68,6 +75,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::DeclarationOutcome;
 use crate::description::DescriptionGrade;
+use crate::description::FamilyParameter;
 use crate::description::written::WrittenCircuit;
 use crate::description::written::WrittenMembers;
 use crate::description::written::WrittenPort;
@@ -1304,6 +1312,84 @@ impl Typer<'_>
             }
         }
     }
+
+    /// Record every constructor of the parameterised `data` family
+    /// `constant`, whose parameters are `parameters` and whose signature is
+    /// `signature`, written as `written`.
+    ///
+    /// # Specification
+    /// - requires: `written` is where the family's reader read its
+    ///   constructors, in the order `signature` lists them.
+    /// - ensures: under the parameters, a constant constructor's name answers
+    ///   at the family applied to them, one with fields at `+U (A₁ -> … -> -F
+    ///   F(…))`, each field's name at its type; the written result at the
+    ///   family's universe, and each of its arguments naming a parameter at
+    ///   that parameter's classifier.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as [`Self::sign`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `Maybe(a)`'s constructors, fields, result and its
+    ///   argument answer under `a`.
+    /// - witness: `described::tests::a_parameterised_constructor_answers_under_its_parameters`
+    fn parameterised(
+        &mut self,
+        parameters: &[FamilyParameter],
+        written: &WrittenMembers,
+        constant: ConstantIndex,
+        signature: &DataSignature,
+    )
+    {
+        let mut scope = Scope::default();
+        for parameter in parameters {
+            scope.push(&parameter.name, Dependent(true));
+        }
+        let context = self.context(&scope);
+        let count = signature.parameters().len();
+        let mut arguments = Vec::with_capacity(count);
+        for index in (0 .. count).rev() {
+            let index = DeBruijnIndex::from(u32::try_from(index).unwrap_or(u32::MAX));
+            arguments.push(self.arena.value_variable(Zone::Intuitionistic, index));
+        }
+        let family = self.arena.value_type_data(constant, arguments);
+        let mut classifiers = Vec::with_capacity(count);
+        for (place, &classifier) in signature.parameters().iter().enumerate() {
+            let lift = u32::try_from(count.saturating_sub(place)).unwrap_or(u32::MAX);
+            classifiers.push(gandr_core_term::shift_value_type(
+                self.arena,
+                classifier,
+                Binders::from(lift),
+            ));
+        }
+        for (fields, member) in signature.constructors().iter().zip(&written.constructors) {
+            let ty = if fields.is_empty() {
+                family
+            }
+            else {
+                let mut chain = self.arena.comp_type_returner(family);
+                for &field in fields.iter().rev() {
+                    chain = self.arena.comp_type_arrow(field, chain);
+                }
+                self.arena.value_type_thunk(chain)
+            };
+            self.emit(member.named, DescribedRole::Name, ty, context);
+            for (&field, port) in fields.iter().zip(&member.fields) {
+                if let Maybe::Present(named) = port.named {
+                    self.emit(named, DescribedRole::Name, field, context);
+                }
+            }
+            self.emit(
+                member.result,
+                DescribedRole::Type,
+                signature.kind(),
+                context,
+            );
+            for (&argument, &classifier) in member.arguments.iter().zip(&classifiers) {
+                self.emit(argument, DescribedRole::Type, classifier, context);
+            }
+        }
+    }
 }
 
 impl LoweredModule<'_>
@@ -1342,6 +1428,7 @@ impl LoweredModule<'_>
         };
         let mut families: BTreeMap<Name, (ValueTypeId, ValueTypeId)> = BTreeMap::new();
         let mut constructors: BTreeMap<Name, (Vec<ValueTypeId>, ValueTypeId)> = BTreeMap::new();
+        let mut parameterised: BTreeMap<Name, (ConstantIndex, &DataSignature)> = BTreeMap::new();
         let base = typer.universe(Level::zero());
         for (name, atom) in [("Integer", BaseType::Integer), ("String", BaseType::String)] {
             let ty = typer.arena.value_type_base(atom);
@@ -1359,6 +1446,10 @@ impl LoweredModule<'_>
                 continue;
             };
             if !signature.parameters().is_empty() {
+                let _first = parameterised.insert(
+                    Name::from(declaration.name().as_ref()),
+                    (declaration.constant(), signature),
+                );
                 continue;
             }
             let ty = typer
@@ -1382,14 +1473,25 @@ impl LoweredModule<'_>
                     typer.sign(presentation, &described.written);
                 },
                 | Maybe::Absent(_) => {
-                    if described.description.polarity == DeclPolarity::Data
-                        && described.parameters.is_empty()
-                    {
+                    if described.description.polarity != DeclPolarity::Data {
+                        continue;
+                    }
+                    if described.parameters.is_empty() {
                         typer.family(
                             &described.description,
                             &described.written,
                             &families,
                             &constructors,
+                        );
+                    }
+                    else if let Some(&(constant, signature)) =
+                        parameterised.get(&described.description.id.name)
+                    {
+                        typer.parameterised(
+                            &described.parameters,
+                            &described.written,
+                            constant,
+                            signature,
                         );
                     }
                 },
