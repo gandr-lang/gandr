@@ -134,7 +134,7 @@ mod entries
                 "a parenthesised group or parameter list: the type inside or around answers",
             ),
         ),
-        ("Type *", Standing::Owed(3)),
+        ("Type *", Standing::Owed(0)),
         ("Type +", Standing::Owed(0)),
         ("Type +U", Standing::Owed(0)),
         ("Type ->", Standing::Owed(0)),
@@ -263,7 +263,8 @@ mod entries
     /// Why a node needs no entry of its own by where it stands, whatever its
     /// kind: inside an attribute or documentation, inside a declaration the
     /// lowering refused, as the head of a former's call, as the module a path
-    /// qualifies, or as a run literal's move.
+    /// qualifies, as a run literal's move, or as an inner link of a product
+    /// chain.
     ///
     /// # Specification
     /// trivial.
@@ -284,6 +285,10 @@ mod entries
         /// A move of a run literal, its head, or the label it names: read by
         /// its shape, never resolved, so the run answers.
         Move,
+        /// An unparenthesised product inside another, `B * C` in `A * B * C`:
+        /// the chain is one product of every factor, however it associates,
+        /// and the outermost link answers.
+        Chained,
     }
 
     /// Every gated node of `tree` with its kind, its span and where it stands.
@@ -393,10 +398,15 @@ mod entries
                 },
                 | Run::Labelled => !melded && def.label == "identifier",
             };
+            let chained = melded
+                && def.label == "*"
+                && def.sort == Sort::Type
+                && parent.is_some_and(|(held, ..)| held == mold);
             let placed = placed
                 .or_else(|| head.then_some(Placed::Head))
                 .or_else(|| qualifier.then_some(Placed::Qualifier))
-                .or_else(|| moved.then_some(Placed::Move));
+                .or_else(|| moved.then_some(Placed::Move))
+                .or_else(|| chained.then_some(Placed::Chained));
             gated.push((kind(grammar, tree, position, *def), span, placed));
         }
         gated
