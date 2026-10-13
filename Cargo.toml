@@ -728,6 +728,13 @@ default-features = false
 path = "crates/theory-orders"
 default-features = false
 
+# The carrier's shapes as a site, its degree and Reedy checks, and the
+# corolla stratum's species and their equivalences.
+# consumers:
+# - core-checker
+[workspace.dependencies.gandr-theory-sites]
+path = "crates/theory-sites"
+
 # Bounded checks a specification clause makes over state a function has
 # accumulated: what a sequence gained since a mark, one push, order around
 # an insertion point.
