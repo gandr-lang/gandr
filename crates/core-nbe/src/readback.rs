@@ -642,6 +642,10 @@ enum Task
     Returned,
     /// Assemble an element identity from its carrier and two endpoints.
     PathType,
+    /// Assemble a directed identity from its carrier and two endpoints.
+    FlowType,
+    /// Assemble a run type over the session code on the stack.
+    RunType,
     /// Assemble a tuple from its components, this many on the stack.
     Tuple(usize),
     /// Assemble a native list cell.
@@ -2047,9 +2051,14 @@ fn run(
             && entry_comps.checked_sub(1) == Some(machine.comps.len())
             && machine.values.last().is_some_and(|&id| core.value(id).is_some())
             && machine.value_types.len() == entry_value_types && machine.comp_types.len() == entry_comp_types,
-        | Task::PathType => machine.tasks.len() == entry_tasks
+        | Task::PathType | Task::FlowType => machine.tasks.len() == entry_tasks
             && entry_values.checked_sub(2) == Some(machine.values.len())
             && machine.value_types.len() == entry_value_types
+            && machine.value_types.last().is_some_and(|&id| core.value_type(id).is_some())
+            && machine.comps.len() == entry_comps && machine.comp_types.len() == entry_comp_types,
+        | Task::RunType => machine.tasks.len() == entry_tasks
+            && entry_values.checked_sub(1) == Some(machine.values.len())
+            && machine.value_types.len() == entry_value_types.saturating_add(1)
             && machine.value_types.last().is_some_and(|&id| core.value_type(id).is_some())
             && machine.comps.len() == entry_comps && machine.comp_types.len() == entry_comp_types,
         | Task::Return | Task::Force => machine.tasks.len() == entry_tasks
@@ -2429,6 +2438,20 @@ fn step(
             machine
                 .value_types
                 .push(core.value_type_path(carrier, left, right));
+            Ok(())
+        },
+        | Task::FlowType => {
+            let target = machine.pop_value()?;
+            let source = machine.pop_value()?;
+            let carrier = machine.pop_value_type()?;
+            machine
+                .value_types
+                .push(core.value_type_flow(carrier, source, target));
+            Ok(())
+        },
+        | Task::RunType => {
+            let session = machine.pop_value()?;
+            machine.value_types.push(core.value_type_run(session));
             Ok(())
         },
         | Task::Tuple(count) => {
@@ -2927,6 +2950,11 @@ ValueType::Session(ref session) => machine.value_types.len() == entry_results
 ValueType::Path { carrier, left, right } => machine.value_types.len() == entry_results
             && matches!(new_tasks, [Task::PathType, Task::QuotedCode { code: second, .. }, Task::QuotedCode { code: first, .. }, Task::QuotedValueType { quoted: child, .. }]
                 if *second == right && *first == left && *child == carrier),
+ValueType::Flow { carrier, source, target } => machine.value_types.len() == entry_results
+            && matches!(new_tasks, [Task::FlowType, Task::QuotedCode { code: second, .. }, Task::QuotedCode { code: first, .. }, Task::QuotedValueType { quoted: child, .. }]
+                if *second == target && *first == source && *child == carrier),
+ValueType::Run(session) => machine.value_types.len() == entry_results
+            && matches!(new_tasks, [Task::RunType, Task::QuotedCode { code: child, .. }] if *child == session),
 },
 None => false,
 }) },
@@ -2985,6 +3013,32 @@ fn step_quoted_value_type(
                 binders,
             });
             machine.tasks.push(at(carrier));
+        },
+        | ValueType::Flow {
+            carrier,
+            source,
+            target,
+        } => {
+            machine.tasks.push(Task::FlowType);
+            machine.tasks.push(Task::QuotedCode {
+                code: target,
+                frame,
+                binders,
+            });
+            machine.tasks.push(Task::QuotedCode {
+                code: source,
+                frame,
+                binders,
+            });
+            machine.tasks.push(at(carrier));
+        },
+        | ValueType::Run(session) => {
+            machine.tasks.push(Task::RunType);
+            machine.tasks.push(Task::QuotedCode {
+                code: session,
+                frame,
+                binders,
+            });
         },
         | ValueType::PathUniverse(..)
         | ValueType::Base(_)

@@ -520,6 +520,8 @@ pub fn decode_bridge(
         | ValueTypeView::Unknown => Ok(()),
         | ValueTypeView::PathUniverse(..)
         | ValueTypeView::Path { .. }
+        | ValueTypeView::Flow { .. }
+        | ValueTypeView::Run(_)
         | ValueTypeView::Data { .. }
         | ValueTypeView::Record(_)
         | ValueTypeView::Sum(..)
@@ -756,10 +758,30 @@ fn convert(
                             left: third,
                             right: fourth,
                         },
+                    )
+                    | (
+                        ValueTypeView::Flow {
+                            carrier: a,
+                            source: first,
+                            target: second,
+                        },
+                        ValueTypeView::Flow {
+                            carrier: b,
+                            source: third,
+                            target: fourth,
+                        },
                     ) => {
                         pending.push(Pairing::Endpoints(second, fourth));
                         pending.push(Pairing::Endpoints(first, third));
                         pending.push(values(a, b));
+                        true
+                    },
+                    // A run type is invariant in its protocol: a subtype's run
+                    // may take an offer its supertype lacks, so moving a run
+                    // along a subtyping is the checked `ride`, never a
+                    // silent subsumption.
+                    | (ValueTypeView::Run(left), ValueTypeView::Run(right)) => {
+                        pending.push(Pairing::Codes(left, right));
                         true
                     },
                     | (ValueTypeView::List(left), ValueTypeView::List(right)) => {
@@ -892,6 +914,8 @@ fn convert(
                     | (
                         ValueTypeView::PathUniverse(..)
                         | ValueTypeView::Path { .. }
+                        | ValueTypeView::Flow { .. }
+                        | ValueTypeView::Run(_)
                         | ValueTypeView::Data { .. }
                         | ValueTypeView::Record(_)
                         | ValueTypeView::Sum(..)
@@ -1153,11 +1177,37 @@ fn convert(
                                     true
                                 }
                             }
+                            else if let Value::Recorded(ref left_moves) = *matched_left_value
+                                && let Value::Recorded(ref right_moves) = *matched_right_value
+                            {
+                                let same = left_moves.len() == right_moves.len()
+                                    && left_moves.iter().zip(right_moves.iter()).all(
+                                        |(left, right)| left.carrying(()) == right.carrying(()),
+                                    );
+                                if same {
+                                    pending.extend(
+                                        left_moves.iter().zip(right_moves.iter()).rev().filter_map(
+                                            |(left, right)| match (left.payload(), right.payload())
+                                            {
+                                                | (Maybe::Present(left), Maybe::Present(right)) => {
+                                                    Some(Pairing::Codes(left, right))
+                                                },
+                                                | _ => None,
+                                            },
+                                        ),
+                                    );
+                                }
+                                same
+                            }
                             else {
                                 {
                                     match *matched_left_value {
                                         | Value::PathRefl(_)
                                         | Value::Here(_)
+                                        | Value::Stay(_)
+                                        | Value::Then(..)
+                                        | Value::SessionRelated { .. }
+                                        | Value::Recorded(_)
                                         | Value::Funext(..)
                                         | Value::Equiv(..)
                                         | Value::Ua { .. }

@@ -257,6 +257,20 @@ pub enum FrameRole
     ForkChild,
     /// A fork's parent is being judged with its end.
     ForkParent,
+    /// A session statement waits on its two codes, then the engine decides it.
+    SessionStatement,
+    /// A stay waits on its point's type.
+    StaySynthesised,
+    /// A composite waits on its first flow.
+    ThenFirst,
+    /// A composite waits on its second flow, which starts where the first ends.
+    ThenSecond,
+    /// A ride waits on the flow it moves along.
+    RideFlow,
+    /// A ride's motive is being formed under the flow's carrier.
+    RideMotive,
+    /// A ride's value is being checked, then admitted at the target.
+    RideValue,
 }
 
 impl fmt::Display for FrameRole
@@ -363,6 +377,13 @@ impl fmt::Display for FrameRole
             | Self::ForkProtocol => "ForkProtocol",
             | Self::ForkChild => "ForkChild",
             | Self::ForkParent => "ForkParent",
+            | Self::SessionStatement => "SessionStatement",
+            | Self::StaySynthesised => "StaySynthesised",
+            | Self::ThenFirst => "ThenFirst",
+            | Self::ThenSecond => "ThenSecond",
+            | Self::RideFlow => "RideFlow",
+            | Self::RideMotive => "RideMotive",
+            | Self::RideValue => "RideValue",
         })
     }
 }
@@ -794,6 +815,13 @@ mod tests
             FrameRole::ForkProtocol,
             FrameRole::ForkChild,
             FrameRole::ForkParent,
+            FrameRole::SessionStatement,
+            FrameRole::StaySynthesised,
+            FrameRole::ThenFirst,
+            FrameRole::ThenSecond,
+            FrameRole::RideFlow,
+            FrameRole::RideMotive,
+            FrameRole::RideValue,
         ];
         let names: Vec<_> = roles.iter().map(ToString::to_string).collect();
         for (index, name) in names.iter().enumerate() {

@@ -146,6 +146,19 @@ pub enum ValueTypeView<'arena>
         /// The right endpoint.
         right: ValueId,
     },
+    /// Directed identity `Flow(A, a, b)`: the forward-only flows from `a` to
+    /// `b` in `A`.
+    Flow
+    {
+        /// The carrier `A`.
+        carrier: ValueTypeId,
+        /// The source endpoint.
+        source: ValueId,
+        /// The target endpoint.
+        target: ValueId,
+    },
+    /// `Run(s)`: the complete recorded runs of the session code `s`.
+    Run(ValueId),
     /// A sum of its summands, in order; the empty sum is the empty type.
     Sum(&'arena [ValueTypeId]),
     /// Finite lists over one element type.
@@ -266,10 +279,10 @@ pub enum CompTypeView<'arena>
 /// - ensures: the node's view when its former is the integer atom, the string
 ///   atom, the empty product (the unit type), a thunk type, a universe of a
 ///   ground sort, a lift, a decode, a product of one or more components, a sum
-///   of any number of summands, a static Pi, a path type, a sealed atom or a
-///   session type or a capability; the children are the node's own. The unknown
-///   type, and a decode whose code is a hole or a mark, view as
-///   [`ValueTypeView::Unknown`].
+///   of any number of summands, a static Pi, a path type, a flow type, a run
+///   type, a sealed atom, a session type or a capability; the children are the
+///   node's own. The unknown type, and a decode whose code is a hole or a mark,
+///   view as [`ValueTypeView::Unknown`].
 /// - provides: the one decision of which value types the judgement and the
 ///   bridge reason about.
 /// - fails: [`FragmentRefusal::DanglingNode`] when the id names no node of
@@ -303,6 +316,8 @@ pub enum CompTypeView<'arena>
     | Ok(ValueTypeView::Thunk(held)) => matches!(arena.value_type(value_type), Some(ValueType::Thunk(inner)) if *inner == held),
     | Ok(ValueTypeView::PathUniverse(first, second)) => matches!(arena.value_type(value_type), Some(ValueType::PathUniverse(left, right)) if *left == first && *right == second),
     | Ok(ValueTypeView::Path { carrier, left, right }) => matches!(arena.value_type(value_type), Some(&ValueType::Path { carrier: found, left: first, right: second }) if found == carrier && first == left && second == right),
+    | Ok(ValueTypeView::Flow { carrier, source, target }) => matches!(arena.value_type(value_type), Some(&ValueType::Flow { carrier: found, source: first, target: second }) if found == carrier && first == source && second == target),
+    | Ok(ValueTypeView::Run(session)) => matches!(arena.value_type(value_type), Some(&ValueType::Run(found)) if found == session),
     | Ok(ValueTypeView::Sum(summands)) => arena.value_type(value_type).is_some_and(|held| matches!(*held, ValueType::Sum(ref parts) if **parts == *summands)),
     | Ok(ValueTypeView::List(element)) => matches!(arena.value_type(value_type), Some(ValueType::List(found)) if *found == element),
     | Ok(ValueTypeView::Product(components)) => !components.is_empty() && arena.value_type(value_type).is_some_and(|held| matches!(*held, ValueType::Product(ref parts) if **parts == *components)),
@@ -356,6 +371,16 @@ pub fn value_type_view(
             left,
             right,
         }),
+        | ValueType::Flow {
+            carrier,
+            source,
+            target,
+        } => Ok(ValueTypeView::Flow {
+            carrier,
+            source,
+            target,
+        }),
+        | ValueType::Run(session) => Ok(ValueTypeView::Run(session)),
         | ValueType::Base(BaseType::Integer) => Ok(ValueTypeView::Integer),
         | ValueType::Base(BaseType::String) => Ok(ValueTypeView::String),
         | ValueType::Base(BaseType::Numeric) => Err(unadmitted(UnadmittedFormer::NumericAtom)),

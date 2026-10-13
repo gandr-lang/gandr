@@ -287,6 +287,9 @@ pub struct CheckingContext<'arena>
     /// The universe equivalences the judgement decided, by node, with the
     /// evidence each round trip replays.
     equivalences: BTreeMap<ValueId, crate::equiv::Equivalence>,
+    /// The session statements the judgement decided, by node, with the
+    /// engine's pairs the kernel replays.
+    flows: BTreeMap<ValueId, crate::flow::Statement>,
     /// The reflexivities the judgement checked, by node, with the dialogues
     /// relating each point to its endpoints.
     reflexivities: BTreeMap<ValueId, crate::code::Reflexivity>,
@@ -370,6 +373,7 @@ impl<'arena> CheckingContext<'arena>
             lifts: BTreeMap::new(),
             funexts: BTreeMap::new(),
             equivalences: BTreeMap::new(),
+            flows: BTreeMap::new(),
             reflexivities: BTreeMap::new(),
             universals: BTreeMap::new(),
             nesting: BTreeMap::new(),
@@ -1168,6 +1172,38 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         self.equivalences.insert(at, equivalence);
     }
 
+    /// The session statements the judgement decided, by node.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn flows(&self) -> &BTreeMap<ValueId, crate::flow::Statement>
+    {
+        &self.flows
+    }
+
+    /// Record the session statement the judgement decided at `at`.
+    ///
+    /// # Specification
+    /// - requires: `statement` is what [`crate::flow`] decided at `at`.
+    /// - ensures: `at` has `statement` as its record, replacing an earlier one.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a decided statement crosses with exactly its recorded
+    ///   classifier and evidence.
+    /// - witness: `flow::tests::statements_decide_by_the_engine_and_replay`
+    #[spec(ensures: self.flows.contains_key(&at))]
+    pub(crate) fn record_flow(
+        &mut self,
+        at: ValueId,
+        statement: crate::flow::Statement,
+    )
+    {
+        self.flows.insert(at, statement);
+    }
+
     /// The reflexivities the judgement checked, by node.
     ///
     /// # Specification
@@ -1432,6 +1468,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 | ValueTypeView::Capability { .. }
                 | ValueTypeView::PathUniverse(..)
                 | ValueTypeView::Path { .. }
+                | ValueTypeView::Flow { .. }
+                | ValueTypeView::Run(_)
                 | ValueTypeView::Sum(_)
                 | ValueTypeView::List(_)
                 | ValueTypeView::Integer
@@ -1638,6 +1676,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                     | ValueTypeView::Universe { level, .. } => Ok(level.clone()),
                     | ValueTypeView::PathUniverse(..)
                     | ValueTypeView::Path { .. }
+                    | ValueTypeView::Flow { .. }
+                    | ValueTypeView::Run(_)
                     | ValueTypeView::Data { .. }
                     | ValueTypeView::Record(_)
                     | ValueTypeView::Sum(..)
@@ -1660,6 +1700,10 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
             },
             | Value::PathRefl(_)
             | Value::Here(_)
+            | Value::Stay(_)
+            | Value::Then(..)
+            | Value::SessionRelated { .. }
+            | Value::Recorded(_)
             | Value::Funext(..)
             | Value::Equiv(..)
             | Value::Ua { .. }

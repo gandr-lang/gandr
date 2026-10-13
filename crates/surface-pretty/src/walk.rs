@@ -182,6 +182,7 @@ use gandr_core_term::session::PayloadSlot;
 use gandr_core_term::session::Protocol;
 use gandr_core_term::session::ProtocolNode;
 use gandr_core_term::session::ProtocolState;
+use gandr_core_term::session::SessionRelation;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::GroundSort;
@@ -322,7 +323,7 @@ enum Kind
     | Kind::ValueType => matches!(*former, Former::BaseType(_) | Former::Product(_) | Former::RecordType(_)
         | Former::Stack(..) | Former::List(_)
         | Former::Sum(_) | Former::ThunkType(_) | Former::Universe { .. } | Former::TypeLift
-        | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::Capability { .. } | Former::PathUniverse(..) | Former::Session { .. }),
+        | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::Capability { .. } | Former::PathUniverse(..) | Former::Session { .. } | Former::RunType(_)),
     | Kind::CompType => matches!(*former, Former::Returner(_) | Former::EffectfulReturner { .. } | Former::Arrow { .. }
         | Former::With(..) | Former::Pi { .. } | Former::ComputationElement(_)),
     | Kind::Value => matches!(*former, Former::Variable { .. } | Former::Constant(_) | Former::Unit
@@ -330,7 +331,7 @@ enum Kind
         | Former::Reify | Former::ListNil | Former::ListCons(..)
         | Former::Quote(_) | Former::QuoteComputation(_) | Former::StaticLambda(_) | Former::StaticApplication(..)
         | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_) | Former::Funext(..) | Former::Equiv(..)
-        | Former::Ua { .. } | Former::Nested(_) | Former::Run(_)),
+        | Former::Ua { .. } | Former::Nested(_) | Former::Run(_) | Former::SessionRelated(..) | Former::Stay(_) | Former::Then(..)),
     | Kind::Computation => matches!(*former, Former::Return(_) | Former::Bind(..) | Former::Force(_)
         | Former::Application(..) | Former::Lambda(_) | Former::Computation),
     | Kind::Unknown => matches!(*former, Former::Unreadable),
@@ -352,7 +353,8 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Abstract(_)
         | Former::Session { .. }
         | Former::StaticPi { .. }
-        | Former::Capability { .. } => Kind::ValueType,
+        | Former::Capability { .. }
+        | Former::RunType(_) => Kind::ValueType,
         | Former::Returner(_)
         | Former::With(..)
         | Former::EffectfulReturner { .. }
@@ -381,6 +383,9 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Here(_)
         | Former::Funext(..)
         | Former::Equiv(..)
+        | Former::SessionRelated(..)
+        | Former::Stay(_)
+        | Former::Then(..)
         | Former::Ua { .. }
         | Former::Nested(_)
         | Former::Run(_) => Kind::Value,
@@ -618,13 +623,13 @@ enum Children<Node>
         Children::Two(Slot { admits: Admits::ValueType, .. }, Slot { admits: Admits::ValueType, .. })),
     | Former::Arrow { .. } | Former::Pi { .. } => matches!(ret,
         Children::Two(Slot { admits: Admits::ValueType, .. }, Slot { admits: Admits::CompType, .. })),
-    | Former::ListCons(..) | Former::PathUniverse(..) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Funext(..) | Former::Equiv(..) | Former::Ua { .. } | Former::StaticApplication(..) => matches!(ret,
+    | Former::ListCons(..) | Former::PathUniverse(..) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Funext(..) | Former::Equiv(..) | Former::Ua { .. } | Former::StaticApplication(..) | Former::SessionRelated(..) | Former::Then(..) => matches!(ret,
         Children::Two(Slot { admits: Admits::Value, .. }, Slot { admits: Admits::Value, .. })),
     | Former::ThunkType(_) | Former::QuoteComputation(_) => matches!(ret,
         Children::One(Slot { admits: Admits::CompType, .. })),
     | Former::List(_) | Former::Returner(_) | Former::EffectfulReturner { .. } | Former::Quote(_) => matches!(ret,
         Children::One(Slot { admits: Admits::ValueType, .. })),
-    | Former::PathRefl(_) | Former::Here(_) | Former::Element(_) | Former::ComputationElement(_) | Former::Injection(..) | Former::StaticLambda(_)
+    | Former::PathRefl(_) | Former::Here(_) | Former::Element(_) | Former::ComputationElement(_) | Former::Injection(..) | Former::StaticLambda(_) | Former::Stay(_) | Former::RunType(_)
         | Former::Return(_) | Former::Force(_) => matches!(ret,
         Children::One(Slot { admits: Admits::Value, .. })),
     | Former::Bind(..) => matches!(ret,
@@ -692,6 +697,8 @@ where
         | Former::PathProduct(first, second)
         | Former::Funext(first, second)
         | Former::Equiv(first, second)
+        | Former::SessionRelated(_, first, second)
+        | Former::Then(first, second)
         | Former::Ua {
             forward: first,
             backward: second,
@@ -715,6 +722,8 @@ where
         | Former::Injection(_, child)
         | Former::StaticLambda(child)
         | Former::Here(child)
+        | Former::Stay(child)
+        | Former::RunType(child)
         | Former::Return(child)
         | Former::Force(child) => Children::One(slot(child, Admits::Value)),
         | Former::Bind(bound, rest) => Children::Two(
@@ -1083,6 +1092,16 @@ enum Bracket
     PathProduct,
     /// A native cell, `cons(head, tail)`.
     ListCons,
+    /// A session equivalence, `bisim(a, b)`.
+    Bisim,
+    /// A session simulation, `sim(a, b)`.
+    Sim,
+    /// Directed reflexivity, `stay(a)`.
+    Stay,
+    /// Directed composition, `then(f, g)`.
+    Then,
+    /// The recorded runs of a session code, `Run(s)`.
+    Run,
 }
 
 impl Bracket
@@ -1103,6 +1122,11 @@ impl Bracket
             | Self::PathRefl => "refl(",
             | Self::PathProduct => "pathProduct(",
             | Self::ListCons => "cons(",
+            | Self::Bisim => "bisim(",
+            | Self::Sim => "sim(",
+            | Self::Stay => "stay(",
+            | Self::Then => "then(",
+            | Self::Run => "Run(",
         })
     }
 }
@@ -2286,6 +2310,15 @@ impl Walk<'_, '_, '_>
             | Former::Here(_) => Some(Join::Bracket(Bracket::Here)),
             | Former::Funext(..) => Some(Join::Bracket(Bracket::Funext)),
             | Former::Equiv(..) => Some(Join::Bracket(Bracket::Equiv)),
+            | Former::SessionRelated(SessionRelation::Equivalence, ..) => {
+                Some(Join::Bracket(Bracket::Bisim))
+            },
+            | Former::SessionRelated(SessionRelation::Subtyping, ..) => {
+                Some(Join::Bracket(Bracket::Sim))
+            },
+            | Former::Stay(_) => Some(Join::Bracket(Bracket::Stay)),
+            | Former::Then(..) => Some(Join::Bracket(Bracket::Then)),
+            | Former::RunType(_) => Some(Join::Bracket(Bracket::Run)),
             | Former::Ua {
                 stratum,
                 source: from,
@@ -2686,10 +2719,10 @@ impl Walk<'_, '_, '_>
     #[spec(
         captures: [entry = self.pieces.len(), taken = match join {
             Join::Prefix(_) | Join::EffectReturner(_) | Join::StaticLambda | Join::Lambda | Join::Thunk
-                | Join::Bracket(Bracket::PathRefl | Bracket::Here | Bracket::List) => Some(1_usize),
+                | Join::Bracket(Bracket::PathRefl | Bracket::Here | Bracket::List | Bracket::Stay | Bracket::Run) => Some(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Positional, .. } | Join::Session { payloads: Arity(count), .. } => Some(count),
             Join::Braced { arity: Arity(count), entries: Entries::Labelled(_), .. } => count.checked_mul(2_usize),
-            Join::Arrow | Join::Pi | Join::Sequence | Join::Ua(_) | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv) => Some(2_usize),
+            Join::Arrow | Join::Pi | Join::Sequence | Join::Ua(_) | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::Then) => Some(2_usize),
             Join::Apply(Arity(arguments)) => arguments.checked_add(1_usize),
         }],
         ensures: |ref ret| match *ret {
@@ -2872,7 +2905,10 @@ impl Walk<'_, '_, '_>
                     | Bracket::PathProduct
                     | Bracket::Funext
                     | Bracket::Equiv
-                    | Bracket::ListCons => {
+                    | Bracket::ListCons
+                    | Bracket::Bisim
+                    | Bracket::Sim
+                    | Bracket::Then => {
                         let second = self.pop()?;
                         let first = self.pop()?;
                         let opener = self.leaf(bracket.opener())?;
@@ -2880,7 +2916,11 @@ impl Walk<'_, '_, '_>
                         let comma = self.space_or_break(comma)?;
                         items.extend([opener, first.doc, comma, second.doc]);
                     },
-                    | Bracket::Here | Bracket::PathRefl | Bracket::List => {
+                    | Bracket::Here
+                    | Bracket::PathRefl
+                    | Bracket::List
+                    | Bracket::Stay
+                    | Bracket::Run => {
                         let body = self.pop()?;
                         let opener = self.leaf(bracket.opener())?;
                         items.extend([opener, body.doc]);

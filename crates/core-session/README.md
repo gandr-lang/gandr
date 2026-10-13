@@ -124,7 +124,7 @@ The independent elimination oracle exhausts 177 protocols: all send/receive word
 
 ## Integration boundary
 
-Live endpoint syntax, ownership and typing belong to `core-term` and `core-checker`. This crate reads no core terms. The kernel reflects finite session protocols as codes beside first-order codes in the value universe, solely to check type-identity evidence; it gains no endpoint or channel values. Recorded skeleton transport is a monitor-level operation, not a CBPV session-value eliminator. Ordinary Flow lowering refuses a session introduction as `RecordedRunRequired`. Native declaration persistence includes session codes, Path evidence and session Flow evidence. The monitor does not correlate asynchronous peers, check FIFO delivery, validate bodies, or establish global deadlock freedom.
+Live endpoint syntax, ownership and typing belong to `core-term` and `core-checker`. This crate reads no core terms. The kernel reflects finite session protocols as codes beside first-order codes in the value universe, solely to check type-identity evidence; it gains no endpoint or channel values. Recorded skeleton transport is a monitor-level operation, not a CBPV session-value eliminator: the checker's `ride` of a recorded run along a session flow is `certified::advance`. Ordinary Flow lowering refuses a session introduction as `RecordedRunRequired`. Native declaration persistence includes session codes, Path evidence and session Flow evidence. The monitor does not correlate asynchronous peers, check FIFO delivery, validate bodies, or establish global deadlock freedom.
 
 ## License
 

@@ -120,6 +120,7 @@ impl Source for ContentSource<'_>
         | (Some(&ContentNode::PathProduct(a, b)), Former::PathProduct(c, d))
         | (Some(&ContentNode::Funext(a, b)), Former::Funext(c, d))
         | (Some(&ContentNode::Equiv(a, b)), Former::Equiv(c, d))
+        | (Some(&ContentNode::Then(a, b)), Former::Then(c, d))
         | (Some(&ContentNode::PathEquiv { forward: a, backward: b, .. }), Former::PathEquiv(c, d))
         | (Some(&ContentNode::ListCons(a, b)), Former::ListCons(c, d))
         | (Some(&ContentNode::StaticApplication(a, b)), Former::StaticApplication(c, d))
@@ -147,6 +148,8 @@ impl Source for ContentSource<'_>
         (Some(held), Former::Tuple(arity)) => matches!(*held, ContentNode::Tuple(ref components) if !components.is_empty() && components.len() == usize::from(arity)),
         (Some(&ContentNode::PathRefl(a)), Former::PathRefl(b))
         | (Some(&ContentNode::Here(a)), Former::Here(b))
+        | (Some(&ContentNode::Stay(a)), Former::Stay(b))
+        | (Some(&ContentNode::RunType(a)), Former::RunType(b))
         | (Some(&ContentNode::Quote(a)), Former::Quote(b))
         | (Some(&ContentNode::QuoteComputation(a)), Former::QuoteComputation(b))
         | (Some(&ContentNode::List(a)), Former::List(b))
@@ -171,6 +174,8 @@ impl Source for ContentSource<'_>
             if core::ptr::eq(core::ptr::from_ref(protocol), core::ptr::from_ref(session.protocol())) && state == session.state() && usize::from(payloads) == session.payloads().len()),
         (Some(&ContentNode::Capability { grade, region, .. }), Former::Capability { grade: actual_grade, region: actual_region, .. }) =>
             grade == actual_grade && region == actual_region,
+        (Some(&ContentNode::SessionRelated { relation, source, target }), Former::SessionRelated(actual, a, b)) =>
+            relation == actual && source == a && target == b,
 
         (Some(&ContentNode::Constant(ref reference) | &ContentNode::Abstract(ref reference)), Former::Unreadable) =>
             match *reference {
@@ -213,6 +218,7 @@ impl Source for ContentSource<'_>
             | ContentNode::Transport(..)
             | ContentNode::ElementTransport { .. }
             | ContentNode::TelescopeTransport { .. }
+            | ContentNode::Ride { .. }
             | ContentNode::ListFold { .. }
             | ContentNode::Case { .. }
             | ContentNode::Session(_)
@@ -227,6 +233,14 @@ impl Source for ContentSource<'_>
             | ContentNode::PathUniverse(source, target) => Former::PathUniverse(source, target),
             | ContentNode::Funext(left, right) => Former::Funext(left, right),
             | ContentNode::Equiv(forward, backward) => Former::Equiv(forward, backward),
+            | ContentNode::SessionRelated {
+                relation,
+                source,
+                target,
+            } => Former::SessionRelated(relation, source, target),
+            | ContentNode::Stay(point) => Former::Stay(point),
+            | ContentNode::Then(first, second) => Former::Then(first, second),
+            | ContentNode::RunType(code) => Former::RunType(code),
             | ContentNode::Ua {
                 stratum,
                 ref sides,
@@ -312,10 +326,11 @@ impl Source for ContentSource<'_>
                 region,
             },
             // Data has no printer reader. A hole or a mark is displayed by
-            // the session. `Path` carries three children, more than a bracket
-            // join holds, and a compound endpoint has no former of its own.
-            // Element identity is `here`, function extensionality `funext`
-            // and universe equivalence `equiv`.
+            // the session. `Path` and `Flow` carry three children, more than
+            // a bracket join holds, a recorded run is a trace the printer
+            // does not spell, and a compound endpoint has no former of its
+            // own. Element identity is `here`, function extensionality
+            // `funext` and universe equivalence `equiv`.
             | ContentNode::Data { .. }
             | ContentNode::Constructor { .. }
             | ContentNode::Unresolved(_)
@@ -326,6 +341,8 @@ impl Source for ContentSource<'_>
             | ContentNode::UnknownType
             | ContentNode::UnknownComputationType
             | ContentNode::PathType { .. }
+            | ContentNode::FlowType { .. }
+            | ContentNode::Recorded(_)
             | ContentNode::Returned(_) => Former::Unreadable,
         }
     }

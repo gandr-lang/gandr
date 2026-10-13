@@ -121,6 +121,9 @@ impl Erasure<'_, '_>
                     | ValueType::Product(ref components) | ValueType::Sum(ref components) => self
                         .frames
                         .extend(components.iter().rev().copied().map(value_type)),
+                    | ValueType::Session(ref session) => self
+                        .frames
+                        .extend(session.payloads().iter().rev().copied().map(value_type)),
                     | _ => return Err(Refusal::MachineInvariant),
                 }
             },
@@ -302,11 +305,85 @@ impl Erasure<'_, '_>
                         )?;
                         target.value_type_sum(&summands)
                     },
+                    | ValueType::Session(ref session) => {
+                        let payloads = session
+                            .payloads()
+                            .iter()
+                            .copied()
+                            .map(value_type)
+                            .collect::<Result<alloc::vec::Vec<_>, _>>()?;
+                        let payloads = target.value_type_product(&payloads);
+                        target.value_type_session(alloc::sync::Arc::new(graph(session)), payloads)
+                    },
                     | _ => return Err(Refusal::MachineInvariant),
                 };
                 Ok(self.erased_value_type(at, image))
             },
             | CoreNode::Type(TypeNode::Computation(_)) => Err(Refusal::MachineInvariant),
         }
+    }
+}
+
+/// The kernel's session graph of `session`'s protocol, node for node, rooted
+/// at the protocol's root.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one kernel node per protocol node at the same position, its
+///   payload slots, labels and continuations kept, a recursion variable naming
+///   its binder's position; the root is the protocol's.
+/// - provides: the graph the kernel replays a session statement's pairs over,
+///   which the engine computed over the same positions.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a recursive seat protocol and its widening cross and the
+///   kernel replays the engine's simulation between them.
+/// - witness: `flow::tests::statements_decide_by_the_engine_and_replay`
+#[spec(ensures: |ret| ret.nodes.len() == session.protocol().nodes().len()
+    && ret.root.0 == usize::from(session.protocol().root()))]
+fn graph(session: &gandr_core_term::session::SessionType) -> gandr_kernel_term::session::Graph
+{
+    use gandr_core_term::session::ProtocolNode;
+    use gandr_kernel_term::session::Label;
+    use gandr_kernel_term::session::Node;
+    use gandr_kernel_term::session::PayloadSlot;
+    use gandr_kernel_term::session::State;
+    let state = |at: gandr_core_term::session::ProtocolState| State(usize::from(at));
+    let labels = |branches: &alloc::collections::BTreeMap<
+        gandr_kernel_term::FieldLabel,
+        gandr_core_term::session::ProtocolState,
+    >| {
+        branches
+            .iter()
+            .map(|(label, &next)| {
+                (
+                    Label(alloc::string::String::from(label.as_ref())),
+                    state(next),
+                )
+            })
+            .collect()
+    };
+    let nodes = session
+        .protocol()
+        .nodes()
+        .iter()
+        .map(|node| match *node {
+            | ProtocolNode::Send { payload, next } => {
+                Node::Send(PayloadSlot(usize::from(payload)), state(next))
+            },
+            | ProtocolNode::Receive { payload, next } => {
+                Node::Receive(PayloadSlot(usize::from(payload)), state(next))
+            },
+            | ProtocolNode::Select(ref branches) => Node::Select(labels(branches)),
+            | ProtocolNode::Offer(ref branches) => Node::Offer(labels(branches)),
+            | ProtocolNode::End => Node::End,
+            | ProtocolNode::Mu(body) => Node::Mu(state(body)),
+            | ProtocolNode::Recur(binder) => Node::Var(state(binder)),
+        })
+        .collect();
+    gandr_kernel_term::session::Graph {
+        nodes,
+        root: state(session.protocol().root()),
     }
 }

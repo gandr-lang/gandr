@@ -352,6 +352,18 @@ pub enum RefusalName
     CapabilityConsumable,
     /// A held capability claiming authority the host did not grant.
     CapabilityUngranted,
+    /// A `bisim` relating two protocols that are not bisimilar.
+    SessionNotEquivalent,
+    /// A `sim` whose source does not simulate its target.
+    SessionNotSubtype,
+    /// A session statement or flow over something other than a session code.
+    SessionCodeExpected,
+    /// A ride whose motive uses the moving endpoint other than covariantly.
+    NonCovariantMotive,
+    /// A ride whose motive the checker cannot move.
+    RideUnsupported,
+    /// A recorded run the protocol does not admit.
+    RunNotAdmitted,
     /// Univalence at a degree no shape of the catalogue reaches.
     UncertifiedDegree,
     /// Univalence over a catalogue whose site fails the corolla or the Segal
@@ -522,7 +534,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 113_usize] = [
+    pub const VOCABULARY: [Self; 119_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -569,6 +581,12 @@ impl RefusalName
         Self::CapabilityEscaped,
         Self::CapabilityConsumable,
         Self::CapabilityUngranted,
+        Self::SessionNotEquivalent,
+        Self::SessionNotSubtype,
+        Self::SessionCodeExpected,
+        Self::NonCovariantMotive,
+        Self::RideUnsupported,
+        Self::RunNotAdmitted,
         Self::UnresolvedName,
         Self::UnresolvedDocLink,
         Self::UnresolvedTypeHead,
@@ -756,6 +774,12 @@ impl RefusalName
         | (Self::CapabilityEscaped, b"CapabilityEscaped")
         | (Self::CapabilityConsumable, b"CapabilityConsumable")
         | (Self::CapabilityUngranted, b"CapabilityUngranted")
+        | (Self::SessionNotEquivalent, b"SessionNotEquivalent")
+        | (Self::SessionNotSubtype, b"SessionNotSubtype")
+        | (Self::SessionCodeExpected, b"SessionCodeExpected")
+        | (Self::NonCovariantMotive, b"NonCovariantMotive")
+        | (Self::RideUnsupported, b"RideUnsupported")
+        | (Self::RunNotAdmitted, b"RunNotAdmitted")
     )
 },
     )]
@@ -833,6 +857,12 @@ impl RefusalName
             | Self::CapabilityEscaped => "CapabilityEscaped",
             | Self::CapabilityConsumable => "CapabilityConsumable",
             | Self::CapabilityUngranted => "CapabilityUngranted",
+            | Self::SessionNotEquivalent => "SessionNotEquivalent",
+            | Self::SessionNotSubtype => "SessionNotSubtype",
+            | Self::SessionCodeExpected => "SessionCodeExpected",
+            | Self::NonCovariantMotive => "NonCovariantMotive",
+            | Self::RideUnsupported => "RideUnsupported",
+            | Self::RunNotAdmitted => "RunNotAdmitted",
             | Self::ShadowedBuiltin => "ShadowedBuiltin",
             | Self::OutOfFragment => "OutOfFragment",
             | Self::GradedBridge => "GradedBridge",
@@ -1125,6 +1155,12 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::CapabilityEscaped { .. }), RefusalName::CapabilityEscaped)
         | (Self::Checking(CheckRefusal::CapabilityConsumable(_)), RefusalName::CapabilityConsumable)
         | (Self::Checking(CheckRefusal::CapabilityUngranted { .. }), RefusalName::CapabilityUngranted)
+        | (Self::Checking(CheckRefusal::SessionNotEquivalent { .. }), RefusalName::SessionNotEquivalent)
+        | (Self::Checking(CheckRefusal::SessionNotSubtype { .. }), RefusalName::SessionNotSubtype)
+        | (Self::Checking(CheckRefusal::SessionCodeExpected { .. }), RefusalName::SessionCodeExpected)
+        | (Self::Checking(CheckRefusal::NonCovariantMotive { .. }), RefusalName::NonCovariantMotive)
+        | (Self::Checking(CheckRefusal::RideUnsupported { .. }), RefusalName::RideUnsupported)
+        | (Self::Checking(CheckRefusal::RunNotAdmitted { .. }), RefusalName::RunNotAdmitted)
     )
 },
     )]
@@ -1371,6 +1407,12 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::CapabilityEscaped { .. }, RefusalName::CapabilityEscaped)
         | (CheckRefusal::CapabilityConsumable(_), RefusalName::CapabilityConsumable)
         | (CheckRefusal::CapabilityUngranted { .. }, RefusalName::CapabilityUngranted)
+        | (CheckRefusal::SessionNotEquivalent { .. }, RefusalName::SessionNotEquivalent)
+        | (CheckRefusal::SessionNotSubtype { .. }, RefusalName::SessionNotSubtype)
+        | (CheckRefusal::SessionCodeExpected { .. }, RefusalName::SessionCodeExpected)
+        | (CheckRefusal::NonCovariantMotive { .. }, RefusalName::NonCovariantMotive)
+        | (CheckRefusal::RideUnsupported { .. }, RefusalName::RideUnsupported)
+        | (CheckRefusal::RunNotAdmitted { .. }, RefusalName::RunNotAdmitted)
     )
 },
 )]
@@ -1444,6 +1486,12 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
         | CheckRefusal::CapabilityEscaped { .. } => RefusalName::CapabilityEscaped,
         | CheckRefusal::CapabilityConsumable(_) => RefusalName::CapabilityConsumable,
         | CheckRefusal::CapabilityUngranted { .. } => RefusalName::CapabilityUngranted,
+        | CheckRefusal::SessionNotEquivalent { .. } => RefusalName::SessionNotEquivalent,
+        | CheckRefusal::SessionNotSubtype { .. } => RefusalName::SessionNotSubtype,
+        | CheckRefusal::SessionCodeExpected { .. } => RefusalName::SessionCodeExpected,
+        | CheckRefusal::NonCovariantMotive { .. } => RefusalName::NonCovariantMotive,
+        | CheckRefusal::RideUnsupported { .. } => RefusalName::RideUnsupported,
+        | CheckRefusal::RunNotAdmitted { .. } => RefusalName::RunNotAdmitted,
         | CheckRefusal::TypeMismatch(_) => RefusalName::TypeMismatch,
         | CheckRefusal::ShapeMismatch { .. } => RefusalName::ShapeMismatch,
         | CheckRefusal::NotSynthesisable { .. } => RefusalName::NotSynthesisable,

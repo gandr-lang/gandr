@@ -470,6 +470,13 @@ impl<'run> Reading<'run>
                     | (&ConstructorTag::Data { tag, arity }, fields) => fields.len() == usize::from(arity)
                         && matches!(*node, gandr_core_term::Value::Constructor { tag: found, fields: ref values, .. }
                             if found == tag && fields.iter().map(|field| self.read.get(field)).eq(values.iter().map(Some))),
+                    | (&ConstructorTag::Recorded(ref shape), fields) => matches!(*node, gandr_core_term::Value::Recorded(ref read)
+                        if read.iter().map(|movement| movement.carrying(())).eq(shape.iter().cloned())
+                            && fields.iter().map(|field| self.read.get(field).copied()).eq(read.iter().filter_map(|movement| match *movement {
+                                | gandr_core_term::session::RecordedMove::Sent(payload)
+                                | gandr_core_term::session::RecordedMove::Received(payload) => Some(Some(payload)),
+                                | _ => None,
+                            }))),
                     | _ => false,
                 },
                 | HeapValue::Thunk { .. } => matches!(*node, gandr_core_term::Value::Thunk(_)),
@@ -568,6 +575,30 @@ impl<'run> Reading<'run>
                         .collect::<Result<Vec<_>, _>>()?;
                     let datatype = self.core.value_type_unknown();
                     Ok(self.core.value_constructor(datatype, tag, fields))
+                },
+                | (&ConstructorTag::Recorded(ref shape), fields)
+                    if fields.len() == usize::from(tag.producer_arity()) =>
+                {
+                    use gandr_core_term::session::RecordedMove;
+                    let mut payloads = fields.iter();
+                    let mut read = Vec::with_capacity(shape.len());
+                    for movement in shape.iter() {
+                        read.push(match *movement {
+                            | RecordedMove::Sent(()) | RecordedMove::Received(()) => {
+                                let &payload =
+                                    payloads.next().ok_or(ReadbackRefusal::Unreadable(id))?;
+                                movement.carrying(self.lookup(payload)?)
+                            },
+                            | RecordedMove::Selected(ref label) => {
+                                RecordedMove::Selected(label.clone())
+                            },
+                            | RecordedMove::Offered(ref label) => {
+                                RecordedMove::Offered(label.clone())
+                            },
+                            | RecordedMove::Closed => RecordedMove::Closed,
+                        });
+                    }
+                    Ok(self.core.value_recorded(alloc::sync::Arc::from(read)))
                 },
                 | _ => Err(ReadbackRefusal::Unreadable(id)),
             },

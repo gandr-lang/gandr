@@ -753,6 +753,10 @@ _ => ret == Ok(Atom::Other(node)),
                     },
                     | Value::PathRefl(_)
                     | Value::Here(_)
+                    | Value::Stay(_)
+                    | Value::Then(..)
+                    | Value::SessionRelated { .. }
+                    | Value::Recorded(_)
                     | Value::Funext(..)
                     | Value::Equiv(..)
                     | Value::Ua { .. }
@@ -804,6 +808,10 @@ _ => ret == Ok(Atom::Other(node)),
                         },
                         | Value::PathRefl(_)
                         | Value::Here(_)
+                        | Value::Stay(_)
+                        | Value::Then(..)
+                        | Value::SessionRelated { .. }
+                        | Value::Recorded(_)
                         | Value::Funext(..)
                         | Value::Equiv(..)
                         | Value::Ua { .. }
@@ -1147,7 +1155,9 @@ _ => ret == Ok(Atom::Other(node)),
                     | ValueType::Abstract(_)
                     | ValueType::StaticPi { .. }
                     | ValueType::Unknown
-                    | ValueType::Session(_) => return Ok(node),
+                    | ValueType::Session(_)
+                    | ValueType::Flow { .. }
+                    | ValueType::Run(_) => return Ok(node),
                 },
                 | Node::CompType(at, place) => match *self
                     .core
@@ -1251,6 +1261,16 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                                 self.atom(Node::Code(code, here)).and_then(|_| self.atom(Node::Code(other_code, there))).map(|_| (Alike::Same, 0, 1))
                             } else { Err(ConversionFault::MachineInvariant) }
                         },
+                        (&ValueType::Flow { source: a, target: b, .. }, &ValueType::Flow { source: c, target: d, .. }) =>
+                            self.atom(Node::Code(a, here)).and_then(|first_left| {
+                                let first_right = self.atom(Node::Code(c, there))?;
+                                let second_left = self.atom(Node::Code(b, here))?;
+                                let second_right = self.atom(Node::Code(d, there))?;
+                                Ok([(first_left, first_right), (second_left, second_right)])
+                            }).map(|expected| { children_correct = atoms.get(entry_atoms..) == Some(expected.as_slice()); (Alike::Same, 1, 2) }),
+                        (&ValueType::Run(a), &ValueType::Run(b)) =>
+                            self.atom(Node::Code(a, here)).and_then(|left| Ok([(left, self.atom(Node::Code(b, there))?)]))
+                                .map(|expected| { children_correct = atoms.get(entry_atoms..) == Some(expected.as_slice()); (Alike::Same, 0, 1) }),
                         _ => Ok((Alike::Different, 0, 0)),
 } } },
                     _ => Err(ConversionFault::MachineInvariant),
@@ -1427,6 +1447,39 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         atoms.extend([left, right]);
                         Ok(Alike::Same)
                     }
+                    else if let ValueType::Flow {
+                        carrier: a,
+                        source: b,
+                        target: c,
+                    } = *matched_left_value
+                        && let ValueType::Flow {
+                            carrier: d,
+                            source: e,
+                            target: f,
+                        } = *matched_right_value
+                    {
+                        pending.push((Node::ValueType(a, here), Node::ValueType(d, there)));
+                        let source = (
+                            self.atom(Node::Code(b, here))?,
+                            self.atom(Node::Code(e, there))?,
+                        );
+                        let target = (
+                            self.atom(Node::Code(c, here))?,
+                            self.atom(Node::Code(f, there))?,
+                        );
+                        atoms.extend([source, target]);
+                        Ok(Alike::Same)
+                    }
+                    else if let ValueType::Run(a) = *matched_left_value
+                        && let ValueType::Run(b) = *matched_right_value
+                    {
+                        let session = (
+                            self.atom(Node::Code(a, here))?,
+                            self.atom(Node::Code(b, there))?,
+                        );
+                        atoms.push(session);
+                        Ok(Alike::Same)
+                    }
                     else if let ValueType::Base(a) = *matched_left_value
                         && let ValueType::Base(b) = *matched_right_value
                     {
@@ -1551,7 +1604,9 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                                 | ValueType::Abstract(_)
                                 | ValueType::StaticPi { .. }
                                 | ValueType::Unknown
-                                | ValueType::Session(_) => Ok(Alike::Different),
+                                | ValueType::Session(_)
+                                | ValueType::Flow { .. }
+                                | ValueType::Run(_) => Ok(Alike::Different),
                             }
                         }
                     }
@@ -2123,6 +2178,18 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                             types.push(Node::ValueType(carrier, place));
                             atoms.push(self.atom(Node::Code(left, place))?);
                             atoms.push(self.atom(Node::Code(right, place))?);
+                        },
+                        | ValueType::Flow {
+                            carrier,
+                            source,
+                            target,
+                        } => {
+                            types.push(Node::ValueType(carrier, place));
+                            atoms.push(self.atom(Node::Code(source, place))?);
+                            atoms.push(self.atom(Node::Code(target, place))?);
+                        },
+                        | ValueType::Run(session) => {
+                            atoms.push(self.atom(Node::Code(session, place))?);
                         },
                         | ValueType::Product(ref components) | ValueType::Sum(ref components) => {
                             types.extend(

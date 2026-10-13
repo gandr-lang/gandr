@@ -147,6 +147,10 @@ pub enum ConstructorTag
         /// The number of fields the constructor carries.
         arity: ProducerArity,
     },
+    /// A recorded run: its moves in order, each send's and receive's payload
+    /// a producer field in move order. A choice's label and a close live in
+    /// the head, which carries no value.
+    Recorded(alloc::sync::Arc<[gandr_core_term::session::RecordedMove<()>]>),
 }
 
 impl ConstructorTag
@@ -157,7 +161,7 @@ impl ConstructorTag
     /// - requires: nothing.
     /// - ensures: a tuple's and a datatype constructor's own field count, a
     ///   record's label count, `0` for the empty list, `2` for a list cell, `1`
-    ///   for an injection and a lift.
+    ///   for an injection and a lift, and a recorded run's sends and receives.
     /// - provides: the one arity table a constructor node is held to.
     /// - fails: never.
     /// - panics: none.
@@ -176,6 +180,7 @@ impl ConstructorTag
         | Self::Injection(_) | Self::Lift(_) => matches!(ret, ProducerArity::ONE),
         | Self::Tuple(arity) | Self::Data { arity, .. } => ret == arity,
         | Self::Record(ref labels) => ret == ProducerArity::from(labels.len()),
+        | Self::Recorded(ref moves) => ret == recorded_payloads(moves),
     })]
     pub fn producer_arity(&self) -> ProducerArity
     {
@@ -185,6 +190,7 @@ impl ConstructorTag
             | Self::Injection(_) | Self::Lift(_) => ProducerArity::ONE,
             | Self::Tuple(arity) | Self::Data { arity, .. } => arity,
             | Self::Record(ref labels) => ProducerArity::from(labels.len()),
+            | Self::Recorded(ref moves) => recorded_payloads(moves),
         }
     }
 
@@ -216,9 +222,31 @@ impl ConstructorTag
             | Self::ListCons
             | Self::Injection(_)
             | Self::Lift(_)
-            | Self::Data { .. } => ConsumerArity::ZERO,
+            | Self::Data { .. }
+            | Self::Recorded(_) => ConsumerArity::ZERO,
         }
     }
+}
+
+/// The producer fields of a recorded run: one per move that carries a
+/// payload.
+///
+/// # Specification
+/// trivial.
+fn recorded_payloads(moves: &[gandr_core_term::session::RecordedMove<()>]) -> ProducerArity
+{
+    ProducerArity::from(
+        moves
+            .iter()
+            .filter(|movement| {
+                matches!(
+                    movement,
+                    gandr_core_term::session::RecordedMove::Sent(())
+                        | gandr_core_term::session::RecordedMove::Received(())
+                )
+            })
+            .count(),
+    )
 }
 
 /// A destructor head `D`: an observation a consumer frame makes.

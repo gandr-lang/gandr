@@ -376,6 +376,14 @@ pub enum Former<'source, Node>
     Funext(Node, Node),
     /// Universe equivalence `equiv(f, g)` over its two translators.
     Equiv(Node, Node),
+    /// A session statement, `bisim(a, b)` or `sim(a, b)`, over its two codes.
+    SessionRelated(gandr_core_term::session::SessionRelation, Node, Node),
+    /// Directed reflexivity `stay(a)`.
+    Stay(Node),
+    /// Directed composition `then(f, g)`.
+    Then(Node, Node),
+    /// The recorded runs of a session code, `Run(s)`.
+    RunType(Node),
     /// The returner over its value: `v` where a path through a body ends,
     /// `pure v` anywhere else.
     Return(Node),

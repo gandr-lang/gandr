@@ -340,8 +340,10 @@ pub enum FocusRefusal
     UniverseTransport(ComputationId),
     /// Element transport has no command-IL destructor.
     ElementTransport(ComputationId),
-    /// Reflexivity or a compound endpoint: the command IL carries no paths,
-    /// so neither has a producer to become.
+    /// An identity introduction — reflexivity, an extensionality or
+    /// equivalence statement, a session statement, a stay, a composite — or a
+    /// compound endpoint: the command IL carries no paths or flows, so none
+    /// has a producer to become.
     ElementPath(ValueId),
     /// A core value id names no node of the core arena.
     DanglingValue(ValueId),
@@ -396,9 +398,9 @@ impl fmt::Display for FocusRefusal
             | Self::ElementTransport(_) => {
                 f.write_str("element transport has no command-IL destructor")
             },
-            | Self::ElementPath(_) => {
-                f.write_str("reflexivity or a compound endpoint has no command-IL producer")
-            },
+            | Self::ElementPath(_) => f.write_str(
+                "an identity introduction or a compound endpoint has no command-IL producer",
+            ),
             | Self::DanglingValue(_) => f.write_str("a core value id names no node"),
             | Self::DanglingComputation(_) => f.write_str("a core computation id names no node"),
             | Self::Mint(refusal) => write!(f, "the command arena refused a node: {refusal}"),
@@ -673,6 +675,9 @@ enum Task
     Tuple(ProducerArity),
     /// Pop one producer per label and mint the record of those labels.
     Record(alloc::sync::Arc<[gandr_core_term::FieldLabel]>),
+    /// Pop one producer per payload move and mint the recorded run of these
+    /// moves.
+    Recorded(alloc::sync::Arc<[gandr_core_term::session::RecordedMove<()>]>),
     /// Pop head and tail producers and mint their native cell.
     ListCons,
     /// Pop one producer and mint its injection into this summand.
@@ -869,6 +874,7 @@ impl<'run> Focusing<'run>
             | &Task::Split(_) => !self.producers.is_empty() && !self.commands.is_empty(),
             | &Task::Tuple(arity) | &Task::Native { arity, .. } => self.producers.len() >= usize::from(arity),
             | &Task::Record(ref labels) => self.producers.len() >= labels.len(),
+            | &Task::Recorded(ref moves) => self.producers.len() >= usize::from(ConstructorTag::Recorded(alloc::sync::Arc::clone(moves)).producer_arity()),
             | &Task::DataCase { branches, .. } => self.producers.len() > usize::from(branches),
             | &Task::Value(_) | &Task::Computation { .. } => true,
         },
@@ -933,6 +939,16 @@ impl<'run> Focusing<'run>
                     .ok_or(FocusRefusal::TranslationInvariant)?;
                 let fields: Vec<ProducerId> = self.producers.drain(start ..).collect();
                 self.constructor(ConstructorTag::Record(labels), &fields)
+            },
+            | Task::Recorded(moves) => {
+                let tag = ConstructorTag::Recorded(moves);
+                let start = self
+                    .producers
+                    .len()
+                    .checked_sub(usize::from(tag.producer_arity()))
+                    .ok_or(FocusRefusal::TranslationInvariant)?;
+                let payloads: Vec<ProducerId> = self.producers.drain(start ..).collect();
+                self.constructor(tag, &payloads)
             },
             | Task::ListCons => {
                 let tail = self.pop_producer()?;
@@ -1406,6 +1422,19 @@ impl<'run> Focusing<'run>
                 }
                 return Ok(());
             },
+            | Value::Recorded(ref moves) => {
+                self.tasks.push(Task::Recorded(
+                    moves.iter().map(|movement| movement.carrying(())).collect(),
+                ));
+                for movement in moves.iter().rev() {
+                    if let gandr_core_term::session::RecordedMove::Sent(payload)
+                    | gandr_core_term::session::RecordedMove::Received(payload) = *movement
+                    {
+                        self.tasks.push(Task::Value(payload));
+                    }
+                }
+                return Ok(());
+            },
             | Value::Injection(summand, body) => {
                 self.tasks.push(Task::Injection(summand));
                 self.tasks.push(Task::Value(body));
@@ -1436,6 +1465,9 @@ impl<'run> Focusing<'run>
             | Value::Funext(..)
             | Value::Equiv(..)
             | Value::Ua { .. }
+            | Value::SessionRelated { .. }
+            | Value::Stay(_)
+            | Value::Then(..)
             | Value::Returned(_) => {
                 return Err(FocusRefusal::ElementPath(id));
             },
@@ -1701,7 +1733,9 @@ impl<'run> Focusing<'run>
                     continuation: return_point,
                 });
             },
-            | Computation::Return(value) => {
+            // A ride the checker admitted leaves its value unchanged: it runs
+            // as the return of the value it rides.
+            | Computation::Return(value) | Computation::Ride { value, .. } => {
                 self.tasks.push(Task::Cut {
                     origin: FocusOrigin::Return,
                     polarity: Polarity::Positive,

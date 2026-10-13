@@ -2167,41 +2167,58 @@ mod tests
     }
 
     #[test]
-    fn readmission_refuses_a_session_typed_declaration_by_name()
+    fn a_session_code_crosses_only_at_its_root()
     {
         let mut arena = CoreArena::new();
-        let protocol = end(&mut arena);
-        let quoted = arena.value_quote(protocol);
+        let root = seat_end(&mut arena);
+        let Some(gandr_core_term::ValueType::Session(session)) = arena.value_type(root).cloned()
+        else {
+            panic!("the seat is a session type");
+        };
+        let past = session.at(ProtocolState::from(2_usize)).unwrap();
+        let past = arena.value_type_session(past);
         let universe = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
-        let declarations = [Declaration::new(
-            ConstantIndex::from(0_usize),
-            Maybe::Present(universe),
-            Maybe::Present(quoted),
-            OriginToken::from(0_usize),
-        )];
+        let declarations: Vec<_> = [root, past]
+            .into_iter()
+            .enumerate()
+            .map(|(position, code)| {
+                let quoted = arena.value_quote(code);
+                Declaration::new(
+                    ConstantIndex::from(position),
+                    Maybe::Present(universe),
+                    Maybe::Present(quoted),
+                    OriginToken::from(position),
+                )
+            })
+            .collect();
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
         let report = check_module(&mut context, &declarations);
         assert!(
-            matches!(
-                report.judged().first().map(crate::Judged::verdict),
-                Some(Verdict::Checked { .. })
-            ),
-            "a session type is a code the checker forms"
+            report
+                .judged()
+                .iter()
+                .all(|judged| matches!(judged.verdict(), Verdict::Checked { .. })),
+            "a session type is a code the checker forms, at any state"
         );
         let readmission = bridge::readmit(&mut arena, &report);
-        assert_eq!(
-            readmission
-                .readmitted()
-                .first()
-                .map(bridge::Readmitted::outcome),
-            Some(&bridge::Outcome::Refused(bridge::Refusal::Session {
-                at: CoreNode::Type(TypeNode::Value(protocol)),
-            })),
-            "the kernel has no channels, so the declaration stays on the checker's side"
+        let outcomes: Vec<_> = readmission
+            .readmitted()
+            .iter()
+            .map(bridge::Readmitted::outcome)
+            .collect();
+        assert!(
+            matches!(
+                outcomes.as_slice(),
+                [
+                    bridge::Outcome::Defined { .. },
+                    bridge::Outcome::Refused(bridge::Refusal::Session { at })
+                ] if *at == CoreNode::Type(TypeNode::Value(past))
+            ),
+            "a protocol's root crosses as the kernel's session code; a state past it names an endpoint mid-protocol, which the kernel has no channel for: {outcomes:?}"
         );
         assert_eq!(
             bridge::Refusal::Session {
-                at: CoreNode::Type(TypeNode::Value(protocol)),
+                at: CoreNode::Type(TypeNode::Value(past)),
             }
             .classify(),
             gandr_core_term::FailureClass::Unrepresentable,

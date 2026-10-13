@@ -126,9 +126,10 @@ pub struct Unfolded(pub u64);
                     Value::Reify(ref frames) => 1_u64.checked_add(u64::try_from(frames.iter().filter(|frame| !matches!(frame, gandr_core_term::control::StackFrame::Project(_))).count()).expect("walkable frame arity")).expect("walkable frame arity"),
                     Value::ListNil | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Hole(_) => 1,
                     Value::Tuple(ref components) => 1_u64.saturating_add(u64::try_from(components.len()).unwrap_or(u64::MAX)),
-                    Value::ListCons(..) | Value::PathProduct(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::StaticApplication(_, _) => 3,
+                    Value::Recorded(ref moves) => 1_u64.saturating_add(u64::try_from(moves.iter().filter(|movement| matches!(movement, gandr_core_term::session::RecordedMove::Sent(_) | gandr_core_term::session::RecordedMove::Received(_))).count()).unwrap_or(u64::MAX)),
+                    Value::ListCons(..) | Value::PathProduct(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::StaticApplication(_, _) | Value::SessionRelated { .. } | Value::Then(..) => 3,
                     Value::PathEquiv { .. } => 4,
-                    Value::PathRefl(_) | Value::Here(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::StaticLambda(_) | Value::Injection(_, _) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::Mark { .. } => 2,
+                    Value::PathRefl(_) | Value::Here(_) | Value::Stay(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::StaticLambda(_) | Value::Injection(_, _) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::Mark { .. } => 2,
                 }
             },
             CoreNode::Computation(id) => {
@@ -143,7 +144,7 @@ pub struct Unfolded(pub u64);
                     Computation::Hole(_) => 1,
                     Computation::ListFold { .. } | Computation::TelescopeTransport { .. } => 6,
                     Computation::Primitive { arguments, .. } => if arguments.len() == 1 { 2 } else { 3 },
-                    Computation::Case { .. } | Computation::PathTransport { .. } => 4,
+                    Computation::Case { .. } | Computation::PathTransport { .. } | Computation::Ride { .. } => 4,
                     Computation::Session(ref action) => 1_u64.saturating_add(u64::try_from(action.values().count().saturating_add(action.computations().count()).saturating_add(action.value_types().count())).unwrap_or(u64::MAX)),
                 }
             },
@@ -157,8 +158,8 @@ pub struct Unfolded(pub u64);
                     ValueType::Session(ref session) => 1_u64.saturating_add(u64::try_from(session.payloads().len()).unwrap_or(u64::MAX)),
                     ValueType::Capability { ref authority, .. } => 1_u64.checked_add(u64::try_from(authority.types().count()).expect("walkable authority arity")).expect("walkable authority arity"),
                     ValueType::Stack { .. } | ValueType::PathUniverse(..) | ValueType::StaticPi { .. } => 3,
-                    ValueType::Path { .. } => 4,
-                    ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 2,
+                    ValueType::Path { .. } | ValueType::Flow { .. } => 4,
+                    ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Run(_) => 2,
                 }
             },
             CoreNode::CompType(id) => {
@@ -242,9 +243,26 @@ pub fn unfolded(
                             .map(|&component| CoreNode::Value(component)),
                     );
                 },
+                | Value::Recorded(ref moves) => {
+                    pending.extend(moves.iter().filter_map(|movement| match *movement {
+                        | gandr_core_term::session::RecordedMove::Sent(payload)
+                        | gandr_core_term::session::RecordedMove::Received(payload) => {
+                            Some(CoreNode::Value(payload))
+                        },
+                        | gandr_core_term::session::RecordedMove::Selected(_)
+                        | gandr_core_term::session::RecordedMove::Offered(_)
+                        | gandr_core_term::session::RecordedMove::Closed => None,
+                    }));
+                },
                 | Value::PathProduct(first, second)
                 | Value::Funext(first, second)
                 | Value::Equiv(first, second)
+                | Value::Then(first, second)
+                | Value::SessionRelated {
+                    source: first,
+                    target: second,
+                    ..
+                }
                 | Value::Ua {
                     forward: first,
                     backward: second,
@@ -258,6 +276,7 @@ pub fn unfolded(
                 | Value::StaticLambda(body) => pending.push(CoreNode::Value(body)),
                 | Value::PathRefl(body)
                 | Value::Here(body)
+                | Value::Stay(body)
                 | Value::Injection(_, body)
                 | Value::Lift { body, .. }
                 | Value::Mark { body, .. } => {
@@ -366,6 +385,11 @@ pub fn unfolded(
                         motive,
                         path,
                         value,
+                    }
+                    | Computation::Ride {
+                        motive,
+                        flow: path,
+                        value,
                     } => pending.extend([
                         CoreNode::ValueType(motive),
                         CoreNode::Value(path),
@@ -438,11 +462,17 @@ pub fn unfolded(
                         carrier,
                         left,
                         right,
+                    }
+                    | ValueType::Flow {
+                        carrier,
+                        source: left,
+                        target: right,
                     } => pending.extend([
                         CoreNode::ValueType(carrier),
                         CoreNode::Value(left),
                         CoreNode::Value(right),
                     ]),
+                    | ValueType::Run(session) => pending.push(CoreNode::Value(session)),
                     | ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
                         pending.extend(parts.iter().map(|&part| CoreNode::ValueType(part)));
                     },

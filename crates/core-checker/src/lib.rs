@@ -111,9 +111,24 @@
 //! escapes its one use is refused by name: [`CheckRefusal::SessionMismatch`]
 //! for an action its state does not admit, [`CheckRefusal::Linearity`] for an
 //! endpoint left, reused, captured, sent or declared. Session types relate
-//! through `gandr-core-session`'s engine. The kernel has no session former,
-//! so a declaration holding one stays on the checker's side. The rules, the
-//! frames and the decisions are in [`session`].
+//! through `gandr-core-session`'s engine. A session code crosses to the kernel
+//! only at its protocol's root, as the kernel's own session code, so a
+//! declaration holding an endpoint stays on the checker's side. The rules,
+//! the frames and the decisions are in [`session`].
+//!
+//! # Session identity
+//!
+//! `bisim(A, B)` states that two session codes are bisimilar, at `Path(Type,
+//! A, B)`, and `sim(A, B)` that the first is a Gay–Hole subtype of the
+//! second, at the directed `Flow(Type, A, B)`; the session engine decides each
+//! and the kernel replays the engine's pairs at `Path_U` and `Flow_U`, trusting
+//! nothing the engine searched. `Run(S)` classifies the finite recorded traces
+//! the protocol's monitor accepts, and `ride(\X. Run(X), f, r)` moves a run
+//! along a flow by the recorded-run consumer, refusing by move a run the
+//! target does not admit. A consumer may take a protocol's receipts as its
+//! runs, compatibility of two protocols as a `Flow` the kernel replays, and
+//! their equivalence as a `Path`. The rules, the decisions and their
+//! alternatives are in the `flow` module.
 //!
 //! # Example
 //!
@@ -306,6 +321,7 @@ mod equiv;
 mod failure;
 #[cfg(test)]
 mod fixture;
+mod flow;
 pub mod fork;
 mod formation;
 mod former;
@@ -362,6 +378,7 @@ pub use crate::failure::Obligation;
 pub use crate::failure::Pursuit;
 pub use crate::failure::Stage;
 pub use crate::failure::judged;
+pub use crate::flow::Statement;
 pub use crate::formation::FormedCompType;
 pub use crate::formation::FormedValueType;
 pub use crate::formation::classify_comp_type;
@@ -405,6 +422,8 @@ pub use crate::refusal::Compared;
 pub use crate::refusal::CoreNode;
 pub use crate::refusal::ExpectedShape;
 pub use crate::refusal::Mismatch;
+pub use crate::refusal::RunFault;
+pub use crate::refusal::RunStep;
 pub use crate::refusal::StaticArity;
 pub use crate::refusal::TermNode;
 pub use crate::refusal::TypeNode;

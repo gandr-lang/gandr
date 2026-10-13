@@ -430,12 +430,16 @@ pub fn level_of(
                 | ValueTypeView::Integer
                 | ValueTypeView::String
                 | ValueTypeView::Unit
+                | ValueTypeView::Run(_)
                 | ValueTypeView::Unknown => {
                     levels.push(Level::zero());
                 },
                 | ValueTypeView::Abstract(atom) => levels.push(context.abstract_level(atom)?),
                 | ValueTypeView::List(element)
                 | ValueTypeView::Path {
+                    carrier: element, ..
+                }
+                | ValueTypeView::Flow {
                     carrier: element, ..
                 } => tasks.push(Task::Enter(TypeNode::Value(element))),
                 | ValueTypeView::Thunk(body) => {

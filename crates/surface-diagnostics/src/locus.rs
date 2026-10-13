@@ -39,6 +39,7 @@ use gandr_core_checker::CheckingForm;
 use gandr_core_checker::CoreNode;
 use gandr_core_checker::ExpectedShape;
 use gandr_core_checker::Mismatch;
+use gandr_core_checker::RunFault;
 use gandr_core_checker::TermNode;
 use gandr_core_checker::TypeNode;
 use gandr_core_checker::UnadmittedFormer;
@@ -782,7 +783,8 @@ fn checked(
                 | CheckingForm::Injection(at)
                 | CheckingForm::Thunk(at)
                 | CheckingForm::StaticLambda(at)
-                | CheckingForm::Nested(at),
+                | CheckingForm::Nested(at)
+                | CheckingForm::Run(at),
         }
         | CheckRefusal::PathCode(at)
         | CheckRefusal::UnknownConstant { at, .. }
@@ -794,7 +796,11 @@ fn checked(
         | CheckRefusal::RoundTripDistinct { at }
         | CheckRefusal::UaUncertified { at, .. }
         | CheckRefusal::UaInequivalent { at, .. }
-        | CheckRefusal::UnenclosedRun { at } => (spanned(origins.value(at)), UNNAMED),
+        | CheckRefusal::UnenclosedRun { at }
+        | CheckRefusal::SessionNotEquivalent { at }
+        | CheckRefusal::SessionNotSubtype { at }
+        | CheckRefusal::SessionCodeExpected { at }
+        | CheckRefusal::RunNotAdmitted { at, .. } => (spanned(origins.value(at)), UNNAMED),
         | CheckRefusal::StaticClassifierExpected { found, .. } => {
             (spanned(origins.value_type(found)), UNNAMED)
         },
@@ -823,7 +829,9 @@ fn checked(
         | CheckRefusal::DescentNotReplayed { at, .. }
         | CheckRefusal::NonExhaustiveDataCase(at)
         | CheckRefusal::AbsentRecordField(at)
-        | CheckRefusal::AbsentTupleComponent(at) => (spanned(origins.computation(at)), UNNAMED),
+        | CheckRefusal::AbsentTupleComponent(at)
+        | CheckRefusal::NonCovariantMotive { at }
+        | CheckRefusal::RideUnsupported { at } => (spanned(origins.computation(at)), UNNAMED),
         | CheckRefusal::OutOfFragment { at: core, .. }
         | CheckRefusal::DanglingNode { node: core } => (node(origins, core), UNNAMED),
         | CheckRefusal::NotADataType(_)
@@ -1150,6 +1158,7 @@ impl fmt::Display for Checked
                     | CheckingForm::Nested(_) => "a computation read as a value",
                     | CheckingForm::Offer(_) => "an offer",
                     | CheckingForm::Scope(_) => "a capability scope",
+                    | CheckingForm::Run(_) => "a recorded run",
                 }
             ),
             | CheckRefusal::UnknownConstant { constant, .. } => write!(
@@ -1308,6 +1317,46 @@ impl fmt::Display for Checked
                 "declaration {} holds a capability beyond the authority the host grants",
                 usize::from(constant)
             ),
+            | CheckRefusal::SessionNotEquivalent { .. } => f.write_str(
+                "a session equivalence requires the two protocols to be bisimilar, payload by payload",
+            ),
+            | CheckRefusal::SessionNotSubtype { .. } => f.write_str(
+                "a session simulation requires its source to select no more and offer no less than its target",
+            ),
+            | CheckRefusal::SessionCodeExpected { .. } => {
+                f.write_str("a session identity relates quoted session types at their protocol's root")
+            },
+            | CheckRefusal::NonCovariantMotive { .. } => f.write_str(
+                "a flow runs one way, so a ride's motive may use its moving endpoint only covariantly",
+            ),
+            | CheckRefusal::RideUnsupported { .. } => f.write_str(
+                "a ride moves a constant motive, a run of the moving endpoint, or a value whose type relates its two endpoints",
+            ),
+            | CheckRefusal::RunNotAdmitted { fault, .. } => match fault {
+                | RunFault::WrongDirection(step) => write!(
+                    f,
+                    "move {} of the run goes the other way from the protocol's next action",
+                    u32::from(step).saturating_add(1)
+                ),
+                | RunFault::WrongLabel(step) => write!(
+                    f,
+                    "move {} of the run takes a label the protocol does not admit there",
+                    u32::from(step).saturating_add(1)
+                ),
+                | RunFault::ResumeAfterEnd(step) => write!(
+                    f,
+                    "move {} of the run follows the protocol's end",
+                    u32::from(step).saturating_add(1)
+                ),
+                | RunFault::Incomplete(step) => write!(
+                    f,
+                    "the run stops after {} moves, before its protocol ends",
+                    u32::from(step)
+                ),
+                | RunFault::OfferNarrowed => f.write_str(
+                    "a run that is not a literal may take any offer its protocol makes, and the flow's target drops one",
+                ),
+            },
         }
     }
 }
@@ -1359,6 +1408,8 @@ impl fmt::Display for Shape
                 "a session type `!A. S`, `?A. S`, `+{l : S}`, `&{l : S}` or `end`"
             },
             | ExpectedShape::Capability => "a capability `Cap {op, …}`",
+            | ExpectedShape::Flow => "a flow type `Flow(A, a, b)`",
+            | ExpectedShape::Run => "a run type `Run(s)`",
         })
     }
 }
@@ -1492,6 +1543,10 @@ impl fmt::Display for Former
             | UnadmittedFormer::Capability => "a capability type at the pure kernel boundary",
             | UnadmittedFormer::Exercise => "an exercised capability at the pure kernel boundary",
             | UnadmittedFormer::Scope => "a capability scope at the pure kernel boundary",
+            | UnadmittedFormer::Run => {
+                "a recorded run or a ride at the pure kernel boundary, moved by the recorded-run consumer"
+            },
+            | UnadmittedFormer::ElementFlow => "a flow between elements of a type other than a universe",
         })
     }
 }

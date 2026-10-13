@@ -259,7 +259,9 @@ pub fn clause(
             | ValueType::Capability { .. }
             | ValueType::Lift { .. }
             | ValueType::StaticPi { .. }
-            | ValueType::Session(_) => Clause::Unclassified,
+            | ValueType::Session(_)
+            | ValueType::Flow { .. }
+            | ValueType::Run(_) => Clause::Unclassified,
         },
     )
 }
