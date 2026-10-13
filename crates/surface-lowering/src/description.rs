@@ -741,7 +741,7 @@ impl Reader<'_, '_>
     /// # Specification
     /// - ensures: each payload field keeps its type, grade and order; the
     ///   written constructor holds the name tile, one port per field, its name
-    ///   tile when written, and the result's bytes.
+    ///   tile when written, the result's bytes and each of its arguments'.
     /// - fails: nonuniform results, higher-order fields and incomplete
     ///   judgments are located.
     /// - panics: none.
@@ -815,7 +815,7 @@ impl Reader<'_, '_>
                 first
             }
         };
-        self.uniform_result(result, family, parameters, indices)?;
+        let arguments = self.uniform_result(result, family, parameters, indices)?;
         let attrs = self.attrs(run)?;
         run.end()?;
         Ok((
@@ -829,6 +829,7 @@ impl Reader<'_, '_>
                 named: named.span,
                 fields: ports,
                 result: result.span,
+                arguments,
             },
         ))
     }

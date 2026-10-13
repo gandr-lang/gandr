@@ -3,6 +3,7 @@
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_surface_syntax::ByteSpan;
 use gandr_theory_levitation::Attr;
 use gandr_theory_levitation::Attrs;
 use gandr_theory_levitation::Name;
@@ -66,7 +67,7 @@ impl Reader<'_, '_>
     ///
     /// # Specification
     /// - ensures: success has the declared head, parameter prefix and total
-    ///   arity.
+    ///   arity, and answers the bytes of each argument in written order.
     /// - fails: a foreign, instantiated, reordered or wrong-arity result is
     ///   located at the result rather than at a sibling member.
     /// - panics: none.
@@ -80,14 +81,17 @@ impl Reader<'_, '_>
     /// - witness: `description::tests::an_instantiated_result_head_declines_as_uninferable`
     /// - witness: `description::tests::a_result_head_of_the_wrong_arity_declines`
     /// - witness: `description::tests::a_foreign_result_head_declines`
-    #[spec(ensures: |result| result.as_ref().err().is_none_or(|diagnostic| diagnostic.span == at.span))]
+    #[spec(ensures: |result| match result.as_ref() {
+        Ok(arguments) => arguments.len() == parameters.len().saturating_add(indices.0),
+        Err(diagnostic) => diagnostic.span == at.span,
+    })]
     pub(super) fn uniform_result(
         &self,
         at: Placed,
         family: &Name,
         parameters: &[FamilyParameter],
         indices: IndexArity,
-    ) -> Result<(), DescriptionDiagnostic>
+    ) -> Result<Vec<ByteSpan>, DescriptionDiagnostic>
     {
         let refusal = || DescriptionDiagnostic {
             span: at.span,
@@ -102,16 +106,16 @@ impl Reader<'_, '_>
         let expected = parameters.len().saturating_add(indices.0);
         if !run.eat(Spelling("(")).0 {
             return if expected == 0 && run.remaining().is_empty() {
-                Ok(())
+                Ok(Vec::new())
             }
             else {
                 Err(refusal())
             };
         }
-        let mut count = 0_usize;
+        let mut arguments = Vec::with_capacity(expected);
         while !run.eat(Spelling(")")).0 {
             let argument = run.take().map_err(|_diagnostic| refusal())?;
-            if let Some(parameter) = parameters.get(count) {
+            if let Some(parameter) = parameters.get(arguments.len()) {
                 let shape = self.pieces(argument).map_err(|_diagnostic| refusal())?;
                 if !matches!(shape.as_slice(), [Piece::Tile { label, .. }] if label.as_ref() == "type_variable")
                     || self.text(argument).0 != parameter.name.as_ref()
@@ -119,15 +123,15 @@ impl Reader<'_, '_>
                     return Err(refusal());
                 }
             }
-            count = count.saturating_add(1);
+            arguments.push(argument.span);
             if !run.eat(Spelling(",")).0 && !run.at(Spelling(")")).0 {
                 return Err(refusal());
             }
         }
-        if count != expected || !run.remaining().is_empty() {
+        if arguments.len() != expected || !run.remaining().is_empty() {
             return Err(refusal());
         }
-        Ok(())
+        Ok(arguments)
     }
 
     /// Retain an optional symbol-attribute slot for the description checker.

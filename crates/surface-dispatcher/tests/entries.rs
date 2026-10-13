@@ -153,8 +153,8 @@ mod entries
         ("Type end", Standing::Owed(25)),
         ("Type mu", Standing::Owed(12)),
         ("Type number", Standing::Owed(0)),
-        ("Type type_identifier", Standing::Owed(55)),
-        ("Type type_variable", Standing::Owed(133)),
+        ("Type type_identifier", Standing::Owed(44)),
+        ("Type type_variable", Standing::Owed(118)),
     ];
 
     /// The names of the primitive formers a call can head: the call is one

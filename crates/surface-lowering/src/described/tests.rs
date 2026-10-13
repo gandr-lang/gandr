@@ -258,3 +258,50 @@ fn a_data_rule_answers_each_node_at_its_sort()
             .all(|entry| usize::from(entry.context) == 0)
     );
 }
+
+#[test]
+fn a_parameterised_constructor_answers_under_its_parameters()
+{
+    let source = SourceText::from(
+        "data Maybe(a : Type) : Type {\n  None : Maybe(a);\n  Some : (x : a) --> Maybe(a);\n}\n",
+    );
+    let span = |around: &'static str, inner: &'static str| {
+        at(source, SourceText::from(around), SourceText::from(inner))
+    };
+    let (types, arena) = described(source);
+    let ty = |entry: DescribedType| arena.value_type(entry.ty).cloned();
+
+    let none = entry(&types, span("None :", "None"), DescribedRole::Name);
+    assert!(
+        matches!(ty(none), Some(ValueType::Data { ref arguments, .. }) if arguments.len() == 1),
+        "a constant at its family applied to its parameter"
+    );
+    assert_eq!(context(&types, none), ["a"], "under the parameters");
+    let some = entry(&types, span("Some :", "Some"), DescribedRole::Name);
+    assert!(
+        matches!(ty(some), Some(ValueType::Thunk(_))),
+        "a constructor over its field"
+    );
+    assert_eq!(context(&types, some), ["a"]);
+    let field = entry(&types, span("(x : a)", "x"), DescribedRole::Name);
+    assert!(ty(field).is_some(), "a field at its type");
+    let result = entry(
+        &types,
+        span("--> Maybe(a)", "Maybe(a)"),
+        DescribedRole::Type,
+    );
+    assert!(
+        matches!(ty(result), Some(ValueType::Universe { .. })),
+        "the result at the family's universe"
+    );
+    let argument = entry(&types, span("(a);\n}", "a"), DescribedRole::Type);
+    assert!(
+        matches!(ty(argument), Some(ValueType::Universe { .. })),
+        "an argument at its parameter's classifier"
+    );
+    assert_eq!(
+        ty(argument),
+        ty(result),
+        "`a : Type` and `Maybe(a) : Type` share the family's universe"
+    );
+}

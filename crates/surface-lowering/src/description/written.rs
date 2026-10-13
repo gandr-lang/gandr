@@ -237,6 +237,9 @@ pub struct WrittenConstructor
     pub fields: Vec<WrittenPort>,
     /// The result the constructor returns.
     pub result: ByteSpan,
+    /// Each argument of the result, the family's parameters then its
+    /// indices, in written order.
+    pub arguments: Vec<ByteSpan>,
 }
 
 /// Where a described declaration's members are written.
