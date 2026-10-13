@@ -200,8 +200,9 @@ pub enum Side
 /// A value: the positive fragment of the term vocabulary.
 ///
 /// Values are the total, thunkable half of the polarity split. No value
-/// constructor introduces a computation effect; the only value embedding a
-/// computation is [`Self::Thunk`], and a thunk suspends rather than runs it.
+/// constructor introduces a computation effect. Two values embed a
+/// computation: [`Self::Thunk`] suspends it, and [`Self::Returned`] stands for
+/// what a pure one returns, which the kernel reads by running it.
 ///
 /// # Specification
 /// - requires: payload types are well formed; typing, live-child resolution and
@@ -265,6 +266,11 @@ pub enum Value
     },
     /// The diagonal `here(a)`, inhabiting `Path(A, a, a)`.
     Here(ValueId),
+    /// A returned endpoint: the value the pure computation returns, standing
+    /// where a value is read, such as `mul(neutral, x)` at a path endpoint.
+    /// It inhabits `A` when the computation returns `A`, and reads as the
+    /// value the computation reduces to `return` of.
+    Returned(ComputationId),
     /// A guarded higher field: identity between two identities, observed to
     /// the program's stated depth.
     Higher

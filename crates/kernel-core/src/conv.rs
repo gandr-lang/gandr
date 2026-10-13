@@ -43,6 +43,17 @@
 //! and this walk separates them. The incompleteness is a refusal a producer
 //! avoids by handing the kernel reduced codes, never a soundness hazard.
 //!
+//! # A returned endpoint compares by its computation, or waits to be read
+//!
+//! Two returned endpoints compare by their computations, structurally, as two
+//! thunks do; a returned endpoint against any other former is apart here,
+//! because what it returns is a reduction and none fires. The checker's mode
+//! switches and reflexivity ask the walk to set such a pair aside instead,
+//! through [`pending_endpoints`], and read each pair by the replay's own
+//! reduction ([`crate::replay::read_endpoints`]). The walk itself still
+//! reduces nothing: the pairs it sets aside are the only place a reading
+//! enters, and every other pair is decided as before.
+//!
 //! # Fail-closed on an unreadable id
 //!
 //! A child id resolves under the arena's minting invariant. Every examined
@@ -94,7 +105,7 @@ pub enum Convertibility
 /// same discharged set, which is what keeps the walk one loop and its sharing
 /// awareness one mechanism.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-enum ConversionGoal
+pub(crate) enum ConversionGoal
 {
     /// A pair of value types.
     ValueType(ValueTypeId, ValueTypeId),
@@ -104,6 +115,18 @@ enum ConversionGoal
     Value(ValueId, ValueId),
     /// A pair of computations.
     Computation(ComputationId, ComputationId),
+}
+
+/// What the walk does with a value pair one of whose sides is a returned
+/// endpoint.
+#[derive(Debug)]
+enum Endpoints<'pending>
+{
+    /// Decide it as every other pair: two returned endpoints by their
+    /// computations, a returned endpoint against any other former apart.
+    Structural,
+    /// Set it aside, unread, for the caller to read.
+    Deferred(&'pending mut Vec<(ValueId, ValueId)>),
 }
 
 /// Decide convertibility of two value types in one arena.
@@ -153,7 +176,11 @@ pub fn convertible_value_types(
     right: ValueTypeId,
 ) -> Convertibility
 {
-    converge(arena, ConversionGoal::ValueType(left, right))
+    converge(
+        arena,
+        ConversionGoal::ValueType(left, right),
+        Endpoints::Structural,
+    )
 }
 
 /// Decide convertibility of two computation types in one arena.
@@ -195,7 +222,11 @@ pub fn convertible_comp_types(
     right: CompTypeId,
 ) -> Convertibility
 {
-    converge(arena, ConversionGoal::CompType(left, right))
+    converge(
+        arena,
+        ConversionGoal::CompType(left, right),
+        Endpoints::Structural,
+    )
 }
 
 /// Decide structural equality of two values in one arena, without reducing.
@@ -235,7 +266,11 @@ pub(crate) fn equal_values(
     right: ValueId,
 ) -> Convertibility
 {
-    converge(arena, ConversionGoal::Value(left, right))
+    converge(
+        arena,
+        ConversionGoal::Value(left, right),
+        Endpoints::Structural,
+    )
 }
 
 /// Decide structural equality of two computations; see [`equal_values`].
@@ -270,7 +305,11 @@ pub(crate) fn equal_computations(
     right: ComputationId,
 ) -> Convertibility
 {
-    converge(arena, ConversionGoal::Computation(left, right))
+    converge(
+        arena,
+        ConversionGoal::Computation(left, right),
+        Endpoints::Structural,
+    )
 }
 
 /// The kernel's term equality on two values: α-equality first, then the
@@ -317,6 +356,41 @@ pub(crate) fn convert_values(
         | crate::replay::KernelVerdict::NotConvertible
         | crate::replay::KernelVerdict::Declined(_) => Convertibility::Distinct,
     }
+}
+
+/// Compare `goal` structurally, setting aside into `pending` every value pair
+/// one of whose sides is a returned endpoint.
+///
+/// # Specification
+/// - requires: nothing — an unreadable id fails closed.
+/// - ensures: [`Convertibility::Convertible`] exactly when every pair the walk
+///   examined, other than the pairs it appended to `pending`, converts as
+///   [`convertible_value_types`] would; a set-aside pair is neither compared
+///   nor descended into. On [`Convertibility::Distinct`] `pending` holds
+///   whatever was set aside before the separating pair.
+/// - provides: where the checker's endpoint reading looks: the type
+///   conversion's own structural walk, finding the returned endpoints it would
+///   otherwise compare by syntax. Each is then normalized and converted by
+///   [`convert_values`], never compared here.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a returned endpoint inside a path type is set aside while
+///   its domain still separates, so the reading is asked only the pairs
+///   structure leaves open.
+/// - witness: `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`
+/// - witness: `element_identity::tests::a_stuck_returned_endpoint_compares_structurally`
+#[spec(captures: before = pending.len(), ensures: |ret| pending.len() >= before
+    && (ret == Convertibility::Distinct || pending.get(before ..).is_some_and(|set_aside| set_aside.iter().all(|&(left, right)|
+        matches!(arena.value(left), Some(&Value::Returned(_))) || matches!(arena.value(right), Some(&Value::Returned(_)))))))]
+pub(crate) fn pending_endpoints(
+    arena: &TermArena,
+    goal: ConversionGoal,
+    pending: &mut Vec<(ValueId, ValueId)>,
+) -> Convertibility
+{
+    converge(arena, goal, Endpoints::Deferred(pending))
 }
 
 /// Convert a synthesized value type against an expected one, building the
@@ -438,7 +512,9 @@ pub(crate) fn case_branch_mismatch(
 /// - requires: nothing; [`ConversionGoal`] fixes each pair's family.
 /// - ensures: [`Convertibility::Convertible`] exactly when each examined pair
 ///   has readable roots and either equal ids or matching structure, with
-///   canonical level equality and nominal atom equality. The iterative heap
+///   canonical level equality and nominal atom equality. Under
+///   [`Endpoints::Deferred`] a value pair with a returned endpoint on either
+///   side is appended to the list unexamined and closes. The iterative heap
 ///   stack does not impose a host-stack depth limit.
 /// - provides: the shared engine of the conversion and term-equality faces. The
 ///   predicate checks the initial roots' readability, identity and head
@@ -482,7 +558,7 @@ pub(crate) fn case_branch_mismatch(
 /// - witness: `conv::tests::an_unreadable_id_fails_closed`
 /// - witness: `conv::tests::a_shared_composite_converts_without_expanding`
 /// - witness: `conv::tests::identity_requires_a_readable_root_in_every_family`
-#[spec(ensures: |ret| match initial {
+#[spec(captures: deferring = matches!(endpoints, Endpoints::Deferred(_)), ensures: |ret| match initial {
     ConversionGoal::ValueType(left, right) => match (arena.value_type(left), arena.value_type(right)) {
     (Some(one), Some(other)) => if left == right {
         ret == Convertibility::Convertible
@@ -507,6 +583,7 @@ pub(crate) fn case_branch_mismatch(
     } else {
         ret == Convertibility::Distinct
             || core::mem::discriminant(one) == core::mem::discriminant(other)
+            || deferring
     },
     _ => ret == Convertibility::Distinct,
 },
@@ -523,6 +600,7 @@ pub(crate) fn case_branch_mismatch(
 fn converge(
     arena: &TermArena,
     initial: ConversionGoal,
+    mut endpoints: Endpoints<'_>,
 ) -> Convertibility
 {
     let mut stack: Vec<ConversionGoal> = Vec::new();
@@ -802,10 +880,17 @@ fn converge(
                     }
                     continue;
                 }
+                let pair = (left, right);
                 let (Some(left), Some(right)) = (arena.value(left), arena.value(right))
                 else {
                     return Convertibility::Distinct;
                 };
+                if let Endpoints::Deferred(ref mut pending) = endpoints
+                    && (matches!(*left, Value::Returned(_)) || matches!(*right, Value::Returned(_)))
+                {
+                    pending.push(pair);
+                    continue;
+                }
                 match (left, right) {
                     | (&Value::Constructor { datatype: a, tag: one, fields: ref xs }, &Value::Constructor { datatype: b, tag: other, fields: ref ys }) => {
                         if one != other || xs.len() != ys.len() { return Convertibility::Distinct; }
@@ -824,6 +909,11 @@ fn converge(
                     },
                     | (&Value::PathRefl(one), &Value::PathRefl(other))
                     | (&Value::Here(one), &Value::Here(other)) => stack.push(ConversionGoal::Value(one, other)),
+                    // Two returned endpoints compare by their computations, as
+                    // two thunks do; what either returns is a reduction.
+                    | (&Value::Returned(one), &Value::Returned(other)) => {
+                        stack.push(ConversionGoal::Computation(one, other));
+                    },
                     // The guarded program is the field's structure and compares
                     // exactly; the layer evidence compares child for child.
                     | (&Value::Higher { program: ref one, evidence: ref xs }, &Value::Higher { program: ref other, evidence: ref ys }) => {
@@ -938,7 +1028,7 @@ fn converge(
                     },
                     | (
                         &Value::Constructor { .. } | &Value::Record(_) | &Value::SessionPath { .. } | &Value::PathRefl(_) | &Value::PathProduct(..) | &Value::PathEquiv { .. }
-                        | &Value::Here(_) | &Value::Higher { .. } | &Value::HigherEvaluation { .. }
+                        | &Value::Here(_) | &Value::Returned(_) | &Value::Higher { .. } | &Value::HigherEvaluation { .. }
                         | &Value::Variable(_)
                         | &Value::Constant(_)
                         | &Value::ListNil | &Value::ListCons(..)

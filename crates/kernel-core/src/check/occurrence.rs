@@ -483,7 +483,9 @@ fn worst(
                             .map(|child| (AnyNode::Value(child), reach))
                     }));
                 },
-                | Some(&Value::Thunk(body)) => pending.push((AnyNode::Computation(body), reach)),
+                | Some(&(Value::Thunk(body) | Value::Returned(body))) => {
+                    pending.push((AnyNode::Computation(body), reach));
+                },
                 | Some(&Value::Quote(quoted)) => pending.push((AnyNode::ValueType(quoted), reach)),
                 | Some(&Value::QuoteComputation(quoted)) => {
                     pending.push((AnyNode::CompType(quoted), reach));

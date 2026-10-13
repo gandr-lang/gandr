@@ -834,7 +834,7 @@ impl TermArena
             Value::HigherEvaluation { ref components, .. } => components.iter().all(|component| self.value(component.left).is_some() && self.value(component.right).is_some() && self.value(component.evidence).is_some()),
             Value::PathEquiv { path_type, forward, backward, .. } => self.value_type(path_type).is_some() && self.value(forward).is_some() && self.value(backward).is_some(),
             Value::SessionPath { path_type, payload_paths, .. } => self.value_type(path_type).is_some() && self.value(payload_paths).is_some(),
-            Value::Thunk(body) => self.computation(body).is_some(),
+            Value::Thunk(body) | Value::Returned(body) => self.computation(body).is_some(),
             Value::Quote(quoted) => self.value_type(quoted).is_some(),
             Value::QuoteComputation(quoted) => self.comp_type(quoted).is_some(),
             Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => true,
@@ -1248,9 +1248,9 @@ impl TermArena
     ///   the push, saturated at the `u32` ceiling; while that length fits `u32`
     ///   the id names the appended node and is greater than every value id
     ///   currently live in this arena.
-    /// - provides: the one value form embedding a computation, which suspends
-    ///   rather than runs it. The child crosses families, so the two ids share
-    ///   no allocation order and none is claimed.
+    /// - provides: the value form suspending a computation rather than running
+    ///   it. The child crosses families, so the two ids share no allocation
+    ///   order and none is claimed.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -2462,6 +2462,39 @@ impl TermArena
         self.alloc_value(Value::Here(point))
     }
 
+    /// Mint a returned endpoint over an already-allocated computation, without
+    /// claiming that it returns.
+    ///
+    /// # Specification
+    /// - requires: `computation` resolves in this arena's computation family.
+    /// - ensures: appends the node and returns the value family's length before
+    ///   the push, saturated at the `u32` ceiling.
+    /// - provides: the value form standing for what a pure computation returns.
+    ///   The child crosses families, so the two ids share no allocation order
+    ///   and none is claimed.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the minted node holds exactly its computation child
+    ///   and grows the value family alone; a thunk over the same child is a
+    ///   different node.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.computation(computation).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values.saturating_add(1)
+                && self.computations.len() == before.computations
+                && ret.0 == u32::try_from(before.values).unwrap_or(u32::MAX)
+                && matches!(self.values.last(), Some(&Value::Returned(actual)) if actual == computation),
+    )]
+    #[inline]
+    pub fn value_returned(
+        &mut self,
+        computation: ComputationId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Returned(computation))
+    }
+
     /// Mint a guarded higher field over its untrusted program and evidence.
     ///
     /// # Specification
@@ -2576,7 +2609,7 @@ Value::ListCons(first, second) | Value::PathProduct(first, second) | Value::Stat
                 ret.as_slice() == [AnyNode::Value(first), AnyNode::Value(second)],
 Value::Injection(_, body) | Value::Lift { body, .. } =>
                 ret.as_slice() == [AnyNode::Value(body)],
-Value::Thunk(body) => ret.as_slice() == [AnyNode::Computation(body)],
+Value::Thunk(body) | Value::Returned(body) => ret.as_slice() == [AnyNode::Computation(body)],
 Value::Quote(quoted) => ret.as_slice() == [AnyNode::ValueType(quoted)],
 Value::QuoteComputation(quoted) => ret.as_slice() == [AnyNode::CompType(quoted)],
 }),
@@ -2695,7 +2728,9 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                 | Some(&Value::Injection(_, body) | &Value::Lift { body, .. }) => {
                     children.push(AnyNode::Value(body));
                 },
-                | Some(&Value::Thunk(body)) => children.push(AnyNode::Computation(body)),
+                | Some(&Value::Thunk(body) | &Value::Returned(body)) => {
+                    children.push(AnyNode::Computation(body));
+                },
                 | Some(&Value::Quote(quoted)) => children.push(AnyNode::ValueType(quoted)),
                 | Some(&Value::QuoteComputation(quoted)) => {
                     children.push(AnyNode::CompType(quoted));
@@ -3420,6 +3455,9 @@ mod tests
                 &[AnyNode::Value(v1)],
             ),
             (arena.value_thunk(c1), Value::Thunk(c1), &[
+                AnyNode::Computation(c1),
+            ]),
+            (arena.value_returned(c1), Value::Returned(c1), &[
                 AnyNode::Computation(c1),
             ]),
             (

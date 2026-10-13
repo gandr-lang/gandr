@@ -159,6 +159,28 @@
 //! lazy record and the record of thunks are not interchangeable, and the two
 //! lost properties are the reason the former is native.
 //!
+//! # The returned endpoint
+//!
+//! [`Value::Returned`] is the value a pure computation returns, standing where
+//! a value is read: the endpoint `mul(neutral, x)` of a path is a call, not a
+//! value former. It mirrors the core's node of the same name. It inhabits `A`
+//! when its computation returns `A`; a returner is pure, because no
+//! computation type here carries an effect row. It reads as the value its
+//! computation reduces to `return` of, and one whose computation is stuck
+//! stays the node, compared by its computation.
+//!
+//! **Choice.** A value node over one computation child, at `0x34` in the
+//! element-identity range, so the kernel holds the call and re-derives what
+//! it returns by its own reduction.
+//!
+//! **Alternatives.** Normalising the endpoint in the producer and persisting
+//! the value it returns, which needs no node but puts a reduction outside the
+//! kernel's re-derivation: the producer's normaliser becomes trusted
+//! computation. A stuck endpoint, such as `x + 1` over a variable, would have
+//! no image at all.
+//!
+//! **Reversal.** None while endpoints are terms.
+//!
 //! Children are typed arena ids and the derived relations are shallow, with the
 //! child-id-equality caveat stated once in [`crate::term`].
 //!
@@ -171,6 +193,7 @@
 //! [`Value::components`]: crate::Value::components
 //! [`Computation::TupleProjection`]: crate::Computation::TupleProjection
 //! [`Computation::Case`]: crate::Computation::Case
+//! [`Value::Returned`]: crate::Value::Returned
 //! [`Computation::With`]: crate::Computation::With
 //! [`Computation::Project`]: crate::Computation::Project
 //! [`Side`]: crate::Side

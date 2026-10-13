@@ -11,10 +11,13 @@ use gandr_kernel_strata::Level;
 use gandr_kernel_term::AdmissionMark;
 use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::BaseType;
+use gandr_kernel_term::CompType;
 use gandr_kernel_term::Computation;
 use gandr_kernel_term::ComputationId;
+use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::DeclarationContent;
+use gandr_kernel_term::DecodedArtifact;
 use gandr_kernel_term::EvaluationComponent;
 use gandr_kernel_term::EvaluationDialogues;
 use gandr_kernel_term::GroundSort;
@@ -46,7 +49,9 @@ use crate::conv::Convertibility;
 use crate::conv::equal_values;
 use crate::encoding::ContentTable;
 use crate::encoding::content_digest;
+use crate::env::CheckedId;
 use crate::env::Environment;
+use crate::env::StagedDeclaration;
 use crate::error::ExpectedValueShape;
 use crate::error::KernelError;
 use crate::error::NonInferableForm;
@@ -64,12 +69,15 @@ use crate::identity_recursion::function_fixtures::higher;
 use crate::identity_recursion::function_fixtures::pointwise;
 use crate::identity_recursion::function_fixtures::thunk_type;
 use crate::path_universe::Reduction;
+use crate::replay::EndpointReading;
 use crate::replay::EngineClaim;
 use crate::replay::KernelVerdict;
 use crate::replay::ReplayBudget;
 use crate::replay::ReplayNode;
 use crate::replay::ReplaySides;
+use crate::replay::Unfoldable;
 use crate::replay::Unfoldings;
+use crate::replay::read_endpoints;
 
 /// Replay a computation against its claimed reduct with an empty dialogue:
 /// every step the claim needs is a search-free reduction.
@@ -1291,6 +1299,517 @@ fn a_certificate_with_identity_decodes_checks_and_replays()
     let returned = arena.computation_return(value);
     assert_eq!(
         computes(&mut arena, transport, returned),
+        KernelVerdict::Convertible
+    );
+}
+
+/// Bool's conjunction as a monoid.
+struct Conjunction
+{
+    /// The carrier, Bool.
+    ty: ValueTypeId,
+    /// Bool's `false`, absorbing.
+    falsity: ValueId,
+    /// The neutral element's position.
+    neutral: ConstantIndex,
+    /// The multiplication's position.
+    mul: ConstantIndex,
+}
+
+/// Whether a fixture's constant unfolds: admitted as a definition, or as an
+/// axiom of the same type.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Admitted
+{
+    /// A definition the reading may unfold.
+    Defined,
+    /// An axiom, opaque to every reading.
+    Assumed,
+}
+
+/// Which unit law a fixture states.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Unit
+{
+    /// `mul(neutral, x) = x`.
+    Left,
+    /// `mul(x, neutral) = x`.
+    Right,
+}
+
+/// Admit `staged`, recording it for the artifact once it is admitted.
+///
+/// # Specification
+/// trivial.
+fn admit(
+    environment: &mut Environment,
+    declarations: &mut Vec<MarkedDeclaration>,
+    staged: StagedDeclaration,
+) -> Result<CheckedId, KernelError>
+{
+    let marked = MarkedDeclaration::new(AdmissionMark::Checked, staged.declaration().clone());
+    let admitted = environment.add_decl(staged)?;
+    declarations.push(marked);
+    Ok(admitted)
+}
+
+/// Admit Bool's conjunction: `neutral : Bool = true`, a definition or an axiom
+/// as `neutral` says, then `mul : U(Bool → Bool → F Bool) = thunk { λa. λb.
+/// case a { true ⇒ return b ; false ⇒ return false } }`.
+///
+/// # Specification
+/// trivial.
+fn conjunction(
+    environment: &mut Environment,
+    declarations: &mut Vec<MarkedDeclaration>,
+    neutral: Admitted,
+) -> Conjunction
+{
+    let mut staging = environment.stage();
+    let boolean = boolean(staging.arena());
+    let declaration = match neutral {
+        | Admitted::Defined => {
+            staging.def(LevelSignature::monomorphic(), boolean.ty, boolean.truth)
+        },
+        | Admitted::Assumed => staging.axiom(LevelSignature::monomorphic(), boolean.ty),
+    };
+    let neutral = admit(environment, declarations, declaration)
+        .expect("the neutral element")
+        .position();
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let returns = arena.comp_type_returner(boolean.ty);
+    let inner = arena.comp_type_arrow(boolean.ty, returns);
+    let outer = arena.comp_type_arrow(boolean.ty, inner);
+    let declared = arena.value_type_thunk(outer);
+    // Under `λa. λb` the scrutinee `a` is index 1; under a branch's payload
+    // binder, `b` is index 1 too.
+    let scrutinee = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let second = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let on_true = arena.computation_return(second);
+    let on_false = arena.computation_return(boolean.falsity);
+    let body = arena.computation_case(scrutinee, &[on_true, on_false]);
+    let body = arena.computation_lambda(body);
+    let body = arena.computation_lambda(body);
+    let body = arena.value_thunk(body);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+    let mul = admit(environment, declarations, declaration)
+        .expect("conjunction")
+        .position();
+    Conjunction {
+        ty: boolean.ty,
+        falsity: boolean.falsity,
+        neutral,
+        mul,
+    }
+}
+
+/// The returned endpoint `⟨force head arguments…⟩`.
+///
+/// # Specification
+/// trivial.
+fn applied(
+    arena: &mut TermArena,
+    head: ConstantIndex,
+    arguments: &[ValueId],
+) -> ValueId
+{
+    let head = arena.value_constant(head);
+    let mut computation = arena.computation_force(head);
+    for &argument in arguments {
+        computation = arena.computation_application(computation, argument);
+    }
+    arena.value_returned(computation)
+}
+
+/// Stage `law : U(Π x : Bool. F Path(Bool, ⟨mul a b⟩, x)) = thunk { λx.
+/// return here(⟨mul a b⟩) }` at `(a, b) = (neutral, x)` for the left unit, or
+/// at `(x, neutral)` for the right.
+///
+/// # Specification
+/// trivial.
+fn unit_law(
+    environment: &mut Environment,
+    monoid: &Conjunction,
+    unit: Unit,
+) -> StagedDeclaration
+{
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let neutral = arena.value_constant(monoid.neutral);
+    let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let arguments = match unit {
+        | Unit::Left => [neutral, bound],
+        | Unit::Right => [bound, neutral],
+    };
+    let endpoint = applied(arena, monoid.mul, &arguments);
+    let identity = arena.value_type_path(monoid.ty, endpoint, bound);
+    let returns = arena.comp_type_returner(identity);
+    let family = arena.comp_type_pi(monoid.ty, returns);
+    let declared = arena.value_type_thunk(family);
+    let here = arena.value_here(endpoint);
+    let body = arena.computation_return(here);
+    let body = arena.computation_lambda(body);
+    let body = arena.value_thunk(body);
+    staging.def(LevelSignature::monomorphic(), declared, body)
+}
+
+/// Admit a decoded artifact's declarations, in order, into a fresh
+/// environment that starts from the artifact's arena.
+///
+/// # Specification
+/// trivial.
+fn readmit(artifact: &DecodedArtifact) -> Result<Environment, KernelError>
+{
+    let mut environment = Environment::new();
+    for (position, marked) in artifact.declarations().iter().enumerate() {
+        let mut staging = environment.stage();
+        if position == 0 {
+            *staging.arena() = artifact.arena().clone();
+        }
+        let levels = marked.declaration().levels().clone();
+        let staged = match *marked.declaration().content() {
+            | DeclarationContent::Def { declared, body } => staging.def(levels, declared, body),
+            | DeclarationContent::Axiom { declared } => staging.axiom(levels, declared),
+            | DeclarationContent::Data { .. } | DeclarationContent::AbstractType { .. } => {
+                panic!("the fixture holds definitions and axioms")
+            },
+        };
+        environment.add_decl(staged)?;
+    }
+    Ok(environment)
+}
+
+#[test]
+fn a_certificate_with_a_returned_endpoint_decodes_checks_and_replays()
+{
+    let mut environment = Environment::new();
+    let mut declarations = Vec::new();
+    let monoid = conjunction(&mut environment, &mut declarations, Admitted::Defined);
+    let declaration = unit_law(&mut environment, &monoid, Unit::Left);
+    let law = admit(&mut environment, &mut declarations, declaration)
+        .expect("the endpoint reads as `x` through both definitions");
+    assert!(environment.audit(law).axioms().is_empty());
+
+    let bytes = gandr_kernel_term::encode(environment.arena(), &declarations);
+    let decoded =
+        gandr_kernel_term::decode(bytes.as_image()).expect("the returned endpoint decodes");
+    assert_eq!(
+        gandr_kernel_term::encode(decoded.arena(), decoded.declarations()),
+        bytes
+    );
+    let readmitted = readmit(&decoded).expect("the decoded law checks");
+    assert_eq!(readmitted.entries().len(), 3);
+
+    // The kernel replays the endpoint's reduction over the decoded bodies:
+    // `mul` and `neutral` unfold, the case selects `b`, and `x` is returned.
+    let declared = decoded
+        .declarations()
+        .last()
+        .map(|marked| marked.declaration().declared_id())
+        .expect("the law");
+    let arena = decoded.arena();
+    let Some(&ValueType::Thunk(family)) = arena.value_type(declared)
+    else {
+        panic!("the law is a suspended family");
+    };
+    let Some(&CompType::Pi { codomain, .. }) = arena.comp_type(family)
+    else {
+        panic!("over Bool");
+    };
+    let Some(&CompType::Returner(identity)) = arena.comp_type(codomain)
+    else {
+        panic!("returning an identity");
+    };
+    let Some(&ValueType::Path { left, right, .. }) = arena.value_type(identity)
+    else {
+        panic!("between the endpoint and `x`");
+    };
+    assert!(matches!(arena.value(left), Some(&Value::Returned(_))));
+    let bodies: Vec<_> = decoded
+        .declarations()
+        .iter()
+        .map(|marked| match *marked.declaration().content() {
+            | DeclarationContent::Def { body, .. } => Unfoldable::Body(body),
+            | DeclarationContent::Data { .. }
+            | DeclarationContent::Axiom { .. }
+            | DeclarationContent::AbstractType { .. } => Unfoldable::Opaque,
+        })
+        .collect();
+    let mut arena = decoded.arena().clone();
+    let replayed = |arena: &mut TermArena, bodies: Vec<Unfoldable>| {
+        read_endpoints(
+            arena,
+            &Unfoldings::new(bodies),
+            &[(left, right)],
+            ReplayBudget::DEFAULT,
+        )
+    };
+    assert_eq!(
+        replayed(&mut arena, bodies.clone()),
+        EndpointReading::Converts
+    );
+    // Drop the δ-step at `neutral`: the case stands on an opaque constant and
+    // the endpoint stays apart from `x`.
+    let mut dropped = bodies;
+    if let Some(first) = dropped.first_mut() {
+        *first = Unfoldable::Opaque;
+    }
+    assert_eq!(replayed(&mut arena, dropped), EndpointReading::Apart);
+
+    // Swap the arguments: the case stands on `x` and refuses by name.
+    let declaration = unit_law(&mut environment, &monoid, Unit::Right);
+    assert!(matches!(
+        environment.add_decl(declaration),
+        Err(KernelError::Identity(IdentityError::EndpointsDiffer { .. }))
+    ));
+    // Withhold `neutral`'s definition: admission drops the same δ-step.
+    let mut withheld = Environment::new();
+    let opaque = conjunction(&mut withheld, &mut Vec::new(), Admitted::Assumed);
+    let declaration = unit_law(&mut withheld, &opaque, Unit::Left);
+    assert!(matches!(
+        withheld.add_decl(declaration),
+        Err(KernelError::Identity(IdentityError::EndpointsDiffer { .. }))
+    ));
+}
+
+#[test]
+fn a_stuck_returned_endpoint_compares_structurally()
+{
+    // axiom f, g : U(Bool → F Bool) ; under `λx`, `here(⟨f x⟩)` relates
+    // `⟨f x⟩` to itself by structure, and neither to `⟨g x⟩` nor to `x`.
+    let mut environment = Environment::new();
+    let mut staging = environment.stage();
+    let boolean = boolean(staging.arena());
+    let arena = staging.arena();
+    let returns = arena.comp_type_returner(boolean.ty);
+    let arrow = arena.comp_type_arrow(boolean.ty, returns);
+    let suspended = arena.value_type_thunk(arrow);
+    let declaration = staging.axiom(LevelSignature::monomorphic(), suspended);
+    let f = environment.add_decl(declaration).expect("f").position();
+    let staging = environment.stage();
+    let declaration = staging.axiom(LevelSignature::monomorphic(), suspended);
+    let g = environment.add_decl(declaration).expect("g").position();
+    let related = |environment: &mut Environment, right: Option<ConstantIndex>| {
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let left = applied(arena, f, &[bound]);
+        let right = match right {
+            | Some(head) => applied(arena, head, &[bound]),
+            | None => bound,
+        };
+        let identity = arena.value_type_path(boolean.ty, left, right);
+        let returns = arena.comp_type_returner(identity);
+        let family = arena.comp_type_pi(boolean.ty, returns);
+        let declared = arena.value_type_thunk(family);
+        let here = arena.value_here(left);
+        let body = arena.computation_return(here);
+        let body = arena.computation_lambda(body);
+        let body = arena.value_thunk(body);
+        let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+        environment.add_decl(declaration)
+    };
+    related(&mut environment, Some(f)).expect("a stuck endpoint relates to itself");
+    for right in [Some(g), None] {
+        assert!(matches!(
+            related(&mut environment, right),
+            Err(KernelError::Identity(IdentityError::EndpointsDiffer { .. }))
+        ));
+    }
+}
+
+#[test]
+fn an_endpoint_owing_an_unfolding_under_a_thunk_is_declined_by_name()
+{
+    // def k : U(Bool → F Bool) = thunk { λx. return x } ;
+    // def j : U(Bool → F Bool) = k ;            (an axiom in the control)
+    // def delay : U(F U(Bool → F Bool)) = thunk { return thunk { force j } } ;
+    // def law : Path(U(Bool → F Bool), ⟨force delay⟩, k) = here(k) ;
+    // `⟨force delay⟩` reads to `thunk { force j }`; relating it to `k` needs
+    // `j` to unfold under the thunk, which only a replayed trace may do.
+    let law = |alias: Admitted| {
+        let mut environment = Environment::new();
+        let mut staging = environment.stage();
+        let boolean = boolean(staging.arena());
+        let declaration = staging.def(
+            LevelSignature::monomorphic(),
+            boolean.function,
+            boolean.identity,
+        );
+        let k = environment.add_decl(declaration).expect("k").position();
+        let mut staging = environment.stage();
+        let named_k = staging.arena().value_constant(k);
+        let declaration = match alias {
+            | Admitted::Defined => {
+                staging.def(LevelSignature::monomorphic(), boolean.function, named_k)
+            },
+            | Admitted::Assumed => staging.axiom(LevelSignature::monomorphic(), boolean.function),
+        };
+        let j = environment.add_decl(declaration).expect("j").position();
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let named_j = arena.value_constant(j);
+        let forced = arena.computation_force(named_j);
+        let inner = arena.value_thunk(forced);
+        let returned = arena.computation_return(inner);
+        let body = arena.value_thunk(returned);
+        let returns = arena.comp_type_returner(boolean.function);
+        let declared = arena.value_type_thunk(returns);
+        let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+        let delay = environment.add_decl(declaration).expect("delay").position();
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let endpoint = applied(arena, delay, &[]);
+        let named_k = arena.value_constant(k);
+        let identity = arena.value_type_path(boolean.function, endpoint, named_k);
+        let here = arena.value_here(named_k);
+        let declaration = staging.def(LevelSignature::monomorphic(), identity, here);
+        environment.add_decl(declaration)
+    };
+    let Err(declined) = law(Admitted::Defined)
+    else {
+        panic!("an endpoint owing an unfolding under a thunk admitted");
+    };
+    assert!(matches!(
+        declined,
+        KernelError::Identity(IdentityError::EndpointsUnreplayed { .. })
+    ));
+    assert_eq!(
+        declined.to_string(),
+        "reflexivity whose endpoints relate only by unfolding under a thunk"
+    );
+    // Over an axiom nothing is owed: the endpoints differ.
+    assert!(matches!(
+        law(Admitted::Assumed),
+        Err(KernelError::Identity(IdentityError::EndpointsDiffer { .. }))
+    ));
+}
+
+#[test]
+fn a_returned_endpoint_over_a_non_returner_is_refused_by_name()
+{
+    // `⟨mul neutral⟩` stops at a function: it returns nothing to stand for.
+    // An impure endpoint has no kernel image to refuse: a kernel returner
+    // carries no effect row.
+    let mut environment = Environment::new();
+    let monoid = conjunction(&mut environment, &mut Vec::new(), Admitted::Defined);
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let neutral = arena.value_constant(monoid.neutral);
+    let partial = applied(arena, monoid.mul, &[neutral]);
+    let identity = arena.value_type_path(monoid.ty, partial, partial);
+    let here = arena.value_here(partial);
+    let declaration = staging.def(LevelSignature::monomorphic(), identity, here);
+    let Err(error) = environment.add_decl(declaration)
+    else {
+        panic!("a returned endpoint over a function admitted");
+    };
+    assert!(matches!(
+        error,
+        KernelError::Identity(IdentityError::ReturnedNonReturner(_))
+    ));
+    assert_eq!(error.to_string(), "a returned endpoint over a non-returner");
+}
+
+#[test]
+fn a_returned_endpoint_reads_at_a_mode_switch()
+{
+    // def switched : U(Π x : Bool. Path(Bool, ⟨mul a x⟩, x) → F Path(Bool, x, x))
+    //   = thunk { λx. λp. return p } ;
+    // checks at `a = neutral`, where the endpoint reads as `x`, and refuses at
+    // `a = false`, where it reads as `false`.
+    let mut environment = Environment::new();
+    let monoid = conjunction(&mut environment, &mut Vec::new(), Admitted::Defined);
+    let switched = |environment: &mut Environment, unit: bool| {
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let first = if unit {
+            arena.value_constant(monoid.neutral)
+        }
+        else {
+            monoid.falsity
+        };
+        let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let endpoint = applied(arena, monoid.mul, &[first, bound]);
+        let given = arena.value_type_path(monoid.ty, endpoint, bound);
+        let diagonal = arena.value_type_path(monoid.ty, bound, bound);
+        let returns = arena.comp_type_returner(diagonal);
+        let arrow = arena.comp_type_arrow(given, returns);
+        let family = arena.comp_type_pi(monoid.ty, arrow);
+        let declared = arena.value_type_thunk(family);
+        let path = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let body = arena.computation_return(path);
+        let body = arena.computation_lambda(body);
+        let body = arena.computation_lambda(body);
+        let body = arena.value_thunk(body);
+        let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+        environment.add_decl(declaration)
+    };
+    switched(&mut environment, true).expect("the given path's endpoint reads as `x`");
+    assert!(matches!(
+        switched(&mut environment, false),
+        Err(KernelError::ValueTypeMismatch(_))
+    ));
+}
+
+#[test]
+fn a_returned_endpoint_replays_as_its_computation()
+{
+    let mut arena = TermArena::new();
+    let boolean = boolean(&mut arena);
+    let returned = arena.computation_return(boolean.truth);
+    let endpoint = arena.value_returned(returned);
+
+    // A value goal holding a returned endpoint replays as its computation.
+    let replayed = |arena: &mut TermArena, right: ValueId| {
+        crate::replay::replay(
+            arena,
+            &Unfoldings::default(),
+            ReplaySides::Values(endpoint, right),
+            EngineClaim::Convertible,
+            core::iter::empty(),
+            ReplayBudget::DEFAULT,
+        )
+    };
+    assert_eq!(
+        replayed(&mut arena, boolean.truth),
+        KernelVerdict::Convertible
+    );
+    assert_ne!(
+        replayed(&mut arena, boolean.falsity),
+        KernelVerdict::Convertible
+    );
+    // Against another returned endpoint, the two computations meet.
+    let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let passed = arena.computation_return(bound);
+    let sequenced = arena.computation_bind(returned, passed);
+    let other = arena.value_returned(sequenced);
+    assert_eq!(replayed(&mut arena, other), KernelVerdict::Convertible);
+
+    // A case over it binds what its computation returns.
+    let on_true = arena.computation_return(boolean.falsity);
+    let on_false = arena.computation_return(boolean.truth);
+    let negated = arena.computation_case(endpoint, &[on_true, on_false]);
+    assert_eq!(
+        computes(&mut arena, negated, on_true),
+        KernelVerdict::Convertible
+    );
+    assert_ne!(
+        computes(&mut arena, negated, on_false),
+        KernelVerdict::Convertible
+    );
+    // A force over it runs the thunk its computation returns.
+    let suspended = arena.value_thunk(on_true);
+    let returns_thunk = arena.computation_return(suspended);
+    let thunked = arena.value_returned(returns_thunk);
+    let forced = arena.computation_force(thunked);
+    assert_eq!(
+        computes(&mut arena, forced, on_true),
+        KernelVerdict::Convertible
+    );
+    assert_ne!(
+        computes(&mut arena, forced, on_false),
         KernelVerdict::Convertible
     );
 }
