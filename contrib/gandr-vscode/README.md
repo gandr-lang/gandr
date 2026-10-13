@@ -79,4 +79,4 @@ mise exec -- aube run vscode:prepublish
 code --extensionDevelopmentPath="$PWD"
 ```
 
-Formatting and linting run with the repository's treefmt pass: oxfmt formats the TypeScript and JSON, and type-aware oxlint applies its rules and the TypeScript checker under the strict `tsconfig.json`.
+Formatting and linting run with the repository's treefmt pass: oxfmt formats the TypeScript and JSON, and type-aware oxlint applies its rules and the TypeScript checker under the strict `tsconfig.json`. `mise run check:extension` from the repository root type-checks, lints, bundles, and packages the extension; a deprecation fails that gate.
