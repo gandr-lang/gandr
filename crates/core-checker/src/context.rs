@@ -1212,6 +1212,34 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         self.definitions.evaluate_claim(self.arena, claim)
     }
 
+    /// Read the closed claim `claim` as [`CodeDefinitions::read_claim`] does,
+    /// over the definitions this context holds.
+    ///
+    /// # Specification
+    /// - requires: as [`CodeDefinitions::read_claim`].
+    /// - ensures: as [`CodeDefinitions::read_claim`], over this context's arena
+    ///   and definitions.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`CodeDefinitions::read_claim`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`CodeDefinitions::read_claim`].
+    /// - witness: `funext::tests::a_higher_order_argument_is_decided_under_the_quantifier`
+    #[spec(ensures: |ret| match ret {
+        | Ok(crate::code::Reading::Returned(ref evaluation)) => self.arena().value(evaluation.returned()).is_some(),
+        | Ok(crate::code::Reading::Stuck(ref reduction)) => self.arena().value(reduction.normal()).is_some(),
+        | Err(_) => true,
+    })]
+    pub(crate) fn read_claim(
+        &mut self,
+        claim: ValueId,
+    ) -> Result<crate::code::Reading, CheckRefusal>
+    {
+        self.definitions.read_claim(self.arena, claim)
+    }
+
     /// The value type `value_type` stands for at its head: a decode of a code
     /// constant with a body read as the type the body denotes, and a sealed
     /// atom inside its seal read as its representation, until the head is

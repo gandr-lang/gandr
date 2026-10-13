@@ -411,10 +411,15 @@ pub enum CheckRefusal
         /// The type its computation synthesised.
         synthesised: CompTypeId,
     },
-    /// A function extensionality the rule does not decide: its functions are
-    /// open, its classifier is no thunk of a pure non-dependent arrow, or its
-    /// domain or result is outside the unit type, the base atoms and binary
-    /// sums and products the coverage reaches.
+    /// A function extensionality past the first-order boundary. The
+    /// description-code fragment is first order by a decidability choice, so
+    /// every domain the rule decides has a finite kernel coverage: open
+    /// functions have free variables no coverage reaches; the classifier must
+    /// be a thunk of a pure non-dependent arrow, dependent arrows keeping their
+    /// own evaluation; the result and every function argument's domain and
+    /// result must be built from the unit type, the base atoms and binary sums
+    /// and products, since a function argument over functions would need
+    /// function identity between the inputs it is applied at.
     FunextUnsupported
     {
         /// The `funext`.
@@ -422,8 +427,10 @@ pub enum CheckRefusal
         /// The type its first function synthesised.
         classifier: ValueTypeId,
     },
-    /// A function extensionality whose two functions do not both return one
-    /// value at some input the coverage reaches.
+    /// A function extensionality whose two functions are not identified: at
+    /// some input the coverage reaches they return values that do not convert,
+    /// apply their function argument at inputs that do not convert, or neither
+    /// return nor apply it. This is the rule's verdict, not a gap.
     PointwiseDistinct
     {
         /// The `funext`.

@@ -29,6 +29,7 @@ use gandr_kernel_term::LayerPosition;
 use gandr_kernel_term::LevelSignature;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::MarkedDeclaration;
+use gandr_kernel_term::QuantifiedStep;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::StringLiteral;
 use gandr_kernel_term::TermArena;
@@ -68,9 +69,13 @@ use crate::identity_recursion::Component;
 use crate::identity_recursion::EvaluationSide;
 use crate::identity_recursion::HigherEvaluation;
 use crate::identity_recursion::Pointwise;
+use crate::identity_recursion::Quantified;
+use crate::identity_recursion::function_fixtures::apply_to;
 use crate::identity_recursion::function_fixtures::boolean;
 use crate::identity_recursion::function_fixtures::duplicate;
+use crate::identity_recursion::function_fixtures::evaluation;
 use crate::identity_recursion::function_fixtures::higher;
+use crate::identity_recursion::function_fixtures::normal_form;
 use crate::identity_recursion::function_fixtures::pointwise;
 use crate::identity_recursion::function_fixtures::thunk_type;
 use crate::path_universe::Reduction;
@@ -1019,6 +1024,323 @@ fn a_higher_evaluation_covers_a_higher_order_argument()
             ..
         }))
     ));
+}
+
+/// Persist quantified steps as the kernel node's two payloads.
+///
+/// # Specification
+/// trivial.
+fn quantified(
+    arena: &mut TermArena,
+    steps: &[Quantified],
+) -> ValueId
+{
+    let mut words = Vec::new();
+    let mut children = Vec::new();
+    for step in steps {
+        match *step {
+            | Quantified::Return {
+                ref left,
+                ref right,
+                proof,
+            } => {
+                words.push(QuantifiedStep::Return(EvaluationDialogues {
+                    left: left.dialogue.0.iter().copied().map(erase).collect(),
+                    right: right.dialogue.0.iter().copied().map(erase).collect(),
+                }));
+                children.extend([left.value, right.value, proof]);
+            },
+            | Quantified::Apply {
+                fibre,
+                ref left,
+                ref right,
+            } => {
+                words.push(QuantifiedStep::Apply {
+                    fibre,
+                    dialogues: EvaluationDialogues {
+                        left: left.dialogue.0.iter().copied().map(erase).collect(),
+                        right: right.dialogue.0.iter().copied().map(erase).collect(),
+                    },
+                });
+                children.extend([left.normal, right.normal]);
+            },
+        }
+    }
+    arena.value_quantified_evaluation(Arc::from(words), Box::from(children))
+}
+
+/// The generic higher-order pattern's telescope at the thunk type `inner`:
+/// `f₀ f₁ : inner, p : Path(inner, f₀, f₁)`, with `f₀`, `f₁` beneath it.
+///
+/// # Specification
+/// trivial.
+fn generic(
+    arena: &mut TermArena,
+    inner: ValueTypeId,
+) -> ([ValueTypeId; 3], (ValueId, ValueId))
+{
+    let [first, second, premise] =
+        [2_u32, 1, 0].map(|index| arena.value_variable(DeBruijnIndex::from(index)));
+    let identity_type = arena.value_type_path(inner, second, premise);
+    ([inner, inner, identity_type], (first, second))
+}
+
+/// `force f a`, as the kernel writes an application.
+///
+/// # Specification
+/// trivial.
+fn forced(
+    arena: &mut TermArena,
+    function: ValueId,
+    argument: ValueId,
+) -> ComputationId
+{
+    let forced = arena.computation_force(function);
+    arena.computation_application(forced, argument)
+}
+
+/// A closed normal form: `body` beneath one lambda per telescope entry.
+///
+/// # Specification
+/// trivial.
+fn closed(
+    arena: &mut TermArena,
+    context: &[ValueTypeId],
+    body: ComputationId,
+) -> ValueId
+{
+    let mut body = body;
+    for _ in context {
+        body = arena.computation_lambda(body);
+    }
+    arena.value_thunk(body)
+}
+
+/// The two return steps closing a branch at each Bool output, both sides
+/// returning the same constructor with unit evidence.
+///
+/// # Specification
+/// trivial.
+fn bool_returns(
+    arena: &mut TermArena,
+    context: &[ValueTypeId],
+    boolean: &crate::identity_recursion::function_fixtures::Boolean,
+) -> [Quantified; 2]
+{
+    let unit = arena.value_unit();
+    [boolean.truth, boolean.falsity].map(|output| {
+        let returned = arena.computation_return(output);
+        Quantified::Return {
+            left: evaluation(arena, context, returned, output),
+            right: evaluation(arena, context, returned, output),
+            proof: unit,
+        }
+    })
+}
+
+#[test]
+fn a_quantified_evaluation_replays_under_the_quantifier()
+{
+    let mut arena = TermArena::new();
+    let boolean = boolean(&mut arena);
+    let inner = boolean.function;
+    let outer = thunk_type(&mut arena, inner, boolean.ty);
+    let (context, (first, second)) = generic(&mut arena, inner);
+    let fibre = DeBruijnIndex::from(0_u32);
+
+    // `λf. f(true)` relates to itself: both sides stick at their own function
+    // applied to `true`, and each Bool output returns on both.
+    let apply_true = apply_to(&mut arena, boolean.truth);
+    let stuck = |arena: &mut TermArena, function: ValueId| {
+        let claim = forced(arena, apply_true, function);
+        let body = forced(arena, function, boolean.truth);
+        let normal = closed(arena, &context, body);
+        normal_form(arena, &context, claim, normal)
+    };
+    let application = Quantified::Apply {
+        fibre,
+        left: stuck(&mut arena, first),
+        right: stuck(&mut arena, second),
+    };
+    let [on_true, on_false] = bool_returns(&mut arena, &context, &boolean);
+    let steps = [application.clone(), on_true.clone(), on_false.clone()];
+    let reflexivity = quantified(&mut arena, &steps);
+    let reflexive = arena.value_type_path(outer, apply_true, apply_true);
+    check_closed_value(&mut arena, reflexivity, reflexive)
+        .expect("λf. f(true) under the quantifier");
+    assert_eq!(
+        synth_closed_value(&mut arena, reflexivity),
+        Err(KernelError::NotInferable {
+            form: NonInferableForm::HigherEvaluation
+        })
+    );
+
+    // Its bind form `λf. x ← f(true); return x` relates to it: the left side
+    // sticks with a continuation, resumed at each output.
+    let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let resumed = arena.computation_return(bound);
+    let function = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let call = forced(&mut arena, function, boolean.truth);
+    let body = arena.computation_bind(call, resumed);
+    let body = arena.computation_lambda(body);
+    let bind_true = arena.value_thunk(body);
+    let claim = forced(&mut arena, bind_true, first);
+    let call = forced(&mut arena, first, boolean.truth);
+    let body = arena.computation_bind(call, resumed);
+    let normal = closed(&mut arena, &context, body);
+    let left = normal_form(&mut arena, &context, claim, normal);
+    let Quantified::Apply { ref right, .. } = application
+    else {
+        panic!("an application step")
+    };
+    let steps = [
+        Quantified::Apply {
+            fibre,
+            left,
+            right: right.clone(),
+        },
+        on_true,
+        on_false,
+    ];
+    let funext = quantified(&mut arena, &steps);
+    let extensional = arena.value_type_path(outer, bind_true, apply_true);
+    check_closed_value(&mut arena, funext, extensional).expect("the bind form relates");
+
+    // `λf. x ← f(true); f(x)` applies its argument twice: each output of the
+    // first application opens the second at that output.
+    let function = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let again = forced(&mut arena, function, bound);
+    let function = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let call = forced(&mut arena, function, boolean.truth);
+    let body = arena.computation_bind(call, again);
+    let body = arena.computation_lambda(body);
+    let twice = arena.value_thunk(body);
+    // Beneath the bound result, the side's function sits one index further.
+    let [under_first, under_second] =
+        [3_u32, 2].map(|index| arena.value_variable(DeBruijnIndex::from(index)));
+    let first_call = |arena: &mut TermArena, function: ValueId, beneath: ValueId| {
+        let claim = forced(arena, twice, function);
+        let call = forced(arena, function, boolean.truth);
+        let again = forced(arena, beneath, bound);
+        let body = arena.computation_bind(call, again);
+        let normal = closed(arena, &context, body);
+        normal_form(arena, &context, claim, normal)
+    };
+    let second_call = |arena: &mut TermArena, function: ValueId, output: ValueId| {
+        let claim = forced(arena, function, output);
+        let normal = closed(arena, &context, claim);
+        normal_form(arena, &context, claim, normal)
+    };
+    let mut steps = Vec::from([Quantified::Apply {
+        fibre,
+        left: first_call(&mut arena, first, under_first),
+        right: first_call(&mut arena, second, under_second),
+    }]);
+    for output in [boolean.truth, boolean.falsity] {
+        steps.push(Quantified::Apply {
+            fibre,
+            left: second_call(&mut arena, first, output),
+            right: second_call(&mut arena, second, output),
+        });
+        steps.extend(bool_returns(&mut arena, &context, &boolean));
+    }
+    let nested = quantified(&mut arena, &steps);
+    let reflexive = arena.value_type_path(outer, twice, twice);
+    check_closed_value(&mut arena, nested, reflexive).expect("a body applying its argument twice");
+}
+
+#[test]
+fn a_quantified_evaluation_refuses_what_it_cannot_relate()
+{
+    let mut arena = TermArena::new();
+    let boolean = boolean(&mut arena);
+    let inner = boolean.function;
+    let outer = thunk_type(&mut arena, inner, boolean.ty);
+    let (context, (first, second)) = generic(&mut arena, inner);
+    let fibre = DeBruijnIndex::from(0_u32);
+    let stuck_at = |arena: &mut TermArena, closure: ValueId, function: ValueId, input: ValueId| {
+        let claim = forced(arena, closure, function);
+        let body = forced(arena, function, input);
+        let normal = closed(arena, &context, body);
+        normal_form(arena, &context, claim, normal)
+    };
+    let apply_true = apply_to(&mut arena, boolean.truth);
+    let apply_false = apply_to(&mut arena, boolean.falsity);
+    let [on_true, on_false] = bool_returns(&mut arena, &context, &boolean);
+
+    // `λf. f(true)` and `λf. f(false)` apply at different inputs.
+    let left = stuck_at(&mut arena, apply_true, first, boolean.truth);
+    let right = stuck_at(&mut arena, apply_false, second, boolean.falsity);
+    let differing = quantified(&mut arena, &[
+        Quantified::Apply { fibre, left, right },
+        on_true.clone(),
+        on_false.clone(),
+    ]);
+    let distinct = arena.value_type_path(outer, apply_true, apply_false);
+    assert_eq!(
+        check_closed_value(&mut arena, differing, distinct),
+        Err(KernelError::Identity(IdentityError::QuantifiedStep {
+            component: Component(0)
+        }))
+    );
+
+    // A fibre naming a function binder is not a premise, and a step past the
+    // tree is outside the coverage.
+    let left = stuck_at(&mut arena, apply_true, first, boolean.truth);
+    let right = stuck_at(&mut arena, apply_true, second, boolean.truth);
+    let misplaced = quantified(&mut arena, &[
+        Quantified::Apply {
+            fibre: DeBruijnIndex::from(1_u32),
+            left: left.clone(),
+            right: right.clone(),
+        },
+        on_true.clone(),
+        on_false.clone(),
+    ]);
+    let reflexive = arena.value_type_path(outer, apply_true, apply_true);
+    assert_eq!(
+        check_closed_value(&mut arena, misplaced, reflexive),
+        Err(KernelError::Identity(IdentityError::QuantifiedStep {
+            component: Component(0)
+        }))
+    );
+    let extra = quantified(&mut arena, &[
+        Quantified::Apply { fibre, left, right },
+        on_true,
+        on_false.clone(),
+        on_false,
+    ]);
+    assert_eq!(
+        check_closed_value(&mut arena, extra, reflexive),
+        Err(KernelError::Identity(IdentityError::Coverage))
+    );
+
+    // `λh. h(not)` applies a function whose own domain is a function: the
+    // fragment boundary refuses it by name before any input is compared.
+    let higher = thunk_type(&mut arena, inner, boolean.ty);
+    let outermost = thunk_type(&mut arena, higher, boolean.ty);
+    let (context, (first, second)) = generic(&mut arena, higher);
+    let apply_not = apply_to(&mut arena, boolean.not);
+    let stuck_at = |arena: &mut TermArena, function: ValueId| {
+        let claim = forced(arena, apply_not, function);
+        let body = forced(arena, function, boolean.not);
+        let normal = closed(arena, &context, body);
+        normal_form(arena, &context, claim, normal)
+    };
+    let application = Quantified::Apply {
+        fibre,
+        left: stuck_at(&mut arena, first),
+        right: stuck_at(&mut arena, second),
+    };
+    let [on_true, on_false] = bool_returns(&mut arena, &context, &boolean);
+    let boundary = quantified(&mut arena, &[application, on_true, on_false]);
+    let reflexive = arena.value_type_path(outermost, apply_not, apply_not);
+    assert_eq!(
+        check_closed_value(&mut arena, boundary, reflexive),
+        Err(KernelError::Identity(IdentityError::HigherOrderDomain {
+            component: Component(0)
+        }))
+    );
 }
 
 #[test]

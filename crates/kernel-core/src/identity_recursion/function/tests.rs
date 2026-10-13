@@ -356,18 +356,43 @@ fn decision(step: ConversionDecision<TraceNode>) -> ConversionDecision<ReplayNod
 fn engine(
     arena: &mut TermArena,
     context: &[ValueTypeId],
-    mut computation: ComputationId,
+    computation: ComputationId,
     value: ValueId,
 ) -> (MachineVerdict, Dialogue)
 {
     let mut returned = arena.computation_return(value);
     for _ in context {
-        computation = arena.computation_lambda(computation);
         returned = arena.computation_lambda(returned);
     }
+    let returned = arena.value_thunk(returned);
+    reaches(arena, context, computation, returned)
+}
+
+/// Obtain the real engine's verdict and complete trace on a claim that a
+/// computation, closed over its telescope, converts to a closed value.
+///
+/// # Specification
+/// - ensures: as [`engine`], against the closed `target` rather than a returned
+///   value.
+/// - panics: on malformed fixture translation or an operational engine error.
+///
+/// # Adequacy
+/// - hypothesis: L1/L3 — a stuck normal form's trace replays, and the trace of
+///   another form refuses.
+/// - witness: `element_identity::tests::a_quantified_evaluation_replays_under_the_quantifier`
+#[spec(ensures: |ret| ret.0 != MachineVerdict::Convertible || arena.value(target).is_some())]
+pub fn reaches(
+    arena: &mut TermArena,
+    context: &[ValueTypeId],
+    mut computation: ComputationId,
+    target: ValueId,
+) -> (MachineVerdict, Dialogue)
+{
+    for _ in context {
+        computation = arena.computation_lambda(computation);
+    }
     let left = arena.value_thunk(computation);
-    let right = arena.value_thunk(returned);
-    let (core, left, right) = translate(arena, left, right);
+    let (core, left, right) = translate(arena, left, target);
     let chain = LoweredChain::new();
     let environment = DefinitionalEnvironment::new();
     let definitions = Definitions::new(&chain, &environment, environment.root());
@@ -392,6 +417,56 @@ fn engine(
         report.verdict(),
         Dialogue(log.decisions().copied().map(decision).collect()),
     )
+}
+
+/// A return step's claimed evaluation of `computation`, traced by the engine.
+///
+/// # Specification
+/// - requires: `computation` returns `value` beneath `context`.
+/// - ensures: the value with the engine's dialogue.
+/// - panics: when the engine does not convert the claim.
+///
+/// # Adequacy
+/// - hypothesis: L1/L3 — each return of the quantified witness replays its
+///   evaluation, and a wrong returned value refuses.
+/// - witness: `element_identity::tests::a_quantified_evaluation_replays_under_the_quantifier`
+#[spec(ensures: |ret| ret.value == value)]
+pub fn evaluation(
+    arena: &mut TermArena,
+    context: &[ValueTypeId],
+    computation: ComputationId,
+    value: ValueId,
+) -> Evaluation
+{
+    let (verdict, dialogue) = engine(arena, context, computation, value);
+    assert_eq!(verdict, MachineVerdict::Convertible);
+    Evaluation { value, dialogue }
+}
+
+/// An application step's claimed normal form of `computation`, traced by
+/// the engine.
+///
+/// # Specification
+/// - requires: `computation`, closed over `context`, converts to `normal`.
+/// - ensures: the normal form with the engine's dialogue.
+/// - panics: when the engine does not convert the claim.
+///
+/// # Adequacy
+/// - hypothesis: L1/L3 — each application of the quantified witness replays its
+///   normal form, and a form applying the other function refuses.
+/// - witness: `element_identity::tests::a_quantified_evaluation_replays_under_the_quantifier`
+/// - witness: `element_identity::tests::a_quantified_evaluation_refuses_what_it_cannot_relate`
+#[spec(ensures: |ret| ret.normal == normal)]
+pub fn normal_form(
+    arena: &mut TermArena,
+    context: &[ValueTypeId],
+    computation: ComputationId,
+    normal: ValueId,
+) -> super::NormalForm
+{
+    let (verdict, dialogue) = reaches(arena, context, computation, normal);
+    assert_eq!(verdict, MachineVerdict::Convertible);
+    super::NormalForm { normal, dialogue }
 }
 
 /// Produce both application traces for one independent pointwise argument.
@@ -481,16 +556,13 @@ fn function_clause_retains_related_inputs_and_neutrals()
         assert!(
             matches!(fiber.get(fiber.root()), Ok(Fiber::Function { argument, result, .. }) if argument == boolean.ty && result == boolean.ty)
         );
-        // Identity's function fibre is the persisted path type; a bridge's
-        // has none.
+        // The function fibre is the persisted path type in either mode: a
+        // bridge's fibre carries its type across as identity's does.
         let lowered = fiber.native(&mut arena);
-        match mode {
-            | Mode::Identity => assert!(matches!(
-                lowered.ok().and_then(|ty| arena.value_type(ty)),
-                Some(&ValueType::Path { domain, left, right }) if domain == boolean.function && left == x && right == y
-            )),
-            | Mode::Bridge => assert!(matches!(lowered, Err(RelationError::NeutralFiber))),
-        }
+        assert!(matches!(
+            lowered.ok().and_then(|ty| arena.value_type(ty)),
+            Some(&ValueType::Path { domain, left, right }) if domain == boolean.function && left == x && right == y
+        ));
         let arguments = RelatedArguments {
             left: boolean.truth,
             right: boolean.truth,
@@ -955,11 +1027,32 @@ fn a_higher_order_argument_binds_its_inner_fibre()
         [pattern.left, pattern.right, pattern.proof].map(|value| arena.value(value).cloned()),
         [variable(2), variable(1), variable(0)]
     );
+    // A bridge binds the same generic input: its premise is the persisted
+    // identity at the inner fibre, so its coverage needs no neutral fibre.
     let bridge = relation(&arena, Mode::Bridge, code);
+    let bridged = bridge
+        .related_patterns(&mut arena, ReplayBudget::DEFAULT)
+        .expect("bridge coverage binds the inner fibre");
+    let [ref bridged] = *bridged.as_slice()
+    else {
+        panic!("one generic related input")
+    };
+    let &[bridged_first, bridged_second, bridged_premise] = bridged.context.as_slice()
+    else {
+        panic!("three binders")
+    };
+    assert_eq!((bridged_first, bridged_second), (inner, inner));
     assert!(matches!(
-        bridge.related_patterns(&mut arena, ReplayBudget::DEFAULT),
-        Err(RelationError::NeutralFiber)
+        arena.value_type(bridged_premise),
+        Some(&ValueType::Path { domain, left, right })
+            if domain == inner
+                && arena.value(left).cloned() == variable(1)
+                && arena.value(right).cloned() == variable(0)
     ));
+    assert_eq!(
+        [bridged.left, bridged.right, bridged.proof].map(|value| arena.value(value).cloned()),
+        [variable(2), variable(1), variable(0)]
+    );
 
     // Ap of a λ that duplicates its argument relates the two copies by the
     // premise, and the output evidence is checked: `here(f₀)` is not it.

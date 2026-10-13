@@ -320,9 +320,11 @@ pub enum RefusalName
     EndpointMismatch,
     /// A compound endpoint whose computation returns no pure value.
     CompoundEndpoint,
-    /// A function extensionality the rule does not decide.
+    /// A function extensionality past the first-order boundary, where no
+    /// finite coverage decides it.
     FunextUnsupported,
-    /// A function extensionality whose functions differ at some input.
+    /// A function extensionality whose functions disagree at some covering
+    /// input: the rule's verdict.
     PointwiseDistinct,
     /// A universe equivalence the rule does not decide.
     EquivUnsupported,

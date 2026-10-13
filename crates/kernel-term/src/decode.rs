@@ -2039,6 +2039,42 @@ fn decode_entry(
             );
             (DecodedNode::Value(id), Family::Value)
         },
+        | tags::NODE_V_QUANTIFIED_EVALUATION => {
+            let count = reader.read_uvarint()?;
+            let mut steps = Vec::new();
+            for _ in 0 .. u64::from(count) {
+                let word = u64::from(reader.read_uvarint()?);
+                let left = decode_dialogue(reader)?;
+                let right = decode_dialogue(reader)?;
+                let dialogues = crate::EvaluationDialogues { left, right };
+                steps.push(match word.checked_sub(1) {
+                    | None => crate::QuantifiedStep::Return(dialogues),
+                    | Some(fibre) => crate::QuantifiedStep::Apply {
+                        fibre: crate::DeBruijnIndex::from(u32::try_from(fibre).map_err(
+                            |_overflow| DecodeError::Malformed {
+                                site: crate::MalformedSite::PathEvidence,
+                            },
+                        )?),
+                        dialogues,
+                    },
+                });
+            }
+            let mut values = Vec::new();
+            for step in &steps {
+                let owed = match *step {
+                    | crate::QuantifiedStep::Return(_) => 3_u8,
+                    | crate::QuantifiedStep::Apply { .. } => 2_u8,
+                };
+                for _ in 0 .. owed {
+                    values.push(read_value(reader, table, this, &mut children)?);
+                }
+            }
+            let id = table.arena.value_quantified_evaluation(
+                alloc::sync::Arc::from(steps),
+                values.into_boxed_slice(),
+            );
+            (DecodedNode::Value(id), Family::Value)
+        },
         | tags::NODE_C_RELATED_APPLICATION => {
             let path = read_value(reader, table, this, &mut children)?;
             let left = read_value(reader, table, this, &mut children)?;
@@ -5265,6 +5301,11 @@ mod tests
                 super::DecodedNode::Computation(c1),
                 &[5, 1, 5, 1, 7],
             ),
+            (
+                &[0x3A, 2, 3, 1, 11, 0, 0, 0, 0, 5, 5, 5, 1, 5],
+                super::DecodedNode::Value(v1),
+                &[5, 5, 5, 1, 5],
+            ),
         ];
         let expected_value_types = [ValueType::Path {
             domain: vt1,
@@ -5291,6 +5332,21 @@ mod tests
             Value::HigherEvaluation {
                 dialogues,
                 components: [component].into(),
+            },
+            Value::QuantifiedEvaluation {
+                steps: alloc::sync::Arc::from([
+                    crate::QuantifiedStep::Apply {
+                        fibre: crate::DeBruijnIndex::from(2_u32),
+                        dialogues: EvaluationDialogues {
+                            left: vec![
+                                gandr_kernel_conversion_trace::ConversionDecision::Decompose,
+                            ],
+                            right: vec![],
+                        },
+                    },
+                    crate::QuantifiedStep::Return(EvaluationDialogues::default()),
+                ]),
+                children: [v1, v1, v1, v0, v1].into(),
             },
         ];
         let expected_computations = [
@@ -5391,6 +5447,15 @@ mod tests
                 },
             ),
             (&[0x38, 1, 1, 0x11, 0, 5, 1, 5], DecodeError::Malformed {
+                site: MalformedSite::PathEvidence,
+            }),
+            (
+                &[0x3A, 1, 0x81, 0x80, 0x80, 0x80, 0x10, 0, 0, 5, 5],
+                DecodeError::Malformed {
+                    site: MalformedSite::PathEvidence,
+                },
+            ),
+            (&[0x3A, 1, 1, 1, 0x11, 0, 5, 5], DecodeError::Malformed {
                 site: MalformedSite::PathEvidence,
             }),
             (&[0x31, 0, 1, 0x11, 5], DecodeError::Malformed {

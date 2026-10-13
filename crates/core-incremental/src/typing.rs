@@ -226,9 +226,11 @@ pub enum Refusal
         /// The type its computation synthesised.
         synthesised: TypeContent,
     },
-    /// A function extensionality the rule does not decide: open functions, a
-    /// classifier that is no thunk of a pure non-dependent arrow, or a domain
-    /// or result outside the first-order fragment.
+    /// A function extensionality past the first-order boundary: open
+    /// functions, whose free variables no coverage reaches; a classifier that
+    /// is no thunk of a pure non-dependent arrow; or a result, or a function
+    /// argument's domain or result, outside the first-order fragment whose
+    /// coverage is finite by the description codes' decidability choice.
     FunextUnsupported
     {
         /// The function extensionality.
@@ -236,8 +238,8 @@ pub enum Refusal
         /// The type its first function synthesised.
         classifier: TypeContent,
     },
-    /// A function extensionality whose functions do not both return one
-    /// value at some covering input.
+    /// A function extensionality whose functions are not identified: they
+    /// disagree at some covering input, the rule's verdict rather than a gap.
     PointwiseDistinct(Site),
     /// A universe equivalence the rule does not decide: open translators, a
     /// classifier that is no thunk of a pure non-dependent arrow, or a code

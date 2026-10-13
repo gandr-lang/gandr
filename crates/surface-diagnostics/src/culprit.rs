@@ -215,7 +215,7 @@ const fn checked(refusal: CheckRefusal) -> Culprit
         | CheckRefusal::PathCode(_) => "not a quoted closed first-order code",
         | CheckRefusal::EndpointMismatch { .. } => "not both endpoints of the path",
         | CheckRefusal::CompoundEndpoint { .. } => "an endpoint that returns no pure value",
-        | CheckRefusal::FunextUnsupported { .. } => "functions outside the rule's fragment",
+        | CheckRefusal::FunextUnsupported { .. } => "functions past the first-order boundary",
         | CheckRefusal::PointwiseDistinct { .. } => "functions that differ at some input",
         | CheckRefusal::EquivUnsupported { .. } => "translators outside the rule's fragment",
         | CheckRefusal::UncertifiedStratum { .. } => "a recursive type",

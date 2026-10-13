@@ -63,7 +63,7 @@
 //! | `0x36–0x37` | Unassigned element-identity growth | Refused |
 //! | `0x38` | Higher evaluation, inline dialogues and three value children per component | Admitted |
 //! | `0x39` | Related-inputs application, path, two arguments, evidence and a body under three binders | Admitted |
-//! | `0x3A` | Reserved: quantified higher evaluation | Refused |
+//! | `0x3A` | Quantified evaluation: steps over returned values, evidence and stuck normal forms | Admitted |
 //! | `0x3B` | Reserved: dependent-arrow higher evaluation | Refused |
 //! | `0x3C–0x47` | Held function-identity growth | Refused |
 //! | `0x48–0x4F` | `Flow_U` reservation | Refused |
@@ -156,6 +156,7 @@
 //! | `0x35` | [`NODE_C_TELESCOPE_TRANSPORT`] | computation | the motive, a computation type `Π (y : A). Π (z : B). F C`; the path; the second entry's source point; the path over the first; the input value | none |
 //! | `0x38` | [`NODE_V_HIGHER_EVALUATION`] | value | per component: left returned value, right returned value, output evidence | component count, then per component the left and the right dialogue |
 //! | `0x39` | [`NODE_C_RELATED_APPLICATION`] | computation | the function path; left and right arguments; argument evidence; the body under three value binders | none |
+//! | `0x3A` | [`NODE_V_QUANTIFIED_EVALUATION`] | value | per step, in pre-order: for a return, left returned value, right returned value, output evidence; for an application, the left and the right closed normal form | step count, then per step its step word and the left and the right dialogue |
 //!
 //! The two structural invariants the reader names rather than reporting as
 //! a bare polarity fault are an endpoint child of [`NODE_VT_PATH`] that is
@@ -171,15 +172,22 @@
 //! computation-family node, so a value or type child is refused as a
 //! polarity fault.
 //!
-//! [`NODE_V_QUANTIFIED_EVALUATION`] and [`NODE_V_DEPENDENT_EVALUATION`] name
-//! the next two function-identity introductions — a component whose body
-//! applies its higher-order argument, and identity at dependent arrows — and
-//! carry no shape yet; a reader refuses them as it refuses any unassigned
-//! byte. Higher-order argument coverage itself needed no node: the higher
-//! evaluation's kernel-generated coverage binds a function argument as two
-//! functions and their identity. Filling any of these slots holds
-//! [`FORMAT_VERSION`]: every byte in both ranges is a node tag, refused by
-//! name by the closed-vocabulary reader until it is admitted.
+//! A quantified evaluation's step word is zero for a return and one more than
+//! the related premise's de Bruijn index for an application; the reader
+//! refuses a fibre past the index range at
+//! [`crate::MalformedSite::PathEvidence`], as it refuses a dialogue premise
+//! past it, and reads three children after a return and two after an
+//! application.
+//!
+//! [`NODE_V_DEPENDENT_EVALUATION`] names the next function-identity
+//! introduction, identity at dependent arrows, and carries no shape yet; a
+//! reader refuses it as it refuses any unassigned byte. Higher-order argument
+//! coverage needed no node of its own: the evaluation's kernel-generated
+//! coverage binds a function argument as two functions and their identity.
+//! Filling a slot of the range holds [`FORMAT_VERSION`]: every byte in both
+//! ranges is a node tag, refused by name by the closed-vocabulary reader until
+//! it is admitted, so [`NODE_V_QUANTIFIED_EVALUATION`] means nothing else to
+//! any reader that predates it.
 //!
 //! # The lazy product
 //!
@@ -595,9 +603,16 @@ pub const NODE_V_HIGHER_EVALUATION: WireTag = WireTag(0x38);
 /// only evaluation names, so the eliminator continues rather than returns.
 pub const NODE_C_RELATED_APPLICATION: WireTag = WireTag(0x39);
 
-/// Reserved node tag: higher evaluation with quantified evidence, for a
-/// component whose body applies its higher-order argument.
+/// Node tag: quantified evaluation, the introduction of identity at a thunk
+/// code whose body applies its higher-order argument, with inline steps over
+/// their value children.
+///
+/// Each coverage component is a pre-order tree: an application step relates
+/// both sides stuck at the functions one premise relates, and opens one branch
+/// per covering pattern of that function's result relation; a return step
+/// closes a branch as a higher-evaluation component does.
 pub const NODE_V_QUANTIFIED_EVALUATION: WireTag = WireTag(0x3A);
+
 /// Reserved node tag: higher evaluation at a dependent arrow.
 pub const NODE_V_DEPENDENT_EVALUATION: WireTag = WireTag(0x3B);
 
@@ -829,7 +844,7 @@ pub struct NodeTagDescription
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
+    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
             && match max_token_bound { Some(bound) => bound.0 >= 1, None => true },
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -881,7 +896,7 @@ const fn row(
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
+    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
             && !matches!(tag, NODE_VT_BASE | NODE_V_VARIABLE | NODE_V_CONSTANT | NODE_VT_ABSTRACT | NODE_V_LIST_NIL),
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -981,7 +996,7 @@ const fn bounded_alias(
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
-pub const NODE_TAG_TABLE: [NodeTagDescription; 60] = [
+pub const NODE_TAG_TABLE: [NodeTagDescription; 61] = [
     row(
         NODE_VT_BASE,
         ChildArity::Fixed(0),
@@ -1031,6 +1046,7 @@ pub const NODE_TAG_TABLE: [NodeTagDescription; 60] = [
     unbounded(NODE_C_TELESCOPE_TRANSPORT, ChildArity::Fixed(5)),
     unbounded(NODE_V_HIGHER_EVALUATION, ChildArity::Counted(0)),
     unbounded(NODE_C_RELATED_APPLICATION, ChildArity::Fixed(5)),
+    unbounded(NODE_V_QUANTIFIED_EVALUATION, ChildArity::Counted(0)),
     unbounded(NODE_VT_LIST, ChildArity::Fixed(1)),
     bounded_alias(NODE_V_LIST_NIL, TokenCount(1)),
     unbounded(NODE_VT_SESSION, ChildArity::Fixed(1)),
@@ -1116,6 +1132,7 @@ mod tests
                         Some(&crate::Value::Returned(_)) => row.tag == super::NODE_V_RETURNED,
                         Some(&crate::Value::Higher { .. }) => row.tag == super::NODE_V_HIGHER,
                         Some(&crate::Value::HigherEvaluation { .. }) => row.tag == super::NODE_V_HIGHER_EVALUATION,
+                        Some(&crate::Value::QuantifiedEvaluation { .. }) => row.tag == super::NODE_V_QUANTIFIED_EVALUATION,
                         Some(&crate::Value::SessionPath { .. }) => row.tag == super::NODE_V_SESSION_PATH,
                         Some(&crate::Value::ListNil) => row.tag == super::NODE_V_LIST_NIL,
                         Some(&crate::Value::ListCons(..)) => row.tag == super::NODE_V_LIST_CONS,
@@ -1245,6 +1262,16 @@ mod tests
             }]),
         );
         let related = arena.computation_related_application(here, (unit, literal), here, ret);
+        let quantified = arena.value_quantified_evaluation(
+            alloc::sync::Arc::from([
+                crate::QuantifiedStep::Apply {
+                    fibre: crate::DeBruijnIndex::from(0_u32),
+                    dialogues: crate::EvaluationDialogues::default(),
+                },
+                crate::QuantifiedStep::Return(crate::EvaluationDialogues::default()),
+            ]),
+            alloc::boxed::Box::from([thunk, thunk, unit, literal, here]),
+        );
         let session = arena.value_type_session(
             alloc::sync::Arc::new(crate::session::Graph {
                 nodes: alloc::vec![crate::session::Node::End],
@@ -1318,6 +1345,7 @@ mod tests
             AnyNode::Computation(telescope_transport),
             AnyNode::Value(evaluation),
             AnyNode::Computation(related),
+            AnyNode::Value(quantified),
             AnyNode::ValueType(arena.value_type_list(unit_type)),
             AnyNode::Value(nil),
             AnyNode::ValueType(session),
@@ -1360,6 +1388,7 @@ mod tests
                         | crate::Value::HigherEvaluation { ref components, .. } => {
                             components.len().saturating_mul(3)
                         },
+                        | crate::Value::QuantifiedEvaluation { ref children, .. } => children.len(),
                         | _ => 0,
                     },
                     | None => 0,
@@ -1423,13 +1452,13 @@ mod tests
                 !reserved.contains(&tag),
                 "an assigned former cannot consume a reserved sharing byte"
             );
-            let identity = matches!(tag, 0x30 ..= 0x35 | 0x38 | 0x39);
+            let identity = matches!(tag, 0x30 ..= 0x35 | 0x38 ..= 0x3A);
             assert!(
                 identity || !(0x30_u8 .. 0x50).contains(&tag),
                 "only the assigned identity bytes leave the identity, funext and flow ranges"
             );
         }
-        for unassigned in (0x36_u8 ..= 0x37).chain(0x3A ..= 0x47).chain(0x48 ..= 0x4F) {
+        for unassigned in (0x36_u8 ..= 0x37).chain(0x3B ..= 0x47).chain(0x48 ..= 0x4F) {
             assert!(
                 !assigned[usize::from(unassigned)],
                 "the unassigned identity growth and the flow reservation name no former: {unassigned:#04x}"
@@ -1468,7 +1497,7 @@ mod tests
         let expected: Vec<_> = (0_u8 ..= 0x1f)
             .filter(|tag| !matches!(tag, 0x01 | 0x0B))
             .chain(0x2a ..= 0x2e)
-            .chain([0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x38, 0x39])
+            .chain([0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x38, 0x39, 0x3A])
             .chain([0x50, 0x51, 0x52, 0x5a, 0x5b, 0x5c])
             .chain(0x5d ..= 0x67)
             .collect();

@@ -32,7 +32,7 @@
 //! | Base | Discrete relation: identical indices give Unit; distinct canonical literals give Empty; unresolved neutral equality remains a relation. | Reflexivity is constructive; distinct variables are not assumed unequal. |
 //! | Sum | Matching injections recurse on their payloads; different injections give Empty. An unknown injection remains suspended. | Payload reflexivity and transport use the matching branch. |
 //! | Product | Component relations paired, including projections of neutral indices. | Componentwise reflexivity and composition; neither coordinate is dropped. |
-//! | Thunk `U (A → F B)` | Suspended product `Π a₀ a₁. Rel(A,a₀,a₁) → Rel(B,force f a₀,force g a₁)`, with the same mode on both premises; at identity it lowers to the persisted `Path` at the thunk type. | `here` reflexivity, higher-evaluation (ap) and pointwise introduction; application transport replays both returners. |
+//! | Thunk `U (A → F B)` | Suspended product `Π a₀ a₁. Rel(A,a₀,a₁) → Rel(B,force f a₀,force g a₁)`, with the same mode on both premises; in either mode it lowers to the persisted `Path` at the thunk type. | `here` reflexivity, higher-evaluation (ap), quantified-evaluation and pointwise introduction; application transport replays both returners. |
 //! | List A | Lazy constructor relation; each Cons applies the already-folded element clause and delays its tail. | A complete finite observation records Unit or a distinguishing Empty fibre, depth and instruction count. |
 //! | Value universe at level zero | Identity only: native `PathUniverse` of the two indexed codes. | Native path reflexivity and certified translator replay. |
 //! | `PathUniverse` | Identity only: the higher record of two native certificates. | Pointwise forward/backward fields and both round-trip coherence obligations, observed separately. |
@@ -105,7 +105,8 @@
 //!
 //! `HigherEvaluation` is an untrusted introduction: each component contains
 //! two claimed returned values, their `core-nbe` dialogues, and an inhabitant
-//! of the computed output relation. The kernel constructs every replay claim
+//! of the computed output relation. `QuantifiedEvaluation` extends it with
+//! application steps (below). The kernel constructs every replay claim
 //! itself. Open component telescopes close under lambdas before replay.
 //! `function_reflexivity` replays the same function on related inputs, the
 //! λ's ap; structural `reflexivity` at a function is `here` of it, which the
@@ -120,22 +121,32 @@
 //! `T`, binds the inner fibre itself: two functions and their identity, `f₀
 //! f₁ : T` and `p : Path(T, f₀, f₁)`, with `f₀` the source argument and `f₁`
 //! the target. Nothing is sampled and nothing is split, so a higher-order
-//! argument is one generic pattern. An identity function fibre lowers to the
-//! persisted `Path` at its thunk type, which is what makes both ends checkable:
-//! the premise is the bound `p`, and a function-valued output is related by
-//! `p`, by `here` or by a nested higher evaluation. A bridge's function fibre
-//! has no persisted type, so bridge coverage stops at a function coordinate
-//! with `NeutralFiber`. The admitted function code is the non-dependent arrow
-//! `U (A → F B)`; dependent arrows, universe and recursive codes are outside
-//! this clause.
+//! argument is one generic pattern. A function fibre lowers to the persisted
+//! `Path` at its thunk type in either mode, which is what makes both ends
+//! checkable: the premise is the bound `p`, and a function-valued output is
+//! related by `p`, by `here` or by a nested higher evaluation. A bridge binds
+//! the same generic input; its fold refuses only the universe, so the persisted
+//! identity at the inner fibre is its premise too. The admitted function code
+//! is the non-dependent arrow `U (A → F B)`; dependent arrows, universe and
+//! recursive codes are outside this clause.
 //!
 //! A body that applies its higher-order argument, `λh. force h v`, is stuck at
-//! the generic pattern: it returns no value there, so no claimed evaluation
-//! replays and the component refuses as `Evaluation`. At concrete related
-//! functions the same application computes, its premise checked at the inner
-//! fibre. The generic case needs the value a stuck returner returns and the
-//! related application of `p` at value level; `0x3A` stays reserved for that
-//! quantified evaluation, since the coverage above needed no wire node.
+//! the generic pattern: it returns no value there, so a higher evaluation's
+//! component refuses as `Evaluation`. The quantified evaluation decides it
+//! under the quantifier. Per pattern it is a pre-order tree of steps. A return
+//! step is a higher evaluation's component. An application step names the
+//! premise `p` at a de Bruijn index of its telescope and carries both sides'
+//! closed normal forms `thunk (λⁿ. S)` with their dialogues: the kernel replays
+//! that each side's computation converts to its normal form, reads `S` as
+//! `force f₀ a` and `force f₁ a'`, bare or bound as `x ← …; K`, with `f₀ f₁`
+//! the two functions `p` relates, and requires `a` and `a'` convertible. It
+//! then covers the inner result `B` and continues each side at each output
+//! `o` — `return o`, or `K` weakened past the output's binders and
+//! instantiated at `o` — one child step per output, in coverage order. The
+//! inner domain must be first order: inputs that are themselves functions
+//! would need function identity between them, refused as `HigherOrderDomain`;
+//! inputs that do not convert, a head no premise relates, or a step of the
+//! wrong kind refuse as `QuantifiedStep`.
 //!
 //! `transport_application` instantiates a checked function identity at an
 //! argument diagonal, `here` at a function argument, and computes the related
@@ -168,9 +179,10 @@
 //! binds its inner fibre as a variable rather than covering it: the
 //! alternatives were refusing it, which left the record's funext by definition
 //! first-order, and sampling functions, which establishes nothing universal.
-//! **Reversal.** A component whose body applies its higher-order argument
-//! needs a value for a stuck returner and the premise's application at value
-//! level; complete dependent funext additionally requires its substitution and
+//! **Reversal.** A function argument whose own domain is higher order needs
+//! function identity between the inputs it is applied at, where the step
+//! would carry a nested evidence tree instead of a convertibility test;
+//! complete dependent funext additionally requires its substitution and
 //! fibrancy laws.
 //!
 //! # Native fibres and admission
@@ -259,7 +271,9 @@ pub(crate) use function::ComponentObligation;
 pub use function::Evaluation;
 pub use function::EvaluationSide;
 pub use function::HigherEvaluation;
+pub(crate) use function::NormalForm;
 pub use function::Pointwise;
+pub(crate) use function::Quantified;
 pub use function::RelatedArguments;
 pub use function::RelatedPattern;
 #[cfg(test)]
@@ -449,6 +463,13 @@ pub enum RelationError
     Pointwise(Component, Box<KernelError>),
     /// An application trace did not certify its claimed returned value.
     Evaluation(Component, EvaluationSide, crate::replay::KernelVerdict),
+    /// A quantified step's normal forms do not apply the two functions its
+    /// premise relates at one input.
+    QuantifiedStep(Component),
+    /// A quantified step applies a function whose own domain binds a
+    /// function: its inputs would need function identity between them, which
+    /// one input up to conversion does not carry.
+    HigherOrderDomain(Component),
     /// Recursive inhabitants require the guarded observation interface.
     RecursiveObservationRequired,
     /// A certificate identity requires its higher record observation.
@@ -501,6 +522,20 @@ impl fmt::Display for RelationError
                 write!(
                     f,
                     "application component {} ({side}) replay failed",
+                    component.0
+                )
+            },
+            | Self::QuantifiedStep(component) => {
+                write!(
+                    f,
+                    "quantified component {} does not apply its premise's functions at one input",
+                    component.0
+                )
+            },
+            | Self::HigherOrderDomain(component) => {
+                write!(
+                    f,
+                    "quantified component {} applies a function whose domain is higher order",
                     component.0
                 )
             },

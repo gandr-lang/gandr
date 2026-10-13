@@ -433,13 +433,13 @@ impl Fibers
     ///
     /// # Specification
     /// - ensures: Unit, pairs and checked native path reflexivity are
-    ///   constructive; code syntax inequality never establishes Empty. An
-    ///   identity function fibre at one function is `here` of it, the persisted
-    ///   reflexivity its path type admits by conversion.
+    ///   constructive; code syntax inequality never establishes Empty. A
+    ///   function fibre at one function is `here` of it, the persisted
+    ///   reflexivity its path type admits by conversion, in either mode.
     /// - fails: `Evidence` on Empty, `NeutralFiber` on a residual, `Arena` on
-    ///   invalid addresses; `HigherEvaluationRequired` at a bridge's function
-    ///   fibre or two distinct functions; named higher or explicit-certificate
-    ///   requirements and native path formation errors retain their causes.
+    ///   invalid addresses; `HigherEvaluationRequired` at two distinct
+    ///   functions; named higher or explicit-certificate requirements and
+    ///   native path formation errors retain their causes.
     /// - panics: none.
     ///
     /// # Errors
@@ -459,7 +459,7 @@ impl Fibers
         (Ok(Fiber::Unit), &Ok(value)) => matches!(arena.value(value).and_then(gandr_kernel_term::Value::components), Some(&[])),
         (Ok(Fiber::Universe(..)), &Ok(value)) => matches!(arena.value(value), Some(&gandr_kernel_term::Value::PathRefl(_))),
         (Ok(Fiber::Product(..)), &Ok(value)) => matches!(arena.value(value).and_then(gandr_kernel_term::Value::components), Some(&[_, _])),
-        (Ok(Fiber::Function { left, right, mode: super::Mode::Identity, .. }), &Ok(value)) => left == right && matches!(arena.value(value), Some(&gandr_kernel_term::Value::Here { .. })),
+        (Ok(Fiber::Function { left, right, .. }), &Ok(value)) => left == right && matches!(arena.value(value), Some(&gandr_kernel_term::Value::Here { .. })),
         _ => false,
     })]
     pub(super) fn inhabitant(
@@ -505,7 +505,7 @@ impl Fibers
         (Ok(Fiber::Unit), Ok(diagonal)) => diagonal.universe.is_empty() && matches!(arena.value(diagonal.value).and_then(gandr_kernel_term::Value::components), Some(&[])),
         (Ok(Fiber::Universe(..)), Ok(diagonal)) => diagonal.universe == [diagonal.value] && matches!(arena.value(diagonal.value), Some(&gandr_kernel_term::Value::PathRefl(_))),
         (Ok(Fiber::Product(..)), Ok(diagonal)) => matches!(arena.value(diagonal.value).and_then(gandr_kernel_term::Value::components), Some(&[_, _])),
-        (Ok(Fiber::Function { left, right, mode: super::Mode::Identity, .. }), Ok(diagonal)) => left == right && diagonal.universe.is_empty() && matches!(arena.value(diagonal.value), Some(&gandr_kernel_term::Value::Here { .. })),
+        (Ok(Fiber::Function { left, right, .. }), Ok(diagonal)) => left == right && diagonal.universe.is_empty() && matches!(arena.value(diagonal.value), Some(&gandr_kernel_term::Value::Here { .. })),
         _ => false,
     })]
     pub(crate) fn diagonal(
@@ -565,12 +565,7 @@ impl Fibers
                             continue;
                         },
                         | Fiber::Empty => return Err(RelationError::Evidence),
-                        | Fiber::Function {
-                            left,
-                            right,
-                            mode: super::Mode::Identity,
-                            ..
-                        } if left == right => {
+                        | Fiber::Function { left, right, .. } if left == right => {
                             let (point, _) = self.native_indices(left, right)?;
                             arena.value_here(point)
                         },

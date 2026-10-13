@@ -296,6 +296,18 @@ pub enum Value
         /// The returned values and output evidence of each component.
         components: alloc::boxed::Box<[crate::EvaluationComponent]>,
     },
+    /// Quantified evaluation: identity at a thunk code whose argument relation
+    /// binds a function, one pre-order tree of replayed steps per
+    /// kernel-generated coverage pattern, each application step opening one
+    /// branch per covering pattern of the applied function's result relation.
+    QuantifiedEvaluation
+    {
+        /// The steps, in pre-order, untrusted.
+        steps: alloc::sync::Arc<[crate::QuantifiedStep]>,
+        /// Each step's value children in step order: three per return, two
+        /// per application.
+        children: alloc::boxed::Box<[ValueId]>,
+    },
     /// A bound value variable.
     Variable(DeBruijnIndex),
     /// A reference to a prior declaration.

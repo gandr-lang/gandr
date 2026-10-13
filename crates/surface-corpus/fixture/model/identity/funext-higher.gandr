@@ -1,0 +1,44 @@
+@[ checks ]
+def at_truth(f : +U[ω] (+{Unit, Unit} -> -F +{Unit, Unit})) -> -F +{Unit, Unit} {
+  become f(+{.0 = unit})
+}
+
+@[ checks ]
+def through(f : +U[ω] (+{Unit, Unit} -> -F +{Unit, Unit})) -> -F +{Unit, Unit} {
+  run b <- at_truth(f);
+  return b
+}
+
+@[ checks ]
+def at_falsity(f : +U[ω] (+{Unit, Unit} -> -F +{Unit, Unit})) -> -F +{Unit, Unit} {
+  become f(+{.1 = unit})
+}
+
+@[ checks ]
+def twice(f : +U[ω] (+{Unit, Unit} -> -F +{Unit, Unit})) -> -F +{Unit, Unit} {
+  run b <- f(+{.0 = unit});
+  become f(b)
+}
+
+@[ checks ]
+def twice_bound(f : +U[ω] (+{Unit, Unit} -> -F +{Unit, Unit})) -> -F +{Unit, Unit} {
+  run b <- f(+{.0 = unit});
+  run c <- f(b);
+  return c
+}
+
+@[ checks ]
+def reflexive : Path(+U[ω] (+U[ω] (+{Unit, Unit} -> -F +{Unit, Unit}) -> -F +{Unit, Unit}), at_truth, at_truth) ;
+def reflexive = funext(at_truth, at_truth) ;
+
+@[ checks ]
+def unfolded : Path(+U[ω] (+U[ω] (+{Unit, Unit} -> -F +{Unit, Unit}) -> -F +{Unit, Unit}), at_truth, through) ;
+def unfolded = funext(at_truth, through) ;
+
+@[ checks ]
+def nested : Path(+U[ω] (+U[ω] (+{Unit, Unit} -> -F +{Unit, Unit}) -> -F +{Unit, Unit}), twice, twice_bound) ;
+def nested = funext(twice, twice_bound) ;
+
+@[ refuses("PointwiseDistinct") ]
+def elsewhere : Path(+U[ω] (+U[ω] (+{Unit, Unit} -> -F +{Unit, Unit}) -> -F +{Unit, Unit}), at_truth, at_falsity) ;
+def elsewhere = funext(at_truth, at_falsity) ;

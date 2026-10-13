@@ -419,11 +419,13 @@ fn checked(
         },
         | CheckRefusal::FunextUnsupported { .. } => f.write_str(
             "`funext` needs two closed pure functions between types built from units, \
-             integers, strings, pairs and two-way sums",
+             integers, strings, pairs and two-way sums; an argument may itself be a \
+             function between such types",
         ),
-        | CheckRefusal::PointwiseDistinct { .. } => {
-            f.write_str("`funext` needs both functions to return the same value at every input")
-        },
+        | CheckRefusal::PointwiseDistinct { .. } => f.write_str(
+            "`funext` needs both functions to agree at every input: return the same value, \
+             or apply their function argument at the same input",
+        ),
         | CheckRefusal::EquivUnsupported { .. } => f.write_str(
             "`equiv` needs two closed pure translators between types built from units, \
              integers, strings, tuples and sums",

@@ -935,6 +935,16 @@ fn converge(
                             stack.push(ConversionGoal::Value(one.evidence, other.evidence));
                         }
                     },
+                    // The step kinds and fibres shape the tree, so they are
+                    // compared; the dialogues are erased as above.
+                    | (&Value::QuantifiedEvaluation { steps: ref one, children: ref xs }, &Value::QuantifiedEvaluation { steps: ref other, children: ref ys }) => {
+                        let shape = |step: &gandr_kernel_term::QuantifiedStep| match *step {
+                            | gandr_kernel_term::QuantifiedStep::Return(_) => None,
+                            | gandr_kernel_term::QuantifiedStep::Apply { fibre, .. } => Some(fibre),
+                        };
+                        if !one.iter().map(shape).eq(other.iter().map(shape)) || xs.len() != ys.len() { return Convertibility::Distinct; }
+                        stack.extend(xs.iter().zip(ys.iter()).map(|(&a, &b)| ConversionGoal::Value(a, b)));
+                    },
                     | (&Value::PathProduct(a, b), &Value::PathProduct(c, d)) => {
                         stack.push(ConversionGoal::Value(a, c));
                         stack.push(ConversionGoal::Value(b, d));
@@ -1033,7 +1043,7 @@ fn converge(
                     },
                     | (
                         &Value::Constructor { .. } | &Value::Record(_) | &Value::SessionPath { .. } | &Value::PathRefl(_) | &Value::PathProduct(..) | &Value::PathEquiv { .. }
-                        | &Value::Here { .. } | &Value::Returned(_) | &Value::Higher { .. } | &Value::HigherEvaluation { .. }
+                        | &Value::Here { .. } | &Value::Returned(_) | &Value::Higher { .. } | &Value::HigherEvaluation { .. } | &Value::QuantifiedEvaluation { .. }
                         | &Value::Variable(_)
                         | &Value::Constant(_)
                         | &Value::ListNil | &Value::ListCons(..)
