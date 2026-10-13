@@ -1,7 +1,7 @@
 //! **The expectation language over a lowered module and its verdicts**: the
-//! `checks`, `owes`, `refuses` and `runs` schemas read off the attribute side
-//! table, the strict and fixture corpus roots, the settle comparison, and the
-//! report a runner reads its counts from.
+//! `checks`, `owes`, `refuses`, `runs` and `normalizes` schemas read off the
+//! attribute side table, the strict and fixture corpus roots, the settle
+//! comparison, and the report a runner reads its counts from.
 //!
 //! The crate reads what the lowering and the checker already produced and
 //! decides one predicate over it. There is no parser here, no machine, no file
@@ -22,10 +22,11 @@
 //! `owes` or `refuses` attribute is itself the refusal
 //! [`ExpectationOutsideFixtureRoot`](CorpusRefusal::ExpectationOutsideFixtureRoot),
 //! and a declaration must check owing nothing; an admitted `runs` additionally
-//! requires its stated run outcome. A red declaration cannot describe itself
-//! green. Under the
-//! [fixture root](CorpusRoot::Fixture) the four schemas assert what the
-//! checker refuses, what it owes and what a run produces.
+//! requires its stated run outcome, and an admitted `normalizes` its block's
+//! stated normal form. A red declaration cannot describe itself green. Under
+//! the [fixture root](CorpusRoot::Fixture) the five schemas assert what the
+//! checker refuses, what it owes, what a run produces and what a block's
+//! rules read a call to.
 //!
 //! **A declared obligation is signed, not waived.** The ledger size is part of
 //! every report, settled or not, so an assumption is never silent.
@@ -242,9 +243,11 @@ mod settle;
 pub use crate::expectation::ExpectationFault;
 pub use crate::expectation::ExpectationSchema;
 pub use crate::expectation::Membership;
+pub use crate::expectation::NORMAL_FORM_ARROW;
 pub use crate::expectation::Outcome;
 pub use crate::expectation::Stated;
 pub use crate::expectation::expectation_schema;
+pub use crate::expectation::normalized_call;
 pub use crate::refusal::CorpusRefusal;
 pub use crate::refusal::Refusal;
 pub use crate::refusal::RefusalName;

@@ -1,0 +1,9 @@
+@[ refuses("RulesDiverge") ]
+data NatApart : Type {
+  Zero : NatApart;
+  Succ : (n : NatApart) --> NatApart;
+  oper add(m : NatApart, n : NatApart) -> NatApart;
+  rule add(Zero, n) ==> n;
+  rule add(m, Zero) ==> Succ(m);
+  rule add(Succ(m), n) ==> Succ(add(m, n));
+}

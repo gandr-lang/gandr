@@ -32,13 +32,22 @@
 //! independent adjacency matcher. Witnesses:
 //! `circuit::embed::tests::one_spelling_in_two_roles_is_two_boxes`,
 //! `circuit::embed::tests::an_exhausted_budget_declines_rather_than_reporting_no_match`.
+//!
+//! Every declaration's rules are then decided as one rewriting system
+//! (`coincide`): a block whose rules may not terminate, or two of whose rules
+//! rewrite one term to two normal forms, is refused as a family at the rule
+//! that shows it, and an admitted block keeps one certificate per critical
+//! pair. Witness:
+//! `coincide::tests::two_rules_rewriting_one_term_apart_refuse_the_block`.
 
+use alloc::borrow::Cow;
 use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_surface_syntax::ByteSpan;
 use gandr_theory_cell_complexes::CellId;
 use gandr_theory_cell_complexes::CellStore;
+use gandr_theory_computads::AdmittedFaceIndex;
 use gandr_theory_computads::CircuitElaboration;
 use gandr_theory_computads::DeclinedFaceIndex;
 use gandr_theory_computads::DescElaboration;
@@ -50,6 +59,10 @@ use gandr_theory_computads::elaborate_data_desc;
 use gandr_theory_levitation::SurfaceSpan;
 use gandr_theory_levitation::WhiskeredCell;
 
+use crate::coincide::CoherenceFault;
+use crate::coincide::Coincidence;
+use crate::coincide::decide;
+use crate::coincide::rewriting_store;
 use crate::description::DescribedDeclaration;
 use crate::form::Placed;
 
@@ -67,6 +80,9 @@ pub enum CellFault
     Operation(OpElaborateError),
     /// The written face or circuit composite did not pass the cell gate.
     Rule(ElaborateError),
+    /// The declaration's rules are no one rewriting system: the fault stands
+    /// at the rule that shows it.
+    Coherence(CoherenceFault),
 }
 
 /// A cell-layer refusal at its own source member.
@@ -81,17 +97,23 @@ pub struct CellDiagnostic
 
 impl CellDiagnostic
 {
-    /// Present a cell-language boundary as a held, unrepresentable declaration.
+    /// Present the diagnostic as a refusal: a cell-language boundary as a
+    /// held, unrepresentable declaration, a coherence fault by its own name.
     ///
     /// # Specification
     /// trivial.
     pub(crate) const fn lowering_refusal(&self) -> crate::LoweringRefusal<'static>
     {
-        crate::LoweringRefusal::OutOfFragment {
-            span: self.span,
-            form: crate::FormName::DECLARATION,
-            sort: crate::FragmentSort::Declaration,
-            boundary: crate::FragmentBoundary::Unadmitted,
+        match self.fault {
+            | CellFault::Coherence(ref fault) => fault.lowering_refusal(self.span),
+            | CellFault::Operation(_) | CellFault::Rule(_) => {
+                crate::LoweringRefusal::OutOfFragment {
+                    span: self.span,
+                    form: crate::FormName::DECLARATION,
+                    sort: crate::FragmentSort::Declaration,
+                    boundary: crate::FragmentBoundary::Unadmitted,
+                }
+            },
         }
     }
 }
@@ -125,10 +147,30 @@ pub struct DeclarationCells
     /// The written faces the cell gate declined, by their position among the
     /// description's rules; the cause is owned by the report's diagnostics.
     pub declined_faces: Vec<DeclinedFaceIndex>,
+    /// The written faces the cell gate admitted, by their position among the
+    /// description's rules, each with its cell.
+    pub faces: Vec<(AdmittedFaceIndex, CellId)>,
     /// One result per circuit rule, in declaration order.
     pub circuits: Vec<CircuitCell>,
     /// The declaration's eta cells or their explicit absence.
     pub eta: EtaElaboration,
+    /// How the declaration's rules stand as one rewriting system.
+    pub coincidence: Coincidence,
+}
+
+impl DeclarationCells
+{
+    /// The cells a rewrite reads: the store less its circuit cells, which are
+    /// congruences over a rewrite rather than rewrites of their own.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn rewriting(&self) -> Cow<'_, CellStore>
+    {
+        rewriting_store(&self.store, &self.faces, &self.circuits)
+    }
 }
 
 /// Cell stores in declaration order and every member-local refusal.
@@ -147,7 +189,10 @@ pub struct CellReport
 /// # Specification
 /// - requires: operation provenance corresponds to the supplied descriptions.
 /// - ensures: each declaration owns one store; a declined face never enters it;
-///   readable siblings are elaborated independently in source order.
+///   readable siblings are elaborated independently in source order; a
+///   declaration the gate declined nothing of has its rules decided as one
+///   rewriting system (`coincide::decide`), a refusal among the diagnostics at
+///   the rule that shows it, and every other declaration is unexamined.
 /// - panics: none.
 ///
 /// Missing external provenance is located at its owning declaration, rather
@@ -158,12 +203,17 @@ pub struct CellReport
 /// - hypothesis: L3 — a two-output operation with a results-tuple rule, a rule
 ///   returning too few results and a later declaration separate an admitted
 ///   many-out member, a refused rule and an untouched sibling, and two
-///   declarations in swapped order separate store order from source order.
+///   declarations in swapped order separate store order from source order; a
+///   declaration with a declined rule is unexamined, and two rules rewriting
+///   one term apart refuse their declaration.
 /// - witness: `desc_cells::tests::a_many_out_operation_rule_becomes_a_cell_with_a_continuation_per_output`
 /// - witness: `desc_cells::tests::a_rule_returning_fewer_results_than_outputs_is_refused_rather_than_narrowed`
 /// - witness: `desc_cells::tests::declaration_order_is_the_cell_order`
 /// - witness: `desc_cells::tests::ordinary_lowering_executes_the_cell_gate_and_preserves_later_values`
-#[spec(ensures: |report| report.declarations.len() == declarations.len() && report.declarations.iter().zip(declarations).all(|(cells, declaration)| cells.at == declaration.at))]
+/// - witness: `coincide::tests::two_rules_rewriting_one_term_apart_refuse_the_block`
+#[spec(ensures: |report| report.declarations.len() == declarations.len()
+    && report.declarations.iter().zip(declarations).all(|(cells, declaration)| cells.at == declaration.at
+        && (cells.declined_faces.is_empty() || cells.coincidence == Coincidence::Unexamined)))]
 #[inline]
 #[must_use]
 pub fn elaborate_desc_cells(declarations: &[DescribedDeclaration]) -> CellReport
@@ -177,10 +227,16 @@ pub fn elaborate_desc_cells(declarations: &[DescribedDeclaration]) -> CellReport
             store,
             opers,
             declined_opers,
+            admitted_faces,
             declined_faces,
             circuits,
             eta,
         } = elaborate_data_desc(&declaration.description);
+        let examined = declined_opers.is_empty()
+            && declined_faces.is_empty()
+            && circuits
+                .iter()
+                .all(|circuit| matches!(circuit, CircuitElaboration::Admitted { .. }));
         for (index, error) in declined_opers {
             let span = declaration
                 .operation_spans
@@ -231,13 +287,40 @@ pub fn elaborate_desc_cells(declarations: &[DescribedDeclaration]) -> CellReport
             };
             outcomes.push(outcome);
         }
+        let coincidence = if !examined {
+            Coincidence::Unexamined
+        }
+        else if declaration.description.rules.is_empty() && outcomes.is_empty() {
+            Coincidence::Orthogonal
+        }
+        else {
+            match decide(
+                &declaration.description,
+                declaration.at.span,
+                &store,
+                &admitted_faces,
+                &outcomes,
+            ) {
+                | Ok(coincidence) => coincidence,
+                | Err((span, fault)) => {
+                    let diagnostic = CellDiagnosticIndex(report.diagnostics.len());
+                    report.diagnostics.push(CellDiagnostic {
+                        span,
+                        fault: CellFault::Coherence(fault),
+                    });
+                    Coincidence::Refused(diagnostic)
+                },
+            }
+        };
         report.declarations.push(DeclarationCells {
             at: declaration.at,
             store,
             operations: opers,
             declined_faces: declined,
+            faces: admitted_faces,
             circuits: outcomes,
             eta,
+            coincidence,
         });
     }
     report
@@ -247,7 +330,7 @@ pub fn elaborate_desc_cells(declarations: &[DescribedDeclaration]) -> CellReport
 ///
 /// # Specification
 /// trivial.
-fn located(
+pub(crate) fn located(
     span: SurfaceSpan,
     owner: ByteSpan,
 ) -> ByteSpan

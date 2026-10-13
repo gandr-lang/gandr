@@ -304,6 +304,7 @@ extern crate alloc;
 mod attribute;
 pub mod circuit;
 mod classify;
+pub mod coincide;
 pub mod desc_cells;
 pub mod described;
 pub mod description;

@@ -36,12 +36,14 @@
 //!
 //! `LoweringRefusal::classify` is a `const`, wildcard-free match: adding a
 //! refusal variant fails to compile until its class is chosen.
-//! `MalformedSource` is the author's mistake; `Unrepresentable` is
-//! `OutOfFragment`, `GradedBridge` and `UnreadAscription`; `EngineFault` is the
-//! budget, the grammar mismatch and the unknown mold. `UserAbsence` — what the
-//! author has not yet supplied, the only class that may become an obligation —
-//! has no refusal in it: obligations come from declaration shape, an
-//! uncompleted signature, and never from a classified failure.
+//! `MalformedSource` is the author's mistake, rules that may not end or that
+//! rewrite one term apart among them; `Unrepresentable` is `OutOfFragment`,
+//! `GradedBridge` and `UnreadAscription`; `EngineFault` is the budget, the
+//! grammar mismatch, the unknown mold, and a coincidence check its step budget
+//! left undecided. `UserAbsence` — what the author has not yet supplied, the
+//! only class that may become an obligation — has no refusal in it:
+//! obligations come from declaration shape, an uncompleted signature, and
+//! never from a classified failure.
 
 use anodized::spec;
 pub use gandr_core_term::FailureClass;
@@ -60,9 +62,10 @@ impl LoweringRefusal<'_>
     ///   wrong-arity form, every graded bridge, every unread ascription, every
     ///   model component the derivation cannot state and every `for` loop
     ///   classifies as unrepresentable, the exhausted allowance, the grammar
-    ///   mismatch and the unknown mold as engine faults, and every other
-    ///   refusal — a family member of the wrong telescope and a loop exit off
-    ///   every loop among them — as malformed source.
+    ///   mismatch, the unknown mold and an undecided coincidence check as
+    ///   engine faults, and every other refusal — a family member of the wrong
+    ///   telescope, a loop exit off every loop and rules that part among them —
+    ///   as malformed source.
     /// - provides: the fact a report groups by and a job alarming on the
     ///   fragment's reach counts.
     /// - fails: never.
@@ -86,6 +89,7 @@ impl LoweringRefusal<'_>
             | Self::ForNeedsListCase { .. } => matches!(ret, FailureClass::Unrepresentable),
             | Self::BudgetExceeded { .. }
             | Self::GrammarMismatch { .. }
+            | Self::RulesUndecided { .. }
             | Self::UnknownMold { .. } => matches!(ret, FailureClass::EngineFault),
             | Self::UnresolvedName { .. }
             | Self::UnresolvedDocLink { .. }
@@ -111,6 +115,8 @@ impl LoweringRefusal<'_>
             | Self::UnmarkedSelfReference { .. }
             | Self::Unreachable { .. }
             | Self::OutsideLoop { .. }
+            | Self::RulesUnoriented { .. }
+            | Self::RulesDiverge { .. }
             | Self::AcrossHandler { .. } => {
                 matches!(ret, FailureClass::MalformedSource)
             },
@@ -145,6 +151,8 @@ impl LoweringRefusal<'_>
             | Self::UnmarkedSelfReference { .. }
             | Self::Unreachable { .. }
             | Self::OutsideLoop { .. }
+            | Self::RulesUnoriented { .. }
+            | Self::RulesDiverge { .. }
             | Self::AcrossHandler { .. } => FailureClass::MalformedSource,
             | Self::OutOfFragment { .. }
             | Self::GradedBridge { .. }
@@ -154,6 +162,7 @@ impl LoweringRefusal<'_>
             | Self::ForNeedsListCase { .. } => FailureClass::Unrepresentable,
             | Self::BudgetExceeded { .. }
             | Self::GrammarMismatch { .. }
+            | Self::RulesUndecided { .. }
             | Self::UnknownMold { .. } => FailureClass::EngineFault,
         }
     }
@@ -190,7 +199,7 @@ mod tests
     ///
     /// # Specification
     /// - requires: the built-in attribute registry contains `owes`.
-    /// - ensures: the 32 listed refusal variants have distinct representatives;
+    /// - ensures: the 36 listed refusal variants have distinct representatives;
     ///   payloads are fixtures rather than evidence of a real lowering failure.
     /// - provides: the domain of the finite classification checks.
     /// - fails: never.
@@ -212,7 +221,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 33_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 36_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -358,6 +367,15 @@ mod tests
                 exit: crate::error::CrossedExit::Break,
             },
             LoweringRefusal::ForNeedsListCase { span: empty },
+            LoweringRefusal::RulesUnoriented { span: empty },
+            LoweringRefusal::RulesDiverge {
+                span: empty,
+                first: empty,
+            },
+            LoweringRefusal::RulesUndecided {
+                span: empty,
+                first: empty,
+            },
         ]
     }
 
@@ -398,6 +416,9 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::Unrepresentable,
+            FailureClass::MalformedSource,
+            FailureClass::MalformedSource,
+            FailureClass::EngineFault,
         ];
 
         for (refusal, class) in vocabulary().into_iter().zip(expected) {

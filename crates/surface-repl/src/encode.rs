@@ -401,7 +401,7 @@ pub fn encode_submission(
                 match (subject, &outcome) {
                     | (
                         Subject::Probe { name: probe },
-                        &(Outcome::Checks(_) | Outcome::Runs(_)),
+                        &(Outcome::Checks(_) | Outcome::Runs(_) | Outcome::Normalizes(_)),
                     ) if probe == name => {
                         let spelling = type_of(resume, fragment);
                         let line = match spelling {
@@ -416,7 +416,10 @@ pub fn encode_submission(
                             typed_line(fragment, &type_of(resume, fragment)),
                         ));
                     },
-                    | (Subject::Declarations, &(Outcome::Checks(_) | Outcome::Runs(_))) => {
+                    | (
+                        Subject::Declarations,
+                        &(Outcome::Checks(_) | Outcome::Runs(_) | Outcome::Normalizes(_)),
+                    ) => {
                         lines.push((
                             OutKind::Type,
                             typed_line(fragment, &type_of(resume, fragment)),
@@ -427,7 +430,10 @@ pub fn encode_submission(
                     },
                     | (
                         Subject::Probe { .. } | Subject::Declarations,
-                        &(Outcome::Checks(_) | Outcome::Refuses(_) | Outcome::Runs(_)),
+                        &(Outcome::Checks(_)
+                        | Outcome::Refuses(_)
+                        | Outcome::Runs(_)
+                        | Outcome::Normalizes(_)),
                     ) => {},
                 }
             }

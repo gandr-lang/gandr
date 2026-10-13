@@ -60,6 +60,8 @@
 //! obligation count bounded rather than exact — which would arrive as a fifth
 //! schema rather than a change to this one.
 
+use alloc::format;
+use alloc::string::ToString as _;
 use alloc::vec::Vec;
 use core::error::Error;
 use core::fmt;
@@ -77,6 +79,7 @@ use gandr_surface_lowering::LoweredDeclaration;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::SurfaceName;
+use gandr_surface_lowering::coincide::CallText;
 use gandr_surface_syntax::ByteSpan;
 use quenchant_shape::shape::Maybe;
 
@@ -105,15 +108,16 @@ quenchant_shape::reason_enum! {
 }
 
 quenchant_shape::reason_enum! {
-    /// Why a declaration carries no run outcome.
+    /// Why a declaration carries no run outcome or normal form.
     pub mod ran {
-        /// The declaration was not run.
+        /// The declaration was not run, and no call was read under it.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
-            /// It states no run outcome, so nothing asked for one.
+            /// It states no run outcome or normal form, so nothing asked for
+            /// one.
             Unstated,
-            /// It states one, but was refused or owes its body, so there is
-            /// nothing to run.
+            /// It states one, but was refused, owes its body, or is not of
+            /// the verdict that has one, so there is nothing to run or read.
             Unaccepted,
         }
     }
@@ -413,7 +417,8 @@ pub struct DeclarationReport<'source>
     produced: Produced<'source>,
     /// The obligations its verdict left in the ledger.
     owed: ObligationCount,
-    /// The outcome its run produced, when it states one and was run.
+    /// The outcome its run produced, or the line its block's normal form
+    /// produced, when it states one and was accepted.
     ran: Maybe<RunSpelling, ran::Absent>,
 }
 
@@ -501,8 +506,9 @@ impl<'source> DeclarationReport<'source>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the produced refusal's name when one was produced; else the
-    ///   outcome its run produced, when it states one and was run; else checks
-    ///   owing the declaration's own obligations.
+    ///   outcome its run or its normal form produced, in the stated schema,
+    ///   when it states one and was accepted; else checks owing the
+    ///   declaration's own obligations.
     /// - provides: the side the settle comparison holds the stated verdict
     ///   against.
     /// - fails: never.
@@ -522,9 +528,12 @@ impl<'source> DeclarationReport<'source>
     Maybe::Present(refusal) => ret == Outcome::Refuses(refusal.name()),
     Maybe::Absent(produced_refusal::Absent::Unrefused) => {
         match self.ran {
-            Maybe::Present(ref spelled) => {
-                matches!(ret, Outcome::Runs(ref actual) if actual == spelled)
-            }
+            Maybe::Present(ref spelled) => match self.stated {
+                Stated::Verdict(Outcome::Normalizes(_)) => {
+                    matches!(ret, Outcome::Normalizes(ref actual) if actual == spelled)
+                }
+                _ => matches!(ret, Outcome::Runs(ref actual) if actual == spelled),
+            },
             Maybe::Absent(_) => ret == Outcome::Checks(self.owed),
         }
     }
@@ -539,7 +548,11 @@ impl<'source> DeclarationReport<'source>
             | (
                 Maybe::Absent(produced_refusal::Absent::Unrefused),
                 &Maybe::Present(ref spelled),
-            ) => Outcome::Runs(spelled.clone()),
+            ) => match self.stated {
+                | Stated::Verdict(Outcome::Normalizes(_)) => Outcome::Normalizes(spelled.clone()),
+                | Stated::Verdict(Outcome::Checks(_) | Outcome::Refuses(_) | Outcome::Runs(_))
+                | Stated::Malformed(_) => Outcome::Runs(spelled.clone()),
+            },
             | (Maybe::Absent(produced_refusal::Absent::Unrefused), &Maybe::Absent(_)) => {
                 Outcome::Checks(self.owed)
             },
@@ -581,7 +594,7 @@ impl<'source> DeclarationReport<'source>
                 matches!(self.produced.refusal(), Maybe::Absent(_))
                     && matches!(self.ran, Maybe::Absent(_)) && count == self.owed
             }
-            Stated::Verdict(Outcome::Runs(ref expected)) => {
+            Stated::Verdict(Outcome::Runs(ref expected) | Outcome::Normalizes(ref expected)) => {
                 matches!(self.produced.refusal(), Maybe::Absent(_))
                     && matches!(
                         self.ran, Maybe::Present(ref actual) if actual == expected
@@ -605,7 +618,7 @@ impl<'source> DeclarationReport<'source>
                     && matches!(self.ran, Maybe::Absent(_))
                     && count == self.owed
             },
-            | Stated::Verdict(Outcome::Runs(ref expected)) => {
+            | Stated::Verdict(Outcome::Runs(ref expected) | Outcome::Normalizes(ref expected)) => {
                 matches!(self.produced.refusal(), Maybe::Absent(_))
                     && matches!(self.ran, Maybe::Present(ref actual) if actual == expected)
             },
@@ -623,10 +636,10 @@ impl<'source> DeclarationReport<'source>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: with `declared` the count a stated `checks` verdict names,
-    ///   and zero for a stated refusal, a stated run outcome or a malformed
-    ///   expectation, the owed obligations past `declared` are undeclared and
-    ///   the declared ones past the owed are unproduced; at most one of the two
-    ///   is nonzero.
+    ///   and zero for a stated refusal, a stated run outcome or normal form, or
+    ///   a malformed expectation, the owed obligations past `declared` are
+    ///   undeclared and the declared ones past the owed are unproduced; at most
+    ///   one of the two is nonzero.
     /// - provides: the surviving count a report sums.
     /// - fails: never.
     /// - panics: none.
@@ -657,9 +670,8 @@ impl<'source> DeclarationReport<'source>
     {
         let declared = match self.stated {
             | Stated::Verdict(Outcome::Checks(declared)) => usize::from(declared),
-            | Stated::Verdict(Outcome::Refuses(_) | Outcome::Runs(_)) | Stated::Malformed(_) => {
-                0_usize
-            },
+            | Stated::Verdict(Outcome::Refuses(_) | Outcome::Runs(_) | Outcome::Normalizes(_))
+            | Stated::Malformed(_) => 0_usize,
         };
         let owed = usize::from(self.owed);
         Surviving::new(
@@ -834,7 +846,8 @@ impl Error for SettleFault
 }
 
 /// Settle `verdicts` against `module` under `root`, reading expectation
-/// payloads out of `arena` and asking `runner` for each run outcome stated.
+/// payloads out of `arena`, asking `runner` for each run outcome stated, and
+/// reading each normal form stated under its block's rules.
 ///
 /// # Specification
 /// - requires: `runner` supplies the toolchain outcome for each requested
@@ -846,8 +859,10 @@ impl Error for SettleFault
 ///   checker verdict; other declarations pair with the checker by admission
 ///   position. Root guards override produced verdicts without dropping their
 ///   owed obligations. Only accepted declarations stating a run outcome call
-///   `runner`, once each in order; the report preserves the checker ledger
-///   count.
+///   `runner`, once each in order, and only accepted declarations stating a
+///   normal form read one, through [`LoweredModule::normal_form`], under the
+///   rules of the block that holds them; the report preserves the checker
+///   ledger count.
 /// - fails: `SettleFault` for the first missing or misaligned verdict, an
 ///   unreadable expectation payload, or a verdict left after the module ends.
 ///   Calls made to the runner before a later fault are not rolled back.
@@ -871,6 +886,7 @@ impl Error for SettleFault
 /// - witness: `settle::tests::the_strict_root_refuses_an_expectation_outside_the_fixture_root`
 /// - witness: `settle::tests::a_run_outcome_settles_under_either_root`
 /// - witness: `settle::tests::a_later_alignment_fault_does_not_replay_or_extend_runner_calls`
+/// - witness: `settle::tests::a_normal_form_settles_against_the_engines_reading`
 #[spec(
     ensures: |ret| match ret {
     Ok(ref report) => {
@@ -906,26 +922,38 @@ impl Error for SettleFault
                         }
                         && match declaration.ran {
                             Maybe::Present(_) => {
-                                matches!(
+                                (matches!(
                                     declaration.stated, Stated::Verdict(Outcome::Runs(_))
                                 )
                                     && matches!(
                                         declaration.produced, Produced::Judged(Verdict::Checked { ..
                                         } | Verdict::Synthesised { .. })
-                                    )
+                                    ))
+                                    || (matches!(
+                                        declaration.stated, Stated::Verdict(Outcome::Normalizes(_))
+                                    ) && matches!(
+                                        declaration.produced, Produced::Judged(Verdict::Data
+                                        | Verdict::Checked { .. } | Verdict::Synthesised { .. })
+                                    ))
                             }
                             Maybe::Absent(ran::Absent::Unaccepted) => {
-                                matches!(
+                                (matches!(
                                     declaration.stated, Stated::Verdict(Outcome::Runs(_))
                                 )
                                     && !matches!(
                                         declaration.produced, Produced::Judged(Verdict::Checked { ..
                                         } | Verdict::Synthesised { .. })
-                                    )
+                                    ))
+                                    || (matches!(
+                                        declaration.stated, Stated::Verdict(Outcome::Normalizes(_))
+                                    ) && !matches!(
+                                        declaration.produced, Produced::Judged(Verdict::Data
+                                        | Verdict::Checked { .. } | Verdict::Synthesised { .. })
+                                    ))
                             }
                             Maybe::Absent(ran::Absent::Unstated) => {
                                 !matches!(
-                                    declaration.stated, Stated::Verdict(Outcome::Runs(_))
+                                    declaration.stated, Stated::Verdict(Outcome::Runs(_) | Outcome::Normalizes(_))
                                 )
                             }
                         }
@@ -1056,8 +1084,20 @@ pub fn settle<'source>(
                 Produced::Judged(Verdict::Checked { .. } | Verdict::Synthesised { .. }),
             ) => Maybe::Present(runner.run(lowered.constant())),
             | (
+                &Stated::Verdict(Outcome::Normalizes(ref line)),
+                Produced::Judged(
+                    Verdict::Data | Verdict::Checked { .. } | Verdict::Synthesised { .. },
+                ),
+            ) => Maybe::Present(normalized(module, lowered, line)),
+            | (
                 &Stated::Verdict(Outcome::Runs(_)),
                 Produced::Judged(Verdict::Data | Verdict::Owed(_) | Verdict::Refused(_))
+                | Produced::Unlowered(_)
+                | Produced::Guarded(_),
+            )
+            | (
+                &Stated::Verdict(Outcome::Normalizes(_)),
+                Produced::Judged(Verdict::Owed(_) | Verdict::Refused(_))
                 | Produced::Unlowered(_)
                 | Produced::Guarded(_),
             ) => Maybe::Absent(ran::Absent::Unaccepted),
@@ -1087,6 +1127,47 @@ pub fn settle<'source>(
         root,
         declarations,
         verdicts.ledger().count(),
+    ))
+}
+
+/// The line `lowered`'s block reads the call `line` states to: the call as
+/// stated, trimmed, then `~>`, then the engine's normal form, or why it has
+/// none.
+///
+/// # Specification
+/// - requires: `line` was read as a `normalizes` payload, so it writes `~>`.
+/// - ensures: the call before the first `~>`, trimmed, a space, `~>`, a space,
+///   and either the spelling of [`LoweredModule::normal_form`]'s answer or the
+///   reason it gives.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a stated normal form the engine reaches settles, one it
+///   does not shows the engine's spelling, and a call into a refused block
+///   shows the refusal.
+/// - witness: `settle::tests::a_normal_form_settles_against_the_engines_reading`
+#[spec(ensures: |ret| match expectation::normalized_call(line) {
+    Maybe::Present(call) => ret.as_ref().starts_with(call.as_ref()),
+    Maybe::Absent(_) => true,
+})]
+fn normalized(
+    module: &LoweredModule<'_>,
+    lowered: &LoweredDeclaration<'_>,
+    line: &RunSpelling,
+) -> RunSpelling
+{
+    let call = match expectation::normalized_call(line) {
+        | Maybe::Present(call) => call,
+        | Maybe::Absent(expectation::normalized_call::Absent::Unwritten) => CallText::from(""),
+    };
+    let reached = match module.normal_form(lowered, call) {
+        | Ok(normal) => normal.spelling(),
+        | Err(fault) => fault.to_string(),
+    };
+    RunSpelling::from(format!(
+        "{call} {arrow} {reached}",
+        call = call.as_ref(),
+        arrow = expectation::NORMAL_FORM_ARROW
     ))
 }
 
@@ -1160,6 +1241,7 @@ mod tests
 {
     use alloc::collections::BTreeSet;
     use alloc::format;
+    use alloc::string::String;
     use alloc::string::ToString as _;
     use alloc::vec::Vec;
     use core::fmt;
@@ -1559,6 +1641,99 @@ mod tests
             report.declarations().len(),
             5_usize,
             "every name is reported, run or not"
+        );
+    }
+
+    #[test]
+    fn a_normal_form_settles_against_the_engines_reading()
+    {
+        let family = |rules: &str, line: &str| {
+            format!(
+                r#"@[ normalizes("{line}") ]
+data NatUnits : Type {{
+    Zero : NatUnits;
+    Succ : (n : NatUnits) --> NatUnits;
+    oper add(m : NatUnits, n : NatUnits) -> NatUnits;
+    rule add(Zero, n) ==> n;
+    {rules}
+    rule add(Succ(m), n) ==> Succ(add(m, n));
+}}"#
+            )
+        };
+        let joins = "rule add(m, Zero) ==> m;";
+        let parts = "rule add(m, Zero) ==> Succ(m);";
+        let normalizes = |line: &str| Outcome::Normalizes(RunSpelling::from(String::from(line)));
+        let rows = [
+            (
+                CorpusRoot::Strict,
+                family(joins, "add(Succ(Zero), Zero) ~> Succ(Zero)"),
+                normalizes("add(Succ(Zero), Zero) ~> Succ(Zero)"),
+                Settlement::Settled,
+            ),
+            (
+                CorpusRoot::Fixture,
+                family(joins, " add(Zero, Zero)   ~> Zero"),
+                normalizes("add(Zero, Zero) ~> Zero"),
+                Settlement::Unsettled,
+            ),
+            (
+                CorpusRoot::Fixture,
+                family(joins, "add(Zero, Zero) ~> Succ(Zero)"),
+                normalizes("add(Zero, Zero) ~> Zero"),
+                Settlement::Unsettled,
+            ),
+            (
+                CorpusRoot::Fixture,
+                family(joins, "add(Zero, Zero) ~> nonsense("),
+                normalizes("add(Zero, Zero) ~> Zero"),
+                Settlement::Unsettled,
+            ),
+            (
+                CorpusRoot::Fixture,
+                family(joins, "add(Zero, Zero)"),
+                Outcome::Checks(ObligationCount::from(0_usize)),
+                Settlement::Unsettled,
+            ),
+            (
+                CorpusRoot::Fixture,
+                family(parts, "add(Zero, Zero) ~> Zero"),
+                Outcome::Refuses(RefusalName::RulesDiverge),
+                Settlement::Unsettled,
+            ),
+        ];
+        for (root, source, outcome, settlement) in rows {
+            let report = settled(root, SourceText::from(source.as_str()));
+            for declaration in report.declarations() {
+                assert_eq!(
+                    (declaration.outcome(), declaration.settlement()),
+                    (outcome.clone(), settlement),
+                    "`{source}` under the {root} root produces and settles as pinned at `{}`, \
+                     the family and its operation alike",
+                    declaration.name()
+                );
+            }
+        }
+
+        let unwritten_source = family(joins, "add(Zero, Zero)");
+        let unwritten = settled(
+            CorpusRoot::Fixture,
+            SourceText::from(unwritten_source.as_str()),
+        );
+        assert!(matches!(
+            unwritten.declarations()[0].stated(),
+            Stated::Malformed(ExpectationFault::UnwrittenNormalForm { .. })
+        ));
+        let function = settled(
+            CorpusRoot::Fixture,
+            SourceText::from(r#"@[ normalizes("a ~> 3") ] def a = 3 ;"#),
+        );
+        assert_eq!(
+            (only(&function).outcome(), only(&function).settlement()),
+            (
+                normalizes("a ~> no normal form: the declaration has no rules"),
+                Settlement::Unsettled
+            ),
+            "a definition holds no rules to read a call under"
         );
     }
 

@@ -760,6 +760,9 @@ fn lowering_row(
         | LoweringRefusal::AcrossHandler { .. }
         | LoweringRefusal::ForNeedsListCase { .. }
         | LoweringRefusal::WithoutK { .. }
+        | LoweringRefusal::RulesUnoriented { .. }
+        | LoweringRefusal::RulesDiverge { .. }
+        | LoweringRefusal::RulesUndecided { .. }
         | LoweringRefusal::BudgetExceeded { .. }
         | LoweringRefusal::GrammarMismatch { .. }
         | LoweringRefusal::UnknownMold { .. } => {},

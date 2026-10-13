@@ -371,6 +371,18 @@ fn lowered(
             "a path cannot be matched against `here`; use it by transport, through `back`, \
              `then` or `cong`",
         ),
+        | LoweringRefusal::RulesUnoriented { .. } => f.write_str(
+            "this rule may rewrite forever: its right side is not smaller than its left in the \
+             order the block's calls induce, so the block's rules are refused",
+        ),
+        | LoweringRefusal::RulesDiverge { .. } => f.write_str(
+            "this rule and an earlier one rewrite one term to two different normal forms, so \
+             the block's rules are refused",
+        ),
+        | LoweringRefusal::RulesUndecided { .. } => f.write_str(
+            "whether this rule and an earlier one agree was not decided within the step \
+             budget, so the block's rules are refused",
+        ),
         | LoweringRefusal::BudgetExceeded { budget } => write!(
             f,
             "the source is too large to read within the allowance of {budget} steps"
@@ -925,6 +937,9 @@ mod tests
             },
             LoweringRefusal::ForNeedsListCase { span },
             LoweringRefusal::WithoutK { span },
+            LoweringRefusal::RulesUnoriented { span },
+            LoweringRefusal::RulesDiverge { span, first: span },
+            LoweringRefusal::RulesUndecided { span, first: span },
             LoweringRefusal::BudgetExceeded {
                 budget: 0_usize.into(),
             },

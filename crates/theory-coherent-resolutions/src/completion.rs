@@ -24,6 +24,11 @@
 //! Fusion is the separate [`crate::derive_fused`] on a composition overlap;
 //! completion here is the confluence engine.
 //!
+//! [`join_critical_pairs`] is completion's check with no derivation: it
+//! decides whether a store's critical pairs already join, reporting the first
+//! divergence, or the first pair the budget leaves undecided, instead of
+//! orienting it.
+//!
 //! # Completion
 //!
 //! `complete` schedules the store's confluence overlaps into independent
@@ -77,6 +82,23 @@
 //! `a_supplied_overlap_naming_another_left_cell_is_declined` holds it. That the
 //! right leg is the stored right cell renamed apart from the stored left one is
 //! the constructor's guarantee and stays a precondition.
+//!
+//! # Joinability without derivation
+//!
+//! `join_critical_pairs` reads each unordered pair of distinct cells once —
+//! the enumerator's confluence entry for a pair and for its mirror share a
+//! peak, and their certificates are one transformation — normalizes both
+//! reducts as completion does, and keeps the certificate of each pair that
+//! joins. A pair that diverges is reported with both normal forms, never
+//! oriented: the caller is asking whether the rules it was given are
+//! confluent, and a derived cell would answer a different question, whether
+//! some extension of them is. A store whose rewriting terminates and whose
+//! pairs all join is confluent (Newman's lemma with the critical-pair lemma),
+//! so a caller holding the termination half asks this for the other.
+//! **Alternative.** Running `complete` and reading its derived cells: a
+//! completed run that derived nothing says the same, but a divergence is
+//! oriented into a cell and the loop continues past it, so the pair that
+//! diverged would have to be recovered from the derivation.
 
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
@@ -99,6 +121,7 @@ use crate::overlap::Overlap;
 use crate::overlap::OverlapKind;
 use crate::overlap::OverlapSupport;
 use crate::overlap::enumerate_overlaps;
+use crate::overlap::overlaps_between;
 use crate::rewrite::normalize;
 use crate::tracelet::Tracelet;
 use crate::tracelet::joined;
@@ -828,6 +851,106 @@ where
     OverlapSupport::from_store(store).batches(&overlaps)
 }
 
+/// Whether every confluence critical pair of a store joins, decided with no
+/// cell derived.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Joinability<A: CellAlphabet = SequentAlphabet>
+{
+    /// Every pair joins: one certificate per unordered pair, in enumeration
+    /// order, and none when no two cells overlap.
+    Joined(Vec<Tracelet<A>>),
+    /// The first pair whose two reducts reach different normal forms.
+    Diverges
+    {
+        /// The pair.
+        overlap: Overlap<A>,
+        /// The left reduct's normal form.
+        left: A::Cmd,
+        /// The right reduct's normal form.
+        right: A::Cmd,
+    },
+    /// The first pair a reduct of which reached no normal form within the
+    /// budget: whether it joins is not decided.
+    Undecided(Overlap<A>),
+}
+
+/// Decide whether every confluence critical pair of `store` joins: the check
+/// completion makes of each pair, with a divergence reported rather than
+/// oriented into a derived cell.
+///
+/// A store whose rewriting terminates and whose critical pairs all join is
+/// confluent, so every strategy reaches one normal form from every term; a
+/// caller that has the termination half asks this for the other.
+///
+/// # Specification
+/// - ensures: the pairs are the confluence entries of [`overlaps_between`] over
+///   each unordered pair of distinct cells, left before right in store order,
+///   so a pair and its mirror are decided once; each pair's two reducts are
+///   normalized under `budget`; [`Joinability::Joined`] carries one replaying
+///   certificate per pair when every pair joins; otherwise the first pair that
+///   does not, as [`Joinability::Undecided`] when a reduct ran out of budget
+///   and as [`Joinability::Diverges`] with both normal forms when they differ.
+/// - panics: none.
+/// - intension: one pair query per unordered cell pair, stopping at the first
+///   pair that does not join.
+///
+/// # Adequacy
+/// - hypothesis: L3 — over the toy alphabet, two additions that overlap at
+///   `add(Zero, Zero)` and agree there join with a certificate that replays,
+///   the same pair with one side made `Succ` diverges with both normal forms, a
+///   reduct needing a step under a zero budget is undecided, and a store with
+///   no overlap joins with no certificate; deciding a mirrored pair twice,
+///   reporting a starved pair as divergent or dropping a certificate changes
+///   one of them.
+/// - witness: `completion::tests::joinability_separates_joined_divergent_and_undecided_pairs`
+#[spec(ensures: |output| match output {
+    Joinability::Joined(ref certificates) => certificates.iter().all(|certificate|
+        certificate.overlap.kind == OverlapKind::Confluence && certificate.overlap.left < certificate.overlap.right
+            && bool::from(certificate.replay(store))),
+    Joinability::Diverges { ref overlap, ref left, ref right } => overlap.kind == OverlapKind::Confluence && left != right,
+    Joinability::Undecided(ref overlap) => overlap.kind == OverlapKind::Confluence,
+})]
+#[inline]
+#[must_use]
+pub fn join_critical_pairs<A>(
+    store: &CellStore<A>,
+    budget: NormalizationBudget,
+) -> Joinability<A>
+where
+    A: CellAlphabet,
+{
+    let mut certificates = Vec::new();
+    for (left_id, left_cell) in store.iter() {
+        for (right_id, right_cell) in store.iter().filter(|&(right_id, _)| right_id > left_id) {
+            for overlap in overlaps_between((left_id, left_cell), (right_id, right_cell)) {
+                if overlap.kind != OverlapKind::Confluence {
+                    continue;
+                }
+                let Ok(left_reduct) = overlap.left_reduct(store)
+                else {
+                    continue;
+                };
+                let left = normalize(store, &left_reduct, budget);
+                let right = normalize(store, &overlap.right_reduct(), budget);
+                if bool::from(left.exhausted) || bool::from(right.exhausted) {
+                    return Joinability::Undecided(overlap);
+                }
+                if left.normal != right.normal {
+                    return Joinability::Diverges {
+                        overlap,
+                        left: left.normal,
+                        right: right.normal,
+                    };
+                }
+                if let Maybe::Present(certificate) = joined(&overlap, left, right) {
+                    certificates.push(certificate);
+                }
+            }
+        }
+    }
+    Joinability::Joined(certificates)
+}
+
 quenchant_shape::reason_enum! {
     /// Why a divergent pair is not oriented into a cell.
     mod orientation {
@@ -1000,6 +1123,76 @@ mod tests
                 certificates: Vec::new()
             },
             supplied
+        );
+    }
+
+    #[test]
+    fn joinability_separates_joined_divergent_and_undecided_pairs()
+    {
+        let budget = NormalizationBudget::from(8_usize);
+        let store_of = |cells: &[(Toy, Toy)]| {
+            let mut store = CellStore::<ToyAlphabet>::new();
+            for cell in cells {
+                let _id = store.insert(toy_cell(cell.0.clone(), cell.1.clone()));
+            }
+            store
+        };
+        let left_unit = (Toy::add(Toy::zero(), Toy::var("y")), Toy::var("y"));
+        let agreeing = store_of(&[
+            left_unit.clone(),
+            (Toy::add(Toy::var("x"), Toy::zero()), Toy::var("x")),
+        ]);
+        let Joinability::Joined(certificates) = join_critical_pairs(&agreeing, budget)
+        else {
+            panic!("both sides send `add(Zero, Zero)` to `Zero`");
+        };
+        assert_eq!(1, certificates.len(), "the pair and its mirror are one");
+        assert!(
+            certificates
+                .iter()
+                .all(|certificate| bool::from(certificate.replay(&agreeing)))
+        );
+        let disagreeing = store_of(&[
+            left_unit.clone(),
+            (
+                Toy::add(Toy::var("x"), Toy::zero()),
+                Toy::succ(Toy::var("x")),
+            ),
+        ]);
+        let Joinability::Diverges { left, right, .. } = join_critical_pairs(&disagreeing, budget)
+        else {
+            panic!("`Zero` and `Succ(Zero)` are both normal");
+        };
+        assert_eq!(
+            (Toy::zero(), Toy::succ(Toy::zero())),
+            (left, right),
+            "both normal forms are reported, the left cell's first"
+        );
+        let starved = store_of(&[
+            left_unit.clone(),
+            (
+                Toy::add(Toy::var("x"), Toy::zero()),
+                Toy::add(Toy::zero(), Toy::var("x")),
+            ),
+        ]);
+        assert!(matches!(
+            join_critical_pairs(&starved, NormalizationBudget::from(0_usize)),
+            Joinability::Undecided(_)
+        ));
+        assert!(
+            matches!(
+                join_critical_pairs(&starved, budget),
+                Joinability::Joined(ref certificates) if certificates.len() == 1
+            ),
+            "the same pair joins once its reduct may take its step"
+        );
+        assert_eq!(
+            Joinability::Joined(Vec::new()),
+            join_critical_pairs(
+                &store_of(&[left_unit, (Toy::succ(Toy::var("x")), Toy::var("x"))]),
+                budget
+            ),
+            "cells that never overlap join with nothing to certify"
         );
     }
 }

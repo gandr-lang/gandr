@@ -953,6 +953,37 @@ pub enum LoweringRefusal<'source>
         span: ByteSpan,
     },
 
+    /// A rule of a `data` or `sign` block whose right-hand side the path order
+    /// does not put below its left-hand side, so the block's rules are not
+    /// known to terminate.
+    RulesUnoriented
+    {
+        /// The bytes the rule covers.
+        span: ByteSpan,
+    },
+
+    /// Two rules of a block that match one term and rewrite it to two normal
+    /// forms, where the block's first-match reading and its equational reading
+    /// part.
+    RulesDiverge
+    {
+        /// The bytes the later rule covers.
+        span: ByteSpan,
+        /// The bytes the earlier rule covers.
+        first: ByteSpan,
+    },
+
+    /// Two rules of a block that match one term whose rewrites reach no normal
+    /// form within the coincidence check's budget: whether the readings agree
+    /// there is not decided.
+    RulesUndecided
+    {
+        /// The bytes the later rule covers.
+        span: ByteSpan,
+        /// The bytes the earlier rule covers.
+        first: ByteSpan,
+    },
+
     /// The lowering's work allowance ran out.
     BudgetExceeded
     {
@@ -1122,6 +1153,20 @@ impl fmt::Display for LoweringRefusal<'_>
                 "a path is matched against `here`, which is axiom K; a path is used by \
                  transport, and `back`, `then` and `cong` derive what a match would",
             ),
+            | Self::RulesUnoriented { .. } => f.write_str(
+                "this rule's right-hand side is not below its left-hand side in the path order, \
+                 so the block's rules may never end",
+            ),
+            | Self::RulesDiverge { .. } => f.write_str(
+                "this rule and an earlier one rewrite one term to different normal forms, so the \
+                 rule written first decides what runs and the equations do not",
+            ),
+            | Self::RulesUndecided { .. } => write!(
+                f,
+                "this rule and an earlier one rewrite one term whose rewrites reach no normal \
+                 form within {} steps, so whether they agree is not decided",
+                crate::coincide::JOIN_STEPS
+            ),
             | Self::BudgetExceeded { budget } => {
                 write!(f, "the lowering outran its allowance of {budget} steps")
             },
@@ -1209,6 +1254,9 @@ impl LoweringRefusal<'_>
             | Self::AcrossHandler { span, .. }
             | Self::ForNeedsListCase { span }
             | Self::WithoutK { span }
+            | Self::RulesUnoriented { span }
+            | Self::RulesDiverge { span, .. }
+            | Self::RulesUndecided { span, .. }
             | Self::UnknownMold { span, .. } => Maybe::Present(span),
             | Self::BudgetExceeded { .. } | Self::GrammarMismatch { .. } => {
                 Maybe::Absent(refusal_span::Absent::Run)
@@ -1250,7 +1298,7 @@ mod tests
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the current 32-variant fixture has no repeated variant tag;
+    /// - ensures: the current 35-variant fixture has no repeated variant tag;
     ///   source-bearing variants carry separately observable rejected spans.
     /// - provides: a finite domain for the exact span projection witness.
     /// - fails: never.
@@ -1271,7 +1319,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 32_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 35_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -1423,6 +1471,17 @@ mod tests
             LoweringRefusal::ForNeedsListCase {
                 span: s(57_usize, 58_usize),
             },
+            LoweringRefusal::RulesUnoriented {
+                span: s(61_usize, 62_usize),
+            },
+            LoweringRefusal::RulesDiverge {
+                span: s(63_usize, 64_usize),
+                first: s(0_usize, 1_usize),
+            },
+            LoweringRefusal::RulesUndecided {
+                span: s(65_usize, 66_usize),
+                first: s(0_usize, 1_usize),
+            },
         ]
     }
 
@@ -1466,6 +1525,9 @@ mod tests
             s(55_usize, 56_usize),
             s(59_usize, 60_usize),
             s(57_usize, 58_usize),
+            s(61_usize, 62_usize),
+            s(63_usize, 64_usize),
+            s(65_usize, 66_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {

@@ -129,6 +129,9 @@ pub enum Label
     Forked,
     /// The first arm of an offer, which a later arm disagrees with.
     FirstArm,
+    /// The earlier rule of a pair that rewrites one term apart, or whose
+    /// joining the step budget left undecided.
+    Overlaps,
 }
 
 impl fmt::Display for Label
@@ -177,6 +180,7 @@ impl fmt::Display for Label
             | Self::Reported => f.write_str("reported here"),
             | Self::Forked => f.write_str("the endpoint was opened by this fork"),
             | Self::FirstArm => f.write_str("the arm it disagrees with"),
+            | Self::Overlaps => f.write_str("the rule it overlaps"),
         }
     }
 }
@@ -410,7 +414,8 @@ impl Annotations
             },
         Stated::Malformed(ExpectationFault::UnknownRefusal { span }
             | ExpectationFault::NegativeObligations { span }
-            | ExpectationFault::ObligationsBeyondRange { span }) =>
+            | ExpectationFault::ObligationsBeyondRange { span }
+            | ExpectationFault::UnwrittenNormalForm { span }) =>
             *ret == Self::at(span, Label::Unsettled(Unsettlement::Malformed)),
         Stated::Verdict(_) => *ret == Self::at(declaration, Label::Unsettled(Unsettlement::Malformed)),
     })]
@@ -439,7 +444,8 @@ impl Annotations
             | Stated::Malformed(
                 ExpectationFault::UnknownRefusal { span }
                 | ExpectationFault::NegativeObligations { span }
-                | ExpectationFault::ObligationsBeyondRange { span },
+                | ExpectationFault::ObligationsBeyondRange { span }
+                | ExpectationFault::UnwrittenNormalForm { span },
             ) => Self::at(span, label),
             | Stated::Verdict(_) => Self::at(declaration, label),
         }
@@ -452,8 +458,9 @@ impl Annotations
     /// - ensures: the primary locus is the span the lowering rejected, labelled
     ///   with what those bytes are, and is absent for the two refusals about
     ///   the run rather than a position; a duplicate declaration, import alias
-    ///   or attribute marks its first occurrence as context, and a member named
-    ///   before its declaration marks that declaration.
+    ///   or attribute marks its first occurrence as context, a member named
+    ///   before its declaration marks that declaration, and a pair of rules
+    ///   that part, or whose joining went undecided, marks the earlier rule.
     /// - provides: the loci of a lowering refusal, whether it refused a
     ///   declaration or the source as a whole.
     /// - fails: never.
@@ -484,6 +491,8 @@ impl Annotations
                     ret.context[0_usize] == Maybe::Present(Annotation { span: first, label: Label::First }),
                 LoweringRefusal::ForwardMemberReference { declared, .. } =>
                     ret.context[0_usize] == Maybe::Present(Annotation { span: declared, label: Label::Declared }),
+                LoweringRefusal::RulesDiverge { first, .. } | LoweringRefusal::RulesUndecided { first, .. } =>
+                    ret.context[0_usize] == Maybe::Present(Annotation { span: first, label: Label::Overlaps }),
                 _ => ret.context[0_usize] == Maybe::Absent(report_context::Absent::Unnamed),
             }
     })]
@@ -510,6 +519,11 @@ impl Annotations
                     label: Label::Declared,
                 })
             },
+            | LoweringRefusal::RulesDiverge { first, .. }
+            | LoweringRefusal::RulesUndecided { first, .. } => Maybe::Present(Annotation {
+                span: first,
+                label: Label::Overlaps,
+            }),
             | LoweringRefusal::UnresolvedName { .. }
             | LoweringRefusal::UnresolvedDocLink { .. }
             | LoweringRefusal::UnresolvedTypeHead { .. }
@@ -536,6 +550,7 @@ impl Annotations
             | LoweringRefusal::AcrossHandler { .. }
             | LoweringRefusal::ForNeedsListCase { .. }
             | LoweringRefusal::WithoutK { .. }
+            | LoweringRefusal::RulesUnoriented { .. }
             | LoweringRefusal::BudgetExceeded { .. }
             | LoweringRefusal::GrammarMismatch { .. }
             | LoweringRefusal::UnknownMold { .. } => Maybe::Absent(report_context::Absent::Unnamed),

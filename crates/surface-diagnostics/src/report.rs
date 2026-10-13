@@ -277,6 +277,9 @@ pub enum Unsettlement
     Unproduced,
     /// It states a run outcome, and its run produced another.
     RunOutcome,
+    /// It states a normal form, and its block's rules read the call to
+    /// another, or to none.
+    NormalForm,
     /// Its expectation states no verdict.
     Malformed,
 }
@@ -295,7 +298,7 @@ impl fmt::Display for Unsettlement
     ///   independent destination-failure observer.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — all four unsettlement kinds have distinct class
+    /// - hypothesis: L3 — all five unsettlement kinds have distinct class
     ///   labels.
     /// - witness: `report::tests::class_labels_keep_their_decision_surfaces_distinct`
     #[inline]
@@ -308,6 +311,7 @@ impl fmt::Display for Unsettlement
             | Self::Obligations => "surviving obligations",
             | Self::Unproduced => "unproduced refusal",
             | Self::RunOutcome => "another run outcome",
+            | Self::NormalForm => "another normal form",
             | Self::Malformed => "malformed expectation",
         })
     }
@@ -839,7 +843,10 @@ impl Report<'_>
             } => Annotations::malformed(declaration.stated(), declaration.span()),
             | Subject::Unsettled {
                 declaration,
-                unsettlement: unsettlement @ (Unsettlement::Unproduced | Unsettlement::RunOutcome),
+                unsettlement:
+                    unsettlement @ (Unsettlement::Unproduced
+                    | Unsettlement::RunOutcome
+                    | Unsettlement::NormalForm),
             } => Annotations::at(declaration.span(), Label::Unsettled(unsettlement)),
             | Subject::Source(refusal) => Annotations::lowering(refusal),
             | Subject::Shadowed(shadowed) => Annotations::at(shadowed.span, Label::Shadows),
@@ -1116,6 +1123,10 @@ impl fmt::Display for NoteText<'_>
                 f,
                 "`{name}` is expected to run to {spelled}, and this refusal leaves it unsettled"
             )?,
+            | Stated::Verdict(Outcome::Normalizes(ref spelled)) => write!(
+                f,
+                "`{name}` is expected to read {spelled}, and this refusal leaves it unsettled"
+            )?,
             | Stated::Malformed(fault) => {
                 write!(f, "`{name}` states no verdict to settle against: {fault}")?;
             },
@@ -1216,6 +1227,7 @@ mod tests
             Class::Unsettled(Unsettlement::Obligations),
             Class::Unsettled(Unsettlement::Unproduced),
             Class::Unsettled(Unsettlement::RunOutcome),
+            Class::Unsettled(Unsettlement::NormalForm),
             Class::Unsettled(Unsettlement::Malformed),
             Class::Goal,
             Class::Warning,

@@ -1,6 +1,6 @@
 # gandr-surface-corpus
 
-The expectation language over a lowered module and its verdicts — the `checks`, `owes`, `refuses` and `runs` schemas, the strict and fixture corpus roots, the settle comparison, and the report a corpus runner reads its counts from — and the language's corpus itself, under `strict/` and `fixture/`.
+The expectation language over a lowered module and its verdicts — the `checks`, `owes`, `refuses`, `runs` and `normalizes` schemas, the strict and fixture corpus roots, the settle comparison, and the report a corpus runner reads its counts from — and the language's corpus itself, under `strict/` and `fixture/`.
 
 <!-- toc -->
 - [Synopsis](#synopsis)
@@ -15,15 +15,16 @@ The expectation language over a lowered module and its verdicts — the `checks`
 
 **What.** `settle` takes a `CorpusRoot`, the `CoreArena` a module was lowered into, the `LoweredModule` from `gandr-surface-lowering`, and the `ModuleReport` `gandr-core-checker` returned for it, and answers a `SettleReport`: one `DeclarationReport` per declared name, stating what the name's attributes assert (`Stated`), what the name produced (`Produced`: the checker's verdict, the lowering's refusal, or the root's own refusal), and the obligations its verdict owes; plus the module's ledger size. `SettleReport::tally` sums a run into a `Tally` — declarations and fixtures by `Settlement`, the ledger size, the surviving obligations, the refusals by failure class, the run's settlement and its `Seal` — which a driver absorbs across sources, gates on, and prints.
 
-**Why.** A corpus that only says pass or fail cannot tell a run that owes nothing from one that signed for a hole, and a corpus whose sources describe their own expected failures can describe a regression as expected. The expectation language here makes both visible: the strict root admits only `checks` and its `runs` refinement, every declaration states a verdict whether it writes one or not, and every report carries the ledger size.
+**Why.** A corpus that only says pass or fail cannot tell a run that owes nothing from one that signed for a hole, and a corpus whose sources describe their own expected failures can describe a regression as expected. The expectation language here makes both visible: the strict root admits only `checks` and its `runs` and `normalizes` refinements, every declaration states a verdict whether it writes one or not, and every report carries the ledger size.
 
-**How.** Attributes are read off the lowering's side table under each declared name's form keys; the four schemas are matched by their registered names, and their payloads are read as literals out of the arena. The declarations are walked in admission order in lockstep with the checker's verdicts, a lowering-refused declaration consuming none. A declaration stating a run outcome that the checker accepted is run through the `Runner` the caller hands in. One equality decides each declaration; the tally counts it once.
+**How.** Attributes are read off the lowering's side table under each declared name's form keys; the five schemas are matched by their registered names, and their payloads are read as literals out of the arena. The declarations are walked in admission order in lockstep with the checker's verdicts, a lowering-refused declaration consuming none. A declaration stating a run outcome that the checker accepted is run through the `Runner` the caller hands in; a data block stating a normal form has its call read under its rules by `LoweredModule::normal_form`. One equality decides each declaration; the tally counts it once.
 
 ## Provided features
 
 - `CorpusRoot` and `CorpusRoot::admit`: the two roots and the strict root's refusal of `owes` and `refuses`.
-- `ExpectationSchema` and `expectation_schema::Absent`: the four schemas, matched by the registry's names.
-- `Runner`, `RunSpelling` and `ran::Absent`: the run a `runs` outcome is compared against, asked of the caller.
+- `ExpectationSchema` and `expectation_schema::Absent`: the five schemas, matched by the registry's names.
+- `Runner`, `RunSpelling` and `ran::Absent`: the run a `runs` outcome is compared against, asked of the caller, and the line a `normalizes` outcome is compared against.
+- `normalized_call`, `normalized_call::Absent` and `NORMAL_FORM_ARROW`: the call a `normalizes` line reads, why a line reads none, and what separates a call from its normal form.
 - `Stated`, `Outcome`, `ExpectationFault` and `Membership`: what a declaration states, and why an expectation states nothing.
 - `RefusalName`, `RefusalSpelling`, `refusal_name::Absent`, `Refusal` and `CorpusRefusal`: the closed refusal vocabulary and producer refusal views.
 - `settle`, `SettleFault`, `Produced`, `produced_refusal::Absent`, `DeclarationReport`, `Settlement` and `Surviving`: the settle comparison.

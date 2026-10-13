@@ -43,7 +43,7 @@
 //!
 //! The registry is closed: `checks` and `explicit_exits` take no payload,
 //! `explicit_runs` none or a text naming its one option, `effects`, `owes` an
-//! integer, `refuses`, `runs` and `doc` a text. Five diagnostics
+//! integer, `refuses`, `runs`, `normalizes` and `doc` a text. Five diagnostics
 //! cover what an attribute can get wrong, checked in this order: an unknown
 //! name, with the registered name within edit distance two when one exists;
 //! the same attribute written twice for one declared name, naming the first;
@@ -374,11 +374,12 @@ pub struct AttributeRegistry;
 ///   suggestions select the earlier eligible row.
 /// - witness: `attribute::tests::every_registered_attribute_answers_its_schema`
 /// - witness: `attribute::tests::suggestions_include_the_bound_and_break_ties_by_registry_order`
-const REGISTRY: [(&str, AttributeSchema); 7_usize] = [
+const REGISTRY: [(&str, AttributeSchema); 8_usize] = [
     ("checks", AttributeSchema::Marker),
     ("owes", AttributeSchema::Integer),
     ("refuses", AttributeSchema::Text),
     ("runs", AttributeSchema::Text),
+    ("normalizes", AttributeSchema::Text),
     ("doc", AttributeSchema::Text),
     (
         RegisteredAttribute::EXPLICIT_EXITS.0,
@@ -1120,6 +1121,7 @@ mod tests
             ("owes", AttributeSchema::Integer),
             ("refuses", AttributeSchema::Text),
             ("runs", AttributeSchema::Text),
+            ("normalizes", AttributeSchema::Text),
             ("doc", AttributeSchema::Text),
             ("explicit_exits", AttributeSchema::Marker),
             ("explicit_runs", AttributeSchema::MarkerOr("effects")),
@@ -1169,6 +1171,7 @@ mod tests
             ("owe", "owes"),
             ("refuse", "refuses"),
             ("run", "runs"),
+            ("normalize", "normalizes"),
             ("docs", "doc"),
             ("explicit_exit", "explicit_exits"),
             ("explicit_run", "explicit_runs"),

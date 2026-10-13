@@ -1,4 +1,4 @@
-@[ checks ]
+@[ normalizes("add(Succ(Succ(Zero)), Succ(Zero)) ~> Succ(Succ(Succ(Zero)))") ]
 data NatAdd : Type {
   Zero : NatAdd;
   Succ : (n : NatAdd) --> NatAdd;
@@ -6,3 +6,7 @@ data NatAdd : Type {
   rule add(Zero, n) ==> n;
   rule add(Succ(m), n) ==> Succ(add(m, n));
 }
+
+@[ runs("Succ(Succ(Succ(Zero)))") ]
+def two_plus_one : +U (-F NatAdd) ;
+def two_plus_one = thunk { become add(Succ(Succ(Zero)), Succ(Zero)) } ;

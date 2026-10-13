@@ -704,8 +704,8 @@ impl<'source> Collector<'_, 'source>
     /// - ensures: one [`Role::Operation`] slot per operation with a route, in
     ///   source order after the family's slots, each with its plan and, when no
     ///   earlier operation took its name, its name; an operation without a
-    ///   route, a parameterised family and a refused declaration change
-    ///   nothing.
+    ///   route, a parameterised family, a refused declaration and a family
+    ///   whose rules the coincidence check refused change nothing.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -747,7 +747,10 @@ impl<'source> Collector<'_, 'source>
             else {
                 return;
             };
-            if !form.parameters.is_empty() || described.description.polarity != DeclPolarity::Data {
+            if !form.parameters.is_empty()
+                || described.description.polarity != DeclPolarity::Data
+                || matches!(cells.coincidence, crate::coincide::Coincidence::Refused(_))
+            {
                 return;
             }
             let mut table = self.route_table();
