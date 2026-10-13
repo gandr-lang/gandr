@@ -316,7 +316,7 @@ pub fn encode(
 #[inline]
 #[must_use]
 pub fn overlapping(
-    spans: Vec<HlSpan>,
+    spans: &[HlSpan],
     start: ByteOffset,
     end: ByteOffset,
 ) -> Vec<HlSpan>
@@ -325,8 +325,9 @@ pub fn overlapping(
         return Vec::new();
     }
     spans
-        .into_iter()
+        .iter()
         .filter(|span| span.range.start().max(start) < span.range.end().min(end))
+        .copied()
         .collect()
 }
 
@@ -608,11 +609,7 @@ mod tests
                     })
                     .collect();
                 assert_eq!(
-                    super::overlapping(
-                        spans.clone(),
-                        ByteOffset::from(start),
-                        ByteOffset::from(end)
-                    ),
+                    super::overlapping(&spans, ByteOffset::from(start), ByteOffset::from(end)),
                     expected,
                     "range {start}..{end}",
                 );

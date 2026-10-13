@@ -70,9 +70,6 @@ use crate::hover::Hovering;
 use crate::hover::hover;
 use crate::hover::hovering;
 use crate::inline::ghost;
-use crate::outline::folds;
-use crate::outline::selections;
-use crate::outline::symbols;
 use crate::position::Position;
 use crate::position::Range;
 use crate::proposal::Proposal;
@@ -104,12 +101,12 @@ use crate::protocol::SelectionRangeParams;
 use crate::protocol::SemanticTokens;
 use crate::protocol::Settings;
 use crate::protocol::StringValue;
+use crate::reading::Reading;
 use crate::recheck::DocumentSession;
 use crate::recheck::Timing;
 use crate::recheck::Tried;
 use crate::recheck::admit;
 use crate::recheck::grammar;
-use crate::recheck::highlight;
 use crate::recheck::open;
 use crate::recheck::recheck;
 use crate::rpc::ErrorCode;
@@ -157,17 +154,15 @@ struct Document
 {
     /// The version of its text.
     version: DocumentVersion,
-    /// Its whole text.
-    text: String,
+    /// Its whole text, with the reading and the hover table the requests
+    /// about it share.
+    text: HeldText,
     /// The session holding its forms between synchronisations.
     session: DocumentSession,
     /// The diagnostics last published at its version.
     published: Vec<Diagnostic>,
     /// The checked proposals kept for its version, in the order kept.
     proposals: Vec<Proposal>,
-    /// What its hovers read — the type table and the declarations of its text
-    /// — built at the first hover after the text last changed.
-    hovering: OnceCell<Hovering>,
 }
 
 impl Document
@@ -184,12 +179,114 @@ impl Document
     {
         Self {
             version,
-            text: String::new(),
+            text: HeldText::new(),
             session: open(uri),
             published: Vec::new(),
             proposals: Vec::new(),
+        }
+    }
+}
+
+/// A copy's text and, once a request has asked, the one [`Reading`] of it and
+/// the [`Hovering`] its hovers read.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a reading or a hover table, once made, is of the text as it
+///   stands: every change to the text drops both.
+/// - panics: none.
+/// - executable: none — the text and what is read off it are private and change
+///   only together, so the structure states the invariant and no call boundary
+///   is left to check.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the editor scenarios hold every structural answer after
+///   each keystroke to a fresh connection's over the same text and every hover
+///   to answering; a reading kept past a change disagrees at the keystroke that
+///   made it.
+/// - witness: `editor::editor::scenarios::random_edits_keep_every_answer_faithful`
+/// - witness: `editor::editor::scenarios::typing_each_corpus_source_keeps_every_answer_faithful`
+struct HeldText
+{
+    /// The text.
+    text: String,
+    /// The reading of `text`, made by the first request that asks.
+    reading: OnceCell<Reading>,
+    /// The type table of `text`, made by the first hover after it changed.
+    hovering: OnceCell<Hovering>,
+}
+
+impl HeldText
+{
+    /// The empty text, unread.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn new() -> Self
+    {
+        Self {
+            text: String::new(),
+            reading: OnceCell::new(),
             hovering: OnceCell::new(),
         }
+    }
+
+    /// The text, as source.
+    ///
+    /// # Specification
+    /// trivial.
+    fn source(&self) -> SourceText<'_>
+    {
+        SourceText::from(self.text.as_str())
+    }
+
+    /// Hold `text` in place of the text held, unread.
+    ///
+    /// # Specification
+    /// trivial.
+    fn replace(
+        &mut self,
+        text: String,
+    )
+    {
+        self.text = text;
+        self.reading = OnceCell::new();
+        self.hovering = OnceCell::new();
+    }
+
+    /// Apply `change` to the text held, as [`apply`] does, and drop what was
+    /// read off it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn apply(
+        &mut self,
+        change: ContentChange,
+    )
+    {
+        apply(&mut self.text, change);
+        self.reading = OnceCell::new();
+        self.hovering = OnceCell::new();
+    }
+
+    /// The reading of the text held, made now when no request has asked since
+    /// it last changed.
+    ///
+    /// # Specification
+    /// trivial.
+    fn reading(&self) -> &Reading
+    {
+        self.reading.get_or_init(|| Reading::of(self.source()))
+    }
+
+    /// What the hovers of the text held read, made now when no hover has asked
+    /// since it last changed.
+    ///
+    /// # Specification
+    /// trivial.
+    fn hovering(&self) -> &Hovering
+    {
+        self.hovering.get_or_init(|| hovering(self.source()))
     }
 }
 
@@ -669,7 +766,8 @@ impl Workspace
                     version: document.version.into(),
                 },
                 report(
-                    SourceText::from(document.text.as_str()),
+                    document.text.source(),
+                    document.text.reading(),
                     &document.published,
                 ),
             )
@@ -710,7 +808,7 @@ impl Workspace
         let texts: Vec<String> = changes
             .iter()
             .map(|change| {
-                let mut text = document.text.clone();
+                let mut text = String::from(document.text.source().as_ref());
                 apply(&mut text, change.clone());
                 text
             })
@@ -1293,8 +1391,8 @@ impl Server
                 match serde_json::from_value::<DocumentParams>(params) {
                     | Ok(params) => success(
                         id,
-                        workspace.outline(&params.text_document.uri, self.peer, |text| {
-                            Answer::Symbols(symbols(text))
+                        workspace.outline(&params.text_document.uri, self.peer, |reading, _| {
+                            Answer::Symbols(reading.symbols())
                         }),
                     ),
                     | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
@@ -1304,8 +1402,8 @@ impl Server
                 match serde_json::from_value::<DocumentParams>(params) {
                     | Ok(params) => success(
                         id,
-                        workspace.outline(&params.text_document.uri, self.peer, |text| {
-                            Answer::Folds(folds(text))
+                        workspace.outline(&params.text_document.uri, self.peer, |reading, _| {
+                            Answer::Folds(reading.folds().to_vec())
                         }),
                     ),
                     | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
@@ -1315,8 +1413,11 @@ impl Server
                 match serde_json::from_value::<SelectionRangeParams>(params) {
                     | Ok(params) => success(
                         id,
-                        workspace.outline(&params.text_document.uri, self.peer, |text| {
-                            Answer::Selections(selections(text, &params.positions))
+                        workspace.outline(&params.text_document.uri, self.peer, |reading, text| {
+                            Answer::Selections(reading.selections(
+                                &LineIndex::new(text.as_ref().into()),
+                                &params.positions,
+                            ))
                         }),
                     ),
                     | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
@@ -1486,8 +1587,7 @@ impl Server
                 held.take_up(self.peer, &uri, text_document.version);
                 let document = &mut held.document;
                 document.version = text_document.version;
-                document.text = text_document.text;
-                document.hovering = OnceCell::new();
+                document.text.replace(text_document.text);
                 document.proposals.clear();
                 let outcome = synchronised(&uri, document, self.verbosity);
                 for message in &outcome.messages {
@@ -1514,9 +1614,8 @@ impl Server
                 };
                 document.version = text_document.version;
                 document.proposals.clear();
-                document.hovering = OnceCell::new();
                 for change in content_changes {
-                    apply(&mut document.text, change);
+                    document.text.apply(change);
                 }
                 let outcome = synchronised(&text_document.uri, document, self.verbosity);
                 for message in &outcome.messages {
@@ -1627,11 +1726,10 @@ impl Workspace
         else {
             return Answer::Nothing;
         };
-        let text = document.text.as_str();
-        let index = LineIndex::new(text.into());
-        let spans = highlight(SourceText::from(text));
+        let index = LineIndex::new(<&str>::from(document.text.source()).into());
+        let spans = document.text.reading().spans();
         let spans = match window {
-            | Window::Whole => spans,
+            | Window::Whole => spans.to_vec(),
             | Window::Within(range) => {
                 overlapping(spans, range.start.byte(&index), range.end.byte(&index))
             },
@@ -1682,13 +1780,11 @@ impl Workspace
         else {
             return Answer::Nothing;
         };
-        let text = document.text.as_str();
-        let index = LineIndex::new(text.into());
+        let text = document.text.source();
+        let index = LineIndex::new(text.as_ref().into());
         let at = position.byte(&index);
         let mut items = ghosts(&document.proposals, position);
-        if let Ok(Maybe::Present(snippet)) =
-            grammar().map(|grammar| ghost(grammar, SourceText::from(text), at))
-        {
+        if let Ok(Maybe::Present(snippet)) = grammar().map(|grammar| ghost(grammar, text, at)) {
             items.push(InlineCompletionItem {
                 insert_text: StringValue {
                     kind: "snippet",
@@ -1703,13 +1799,14 @@ impl Workspace
         Answer::Inline(InlineCompletionList { items })
     }
 
-    /// What `read` answers over the text of the copy of the document at `uri`
-    /// that `peer` is answered from.
+    /// What `read` answers over the reading and the text of the copy of the
+    /// document at `uri` that `peer` is answered from.
     ///
     /// # Specification
     /// - requires: nothing; an unknown URI is admitted.
     /// - ensures: an unknown document yields Nothing, without calling `read`; a
-    ///   held document yields what `read` answers over its text.
+    ///   held document yields what `read` answers over its text's reading and
+    ///   its text.
     /// - provides: the answers to the outline requests, which read the
     ///   document's text alone.
     /// - fails: never.
@@ -1724,11 +1821,11 @@ impl Workspace
         &self,
         uri: &DocumentUri,
         peer: Peer,
-        read: impl FnOnce(SourceText<'_>) -> Answer,
+        read: impl FnOnce(&Reading, SourceText<'_>) -> Answer,
     ) -> Answer
     {
         match self.view(uri, peer) {
-            | Maybe::Present(document) => read(SourceText::from(document.text.as_str())),
+            | Maybe::Present(document) => read(document.text.reading(), document.text.source()),
             | Maybe::Absent(_) => Answer::Nothing,
         }
     }
@@ -1739,11 +1836,12 @@ impl Workspace
     /// # Specification
     /// - requires: nothing; an unknown URI and any position are admitted.
     /// - ensures: an unknown document yields Nothing; otherwise the hover
-    ///   [`hover()`] shows read against what the copy keeps for its hovers and
-    ///   its session, followed by the notes of the kept proposals whose range
-    ///   holds the position and explain themselves, or those notes alone over
-    ///   the first one's range when the hover shows nothing there or the
-    ///   grammar did not build. Nothing when neither shows anything.
+    ///   [`hover()`] shows read against the text's reading, what the copy keeps
+    ///   for its hovers and its session, followed by the notes of the kept
+    ///   proposals whose range holds the position and explain themselves, or
+    ///   those notes alone over the first one's range when the hover shows
+    ///   nothing there or the grammar did not build. Nothing when neither shows
+    ///   anything.
     /// - provides: the answer to `textDocument/hover`.
     /// - fails: never.
     /// - panics: none.
@@ -1768,11 +1866,13 @@ impl Workspace
             return Answer::Nothing;
         };
         let shown = match document.session {
-            | Ok(ref session) => {
-                let text = SourceText::from(document.text.as_str());
-                let kept = document.hovering.get_or_init(|| hovering(text));
-                hover(text, session, kept, position)
-            },
+            | Ok(ref session) => hover(
+                document.text.source(),
+                session,
+                document.text.reading(),
+                document.text.hovering(),
+                position,
+            ),
             | Err(_) => Maybe::Absent(crate::hover::hovered::Absent::Unparsed),
         };
         match (shown, notes(&document.proposals, position)) {
@@ -1828,7 +1928,7 @@ impl Workspace
         else {
             return success(id, Answer::Nothing);
         };
-        match edits(SourceText::from(document.text.as_str()), window) {
+        match edits(document.text.source(), window) {
             | Ok(edits) => success(id, Answer::Edits(edits)),
             | Err(unformatted) => failure(id, ErrorCode::REQUEST_FAILED, unformatted.to_string()),
         }
@@ -1924,7 +2024,7 @@ fn synchronised(
     let rechecked = recheck(
         uri,
         &mut document.session,
-        SourceText::from(document.text.as_str()),
+        document.text.source(),
         verbosity,
     );
     Outcome {
@@ -2199,7 +2299,7 @@ mod tests
     /// - witness: `server::tests::a_range_returns_only_the_tokens_it_covers`
     #[spec(ensures: |ret| ret.server.phase == super::Phase::Running
         && ret.workspace.documents.len() == 1
-        && ret.workspace.documents.values().all(|held| held.document.text == "def f = 42 ;\n"))]
+        && ret.workspace.documents.values().all(|held| held.document.text.source().as_ref() == "def f = 42 ;\n"))]
     fn server_over_the_known_document() -> Connected
     {
         let mut server = initialized();
@@ -2937,7 +3037,7 @@ mod tests
                 .workspace
                 .documents
                 .get(&uri)
-                .map(|held| held.document.text.clone())
+                .map(|held| String::from(held.document.text.source().as_ref()))
                 .expect("the document is open")
         };
         let changed = send(
@@ -3368,7 +3468,7 @@ mod tests
             workspace
                 .documents
                 .get(&uri)
-                .map(|held| held.document.text.as_str()),
+                .map(|held| <&str>::from(held.document.text.source())),
             Some(text),
             "the held text is unchanged"
         );
@@ -3637,5 +3737,3 @@ mod tests
         );
     }
 }
-// weave: run 'weave explain crates/surface-lsp/src/server.rs' for per-hunk
-// detail, 'weave check' to verify your resolution
