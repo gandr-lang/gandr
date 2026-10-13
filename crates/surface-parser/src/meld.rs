@@ -4734,23 +4734,26 @@ impl<'pbg> MeldState<'pbg>
     ///   of [`finalize`](Self::finalize); leaves `self` unchanged; allocates
     ///   nothing.
     /// - panics: none.
+    /// - executable: none — the clause is parity with `finalize`, and running
+    ///   `finalize` to check it walked and allocated the whole completion on
+    ///   every candidate of every lookahead window: a re-finalise per
+    ///   keystroke, quadratic in the source under enforcement (the editor's
+    ///   random-edit scenario over the corpus: 74 s enforcing with the clause,
+    ///   29 s without; one long looped source alone added 160 s). The parity is
+    ///   held by the witness below over the states that distinguish the two
+    ///   walks.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the molder's completion tiebreak and window ends read
     ///   this delta on every corpus source and malformed variant, so a class
     ///   counted that `finalize` drops, or one missed, changes a chosen mold
-    ///   and the committed tree.
+    ///   and the committed tree; the parity witness folds `finalize`'s
+    ///   obligations over missing operands, open forms, filled and absent
+    ///   required tails and an empty slope.
+    /// - witness: `meld::tests::completion_delta_agrees_with_finalize`
     /// - witness: `meld::tests::finalize_charges_a_required_tail_only_when_it_is_absent`
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
     #[must_use]
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            spec_clause_traversal,
-            reason = "parity: the body walks the same shortfalls `finalize` collects"
-        )
-    )]
-    #[spec(ensures: |ret| { let mut delta = base; for obligation in self.finalize().obligations() { delta.insert(obligation.class); } ret == delta })]
     pub(crate) fn completion_delta(
         &self,
         base: Delta,
@@ -4783,7 +4786,7 @@ impl<'pbg> MeldState<'pbg>
     ///   cell's right operand before its left; leaves `self` unchanged.
     /// - panics: none.
     /// - executable: none — `visit` is a write-only sink; what it is handed is
-    ///   observed by the callers' executable clauses, which read
+    ///   observed by the callers' witnesses, which read
     ///   [`finalize`](Self::finalize) and the completion delta.
     ///
     /// # Adequacy
@@ -8099,6 +8102,7 @@ mod tests
     use super::UnitBase;
     use super::UnitSeam;
     use crate::label::Lexeme;
+    use crate::oblig::Delta;
     use crate::oblig::Oblig;
     use crate::testing::children;
     use crate::testing::label;
@@ -10695,6 +10699,84 @@ mod tests
             owed(&with(("(", "parenthesized_type")))?,
             "an opened operand fills the tail, and only its `)` is owed in its place"
         );
+        Ok(())
+    }
+
+    /// `completion_delta` counts exactly the classes `finalize` reports, over
+    /// an empty slope, operators missing one or both operands, an open form
+    /// owing its required tail, and the tail filled by a written or an opened
+    /// operand — the states the two walks could diverge on.
+    #[test]
+    fn completion_delta_agrees_with_finalize() -> Result<(), Box<dyn Error>>
+    {
+        let folded = |state: &MeldState<'_>| {
+            let mut delta = Delta::empty();
+            for obligation in state.finalize().obligations() {
+                delta.insert(obligation.class);
+            }
+            delta
+        };
+        let infix = infix_pbg()?;
+        let atom = only(&infix, TileLabel("x"));
+        let plus = only(&infix, TileLabel("+"));
+        for source in ["", "+", "+x", "x+", "x+x", "x++x"] {
+            let mut state = MeldState::new(&infix);
+            for text in source.split("").filter(|part| !part.is_empty()) {
+                let mold = if text == "+" { plus } else { atom };
+                state.push(&MoldedTile::new(mold, TileText::from(text)));
+            }
+            assert_eq!(
+                state.completion_delta(Delta::empty()),
+                folded(&state),
+                "{source:?}"
+            );
+        }
+        let pbg = built_in()?;
+        let mold_of = |text: &'static str, kind: &str| -> Result<MoldId, Box<dyn Error>> {
+            let label = match text {
+                | "g" => "identifier",
+                | other => other,
+            };
+            pbg.candidates(TileLabel(label))
+                .iter()
+                .copied()
+                .find(|&mold| pbg.named_kind(mold).is_ok_and(|named| named.0 == kind))
+                .ok_or_else(|| format!("no {kind} mold for {text}").into())
+        };
+        let head = [
+            ("def", "def_value"),
+            ("g", "def_value"),
+            (":", "def_value"),
+            ("+U", "u_type"),
+            ("[", "u_type"),
+            ("ω", "u_type"),
+            ("]", "u_type"),
+        ];
+        let tails: [&[(&'static str, &'static str)]; 3] =
+            [&[], &[("Integer", "primitive_type")], &[(
+                "(",
+                "parenthesized_type",
+            )]];
+        for tail in tails {
+            let mut state = MeldState::new(&pbg);
+            for (position, &(text, kind)) in head.iter().chain(tail).enumerate() {
+                if position > 0 {
+                    state.space(SpaceText::from(" "));
+                }
+                state.push(&MoldedTile::new(mold_of(text, kind)?, TileText::from(text)));
+            }
+            let base = state.completion_delta(Delta::empty());
+            assert_eq!(base, folded(&state), "{tail:?}");
+            let mut seeded = Delta::empty();
+            seeded.insert(Oblig::MissingMeld);
+            let mut expected = folded(&state);
+            expected.insert(Oblig::MissingMeld);
+            assert_eq!(
+                state.completion_delta(seeded),
+                expected,
+                "{tail:?} over a seeded base"
+            );
+        }
         Ok(())
     }
 
