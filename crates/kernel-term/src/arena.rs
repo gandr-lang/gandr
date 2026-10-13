@@ -177,7 +177,7 @@ impl crate::decl::DeclarationContent
     /// - witness: `decl::tests::finishers_preserve_payloads_and_staged_graphs`
     /// - witness: `arena::tests::scalar_clamps_and_index_ceilings_match_widened_models`
     #[spec(
-        ensures: |ret| ret.0 == match *self { Self::Def { declared, .. } | Self::Axiom { declared } | Self::AbstractType { kind: declared } | Self::Data { kind: declared, .. } => declared.0 },
+        ensures: |ret| ret.0 == match *self { Self::Def { declared, .. } | Self::Axiom { declared } | Self::AbstractType { kind: declared, .. } | Self::Data { kind: declared, .. } => declared.0 },
     )]
     #[inline]
     #[must_use]
@@ -187,7 +187,7 @@ impl crate::decl::DeclarationContent
             | Self::Def { declared, .. }
             | Self::Axiom { declared }
             | Self::Data { kind: declared, .. }
-            | Self::AbstractType { kind: declared } => declared,
+            | Self::AbstractType { kind: declared, .. } => declared,
         }
     }
 }
@@ -3111,6 +3111,8 @@ mod tests
                 .0,
                 crate::decl::DeclarationContent::AbstractType {
                     kind: super::ValueTypeId(17),
+                    representation: super::ValueTypeId(19),
+                    scope: crate::decl::SealScope::Open,
                 }
                 .declared_id()
                 .0,

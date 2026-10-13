@@ -193,7 +193,15 @@ fn identity_at_an_open_type_is_a_neutral_fibre()
     let mut environment = Environment::new();
     let mut staging = environment.stage();
     let kind = universe(staging.arena());
-    let declaration = staging.abstract_type(LevelSignature::monomorphic(), kind);
+    let integer = staging
+        .arena()
+        .value_type_base(gandr_kernel_term::BaseType::Integer);
+    let declaration = staging.abstract_type(
+        LevelSignature::monomorphic(),
+        kind,
+        integer,
+        gandr_kernel_term::SealScope::Closed(gandr_kernel_term::SealExtent::from(0_usize)),
+    );
     let atom = environment
         .add_decl(declaration)
         .expect("an abstract type at the value universe")
@@ -370,6 +378,8 @@ fn identity_at_an_open_type_is_a_neutral_fibre()
         Some(&Computation::Return(reflexive_y))
     );
 }
+
+// refused_by: modify_delete_guard · collision: none (no common ancestor text)
 
 #[test]
 fn reflexivity_converts_its_endpoints_by_the_laws_of_bind()

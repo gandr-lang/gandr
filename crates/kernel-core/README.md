@@ -21,7 +21,8 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 
 ## Provided features
 
-- **Admission.** `Environment` with `stage`, `add_decl`, `add_decl_unchecked`, `abandon` and `audit`; `StagedDeclaration`, `CheckedId`, `AdmittedDeclaration` and `AxiomReport`.
+- **Admission.** `Environment` with `stage`, `add_decl`, `add_decl_unchecked`, `abandon`, `seal`, `replay` and `audit`; `StagedDeclaration`, `CheckedId`, `AdmittedDeclaration`, `ArtifactRefusal` and `AxiomReport`.
+- **Sealing.** An abstract type carries its representation and the extent of its minting admission: the declarations inside it are checked with the atom read as its representation, every later one against the bare atom (`seal`), and a replayed artifact re-derives both from the recorded extent.
 - **The checking machine.** `check_declaration`, the default path with a fresh memo, and `check_declaration_with_memo`, the opt-in entry that returns a verdict and never a `CheckedId`.
 - **Type formation.** An iterative walk computing a type's universe level, gating lift strictness, level scope, a sealed atom's kind, and the code a decode of either family owes.
 - **Conversion.** `convert_value_type`, `convert_comp_type` and their `convertible_*` forms: structural comparison of two types, descending into the terms they carry, over `Convertibility`.
@@ -78,7 +79,7 @@ fn example() -> Result<(), KernelError> {
 }
 ```
 
-`tests/acceptance.rs` carries the memo measurements and the poisoned-entry cases; `tests/adversarial_depth.rs` the depth totality. Run them with the unit tests, then the enforcing twin:
+`tests/acceptance.rs` carries the memo measurements and the poisoned-entry cases; `tests/adversarial_depth.rs` the depth totality; `tests/sealed_export.rs` a sealed module's export replayed and its rewritten copies refused. Run them with the unit tests, then the enforcing twin:
 
 ```sh
 cargo nextest run -p gandr-kernel-core
@@ -94,7 +95,8 @@ Mechanism, rule tables, decisions and specification detail live in the rustdoc b
 | The four decisions, the memo's binding conditions and collapse law, arithmetic and absence, specification boundaries | [`src/lib.rs`](src/lib.rs) |
 | The checking machine, its correspondence table, universes and the lift, static operators, the native List | [`src/check.rs`](src/check.rs) |
 | Nominal data and records; strict positivity; the structural fixpoint | [`src/check/former.rs`](src/check/former.rs), [`src/check/occurrence.rs`](src/check/occurrence.rs), [`src/check/descent.rs`](src/check/descent.rs) |
-| Admission, staging order, the audit | [`src/env.rs`](src/env.rs) |
+| Admission, staging order, the audit, replay | [`src/env.rs`](src/env.rs) |
+| The seal rule: a manifest atom read as its representation | [`src/seal.rs`](src/seal.rs) |
 | Conversion and its discharged set | [`src/conv.rs`](src/conv.rs) |
 | Conversion replay, its decisions and laws | [`src/replay.rs`](src/replay.rs) |
 | The content key, the digest and the binder slice | [`src/encoding.rs`](src/encoding.rs), [`src/support.rs`](src/support.rs) |

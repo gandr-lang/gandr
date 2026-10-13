@@ -20,6 +20,7 @@ mod acceptance
     use gandr_kernel_core::Environment;
     use gandr_kernel_core::ExpansionCensus;
     use gandr_kernel_core::ExpansionCount;
+    use gandr_kernel_core::Judgement;
     use gandr_kernel_core::KernelError;
     use gandr_kernel_core::LevelContext;
     use gandr_kernel_core::NodeOutcome;
@@ -689,8 +690,7 @@ mod acceptance
         let mut census = ExpansionCensus::new();
         let verdict = check_declaration_with_memo(
             arena,
-            &[],
-            &levels(),
+            Judgement::new(&[], &levels()),
             declaration,
             memo,
             session,

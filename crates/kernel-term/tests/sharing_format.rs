@@ -39,6 +39,8 @@ mod sharing_format
     use gandr_kernel_term::NameSegment;
     use gandr_kernel_term::ReservedKind;
     use gandr_kernel_term::ReservedSlot;
+    use gandr_kernel_term::SealExtent;
+    use gandr_kernel_term::SealScope;
     use gandr_kernel_term::StructuredName;
     use gandr_kernel_term::TableEntryCount;
     use gandr_kernel_term::TagSite;
@@ -2129,13 +2131,13 @@ mod sharing_format
     {
         let arena = TermArena::new();
         let bytes = encode(&arena, &[]);
-        // Hand check of the version field: the version is 3, which as a
-        // little-endian sixteen-bit field is the low byte 0x03 first and the
+        // Hand check of the version field: the version is 4, which as a
+        // little-endian sixteen-bit field is the low byte 0x04 first and the
         // high byte 0x00 after. The header is the four-byte magic, that
         // two-byte field, the empty atom table as one varint zero and the
         // declaration count as one varint zero.
         assert_eq!(
-            vec![b'G', b'K', b'X', b'1', 0x03, 0x00, 0x00, 0x00],
+            vec![b'G', b'K', b'X', b'1', 0x04, 0x00, 0x00, 0x00],
             Vec::from(bytes.clone()),
             "the empty artifact is the magic, the version, an empty atom table and a zero count"
         );
@@ -2585,10 +2587,21 @@ mod sharing_format
             "the binary-former version is refused rather than misread"
         );
 
-        let future = raw_artifact(Version(4), &[], &[]);
+        let abstract_type_without_representation = raw_artifact(Version(3), &[], &[]);
         assert_eq!(
             Err(DecodeError::UnsupportedVersion {
-                found: FormatVersion::from(4),
+                found: FormatVersion::from(3),
+            }),
+            decode(ArtifactImage::from(
+                abstract_type_without_representation.as_ref()
+            )),
+            "the version whose atoms carried no representation is refused rather than misread"
+        );
+
+        let future = raw_artifact(Version(5), &[], &[]);
+        assert_eq!(
+            Err(DecodeError::UnsupportedVersion {
+                found: FormatVersion::from(5),
             }),
             decode(ArtifactImage::from(future.as_ref())),
             "a later version is refused with the version it declared"
@@ -2850,7 +2863,12 @@ mod sharing_format
             let declaration = match position % 3 {
                 | 0 => builder.def(LevelSignature::monomorphic(), declared, reference),
                 | 1 => builder.axiom(LevelSignature::monomorphic(), declared),
-                | _ => builder.abstract_type(LevelSignature::monomorphic(), declared),
+                | _ => builder.abstract_type(
+                    LevelSignature::monomorphic(),
+                    declared,
+                    declared,
+                    SealScope::Closed(SealExtent::from(0_usize)),
+                ),
             };
             declarations.push(MarkedDeclaration::new(AdmissionMark::Checked, declaration));
         }
@@ -3027,14 +3045,20 @@ mod sharing_format
     ///   retaining the surrounding record.
     /// - witness: `sharing_format::sharing_format::a_sealed_artifact_round_trips_with_its_atom_table`
     #[spec(
-        ensures: |ret| ret.as_image().as_ref() == [b'G', b'K', b'X', b'1', 3, 0, 1, 0, 2, 0, 2, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 2, 3, 0, 0x0d, 0, 1, 2, 0, 0, 0, 0].as_slice(),
+        ensures: |ret| ret.as_image().as_ref() == [b'G', b'K', b'X', b'1', 4, 0, 1, 0, 2, 0, 2, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 2, 3, 0, 0x0d, 0, 2, 3, 0, 0, 0, 0].as_slice(),
     )]
     fn sealed_artifact() -> EncodedArtifact
     {
         let mut arena = TermArena::new();
         let kind = arena.value_type_universe(GroundSort::Value, gandr_kernel_strata::Level::zero());
+        let integer = arena.value_type_base(BaseType::Integer);
         let builder = DeclarationBuilder::new(&mut arena);
-        let atom = builder.abstract_type(LevelSignature::monomorphic(), kind);
+        let atom = builder.abstract_type(
+            LevelSignature::monomorphic(),
+            kind,
+            integer,
+            SealScope::Closed(SealExtent::from(1_usize)),
+        );
         let declared = arena.value_type_unit();
         let body = arena.value_unit();
         let definition = definition_over(&mut arena, declared, body);
@@ -3075,7 +3099,7 @@ mod sharing_format
     /// - witness: `sharing_format::sharing_format::a_minted_atom_table_naming_a_definition_is_refused`
     #[spec(
         ensures: |ret| ret.0.starts_with(b"GKX1")
-                && ret.0.get(4 .. 6) == Some([3_u8, 0].as_slice())
+                && ret.0.get(4 .. 6) == Some([4_u8, 0].as_slice())
                 && { let count = u64::try_from(atoms.len()).unwrap_or(u64::MAX);
             let valid_count = { let scalar = count;
             let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
@@ -3088,7 +3112,7 @@ mod sharing_format
             ret.0.as_slice().get((position) .. (position).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
             u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
                 && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) }).then_some(position.saturating_add(usize::try_from(64_u32.saturating_sub((atom.0).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX))) }) }
-            else { None } }.is_some_and(|position| ret.0.get(position ..) == Some([2_u8, 0, 2, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 2, 3, 0, 0x0d, 0, 1, 2, 0, 0, 0, 0].as_slice())),
+            else { None } }.is_some_and(|position| ret.0.get(position ..) == Some([2_u8, 0, 2, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 2, 3, 0, 0x0d, 0, 2, 3, 0, 0, 0, 0].as_slice())),
     )]
     fn sealed_with_atom_table(atoms: &[WireValue]) -> Bytes
     {
@@ -3124,17 +3148,59 @@ mod sharing_format
             .declarations()
             .first()
             .expect("the atom declaration decodes");
-        assert!(
-            matches!(
-                *first.declaration().content(),
-                DeclarationContent::AbstractType { .. }
-            ),
-            "an atom decodes as an atom rather than as an axiom"
+        let DeclarationContent::AbstractType {
+            representation,
+            scope,
+            ..
+        } = *first.declaration().content()
+        else {
+            panic!("an atom decodes as an atom rather than as an axiom");
+        };
+        assert_eq!(
+            artifact.arena().value_type(representation),
+            Some(&ValueType::Base(BaseType::Integer)),
+            "the atom carries the representation it was sealed over"
+        );
+        assert_eq!(
+            scope,
+            SealScope::Closed(SealExtent::from(1_usize)),
+            "and the admission that minted it holds the one member after it"
         );
         assert_eq!(
             Vec::from(bytes),
             Vec::from(encode(artifact.arena(), artifact.declarations())),
             "the sealed artifact re-encodes to the bytes it came from"
+        );
+    }
+
+    #[test]
+    fn a_seal_reaching_past_the_artifact_is_refused()
+    {
+        // The atom's extent is the last byte of its segment: the magic, the
+        // version, the one-entry table, the declaration count, then the
+        // segment's mark, kind, name, levels, entry count, the universe and
+        // integer entries, and its two roots.
+        let mut bytes = Vec::from(sealed_artifact());
+        let extent = bytes.get_mut(22).expect("the atom's extent byte");
+        assert_eq!(*extent, 1, "the fixture's atom holds its one member");
+        *extent = 2;
+        assert_eq!(
+            Err(DecodeError::Malformed {
+                site: MalformedSite::SealExtent,
+            }),
+            decode(ArtifactImage::from(bytes.as_slice())),
+            "an atom cannot hold a declaration the artifact does not carry"
+        );
+    }
+
+    #[test]
+    fn a_minted_atom_table_claiming_an_absent_atom_is_rejected()
+    {
+        let bytes = raw_artifact(current_version(), &[WireValue(0)], &[]);
+        assert_eq!(
+            Err(refuted_atom_table()),
+            decode(ArtifactImage::from(bytes.as_ref())),
+            "a table naming an atom the declarations do not contain is refused"
         );
     }
 

@@ -103,6 +103,7 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_term::AdmissionMark;
 use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::ArenaWatermark;
 use gandr_kernel_term::CompType;
@@ -112,6 +113,9 @@ use gandr_kernel_term::Declaration;
 use gandr_kernel_term::DeclarationBuilder;
 use gandr_kernel_term::DeclarationContent;
 use gandr_kernel_term::LevelSignature;
+use gandr_kernel_term::MarkedDeclaration;
+use gandr_kernel_term::SealExtent;
+use gandr_kernel_term::SealScope;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
@@ -687,14 +691,21 @@ impl<'env> Staging<'env>
         }
     }
 
-    /// Finalize a sealed abstract type at an already-minted universe kind.
+    /// Finalize a sealed abstract type at an already-minted universe kind, over
+    /// an already-minted representation, with the scope of its minting
+    /// admission.
+    ///
+    /// A producer sealing a module stages its atoms [`SealScope::Open`] and
+    /// closes them with [`Environment::seal`] once the module's members are
+    /// admitted; a replay stages them [`SealScope::Closed`] at the extent the
+    /// artifact carries, and the environment closes them itself.
     ///
     /// # Specification
     /// - requires: this session owns the final registration for its builder's
     ///   start mark, as established by construction and its exclusive borrow.
     /// - ensures: the returned abstract type retains that start mark and the
-    ///   supplied level signature and roots. Its arena content and registration
-    ///   remain live until admission, bypass, or abandonment.
+    ///   supplied level signature, roots and scope. Its arena content and
+    ///   registration remain live until admission, bypass, or abandonment.
     /// - provides: ownership transfer from a borrowing session to a staged
     ///   declaration without triggering either rollback or claim release.
     /// - fails: never.
@@ -709,7 +720,7 @@ impl<'env> Staging<'env>
         requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()),
         captures: [entry_start = self.builder.content_start()],
         ensures: |ret| ret.content_start == entry_start
-            && *ret.declaration.content() == DeclarationContent::AbstractType { kind }
+            && *ret.declaration.content() == DeclarationContent::AbstractType { kind, representation, scope }
     )]
     #[inline]
     #[must_use]
@@ -717,13 +728,17 @@ impl<'env> Staging<'env>
         self,
         levels: LevelSignature,
         kind: ValueTypeId,
+        representation: ValueTypeId,
+        scope: SealScope,
     ) -> StagedDeclaration
     {
         let content_start = self.builder.content_start();
         let _kept = core::mem::ManuallyDrop::new(self.claim);
         StagedDeclaration {
             content_start,
-            declaration: self.builder.abstract_type(levels, kind),
+            declaration: self
+                .builder
+                .abstract_type(levels, kind, representation, scope),
         }
     }
 }
@@ -776,6 +791,18 @@ impl AdmittedDeclaration
     {
         self.declaration.content()
     }
+
+    /// The declaration as the environment holds it: as staged, with an
+    /// abstract type's scope closed where the environment closed it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn declaration(&self) -> &Declaration
+    {
+        &self.declaration
+    }
 }
 
 /// The transitive audit of a declaration: the axioms and unchecked admissions
@@ -819,6 +846,42 @@ impl AxiomReport
     }
 }
 
+/// Why an artifact did not replay: the first declaration the kernel rejected,
+/// and the rejection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArtifactRefusal
+{
+    /// The artifact position of the rejected declaration.
+    position: ConstantIndex,
+    /// What the choke point refused it for.
+    error: KernelError,
+}
+
+impl ArtifactRefusal
+{
+    /// The artifact position of the rejected declaration.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn position(&self) -> ConstantIndex
+    {
+        self.position
+    }
+
+    /// What the choke point refused it for.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn error(&self) -> &KernelError
+    {
+        &self.error
+    }
+}
+
 /// The append-only kernel environment: one arena, and the admitted
 /// declarations in admission order.
 #[derive(Clone, Debug, Default)]
@@ -834,6 +897,9 @@ pub struct Environment
     /// The content-start marks of declarations staged into the arena and not
     /// yet resolved. What a rejection may not truncate through.
     outstanding: StagedMarks,
+    /// The atoms whose minting admission is open, ascending: what a
+    /// declaration admitted now reads as its representation.
+    manifest: Vec<ConstantIndex>,
 }
 
 impl Environment
@@ -1142,9 +1208,14 @@ impl Environment
             let Self {
                 ref mut arena,
                 ref entries,
+                ref manifest,
                 ..
             } = *self;
-            check::check_declaration(arena, entries, &levels, &declaration)
+            check::check_declaration(
+                arena,
+                check::Judgement::new(entries, &levels).unsealing(manifest),
+                &declaration,
+            )
         };
         match outcome {
             | Ok(()) => {
@@ -1159,6 +1230,7 @@ impl Environment
                     admission: Admission::Checked,
                     rested_on,
                 });
+                self.advance_seals(position);
                 Ok(CheckedId::new(position))
             },
             | Err(error) => {
@@ -1230,7 +1302,222 @@ impl Environment
             admission: Admission::Unchecked,
             rested_on,
         });
+        self.advance_seals(position);
         CheckedId::new(position)
+    }
+
+    /// Close the admission that minted `atom`: from the next admission on, the
+    /// atom is opaque.
+    ///
+    /// The kernel draws the boundary itself, from its own admission count: the
+    /// extent it records is how many declarations it admitted after the atom,
+    /// so no later declaration can claim its way inside, and an artifact
+    /// exported from this environment carries the boundary as drawn.
+    ///
+    /// # Specification
+    /// - requires: nothing — a receipt for anything but an open abstract type
+    ///   is refused.
+    /// - ensures: on success the atom is no longer manifest, its held
+    ///   declaration's scope is closed at the number of declarations admitted
+    ///   after it, and that extent is returned. Every other face of the
+    ///   environment is unchanged, and on failure nothing changes.
+    /// - provides: the close a producer sealing a module issues once its
+    ///   members are admitted.
+    /// - fails: [`KernelError::SealNotOpen`] when `atom` names no abstract type
+    ///   staged [`SealScope::Open`] whose admission is still open — a closed
+    ///   atom, one whose own scope closes it, or any other declaration.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`KernelError::SealNotOpen`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a member admitted before the close checks at the
+    ///   representation, a value of the representation offered after it is
+    ///   refused, and a second close of the same atom is refused.
+    /// - witness: `env::tests::a_value_of_the_representation_does_not_inhabit_the_atom`
+    /// - witness: `env::tests::an_atom_seals_once`
+    #[spec(
+        captures: [entry_len = self.entries.len(), entry_manifest = self.manifest.len()],
+        ensures: |ret| self.entries.len() == entry_len && ret.as_ref().map_or_else(
+            |error| self.manifest.len() == entry_manifest
+                && *error == KernelError::SealNotOpen { index: atom.position() },
+            |extent| self.manifest.len().checked_add(1) == Some(entry_manifest)
+                && !self.manifest.contains(&atom.position())
+                && usize::from(atom.position()).checked_add(usize::from(*extent)).and_then(|end| end.checked_add(1)) == Some(entry_len),
+        ),
+    )]
+    #[inline]
+    pub fn seal(
+        &mut self,
+        atom: CheckedId,
+    ) -> Result<SealExtent, KernelError>
+    {
+        let position = atom.position();
+        let refused = KernelError::SealNotOpen { index: position };
+        let Some(held) = self.manifest.iter().position(|&open| open == position)
+        else {
+            return Err(refused);
+        };
+        let extent = SealExtent::from(
+            self.entries
+                .len()
+                .saturating_sub(usize::from(position))
+                .saturating_sub(1),
+        );
+        let Some(entry) = self.entries.get_mut(usize::from(position))
+        else {
+            return Err(refused);
+        };
+        let DeclarationContent::AbstractType {
+            scope: SealScope::Open,
+            ..
+        } = *entry.declaration.content()
+        else {
+            return Err(refused);
+        };
+        entry.declaration = entry.declaration.clone().closed(extent);
+        let _closed = self.manifest.remove(held);
+        Ok(extent)
+    }
+
+    /// Re-admit an artifact's declarations, in order, into a fresh environment
+    /// over the arena their content lives in.
+    ///
+    /// Each declaration passes the same choke point it passed when it was
+    /// produced — checked through [`Self::add_decl`], or through the warned
+    /// bypass when the artifact marks it so — and each abstract type closes
+    /// at the extent its record carries, so a sealed module's members are
+    /// re-checked at the representation and every later declaration against
+    /// the atom.
+    ///
+    /// # Specification
+    /// - requires: every root of `declarations` resolves in `arena`, as a
+    ///   decoded artifact's do.
+    /// - ensures: `Ok` holding an environment with one entry per declaration,
+    ///   in order, each admitted as its mark says, whose audit is the producing
+    ///   environment's; or the first refusal with the position it met.
+    /// - provides: the replay a reader runs over a decoded artifact, which is
+    ///   what makes the artifact's opacity a kernel fact rather than a
+    ///   producer's claim.
+    /// - fails: [`ArtifactRefusal`] naming the first declaration the kernel
+    ///   rejects and why.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`ArtifactRefusal`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a sealed module's export replays; a copy whose client
+    ///   reads the atom at its representation, a copy whose atom was downgraded
+    ///   to an axiom, and a copy whose provenance was rewritten are each
+    ///   refused at the declaration that broke.
+    /// - witness: `sealed_export::sealed_export::the_export_of_a_sealed_module_replays`
+    /// - witness: `sealed_export::sealed_export::an_atom_downgraded_to_an_axiom_fails_to_replay`
+    /// - witness: `sealed_export::sealed_export::sealing_provenance_round_trips_and_cannot_be_rewritten`
+    #[spec(ensures: |ret| ret.as_ref().map_or_else(
+        |refusal| usize::from(refusal.position()) < declarations.len(),
+        |environment| environment.entries.len() == declarations.len(),
+    ))]
+    #[inline]
+    pub fn replay(
+        arena: TermArena,
+        declarations: &[MarkedDeclaration],
+    ) -> Result<Self, ArtifactRefusal>
+    {
+        let floor = arena.watermark();
+        let mut environment = Self {
+            arena,
+            admission_floor: floor,
+            ..Self::default()
+        };
+        for (position, marked) in declarations.iter().enumerate() {
+            let staged = StagedDeclaration {
+                content_start: floor,
+                declaration: marked.declaration().clone(),
+            };
+            match marked.mark() {
+                | AdmissionMark::Checked => {
+                    let _admitted =
+                        environment
+                            .add_decl(staged)
+                            .map_err(|error| ArtifactRefusal {
+                                position: ConstantIndex::from(position),
+                                error,
+                            })?;
+                },
+                | AdmissionMark::UncheckedBypass => {
+                    let _admitted = environment.add_decl_unchecked(staged);
+                },
+            }
+        }
+        Ok(environment)
+    }
+
+    /// Open an atom just admitted at `position`, and close every atom whose
+    /// scope that admission exhausted.
+    ///
+    /// # Specification
+    /// - requires: `position` is the last entry's.
+    /// - ensures: the manifest holds, ascending, exactly the earlier atoms
+    ///   staged open and not yet sealed, the earlier atoms whose closed scope
+    ///   still reaches past `position`, and the entry at `position` when it is
+    ///   an abstract type staged open or closed past nothing less than one
+    ///   declaration.
+    /// - provides: the one place the manifest moves on admission, shared by the
+    ///   checked choke point and the bypass.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a replayed atom closed after one member is manifest
+    ///   for that member and opaque for the next declaration.
+    /// - witness: `sealed_export::sealed_export::the_export_of_a_sealed_module_replays`
+    #[spec(ensures: self.manifest.windows(2).all(|pair| pair.first() < pair.last())
+        && self.manifest.iter().all(|&atom| atom <= position))]
+    fn advance_seals(
+        &mut self,
+        position: ConstantIndex,
+    )
+    {
+        let reaches_past = |atom: ConstantIndex, extent: SealExtent| {
+            usize::from(atom).saturating_add(usize::from(extent)) > usize::from(position)
+        };
+        let Self {
+            ref entries,
+            ref mut manifest,
+            ..
+        } = *self;
+        manifest.retain(|&atom| {
+            match entries
+                .get(usize::from(atom))
+                .map(AdmittedDeclaration::content)
+            {
+                | Some(&DeclarationContent::AbstractType {
+                    scope: SealScope::Closed(extent),
+                    ..
+                }) => reaches_past(atom, extent),
+                | Some(&DeclarationContent::AbstractType {
+                    scope: SealScope::Open,
+                    ..
+                }) => true,
+                | Some(_) | None => false,
+            }
+        });
+        match entries
+            .get(usize::from(position))
+            .map(AdmittedDeclaration::content)
+        {
+            | Some(&DeclarationContent::AbstractType {
+                scope: SealScope::Open,
+                ..
+            }) => manifest.push(position),
+            | Some(&DeclarationContent::AbstractType {
+                scope: SealScope::Closed(extent),
+                ..
+            }) if reaches_past(position, extent) => manifest.push(position),
+            | Some(_) | None => {},
+        }
     }
 
     /// The transitive audit of an admitted declaration.
@@ -1299,7 +1586,9 @@ impl Environment
     /// what its body names**, and the two are separate graphs to walk.
     /// Formation resting on a reference is exactly as load-bearing as a
     /// body resting on an axiom, so every arm's declared root is scanned —
-    /// an abstract type's own kind included.
+    /// an abstract type's own kind included, and its representation beside
+    /// it, because the members sealed over the atom were checked against
+    /// that representation and reach it through the atom.
     ///
     /// **The type plane has two reference forms, and both are followed here.**
     /// A sealed atom names a declaration directly; a code names one through
@@ -1313,12 +1602,12 @@ impl Environment
     /// - requires: `position` is the next admission index and `content` is its
     ///   declaration. Checked references name earlier admissions; a bypass is
     ///   itself an audit reason even if it names an unknown position.
-    /// - ensures: the union of the audits of every position the declared type
-    ///   or a definition's body names, with `position` itself included exactly
-    ///   when the declaration is an axiom or is being bypassed. Both reference
-    ///   forms of the type plane are followed — a sealed atom directly, and a
-    ///   code through the term language — so a declaration reachable only
-    ///   through a code stays in the graph.
+    /// - ensures: the union of the audits of every position the declared type,
+    ///   an abstract type's representation or a definition's body names, with
+    ///   `position` itself included exactly when the declaration is an axiom or
+    ///   is being bypassed. Both reference forms of the type plane are followed
+    ///   — a sealed atom directly, and a code through the term language — so a
+    ///   declaration reachable only through a code stays in the graph.
     /// - provides: the precomputed audit an admission stores, which makes the
     ///   report a lookup rather than a walk, and which is what lets "empty on
     ///   both faces" be a fact rather than a false negative.
@@ -1359,6 +1648,9 @@ impl Environment
             for root in parameters.iter().chain(constructors.iter().flatten()) {
                 direct.append(&mut audited_type_constants(&self.arena, *root));
             }
+        }
+        if let DeclarationContent::AbstractType { representation, .. } = *content {
+            direct.append(&mut audited_type_constants(&self.arena, representation));
         }
         if let DeclarationContent::Def { body, .. } = *content {
             direct.append(&mut collect_reachable(
@@ -1788,6 +2080,8 @@ mod tests
     use gandr_kernel_term::GroundSort;
     use gandr_kernel_term::LevelSignature;
     use gandr_kernel_term::Literal;
+    use gandr_kernel_term::SealExtent;
+    use gandr_kernel_term::SealScope;
     use gandr_kernel_term::StringLiteral;
     use gandr_kernel_term::TermArena;
 
@@ -2185,7 +2479,13 @@ mod tests
             let kind = staging
                 .arena()
                 .value_type_universe(GroundSort::Value, level(LevelConstant::from(0)));
-            staging.abstract_type(LevelSignature::monomorphic(), kind)
+            let integer = staging.arena().value_type_base(BaseType::Integer);
+            staging.abstract_type(
+                LevelSignature::monomorphic(),
+                kind,
+                integer,
+                SealScope::Closed(SealExtent::from(0_usize)),
+            )
         };
         let atom = environment.add_decl(atom).expect("an atom admits");
         // A declaration whose *type* names the atom, and whose body names the
@@ -2556,9 +2856,12 @@ mod tests
                         staging.sealed_def(LevelSignature::monomorphic(), declared, body, vec![])
                     },
                     | Finisher::Axiom => staging.axiom(LevelSignature::monomorphic(), declared),
-                    | Finisher::AbstractType => {
-                        staging.abstract_type(LevelSignature::monomorphic(), kind)
-                    },
+                    | Finisher::AbstractType => staging.abstract_type(
+                        LevelSignature::monomorphic(),
+                        kind,
+                        declared,
+                        SealScope::Open,
+                    ),
                 }
             };
             let before = environment.arena().watermark();
@@ -2629,6 +2932,202 @@ mod tests
         assert!(
             environment.add_decl(second).is_ok(),
             "and the outstanding declaration above it still admits"
+        );
+    }
+
+    /// Stage an abstract type at the value universe of level zero over the
+    /// integer, with `scope`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn integer_atom(
+        environment: &mut Environment,
+        scope: SealScope,
+    ) -> StagedDeclaration
+    {
+        let mut staging = environment.stage();
+        let kind = staging
+            .arena()
+            .value_type_universe(GroundSort::Value, level(LevelConstant::from(0)));
+        let integer = staging.arena().value_type_base(BaseType::Integer);
+        staging.abstract_type(LevelSignature::monomorphic(), kind, integer, scope)
+    }
+
+    /// Stage `def : declared = 7`, with `declared` the atom at `atom` when
+    /// given and the integer otherwise.
+    ///
+    /// # Specification
+    /// trivial.
+    fn seven_at(
+        environment: &mut Environment,
+        atom: Option<ConstantIndex>,
+    ) -> StagedDeclaration
+    {
+        let mut staging = environment.stage();
+        let declared = match atom {
+            | Some(atom) => staging.arena().value_type_abstract(atom),
+            | None => staging.arena().value_type_base(BaseType::Integer),
+        };
+        let seven = staging.arena().value_literal(Literal::Integer(
+            gandr_kernel_term::IntegerLiteral::new(
+                gandr_kernel_term::Sign::NonNegative,
+                gandr_kernel_term::Magnitude::from_decimal_text(String::from("7"))
+                    .expect("decimal digits"),
+            ),
+        ));
+        staging.def(LevelSignature::monomorphic(), declared, seven)
+    }
+
+    #[test]
+    fn a_value_of_the_representation_does_not_inhabit_the_atom()
+    {
+        let mut environment = Environment::new();
+        let atom = integer_atom(&mut environment, SealScope::Open);
+        let atom = environment.add_decl(atom).expect("an atom admits");
+        let inside = seven_at(&mut environment, Some(atom.position()));
+        let seed = environment
+            .add_decl(inside)
+            .expect("inside the minting admission the atom reads as the integer");
+        assert_eq!(
+            environment.seal(atom),
+            Ok(SealExtent::from(1_usize)),
+            "the admission closes after its one member"
+        );
+        let outside = seven_at(&mut environment, Some(atom.position()));
+        assert!(
+            matches!(
+                environment.add_decl(outside),
+                Err(KernelError::ValueTypeMismatch(_))
+            ),
+            "after the seal an integer does not inhabit the atom"
+        );
+        let leak = {
+            let mut staging = environment.stage();
+            let declared = staging.arena().value_type_base(BaseType::Integer);
+            let body = staging.arena().value_constant(seed.position());
+            staging.def(LevelSignature::monomorphic(), declared, body)
+        };
+        assert!(
+            matches!(
+                environment.add_decl(leak),
+                Err(KernelError::ValueTypeMismatch(_))
+            ),
+            "nor does the member sealed at it read as an integer"
+        );
+    }
+
+    #[test]
+    fn an_atom_seals_once()
+    {
+        let mut environment = Environment::new();
+        let open = integer_atom(&mut environment, SealScope::Open);
+        let open = environment.add_decl(open).expect("an open atom admits");
+        let closed = integer_atom(
+            &mut environment,
+            SealScope::Closed(SealExtent::from(1_usize)),
+        );
+        let closed = environment.add_decl(closed).expect("a closed atom admits");
+        let member = seven_at(&mut environment, None);
+        let member = environment.add_decl(member).expect("an integer admits");
+        assert_eq!(
+            environment.seal(closed),
+            Err(KernelError::SealNotOpen {
+                index: closed.position()
+            }),
+            "an atom whose own scope closes it is not closed by hand"
+        );
+        assert_eq!(
+            environment.seal(member),
+            Err(KernelError::SealNotOpen {
+                index: member.position()
+            }),
+            "a definition has no minting admission"
+        );
+        assert_eq!(
+            environment.seal(open),
+            Ok(SealExtent::from(2_usize)),
+            "the open atom closes after the two declarations admitted since"
+        );
+        assert_eq!(
+            environment.seal(open),
+            Err(KernelError::SealNotOpen {
+                index: open.position()
+            }),
+            "and closes once"
+        );
+    }
+
+    #[test]
+    fn a_sealed_atom_is_not_an_axiom_and_adds_no_obligation()
+    {
+        let mut environment = Environment::new();
+        let atom = integer_atom(&mut environment, SealScope::Open);
+        let atom = environment.add_decl(atom).expect("an atom admits");
+        let member = seven_at(&mut environment, Some(atom.position()));
+        let member = environment.add_decl(member).expect("the member admits");
+        let _extent = environment.seal(atom).expect("the atom seals");
+        for admitted in [atom, member] {
+            let report = environment.audit(admitted);
+            assert!(
+                report.axioms().is_empty(),
+                "neither the atom nor a member checked at its representation is an axiom"
+            );
+            assert!(
+                report.unchecked_admissions().is_empty(),
+                "and both crossed the checked choke point"
+            );
+        }
+    }
+
+    #[test]
+    fn audit_follows_the_declared_type_to_an_unchecked_atom()
+    {
+        let mut environment = Environment::new();
+        let sealed = integer_atom(
+            &mut environment,
+            SealScope::Closed(SealExtent::from(0_usize)),
+        );
+        let sealed = environment.add_decl_unchecked(sealed);
+        let axiom = {
+            let mut staging = environment.stage();
+            let declared = staging.arena().value_type_abstract(sealed.position());
+            staging.axiom(LevelSignature::monomorphic(), declared)
+        };
+        let axiom = environment
+            .add_decl(axiom)
+            .expect("an axiom at the atom admits");
+        assert_eq!(
+            environment.audit(axiom).unchecked_admissions(),
+            &[sealed.position()],
+            "formation rests on the unchecked atom, so the audit reports it"
+        );
+    }
+
+    #[test]
+    fn a_representation_above_its_kind_is_refused()
+    {
+        let mut environment = Environment::new();
+        let atom = {
+            let mut staging = environment.stage();
+            let kind = staging
+                .arena()
+                .value_type_universe(GroundSort::Value, level(LevelConstant::from(0)));
+            let universe = staging
+                .arena()
+                .value_type_universe(GroundSort::Value, level(LevelConstant::from(0)));
+            staging.abstract_type(
+                LevelSignature::monomorphic(),
+                kind,
+                universe,
+                SealScope::Open,
+            )
+        };
+        assert!(
+            matches!(
+                environment.add_decl(atom),
+                Err(KernelError::UniverseViolation(_))
+            ),
+            "a universe lives one level above the kind it would be sealed at"
         );
     }
 }
