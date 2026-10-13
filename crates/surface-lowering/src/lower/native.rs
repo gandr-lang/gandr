@@ -265,6 +265,8 @@ use quenchant_shape::shape::Maybe;
 use super::FormName;
 use super::Former;
 use super::Function;
+use super::LabelRead;
+use super::LabelSite;
 use super::Lowered;
 use super::Lowerer;
 use super::Plan;
@@ -3018,13 +3020,16 @@ impl<'source> Lowerer<'_, 'source>
     ///   bind in a telescope.
     /// - ensures: `ty` itself when every frame binds; otherwise `ty` with a
     ///   binder inserted for each frame that does not, each node the rewrite
-    ///   mints recorded with `origin`.
+    ///   copies recorded at the origin of the node it copies and every other
+    ///   node it mints with `origin`.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a closed annotation is carried unchanged.
+    /// - hypothesis: L3 — a closed annotation is carried unchanged, and one
+    ///   under a match's binders keeps each of its nodes at its bytes.
     /// - witness: `lower::native::tests::a_parameterized_constructor_needs_its_classifier`
+    /// - witness: `lower::native::tests::a_relocated_annotation_keeps_its_bytes`
     #[spec(ensures: |ret| sink.arena.value_type(ret).is_some() || ret == ty)]
     pub(super) fn relocate_value_type(
         &self,
@@ -3039,16 +3044,24 @@ impl<'source> Lowerer<'_, 'source>
         }
         let mark = sink.arena.watermark();
         let wrapped = sink.arena.comp_type_returner(ty);
-        let carried = self.relocate(sink.arena, wrapped, frame, Binders::default(), None);
+        let mut copies = Vec::new();
+        let carried = self.relocate(
+            sink.arena,
+            wrapped,
+            frame,
+            Binders::default(),
+            Some(&mut copies),
+        );
         let result = match sink.arena.comp_type(carried) {
             | Some(&CompType::Returner { result: inner, .. }) => inner,
             | _ => ty,
         };
-        record_since(
+        record_copied_since(
             sink,
             mark,
             origin,
             Maybe::Absent(rooted::Absent::Classifier),
+            &copies,
         );
 
         result
@@ -3804,7 +3817,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   name the frame of a recursive function's fixpoint binds, and which
     ///   heads a call passing each of that function's parameters before the
     ///   last as itself and one argument more, stands as the variable the frame
-    ///   binds and makes the function's fixpoint claim descent.
+    ///   binds and makes the function's fixpoint claim descent; each leading
+    ///   argument, which the call erases, is labelled with its parameter's
+    ///   written type.
     /// - provides: the head of a recursive call.
     /// - fails: the reserved refusal for any other resident, a termination
     ///   claim the grammar reserves; the unadmitted refusal for an
@@ -3914,6 +3929,17 @@ impl<'source> Lowerer<'_, 'source>
                     ..descent.call
                 };
                 return Err(varied.out(FragmentBoundary::NonUniform));
+            }
+            // The argument is the parameter itself, which the fixpoint binds
+            // outside the call: it answers at the parameter's written type.
+            if let Maybe::Present(declared) = parameter.declared
+                && let Reading::ValueType(read) = self.reading(declared)
+            {
+                self.labels.push(LabelSite {
+                    written: passed.span,
+                    held: declared,
+                    read: LabelRead::ValueType(read),
+                });
             }
         }
         if let Some(held) = self.recursions.get_mut(&bound.binder) {
