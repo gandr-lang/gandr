@@ -9,8 +9,10 @@ use gandr_kernel_term::ComputationId;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::ValueId;
+use gandr_kernel_term::ValueTypeId;
 
 use super::Allowance;
+use super::Boundary;
 use super::Certificate;
 use super::Family;
 use super::Flow;
@@ -21,6 +23,7 @@ use super::Flows;
 use super::Reduct;
 use super::Ride;
 use super::Seam;
+use super::Variance;
 use super::coverage;
 use crate::check::check_closed_value;
 use crate::check::synth_closed_value;
@@ -38,33 +41,40 @@ use crate::replay::Unfoldings;
 /// # Specification
 /// - ensures: every translator checks in a fresh closed-check session and every
 ///   symbolic image replays positively; sequential seams match types. Explicit
-///   feedback is refused, even when both endpoint types coincide. Generated
-///   terms remain in `arena`; callers may restore its watermark. Session
-///   introductions recheck native payload formation, every supplied simulation
-///   pair and every native payload-path obligation.
+///   feedback is refused, even when both endpoint types coincide. A function
+///   introduction's endpoints are function codes over first-order codes, and
+///   each boundary flow runs in the direction its [`Boundary::variance`] fixes.
+///   Generated terms remain in `arena`; callers may restore its watermark.
+///   Session introductions recheck native payload formation, every supplied
+///   simulation pair and every native payload-path obligation.
 /// - provides: `Flow_U source target`, never an admission capability.
-/// - fails: code, typing, coverage, naturality, replay, seam or budget errors.
+/// - fails: code, typing, coverage, naturality, replay, seam, boundary or
+///   budget errors.
 /// - panics: none.
 ///
 /// # Errors
-/// Code, typing, session-replay, seam or budget errors.
+/// Code, typing, session-replay, seam, boundary or budget errors.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — both terminal branches form; wrong images refuse;
-///   injection followed by fold admits, but explicit feedback does not.
+///   injection followed by fold admits, but explicit feedback does not; a
+///   function flow forms only with its domain boundary reversed.
 /// - witness: `flow_universe::tests::terminal_ride_and_stay_compute`
 /// - witness: `flow_universe::tests::constant_leaf_and_forged_evidence_refuse`
 /// - witness: `flow_universe::tests::composition_preserves_direction_and_refuses_feedback`
+/// - witness: `flow_universe::tests::function::directed_funext_forms_and_rides_in_variance_order`
+/// - witness: `flow_universe::tests::function::symmetry_refusal_holds_at_a_thunk_code`
 /// - witness: `session::tests::session_relations_replay_without_search`
 #[spec(ensures: |ret| match ret {
     Ok(classifier) => u64::from(budget) > 0 && match flows.get(root) {
         Ok(&Flow::Stay(code)) => classifier.source == classifier.target && matches!(arena.value(code), Some(&gandr_kernel_term::Value::Quote(root)) if root == classifier.source),
-        Ok(&Flow::Forward { source, target, .. } | &Flow::Session { source, target, .. }) => matches!(arena.value(source), Some(&gandr_kernel_term::Value::Quote(root)) if root == classifier.source) && matches!(arena.value(target), Some(&gandr_kernel_term::Value::Quote(root)) if root == classifier.target),
+        Ok(&Flow::Forward { source, target, .. } | &Flow::Session { source, target, .. } | &Flow::Function { source, target, .. }) => matches!(arena.value(source), Some(&gandr_kernel_term::Value::Quote(root)) if root == classifier.source) && matches!(arena.value(target), Some(&gandr_kernel_term::Value::Quote(root)) if root == classifier.target),
         Ok(&Flow::Compose { seam: Seam::Sequence, .. }) => true,
         _ => false,
     },
     Err(FlowError::Cycle { first, second }) => flows.0.iter().any(|flow| matches!(flow, &Flow::Compose { first: a, second: b, seam: Seam::Feedback } if a == first && b == second)),
     Err(FlowError::UnknownFlow(id)) => flows.0.get(id.0).is_none(),
+    Err(FlowError::Boundary(_)) => flows.0.iter().any(|flow| matches!(flow, &Flow::Function { .. })),
     Err(_) => true,
 })]
 #[inline]
@@ -111,7 +121,7 @@ pub fn form(
                 FlowType { source, target }
             },
             | &Flow::Stay(code) => {
-                let source = coverage::code(arena, code, &mut allowance)?;
+                let source = coverage::endpoint(arena, code, &mut allowance)?;
                 FlowType {
                     source,
                     target: source,
@@ -128,6 +138,43 @@ pub fn form(
                 coverage::translator(arena, translator, source, target)?;
                 coverage::forward(arena, source, target, translator, images, budget)?;
                 FlowType { source, target }
+            },
+            | &Flow::Function {
+                source,
+                target,
+                domain,
+                codomain,
+            } => {
+                if !expanded {
+                    pending.push((id, true));
+                    pending.push((codomain, false));
+                    pending.push((domain, false));
+                    continue;
+                }
+                let source = coverage::function(arena, source, &mut allowance)?;
+                let target = coverage::function(arena, target, &mut allowance)?;
+                let domain = formed.get(&domain).ok_or(FlowError::UnknownFlow(domain))?;
+                boundary(
+                    arena,
+                    Boundary::Domain,
+                    *domain,
+                    source.domain,
+                    target.domain,
+                )?;
+                let codomain = formed
+                    .get(&codomain)
+                    .ok_or(FlowError::UnknownFlow(codomain))?;
+                boundary(
+                    arena,
+                    Boundary::Codomain,
+                    *codomain,
+                    source.codomain,
+                    target.codomain,
+                )?;
+                FlowType {
+                    source: source.code,
+                    target: target.code,
+                }
             },
             | &Flow::Compose {
                 first,
@@ -164,6 +211,50 @@ pub fn form(
         formed.insert(id, classifier);
     }
     formed.remove(&root).ok_or(FlowError::UnknownFlow(root))
+}
+
+/// Check that a boundary flow runs in the direction its variance fixes.
+///
+/// # Specification
+/// - ensures: a covariant boundary flow runs from the source function's part to
+///   the target function's part; a contravariant one runs from the target's
+///   part to the source's.
+/// - fails: `Boundary` naming the position when either endpoint type differs.
+/// - panics: none.
+///
+/// # Errors
+/// `FlowError::Boundary`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one certificate admits at both boundaries between codes
+///   whose parts it orients, and its reverse refuses at each, naming it.
+/// - witness: `flow_universe::tests::function::directed_funext_forms_and_rides_in_variance_order`
+/// - witness: `flow_universe::tests::function::symmetry_refusal_holds_at_a_thunk_code`
+#[spec(ensures: |ret| match ret {
+    Ok(()) => true,
+    Err(FlowError::Boundary(named)) => named == boundary,
+    Err(_) => false,
+})]
+fn boundary(
+    arena: &TermArena,
+    boundary: Boundary,
+    flow: FlowType,
+    source_part: ValueTypeId,
+    target_part: ValueTypeId,
+) -> Result<(), FlowError>
+{
+    let (from, to) = match boundary.variance() {
+        | Variance::Covariant => (source_part, target_part),
+        | Variance::Contravariant => (target_part, source_part),
+    };
+    if convertible_value_types(arena, flow.source, from) == Convertibility::Convertible
+        && convertible_value_types(arena, flow.target, to) == Convertibility::Convertible
+    {
+        Ok(())
+    }
+    else {
+        Err(FlowError::Boundary(boundary))
+    }
 }
 
 /// A formed classifier retaining its independent certificate family.
@@ -274,9 +365,10 @@ fn flow_id(certificate: Certificate) -> Result<FlowId, FlowError>
 ///
 /// # Adequacy
 /// - hypothesis: L3 — terminal transport admits both Bool constructors and
-///   rejects a source value of the wrong type.
+///   rejects a source value of the wrong type; a function flow rejects a Bool.
 /// - witness: `flow_universe::tests::terminal_ride_and_stay_compute`
 /// - witness: `flow_universe::tests::formation_boundaries_refuse`
+/// - witness: `flow_universe::tests::function::directed_funext_forms_and_rides_in_variance_order`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |result| *result == term && matches!(result.certificate, Certificate::Flow(_))))]
 #[inline]
 pub fn elaborate(
@@ -298,7 +390,10 @@ pub fn elaborate(
 /// # Specification
 /// - requires: `root` passed formation in the current arena.
 /// - ensures: Stay lowers to identity; Forward retains its translator; Sequence
-///   uses CBPV bind in source-to-target order, with no inverse construction.
+///   uses CBPV bind in source-to-target order, with no inverse construction. A
+///   function introduction lowers to `λf. return (thunk (λa'. domain a' to a. f
+///   a to b. codomain b))`: the argument boundary's translator runs before the
+///   function and the result boundary's after it.
 /// - fails: `UnknownFlow`, `Arena`, `Cycle` or `Budget`; session introductions
 ///   return `RecordedRunRequired` because no endpoint-value eliminator exists.
 /// - panics: none.
@@ -308,14 +403,16 @@ pub fn elaborate(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — composed injection/fold acts as identity, terminal then
-///   injection chooses that injection, and a formed session flow refuses value
-///   lowering rather than manufacturing an endpoint or identity translator.
+///   injection chooses that injection, a function flow applies its boundaries
+///   in variance order, and a formed session flow refuses value lowering rather
+///   than manufacturing an endpoint or identity translator.
 /// - witness: `flow_universe::tests::composition_preserves_direction_and_refuses_feedback`
+/// - witness: `flow_universe::tests::function::directed_funext_forms_and_rides_in_variance_order`
 /// - witness: `flow_universe::rules::tests::session_lowering_requires_a_recorded_run`
 #[spec(ensures: |ret| match ret {
     Ok(value) => u64::from(budget) > 0 && match flows.get(root) {
         Ok(&Flow::Forward { translator, .. }) => value == translator,
-        Ok(&Flow::Stay(_) | &Flow::Compose { seam: Seam::Sequence, .. }) => matches!(arena.value(value), Some(&gandr_kernel_term::Value::Thunk(_))),
+        Ok(&Flow::Stay(_) | &Flow::Compose { seam: Seam::Sequence, .. } | &Flow::Function { .. }) => matches!(arena.value(value), Some(&gandr_kernel_term::Value::Thunk(_))),
         _ => false,
     },
     Err(FlowError::Cycle { first, second }) => flows.0.iter().any(|flow| matches!(flow, &Flow::Compose { first: a, second: b, seam: Seam::Feedback } if a == first && b == second)),
@@ -371,6 +468,38 @@ fn lower(
                 let lambda = arena.computation_lambda(body);
                 arena.value_thunk(lambda)
             },
+            | &Flow::Function {
+                domain, codomain, ..
+            } => {
+                if !expanded {
+                    pending.push((id, true));
+                    pending.push((codomain, false));
+                    pending.push((domain, false));
+                    continue;
+                }
+                let domain = *lowered.get(&domain).ok_or(FlowError::UnknownFlow(domain))?;
+                let codomain = *lowered
+                    .get(&codomain)
+                    .ok_or(FlowError::UnknownFlow(codomain))?;
+                // Beneath `λa'`, each bind adds one binder: the function `f`
+                // sits at index 1 under `λa'` and at index 2 once `a` is bound.
+                // The boundary translators are closed and need no shift.
+                let argument = arena.value_variable(DeBruijnIndex::from(0_u32));
+                let function = arena.value_variable(DeBruijnIndex::from(2_u32));
+                let domain = arena.computation_force(domain);
+                let domain = arena.computation_application(domain, argument);
+                let function = arena.computation_force(function);
+                let function = arena.computation_application(function, argument);
+                let codomain = arena.computation_force(codomain);
+                let codomain = arena.computation_application(codomain, argument);
+                let result = arena.computation_bind(function, codomain);
+                let body = arena.computation_bind(domain, result);
+                let lambda = arena.computation_lambda(body);
+                let transported = arena.value_thunk(lambda);
+                let returned = arena.computation_return(transported);
+                let lambda = arena.computation_lambda(returned);
+                arena.value_thunk(lambda)
+            },
         };
         lowered.insert(id, function);
     }
@@ -392,10 +521,12 @@ fn lower(
 /// `FamilyMismatch`, `UnknownFlow`, `Cycle`, `Arena` or `Budget`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — Stay returns its original input at zero lowering budget;
-///   forward action and composition compute their specified outputs.
+/// - hypothesis: L3 — Stay returns its original input at zero lowering budget,
+///   at a first-order and at a function code; forward action, composition and
+///   function flows compute their specified outputs.
 /// - witness: `flow_universe::tests::terminal_ride_and_stay_compute`
 /// - witness: `flow_universe::tests::composition_preserves_direction_and_refuses_feedback`
+/// - witness: `flow_universe::tests::function::stay_at_a_thunk_code_collapses`
 #[spec(
     captures: before = arena.watermark(),
     ensures: |ret| match ret {

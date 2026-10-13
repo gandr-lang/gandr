@@ -1,19 +1,23 @@
-//! Forward-only certificates over closed first-order and session codes.
+//! Forward-only certificates over closed first-order, function and session
+//! codes.
 //!
 //! Formation checks a closed translator and replays its action on every
 //! constructor pattern with rigid Base leaves. Output patterns may rearrange,
 //! duplicate or discard those leaves, but cannot manufacture or inspect them.
-//! `ride` replays the forward action; `stay` returns its argument in one step.
-//! Session introductions replay finite simulations and have a recorded-run
-//! consumer rather than a CBPV endpoint-value action. The syntax is an
-//! in-memory rule language, separate from native terms and
-//! from universe paths. It carries no admission receipt or reusable verdict.
+//! At a function code, formation orients two boundary flows by the variance
+//! the arrow fixes and assembles the translator from them. `ride` replays the
+//! forward action; `stay` returns its argument in one step. Session
+//! introductions replay finite simulations and have a recorded-run consumer
+//! rather than a CBPV endpoint-value action. The syntax is an in-memory rule
+//! language, separate from native terms and from universe paths. It carries
+//! no admission receipt or reusable verdict.
 //!
 //! # The family
 //!
 //! This module defines a separate in-memory `Flow_U a b` family over quoted
-//! Base codes, products of any arity (the unit among them) and sums of at
-//! least one summand. The empty sum is outside the vocabulary. A forward
+//! Base codes, products of any arity (the unit among them), sums of at least
+//! one summand, and function codes `U (A → F B)` whose argument and result
+//! are among those. The empty sum is outside the vocabulary. A forward
 //! certificate stores one closed CBPV translator and one proposed
 //! image/dialogue per source constructor pattern. It carries neither an
 //! inverse nor round-trip evidence. Every consuming formation checks the
@@ -31,6 +35,9 @@
 //! | Family separation | A valid equivalence at a Flow boundary, or a Flow at a Path boundary, returns `FamilyMismatch`. |
 //! | Sequential composition | `Compose { seam: Sequence, .. }` checks the intermediate type and lowers in order to CBPV bind. |
 //! | Feedback | Connecting the second output back into the first input returns `Cycle` with both occurrences. |
+//! | Function formation | `Function` forms `Flow_U (U (A → F B)) (U (A' → F B'))` from `Flow_U A' A` at the contravariant domain and `Flow_U B B'` at the covariant codomain; a boundary flow running the other way returns `Boundary`. |
+//! | Function computation | `ride` runs the domain translator, then the function, then the codomain translator; `stay` at a function code returns its function in one step. |
+//! | Function stock | `Forward` refuses function endpoints with `UnsupportedType`: a function has no constructor pattern to cover. |
 //!
 //! **Native family boundary.** `Certificate::Path` carries a native value id.
 //! `form_certificate` synthesizes that value through the ordinary closed
@@ -61,31 +68,73 @@
 //! closed-code gate handles explicit two-occurrence seams, not a general
 //! reflected cell-support graph or invertible-core comparison.
 //!
+//! # Directed funext
+//!
+//! **The arrow's action is the statement.** `Flow_U` at a function code is a
+//! forward flow of results over a forward flow of arguments, the argument flow
+//! running from the target's domain to the source's. Variance is data:
+//! [`Boundary::variance`] is all the formation rule reads to orient a
+//! boundary, and it is the reversal [`Motive::Arrow`] applies to a motive. No
+//! modality, polarity-annotated context or internal hom object enters. The
+//! statement binds no variable, since its boundaries are closed certificates,
+//! so the divariant variable that keeps directed function extensionality out
+//! of a polarity calculus does not arise (Jacob Neumann, *A Generalized
+//! Algebraic Theory of Directed Equality*, doctoral thesis, University of
+//! Nottingham, 2025, §0.2 and §4.4). Riding a flow through a function's
+//! argument is the motive `Arrow(El(Moving), El(Fixed))`, which
+//! [`check_motive`] refuses as it refuses symmetry: the argument boundary is
+//! consumed only contravariantly, by this clause.
+//!
+//! **Leaves at a function code.** Both boundary flows are leaf-natural
+//! certificates and the assembled translator only composes them with its
+//! argument, so the translator manufactures no leaf: a constant result
+//! boundary refuses as `NonNatural` before the function flow forms. The arrow
+//! of two `stay`s rides a function to itself by conversion replay.
+//!
+//! **What the clause does not state.** A flow between two functions of one
+//! first-order function code would relate their outputs pointwise over
+//! related inputs. First-order elements carry only identities, so that
+//! relation is element identity at the thunk code, which
+//! [`crate::identity_recursion`] computes; this module adds nothing there. A
+//! natural transformation between code-valued functions, where an argument
+//! would occur at both variances, is outside the clause.
+//!
 //! # Decision
 //!
 //! **Choice.** The rule arena reuses native closed checking and conversion
 //! replay. Flat, constructor-ordered ids and bounded iterative walks avoid
 //! recursive ownership; formation and lowering tables live only for one call.
+//! The function clause is structural: the kernel assembles its translator
+//! from formed boundary flows, and it carries both endpoint codes so a
+//! misdirected boundary refuses by name.
 //! **Alternatives.** A second evaluator; host-language translators, which
 //! would bypass the obligation; native persisted formers, which would require
-//! encoding, support and wire integration. No wire tag is allocated.
+//! encoding, support and wire integration. No wire tag is allocated. At
+//! function codes: forward translators covered symbolically, which have no
+//! constructor pattern to replay and would need leaf-naturality redefined for
+//! exponentials; a classifier derived from the boundary flows alone, under
+//! which no direction can be refused; and a polarity modality on contexts.
 //! **Reversal.** Declaration admission must consume Flow syntax. Motive
 //! checking is the term-structural covariance side condition over El, Flow,
 //! Arrow, Sum and Product; value transport uses `El(Moving)`. General
 //! dependent directed elimination and the reflected variance calculus remain
-//! outside this rule language.
+//! outside this rule language. The function clause is revisited when an
+//! argument code is itself a function or universe code, where an argument
+//! variable would occur at both variances, or when a translator at function
+//! codes that is not the arrow of two boundary flows must be certified.
 //!
 //! # Witnesses
 //!
-//! The seven witnesses in this module's tests use the independent conversion
+//! The eleven witnesses in this module's tests use the independent conversion
 //! engine and exact expected outputs. The public replay boundary restores its
 //! arena watermark on success and failure. Its memo discipline is the memo's
 //! six-condition discipline: no caller-supplied checker memo, persistent
 //! verdict, storage policy or authority-bearing hit. A standalone mutation
 //! campaign belongs over leaf aliasing and type confusion, manufactured
 //! constants, omitted source coverage, forged dialogues, reversed
-//! composition, missed feedback, motive sign propagation, family coercion and
-//! Stay reduction; no campaign or score is claimed.
+//! composition, missed feedback, motive sign propagation, family coercion,
+//! Stay reduction, boundary orientation and boundary order in lowering; no
+//! campaign or score is claimed.
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::fmt;
@@ -162,9 +211,10 @@ pub enum Seam
 ///   translator and the requested seam.
 /// # Adequacy
 /// - hypothesis: L3 — a terminal map forms without an inverse; feedback
-///   refuses.
+///   refuses; a function flow forms from two boundary flows.
 /// - witness: `flow_universe::tests::terminal_ride_and_stay_compute`
 /// - witness: `flow_universe::tests::composition_preserves_direction_and_refuses_feedback`
+/// - witness: `flow_universe::tests::function::directed_funext_forms_and_rides_in_variance_order`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Flow
 {
@@ -180,7 +230,7 @@ pub enum Flow
         /// Native payload-path tuple, terminated by Unit.
         payload_paths: ValueId,
     },
-    /// Directed reflexivity at a quoted closed first-order code.
+    /// Directed reflexivity at a quoted closed first-order or function code.
     Stay(ValueId),
     /// A leaf-natural forward translator with exhaustive symbolic replay.
     Forward
@@ -193,6 +243,20 @@ pub enum Flow
         translator: ValueId,
         /// One output and dialogue per source constructor pattern.
         images: Vec<Image>,
+    },
+    /// The arrow's action at a function code `U (A → F B)` over first-order
+    /// codes: a forward flow of results over a forward flow of arguments,
+    /// each boundary running in the direction its variance fixes.
+    Function
+    {
+        /// Quoted source function code `U (A → F B)`.
+        source: ValueId,
+        /// Quoted target function code `U (A' → F B')`.
+        target: ValueId,
+        /// The contravariant argument boundary, `Flow_U A' A`.
+        domain: FlowId,
+        /// The covariant result boundary, `Flow_U B B'`.
+        codomain: FlowId,
     },
     /// Connect two certificate occurrences; formation checks the requested
     /// seam.
@@ -227,7 +291,7 @@ pub enum Certificate
     Flow(FlowId),
 }
 
-/// Endpoint variance in the directed classifier.
+/// Endpoint and boundary variance in the directed classifier.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Variance
 {
@@ -235,6 +299,45 @@ pub enum Variance
     Contravariant,
     /// Produced output; moving occurrences preserve direction here.
     Covariant,
+}
+
+/// A function code's boundary, marked with the variance the arrow fixes there.
+///
+/// # Specification
+/// - provides: the boundary's position; [`Boundary::variance`] is the only
+///   source of the direction a boundary flow must run.
+/// - panics: none.
+/// - executable: none — a position carries no behavior; formation reads its
+///   variance when it orients a boundary flow.
+/// # Adequacy
+/// - hypothesis: L3 — a domain flow supplied covariantly and a codomain flow
+///   supplied contravariantly each refuse, naming the boundary.
+/// - witness: `flow_universe::tests::function::symmetry_refusal_holds_at_a_thunk_code`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Boundary
+{
+    /// The argument position: the arrow reverses variance here.
+    Domain,
+    /// The result position: the arrow preserves variance here.
+    Codomain,
+}
+
+impl Boundary
+{
+    /// The variance the arrow fixes at this boundary, as [`Motive::Arrow`]
+    /// reads it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn variance(self) -> Variance
+    {
+        match self {
+            | Self::Domain => Variance::Contravariant,
+            | Self::Codomain => Variance::Covariant,
+        }
+    }
 }
 
 impl Variance
@@ -301,14 +404,19 @@ impl Flows
     /// `FlowError::UnknownFlow`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — composition resolves each child and retains its
-    ///   order.
+    /// - hypothesis: L3 — composition and function introductions resolve each
+    ///   child and retain their order.
     /// - witness: `flow_universe::tests::composition_preserves_direction_and_refuses_feedback`
+    /// - witness: `flow_universe::tests::function::directed_funext_forms_and_rides_in_variance_order`
     #[spec(
         captures: before = self.0.len(),
         ensures: |ret| match ret {
             Ok(id) => id.0 == before && self.0.len() == before.saturating_add(1)
-                && match self.0.get(id.0) { Some(&Flow::Compose { first, second, .. }) => first.0 < id.0 && second.0 < id.0, Some(_) => true, None => false },
+                && match self.0.get(id.0) {
+                    Some(&Flow::Compose { first: a, second: b, .. } | &Flow::Function { domain: a, codomain: b, .. }) => a.0 < id.0 && b.0 < id.0,
+                    Some(_) => true,
+                    None => false,
+                },
             Err(FlowError::UnknownFlow(id)) => self.0.len() == before && id.0 >= before,
             Err(_) => false,
         },
@@ -319,7 +427,13 @@ impl Flows
         flow: Flow,
     ) -> Result<FlowId, FlowError>
     {
-        if let Flow::Compose { first, second, .. } = flow {
+        if let Flow::Compose { first, second, .. }
+        | Flow::Function {
+            domain: first,
+            codomain: second,
+            ..
+        } = flow
+        {
             self.get(first)?;
             self.get(second)?;
         }
@@ -431,6 +545,9 @@ pub enum FlowError
     },
     /// Moving endpoint occurs contravariantly in the motive.
     NonCovariantMotive(MotiveId),
+    /// A function code's boundary flow does not run in the direction its
+    /// variance fixes.
+    Boundary(Boundary),
     /// Missing motive syntax.
     UnknownMotive(MotiveId),
     /// Construction or traversal allowance exhausted.
@@ -481,6 +598,12 @@ impl fmt::Display for FlowError
                 ..
             } => f.write_str("expected Path, found Flow"),
             | &Self::NonCovariantMotive(_) => f.write_str("non-covariant directed motive"),
+            | &Self::Boundary(Boundary::Domain) => {
+                f.write_str("the domain boundary flow must run contravariantly")
+            },
+            | &Self::Boundary(Boundary::Codomain) => {
+                f.write_str("the codomain boundary flow must run covariantly")
+            },
             | &Self::UnknownMotive(_) => f.write_str("unknown directed motive"),
             | &Self::Budget => f.write_str("universe-flow budget exhausted"),
             | &Self::Path(ref error) => write!(f, "universe-path formation: {error}"),
