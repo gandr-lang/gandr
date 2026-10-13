@@ -609,6 +609,8 @@ pub use exits::InferredExit;
 
 mod functor;
 
+mod loops;
+
 mod runs;
 
 pub use runs::AskedRuns;
@@ -1162,15 +1164,17 @@ enum Family
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum Ending
 {
-    /// The form is the exit: `return` or `become`.
+    /// The form is the exit: `return` or `become`, or a loop's `break` or
+    /// `continue`.
     Exit,
     /// The form passes the end on to what ends it — a block's last
     /// computation, a match's arms, a grouping's operand, a lambda's own body,
-    /// which answers the function type the end has — or is a hole, which the
-    /// author has yet to fill.
+    /// which answers the function type the end has, a loop's `break`s — or is
+    /// a hole, which the author has yet to fill.
     Passes,
     /// The form ends the body without an exit, so the lowering infers the one
-    /// its polarity names: `return` over a value, `become` over a computation.
+    /// its position names: at a body's end, `return` over a value and `become`
+    /// over a computation; at a loop body's end, the loop's re-entry.
     Inferred,
 }
 
@@ -1178,9 +1182,9 @@ enum Ending
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: `return` and `become` are the exit; a block, a match, an offer, a
-///   copattern block, a grouping, a lambda and a hole pass the end on; every
-///   other former takes an inferred exit.
+/// - ensures: `return`, `become`, `break` and `continue` are the exit; a block,
+///   a match, an offer, a copattern block, a grouping, a lambda, a loop and a
+///   hole pass the end on; every other former takes an inferred exit.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -1190,21 +1194,24 @@ enum Ending
 /// - witness: `lower::tests::an_exit_lowers_where_a_path_passes_and_nowhere_else`
 /// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
 #[spec(ensures: |ret| match former {
-    Former::Exit | Former::Become => ret == Ending::Exit,
-    Former::Block | Former::Case | Former::Offer | Former::LazyRecord | Former::Parenthesized | Former::Lambda | Former::Hole => ret == Ending::Passes,
+    Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
+    Former::Block | Former::Case | Former::Offer | Former::LazyRecord | Former::Parenthesized | Former::Lambda | Former::Hole | Former::Loop | Former::While | Former::For => ret == Ending::Passes,
     _ => ret == Ending::Inferred,
 })]
 fn ending(former: Former) -> Ending
 {
     match former {
-        | Former::Exit | Former::Become => Ending::Exit,
+        | Former::Exit | Former::Become | Former::Break | Former::Continue => Ending::Exit,
         | Former::Block
         | Former::Case
         | Former::Offer
         | Former::LazyRecord
         | Former::Parenthesized
         | Former::Lambda
-        | Former::Hole => Ending::Passes,
+        | Former::Hole
+        | Former::Loop
+        | Former::While
+        | Former::For => Ending::Passes,
         | Former::Name
         | Former::Constructor
         | Former::Number
@@ -1251,6 +1258,42 @@ fn ending(former: Former) -> Ending
     }
 }
 
+/// How `former`, standing where a path through a loop's body ends, treats
+/// that end.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the four exits are the exit; a block, a match, an offer, a
+///   grouping and a hole pass the end on; every other former, a nested loop
+///   among them, takes the inferred re-entry.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a loop ending in `continue`, in a match whose arms break
+///   or end in a call, and in a call each lower and run.
+/// - witness: `lower::loops::tests::a_loop_body_ends_by_its_exits_or_runs_again`
+#[spec(ensures: |ret| match former {
+    Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
+    Former::Block | Former::Case | Former::Offer | Former::Parenthesized | Former::Hole => ret == Ending::Passes,
+    _ => ret == Ending::Inferred,
+})]
+fn iterating(former: Former) -> Ending
+{
+    match ending(former) {
+        | Ending::Exit => Ending::Exit,
+        | Ending::Passes
+            if matches!(
+                former,
+                Former::Block | Former::Case | Former::Offer | Former::Parenthesized | Former::Hole
+            ) =>
+        {
+            Ending::Passes
+        },
+        | Ending::Passes | Ending::Inferred => Ending::Inferred,
+    }
+}
+
 /// The family `former` belongs to.
 ///
 /// # Specification
@@ -1286,6 +1329,11 @@ fn ending(former: Former) -> Ending
                     | Former::Return
                     | Former::Exit
                     | Former::Become
+                    | Former::Loop
+                    | Former::While
+                    | Former::For
+                    | Former::Break
+                    | Former::Continue
                     | Former::Force
                     | Former::Run
                     | Former::Call
@@ -1350,6 +1398,11 @@ const fn family_of(former: Former) -> Family
         | Former::Return
         | Former::Exit
         | Former::Become
+        | Former::Loop
+        | Former::While
+        | Former::For
+        | Former::Break
+        | Former::Continue
         | Former::Force
         | Former::Run
         | Former::Call
@@ -1961,6 +2014,15 @@ enum Plan
     Lambda(Block),
     /// A block's statements bound over its last computation.
     Block(Block),
+    /// A loop's fixpoint over its body.
+    Loop(Block),
+    /// A conditional loop's fixpoint over the case of its condition: its body
+    /// when the condition holds, leaving the loop with unit when it does not.
+    While(NodeIndex, Block),
+    /// A bare `break`: the returner of unit, leaving the nearest loop.
+    Break,
+    /// A `continue`: the force of the nearest loop's fixpoint, at this index.
+    Reenter(DeBruijnIndex),
     /// An application of its head to its arguments, left to right, in the
     /// lowerer's operand store.
     Application(NodeIndex, Stretch),
@@ -2440,9 +2502,26 @@ struct Lowerer<'run, 'source>
     /// computation of a statement that holds an exit, and what stands in tail
     /// position of one.
     joined: BTreeSet<NodeIndex>,
-    /// The exits read: every `return` and `become`, written or inferred,
-    /// whose minted computation the commuting keeps where it stands.
+    /// The exits read: every `return` and `become`, written or inferred, and
+    /// every `continue`, whose minted computation the commuting keeps where
+    /// it stands.
     leaving: BTreeSet<NodeIndex>,
+    /// The computation positions where a path through a loop's body ends: the
+    /// body's last computation, and what stands in tail position of one. A
+    /// form there that is no exit runs the loop again.
+    iterated: BTreeSet<NodeIndex>,
+    /// The computation positions a path through a loop's body passes, where
+    /// a `break` or a `continue` may stand.
+    looping: BTreeSet<NodeIndex>,
+    /// The `break`s read, whose minted returner the commuting continues with
+    /// what follows their loop.
+    breaking: BTreeSet<NodeIndex>,
+    /// The loop ends written without an exit, each run again: the index its
+    /// loop's fixpoint has under the binder of the result it discards.
+    reentered: BTreeMap<NodeIndex, DeBruijnIndex>,
+    /// The conditions of `while` loops, read where a computation is: a value
+    /// written there is returned, so the loop binds what it tests.
+    tested: BTreeSet<NodeIndex>,
     /// The tails the source wrote without an exit, each exited by the one its
     /// polarity names: a value by an inserted `return`, a computation by
     /// running it in tail position.
@@ -2531,6 +2610,12 @@ struct Sink<'run>
     distributed: BTreeMap<ComputationId, Origin>,
     /// The host's interfaces, once a capability form has minted them.
     host: capability::Host,
+    /// Every fixpoint a loop minted, and each copy a match leaf made of one:
+    /// the commuting walks into its body.
+    loops: BTreeSet<ComputationId>,
+    /// Every returner a `break` minted, and each copy a match leaf made of
+    /// one: a local end of its loop's position rather than of its body.
+    breaks: BTreeSet<ComputationId>,
 }
 
 /// Lower one module into `arena`, declaring its names over `outermost`.
@@ -2758,6 +2843,8 @@ pub fn lower_module<'source>(
         exits: BTreeSet::new(),
         distributed: BTreeMap::new(),
         host: capability::Host::Unminted,
+        loops: BTreeSet::new(),
+        breaks: BTreeSet::new(),
     };
     lowerer.mint(&mut sink)?;
     lowerer.mint_abstracts(&mut sink);
@@ -2924,6 +3011,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             exitable: BTreeSet::new(),
             joined: BTreeSet::new(),
             leaving: BTreeSet::new(),
+            iterated: BTreeSet::new(),
+            looping: BTreeSet::new(),
+            breaking: BTreeSet::new(),
+            reentered: BTreeMap::new(),
+            tested: BTreeSet::new(),
             inferred: BTreeSet::new(),
             elided: Vec::new(),
             asked: BTreeSet::new(),
@@ -3889,12 +3981,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::an_exit_lowers_where_a_path_passes_and_nowhere_else`
     /// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
     #[spec(
+        captures: iterated = self.iterated.contains(&site.at.node),
         ensures: |ret| {
             if let Maybe::Present(repaired) = pieces.repair {
                 ret == Err(repaired.refusal(site.name))
             }
             else if let Some(&statement) = self.stated.get(&site.at.node)
                 && ending(former) != Ending::Exit
+                && !iterated
             {
                 ret == Err(LoweringRefusal::OutOfFragment {
                     span: statement,
@@ -3938,6 +4032,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let family = family_of(former);
         if let Some(&statement) = self.stated.get(&site.at.node)
             && ending(former) != Ending::Exit
+            && !self.iterated.contains(&site.at.node)
         {
             return Err(LoweringRefusal::OutOfFragment {
                 span: statement,
@@ -3953,6 +4048,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if self.exits.contains(&site.at.node) && ending(former) == Ending::Inferred {
             let _tail = self.inferred.insert(site.at.node);
             let _exit = self.leaving.insert(site.at.node);
+        }
+        if self.iterated.contains(&site.at.node)
+            && ending(former) != Ending::Exit
+            && (self.stated.contains_key(&site.at.node) || iterating(former) == Ending::Inferred)
+        {
+            self.reenter(site)?;
         }
         let cursor = Cursor::new(&pieces.pieces, site.at.span);
         match former {
@@ -3990,6 +4091,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Former::Return => self.keyed(site, cursor, TileName::PURE),
             | Former::Exit => self.keyed(site, cursor, TileName::RETURN),
             | Former::Become => self.tail_call(site, cursor),
+            | Former::Loop => self.looped(site, cursor),
+            | Former::While => self.repeated(site, cursor),
+            | Former::For => Err(LoweringRefusal::ForNeedsListCase { span: site.at.span }),
+            | Former::Break => self.broken(site, cursor),
+            | Former::Continue => self.continued(site, cursor),
             | Former::Force => self.keyed(site, cursor, TileName::FORCE),
             | Former::Run => self.run(site, cursor),
             | Former::Call => self.call(site, cursor),
@@ -4040,7 +4146,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   sort by a quote, and a computation as the value it returns at an
     ///   endpoint and nested everywhere else; a tail, where a path through a
     ///   body ends, reaches a value by the `return` its polarity names,
-    ///   recorded as inferred and leaving; the bridge is recorded for the
+    ///   recorded as inferred and leaving; a `while` loop's condition reaches a
+    ///   value by a `return` the loop binds; the bridge is recorded for the
     ///   form's node, and every other match records none.
     /// - provides: the sort check every former takes, and the six insertions
     ///   decided by the sort of a position.
@@ -4065,6 +4172,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::identity::tests::a_computation_endpoint_is_the_value_it_returns`
     /// - witness: `lower::tests::a_lambda_in_value_position_is_nested_and_marked_inserted`
     /// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
+    /// - witness: `lower::loops::tests::a_while_tests_its_condition_on_every_pass`
     #[spec(
         ensures: |ret| {
             let expected = match (site.reading, produced) {
@@ -4093,6 +4201,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     Some((frame, Bridge::Inserted(Insertion::Nested)))
                 },
                 | (Reading::Computation(frame), Produced::Value)
+                    if self.tested.contains(&site.at.node) =>
+                {
+                    Some((frame, Bridge::Inserted(Insertion::Return)))
+                },
+                | (Reading::Computation(frame), Produced::Value)
                     if self.exits.contains(&site.at.node) =>
                 {
                     Some((frame, Bridge::Inserted(Insertion::Return)))
@@ -4107,6 +4220,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             .get(usize::from(site.at.node))
                             .is_none_or(|held| *held == bridge)
                         && (bridge != Bridge::Inserted(Insertion::Return)
+                            || self.tested.contains(&site.at.node)
                             || (self.inferred.contains(&site.at.node)
                                 && self.leaving.contains(&site.at.node)))
                 },
@@ -4143,6 +4257,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             | (Reading::Value(frame), Produced::Computation) => {
                 (frame, Bridge::Inserted(Insertion::Nested))
+            },
+            | (Reading::Computation(frame), Produced::Value)
+                if self.tested.contains(&site.at.node) =>
+            {
+                (frame, Bridge::Inserted(Insertion::Return))
             },
             | (Reading::Computation(frame), Produced::Value)
                 if self.exits.contains(&site.at.node) =>
@@ -8119,8 +8238,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   it and the result kept as the node's lowered core node; a tail whose
     ///   exit was inferred and minted as a computation is recorded with that
     ///   exit, `return` when the bridge is the inserted one and `become`
-    ///   otherwise; a node with no plan left, or under a refused declaration
-    ///   outside a payload, is left as it is.
+    ///   otherwise; a `break`'s returner is recorded as a break; a loop end
+    ///   written without an exit is bound and its loop run again, as
+    ///   [`Self::rerun`] writes it; a node with no plan left, or under a
+    ///   refused declaration outside a payload, is left as it is.
     /// - provides: the per-position half of [`Self::mint`].
     /// - fails: never.
     /// - panics: none.
@@ -8196,6 +8317,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 }));
             }
         }
+        if self.breaking.contains(&position)
+            && let Maybe::Present(Lowered::Computation(broken)) = bridged
+        {
+            let _first = sink.breaks.insert(broken);
+        }
+        let bridged = match (self.reentered.get(&position), bridged) {
+            | (Some(&own), Maybe::Present(Lowered::Computation(end))) => Maybe::Present(
+                Lowered::Computation(self.rerun(position, end, own, sink, origin)),
+            ),
+            | (_, bridged) => bridged,
+        };
         if let Some(held) = self.lowered.get_mut(usize::from(position)) {
             *held = bridged;
         }
@@ -8285,7 +8417,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::ListCons(..)
                 | Plan::Run(_)
                 | Plan::Constructor(_) => Some(Produced::Value),
-                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(_) | Plan::Block(_) | Plan::Application(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Action(_) => {
+                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(_) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Action(_) => {
                     Some(Produced::Computation)
                 },
                 | Plan::Atom(_)
@@ -8500,6 +8632,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.mint_observe(subject, observed, sink, origin)
             },
             | Plan::Block(block) => self.mint_block(block, sink).map(Lowered::Computation),
+            | Plan::Loop(body) => self.mint_loop(body, sink, origin),
+            | Plan::While(condition, body) => self.mint_while(condition, body, sink, origin),
+            | Plan::Break => {
+                let unit = sink.arena.value_unit();
+                sink.origins.record_value(unit, origin);
+                let id = sink.arena.computation_return(unit);
+                Maybe::Present(sink.computation(id, origin))
+            },
+            | Plan::Reenter(index) => {
+                let own = sink.arena.value_variable(Zone::Intuitionistic, index);
+                sink.origins.record_value(own, origin);
+                let id = sink.arena.computation_force(own);
+                Maybe::Present(sink.computation(id, origin))
+            },
             | Plan::Derived(derived) => self.mint_derived(derived, sink, origin),
             | Plan::TelescopeTransport(transported) => {
                 self.mint_telescope_transport(transported, sink, origin)
@@ -9177,6 +9323,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Copattern(_)
             | Plan::Observe(..)
             | Plan::Block(_)
+            | Plan::Loop(_)
+            | Plan::While(..)
+            | Plan::Break
+            | Plan::Reenter(_)
             | Plan::Derived(_)
             | Plan::Session(..)
             | Plan::Action(_)
@@ -11259,6 +11409,7 @@ impl Sink<'_>
                 | Insertion::Classifier
                 | Insertion::Match
                 | Insertion::Fixpoint
+                | Insertion::Loop
                 | Insertion::Endpoint
                 | Insertion::Identity
                 | Insertion::Nested,
@@ -12002,6 +12153,11 @@ pub fn parse_literal(
         | Former::Return
         | Former::Exit
         | Former::Become
+        | Former::Loop
+        | Former::While
+        | Former::For
+        | Former::Break
+        | Former::Continue
         | Former::Force
         | Former::Run
         | Former::Call

@@ -2107,6 +2107,85 @@ def bad : Integer ; def bad = "text" ; def small : Type ; def small = Integer ;"
         );
     }
 
+    /// The highest continuation the force of the thunk declared as `name`
+    /// held within `steps` transitions, on a fresh machine; it panics unless
+    /// the declaration halts and the force runs past `steps`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn peak_within(
+        program: &mut Program<'_>,
+        name: SurfaceName<'_>,
+        steps: super::StepCount,
+    ) -> gandr_core_sequent::FrameHeight
+    {
+        let position = program
+            .declarations
+            .iter()
+            .find(|&(_, declared)| declared.name == name)
+            .map(|(&constant, _)| constant)
+            .expect("the program declares the name");
+        let (returned, forced) = program.entries(position).expect("the declaration focuses");
+        let mut machine = super::Machine::new(&program.arena, &program.definitions);
+        assert!(
+            matches!(
+                machine.run(returned, super::StepCount::from(super::RUN_BUDGET)),
+                Ok(super::Outcome::Halted(_))
+            ),
+            "`{name}` is a thunk"
+        );
+        assert_eq!(
+            machine.run(forced, steps),
+            Err(MachineFault::OutOfSteps),
+            "`{name}` runs past {steps:?}"
+        );
+        machine.store().peak_height()
+    }
+
+    #[test]
+    fn a_loop_runs_in_constant_continuation()
+    {
+        let mut deep = String::from("Zero");
+        for _ in 0 .. 1024_usize {
+            deep = format!("Succ({deep})");
+        }
+        let source = format!(
+            "data Nat : Type {{\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}}\n\
+             def tick(n : Nat) -> -F Unit {{ return unit }}\n\
+             def rec deep(n : Nat) -> -F Nat {{\n  case n {{\n    Zero => return n,\n    \
+             Succ(p) => {{ run m <- deep[<](p) ; return m }}\n  }}\n}}\n\
+             def spin : +U (-F Nat) ;\ndef spin = thunk {{ loop {{ tick(Zero); }} }} ;\n\
+             def bound : +U (-F Nat) ;\ndef bound = thunk {{ loop {{ run u <- tick(Zero) ; continue }} }} ;\n\
+             def broken : +U (-F Nat) ;\ndef broken = thunk {{ loop {{ run u <- loop {{ break }} ; continue }} }} ;\n\
+             def tested : +U (-F Nat) ;\ndef tested = thunk {{ while 1 > 0 {{ tick(Zero) }} ; return Zero }} ;\n\
+             def descent : +U (-F Nat) ;\ndef descent = thunk {{ become deep({deep}) }} ;\n"
+        );
+        let mut program = program(source.as_str());
+        let (short, long) = (1_usize << 7_u32, 1_usize << 16_u32);
+        let within = |program: &mut Program<'_>, name: &str, steps: usize| {
+            peak_within(
+                program,
+                SurfaceName::from(name),
+                super::StepCount::from(steps),
+            )
+        };
+        for name in ["spin", "bound", "broken", "tested"] {
+            let at_short = within(&mut program, name, short);
+            let at_long = within(&mut program, name, long);
+            assert_eq!(
+                at_short, at_long,
+                "`{name}` holds the same continuation however many passes it runs"
+            );
+        }
+        let at_short = within(&mut program, "descent", short);
+        let at_longer = within(&mut program, "descent", short << 3_u32);
+        assert!(
+            usize::from(at_longer) > usize::from(at_short),
+            "a bound recursion holds more continuation the longer it runs: {at_short:?} against \
+             {at_longer:?}"
+        );
+    }
+
     /// The source of a function whose exits stand one and two matches deep
     /// under a bound statement, and of its runs over three inputs.
     const PICK: &str = "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n\

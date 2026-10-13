@@ -171,6 +171,21 @@ mod tests
     }
 
     #[test]
+    fn the_loop_forms_keep_their_written_spelling()
+    {
+        golden(Path::new("loops"));
+        let source = std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/loops.gandr"),
+        )
+        .expect("the fixture is readable");
+        assert_eq!(
+            text(&grammar(), source.as_str(), WIDE),
+            source,
+            "`loop`, `while`, `for`, `break`, `break(v)` and `continue` are their own canonical form"
+        );
+    }
+
+    #[test]
     fn top_level_forms_and_comments_keep_their_lines()
     {
         let grammar = grammar();

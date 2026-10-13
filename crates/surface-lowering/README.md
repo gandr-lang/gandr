@@ -101,7 +101,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Imports | [`import`](src/import.rs) |
 | Sorts, function tails, blocks, insertions, universes, type operators, products, literals, the two sweeps | [`lower`](src/lower.rs) |
 | Native data, the match and recursive functions | [`lower::native`](src/lower/native.rs) |
-| Early exits: the survey, the commuting, the cut and the exit a tail's polarity infers; the decisions and their alternatives | [`lower::exits`](src/lower/exits.rs), [`src/lib.rs`](src/lib.rs), [`lower`](src/lower.rs) |
+| Early exits and loops: the survey, the commuting, the cut, inferred exits and a loop's fixpoint | [`lower::exits`](src/lower/exits.rs), [`lower::loops`](src/lower/loops.rs), [`src/lib.rs`](src/lib.rs), [`lower`](src/lower.rs) |
 | Nested computations: the lowering's record of each inferred run, the attribute's ask and how its `run` is spelled | [`lower::runs`](src/lower/runs.rs), [`lower`](src/lower.rs) |
 | Binary sessions: protocols, endpoints, actions and the statements binding them | [`lower::session`](src/lower/session.rs) |
 | The failure classifier | [`classify`](src/classify.rs) |

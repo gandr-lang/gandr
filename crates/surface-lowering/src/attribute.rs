@@ -655,6 +655,11 @@ pub const fn payload_form(former: Former) -> PayloadForm
         | Former::Return
         | Former::Exit
         | Former::Become
+        | Former::Loop
+        | Former::While
+        | Former::For
+        | Former::Break
+        | Former::Continue
         | Former::Block
         | Former::Force
         | Former::Run

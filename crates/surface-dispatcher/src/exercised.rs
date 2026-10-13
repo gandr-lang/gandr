@@ -745,6 +745,8 @@ fn lowering_row(
         | LoweringRefusal::NonExhaustiveMatch { .. }
         | LoweringRefusal::UnmarkedSelfReference { .. }
         | LoweringRefusal::Unreachable { .. }
+        | LoweringRefusal::OutsideLoop { .. }
+        | LoweringRefusal::ForNeedsListCase { .. }
         | LoweringRefusal::WithoutK { .. }
         | LoweringRefusal::BudgetExceeded { .. }
         | LoweringRefusal::GrammarMismatch { .. }

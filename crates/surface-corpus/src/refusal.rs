@@ -431,6 +431,10 @@ pub enum RefusalName
     UnmarkedSelfReference,
     /// Code after a statement every path of which exits.
     Unreachable,
+    /// A `break` or a `continue` on no path through a loop's body.
+    OutsideLoop,
+    /// A `for` loop, which waits on a case former over the native list.
+    ForNeedsListCase,
     /// A path matched against reflexivity, `here`: axiom K.
     WithoutK,
     /// A work allowance ran out, the lowering's or the checker's.
@@ -518,7 +522,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 111_usize] = [
+    pub const VOCABULARY: [Self; 113_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -592,6 +596,8 @@ impl RefusalName
         Self::NonExhaustiveMatch,
         Self::UnmarkedSelfReference,
         Self::Unreachable,
+        Self::OutsideLoop,
+        Self::ForNeedsListCase,
         Self::WithoutK,
         Self::BudgetExceeded,
         Self::GrammarMismatch,
@@ -673,6 +679,8 @@ impl RefusalName
         (Self::NonExhaustiveMatch, b"NonExhaustiveMatch") |
         (Self::UnmarkedSelfReference, b"UnmarkedSelfReference") |
         (Self::Unreachable, b"Unreachable") |
+        (Self::OutsideLoop, b"OutsideLoop") |
+        (Self::ForNeedsListCase, b"ForNeedsListCase") |
         (Self::WithoutK, b"WithoutK") |
         (Self::BudgetExceeded, b"BudgetExceeded") | (Self::GrammarMismatch,
         b"GrammarMismatch") | (Self::UnknownMold, b"UnknownMold") | (Self::TypeMismatch,
@@ -846,6 +854,8 @@ impl RefusalName
             | Self::NonExhaustiveMatch => "NonExhaustiveMatch",
             | Self::UnmarkedSelfReference => "UnmarkedSelfReference",
             | Self::Unreachable => "Unreachable",
+            | Self::OutsideLoop => "OutsideLoop",
+            | Self::ForNeedsListCase => "ForNeedsListCase",
             | Self::WithoutK => "WithoutK",
             | Self::BudgetExceeded => "BudgetExceeded",
             | Self::GrammarMismatch => "GrammarMismatch",
@@ -1037,6 +1047,10 @@ impl Refusal<'_>
         RefusalName::UnmarkedSelfReference) |
         (Self::Lowering(LoweringRefusal::Unreachable { .. }),
         RefusalName::Unreachable) |
+        (Self::Lowering(LoweringRefusal::OutsideLoop { .. }),
+        RefusalName::OutsideLoop) |
+        (Self::Lowering(LoweringRefusal::ForNeedsListCase { .. }),
+        RefusalName::ForNeedsListCase) |
         (Self::Lowering(LoweringRefusal::WithoutK { .. }),
         RefusalName::WithoutK) |
         (Self::Lowering(LoweringRefusal::BudgetExceeded { .. }) |
@@ -1210,7 +1224,9 @@ impl Refusal<'_>
         RefusalName::LowercaseModuleName) | (LoweringRefusal::NonExhaustiveMatch { .. },
         RefusalName::NonExhaustiveMatch) | (LoweringRefusal::UnmarkedSelfReference { .. },
         RefusalName::UnmarkedSelfReference) | (LoweringRefusal::Unreachable { .. },
-        RefusalName::Unreachable) | (LoweringRefusal::WithoutK { .. },
+        RefusalName::Unreachable) | (LoweringRefusal::OutsideLoop { .. },
+        RefusalName::OutsideLoop) | (LoweringRefusal::ForNeedsListCase { .. },
+        RefusalName::ForNeedsListCase) | (LoweringRefusal::WithoutK { .. },
         RefusalName::WithoutK) | (LoweringRefusal::BudgetExceeded { .. },
         RefusalName::BudgetExceeded) | (LoweringRefusal::GrammarMismatch { .. },
         RefusalName::GrammarMismatch) | (LoweringRefusal::UnknownMold { .. },
@@ -1250,6 +1266,8 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | LoweringRefusal::NonExhaustiveMatch { .. } => RefusalName::NonExhaustiveMatch,
         | LoweringRefusal::UnmarkedSelfReference { .. } => RefusalName::UnmarkedSelfReference,
         | LoweringRefusal::Unreachable { .. } => RefusalName::Unreachable,
+        | LoweringRefusal::OutsideLoop { .. } => RefusalName::OutsideLoop,
+        | LoweringRefusal::ForNeedsListCase { .. } => RefusalName::ForNeedsListCase,
         | LoweringRefusal::WithoutK { .. } => RefusalName::WithoutK,
         | LoweringRefusal::BudgetExceeded { .. } => RefusalName::BudgetExceeded,
         | LoweringRefusal::GrammarMismatch { .. } => RefusalName::GrammarMismatch,

@@ -26,16 +26,19 @@
 //! match pushes onto the current region. Observing a thunk by `force` opens
 //! its memo cell: a forced cell returns its cached value, an opened one
 //! pushes an update frame under the body's return point, and a re-entrant one
-//! runs the body inline. A recursive thunk follows the same protocol, its
-//! body running with the thunk itself bound innermost. Observing a copattern
+//! runs the body inline. A recursive thunk whose body returns a copattern
+//! object follows the same protocol, its body running with the thunk itself
+//! bound innermost; any other recursive thunk, a loop, unfolds against the
+//! forcing continuation with no frame of its own. Observing a copattern
 //! object runs the arm its destructor selects. A suspended `μ` delivered
 //! anywhere but to a `μ̃` runs against the consumer it meets.
 //!
 //! Producers evaluate to heap values without a transition: constructors
-//! allocate their evaluated fields, a thunk or a recursive thunk allocates a
-//! fresh cell, a copattern object or a `μ` closes over the environment, and a
-//! constant unfolds its [`Definition`] once per machine, a cycle among
-//! definitions stopping the run. Every walk is a loop over an explicit stack.
+//! allocate their evaluated fields, a thunk or a cached recursive thunk
+//! allocates a fresh cell, a copattern object or a `μ` closes over the
+//! environment, and a constant unfolds its [`Definition`] once per machine, a
+//! cycle among definitions stopping the run. Every walk is a loop over an
+//! explicit stack.
 //!
 //! # Ordinary continuations are marks
 //!
@@ -61,14 +64,16 @@
 //! to that mark, and a mark whose frame has since been popped and replaced is
 //! refused as stale by the store. Forcing a thunk follows its cell: a forced
 //! cell returns its cached value, an opened one pushes an update frame under
-//! the body's return point, a re-entrant one runs the body inline; a recursive
-//! thunk does the same with itself bound innermost. A `μ` against a `μ̃` at a
+//! the body's return point, a re-entrant one runs the body inline; a cached
+//! recursive thunk does the same with itself bound innermost, and a loop
+//! unfolds with itself bound innermost and no frame. A `μ` against a `μ̃` at a
 //! negative cut is suspended and bound, the call-by-name side of the critical
 //! pair; everywhere else the `μ` runs first. Producers evaluate within a
-//! transition — a constructor over its evaluated fields, a thunk or a recursive
-//! thunk with a fresh cell, a copattern object or a `μ` closed over the
-//! environment — and a constant unfolds its definition once per machine, a
-//! cycle among definitions stopping the run as `Stuck::CyclicConstant`.
+//! transition — a constructor over its evaluated fields, a thunk or a cached
+//! recursive thunk with a fresh cell, a loop with none, a copattern object or
+//! a `μ` closed over the environment — and a constant unfolds its definition
+//! once per machine, a cycle among definitions stopping the run as
+//! `Stuck::CyclicConstant`.
 //!
 //! Ordinary covariables use marks into the one frame region; values and
 //! environments use shared heap addresses, and the caller supplies the step
@@ -82,32 +87,44 @@
 //!
 //! A core fixpoint `fix x. M` focuses to a recursive thunk, `fix{x; force(α) ⇒
 //! 𝓕⟦M⟧α}`: a thunk whose body binds one producer, the thunk itself, innermost,
-//! besides its return point. The machine allocates it with a memo cell like any
-//! thunk and forces it by the same cell protocol, binding the forced value
-//! itself as `x`, so a self reference is an address in the environment and the
-//! heap stays acyclic and append-only. The cell caches what forcing the
-//! fixpoint returns — for a recursive function, the function — which no
-//! argument changes, and a body that forces itself before returning re-enters
-//! the cell and loops until the budget runs out. A nominal match `case_D v
-//! {b̄}` delivers `c_i(v̄)` to `datacase(b̄; c)` by loading `c`, pushing one
-//! application frame per field, the first on top, and forcing `b_i`: the core's
-//! case-β, `b_i` applied to `v̄`.
+//! besides its return point. Forcing it binds the forced value itself as `x`,
+//! so a self reference is an address in the environment and the heap stays
+//! acyclic and append-only. What forcing does next follows the body. A body
+//! that returns a copattern object at once — a recursive function, or a lazy
+//! record — gets a memo cell like any thunk and the same cell protocol: the
+//! cell caches the object, which no argument changes. Any other body, a loop
+//! at a computation type such as `F A`, gets no cell: forcing unfolds `fix x.
+//! M` to `M[thunk (fix x. M)/x]` against the forcing continuation, pushing
+//! nothing, so a body that forces itself in tail position re-enters with the
+//! continuation it was forced with. A nominal match `case_D v {b̄}` delivers
+//! `c_i(v̄)` to `datacase(b̄; c)` by loading `c`, pushing one application frame
+//! per field, the first on top, and forcing `b_i`: the core's case-β, `b_i`
+//! applied to `v̄`.
 //!
 //! The machine unfolds a fixpoint when it is forced; `core-nbe` unfolds one
 //! when it is applied to a canonical argument. The two strategies agree on a
 //! closed first-order answer, and the differential compares them over Nat, List
 //! and a Tree with a function field. **Choice.** A recursive thunk, rather than
-//! a refusal, which leaves every recursive program without a runner.
-//! **Alternatives.** Unrolling the fixpoint a bounded number of times hands the
-//! machine a term that diverges from the core at the bound. A cyclic
-//! environment — `x` bound to a closure over the environment that binds it —
-//! breaks the append-only heap the readback walks in address order.
+//! a refusal, which leaves every recursive program without a runner; a cell
+//! only for a body that returns a copattern object, since a loop's body
+//! returns nothing to cache. The recorded design binds every recursive thunk
+//! through the ordinary memo cell. Around a loop that cell's update frame
+//! memoizes a result that does not exist yet and stands for the loop's whole
+//! run, so an inner loop left by a `break` that re-enters the outer one, or a
+//! `become` inside a loop, leaves one frame under every further iteration;
+//! unfolding holds none, which is the loop's constant continuation.
+//! **Alternatives.** A cell for every fixpoint, the recorded design, holds the
+//! frame above. No cell for any fixpoint re-closes a recursive function's
+//! object at every call for no gain. Unrolling the fixpoint a bounded number
+//! of times hands the machine a term that diverges from the core at the bound.
+//! A cyclic environment — `x` bound to a closure over the environment that
+//! binds it — breaks the append-only heap the readback walks in address order.
 //! Self-application through a recursive type needs types the IL does not carry.
 //! A nominal match's branches as pattern arms binding the fields would strip
 //! each branch's `λ`s, which is not total: a branch is any computation of the
-//! function type. **Reversal.** A fixpoint whose value depends on the argument
-//! it is applied at — a fixpoint at a computation type other than a function,
-//! read lazily — would need the cell bypassed; the core admits none.
+//! function type. **Reversal.** A loop whose result a later force should share
+//! — the thunk escaping its own body and forced again after the loop returned
+//! — would want the cell back for that body shape.
 //!
 //! # Effects and delimited control
 //!
@@ -194,6 +211,7 @@ use crate::store::ForceEntry;
 use crate::store::Frame;
 use crate::store::HeapValue;
 use crate::store::HeapValueId;
+use crate::store::Memo;
 use crate::store::Store;
 use crate::store::StoreFault;
 /// What a constant stands for when a run meets it.
@@ -1724,10 +1742,12 @@ impl<'program> Machine<'program>
     ///
     /// # Specification
     /// - requires: the frame region's top is `mark`.
-    /// - ensures: `force` on a thunk or a recursive thunk follows its cell's
-    ///   protocol, a recursive thunk's body running with the thunk itself bound
-    ///   innermost; any destructor on a copattern object runs the arm it
-    ///   selects with the arguments and `mark` bound.
+    /// - ensures: `force` on a thunk or a cached recursive thunk follows its
+    ///   cell's protocol, a recursive thunk's body running with the thunk
+    ///   itself bound innermost; `force` on a loop runs its body with itself
+    ///   bound innermost and `mark` as its return point, pushing nothing; any
+    ///   destructor on a copattern object runs the arm it selects with the
+    ///   arguments and `mark` bound.
     /// - provides: the elimination of the negative values and thunks.
     /// - fails: [`Stuck::Unobservable`] for any other value or a missing arm,
     ///   and the store's faults.
@@ -1741,11 +1761,12 @@ impl<'program> Machine<'program>
     ///   the three cell states by continuation marks, the unique update frame
     ///   and exact cached address. Abandonment declines the update before a new
     ///   run. A recursive thunk computes through its own binding and a loop
-    ///   through it re-enters its cell. L2 — captured and curried functions
-    ///   compare with normal forms.
+    ///   through it re-enters with no frame, nested or under a function's tail
+    ///   call. L2 — captured and curried functions compare with normal forms.
     /// - witness: `machine::tests::forcing_reentry_shares_updates_and_abandonment_declines_them`
     /// - witness: `machine::tests::a_shared_thunk_is_forced_once`
     /// - witness: `machine::tests::a_recursive_thunk_computes_through_its_own_binding`
+    /// - witness: `machine::tests::a_loop_holds_no_frame_across_its_iterations`
     /// - witness: `machine::tests::transition_refusals_name_the_first_invalid_endpoint`
     /// - witness: `tests::differential::hand_built_exact_readback_cases_agree`
     #[spec(
@@ -1753,13 +1774,21 @@ impl<'program> Machine<'program>
         captures: [forcing = match self.store.value(value) {
             | Some(&HeapValue::Thunk { body, environment, cell }) if head == DestructorTag::Force =>
                 Some((body, environment, cell, self.store.cell(cell), false)),
-            | Some(&HeapValue::Fixpoint { body, environment, cell, .. }) if head == DestructorTag::Force =>
+            | Some(&HeapValue::Fixpoint { body, environment, memo: crate::store::Memo::Cell(cell), .. }) if head == DestructorTag::Force =>
                 Some((body, environment, cell, self.store.cell(cell), true)),
+            | _ => None,
+        }, unfolding = match self.store.value(value) {
+            | Some(&HeapValue::Fixpoint { body, memo: crate::store::Memo::Unfolds, .. }) if head == DestructorTag::Force => Some(body),
             | _ => None,
         }],
         ensures: |ref ret| match ret.as_ref().copied() {
             | Err(_) => true,
-            | Ok(next) => if let Some((body, captured, cell, state, recursive)) = forcing {
+            | Ok(next) => if let Some(body) = unfolding {
+                matches!(next, Next::Continue(Control::Run(found, inner)) if found == body
+                    && self.store.lookup_value(inner, DeBruijnIndex::from(0_u32)) == Some(value)
+                    && self.store.lookup_covalue(inner, CovariableIndex::from(0_u32)) == Some(self.store.return_continuation(mark)))
+                    && self.store.mark() == mark
+            } else if let Some((body, captured, cell, state, recursive)) = forcing {
                 match state {
                     | Some(crate::store::MemoState::Forced(cached)) => next == Next::Continue(Control::Return(cached, mark))
                         && self.store.cell(cell) == state && self.store.mark() == mark,
@@ -1799,6 +1828,18 @@ impl<'program> Machine<'program>
     {
         let unobservable = Stuck::Unobservable { value, head };
         match self.store.value(value) {
+            | Some(&HeapValue::Fixpoint {
+                body,
+                environment,
+                memo: Memo::Unfolds,
+                ..
+            }) if head == DestructorTag::Force => {
+                let captured = self.store.bind_value(environment, value)?;
+                let inner = self
+                    .store
+                    .bind_covalue(captured, self.store.return_continuation(mark))?;
+                Ok(Next::Continue(Control::Run(body, inner)))
+            },
             | Some(
                 &(HeapValue::Thunk {
                     body,
@@ -1808,7 +1849,7 @@ impl<'program> Machine<'program>
                 | HeapValue::Fixpoint {
                     body,
                     environment,
-                    cell,
+                    memo: Memo::Cell(cell),
                     ..
                 }),
             ) if head == DestructorTag::Force => {
@@ -2235,10 +2276,11 @@ impl<'program> Machine<'program>
     /// # Specification
     /// - requires: no constant unfolding is currently running.
     /// - ensures: a variable reads its binding; a literal and a constructor
-    ///   over its evaluated fields are allocated; a thunk or a recursive thunk
-    ///   is allocated with a fresh cell; a copattern object or a `μ` closes
-    ///   over `environment`; a constant reads its value, unfolding its
-    ///   definition in the empty environment the first time it is met.
+    ///   over its evaluated fields are allocated; a thunk is allocated with a
+    ///   fresh cell, a recursive thunk with the memo its body takes; a
+    ///   copattern object or a `μ` closes over `environment`; a constant reads
+    ///   its value, unfolding its definition in the empty environment the first
+    ///   time it is met.
     /// - provides: the value side of a cut.
     /// - fails: an unbound variable, an undefined or cyclic constant, a
     ///   constructor carrying a consumer, and the store's faults; a constant
@@ -2282,8 +2324,11 @@ impl<'program> Machine<'program>
                         && matches!(*held, HeapValue::Constructed { tag: ref found, ref fields } if tag == found && fields.len() == producers.len()),
                     | ProducerNode::Thunk { body } => matches!(*held, HeapValue::Thunk { body: found, environment: captured, cell }
                         if found == body && captured == environment && self.store.cell(cell) == Some(crate::store::MemoState::Unforced)),
-                    | ProducerNode::Fixpoint { body, evidence } => matches!(*held, HeapValue::Fixpoint { body: found, environment: captured, cell, evidence: claimed }
-                        if found == body && captured == environment && claimed == evidence && self.store.cell(cell) == Some(crate::store::MemoState::Unforced)),
+                    | ProducerNode::Fixpoint { body, evidence } => matches!(*held, HeapValue::Fixpoint { body: found, environment: captured, memo, evidence: claimed }
+                        if found == body && captured == environment && claimed == evidence && match memo {
+                            | Memo::Cell(cell) => self.store.cell(cell) == Some(crate::store::MemoState::Unforced),
+                            | Memo::Unfolds => true,
+                        }),
                     | ProducerNode::Cocase { .. } | ProducerNode::Mu { .. } => matches!(*held,
                         HeapValue::Closure { producer, environment: captured } if producer == root && captured == environment),
                 }))),
@@ -2426,11 +2471,11 @@ impl<'program> Machine<'program>
                             })?
                         },
                         | ProducerNode::Fixpoint { body, evidence } => {
-                            let cell = self.store.allocate_cell()?;
+                            let memo = self.memo(body)?;
                             self.store.allocate(HeapValue::Fixpoint {
                                 body,
                                 environment,
-                                cell,
+                                memo,
                                 evidence,
                             })?
                         },
@@ -2557,6 +2602,47 @@ impl<'program> Machine<'program>
             }
         }
         Ok(())
+    }
+
+    /// The memo a recursive thunk over `body` is forced by.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a body that cuts a copattern object against its own return
+    ///   point — a recursive function or lazy record — takes a fresh unforced
+    ///   cell; any other body, a loop, unfolds.
+    /// - provides: the choice between caching a fixpoint and unfolding it.
+    /// - fails: the store's faults when its cell region is full.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a recursive function computes through its cached cell
+    ///   and loops re-enter with no frame, which a cell on the wrong body shape
+    ///   would add.
+    /// - witness: `machine::tests::a_recursive_thunk_computes_through_its_own_binding`
+    /// - witness: `machine::tests::a_loop_holds_no_frame_across_its_iterations`
+    #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|&memo| match memo {
+        | Memo::Cell(cell) => self.store.cell(cell) == Some(crate::store::MemoState::Unforced),
+        | Memo::Unfolds => true,
+    }))]
+    fn memo(
+        &mut self,
+        body: CommandId,
+    ) -> Result<Memo, Stop>
+    {
+        let arena = self.arena;
+        let returns_object = matches!(arena.command(body), Some(&CommandNode::Cut { producer, consumer, .. })
+            if matches!(arena.producer(producer), Some(&ProducerNode::Cocase { .. }))
+                && arena.consumer(consumer) == Some(&ConsumerNode::Covariable(CovariableIndex::from(0_u32))));
+        if returns_object {
+            Ok(Memo::Cell(self.store.allocate_cell()?))
+        }
+        else {
+            Ok(Memo::Unfolds)
+        }
     }
 
     /// How far a constant's unfolding has got.
@@ -4395,8 +4481,7 @@ mod tests
     }
 
     /// `(fix self. λn. case n {zero ⇒ return zero | succ k ⇒ r ← force self k;
-    /// return succ (succ r)}) 2` doubles through its own binding to `4`, and
-    /// `fix self. force self` re-enters its cell until the budget runs out.
+    /// return succ (succ r)}) 2` doubles through its own binding to `4`.
     #[test]
     fn a_recursive_thunk_computes_through_its_own_binding()
     {
@@ -4430,22 +4515,68 @@ mod tests
             evaluated(&mut core, program),
             "two doubled"
         );
+    }
 
+    /// Three loops that never end stand as high after ten thousand steps as
+    /// after a hundred: `fix x. force x`; `fix o. fix i. force o`, an inner
+    /// loop left for the outer one, as a `break` commuted to the outer
+    /// `continue` leaves it; and `(fix f. λn. fix k. (force f) n) ()`, a
+    /// function tail-calling itself from inside a loop. Only the function's
+    /// fixpoint takes a cell.
+    #[test]
+    fn a_loop_holds_no_frame_across_its_iterations()
+    {
+        let mut core = CoreArena::new();
         let itself = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
         let reentry = core.computation_force(itself);
-        let looping =
+        let plain =
             core.computation_fixpoint(reentry, gandr_kernel_term::FixpointEvidence::Partial);
-        let mut arena = CommandArena::new();
-        let mut provenance = Provenance::new();
-        let command = focus_computation(&core, looping, &mut arena, &mut provenance)
-            .expect("a closed term focuses");
-        let definitions = Definitions::new();
-        let mut machine = Machine::new(&arena, &definitions);
-        assert_eq!(
-            Err(MachineFault::OutOfSteps),
-            machine.run(command, budget()),
-            "the loop re-enters its cell"
+        let outer = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let continued = core.computation_force(outer);
+        let inner =
+            core.computation_fixpoint(continued, gandr_kernel_term::FixpointEvidence::Partial);
+        let nested = core.computation_fixpoint(inner, gandr_kernel_term::FixpointEvidence::Partial);
+        let own = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
+        let argument = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let forced = core.computation_force(own);
+        let call = core.computation_application(forced, argument);
+        let looping = core.computation_fixpoint(call, gandr_kernel_term::FixpointEvidence::Partial);
+        let function = core.computation_lambda(looping);
+        let recursive = core.computation_fixpoint(
+            function,
+            gandr_kernel_term::FixpointEvidence::StructuralDescent,
         );
+        let unit = core.value_unit();
+        let calling = core.computation_application(recursive, unit);
+        for (program, cells, shape) in [
+            (plain, 0_usize, "a loop"),
+            (nested, 0_usize, "a nested loop"),
+            (calling, 1_usize, "a tail call inside a loop"),
+        ] {
+            let [short, long] = [100_usize, 10_000_usize].map(|steps| {
+                let mut arena = CommandArena::new();
+                let mut provenance = Provenance::new();
+                let command = focus_computation(&core, program, &mut arena, &mut provenance)
+                    .expect("a closed term focuses");
+                let definitions = Definitions::new();
+                let mut machine = Machine::new(&arena, &definitions);
+                assert_eq!(
+                    Err(MachineFault::OutOfSteps),
+                    machine.run(command, StepCount::from(steps)),
+                    "{shape} never ends"
+                );
+                assert_eq!(
+                    cells,
+                    usize::from(machine.store().cell_count()),
+                    "{shape} caches only a function"
+                );
+                machine.store().peak_height()
+            });
+            assert_eq!(
+                short, long,
+                "{shape} stands no higher after more iterations"
+            );
+        }
     }
 
     /// `((λ. λ. return x1) 1) 2` binds each argument at its own binder.

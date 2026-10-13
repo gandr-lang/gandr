@@ -141,8 +141,8 @@ pub enum HeapValue
         body: CommandId,
         /// The captured environment, without the thunk itself.
         environment: Environment,
-        /// The memo cell.
-        cell: CellId,
+        /// What forcing the thunk writes back.
+        memo: Memo,
         /// The termination claim the core fixpoint carried.
         evidence: gandr_kernel_term::FixpointEvidence,
     },
@@ -159,6 +159,32 @@ pub enum HeapValue
     /// A constant with no body to run: an owed or refused declaration, which
     /// the machine carries as itself.
     Opaque(ConstantIndex),
+}
+
+/// What forcing a recursive thunk writes back.
+///
+/// # Specification
+/// - requires: a cell belongs to the store holding the recursive thunk.
+/// - ensures: a cell follows the thunk protocol; an unfolding fixpoint has no
+///   cell to follow.
+/// - provides: the choice between caching a fixpoint's value and unfolding it.
+/// - executable: none — the cell's ownership is the store's, which this tag
+///   does not hold.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a recursive function forced twice reads its cached
+///   object, and a loop re-entered holds no update frame.
+/// - witness: `machine::tests::a_recursive_thunk_computes_through_its_own_binding`
+/// - witness: `machine::tests::a_loop_holds_no_frame_across_its_iterations`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Memo
+{
+    /// The body returns a copattern object at once — a function or a lazy
+    /// record — which the cell caches as a thunk's does.
+    Cell(CellId),
+    /// The body returns nothing at once, a loop: forcing unfolds the fixpoint
+    /// against the forcing continuation, with no update frame.
+    Unfolds,
 }
 
 /// The state of a memo cell.

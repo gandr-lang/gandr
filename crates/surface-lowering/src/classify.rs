@@ -57,11 +57,12 @@ impl LoweringRefusal<'_>
     /// - ensures: the class is a function of the variant alone — two refusals
     ///   of one variant classify alike whatever their spans, names or
     ///   suggestions hold — and every reserved, unadmitted, wrong-sort or
-    ///   wrong-arity form, every graded bridge, every unread ascription and
-    ///   every model component the derivation cannot state classifies as
-    ///   unrepresentable, the exhausted allowance, the grammar mismatch and the
-    ///   unknown mold as engine faults, and every other refusal — a family
-    ///   member of the wrong telescope among them — as malformed source.
+    ///   wrong-arity form, every graded bridge, every unread ascription, every
+    ///   model component the derivation cannot state and every `for` loop
+    ///   classifies as unrepresentable, the exhausted allowance, the grammar
+    ///   mismatch and the unknown mold as engine faults, and every other
+    ///   refusal — a family member of the wrong telescope and a loop exit off
+    ///   every loop among them — as malformed source.
     /// - provides: the fact a report groups by and a job alarming on the
     ///   fragment's reach counts.
     /// - fails: never.
@@ -81,7 +82,8 @@ impl LoweringRefusal<'_>
             | Self::GradedBridge { .. }
             | Self::UnreadAscription { .. }
             | Self::UnstatedComponent { .. }
-            | Self::WithoutK { .. } => matches!(ret, FailureClass::Unrepresentable),
+            | Self::WithoutK { .. }
+            | Self::ForNeedsListCase { .. } => matches!(ret, FailureClass::Unrepresentable),
             | Self::BudgetExceeded { .. }
             | Self::GrammarMismatch { .. }
             | Self::UnknownMold { .. } => matches!(ret, FailureClass::EngineFault),
@@ -107,7 +109,8 @@ impl LoweringRefusal<'_>
             | Self::LowercaseModuleName { .. }
             | Self::NonExhaustiveMatch { .. }
             | Self::UnmarkedSelfReference { .. }
-            | Self::Unreachable { .. } => {
+            | Self::Unreachable { .. }
+            | Self::OutsideLoop { .. } => {
                 matches!(ret, FailureClass::MalformedSource)
             },
         },
@@ -139,12 +142,14 @@ impl LoweringRefusal<'_>
             | Self::LowercaseModuleName { .. }
             | Self::NonExhaustiveMatch { .. }
             | Self::UnmarkedSelfReference { .. }
-            | Self::Unreachable { .. } => FailureClass::MalformedSource,
+            | Self::Unreachable { .. }
+            | Self::OutsideLoop { .. } => FailureClass::MalformedSource,
             | Self::OutOfFragment { .. }
             | Self::GradedBridge { .. }
             | Self::UnreadAscription { .. }
             | Self::UnstatedComponent { .. }
-            | Self::WithoutK { .. } => FailureClass::Unrepresentable,
+            | Self::WithoutK { .. }
+            | Self::ForNeedsListCase { .. } => FailureClass::Unrepresentable,
             | Self::BudgetExceeded { .. }
             | Self::GrammarMismatch { .. }
             | Self::UnknownMold { .. } => FailureClass::EngineFault,
@@ -183,7 +188,7 @@ mod tests
     ///
     /// # Specification
     /// - requires: the built-in attribute registry contains `owes`.
-    /// - ensures: the 30 listed refusal variants have distinct representatives;
+    /// - ensures: the 32 listed refusal variants have distinct representatives;
     ///   payloads are fixtures rather than evidence of a real lowering failure.
     /// - provides: the domain of the finite classification checks.
     /// - fails: never.
@@ -205,7 +210,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 30_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 32_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -342,6 +347,11 @@ mod tests
                 span: empty,
                 functor: SurfaceName::from("MkCounter"),
             },
+            LoweringRefusal::OutsideLoop {
+                span: empty,
+                exit: crate::error::LoopExit::Break,
+            },
+            LoweringRefusal::ForNeedsListCase { span: empty },
         ]
     }
 
@@ -379,6 +389,8 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
+            FailureClass::MalformedSource,
+            FailureClass::Unrepresentable,
         ];
 
         for (refusal, class) in vocabulary().into_iter().zip(expected) {

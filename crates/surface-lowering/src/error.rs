@@ -77,10 +77,20 @@
 //! exponent, and every kind outside the dispatch table. `WrongSort`: the form
 //! produces another sort than its position demands. `Arity`: a lambda with
 //! other than one parameter, a block with no last computation, a recursive call
-//! with other than one argument per parameter. `NotInTail`: a `return` or
-//! `become` standing where no path through a body passes (the `lower` module's
-//! § A function exits where its body ends). `JoinsBlock`: a written answer on a
-//! match whose arms continue the block after it.
+//! with other than one argument per parameter. `NotInTail`: a `return`,
+//! `become`, `break` or `continue`, or a loop, standing where no path through
+//! a body passes (the `lower` module's § A function exits where its body
+//! ends). `JoinsBlock`: a written answer on a match whose arms continue the
+//! block after it.
+//!
+//! # Loops refuse by their own names
+//!
+//! A `break` or a `continue` on a path through a body but not through a
+//! loop's body is [`LoweringRefusal::OutsideLoop`]: the source wrote a loop
+//! exit where no loop is iterated, which is a mistake, not a form the
+//! fragment lacks. A `for` loop is [`LoweringRefusal::ForNeedsListCase`],
+//! naming what it waits on: the list it iterates has a fold and no case
+//! former, in the kernel or the core.
 //!
 //! `Unadmitted` and `Arity` exist because the grammar is the whole surface and
 //! the fragment is a small part of it; without them every form the surface has
@@ -239,9 +249,10 @@ pub enum FragmentBoundary
     /// unchanging parameters stands, something other than that parameter: only
     /// the last parameter descends.
     NonUniform,
-    /// The form is a function exit, `return` or `become`, standing where no
-    /// path through a function's, a lambda's or a thunk's body passes: a
-    /// call's head, an operand, or outside any body.
+    /// The form is a function exit, `return` or `become`, a loop exit,
+    /// `break` or `continue`, or a loop, standing where no path through a
+    /// function's, a lambda's or a thunk's body passes: a call's head, an
+    /// operand, or outside any body.
     NotInTail,
     /// The form is a match written with an answer, `case e -> T { … }`,
     /// whose arms continue the block after the statement it is bound by,
@@ -287,7 +298,7 @@ impl fmt::Display for FragmentBoundary
             ),
             | Self::NotInTail => f.write_str(
                 "stands where no path through a function, a lambda, a thunk or a copattern \
-                 clause body passes; an exit leaves only from such a path",
+                 clause body passes; an exit leaves, and a loop runs, only on such a path",
             ),
             | Self::JoinsBlock => f.write_str(
                 "has arms that continue the block after it, which answer what the block \
@@ -412,6 +423,48 @@ impl fmt::Display for AscriptionForm
             | Self::Kinded => f.write_str("is a kinded type component, a type family"),
             | Self::Parameterized => f.write_str("is a type component that binds parameters"),
         }
+    }
+}
+
+/// A loop exit: the keyword a [`LoweringRefusal::OutsideLoop`] names.
+///
+/// # Specification
+/// - requires: a producer selects the keyword actually written.
+/// - ensures: one variant per loop exit.
+/// - provides: which exit stood outside every loop.
+/// - fails: not applicable to the tag itself.
+/// - panics: none.
+/// - executable: none — the tag holds no tree to check the keyword against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a `break` and a `continue` outside every loop are each
+///   refused with their own keyword.
+/// - witness: `lower::loops::tests::a_loop_exit_off_every_loop_body_is_refused_by_name`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum LoopExit
+{
+    /// `break` or `break(v)`, leaving the nearest loop.
+    Break,
+    /// `continue`, running the nearest loop's body again.
+    Continue,
+}
+
+impl fmt::Display for LoopExit
+{
+    /// Writes the keyword between backticks.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(match *self {
+            | Self::Break => "`break`",
+            | Self::Continue => "`continue`",
+        })
     }
 }
 
@@ -804,6 +857,26 @@ pub enum LoweringRefusal<'source>
         span: ByteSpan,
     },
 
+    /// A `break` or a `continue` on no path through a loop's body: outside
+    /// every loop, or inside a function, a lambda, a thunk or a copattern
+    /// clause a loop holds, whose body is its own.
+    OutsideLoop
+    {
+        /// The bytes the exit covers.
+        span: ByteSpan,
+        /// Which exit was written.
+        exit: LoopExit,
+    },
+
+    /// A `for` loop: the native list it iterates has a fold and no case
+    /// former, and a loop in constant continuation steps through a list by
+    /// a case on it.
+    ForNeedsListCase
+    {
+        /// The bytes the loop covers.
+        span: ByteSpan,
+    },
+
     /// A pattern matching a path against reflexivity, `here`: axiom K where
     /// the endpoints are fixed, and in every case a second eliminator beside
     /// transport, which is the only way a path is used.
@@ -964,6 +1037,15 @@ impl fmt::Display for LoweringRefusal<'_>
             | Self::Unreachable { .. } => f.write_str(
                 "no path reaches this code: every path through the statement before it exits",
             ),
+            | Self::OutsideLoop { exit, .. } => write!(
+                f,
+                "{exit} stands on no path through a loop's body; a function, a lambda, a \
+                 thunk or a copattern clause inside a loop has a body of its own"
+            ),
+            | Self::ForNeedsListCase { .. } => f.write_str(
+                "a `for` loop steps through a native list, which has a fold and no case \
+                 former in the kernel or the core; loop over it by recursion instead",
+            ),
             | Self::WithoutK { .. } => f.write_str(
                 "a path is matched against `here`, which is axiom K; a path is used by \
                  transport, and `back`, `then` and `cong` derive what a match would",
@@ -1051,6 +1133,8 @@ impl LoweringRefusal<'_>
             | Self::NonExhaustiveMatch { span }
             | Self::UnmarkedSelfReference { span, .. }
             | Self::Unreachable { span }
+            | Self::OutsideLoop { span, .. }
+            | Self::ForNeedsListCase { span }
             | Self::WithoutK { span }
             | Self::UnknownMold { span, .. } => Maybe::Present(span),
             | Self::BudgetExceeded { .. } | Self::GrammarMismatch { .. } => {
@@ -1074,6 +1158,7 @@ mod tests
     use super::FormFault;
     use super::FragmentBoundary;
     use super::FragmentSort;
+    use super::LoopExit;
     use super::LoweringRefusal;
     use super::TelescopeFault;
     use super::refusal_span;
@@ -1091,7 +1176,7 @@ mod tests
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the current 29-variant fixture has no repeated variant tag;
+    /// - ensures: the current 31-variant fixture has no repeated variant tag;
     ///   source-bearing variants carry separately observable rejected spans.
     /// - provides: a finite domain for the exact span projection witness.
     /// - fails: never.
@@ -1112,7 +1197,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 29_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 31_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -1253,6 +1338,13 @@ mod tests
                 span: s(53_usize, 54_usize),
                 functor: SurfaceName::from("MkCounter"),
             },
+            LoweringRefusal::OutsideLoop {
+                span: s(55_usize, 56_usize),
+                exit: LoopExit::Continue,
+            },
+            LoweringRefusal::ForNeedsListCase {
+                span: s(57_usize, 58_usize),
+            },
         ]
     }
 
@@ -1293,6 +1385,8 @@ mod tests
             s(49_usize, 50_usize),
             s(51_usize, 52_usize),
             s(53_usize, 54_usize),
+            s(55_usize, 56_usize),
+            s(57_usize, 58_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {

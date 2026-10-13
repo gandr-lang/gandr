@@ -338,6 +338,15 @@ fn lowered(
         | LoweringRefusal::Unreachable { .. } => {
             f.write_str("this code never runs: every path before it leaves the body")
         },
+        | LoweringRefusal::OutsideLoop { exit, .. } => write!(
+            f,
+            "{exit} leaves a loop, and no loop runs here; a function, a lambda or a thunk \
+             inside a loop has a body of its own"
+        ),
+        | LoweringRefusal::ForNeedsListCase { .. } => f.write_str(
+            "`for` loops are not supported yet: a list has no case to step through it with; \
+             loop over it by recursion instead",
+        ),
         | LoweringRefusal::WithoutK { .. } => f.write_str(
             "a path cannot be matched against `here`; use it by transport, through `back`, \
              `then` or `cong`",
@@ -717,6 +726,7 @@ mod tests
     use gandr_surface_lowering::FragmentBoundary;
     use gandr_surface_lowering::FragmentSort;
     use gandr_surface_lowering::HeadArity;
+    use gandr_surface_lowering::LoopExit;
     use gandr_surface_lowering::LoweringRefusal;
     use gandr_surface_lowering::OperandCount;
     use gandr_surface_lowering::PayloadForm;
@@ -857,6 +867,11 @@ mod tests
             LoweringRefusal::NonExhaustiveMatch { span },
             LoweringRefusal::UnmarkedSelfReference { span, name },
             LoweringRefusal::Unreachable { span },
+            LoweringRefusal::OutsideLoop {
+                span,
+                exit: LoopExit::Break,
+            },
+            LoweringRefusal::ForNeedsListCase { span },
             LoweringRefusal::WithoutK { span },
             LoweringRefusal::BudgetExceeded {
                 budget: 0_usize.into(),

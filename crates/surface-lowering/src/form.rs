@@ -452,6 +452,14 @@ impl TileName
     pub const RETURN: Self = Self("return");
     /// The tail-call exit `become`.
     pub const BECOME: Self = Self("become");
+    /// The loop exit `break`.
+    pub const BREAK: Self = Self("break");
+    /// The loop re-entry `continue`.
+    pub const CONTINUE: Self = Self("continue");
+    /// The loop keyword `loop`.
+    pub const LOOP: Self = Self("loop");
+    /// The conditional loop keyword `while`.
+    pub const WHILE: Self = Self("while");
     /// The bind keyword `run`, opening a statement or a run where a value is
     /// read.
     pub const RUN: Self = Self("run");
@@ -602,6 +610,19 @@ pub enum Former
     Exit,
     /// The tail call `become c`, in tail position of a body.
     Become,
+    /// The loop `loop { c }`, which runs its body again wherever a path
+    /// through it ends without leaving it.
+    Loop,
+    /// The conditional loop `while v { c }`: a loop whose body runs while its
+    /// condition holds, and which leaves with unit when it does not.
+    While,
+    /// The loop over a list `for x in v { c }`.
+    For,
+    /// The loop exit `break` or `break(v)`, leaving the nearest loop with its
+    /// value, unit when none is written.
+    Break,
+    /// The loop re-entry `continue`, running the nearest loop's body again.
+    Continue,
     /// The force `force v`.
     Force,
     /// The run `run c` where a value is read: the computation runs before
@@ -724,7 +745,7 @@ impl Former
     ///   of successful table outcomes plus the miss outcome. The evidence is
     ///   bounded to the current closed enum and table.
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 52_usize] = [
+    pub const ALL: [Self; 57_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Hole,
@@ -738,6 +759,11 @@ impl Former
         Self::Return,
         Self::Exit,
         Self::Become,
+        Self::Loop,
+        Self::While,
+        Self::For,
+        Self::Break,
+        Self::Continue,
         Self::Force,
         Self::Run,
         Self::Call,
@@ -799,7 +825,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 58_usize] = [
+pub const FORMERS: [(&str, Former); 64_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -813,6 +839,12 @@ pub const FORMERS: [(&str, Former); 58_usize] = [
     ("pure_expression", Former::Return),
     ("return_expression", Former::Exit),
     ("become_expression", Former::Become),
+    ("loop_expression", Former::Loop),
+    ("while_expression", Former::While),
+    ("for_expression", Former::For),
+    ("break_expression", Former::Break),
+    ("break_value_expression", Former::Break),
+    ("continue_expression", Former::Continue),
     ("force_expression", Former::Force),
     ("run_expression", Former::Run),
     ("call_expression", Former::Call),

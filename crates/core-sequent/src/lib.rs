@@ -169,6 +169,7 @@ pub use crate::store::Frame;
 pub use crate::store::HeapFamily;
 pub use crate::store::HeapValue;
 pub use crate::store::HeapValueId;
+pub use crate::store::Memo;
 pub use crate::store::MemoState;
 pub use crate::store::ObservationArguments;
 pub use crate::store::Store;

@@ -159,6 +159,11 @@ pub enum Insertion
     /// The fixpoint a recursive function closes over its last parameter's
     /// lambda, binding the function's own name.
     Fixpoint,
+    /// A node a loop writes that the source does not: a `while`'s case on its
+    /// condition with the unit its false branch leaves with, and the re-entry
+    /// where a path through a loop's body ends without leaving it — the
+    /// result discarded and the loop's fixpoint forced again.
+    Loop,
     /// The value a computation returns, standing where a path type's endpoint
     /// or reflexivity's point is read: a compound endpoint.
     Endpoint,
