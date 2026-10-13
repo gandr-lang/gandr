@@ -2099,6 +2099,9 @@ enum Frame
         /// The summand injected into.
         summand: gandr_kernel_term::Summand,
     },
+    /// Assemble a function extensionality once every normal form it records
+    /// has crossed.
+    FunextBuild(ValueId),
     /// A thunk, awaiting its body's computation.
     Thunk
     {
@@ -3338,7 +3341,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             },
             | Value::Hole(hole) => return Err(Refusal::Hole { at: node, hole }),
             | Value::Here(point) => (Frame::Here { at }, CoreNode::Term(TermNode::Value(point))),
-            | Value::Funext(..) => return self.funext(target, at),
+            | Value::Funext(..) => return self.prepare_funext(target, at),
             | Value::Equiv(forward, backward) => {
                 let Some(decided) = self.source.equivalences.get(&at)
                 else {
@@ -3381,6 +3384,62 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         Ok(Step::Descend(child))
     }
 
+    /// Queue the normal forms the function extensionality `at` records, so
+    /// each crosses on the machine's own stack before its evaluation is
+    /// assembled.
+    ///
+    /// # Specification
+    /// - requires: the judgement accepted `at` as a function extensionality.
+    /// - ensures: `at` is open; every application step's two normal forms are
+    ///   visited, in step order and left before right, before [`Self::funext`]
+    ///   assembles the evaluation; a record of returns alone assembles at once.
+    /// - fails: [`Refusal::MachineInvariant`] when the judgement recorded
+    ///   nothing at `at`; as [`Self::funext`] when it assembles at once.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`Refusal`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the quantified witness erases its normal forms before
+    ///   its evaluation and the kernel replays it; a record of returns alone
+    ///   crosses as a higher evaluation.
+    /// - witness: `bridge::tests::a_quantified_funext_crosses_as_a_quantified_evaluation`
+    /// - witness: `bridge::tests::a_funext_crosses_as_a_higher_evaluation`
+    #[spec(ensures: |ret| ret.is_err() || !matches!(ret, Ok(Step::Descend(_))) || !self.frames.is_empty())]
+    fn prepare_funext(
+        &mut self,
+        target: &mut TermArena,
+        at: ValueId,
+    ) -> Result<Step, Refusal>
+    {
+        let source = self.source;
+        let Some(record) = source.funexts.get(&at)
+        else {
+            return Err(Refusal::MachineInvariant);
+        };
+        self.memo().values.insert(at, Image::Open);
+        self.frames.push(Frame::FunextBuild(at));
+        for step in record.steps().iter().rev() {
+            if let FunextStep::Apply {
+                ref left,
+                ref right,
+                ..
+            } = *step
+            {
+                self.frames.extend(
+                    [right.normal(), left.normal()]
+                        .map(|normal| Frame::NativeNext(CoreNode::Term(TermNode::Value(normal)))),
+                );
+            }
+        }
+        match self.frames.pop() {
+            | Some(Frame::NativeNext(child)) => Ok(Step::Descend(child)),
+            | Some(Frame::FunextBuild(node)) => self.funext(target, node),
+            | _ => Err(Refusal::MachineInvariant),
+        }
+    }
+
     /// Erase the function extensionality `at` into the kernel's higher
     /// evaluation when every step returns, and into its quantified evaluation
     /// otherwise: per return the value each function returns, the diagonal
@@ -3389,7 +3448,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// traces; every trace with its anchors forgotten.
     ///
     /// # Specification
-    /// - requires: the judgement accepted `at` as a function extensionality.
+    /// - requires: the judgement accepted `at` as a function extensionality;
+    ///   every application step's normal forms have crossed in the current
+    ///   mode.
     /// - ensures: when every recorded step returns, one kernel component per
     ///   step, in order, each carrying the images of the two returned values
     ///   and the diagonal of the first — the unit value at the unit type, a
@@ -3398,15 +3459,15 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///   component, the machine's decisions with every anchor erased. Otherwise
     ///   one kernel step per recorded step, in order: a return as a component
     ///   is, its three children in that order; an application with its fibre
-    ///   and the images of its two normal forms, erased as any closed value is.
-    ///   The two functions are not erased: the kernel reads them from the
-    ///   identity type it checks the evaluation at.
+    ///   and the images its two normal forms crossed as. The two functions are
+    ///   not erased: the kernel reads them from the identity type it checks the
+    ///   evaluation at.
     /// - provides: the evidence the kernel's higher or quantified evaluation
     ///   replays, the core's decision recomputed rather than trusted.
     /// - fails: [`Refusal::MachineInvariant`] when the judgement recorded no
-    ///   steps at `at` or a returned value is not first order;
-    ///   [`Refusal::Hole`] at a hole a returned value holds; a constant's own
-    ///   refusal; any refusal erasing a normal form gives.
+    ///   steps at `at`, a returned value is not first order or a normal form
+    ///   has no image; [`Refusal::Hole`] at a hole a returned value holds; a
+    ///   constant's own refusal.
     /// - panics: none.
     ///
     /// # Errors
@@ -3414,8 +3475,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///
     /// # Termination
     /// - reason: a `for` loop over the recorded steps and, per value, a `while
-    ///   let` worklist over its finite tree, not recursion; a normal form is
-    ///   erased by the machine's own worklist.
+    ///   let` worklist over its finite tree, not recursion; the normal forms
+    ///   crossed on the machine's own stack before.
     /// - measure: the steps left, then the nodes left to visit.
     ///
     /// # Adequacy
@@ -3470,8 +3531,13 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                         ref left,
                         ref right,
                     } => {
-                        let left_image = self.nested_value(target, left.normal())?;
-                        let right_image = self.nested_value(target, right.normal())?;
+                        let [left_image, right_image] =
+                            [left.normal(), right.normal()].map(|normal| {
+                                match self.reached().values.get(&normal) {
+                                    | Some(&Image::Erased(image)) => Ok(image),
+                                    | _ => Err(Refusal::MachineInvariant),
+                                }
+                            });
                         steps.push(QuantifiedStep::Apply {
                             fibre,
                             dialogues: EvaluationDialogues {
@@ -3479,7 +3545,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                                 right: forget(right.decisions()),
                             },
                         });
-                        children.extend([left_image, right_image]);
+                        children.extend([left_image?, right_image?]);
                     },
                 }
             }
@@ -3517,40 +3583,6 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             )
         };
         Ok(self.erased_value(at, image))
-    }
-
-    /// Erase the value `root` into `target` from within another node's
-    /// erasure, leaving that erasure's open frames as they stand.
-    ///
-    /// # Specification
-    /// - requires: no earlier erasure of this machine was refused; `root` does
-    ///   not reach a node whose erasure is open.
-    /// - ensures: as [`Self::value`]; the frames open before the call are open
-    ///   after it, in order.
-    /// - provides: the erasure of a closed value a step records, a function
-    ///   extensionality's normal form, run to completion on its own frame stack
-    ///   so the enclosing erasure resumes where it stood.
-    /// - fails: as [`Self::value`].
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// - any [`Refusal`] [`Self::value`] gives.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — the quantified witness erases two normal forms inside
-    ///   its funext's erasure, and the enclosing declaration still crosses.
-    /// - witness: `bridge::tests::a_quantified_funext_crosses_as_a_quantified_evaluation`
-    #[spec(captures: before = self.frames.len(), ensures: self.frames.len() == before)]
-    fn nested_value(
-        &mut self,
-        target: &mut TermArena,
-        root: ValueId,
-    ) -> Result<gandr_kernel_term::ValueId, Refusal>
-    {
-        let open = core::mem::take(&mut self.frames);
-        let image = self.value(target, root);
-        self.frames = open;
-        image
     }
 
     /// The kernel image of `value`, a first-order value a function returned,
@@ -4337,6 +4369,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         match (frame, image) {
             | (Frame::NativeNext(child), _) => Ok(Step::Descend(child)),
             | (Frame::NativeBuild(root), _) => self.finish_native(target, root),
+            | (Frame::FunextBuild(at), _) => self.funext(target, at),
             | (Frame::ListHead { at, tail }, AnyNode::Value(head)) => {
                 self.frames.push(Frame::ListTail { at, head });
                 self.argument(tail)

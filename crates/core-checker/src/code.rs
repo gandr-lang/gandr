@@ -1204,6 +1204,12 @@ impl CodeDefinitions
     /// - hypothesis: L3 — as [`Self::evaluate_claim`] and [`Self::read_claim`].
     /// - witness: `funext::tests::pointwise_equal_functions_relate_by_computation`
     /// - witness: `funext::tests::a_higher_order_argument_is_decided_under_the_quantifier`
+    #[spec(ensures: |ret| match ret {
+        | Ok(Readback::Returned { normal, returned }) => core.value(normal).is_some() && core.value(returned).is_some(),
+        | Ok(Readback::Stuck(normal)) => core.value(normal).is_some(),
+        | Ok(Readback::Unsuspended) => true,
+        | Err(refusal) => refusal == CheckRefusal::Undecided { at: claim },
+    })]
     fn read_back(
         &self,
         core: &mut CoreArena,
@@ -1273,6 +1279,7 @@ impl CodeDefinitions
     /// - hypothesis: L3 — as [`Self::evaluate_claim`] and [`Self::read_claim`].
     /// - witness: `bridge::tests::a_funext_crosses_as_a_higher_evaluation`
     /// - witness: `bridge::tests::a_quantified_funext_crosses_as_a_quantified_evaluation`
+    #[spec(ensures: |ret| ret.is_ok() || ret == Err(CheckRefusal::Undecided { at: claim }))]
     fn claim_trace(
         &self,
         core: &CoreArena,

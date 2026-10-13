@@ -192,6 +192,19 @@ impl Coordinate
     ///
     /// # Errors
     /// - [`CheckRefusal::MachineInvariant`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a twice-applied body's second application finds its
+    ///   premise beneath the first's output binders; an index left unraised
+    ///   names the wrong premise and refuses.
+    /// - witness: `funext::tests::a_higher_order_argument_is_decided_under_the_quantifier`
+    #[spec(ensures: |ret| match ret {
+        | Ok(found) => found.result == self.result
+            && Some(u32::from(found.premise)) == u32::from(self.premise).checked_add(u32::from(binders))
+            && Some(u32::from(found.left)) == u32::from(self.left).checked_add(u32::from(binders))
+            && Some(u32::from(found.right)) == u32::from(self.right).checked_add(u32::from(binders)),
+        | Err(refusal) => refusal == CheckRefusal::MachineInvariant,
+    })]
     fn beneath(
         self,
         binders: Binders,
@@ -450,6 +463,14 @@ pub fn decide(
 ///
 /// # Errors
 /// - [`CheckRefusal`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two functions returning the same boolean agree, and
+///   negation against the identity, or an argument applied at true against one
+///   applied at false, differ.
+/// - witness: `funext::tests::pointwise_equal_functions_relate_by_computation`
+/// - witness: `funext::tests::what_the_rule_cannot_show_it_refuses_by_name`
+#[spec(ensures: |ret| !matches!(ret, Err(CheckRefusal::Undecided { .. })))]
 fn agreement(
     context: &CheckingContext<'_>,
     left: ValueId,
@@ -493,6 +514,11 @@ enum Agreement
 /// - hypothesis: L3 — the Bool function type reads its two halves, and a
 ///   function type over functions reads a thunk type as its domain.
 /// - witness: `funext::tests::a_higher_order_argument_is_decided_under_the_quantifier`
+#[spec(ensures: |ret| match ret {
+    | Ok(Maybe::Present((domain, result))) => context.arena().value_type(domain).is_some() && context.arena().value_type(result).is_some(),
+    | Ok(Maybe::Absent(reason)) => reason == outside::Absent::Former,
+    | Err(_) => true,
+})]
 fn arrow(
     context: &mut CheckingContext<'_>,
     classifier: ValueTypeId,
@@ -778,6 +804,10 @@ fn coverage(
 /// - hypothesis: L3 — a tail application and a bound one both read; a body
 ///   stuck on a base variable's case reads elsewhere.
 /// - witness: `funext::tests::a_higher_order_argument_is_decided_under_the_quantifier`
+#[spec(ensures: |ret| match ret {
+    | Maybe::Present(found) => context.arena().value(found.input).is_some(),
+    | Maybe::Absent(reason) => reason == applied::Absent::Elsewhere,
+})]
 fn stuck(
     context: &CheckingContext<'_>,
     normal: ValueId,
@@ -839,6 +869,10 @@ fn stuck(
 /// - hypothesis: L3 — a twice-applied body reads its second application at the
 ///   first's output.
 /// - witness: `funext::tests::a_higher_order_argument_is_decided_under_the_quantifier`
+#[spec(ensures: |ret| match continuation {
+    | Continuation::Tail => context.arena().computation(ret) == Some(&Computation::Return(output.0)),
+    | Continuation::Bind(_) => context.arena().computation(ret).is_some(),
+})]
 fn resume(
     context: &mut CheckingContext<'_>,
     continuation: Continuation,
