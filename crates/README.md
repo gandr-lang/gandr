@@ -74,7 +74,7 @@ crates/
 ├── theory-sites/                  the carrier's shapes as a site with stick-free objects: the morphism class over circuit wirings, its degree, the finite checks of its generalized Reedy structure
 ├── theory-spec-combinators/       the bounded checks a specification clause makes of accumulated state: what a sequence gained since a mark, one push, order around an insertion point
 ├── theory-virtual-doctrines/      virtual double categories, reflected judgments and directed laws over replayable rewriting evidence
-├── workflow-spec-cost/            the `spec-cost` binary: executable specifications ranked by the check time profiled in the slowest enforcing tests
+├── workflow-spec-cost/            the `spec-cost` and `spec-cost-ratio` binaries: checks ranked by profiled time; each test's enforcing over plain time
 └── workflow-test-timing/          the `test-timing` binary: nextest priority levels proposed from recent merge-queue runs' JUnit reports
 ```
 
