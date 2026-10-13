@@ -201,22 +201,50 @@
 //! not a proof for all programs.
 //!
 //! The editor simulation (`tests/editor.rs`) drives a connection one
-//! keystroke at a time, in process and in lockstep: a buffer models the
-//! editor's text, cursor, auto-closed pairs and indentation, a typist reaches
-//! each corpus source from an empty buffer and an erasure deletes it line by
-//! line, and random edit scripts are undone to where they started. Every
-//! keystroke's publication carries the latest version and every request is
-//! answered once without an error. The oracle is a fresh connection opening
-//! the same text whole: the published diagnostics, semantic tokens, outline,
-//! folding, selection ranges and inline completion must equal its answers,
-//! at every keystroke of the erasure and the scripts, and at every line of
-//! the corpus typing, where a whole reparse per keystroke would cost minutes
-//! with specifications enforced. A hover's documentation reads the session's
-//! last accepted revision, which a fresh connection lacks, so it is held to
+//! keystroke at a time, in lockstep: a buffer models the editor's text,
+//! cursor, auto-closed pairs and indentation, a typist reaches each corpus
+//! source from an empty buffer and an erasure deletes it line by line, and
+//! random edit scripts are undone to where they started. Every keystroke's
+//! publication carries the latest version and every request is answered once
+//! without an error. The oracle is a fresh connection opening the same text
+//! whole: the published diagnostics, semantic tokens, outline, folding,
+//! selection ranges and inline completion must equal its answers, at every
+//! keystroke of the erasure and the scripts, and at every line of the corpus
+//! typing, where a whole reparse per keystroke would cost minutes with
+//! specifications enforced. A hover's documentation reads the session's last
+//! accepted revision, which a fresh connection lacks, so it is held to
 //! answering, not to agreeing. A hover at every byte of every corpus source
 //! answers without a fault, and the share it answers is recorded as a floor
-//! that may only rise. Each recorded session replays message for message
-//! through `serve` over framed streams.
+//! that may only rise.
+//!
+//! **One execution per session.** A single editor's session is `serve`
+//! itself, on a thread of its own over in-memory framed streams, so every
+//! answer the session holds to the oracle is one the transport wrote, and the
+//! session ends with `shutdown` and `exit`. The two-editor sessions share a
+//! workspace, as the hub's connections do, so they run in process and replay
+//! message for message through `serve` at their end. _Alternative:_ every
+//! session in process and replayed, which ran the server's work twice: with
+//! specifications enforced the replay was 45% of the corpus typing.
+//! _Reversal:_ a check that only an in-process drive can make moves the
+//! single-editor sessions back in process, with the replay.
+//!
+//! **The gate samples the corpus sweeps; a daily lane runs them whole.** With
+//! specifications enforced the sweeps set the merge queue's critical path, so
+//! the gate (`mise run check`) visits a sample and the daily lane
+//! (`mise run ci:sweeps`, which sets `GANDR_SWEEPS_WHOLE=1`) every source. The
+//! erasure and the ghost-text sweep visit every fourth source by index after
+//! the length sort, the longest in. The typing is a smoke, every eighth source
+//! no longer than a kibibyte: the longest source alone types for longer than
+//! the gate can spend, and no sample that keeps it is shorter, while the
+//! erasure's sample still holds it to the oracle at every keystroke. The random
+//! edit scenarios generate a quarter of their scripts. A source that fails in
+//! the sample fails the gate and one outside it fails the daily lane: nothing
+//! goes untested, part of it is tested later. The constants beside each sweep
+//! state their measured cost. _Alternatives:_ the whole corpus in the gate,
+//! which held the queue's enforcing lane past fifteen minutes; a random sample,
+//! whose failure the next run cannot reproduce. _Reversal:_ the samples widen
+//! to the whole once the specification cost per keystroke falls far enough
+//! that the whole fits the gate.
 //!
 //! Two effects cannot be observed by a useful return-value predicate: `serve`
 //! owns opaque generic input/output streams, and `Capabilities::fmt` writes

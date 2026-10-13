@@ -1,5 +1,10 @@
 //! The scenarios: the corpus typed and erased, scripted edits that break and
 //! fix a document, and random edit scripts undone to where they started.
+//!
+//! The gate types and erases a sample of the corpus and generates a share of
+//! the random scripts; `GANDR_SWEEPS_WHOLE=1` (`mise run ci:sweeps`, the
+//! daily lane) visits every source and runs every script. A source that fails
+//! in the sample fails the gate, and one outside it fails the daily lane.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -42,8 +47,68 @@ use super::editing::Session;
 /// A change that answers more positions raises it.
 const ANSWERED_FLOOR: usize = 735;
 
-/// The random edit scripts each run generates.
+/// The random edit scripts each scenario generates in a whole run.
 const CASES: u32 = 32;
+
+/// The random edit scripts each scenario generates in the gate's run: a
+/// quarter of the whole's. Their cost is the scripts' keystrokes: the whole's
+/// 32 took the random-edit scenario 40 s and the two-editor scenarios 22 s
+/// and 19 s on the enforcing lane (medians of five merge-queue runs).
+const SAMPLED_CASES: u32 = 8;
+
+/// The gate's erasure: every fourth corpus source by index after the length
+/// sort, the longest in, every keystroke held to the oracle. On four cores
+/// with specifications enforced the sample erases in 29 s against the whole
+/// corpus's 48 s, the longest source setting both.
+const ERASED: Sample = Sample {
+    stride: Stride(4),
+    ceiling: Ceiling(usize::MAX),
+};
+
+/// The gate's typing, a smoke: every eighth corpus source no longer than a
+/// kibibyte, by index after the length sort. On four cores with
+/// specifications enforced the whole corpus types in 88 s, 66 s of it the
+/// longest source alone, which no sample that keeps that source can shorten;
+/// the sources past the ceiling are typed by the whole run, and the erasure's
+/// sample still holds the longest to the oracle at every keystroke. The smoke
+/// types in 4 s.
+const TYPED: Sample = Sample {
+    stride: Stride(8),
+    ceiling: Ceiling(1024),
+};
+
+/// What part of the corpus a sweep visits under the gate; the whole run,
+/// `GANDR_SWEEPS_WHOLE=1` (`mise run ci:sweeps`), visits every source.
+#[derive(Clone, Copy, Debug)]
+struct Sample
+{
+    /// The step between the sources it visits.
+    stride: Stride,
+    /// The longest source it visits.
+    ceiling: Ceiling,
+}
+
+/// A sample's step: it visits the sources whose index after the length sort
+/// this divides.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct Stride(usize);
+
+/// The length in bytes past which a source is left to the whole run.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct Ceiling(usize);
+
+/// How much a run of the corpus sweeps covers.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Sweep
+{
+    /// Every source and every random script: `mise run ci:sweeps`, the
+    /// daily lane.
+    Whole,
+    /// The gate's samples and its share of random scripts: `mise run check`.
+    Sampled,
+}
 
 /// The texts a random edit script starts from.
 const SEEDS: [&str; 4] = [
@@ -137,6 +202,89 @@ fn corpus() -> Vec<Source>
             }
         })
         .collect()
+}
+
+impl Sweep
+{
+    /// The coverage the environment asks for: the whole when
+    /// `GANDR_SWEEPS_WHOLE` is set, the gate's samples otherwise.
+    ///
+    /// # Specification
+    /// trivial.
+    fn asked() -> Self
+    {
+        if std::env::var_os("GANDR_SWEEPS_WHOLE").is_some() {
+            Self::Whole
+        }
+        else {
+            Self::Sampled
+        }
+    }
+
+    /// The corpus sources a sweep visits, the longest first: every source in
+    /// a whole run, and `sample`'s share in the gate's.
+    ///
+    /// # Specification
+    /// - requires: the corpus crate sits beside this one.
+    /// - ensures: the walk reached more than a hundred sources. A whole run
+    ///   returns every one; a sampled run returns, of those no longer than the
+    ///   sample's ceiling, the ones whose index after the length sort its
+    ///   stride divides, standing for more than a hundred sources. Either way
+    ///   longest first, sources of one length in path order.
+    /// - provides: the sources the typing and the erasure visit.
+    /// - panics: the corpus cannot be read, the walk reaches a hundred sources
+    ///   or fewer, or the sample stands for a hundred or fewer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a truncated walk fails the whole run's floor, and a
+    ///   sample whose ceiling or stride left too few sources fails the sampled
+    ///   run's; the order is the predicate's.
+    /// - witness: `editor::editor::scenarios::typing_each_corpus_source_keeps_every_answer_faithful`
+    /// - witness: `editor::editor::scenarios::erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful`
+    #[spec(ensures: |ret| ret.is_sorted_by(|longer, shorter| longer.text.len() >= shorter.text.len()))]
+    fn visited(
+        self,
+        sample: Sample,
+    ) -> Vec<Source>
+    {
+        let mut sources = corpus();
+        assert!(
+            sources.len() > 100,
+            "the corpus is walked whole: {}",
+            sources.len()
+        );
+        sources.sort_by_key(|source| core::cmp::Reverse(source.text.len()));
+        if self == Self::Whole {
+            return sources;
+        }
+        let Sample {
+            stride: Stride(stride),
+            ceiling: Ceiling(ceiling),
+        } = sample;
+        let sampled: Vec<Source> = sources
+            .into_iter()
+            .filter(|source| source.text.len() <= ceiling)
+            .step_by(stride)
+            .collect();
+        assert!(
+            sampled.len().saturating_mul(stride) > 100,
+            "every {stride}th source of at most {ceiling} bytes stands for a hundred or more: {}",
+            sampled.len()
+        );
+        sampled
+    }
+
+    /// The random edit scripts each scenario generates.
+    ///
+    /// # Specification
+    /// trivial.
+    fn scripts(self) -> ProptestConfig
+    {
+        ProptestConfig::with_cases(match self {
+            | Self::Whole => CASES,
+            | Self::Sampled => SAMPLED_CASES,
+        })
+    }
 }
 
 #[test]
@@ -361,29 +509,19 @@ fn each_in_parallel(
 #[test]
 fn typing_each_corpus_source_keeps_every_answer_faithful()
 {
-    let sources = corpus();
-    assert!(
-        sources.len() > 100,
-        "the corpus is walked whole: {}",
-        sources.len()
-    );
+    let sources = Sweep::asked().visited(TYPED);
     each_in_parallel(&sources, |source| {
         let mut session =
             Session::open(source.uri.clone(), Text(""), Typing::Assisted, Oracle::Line);
         session.type_in(Text(&source.text));
-        session.replays_over_streams();
+        session.closes_over_streams();
     });
 }
 
 #[test]
 fn erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful()
 {
-    let sources = corpus();
-    assert!(
-        sources.len() > 100,
-        "the corpus is walked whole: {}",
-        sources.len()
-    );
+    let sources = Sweep::asked().visited(ERASED);
     each_in_parallel(&sources, |source| {
         let mut session = Session::open(
             source.uri.clone(),
@@ -396,7 +534,7 @@ fn erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful()
             session.buffer().text().0.is_empty(),
             "the document is erased"
         );
-        session.replays_over_streams();
+        session.closes_over_streams();
     });
 }
 
@@ -479,7 +617,7 @@ fn fixing_a_mismatch_clears_its_diagnostic()
         Vec::<Value>::new(),
         "the fix clears the diagnostic"
     );
-    session.replays_over_streams();
+    session.closes_over_streams();
 }
 
 #[test]
@@ -503,7 +641,7 @@ fn defining_a_missing_name_clears_its_diagnostic()
         Vec::<Value>::new(),
         "defining `a` clears the diagnostic"
     );
-    session.replays_over_streams();
+    session.closes_over_streams();
 }
 
 #[test]
@@ -529,11 +667,11 @@ fn restoring_a_semicolon_clears_its_diagnostic()
         Vec::<Value>::new(),
         "the `;` clears the diagnostic"
     );
-    session.replays_over_streams();
+    session.closes_over_streams();
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(CASES))]
+    #![proptest_config(Sweep::asked().scripts())]
 
     #[test]
     fn random_edits_keep_every_answer_faithful(
@@ -564,7 +702,7 @@ proptest! {
         seed in select(SEEDS.as_slice()),
         script in proptest::collection::vec(edit(), 1_usize .. 16_usize),
     ) {
-        let mut first = Session::open(
+        let mut first = Session::open_shared(
             String::from("file:///strict/shared.gandr"),
             Text(seed),
             Typing::Assisted,
@@ -585,7 +723,7 @@ proptest! {
         seed in select(SEEDS.as_slice()),
         script in proptest::collection::vec((any::<bool>(), edit()), 1_usize .. 16_usize),
     ) {
-        let mut first = Session::open(
+        let mut first = Session::open_shared(
             String::from("file:///strict/diverged.gandr"),
             Text(seed),
             Typing::Assisted,
