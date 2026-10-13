@@ -58,8 +58,10 @@ use crate::il::ConsumerId;
 use crate::il::ConsumerNode;
 use crate::il::CovariableIndex;
 use crate::il::DestructorTag;
+use crate::il::Introduces;
 use crate::il::ProducerId;
 use crate::il::ProducerNode;
+use crate::il::Route;
 
 /// A head whose arity a node is held to.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -414,9 +416,11 @@ impl Walk<'_>
     /// Schedule control children under their declared value and return binders.
     ///
     /// # Specification
-    /// - ensures: signatures erase no runtime binding; subjects, resumes and
-    ///   resets bind one return, shift binds a stack, and handler clauses bind
-    ///   payload then stack independently from the return clause's one value.
+    /// - ensures: signatures erase no runtime binding; an exercise reads its
+    ///   capability beside its payload; subjects, resumes and resets bind one
+    ///   return, a scope's subject its capability first, shift binds a stack,
+    ///   and handler clauses bind payload then stack independently from the
+    ///   return clause's one value.
     /// - fails: a missing or non-control command.
     ///
     /// # Adequacy
@@ -437,14 +441,19 @@ impl Walk<'_>
         match *node {
             | CommandNode::Cut { .. } => self.stack.push(Visit::Command(id, depth)),
             | CommandNode::Perform {
+                route,
                 payload,
                 continuation,
                 ..
             } => {
                 self.stack.push(Visit::Consumer(continuation, depth));
                 self.stack.push(Visit::Producer(payload, depth));
+                if let Route::Capability(capability) = route {
+                    self.stack.push(Visit::Producer(capability, depth));
+                }
             },
             | CommandNode::Handle {
+                introduces,
                 subject,
                 on_return,
                 ref clauses,
@@ -462,9 +471,13 @@ impl Walk<'_>
                     on_return,
                     depth.under(ProducerArity::ONE, ConsumerArity::ONE),
                 ));
+                let bound = match introduces {
+                    | Introduces::Nothing => ProducerArity::ZERO,
+                    | Introduces::Capability => ProducerArity::ONE,
+                };
                 self.stack.push(Visit::Command(
                     subject,
-                    depth.under(ProducerArity::ZERO, ConsumerArity::ONE),
+                    depth.under(bound, ConsumerArity::ONE),
                 ));
             },
             | CommandNode::Resume {
@@ -1047,6 +1060,7 @@ mod tests
         let handled = arena
             .mint_command(CommandNode::Handle {
                 signature: signature.clone(),
+                introduces: crate::il::Introduces::Nothing,
                 subject,
                 on_return,
                 clauses: alloc::sync::Arc::from([EffectClause {
@@ -1060,6 +1074,7 @@ mod tests
             .mint_command(CommandNode::Perform {
                 signature,
                 operation: "op".into(),
+                route: Route::Nearest,
                 payload: producers[0],
                 continuation: consumers[3],
             })

@@ -34,8 +34,10 @@ use crate::il::ConstructorTag;
 use crate::il::ConsumerId;
 use crate::il::ConsumerNode;
 use crate::il::DestructorTag;
+use crate::il::Introduces;
 use crate::il::ProducerId;
 use crate::il::ProducerNode;
+use crate::il::Route;
 use crate::il::Selector;
 
 /// Fixed text a rendering writes.
@@ -323,21 +325,34 @@ fn command(
         | CommandNode::Perform {
             ref signature,
             ref operation,
+            route,
             payload,
             continuation,
-        } => alloc::vec![
-            text!("perform "),
-            Piece::Name(signature.name().as_ref()),
-            text!("."),
-            Piece::Name(operation.as_ref()),
-            text!("("),
-            Piece::Producer(payload, depth),
-            text!("; "),
-            Piece::Consumer(continuation, depth),
-            text!(")")
-        ],
+        } => {
+            let mut pieces = Vec::with_capacity(12);
+            match route {
+                | Route::Nearest => pieces.push(text!("perform ")),
+                | Route::Capability(capability) => pieces.extend([
+                    text!("exercise "),
+                    Piece::Producer(capability, depth),
+                    text!(" "),
+                ]),
+            }
+            pieces.extend([
+                Piece::Name(signature.name().as_ref()),
+                text!("."),
+                Piece::Name(operation.as_ref()),
+                text!("("),
+                Piece::Producer(payload, depth),
+                text!("; "),
+                Piece::Consumer(continuation, depth),
+                text!(")"),
+            ]);
+            pieces
+        },
         | CommandNode::Handle {
             ref signature,
+            introduces,
             subject,
             on_return,
             ref clauses,
@@ -345,9 +360,15 @@ fn command(
         } => {
             let mut pieces = Vec::with_capacity(clauses.len().saturating_mul(4).saturating_add(8));
             pieces.extend([
-                text!("handle "),
+                match introduces {
+                    | Introduces::Nothing => text!("handle "),
+                    | Introduces::Capability => text!("scope "),
+                },
                 Piece::Name(signature.name().as_ref()),
-                text!(" { "),
+                match introduces {
+                    | Introduces::Nothing => text!(" { "),
+                    | Introduces::Capability => text!(" { (c) ⇒ "),
+                },
                 Piece::Command(subject, depth),
                 text!(" | return(x; α) ⇒ "),
                 Piece::Command(on_return, depth),

@@ -76,8 +76,10 @@ use crate::il::ConstructorTag;
 use crate::il::ConsumerId;
 use crate::il::ConsumerNode;
 use crate::il::DestructorTag;
+use crate::il::Introduces;
 use crate::il::ProducerId;
 use crate::il::ProducerNode;
+use crate::il::Route;
 use crate::il::Selector;
 
 /// Why a command or producer has no core reading.
@@ -586,7 +588,8 @@ impl Unfocusing<'_>
                 _ => true,
             }),
             | &Task::Control(source, _) => self.arena.command(source).is_none_or(|node| match *node {
-                CommandNode::Perform { .. } => !self.values.is_empty(),
+                CommandNode::Perform { route: Route::Nearest, .. } => !self.values.is_empty(),
+                CommandNode::Perform { route: Route::Capability(_), .. } => self.values.len() >= 2,
                 CommandNode::Handle { ref clauses, .. } => self.computations.len() >= clauses.len().saturating_add(2),
                 CommandNode::Resume { .. } => !self.values.is_empty() && !self.computations.is_empty(),
                 CommandNode::Reset { .. } | CommandNode::Shift { .. } => !self.computations.is_empty(),
@@ -953,15 +956,30 @@ impl Unfocusing<'_>
             | CommandNode::Perform {
                 ref signature,
                 ref operation,
+                route,
                 ..
             } => {
                 let signature = self.signature(source, signature, depth)?;
                 let payload = self.pop_value()?;
-                self.core
-                    .computation_perform(signature, operation.clone(), payload)
+                match route {
+                    | Route::Nearest => {
+                        self.core
+                            .computation_perform(signature, operation.clone(), payload)
+                    },
+                    | Route::Capability(_) => {
+                        let capability = self.pop_value()?;
+                        self.core.computation_exercise(
+                            capability,
+                            signature,
+                            operation.clone(),
+                            payload,
+                        )
+                    },
+                }
             },
             | CommandNode::Handle {
                 ref signature,
+                introduces,
                 ref clauses,
                 ..
             } => {
@@ -976,8 +994,20 @@ impl Unfocusing<'_>
                 translated.reverse();
                 let on_return = self.pop_computation()?;
                 let subject = self.pop_computation()?;
-                self.core
-                    .computation_handle(signature, subject, on_return, translated.into())
+                match introduces {
+                    | Introduces::Nothing => self.core.computation_handle(
+                        signature,
+                        subject,
+                        on_return,
+                        translated.into(),
+                    ),
+                    | Introduces::Capability => self.core.computation_scope(
+                        signature,
+                        subject,
+                        on_return,
+                        translated.into(),
+                    ),
+                }
             },
             | CommandNode::Resume { .. } => {
                 let body = self.pop_computation()?;
@@ -1026,6 +1056,7 @@ impl Unfocusing<'_>
         match *node {
             | CommandNode::Cut { .. } => self.tasks.push(Task::Command(source, depth)),
             | CommandNode::Perform {
+                route,
                 payload,
                 continuation,
                 ..
@@ -1033,8 +1064,12 @@ impl Unfocusing<'_>
                 self.tasks.push(Task::Spine(continuation, depth));
                 self.tasks.push(Task::Control(source, depth));
                 self.tasks.push(Task::Value(payload, depth));
+                if let Route::Capability(capability) = route {
+                    self.tasks.push(Task::Value(capability, depth));
+                }
             },
             | CommandNode::Handle {
+                introduces,
                 subject,
                 on_return,
                 ref clauses,
@@ -1051,8 +1086,11 @@ impl Unfocusing<'_>
                 }
                 self.tasks
                     .push(Task::Command(on_return, depth.under_function_arm()));
-                self.tasks
-                    .push(Task::Command(subject, depth.under_covariable()));
+                let under = match introduces {
+                    | Introduces::Nothing => depth.under_covariable(),
+                    | Introduces::Capability => depth.under_function_arm(),
+                };
+                self.tasks.push(Task::Command(subject, under));
             },
             | CommandNode::Resume {
                 stack,

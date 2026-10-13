@@ -73,8 +73,19 @@ fn hand_built_control_cases_cover_every_former()
     let performed = core.computation_perform(signature.clone(), "op".into(), unit);
     let resumed = core.computation_resume(zero, payload);
     let handled = core.computation_handle(
-        signature,
+        signature.clone(),
         performed,
+        identity,
+        alloc::sync::Arc::from([EffectClause {
+            operation: "op".into(),
+            body: resumed,
+        }]),
+    );
+    let exercised = core.computation_exercise(zero, signature.clone(), "op".into(), unit);
+    let exercised = core.computation_bind(exercised, identity);
+    let scoped = core.computation_scope(
+        signature,
+        exercised,
         identity,
         alloc::sync::Arc::from([EffectClause {
             operation: "op".into(),
@@ -93,6 +104,7 @@ fn hand_built_control_cases_cover_every_former()
         stack_return,
         performed,
         handled,
+        scoped,
         resume_literal,
         reset,
         under,

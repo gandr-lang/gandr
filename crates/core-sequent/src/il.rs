@@ -575,6 +575,40 @@ pub enum Selector
     Label(gandr_core_term::FieldLabel),
 }
 
+/// What a handler binds over its subject besides the subject's return
+/// covariable.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Introduces
+{
+    /// Nothing: a handler of the core's anonymous `handle`, which an
+    /// operation reaches by being the nearest delimiter.
+    Nothing,
+    /// A capability: the subject binds one producer, the capability the
+    /// handler introduces, and an exercise through it reaches this handler
+    /// whatever stands between.
+    Capability,
+}
+
+/// How an operation request finds the handler that answers it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Route
+{
+    /// The nearest delimiter decides: a handler of the operation's interface
+    /// answers, any other delimiter offers the request to the host.
+    Nearest,
+    /// The capability the producer evaluates to decides: the handler that
+    /// introduced it answers, across every frame above it; a capability no
+    /// handler introduced — one the host holds — offers the request to the
+    /// host.
+    Capability(ProducerId),
+}
+
 /// A command node.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum CommandNode
@@ -586,6 +620,8 @@ pub enum CommandNode
         signature: gandr_core_term::effect::EffectSig,
         /// The operation within that interface.
         operation: gandr_core_term::effect::OperationName,
+        /// How the request finds its handler.
+        route: Route,
         /// Its eager payload.
         payload: ProducerId,
         /// The continuation installed before propagation.
@@ -596,7 +632,10 @@ pub enum CommandNode
     {
         /// The interface this delimiter handles.
         signature: gandr_core_term::effect::EffectSig,
-        /// The subject, binding one return covariable.
+        /// What the subject binds besides its return covariable.
+        introduces: Introduces,
+        /// The subject, binding the introduced capability, when there is
+        /// one, and one return covariable.
         subject: CommandId,
         /// Return clause: one value binder and one return covariable.
         on_return: CommandId,
@@ -1103,11 +1142,15 @@ impl CommandArena
             },
             | CommandNode::Perform {
                 ref signature,
+                route,
                 payload,
                 continuation,
                 ..
             } => {
                 self.signature_resolves(signature)?;
+                if let Route::Capability(capability) = route {
+                    self.producer_resolves(capability)?;
+                }
                 self.producer_resolves(payload)?;
                 self.consumer_resolves(continuation)?;
             },
@@ -1117,6 +1160,7 @@ impl CommandArena
                 on_return,
                 ref clauses,
                 continuation,
+                ..
             } => {
                 self.signature_resolves(signature)?;
                 self.command_resolves(subject)?;

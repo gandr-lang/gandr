@@ -129,12 +129,26 @@
 //! # Effects and delimited control
 //!
 //! Effect requests carry an inline signature, an operation name and a live
-//! payload. The nearest delimiter decides dispatch: a matching handler captures
-//! its own frame and the intervening continuation; a nonmatching handler or a
-//! reset offers the request to the host rather than searching an outer handler.
-//! Matching uses both interface and operation names, so unrelated interfaces
-//! cannot intercept each other's equally named operations. A shift captures
-//! through the nearest reachable reset; a handler is a barrier, not a reset.
+//! payload. An anonymous request is decided by the nearest delimiter: a
+//! matching handler captures its own frame and the intervening continuation; a
+//! nonmatching handler or a reset offers the request to the host rather than
+//! searching an outer handler. Matching uses both interface and operation
+//! names, so unrelated interfaces cannot intercept each other's equally named
+//! operations.
+//!
+//! A handler that introduces a capability (the core's `Scope`) allocates a
+//! fresh `HeapValue::Capability`, binds it in its subject and records its
+//! address in its frame. An exercise through that capability is lexical: it
+//! captures up to the frame carrying the same address, across every reset and
+//! handler above it, so an inner handler of the same interface cannot claim
+//! it. An exercise through a capability no handler introduced — a host
+//! constant — is offered to the host.
+//!
+//! A shift captures through the nearest reachable reset, across every handler
+//! frame above it, as the checker types a shift against the nearest reset
+//! across handler frames. A shift that discards its stack therefore unwinds
+//! those handlers without running their return clauses: the lowering spells
+//! an early `return` out of a handled subject this way.
 //!
 //! Captured stacks are immutable frame slices over shared heap addresses.
 //! Resume copies the frames onto the ambient continuation, making capture
@@ -166,8 +180,10 @@
 //! only with globally unique operation identities.
 //!
 //! Witnesses: `machine::tests::hand_built_effect_cases_agree`,
-//! `machine::tests::hand_built_shift_cases_agree`, the eight `host_seam_*`
-//! tests,
+//! `machine::tests::hand_built_shift_cases_agree`,
+//! `machine::tests::a_shift_unwinds_the_handlers_above_its_reset`,
+//! `machine::tests::an_exercise_reaches_the_scope_that_introduced_its_capability`,
+//! the eight `host_seam_*` tests,
 //! `machine::tests::handler_resumption_under_projection_uses_the_ambient_continuation_once`,
 //! `machine::tests::the_assert_handler_runs_combinator_assertions`,
 //! `machine::tests::the_assert_handler_reports_a_failure`,
@@ -199,8 +215,10 @@ use crate::il::ConsumerId;
 use crate::il::ConsumerNode;
 use crate::il::CovariableIndex;
 use crate::il::DestructorTag;
+use crate::il::Introduces;
 use crate::il::ProducerId;
 use crate::il::ProducerNode;
+use crate::il::Route;
 use crate::il::Selector;
 use crate::readback::ReadbackRefusal;
 use crate::readback::read_back_terminal;
@@ -211,6 +229,7 @@ use crate::store::ForceEntry;
 use crate::store::Frame;
 use crate::store::HeapValue;
 use crate::store::HeapValueId;
+use crate::store::Introduced;
 use crate::store::Memo;
 use crate::store::Store;
 use crate::store::StoreFault;
@@ -582,6 +601,7 @@ impl HostHandler for NoHost
         HostReply::Decline
     }
 }
+
 /// Why a run could not go on.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum MachineFault
@@ -1166,27 +1186,46 @@ impl<'program> Machine<'program>
         match *node {
             | CommandNode::Cut { .. } => Err(Stuck::IllFormedCommand(id).into()),
             | CommandNode::Perform {
+                route,
                 payload,
                 continuation,
                 ..
             } => {
                 self.load(continuation, environment)?;
+                let through = match route {
+                    | Route::Nearest => Introduced::Nothing,
+                    | Route::Capability(capability) => {
+                        Introduced::Capability(self.evaluate(capability, environment)?)
+                    },
+                };
                 let payload = self.evaluate(payload, environment)?;
-                self.perform(id, payload)
+                self.perform(id, through, payload)
             },
             | CommandNode::Handle {
+                introduces,
                 subject,
                 continuation,
                 ..
             } => {
                 self.load(continuation, environment)?;
+                let (introduced, scope) = match introduces {
+                    | Introduces::Nothing => (Introduced::Nothing, environment),
+                    | Introduces::Capability => {
+                        let capability = self.store.allocate(HeapValue::Capability)?;
+                        (
+                            Introduced::Capability(capability),
+                            self.store.bind_value(environment, capability)?,
+                        )
+                    },
+                };
                 self.store.push_frame(Frame::Handler {
                     command: id,
                     environment,
+                    introduced,
                 })?;
                 let inner = self
                     .store
-                    .bind_covalue(environment, crate::store::Covalue::FallThrough)?;
+                    .bind_covalue(scope, crate::store::Covalue::FallThrough)?;
                 Ok(Next::Continue(Control::Run(subject, inner)))
             },
             | CommandNode::Reset { body, continuation } => {
@@ -1221,18 +1260,25 @@ impl<'program> Machine<'program>
     /// intact.
     ///
     /// # Specification
-    /// - ensures: the nearest delimiter decides source handling; a matching
-    ///   interface and operation capture that handler and its inner frames.
-    ///   Clauses bind payload then resumption and return to the ambient tail.
-    ///   Unclaimed operations retain every frame for the host reply.
-    /// - fails: malformed handler instructions and store faults.
+    /// - ensures: an anonymous request is decided by the nearest delimiter: a
+    ///   matching interface and operation capture that handler and its inner
+    ///   frames. An exercise through a capability a handler introduced captures
+    ///   that handler's frame and every frame above it, whatever stands
+    ///   between; one through any other capability, which only the host holds,
+    ///   is offered to the host. Clauses bind payload then resumption and
+    ///   return to the ambient tail. Unclaimed operations retain every frame
+    ///   for the host reply.
+    /// - fails: malformed handler instructions, an introduced capability whose
+    ///   handler's frame is gone, and store faults.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — matching and nonmatching nested handlers, repeated
-    ///   resumes, and same-named operations from distinct interfaces separate
+    ///   resumes, same-named operations from distinct interfaces, and an
+    ///   exercise past an inner handler of the same interface separate
     ///   dispatch.
     /// - witness: `machine::tests::hand_built_effect_cases_agree`
     /// - witness: `machine::tests::handler_resumption_under_projection_uses_the_ambient_continuation_once`
+    /// - witness: `machine::tests::an_exercise_reaches_the_scope_that_introduced_its_capability`
     #[spec(ensures: |ref ret| ret.is_err() || ret.as_ref().is_ok_and(|next| match *next {
         Next::Host { at: found, payload: found_payload } => found == at && found_payload == payload,
         Next::Continue(Control::Run(_, inner)) => self.store.lookup_value(inner, DeBruijnIndex::from(1_u32)) == Some(payload)
@@ -1243,6 +1289,7 @@ impl<'program> Machine<'program>
     fn perform(
         &mut self,
         at: CommandId,
+        through: Introduced,
         payload: HeapValueId,
     ) -> Result<Next, Stop>
     {
@@ -1256,14 +1303,30 @@ impl<'program> Machine<'program>
         else {
             return Err(Stuck::IllFormedCommand(at).into());
         };
+        let introduced = match through {
+            | Introduced::Capability(capability)
+                if matches!(self.store.value(capability), Some(&HeapValue::Capability)) =>
+            {
+                Introduced::Capability(capability)
+            },
+            | Introduced::Capability(_) => {
+                self.store.cancel_updates(ContinuationMark::BASE)?;
+                return Ok(Next::Host { at, payload });
+            },
+            | Introduced::Nothing => Introduced::Nothing,
+        };
         let mut selected = None;
         for (index, frame) in self.store.frames().enumerate().rev() {
-            match *frame {
-                | Frame::Reset => break,
-                | Frame::Handler {
-                    command,
-                    environment,
-                } => {
+            match (*frame, introduced) {
+                | (Frame::Reset, Introduced::Nothing) => break,
+                | (
+                    Frame::Handler {
+                        command,
+                        environment,
+                        introduced: installed,
+                    },
+                    _,
+                ) if introduced == Introduced::Nothing || installed == introduced => {
                     let handler = arena
                         .command(command)
                         .ok_or(Stuck::IllFormedCommand(command))?;
@@ -1289,6 +1352,9 @@ impl<'program> Machine<'program>
         }
         let Some((height, environment, body)) = selected
         else {
+            if let Introduced::Capability(_) = introduced {
+                return Err(Stuck::PerformNoHandler(at).into());
+            }
             self.store.cancel_updates(ContinuationMark::BASE)?;
             return Ok(Next::Host { at, payload });
         };
@@ -1305,19 +1371,23 @@ impl<'program> Machine<'program>
         Ok(Next::Continue(Control::Run(body, inner)))
     }
 
-    /// Capture through the nearest reset; a handler is a structural barrier.
+    /// Capture through the nearest reset, across every handler frame above
+    /// it.
     ///
     /// # Specification
-    /// - ensures: the shift body receives a reusable stack including its reset,
-    ///   while the active continuation becomes exactly the tail below that
-    ///   reset.
+    /// - ensures: the shift body receives a reusable stack including its reset
+    ///   and every handler frame above it, while the active continuation
+    ///   becomes exactly the tail below that reset: a shift whose body never
+    ///   resumes the stack unwinds those handlers, their return clauses not
+    ///   run.
     /// - fails: a missing reachable reset and store faults.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — nested prompts, handler barriers and repeated
-    ///   resumption distinguish shallow capture and one-shot or missing reset
-    ///   behavior.
+    /// - hypothesis: L3 — nested prompts, a handler between the shift and its
+    ///   reset, and repeated resumption distinguish shallow capture, a handler
+    ///   barrier and one-shot or missing reset behavior.
     /// - witness: `machine::tests::hand_built_shift_cases_agree`
+    /// - witness: `machine::tests::a_shift_unwinds_the_handlers_above_its_reset`
     #[spec(ensures: |ref ret| ret.is_err() || ret.as_ref().is_ok_and(|next|
         matches!(*next, Next::Continue(Control::Run(found, inner)) if found == body
             && self.store.lookup_value(inner, DeBruijnIndex::from(0_u32)).is_some_and(|stack|
@@ -1329,18 +1399,15 @@ impl<'program> Machine<'program>
         environment: Environment,
     ) -> Result<Next, Stop>
     {
-        let mut selected = None;
-        for (index, frame) in self.store.frames().enumerate().rev() {
-            match *frame {
-                | Frame::Reset => {
-                    selected = Some(crate::FrameHeight::from(index));
-                    break;
-                },
-                | Frame::Handler { .. } => break,
-                | _ => {},
-            }
-        }
-        let height = selected.ok_or(Stuck::ShiftNoReset(at))?;
+        let height = self
+            .store
+            .frames()
+            .enumerate()
+            .rev()
+            .find_map(|(index, frame)| {
+                (*frame == Frame::Reset).then(|| crate::FrameHeight::from(index))
+            })
+            .ok_or(Stuck::ShiftNoReset(at))?;
         let base = self
             .store
             .mark_below(height)
@@ -1706,6 +1773,7 @@ impl<'program> Machine<'program>
             | Frame::Handler {
                 command,
                 environment,
+                ..
             } => {
                 let Some(&CommandNode::Handle { on_return, .. }) = self.arena.command(command)
                 else {
@@ -3356,10 +3424,78 @@ mod tests
         assert_control(&mut core, nested, ControlExpectation::Value(two));
         assert_control(&mut core, discard, ControlExpectation::Shift);
         assert_control(&mut core, discard_bound, ControlExpectation::Shift);
-        let signature = effect(&mut core, "Barrier".into(), "op".into());
-        let handled = handler(&mut core, signature, discard, identity, ret_one);
-        let blocked = core.computation_reset(handled);
-        assert_control(&mut core, blocked, ControlExpectation::Shift);
+    }
+
+    #[test]
+    fn a_shift_unwinds_the_handlers_above_its_reset()
+    {
+        let mut core = CoreArena::new();
+        let one = integer(&mut core, Digits("1"));
+        let nine = integer(&mut core, Digits("9"));
+        let zero = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+        let ret_one = core.computation_return(one);
+        let ret_nine = core.computation_return(nine);
+        let pair = core.value_tuple(&[zero, zero]);
+        let pair_return = core.computation_return(pair);
+        let discard = core.computation_shift(ret_one);
+        let signature = effect(&mut core, "Unwound".into(), "op".into());
+        let handled = handler(&mut core, signature.clone(), discard, pair_return, ret_nine);
+        let reset = core.computation_reset(handled);
+        assert_control(&mut core, reset, ControlExpectation::Value(one));
+        let inner = handler(&mut core, signature.clone(), discard, pair_return, ret_nine);
+        let outer = handler(&mut core, signature, inner, pair_return, ret_nine);
+        let bound = core.computation_bind(outer, pair_return);
+        let reset = core.computation_reset(bound);
+        assert_control(&mut core, reset, ControlExpectation::Value(one));
+        assert_control(&mut core, handled, ControlExpectation::Shift);
+    }
+
+    #[test]
+    fn an_exercise_reaches_the_scope_that_introduced_its_capability()
+    {
+        let mut core = CoreArena::new();
+        let five = integer(&mut core, Digits("5"));
+        let seven = integer(&mut core, Digits("7"));
+        let nine = integer(&mut core, Digits("9"));
+        let zero = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+        let outer = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+        let identity = core.computation_return(zero);
+        let ret_seven = core.computation_return(seven);
+        let ret_nine = core.computation_return(nine);
+        let signature = effect(&mut core, "E".into(), "op".into());
+        let scope = |core: &mut CoreArena, subject, body| {
+            core.computation_scope(
+                signature.clone(),
+                subject,
+                identity,
+                alloc::sync::Arc::from([gandr_core_term::control::EffectClause {
+                    operation: "op".into(),
+                    body,
+                }]),
+            )
+        };
+        let through_outer = core.computation_exercise(outer, signature.clone(), "op".into(), five);
+        let inner = scope(&mut core, through_outer, ret_nine);
+        let past = scope(&mut core, inner, ret_seven);
+        assert_control(&mut core, past, ControlExpectation::Value(seven));
+        let through_inner = core.computation_exercise(zero, signature.clone(), "op".into(), five);
+        let inner = scope(&mut core, through_inner, ret_nine);
+        let nearest = scope(&mut core, inner, ret_seven);
+        assert_control(&mut core, nearest, ControlExpectation::Value(nine));
+        let inner = handler(
+            &mut core,
+            signature.clone(),
+            through_inner,
+            identity,
+            ret_nine,
+        );
+        let crossed = scope(&mut core, inner, ret_seven);
+        assert_control(&mut core, crossed, ControlExpectation::Value(seven));
+        let lifted = core.computation_bind(through_inner, identity);
+        let reply = core.computation_return(outer);
+        let replied = core.computation_resume(zero, reply);
+        let resuming = scope(&mut core, lifted, replied);
+        assert_control(&mut core, resuming, ControlExpectation::Value(five));
     }
 
     /// One independently expected host observation and its decision.
