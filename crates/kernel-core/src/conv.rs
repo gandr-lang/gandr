@@ -50,7 +50,10 @@
 //! because what it returns is a reduction and none fires. The checker's mode
 //! switches and reflexivity ask the walk to set such a pair aside instead,
 //! through [`pending_endpoints`], and read each pair by the replay's own
-//! reduction ([`crate::replay::read_endpoints`]). The walk itself still
+//! reduction ([`crate::replay::read_endpoints`]). Where that reading leaves a
+//! definition's types apart, [`related_pairs`] sets aside every path type's
+//! endpoint pair as well, for the dialogues the definition carries
+//! ([`crate::element_identity::related_endpoints`]). The walk itself still
 //! reduces nothing: the pairs it sets aside are the only place a reading
 //! enters, and every other pair is decided as before.
 //!
@@ -127,6 +130,9 @@ enum Endpoints<'pending>
     Structural,
     /// Set it aside, unread, for the caller to read.
     Deferred(&'pending mut Vec<(ValueId, ValueId)>),
+    /// Set it aside as [`Endpoints::Deferred`] does, and set aside every
+    /// pair of path endpoints too, for the caller to relate.
+    Related(&'pending mut Vec<(ValueId, ValueId)>),
 }
 
 /// Decide convertibility of two value types in one arena.
@@ -393,6 +399,40 @@ pub(crate) fn pending_endpoints(
     converge(arena, goal, Endpoints::Deferred(pending))
 }
 
+/// Compare `goal` structurally, setting aside into `pending` every pair of
+/// path endpoints and every value pair one of whose sides is a returned
+/// endpoint.
+///
+/// # Specification
+/// - requires: nothing — an unreadable id fails closed.
+/// - ensures: [`Convertibility::Convertible`] exactly when every pair the walk
+///   examined, other than the pairs it appended to `pending`, converts as
+///   [`convertible_value_types`] would; a set-aside pair is neither compared
+///   nor descended into. On [`Convertibility::Distinct`] `pending` holds
+///   whatever was set aside before the separating pair.
+/// - provides: where a definition's relations are read: the same walk as
+///   [`pending_endpoints`], leaving to the caller every endpoint pair a path
+///   type carries, which is where the producer's conversion recorded its
+///   dialogues.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two path types whose compound endpoints differ set both
+///   endpoint pairs aside and converge, so a relation reaches them, while a
+///   differing domain still separates.
+/// - witness: `element_identity::tests::a_definition_relating_compound_endpoints_admits`
+/// - witness: `conv::tests::related_pairs_set_aside_path_endpoints`
+#[spec(captures: before = pending.len(), ensures: |ret| pending.len() >= before)]
+pub(crate) fn related_pairs(
+    arena: &TermArena,
+    goal: ConversionGoal,
+    pending: &mut Vec<(ValueId, ValueId)>,
+) -> Convertibility
+{
+    converge(arena, goal, Endpoints::Related(pending))
+}
+
 /// Convert a synthesized value type against an expected one, building the
 /// mismatch on divergence.
 ///
@@ -514,8 +554,9 @@ pub(crate) fn case_branch_mismatch(
 ///   has readable roots and either equal ids or matching structure, with
 ///   canonical level equality and nominal atom equality. Under
 ///   [`Endpoints::Deferred`] a value pair with a returned endpoint on either
-///   side is appended to the list unexamined and closes. The iterative heap
-///   stack does not impose a host-stack depth limit.
+///   side is appended to the list unexamined and closes; under
+///   [`Endpoints::Related`] so is every pair of path endpoints. The iterative
+///   heap stack does not impose a host-stack depth limit.
 /// - provides: the shared engine of the conversion and term-equality faces. The
 ///   predicate checks the initial roots' readability, identity and head
 ///   separation; the graph judgement and termination argument are not replayed
@@ -558,7 +599,7 @@ pub(crate) fn case_branch_mismatch(
 /// - witness: `conv::tests::an_unreadable_id_fails_closed`
 /// - witness: `conv::tests::a_shared_composite_converts_without_expanding`
 /// - witness: `conv::tests::identity_requires_a_readable_root_in_every_family`
-#[spec(captures: deferring = matches!(endpoints, Endpoints::Deferred(_)), ensures: |ret| match initial {
+#[spec(captures: deferring = matches!(endpoints, Endpoints::Deferred(_) | Endpoints::Related(_)), ensures: |ret| match initial {
     ConversionGoal::ValueType(left, right) => match (arena.value_type(left), arena.value_type(right)) {
     (Some(one), Some(other)) => if left == right {
         ret == Convertibility::Convertible
@@ -667,8 +708,14 @@ fn converge(
                         },
                     ) => {
                         stack.push(ConversionGoal::ValueType(one_domain, other_domain));
-                        stack.push(ConversionGoal::Value(one_left, other_left));
-                        stack.push(ConversionGoal::Value(one_right, other_right));
+                        if let Endpoints::Related(ref mut pending) = endpoints {
+                            pending.push((one_left, other_left));
+                            pending.push((one_right, other_right));
+                        }
+                        else {
+                            stack.push(ConversionGoal::Value(one_left, other_left));
+                            stack.push(ConversionGoal::Value(one_right, other_right));
+                        }
                     },
                     | (&ValueType::Base(one), &ValueType::Base(other)) => {
                         if one != other {
@@ -885,7 +932,8 @@ fn converge(
                 else {
                     return Convertibility::Distinct;
                 };
-                if let Endpoints::Deferred(ref mut pending) = endpoints
+                if let Endpoints::Deferred(ref mut pending) | Endpoints::Related(ref mut pending) =
+                    endpoints
                     && (matches!(*left, Value::Returned(_)) || matches!(*right, Value::Returned(_)))
                 {
                     pending.push(pair);
@@ -1362,6 +1410,45 @@ mod tests
             convertible_value_types(&arena, first, second),
             "the id fast path is positive only: unequal ids decide nothing and the structural \
              walk decides"
+        );
+    }
+
+    #[test]
+    fn related_pairs_set_aside_path_endpoints()
+    {
+        let mut arena = TermArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let string = arena.value_type_base(BaseType::String);
+        let first = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let second = arena.value_variable(DeBruijnIndex::from(1_u32));
+        let one = arena.value_type_path(integer, first, second);
+        let other = arena.value_type_path(integer, second, first);
+        let mut pending = alloc::vec::Vec::new();
+        assert_eq!(
+            super::related_pairs(
+                &arena,
+                super::ConversionGoal::ValueType(one, other),
+                &mut pending
+            ),
+            Convertibility::Convertible,
+            "differing endpoints are left to the caller"
+        );
+        assert_eq!(pending, [(first, second), (second, first)]);
+        assert_eq!(
+            convertible_value_types(&arena, one, other),
+            Convertibility::Distinct,
+            "the structural walk compares the same endpoints"
+        );
+        let apart = arena.value_type_path(string, second, first);
+        let mut pending = alloc::vec::Vec::new();
+        assert_eq!(
+            super::related_pairs(
+                &arena,
+                super::ConversionGoal::ValueType(one, apart),
+                &mut pending
+            ),
+            Convertibility::Distinct,
+            "a differing domain still separates"
         );
     }
 

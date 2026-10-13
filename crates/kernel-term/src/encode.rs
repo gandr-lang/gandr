@@ -357,9 +357,11 @@ fn encode_minted_atom_table(
 ///   after this one in the sequence.
 /// - ensures: writes the mark, kind, name and level interface, then only newly
 ///   completed entries, in first-completion order. Definitions write
-///   declared/body roots and four annotation slots; abstract types write their
-///   kind and representation roots and the extent of their scope, an open scope
-///   as `remaining`; the other kinds write one root and no slots.
+///   declared/body roots and four annotation slots, and a definition relating
+///   endpoints writes [`tags::KIND_DEF_RELATING`] and closes with the pair
+///   count and each pair's roots and dialogue; abstract types write their kind
+///   and representation roots and the extent of their scope, an open scope as
+///   `remaining`; the other kinds write one root and no slots.
 /// - provides: one segment with cross-declaration sharing. The predicate checks
 ///   the mark/kind bytes, root memo presence and global-counter transition;
 ///   literal segment fixtures observe field order and slot framing.
@@ -377,14 +379,16 @@ fn encode_minted_atom_table(
 ///   or independent correctness through round-trip self-agreement.
 /// - witness: `encode::tests::declaration_sequences_match_literal_segment_fixtures`
 /// - witness: `encode::tests::atom_positions_and_provenance_preserve_sequence_identity`
+/// - witness: `encode::tests::a_relating_definition_closes_its_segment_with_its_pairs`
 #[spec(
     captures: entry = (out.as_image().as_ref().len(), interner.by_content.len(), interner.next),
     ensures: |ret| { let image = out.as_image();
         let bytes = image.as_ref();
         bytes.get(entry.0).copied() == Some(u8::from(match marked.mark() { AdmissionMark::Checked => tags::ADMISSION_CHECKED, AdmissionMark::UncheckedBypass => tags::ADMISSION_UNCHECKED }))
-            && bytes.get(entry.0.saturating_add(1)).copied() == Some(u8::from(match *marked.declaration().content() { DeclarationContent::Data { .. } => tags::KIND_DATA, DeclarationContent::Def { .. } => tags::KIND_DEF, DeclarationContent::Axiom { .. } => tags::KIND_AXIOM, DeclarationContent::AbstractType { .. } => tags::KIND_ABSTRACT_TYPE }))
+            && bytes.get(entry.0.saturating_add(1)).copied() == Some(u8::from(match *marked.declaration().content() { DeclarationContent::Data { .. } => tags::KIND_DATA, DeclarationContent::Def { .. } if marked.declaration().related().is_empty() => tags::KIND_DEF, DeclarationContent::Def { .. } => tags::KIND_DEF_RELATING, DeclarationContent::Axiom { .. } => tags::KIND_AXIOM, DeclarationContent::AbstractType { .. } => tags::KIND_ABSTRACT_TYPE }))
             && interner.by_node.contains_key(&AnyNode::ValueType(marked.declaration().declared_id()))
             && match *marked.declaration().content() { DeclarationContent::Def { body, .. } => interner.by_node.contains_key(&AnyNode::Value(body)), _ => true }
+            && marked.declaration().related().iter().all(|related| interner.by_node.contains_key(&AnyNode::Value(related.left)) && interner.by_node.contains_key(&AnyNode::Value(related.right)))
             && interner.by_content.len() >= entry.1
             && u32::from(interner.next) == u32::from(entry.2).saturating_add(u32::try_from(interner.by_content.len().saturating_sub(entry.1)).unwrap_or(u32::MAX)) },
 )]
@@ -404,7 +408,8 @@ fn encode_declaration(
     let content = declaration.content();
     out.put_tag(match *content {
         | DeclarationContent::Data { .. } => tags::KIND_DATA,
-        | DeclarationContent::Def { .. } => tags::KIND_DEF,
+        | DeclarationContent::Def { .. } if declaration.related().is_empty() => tags::KIND_DEF,
+        | DeclarationContent::Def { .. } => tags::KIND_DEF_RELATING,
         | DeclarationContent::Axiom { .. } => tags::KIND_AXIOM,
         | DeclarationContent::AbstractType { .. } => tags::KIND_ABSTRACT_TYPE,
     });
@@ -413,6 +418,7 @@ fn encode_declaration(
 
     let mut segment: Vec<EncodedEntry> = Vec::new();
     let mut data_roots = Vec::new();
+    let mut related_roots = Vec::new();
     let (root_declared, root_body, root_sealed) = match *content {
         | DeclarationContent::Data {
             kind,
@@ -432,6 +438,13 @@ fn encode_declaration(
         | DeclarationContent::Def { declared, body } => {
             let declared = intern(arena, interner, &mut segment, AnyNode::ValueType(declared));
             let body = intern(arena, interner, &mut segment, AnyNode::Value(body));
+            // The related endpoints after the body, so a definition relating
+            // none interns exactly what it did before the kind existed.
+            for related in declaration.related() {
+                let left = intern(arena, interner, &mut segment, AnyNode::Value(related.left));
+                let right = intern(arena, interner, &mut segment, AnyNode::Value(related.right));
+                related_roots.push((left, right));
+            }
             (declared, Some(body), None)
         },
         | DeclarationContent::Axiom { declared } => {
@@ -499,6 +512,20 @@ fn encode_declaration(
         out.put_uvarint(WireU64::from(0_u64));
         encode_sealing_provenance(out, declaration.provenance());
         out.put_uvarint(WireU64::from(0_u64));
+    }
+    // The relating block closes a definition's segment: a pair count of at
+    // least one, since a definition relating none wrote the plain kind, then
+    // each pair's roots and its dialogue.
+    if !related_roots.is_empty() {
+        out.put_uvarint(WireU64::from(WireUsize::from(related_roots.len())));
+        for (&(left, right), related) in related_roots.iter().zip(declaration.related()) {
+            out.put_uvarint(WireU64::from(u64::from(u32::from(left))));
+            out.put_uvarint(WireU64::from(u64::from(u32::from(right))));
+            out.put_uvarint(WireU64::from(WireUsize::from(related.dialogue.len())));
+            for &decision in &related.dialogue {
+                out.put_uvarint(WireU64::from(crate::term::decision_word(decision).0));
+            }
+        }
     }
 }
 
@@ -1980,6 +2007,95 @@ mod tests
                 .as_image()
                 .as_ref(),
             expected
+        );
+    }
+
+    #[test]
+    fn a_relating_definition_closes_its_segment_with_its_pairs()
+    {
+        use gandr_kernel_conversion_trace::ConversionDecision;
+        use gandr_kernel_conversion_trace::ConversionSide;
+
+        let mut arena = TermArena::new();
+        let mut builder = DeclarationBuilder::new(&mut arena);
+        let unit_type = builder.arena().value_type_unit();
+        let unit = builder.arena().value_unit();
+        let wrapped = builder.arena().value_tuple(&[unit]);
+        let related = alloc::vec![crate::decl::RelatedEndpoints {
+            left: unit,
+            right: wrapped,
+            dialogue: alloc::vec![
+                ConversionDecision::Decompose,
+                ConversionDecision::ReturnEta {
+                    side: ConversionSide::Right,
+                }
+            ],
+        }];
+        let definition = builder
+            .def(LevelSignature::monomorphic(), unit_type, unit)
+            .relating(related.clone());
+        let declarations = [MarkedDeclaration::new(AdmissionMark::Checked, definition)];
+        // The relating kind, then the plain definition's fields: the unit type,
+        // the unit and the wrapped unit as entries, the declared and body roots
+        // and the four empty slots; then one pair, its two roots and its two
+        // decision words.
+        let expected = [
+            b'G', b'K', b'X', b'1', 5, 0, 0, 1, 0, 7, 0, 0, 0, 3, 0x03, 0, 0x0D, 0, 0x0D, 1, 1, 0,
+            1, 0, 0, 0, 0, 1, 1, 2, 2, 0x0B, 0x0E,
+        ];
+        let bytes = super::encode(&arena, &declarations);
+        assert_eq!(bytes.as_image().as_ref(), expected);
+        let decoded = crate::decode::decode(ArtifactImage::from(expected.as_slice()))
+            .expect("the literal artifact is structurally admissible");
+        let declaration = decoded.declarations().first().expect("one definition");
+        assert_eq!(declaration.declaration().related().len(), 1);
+        assert_eq!(
+            declaration
+                .declaration()
+                .related()
+                .first()
+                .map(|pair| pair.dialogue.clone()),
+            related.first().map(|pair| pair.dialogue.clone())
+        );
+        assert_eq!(
+            super::encode(decoded.arena(), decoded.declarations())
+                .as_image()
+                .as_ref(),
+            expected
+        );
+        // A relating kind closing with no pair decodes to a plain definition,
+        // whose canonical bytes carry the plain kind.
+        let empty = [
+            b'G', b'K', b'X', b'1', 5, 0, 0, 1, 0, 7, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0, 0, 0,
+            0, 0,
+        ];
+        assert_eq!(
+            crate::decode::decode(ArtifactImage::from(empty.as_slice())),
+            Err(crate::error::DecodeError::Malformed {
+                site: crate::error::MalformedSite::NonCanonical,
+            })
+        );
+        // A word outside the decision alphabet is refused as path evidence.
+        let mut unknown = expected;
+        if let Some(word) = unknown.last_mut() {
+            *word = 0x7F;
+        }
+        assert_eq!(
+            crate::decode::decode(ArtifactImage::from(unknown.as_slice())),
+            Err(crate::error::DecodeError::Malformed {
+                site: crate::error::MalformedSite::PathEvidence,
+            })
+        );
+        // The plain kind over the same bytes leaves the pair unread.
+        let mut plain = expected;
+        if let Some(kind) = plain.get_mut(9) {
+            *kind = 0;
+        }
+        assert_eq!(
+            crate::decode::decode(ArtifactImage::from(plain.as_slice())),
+            Err(crate::error::DecodeError::Malformed {
+                site: crate::error::MalformedSite::TrailingBytes,
+            })
         );
     }
 

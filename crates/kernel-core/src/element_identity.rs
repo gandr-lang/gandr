@@ -106,6 +106,33 @@
 //!   binder carries its own dialogue the same way; the forced loop stays
 //!   δ-free.
 //!
+//! **A definition's conversions replay the dialogues it carries.** A
+//! definition whose declared type and body's type are path types with compound
+//! endpoints, `Path(H, comp(p, p, q, id(p), f), f)` against `Path(H, comp(p,
+//! q, q, f, id(q)), f)`, converts them only through a definition's body under
+//! a binder: the δ-step the reflexivity paragraph above routes through a
+//! dialogue. The definition carries a related pair per endpoint pair the
+//! producer's conversion related, each with its dialogue
+//! ([`RelatedEndpoints`]), and a mode switch whose forced reading leaves the
+//! types apart reads them ([`related_endpoints`]): the walk sets every path
+//! type's endpoint pair aside, a pair the forced reading relates passes, and
+//! any other is matched by α-equality, in either orientation, to a related
+//! pair whose dialogue is replayed with the admitted definitions unfoldable. A
+//! pair no relation matches keeps the mismatch it had; a matched dialogue that
+//! does not replay is refused as [`IdentityError::RelatedEndpointsDiffer`],
+//! naming its verdict. The forced loop stays δ-free and nothing is searched: a
+//! definition relating nothing is checked exactly as before.
+//!
+//! - alternatives: matching relations by their order in the walk, which ties
+//!   the wire to the order two different conversions visit a type; replaying
+//!   each relation at each pair until one replays, a search whose cost and
+//!   verdict depend on the producer's ordering; a relation per mode switch
+//!   inside the body's term, which needs a site on every node a conversion can
+//!   meet.
+//! - reversal: a conversion between terms other than path endpoints — two codes
+//!   under an element type, a data index — that needs a δ-step under a binder
+//!   sets its pairs aside the same way and is matched the same way.
+//!
 //! **The checking machine never re-enters itself.** Every value the fold would
 //! check, a guard's evidence or a higher evaluation's returned values and
 //! output evidence, becomes a goal on the machine's own stack. The fold is read
@@ -224,6 +251,7 @@ use gandr_kernel_term::HigherLayer;
 use gandr_kernel_term::HigherProgram;
 use gandr_kernel_term::LayerPosition;
 use gandr_kernel_term::QuantifiedStep;
+use gandr_kernel_term::RelatedEndpoints;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
@@ -313,6 +341,18 @@ pub enum IdentityError
         /// That endpoint's dialogue's replay verdict.
         verdict: KernelVerdict,
     },
+    /// A definition's type conversion meets two path endpoints its forced
+    /// reading leaves apart, and the dialogue the definition carries for that
+    /// pair does not replay as their convertibility.
+    RelatedEndpointsDiffer
+    {
+        /// The expected type's endpoint's content digest.
+        left: ContentDigest,
+        /// The synthesized type's endpoint's content digest.
+        right: ContentDigest,
+        /// The pair's dialogue's replay verdict.
+        verdict: KernelVerdict,
+    },
     /// The fibre is neutral: the domain is open, or the endpoints are not
     /// canonical, so no introduction but `here` inhabits it.
     NeutralFibre,
@@ -399,6 +439,9 @@ impl fmt::Display for IdentityError
             | Self::OutsideFold(_) => f.write_str("identity at a type outside the identity fold"),
             | Self::EndpointsDiffer { .. } => {
                 f.write_str("reflexivity between differing endpoints")
+            },
+            | Self::RelatedEndpointsDiffer { .. } => {
+                f.write_str("a definition's related endpoints do not replay")
             },
             | Self::NeutralFibre => f.write_str("an identity fibre is neutral"),
             | Self::EmptyFibre => f.write_str("an identity fibre is empty"),
@@ -560,6 +603,110 @@ pub(crate) fn reflexive_endpoints(
         }
     }
     Ok(())
+}
+
+/// Read a type conversion the forced reading left apart through the endpoint
+/// pairs a definition relates: every path type's endpoints and every returned
+/// endpoint the conversion meets are set aside, each pair the forced reading
+/// does not relate is matched by α-equality to a related pair, and that pair's
+/// dialogue is replayed.
+///
+/// # Specification
+/// - requires: `goal`'s roots, every related pair and every body in
+///   `unfoldings` live in `arena`, each related pair in the context the
+///   conversion meets it in.
+/// - ensures: [`crate::replay::EndpointReading::Apart`] when the structure
+///   outside the set-aside pairs diverges, or a set-aside pair is neither
+///   related by the forced reading nor α-equal, in either orientation, to a
+///   related pair; [`crate::replay::EndpointReading::Converts`] when every
+///   set-aside pair is related by the forced reading or its related pair's
+///   dialogue replays, under `unfoldings` and within [`ReplayBudget::DEFAULT`],
+///   as a derivation of convertibility. `arena` holds what it held on entry.
+/// - provides: the mode switches' reading of a definition's relations. The
+///   match is content equality, never a search: soundness rests on the replay
+///   alone, and a pair matched to the wrong relation cannot replay. Every
+///   δ-step is a decision of the dialogue, so the forced loop stays δ-free.
+/// - fails: [`IdentityError::RelatedEndpointsDiffer`] at the first pair whose
+///   related dialogue does not replay, naming the pair and the replay's
+///   verdict.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Termination
+/// - reason: the `for` loop over the set-aside pairs and the `find` over the
+///   related pairs, not recursion.
+/// - measure: the pairs left; each replay is bounded by its budget.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two path types whose compound endpoints relate only
+///   through a definition's body convert by the definition's dialogue, and a
+///   dialogue naming the wrong side or an unrelated definition is refused by
+///   name; a definition relating nothing keeps the forced reading's verdict.
+/// - witness: `element_identity::tests::a_definition_relating_compound_endpoints_admits`
+/// - witness: `element_identity::tests::a_corrupted_relation_is_refused_by_name`
+#[spec(
+    captures: before = arena.watermark(),
+    ensures: |ret| arena.watermark() == before && ret.as_ref().err().is_none_or(|error| matches!(
+        error,
+        &KernelError::Identity(IdentityError::RelatedEndpointsDiffer { verdict, .. })
+            if verdict != KernelVerdict::Convertible
+    )),
+)]
+pub(crate) fn related_endpoints(
+    arena: &mut TermArena,
+    unfoldings: &Unfoldings,
+    related: &[RelatedEndpoints],
+    goal: crate::conv::ConversionGoal,
+) -> Result<crate::replay::EndpointReading, KernelError>
+{
+    let mut pairs = Vec::new();
+    if crate::conv::related_pairs(arena, goal, &mut pairs) == Convertibility::Distinct {
+        return Ok(crate::replay::EndpointReading::Apart);
+    }
+    for (left, right) in pairs {
+        let mut pending = Vec::new();
+        if crate::conv::pending_endpoints(
+            arena,
+            crate::conv::ConversionGoal::Value(left, right),
+            &mut pending,
+        ) == Convertibility::Convertible
+            && crate::replay::read_endpoints(arena, unfoldings, &pending, ReplayBudget::DEFAULT)
+                == crate::replay::EndpointReading::Converts
+        {
+            continue;
+        }
+        let matched = related.iter().find(|relation| {
+            let forward = equal_values(arena, left, relation.left) == Convertibility::Convertible
+                && equal_values(arena, right, relation.right) == Convertibility::Convertible;
+            forward
+                || equal_values(arena, left, relation.right) == Convertibility::Convertible
+                    && equal_values(arena, right, relation.left) == Convertibility::Convertible
+        });
+        let Some(relation) = matched
+        else {
+            return Ok(crate::replay::EndpointReading::Apart);
+        };
+        let verdict = crate::replay::replay(
+            arena,
+            unfoldings,
+            ReplaySides::Values(relation.left, relation.right),
+            EngineClaim::Convertible,
+            relation.dialogue.iter().copied().map(anchor),
+            ReplayBudget::DEFAULT,
+        );
+        if verdict != KernelVerdict::Convertible {
+            return Err(KernelError::Identity(
+                IdentityError::RelatedEndpointsDiffer {
+                    left: content_digest(arena, AnyNode::Value(left)),
+                    right: content_digest(arena, AnyNode::Value(right)),
+                    verdict,
+                },
+            ));
+        }
+    }
+    Ok(crate::replay::EndpointReading::Converts)
 }
 
 /// The native type an identity's non-diagonal evidence inhabits.

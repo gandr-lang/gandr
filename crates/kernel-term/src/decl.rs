@@ -587,6 +587,41 @@ impl From<Vec<NameSegment>> for StructuredName
     }
 }
 
+/// Two path endpoints a definition's type conversions relate, and the
+/// dialogue the producer kept relating the left to the right.
+///
+/// A definition's declared type and the type its body synthesises can be
+/// path types whose endpoints are compound terms related only through a
+/// constant's body: `Path(H, comp(p, p, q, id(p), f), f)` against
+/// `Path(H, comp(p, q, q, f, id(q)), f)`. The kernel's forced reading
+/// normalizes neither endpoint far enough to compare them, so the producer
+/// hands over the reading it found, and the kernel replays it at that pair.
+///
+/// # Specification
+/// - provides: the producer's claim that `left` converts with `right`, with the
+///   dialogue it found; nothing here checks either.
+/// - panics: none.
+/// - executable: none — data declaration; the kernel's admission replays the
+///   dialogue and owns the verdict.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a relating definition round-trips through the wire with
+///   its endpoints and every decision, a corrupted pair block is refused at
+///   decode, and only a definition carries pairs. The replay is the kernel's,
+///   witnessed where it runs.
+/// - witness: `encode::tests::a_relating_definition_closes_its_segment_with_its_pairs`
+/// - witness: `decl::tests::relating_touches_only_a_definition`
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct RelatedEndpoints
+{
+    /// The endpoint the dialogue starts from.
+    pub left: ValueId,
+    /// The endpoint the dialogue ends at.
+    pub right: ValueId,
+    /// The conversion trace the producer kept between the two.
+    pub dialogue: crate::identity::Dialogue,
+}
+
 /// A declaration: a level interface, its content roots, its sealing
 /// provenance, and its structured name.
 ///
@@ -628,6 +663,10 @@ pub struct Declaration
     /// The structured name the artifact's name record carries; empty for a
     /// declaration no producer named.
     name: StructuredName,
+    /// The path endpoints the definition's type conversions relate, with the
+    /// dialogue relating each pair; empty for every declaration whose
+    /// conversions the kernel's forced reading decides alone.
+    related: Vec<RelatedEndpoints>,
 }
 
 impl Declaration
@@ -688,6 +727,18 @@ impl Declaration
         &self.name
     }
 
+    /// The path endpoints the definition's type conversions relate, with the
+    /// dialogue relating each pair.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn related(&self) -> &[RelatedEndpoints]
+    {
+        &self.related
+    }
+
     /// This declaration under `name`, its levels, content and provenance
     /// unchanged.
     ///
@@ -736,6 +787,46 @@ impl Declaration
     ) -> Self
     {
         Self { name, ..self }
+    }
+
+    /// This definition carrying `related` as the endpoint pairs its type
+    /// conversions relate, everything else unchanged.
+    ///
+    /// # Specification
+    /// - requires: nothing — a related pair is a claim the kernel replays,
+    ///   never a typing fact taken on trust.
+    /// - ensures: a definition comes back carrying exactly `related`; any other
+    ///   declaration, which has no conversion of a body to relate, comes back
+    ///   unchanged. Content, levels, provenance and name are untouched either
+    ///   way.
+    /// - provides: the one way a producer attaches its dialogues, after
+    ///   whichever finisher built the definition, so no finisher changes its
+    ///   signature for them.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a definition keeps the pairs and an axiom passed
+    ///   through keeps none.
+    /// - witness: `decl::tests::relating_touches_only_a_definition`
+    #[spec(
+        captures: entry = (matches!(self.content, DeclarationContent::Def { .. }), self.related.len(), related.len(), self.provenance.len(), self.name.0.len()),
+        ensures: |ret| ret.related.len() == if entry.0 { entry.2 } else { entry.1 }
+            && ret.provenance.len() == entry.3 && ret.name.0.len() == entry.4,
+    )]
+    #[inline]
+    #[must_use]
+    pub fn relating(
+        self,
+        related: Vec<RelatedEndpoints>,
+    ) -> Self
+    {
+        match self.content {
+            | DeclarationContent::Def { .. } => Self { related, ..self },
+            | DeclarationContent::Data { .. }
+            | DeclarationContent::Axiom { .. }
+            | DeclarationContent::AbstractType { .. } => self,
+        }
     }
 
     /// This declaration with an abstract type's minting admission closed after
@@ -1133,6 +1224,7 @@ impl<'arena> DeclarationBuilder<'arena>
             content: DeclarationContent::Def { declared, body },
             provenance: Vec::new(),
             name: StructuredName::default(),
+            related: Vec::new(),
         }
     }
 
@@ -1185,6 +1277,7 @@ impl<'arena> DeclarationBuilder<'arena>
             content: DeclarationContent::Def { declared, body },
             provenance,
             name: StructuredName::default(),
+            related: Vec::new(),
         }
     }
 
@@ -1234,6 +1327,7 @@ impl<'arena> DeclarationBuilder<'arena>
             content: DeclarationContent::Axiom { declared },
             provenance: Vec::new(),
             name: StructuredName::default(),
+            related: Vec::new(),
         }
     }
 
@@ -1290,6 +1384,7 @@ impl<'arena> DeclarationBuilder<'arena>
             },
             provenance: Vec::new(),
             name: StructuredName::default(),
+            related: Vec::new(),
         }
     }
 }
@@ -1354,6 +1449,7 @@ impl DeclarationBuilder<'_>
             },
             provenance: Vec::new(),
             name: StructuredName::default(),
+            related: Vec::new(),
         }
     }
 }
@@ -1639,6 +1735,40 @@ mod tests
             definition.clone().closed(super::SealExtent::from(2_usize)),
             definition,
             "a definition has no minting admission to close"
+        );
+    }
+
+    #[test]
+    fn relating_touches_only_a_definition()
+    {
+        let mut arena = TermArena::new();
+        let unit = arena.value_unit();
+        let star = arena.value_tuple(&[unit]);
+        let unit_type = arena.value_type_unit();
+        let related = alloc::vec![super::RelatedEndpoints {
+            left: unit,
+            right: star,
+            dialogue: alloc::vec![gandr_kernel_conversion_trace::ConversionDecision::Decompose],
+        }];
+        let definition =
+            DeclarationBuilder::new(&mut arena).def(LevelSignature::monomorphic(), unit_type, unit);
+        assert!(
+            definition.related().is_empty(),
+            "a finisher relates nothing"
+        );
+        let relating = definition.clone().relating(related.clone());
+        assert_eq!(relating.related(), related.as_slice());
+        assert_eq!(relating.content(), definition.content());
+        assert_ne!(
+            relating, definition,
+            "the related pairs are part of what a declaration is"
+        );
+        let axiom =
+            DeclarationBuilder::new(&mut arena).axiom(LevelSignature::monomorphic(), unit_type);
+        assert_eq!(
+            axiom.clone().relating(related),
+            axiom,
+            "an axiom has no body whose conversions relate anything"
         );
     }
 

@@ -244,6 +244,15 @@
 //! evaluation, not a conversion rule. The witness is
 //! `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`.
 //!
+//! A definition whose declared type and body's type relate compound path
+//! endpoints only through a constant's body carries the engine's dialogue for
+//! each such pair, and a mode switch the forced reading leaves apart replays
+//! the dialogue of the pair α-equal to the one it meets
+//! ([`mod@element_identity`] § A definition's conversions replay the dialogues
+//! it carries). Matching is content equality, never a search, and the forced
+//! loop stays δ-free. The witness is
+//! `element_identity::tests::a_definition_relating_compound_endpoints_admits`.
+//!
 //! # Contract boundaries
 //!
 //! The source `# Specification` is authoritative; `#[spec(...)]` checks
@@ -255,7 +264,7 @@
 //! | Admission, staging and audit | [Environment](crate::env): committed prefixes, rollback, registration ownership, provenance ordering, ordered dependency reasons and reachability boundaries. |
 //! | Guarded local admission | [Admission](crate::admission): schema inheritance, rule-discrimination transparency, guarded substitution and exact instance-side agreement by same-arena identity. |
 //! | Checking and conversion | [Checker](crate::check), [conversion](crate::conv) and `witness`: level precedence, refusal subjects, readable identities, mode transitions and witness projections. |
-//! | Element identity | [Element identity](crate::element_identity): the neutral fibre at an open type, fibre redirection, reflexivity by conversion, the returned endpoint read by its reduction, guarded higher fields, coverage-replayed higher and quantified evaluation and transport by substitution. |
+//! | Element identity | [Element identity](crate::element_identity): the neutral fibre at an open type, fibre redirection, reflexivity by conversion, the returned endpoint read by its reduction, a definition's related endpoints replayed by matching, guarded higher fields, coverage-replayed higher and quantified evaluation and transport by substitution. |
 //! | Encoding and support | [Encoding](crate::encoding) and [support]: byte-exact frames and hashes, ordered children, content-id reuse, cache observations and binder reach. |
 //! | Replay and rewrite | [Replay](mod@crate::replay) and [rewrite]: arena restoration, trace consumption, ordered premises, freezing, rule priority and unchanged-subject reuse. |
 //! | Fixture observations | `acceptance`, `adversarial_depth`, `flow_universe::tests` and `path_universe::tests`: differential verdicts, closed-form counts, small-stack teardown and fixed syntax seams. |
