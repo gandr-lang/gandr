@@ -3757,7 +3757,8 @@ pub(super) fn record_since(
 /// - ensures: every node minted since `mark` carries an origin, in ascending
 ///   order in each family: the root its own; a node `carried` reports as a copy
 ///   the origin of the node it was copied from, a copy of a match's root that
-///   match's record too; every other node `origin`.
+///   match's record too; every other node `origin`. Each written variable the
+///   rewrite replaced by a node answering elsewhere is labelled with it.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -3766,6 +3767,7 @@ pub(super) fn record_since(
 ///   copy of its arm's body answers at the body's bytes.
 /// - witness: `lower::native::tests::a_match_keeps_its_patterns_beside_its_tree`
 /// - witness: `lower::native::tests::a_leaf_keeps_its_arm_body_written`
+/// - witness: `lower::exits::tests::a_use_a_local_end_replaces_keeps_its_bytes`
 #[spec(ensures: sink.arena.values_since(mark).all(|id| matches!(sink.origins.value(id), Maybe::Present(_)))
     && sink.arena.computations_since(mark).all(|id| match root {
         | Maybe::Present((held, written)) if held == id => sink.origins.computation(id) == Maybe::Present(written),
@@ -3804,6 +3806,7 @@ fn record_copied_since(
         let recorded = sources.comp_type(sink, id, origin);
         sink.origins.record_comp_type(id, recorded);
     }
+    exits::label_replaced(sink, carried);
 }
 
 impl<'source> Lowerer<'_, 'source>

@@ -1223,6 +1223,37 @@ impl OriginTable
         self.labels.push(label);
     }
 
+    /// Carry every label naming the term `from` over to `to`, which a rewrite
+    /// put in its place.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: no label names `from` unless `from == to`; every label that
+    ///   named it names `to`; the count is unchanged.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a use instantiated at a binder a later instantiation
+    ///   replaces answers at the value that replaced both.
+    /// - witness: `lower::exits::tests::a_use_a_local_end_replaces_keeps_its_bytes`
+    #[spec(
+        captures: before = self.labels.len(),
+        ensures: self.labels.len() == before,
+    )]
+    pub(crate) fn relabel(
+        &mut self,
+        from: ValueId,
+        to: ValueId,
+    )
+    {
+        for label in &mut self.labels {
+            if label.labelled == Labelled::Value(from) {
+                label.labelled = Labelled::Value(to);
+            }
+        }
+    }
+
     /// Each label written against an entry, in the order lowered.
     ///
     /// # Specification

@@ -35,6 +35,7 @@ use crate::lower::native::tests::refusal_of;
 use crate::lower::native::tests::tail_of;
 use crate::module::collect;
 use crate::namespace::Recognition;
+use crate::origin::Labelled;
 use crate::resolve::SurfaceName;
 
 /// The naturals every witness matches on.
@@ -240,6 +241,46 @@ fn a_bound_match_continues_its_block_at_each_local_arm()
                 if matches!(arena.computation(bound), Some(Computation::DataCase { .. }))
         ),
         "a match holding no exit binds the rest of its block once"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
+fn a_use_a_local_end_replaces_keeps_its_bytes()
+{
+    let source = format!(
+        "{NAT}def twice(n : Nat) -> -F Nat {{ run m <- case n {{ Zero => return n, Succ(p) => {{ run q <- case p {{ Zero => return p, Succ(r) => pure r }} ; pure q }} }} ; return Succ(m) }}\n"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let text = SourceText::from(source.as_str());
+    let at = |needle: &str| {
+        usize::from(spelled(text, SourceText::from(needle)).start()).saturating_add(5_usize)
+    };
+    let named = |offset: usize| {
+        module
+            .origins()
+            .labels()
+            .iter()
+            .find(|label| usize::from(label.span.start()) == offset)
+            .map(|label| label.labelled.clone())
+    };
+    let (used, passed, scrutinised) = (
+        named(at("Succ(m)")),
+        named(at("pure q")),
+        named(at("case p")),
+    );
+    assert!(
+        matches!(used, Some(Labelled::Value(_))),
+        "the bound match's binder, instantiated away, answers at its use: {used:?}"
+    );
+    assert_eq!(
+        used, passed,
+        "a chain of instantiations answers both uses at the value that replaced them"
+    );
+    assert!(
+        matches!(scrutinised, Some(Labelled::Value(_))),
+        "a scrutinee a leaf's copy replaces answers at its bytes: {scrutinised:?}"
     );
     assert_accepted(&judged(&module, &mut arena));
 }
