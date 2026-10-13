@@ -29,6 +29,19 @@ priority = 80
 filter = "test(=parse::tests::hostile_edits_reuse_only_equal_units)"
 priority = 70
 
+# The editor's typing scenario types every corpus source through the language
+# server with specifications enforced: 118 s alone at `7922f2b`, longer under
+# parallel load, against a default kill limit of 120 s; on a hosted runner it
+# passes 300 s. Every profile inherits this override, so its limit is the
+# enforcing profile's own (60 s × 10): the local gate stops losing the test to
+# load, the hosted lanes keep the limit they had, and the rule stated below —
+# at least twice the slowest enforcing test — holds everywhere until the
+# specification cost falls. The plain run is unaffected: a limit is a ceiling,
+# never a wait.
+[[profile.default.overrides]]
+filter = "test(=editor::scenarios::typing_each_corpus_source_keeps_every_answer_faithful)"
+slow-timeout = { period = "60s", terminate-after = 10 }
+
 [profile.ci]
 status-level = "slow"
 final-status-level = "slow"
