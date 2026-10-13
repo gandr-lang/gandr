@@ -399,6 +399,13 @@ impl<'source> Lowerer<'_, 'source>
     ///   readings.
     /// - witness: `lower::identity::tests::a_bound_name_shadows_an_identity_operation`
     /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body searches the fixed spelling table for the head's name once; the check searches it once more"
+        )
+    )]
     #[spec(
         ensures: |ret| match ret {
             | Ok(Maybe::Present(operation)) => SPELLED

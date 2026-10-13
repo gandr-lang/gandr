@@ -19,11 +19,13 @@ name = "tests"
 path = "tests/lib.rs"
 
 # The pinned anodized facade supplies core-only specification helpers; BLAKE3
-# is the digest family; the chunker supplies the typed boundary scanner.
+# is the digest family; the chunker supplies the typed boundary scanner; the
+# specification combinators supply the answer a type's invariant reads.
 [dependencies]
 anodized.workspace = true
 blake3.workspace = true
 gandr-storage-chunker.workspace = true
+gandr-theory-spec-combinators.workspace = true
 
 # The record plane supplies a real node image for the domain-separation
 # witness; proptest generates the values and profiles the laws range over.

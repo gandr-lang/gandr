@@ -13,7 +13,8 @@ publish.workspace = true
 
 # The pinned anodized facade supplies core-only specification helpers; BLAKE3
 # is the manifest identity's digest; the kernel's term crate decodes and
-# delimits the artifact; the record plane holds its records.
+# delimits the artifact; the record plane holds its records; the
+# specification combinators supply the answer a type's invariant reads.
 [dependencies]
 anodized.workspace = true
 blake3.workspace = true
@@ -22,6 +23,7 @@ gandr-storage-records.workspace = true
 gandr-theory-cell-complexes.workspace = true
 gandr-theory-decomposition-spaces.workspace = true
 gandr-theory-deep-inference.workspace = true
+gandr-theory-spec-combinators.workspace = true
 quenchant-shape.workspace = true
 
 # The level oracle builds the universe declarations the generated environments

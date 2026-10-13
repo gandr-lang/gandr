@@ -2477,6 +2477,13 @@ impl<'pbg> Molder<'pbg>
     /// - witness: `mold::tests::picks_the_obligation_minimum_mold`
     /// - witness: `mold::tests::a_window_reads_the_token_after_a_tied_separator`
     /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the procedure the body dispatches to walks the same candidate menu to filter it by admissibility"
+        )
+    )]
     #[spec(requires: self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right), ensures: |ret| ret.map_or_else(|| self.candidates.is_empty(), |mold| self.candidates.contains(&mold)))]
     fn choose(
         &mut self,
@@ -2510,6 +2517,13 @@ impl<'pbg> Molder<'pbg>
     ///   a table verdict differ unseen.
     /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
     #[cold]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks the same candidate menu to filter it by admissibility, once per procedure"
+        )
+    )]
     #[spec(requires: self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right), captures: before = self.disagreements, ensures: |ret| self.disagreements >= before && ret.map_or_else(|| self.candidates.is_empty(), |mold| self.candidates.contains(&mold)))]
     fn choose_both(
         &mut self,
@@ -2539,6 +2553,13 @@ impl<'pbg> Molder<'pbg>
     /// - hypothesis: L3 — as [`choose`](Self::choose); the differential witness
     ///   reads the two procedures against each other.
     /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks the same candidate menu to filter it by admissibility"
+        )
+    )]
     #[spec(requires: self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right), ensures: |ret| ret.map_or_else(|| self.candidates.is_empty(), |mold| self.candidates.contains(&mold)))]
     fn choose_by(
         &mut self,
@@ -2823,6 +2844,13 @@ impl<'pbg> Molder<'pbg>
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
     /// - witness: `mold::tests::lookahead_window_stops_after_eight_significant_tokens`
     /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the procedure the body dispatches to walks the same candidate menu to filter it by admissibility"
+        )
+    )]
     #[spec(requires: self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right), captures: before = (self.candidates.len(), tokens.get(index.0).is_some()), ensures: |ret| ret.is_some() == (before.1 && before.0 > 0) && ret.is_none_or(|mold| self.pbg.mold(mold).is_ok()))]
     fn choose_stream<'src>(
         &mut self,
@@ -2860,6 +2888,13 @@ impl<'pbg> Molder<'pbg>
     ///   unseen.
     /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
     #[cold]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body copies the candidate menu and walks it to filter it by admissibility, once per procedure"
+        )
+    )]
     #[spec(requires: self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right), captures: before = (self.candidates.len(), tokens.get(index.0).is_some(), self.disagreements), ensures: |ret| self.disagreements >= before.2 && ret.is_some() == (before.1 && before.0 > 0) && ret.is_none_or(|mold| self.pbg.mold(mold).is_ok()))]
     fn choose_stream_both<'src>(
         &mut self,
@@ -2901,6 +2936,13 @@ impl<'pbg> Molder<'pbg>
     /// - hypothesis: L3 — as [`choose_stream`](Self::choose_stream); the
     ///   differential witness reads the two procedures against each other.
     /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks the same candidate menu to filter it by admissibility"
+        )
+    )]
     #[spec(requires: self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right), captures: before = (self.candidates.len(), tokens.get(index.0).is_some()), ensures: |ret| ret.is_some() == (before.1 && before.0 > 0) && ret.is_none_or(|mold| self.pbg.mold(mold).is_ok()))]
     fn choose_stream_by<'src>(
         &mut self,

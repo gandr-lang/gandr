@@ -941,6 +941,13 @@ impl<Id: Copy> SessionType<Id>
     /// - hypothesis: L3 — the seat's session type and its operator's are each
     ///   other's dual, observed through the step each admits.
     /// - witness: `session::tests::dual_swaps_every_action_and_keeps_the_rest`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body dualises every node of the protocol once; the check dualises them once more and compares each once"
+        )
+    )]
     #[spec(ensures: |ret| ret.state == self.state && *ret.protocol == self.protocol.dual())]
     #[inline]
     #[must_use]

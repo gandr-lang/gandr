@@ -60,11 +60,13 @@ env.CARGO_ENCODED_RUSTFLAGS = "{% if env.CARGO_ENCODED_RUSTFLAGS is defined %}{%
 # The executable-specification lints are `allow` by default in the library and
 # denied here for the whole workspace: an unqualified attribute on every
 # nontrivial item, an adequacy section with witnesses, `Maybe` for absence,
-# typed errors at the boundary. A crate the backfill has not reached yet
-# carries the matching `allow` on its root under
-# `cfg_attr(dylint_lib = "quenchant_dylints", …)`; that line leaves with the
-# crate's own backfill, and this flag stays.
-env.DYLINT_RUSTFLAGS = "-D spec_attribute_present -D spec_attribute_unqualified -D adequacy_present -D maybe_shape -D erased_error_signature"
+# typed errors at the boundary, and no clause that walks state accumulated on
+# the receiver or behind a `&mut` parameter except through a function whose
+# rustdoc states its `# Clause cost` (the `theory-spec-combinators` crate
+# docs). A crate the backfill has not reached yet carries the matching `allow`
+# on its root under `cfg_attr(dylint_lib = "quenchant_dylints", …)`; that line
+# leaves with the crate's own backfill, and this flag stays.
+env.DYLINT_RUSTFLAGS = "-D spec_attribute_present -D spec_attribute_unqualified -D adequacy_present -D maybe_shape -D erased_error_signature -D spec_clause_traversal"
 # Every policy run also records what each specification names, one file per
 # compilation unit, for `evidence:obligations`. Recording always keeps one
 # configuration, so the lint state and the records never disagree; it adds no

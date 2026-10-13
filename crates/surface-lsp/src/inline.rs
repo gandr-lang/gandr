@@ -825,6 +825,13 @@ fn spelled(
 ///   closer of another family, or not counting nested brackets, changes them.
 /// - witness: `inline::tests::the_defect_rows_answer_as_wanted`
 /// - witness: `inline::tests::the_ranking_is_pinned`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "parity: `parts` is one candidate's material, which the caller builds afresh for this call alone; the check copies it once and compares the kept prefix once, no more than building it cost"
+    )
+)]
 #[spec(captures: before = parts.clone(), ensures: |ret| before.starts_with(parts.as_slice())
     && matches!(ret, Fit::Meets) == (parts.len() < before.len()))]
 fn subtract(

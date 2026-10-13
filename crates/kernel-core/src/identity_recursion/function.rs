@@ -960,6 +960,13 @@ impl Relation
     /// - hypothesis: L3 — the higher-order argument of the quantified witness
     ///   finds its clause; a fibre naming a Base binder never reaches here.
     /// - witness: `element_identity::tests::a_quantified_evaluation_replays_under_the_quantifier`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body scans the program's nodes for the function clause once; the check scans them once more"
+        )
+    )]
     #[spec(ensures: |ret| match ret {
         Ok((argument, result)) => self.nodes.iter().any(|node| node.source == classifier && node.clause == Clause::Function(argument, result)),
         Err(_) => !self.nodes.iter().any(|node| node.source == classifier && matches!(node.clause, Clause::Function(..))),

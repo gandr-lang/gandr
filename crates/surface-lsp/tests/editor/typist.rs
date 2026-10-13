@@ -54,6 +54,13 @@ impl Session
     ///   per-keystroke prefix check.
     /// - witness: `editor::editor::scenarios::typing_each_corpus_source_keeps_every_answer_faithful`
     /// - witness: `editor::editor::scenarios::defining_a_missing_name_clears_its_diagnostic`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body types every character, comparing the text up to the cursor at each keystroke; the check compares the final text once"
+        )
+    )]
     #[spec(captures: [target = {
             let text = self.buffer().text().0;
             let (before, after) = text.split_at(self.buffer().cursor().0);
@@ -294,6 +301,13 @@ impl Session
     /// - hypothesis: L2 — every indented corpus line passes here; a wrong width
     ///   shows as a text off its target.
     /// - witness: `editor::editor::scenarios::typing_each_corpus_source_keeps_every_answer_faithful`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body reads the line before the cursor at every keystroke; the check reads it once before and twice after"
+        )
+    )]
     #[spec(requires: self.buffer().line_before_cursor().0.chars().all(|character| character == ' '),
         ensures: self.buffer().line_before_cursor().0.len() == width.0
             && self.buffer().line_before_cursor().0.chars().all(|character| character == ' '))]

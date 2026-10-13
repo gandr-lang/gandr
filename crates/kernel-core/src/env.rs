@@ -1343,7 +1343,7 @@ impl Environment
             |error| self.manifest.len() == entry_manifest
                 && *error == KernelError::SealNotOpen { index: atom.position() },
             |extent| self.manifest.len().checked_add(1) == Some(entry_manifest)
-                && !self.manifest.contains(&atom.position())
+                && self.manifest.binary_search(&atom.position()).is_err()
                 && usize::from(atom.position()).checked_add(usize::from(*extent)).and_then(|end| end.checked_add(1)) == Some(entry_len),
         ),
     )]
@@ -1473,6 +1473,13 @@ impl Environment
     /// - hypothesis: L3 — a replayed atom closed after one member is manifest
     ///   for that member and opaque for the next declaration.
     /// - witness: `sealed_export::sealed_export::the_export_of_a_sealed_module_replays`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks every held atom once to retain it; the check reads each twice"
+        )
+    )]
     #[spec(ensures: self.manifest.windows(2).all(|pair| pair.first() < pair.last())
         && self.manifest.iter().all(|&atom| atom <= position))]
     fn advance_seals(

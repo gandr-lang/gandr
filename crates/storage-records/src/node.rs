@@ -25,6 +25,7 @@ use alloc::vec::Vec;
 use core::cmp::Ordering;
 
 use anodized::spec;
+use gandr_theory_spec_combinators::Holds;
 
 use crate::bytes::EncodedNode;
 use crate::bytes::NODE_HASH_LEN;
@@ -252,9 +253,7 @@ impl ChildRef
 /// - witness: `node::tests::an_oversized_leaf_count_is_refused`
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[spec(maintains: u64::try_from(self.records.len())
-    .is_ok_and(|count| count <= u64::from(MAX_LEAF_RECORDS))
-    && self.records.array_windows::<2>().all(|pair| pair[0].key() < pair[1].key()))]
+#[spec(maintains: bool::from(self.well_formed()))]
 pub struct LeafNode
 {
     /// The leaf's records, strictly increasing in key order.
@@ -344,6 +343,39 @@ impl LeafNode
     {
         RecordCount::of_slice(self.records.as_ref())
     }
+
+    /// Whether the leaf fits the leaf budget and its keys strictly increase.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: holds exactly when the leaf carries at most
+    ///   [`MAX_LEAF_RECORDS`] records, each keyed strictly before the next.
+    /// - provides: the leaf's invariant, which a clause reads through this
+    ///   bound.
+    /// - panics: none.
+    /// - executable: none — this is the invariant's predicate; a postcondition
+    ///   could only repeat its comparisons.
+    ///
+    /// # Clause cost
+    /// - bound: one key comparison per adjacent pair of records, fewer than
+    ///   [`MAX_LEAF_RECORDS`]. The clauses that read it check a leaf the
+    ///   decoder has just compared pair by pair, or one a proof's verifier has
+    ///   just decoded and re-encodes whole.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty and forty-record leaves hold; swapping two
+    ///   records or repeating a key in a decoded leaf fails.
+    /// - witness: `node::tests::leaves_round_trip`
+    fn well_formed(&self) -> Holds
+    {
+        Holds::from(
+            u64::try_from(self.records.len())
+                .is_ok_and(|count| count <= u64::from(MAX_LEAF_RECORDS))
+                && self
+                    .records
+                    .is_sorted_by(|lower, higher| lower.key() < higher.key()),
+        )
+    }
 }
 
 /// A decoded internal node.
@@ -369,29 +401,7 @@ impl LeafNode
 /// - witness: `node::tests::a_wrong_internal_record_total_is_refused`
 /// - witness: `node::tests::child_count_ceiling_is_inclusive`
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[spec(maintains: {
-    if self.children.is_empty()
-        || !u64::try_from(self.children.len())
-            .is_ok_and(|count| count <= u64::from(MAX_NODE_CHILDREN))
-    {
-        return false;
-    }
-    let mut previous = None;
-    let mut total = 0_u64;
-    for child in self.children.as_ref() {
-        let key = child.first_key();
-        let count = u64::from(child.record_count());
-        if count == 0_u64 || previous.is_some_and(|previous| previous >= key) {
-            return false;
-        }
-        let Some(next) = total.checked_add(count) else {
-            return false;
-        };
-        total = next;
-        previous = Some(key);
-    }
-    total == u64::from(self.record_count)
-})]
+#[spec(maintains: bool::from(self.well_formed()))]
 pub struct InternalNode
 {
     /// The total record count the header claims, checked against the children.
@@ -470,6 +480,57 @@ impl InternalNode
     ) -> Option<ChildIndex>
     {
         select_child(self.children.as_ref(), key)
+    }
+
+    /// Whether the node's children are nonempty, within the child budget,
+    /// strictly ordered and each nonempty, and sum to the declared total.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: holds exactly when the node has between one and
+    ///   [`MAX_NODE_CHILDREN`] children, each claims at least one record, their
+    ///   separators strictly increase, and their counts sum without overflow to
+    ///   the node's declared total.
+    /// - provides: the internal node's invariant, which a clause reads through
+    ///   this bound.
+    /// - panics: none.
+    /// - executable: none — this is the invariant's predicate; a postcondition
+    ///   could only repeat its pass.
+    ///
+    /// # Clause cost
+    /// - bound: one separator comparison and one checked addition per child, at
+    ///   most [`MAX_NODE_CHILDREN`]. The clause that reads it checks a node a
+    ///   proof's verifier has just decoded and re-encodes whole.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — three ordered children totalling six hold; a wrong
+    ///   total, swapped children, a repeated separator, an empty child, an
+    ///   overflowing sum and a childless node each fail.
+    /// - witness: `node::tests::internal_nodes_round_trip`
+    fn well_formed(&self) -> Holds
+    {
+        if self.children.is_empty()
+            || !u64::try_from(self.children.len())
+                .is_ok_and(|count| count <= u64::from(MAX_NODE_CHILDREN))
+        {
+            return Holds::from(false);
+        }
+        let mut previous = None;
+        let mut total = 0_u64;
+        for child in self.children.as_ref() {
+            let key = child.first_key();
+            let count = u64::from(child.record_count());
+            if count == 0_u64 || previous.is_some_and(|earlier| earlier >= key) {
+                return Holds::from(false);
+            }
+            let Some(next) = total.checked_add(count)
+            else {
+                return Holds::from(false);
+            };
+            total = next;
+            previous = Some(key);
+        }
+        Holds::from(total == u64::from(self.record_count))
     }
 }
 

@@ -39,6 +39,7 @@ use core::mem;
 
 use anodized::spec;
 use gandr_storage_chunker::TokenCount;
+use gandr_theory_spec_combinators::Holds;
 
 use crate::chunk::ChunkStore;
 use crate::error::ValueError;
@@ -526,9 +527,7 @@ impl<'store> Scan<'store>
 ///   These distinguish the stored-state bounds, not completeness of an
 ///   arbitrary store's authenticated closure.
 /// - witness: `closure::tests::closure_state_refinements_reject_impossible_counts`
-#[spec(maintains: self.spent <= MAX_DECODE_WORK
-    && self.counted.iter().all(|(pointer, count)|
-        self.digests.contains(&pointer.digest()) && u64::from(*count) >= 2_u64))]
+#[spec(maintains: bool::from(self.well_formed()))]
 struct Walk<'store, Store>
 where
     Store: ChunkStore + ?Sized,
@@ -547,6 +546,39 @@ impl<'store, Store> Walk<'store, Store>
 where
     Store: ChunkStore + ?Sized,
 {
+    /// Whether the walk's work fits the decode budget and each counted subtree
+    /// names a loaded chunk and counts its own open and close.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: holds exactly when the spent work is at most
+    ///   [`MAX_DECODE_WORK`] and every counted pointer's digest is among the
+    ///   loaded chunks, with a count of at least two.
+    /// - provides: the walk's invariant, which a clause reads through this
+    ///   bound.
+    /// - panics: none.
+    /// - executable: none — this is the invariant's predicate; a postcondition
+    ///   could only repeat its lookups.
+    ///
+    /// # Clause cost
+    /// - bound: one loaded-digest lookup per counted subtree. No function's
+    ///   clause reads the walk's invariant; only its witness does.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an entered leaf with a valid cached count holds;
+    ///   over-budget work, a count below two and an unloaded cache key each
+    ///   fail.
+    /// - witness: `closure::tests::closure_state_refinements_reject_impossible_counts`
+    fn well_formed(&self) -> Holds
+    {
+        Holds::from(
+            self.spent <= MAX_DECODE_WORK
+                && self.counted.iter().all(|(pointer, count)| {
+                    self.digests.contains(&pointer.digest()) && u64::from(*count) >= 2_u64
+                }),
+        )
+    }
+
     /// Loads the chunk a pointer names and opens a scan at its offset.
     ///
     /// # Specification

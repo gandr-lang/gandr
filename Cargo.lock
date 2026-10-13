@@ -631,6 +631,7 @@ dependencies = [
  "gandr-theory-coherent-resolutions",
  "gandr-theory-decomposition-spaces",
  "gandr-theory-deep-inference",
+ "gandr-theory-spec-combinators",
  "proptest",
  "quenchant-anodized",
  "quenchant-shape",
@@ -649,6 +650,7 @@ version = "0.0.0"
 dependencies = [
  "blake3",
  "gandr-storage-chunker",
+ "gandr-theory-spec-combinators",
  "proptest",
  "quenchant-anodized",
 ]
@@ -660,6 +662,7 @@ dependencies = [
  "blake3",
  "gandr-storage-chunker",
  "gandr-storage-records",
+ "gandr-theory-spec-combinators",
  "proptest",
  "quenchant-anodized",
 ]
@@ -779,6 +782,7 @@ dependencies = [
  "gandr-theory-computads",
  "gandr-theory-levitation",
  "gandr-theory-sites",
+ "gandr-theory-spec-combinators",
  "quenchant-anodized",
  "quenchant-shape",
 ]

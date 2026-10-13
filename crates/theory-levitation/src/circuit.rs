@@ -407,7 +407,8 @@ impl CircuitBody
     #[spec(ensures: |ret| match ret {
         Roots::One(port) => self.outs.len() == 1 && self.outs.first() == Some(port),
         Roots::Whole(frame, _) => self.outs.len() > 1 && frame.outs == self.outs,
-        Roots::Tuple(ports) => ports.len() != 1 && ports == &*self.outs,
+        Roots::Tuple(ports) => ports.len() != 1
+            && core::ptr::eq(core::ptr::from_ref(ports), &raw const *self.outs),
     })]
     pub(crate) fn roots<'body>(
         &'body self,

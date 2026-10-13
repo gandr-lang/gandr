@@ -345,6 +345,13 @@ impl<'source> Collector<'_, 'source>
     ///   undeclared sign, each asserted as the exact components or refusal.
     /// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
     /// - witness: `modules::modules::models::a_model_of_an_undeclared_sign_is_refused_by_name`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body names every derived component once; the check compares each name once"
+        )
+    )]
     #[spec(
         ensures: |ret| ret.as_ref().map_or(true, |found| {
             found.0.len() == found.1.components.len()

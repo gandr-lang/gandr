@@ -40,12 +40,19 @@
 //! not a combinator: wrapping it would hide from the lint the walk the lint
 //! exists to show. A clause whose check is linear in accumulated state carries
 //! `#[expect(spec_clause_traversal, reason = "...")]` at its own site instead,
-//! where the reviewer weighs the reason, typically that the function walks the
-//! same state itself. A domain claim that needs knowledge of one crate's types
+//! where the reviewer weighs the reason. The reason opens with its class:
+//! `parity:` names the walk the function's body already makes, `bounded:`
+//! states why the walk stays small, and `test fixture:` marks a clause of
+//! test-only code. A domain claim that needs knowledge of one crate's types
 //! (the caches of a parser's stack, the reach of an overlay) is a combinator in
-//! that crate's `spec` module, under the same rule. The reversal is a measured
-//! case where a clause cannot state its claim within the function's cost
-//! through a bounded read; that case is a new combinator here, never an
+//! that crate's private `spec` module, under the same rule. A type's own
+//! invariant (`#[spec(maintains: …)]` on a struct or enum) expands into an
+//! `impl` the macro generates, which an expectation on the type does not
+//! reach: an invariant that walks the type calls a method of the type whose
+//! `# Clause cost` bound carries the reason an expectation would, and a test
+//! fixture's invariants take the expectation on their module. The reversal is
+//! a measured case where a clause cannot state its claim within the function's
+//! cost through a bounded read; that case is a new combinator here, never an
 //! inlined walk.
 //!
 //! **Captured marks.** A [`Mark`] is a position: the length of a sequence

@@ -441,6 +441,13 @@ impl<'source> Lowerer<'_, 'source>
     ///   signature's types, and a law over a refused family inherits it.
     /// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
     /// - witness: `modules::modules::models::a_family_of_the_wrong_telescope_is_refused`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body sweeps every slot once, filing each model half; the check looks each filed half up among the faults once"
+        )
+    )]
     #[spec(
         ensures: self.modelled.keys().all(|slot| !self.faults.contains_key(slot)),
     )]
@@ -860,6 +867,13 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
     /// - witness: `modules::modules::models::a_family_of_the_wrong_telescope_is_refused`
     /// - witness: `modules::modules::models::a_written_family_of_the_wrong_telescope_is_refused`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body checks every family check once; the check looks each up among the faults and the kind checks once"
+        )
+    )]
     #[spec(
         ensures: self.collected.family_checks.keys().all(|slot| !(self.faults.contains_key(slot) && self.kind_checks.contains_key(slot))),
     )]

@@ -13,6 +13,7 @@ publish.workspace = true
 
 # The pinned anodized facade supplies the executable specifications of the
 # readers and minters; logic/BigInt stays disabled in this no_std library.
+# The specification combinators bound a clause to what a call appended.
 [dependencies]
 anodized.workspace = true
 gandr-core-term.workspace = true
@@ -25,6 +26,7 @@ gandr-theory-circuit-algebras.workspace = true
 gandr-theory-coherent-resolutions.workspace = true
 gandr-theory-computads.workspace = true
 gandr-theory-levitation.workspace = true
+gandr-theory-spec-combinators.workspace = true
 quenchant-shape.workspace = true
 
 # The kernel's content digest witnesses that two spellings readmit as one

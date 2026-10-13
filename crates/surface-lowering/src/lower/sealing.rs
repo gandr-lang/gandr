@@ -44,6 +44,13 @@ impl Lowerer<'_, '_>
     ///   type refuses its atom and every client of it, while an unrelated
     ///   declaration still lowers.
     /// - witness: `modules::modules::a_sealed_component_over_a_refused_member_is_refused_with_it`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks every abstract slot once; the check counts the refused ones before and after and reads each once more"
+        )
+    )]
     #[spec(
         captures: before = self.collected.abstracts.keys().filter(|&&slot| matches!(self.collected.slots.get(usize::from(slot)).map(|own| own.refusal), Some(Maybe::Present(_)))).count(),
         ensures: |ret| {
@@ -104,6 +111,13 @@ impl Lowerer<'_, '_>
     /// - witness: `modules::modules::opaque_ascription_seals`
     /// - witness: `modules::modules::an_abstract_component_kinds_at_a_universe`
     /// - witness: `modules::modules::a_transparent_abstract_component_reads_its_type_member`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks every abstract slot once, minting each declaration; the check reads each minted sealing and kind check once"
+        )
+    )]
     #[spec(
         ensures: self.sealings.keys().chain(self.kind_checks.keys()).all(|slot| {
             self.collected.abstracts.contains_key(slot)

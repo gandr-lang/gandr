@@ -23,6 +23,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_theory_spec_combinators::Holds;
 
 use crate::boundary::RecordSpan;
 use crate::boundary::leaf_spans;
@@ -77,13 +78,43 @@ use crate::wire::ensure_proof_budget;
 ///   unauthenticated cached bytes and lost coordinate correlation.
 /// - witness: `tree::tests::built_state_refinements_reject_cache_corruption`
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[spec(maintains: hash_node(self.node.bytes()) == self.node.identity())]
+#[spec(maintains: bool::from(self.well_formed()))]
 struct LeafEntry
 {
     /// The leaf's identity and bytes.
     node: ProofNode,
     /// The run of record positions the leaf holds.
     span: RecordSpan,
+}
+
+impl LeafEntry
+{
+    /// Whether the cached identity is the hash of the cached bytes.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: holds exactly when hashing the leaf's stored encoding gives
+    ///   its stored identity.
+    /// - provides: the leaf entry's invariant, which a clause reads through
+    ///   this bound.
+    /// - panics: none.
+    /// - executable: none — this is the invariant's predicate; a postcondition
+    ///   could only hash the bytes again.
+    ///
+    /// # Clause cost
+    /// - bound: one hash of one leaf's encoding, at most
+    ///   [`MAX_NODE_BYTES`](crate::wire::MAX_NODE_BYTES) long. The tree's
+    ///   invariant reads it once per leaf, in the postcondition of the build
+    ///   that hashed the same bytes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a built leaf holds; its payload replaced under the
+    ///   original identity fails.
+    /// - witness: `tree::tests::built_state_refinements_reject_cache_corruption`
+    fn well_formed(&self) -> Holds
+    {
+        Holds::from(hash_node(self.node.bytes()) == self.node.identity())
+    }
 }
 
 /// A built ordered-record tree.
@@ -115,39 +146,7 @@ struct LeafEntry
 /// - witness: `tests::build::the_root_is_a_function_of_the_records`
 /// - witness: `tree::tests::built_state_refinements_reject_cache_corruption`
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[spec(maintains: {
-    if RecordCount::of_slice(self.records.as_ref()) != Ok(self.root.record_count())
-        || !self.records.array_windows::<2>().all(|pair| pair[0].key() < pair[1].key())
-        || self.children.len() != self.leaves.len()
-        || self.root.ensure_binds(self.root_node.identity()).is_err()
-        || hash_node(self.root_node.bytes()) != self.root_node.identity()
-    {
-        return false;
-    }
-    let mut next = 0_usize;
-    for (child, leaf) in self.children.iter().zip(self.leaves.iter()) {
-        let start = usize::from(leaf.span.start());
-        let end = usize::from(leaf.span.end());
-        if start != next || child.identity() != leaf.node.identity()
-            || !anodized::types::Spec::predicate(leaf)
-        {
-            return false;
-        }
-        let Some(run) = self.records.get(start .. end) else {
-            return false;
-        };
-        let Some(first) = run.first() else {
-            return false;
-        };
-        if child.first_key() != first.key()
-            || RecordCount::of_slice(run) != Ok(child.record_count())
-        {
-            return false;
-        }
-        next = end;
-    }
-    self.leaves.is_empty() || next == self.records.len()
-})]
+#[spec(maintains: bool::from(self.well_formed()))]
 pub struct RecordTree
 {
     /// The root manifest.
@@ -164,6 +163,74 @@ pub struct RecordTree
 
 impl RecordTree
 {
+    /// Whether the cached root, nodes, leaves and records describe one tree.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: holds exactly when the record count matches the root's, the
+    ///   records strictly increase by key, the root binds the root node and the
+    ///   root node's bytes hash to its identity, and the leaves pair with the
+    ///   root's children in order: each leaf's span starts where the previous
+    ///   ended, names the child's identity, satisfies the leaf entry's
+    ///   invariant, and covers a nonempty run whose first key and count the
+    ///   child claims; the spans end at the last record.
+    /// - provides: the tree's invariant, which a clause reads through this
+    ///   bound.
+    /// - panics: none.
+    /// - executable: none — this is the invariant's predicate; a postcondition
+    ///   could only repeat its pass.
+    ///
+    /// # Clause cost
+    /// - bound: one pass over the records, one over the leaves, and a hash of
+    ///   the root node and of each leaf: the work of building the tree. Its one
+    ///   clause reader is [`RecordTree::build`]'s postcondition, whose body
+    ///   makes the same pass.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a built three-record tree holds; a substituted record
+    ///   count, swapped records, swapped children, a moved span and a leaf
+    ///   payload replaced under its identity each fail.
+    /// - witness: `tree::tests::built_state_refinements_reject_cache_corruption`
+    fn well_formed(&self) -> Holds
+    {
+        if RecordCount::of_slice(self.records.as_ref()) != Ok(self.root.record_count())
+            || !self
+                .records
+                .is_sorted_by(|lower, higher| lower.key() < higher.key())
+            || self.children.len() != self.leaves.len()
+            || self.root.ensure_binds(self.root_node.identity()).is_err()
+            || hash_node(self.root_node.bytes()) != self.root_node.identity()
+        {
+            return Holds::from(false);
+        }
+        let mut next = 0_usize;
+        for (child, leaf) in self.children.iter().zip(self.leaves.iter()) {
+            let start = usize::from(leaf.span.start());
+            let end = usize::from(leaf.span.end());
+            if start != next
+                || child.identity() != leaf.node.identity()
+                || !anodized::types::Spec::predicate(leaf)
+            {
+                return Holds::from(false);
+            }
+            let Some(run) = self.records.get(start .. end)
+            else {
+                return Holds::from(false);
+            };
+            let Some(first) = run.first()
+            else {
+                return Holds::from(false);
+            };
+            if child.first_key() != first.key()
+                || RecordCount::of_slice(run) != Ok(child.record_count())
+            {
+                return Holds::from(false);
+            }
+            next = end;
+        }
+        Holds::from(self.leaves.is_empty() || next == self.records.len())
+    }
+
     /// Builds a tree from a strictly increasing record sequence.
     ///
     /// # Specification

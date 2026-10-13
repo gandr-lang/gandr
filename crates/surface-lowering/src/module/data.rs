@@ -23,6 +23,8 @@ use gandr_surface_syntax::NodeIndex;
 use gandr_theory_levitation::DeclPolarity;
 use gandr_theory_levitation::Name;
 use gandr_theory_levitation::TermView;
+use gandr_theory_spec_combinators::Mark;
+use gandr_theory_spec_combinators::appended;
 use quenchant_shape::shape::Maybe;
 
 use super::Collector;
@@ -714,10 +716,10 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `operation::tests::an_operation_whose_rules_miss_a_constructor_is_not_callable`
     /// - witness: `operation::tests::an_operation_calling_a_later_one_is_not_callable`
     #[spec(
-        captures: before = (self.collected.slots.len(), self.collected.operations.len()),
-        ensures: self.collected.slots.len().saturating_sub(before.0)
+        captures: before = (Mark::of(&self.collected.slots), self.collected.operations.len()),
+        ensures: self.collected.slots.len().saturating_sub(usize::from(before.0))
             == self.collected.operations.len().saturating_sub(before.1)
-            && self.collected.slots.iter().skip(before.0).all(|slot| slot.role == Role::Operation),
+            && appended(&self.collected.slots, before.0).iter().all(|slot| slot.role == Role::Operation),
     )]
     pub(super) fn route_operations(
         &mut self,

@@ -490,6 +490,13 @@ impl SealTable
     /// - witness: `seal::tests::re_minting_the_same_sites_verifies`
     /// - witness: `seal::tests::a_reordered_record_is_refused`
     /// - witness: `seal::tests::a_truncated_record_is_refused`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body compares the record with the minting order site by site once; the check compares them once more"
+        )
+    )]
     #[spec(ensures: |ret| match ret {
         | Ok(()) => recorded == self.order.as_slice(),
         | Err(SealError::RemintingCountDiverged { recorded: count, minted }) => count == recorded.len()

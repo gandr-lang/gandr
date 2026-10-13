@@ -8,6 +8,13 @@
 //! subtree. The steps are biased toward deep spines, wide fans, repeated
 //! subtrees and the empty-payload constructor; profiles toward kappa one,
 //! powers of two, and caps at and below kappa.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "test fixture: the generated values' invariants walk a whole value or arena, which the property generators keep small; an expectation on a type does not reach the impl its invariant expands to"
+    )
+)]
 
 use anodized::spec;
 use gandr_storage_chunker::Kappa;
