@@ -106,6 +106,7 @@ use crate::recheck::DocumentSession;
 use crate::recheck::Timing;
 use crate::recheck::Tried;
 use crate::recheck::admit;
+use crate::recheck::forms;
 use crate::recheck::grammar;
 use crate::recheck::open;
 use crate::recheck::recheck;
@@ -1746,25 +1747,24 @@ impl Workspace
     /// - requires: nothing; an unknown URI and any position are admitted.
     /// - ensures: an unknown document yields Nothing; a held document yields
     ///   first the ghost text of each kept proposal whose range holds the
-    ///   position, replacing that range, then one item when [`ghost()`] shows
-    ///   ghost text at the position's byte, its snippet inserted at the empty
-    ///   range at `position`, and none when it shows none or the grammar did
-    ///   not build.
+    ///   position, replacing that range, then each ghost text [`ghost()`] ranks
+    ///   at the position's byte, best first, its snippet inserted at the empty
+    ///   range at `position`; none of those when the grammar did not build.
     /// - provides: the answer to `textDocument/inlineCompletion`.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a known document after an open bracket, the same
-    ///   document where nothing is owed, and an unknown document distinguish
-    ///   the item, the empty list and null through exact wire answers; a cursor
-    ///   inside a kept proposal sees it first.
+    ///   document before written text, and an unknown document distinguish the
+    ///   ranked items and null through exact wire answers; a cursor inside a
+    ///   kept proposal sees it first.
     /// - witness: `server::tests::inline_completion_answers_the_expected_closer`
     /// - witness: `server::tests::kept_proposals_reach_every_editor_surface`
     #[spec(ensures: |ret| match ret {
         Answer::Nothing => !self.documents.contains_key(uri),
         Answer::Inline(ref list) => self.documents.get(uri).is_some_and(|held|
-            list.items.len() <= held.view(peer).proposals.len().saturating_add(1))
+            list.items.len() <= held.view(peer).proposals.len().saturating_add(8))
             && list.items.iter().all(|item| item.range.start <= position && position <= item.range.end),
         Answer::Initialize(_) | Answer::Tokens(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Actions(_) => false,
@@ -1784,17 +1784,19 @@ impl Workspace
         let index = LineIndex::new(text.as_ref().into());
         let at = position.byte(&index);
         let mut items = ghosts(&document.proposals, position);
-        if let Ok(Maybe::Present(snippet)) = grammar().map(|grammar| ghost(grammar, text, at)) {
-            items.push(InlineCompletionItem {
-                insert_text: StringValue {
-                    kind: "snippet",
-                    value: String::from(snippet),
-                },
-                range: Range {
-                    start: position,
-                    end: position,
-                },
-            });
+        if let (Ok(grammar), Ok(forms)) = (grammar(), forms()) {
+            items.extend(ghost(grammar, forms, text, at).into_iter().map(|snippet| {
+                InlineCompletionItem {
+                    insert_text: StringValue {
+                        kind: "snippet",
+                        value: String::from(snippet),
+                    },
+                    range: Range {
+                        start: position,
+                        end: position,
+                    },
+                }
+            }));
         }
         Answer::Inline(InlineCompletionList { items })
     }
@@ -2442,19 +2444,31 @@ mod tests
             );
             send(server, Json(&request))
         };
+        let after_call = ask(&mut server, "file:///tmp/open.gandr", 11);
         assert_eq!(
-            ask(&mut server, "file:///tmp/open.gandr", 11),
-            wire(Json(
-                r#"[{"jsonrpc":"2.0","id":7,"result":{"items":[{
-                    "insertText":{"kind":"snippet","value":")"},
-                    "range":{"start":{"line":0,"character":11},"end":{"line":0,"character":11}}}]}}]"#
-            )),
-            "after `f(1` the call's closer is the ghost text"
+            after_call.pointer("/0/result/items/0"),
+            Some(&wire(Json(
+                r#"{"insertText":{"kind":"snippet","value":")"},
+                    "range":{"start":{"line":0,"character":11},"end":{"line":0,"character":11}}}"#
+            ))),
+            "after `f(1` the call's closer is the first ghost text: {after_call}"
         );
-        assert_eq!(
-            ask(&mut server, "file:///tmp/open.gandr", 5),
-            wire(Json(r#"[{"jsonrpc":"2.0","id":7,"result":{"items":[]}}]"#)),
-            "text after the cursor on its line: nothing is shown"
+        // Text after the cursor on its line is input, never a refusal: the
+        // ranked ghost texts are inserted at the cursor.
+        let before_text = ask(&mut server, "file:///tmp/open.gandr", 5);
+        let items = before_text
+            .pointer("/0/result/items")
+            .and_then(Value::as_array)
+            .expect("a held document answers a list");
+        assert!(
+            (1 ..= 8).contains(&items.len())
+                && items.iter().all(|item| {
+                    item.pointer("/range")
+                        == Some(&wire(Json(
+                            r#"{"start":{"line":0,"character":5},"end":{"line":0,"character":5}}"#,
+                        )))
+                }),
+            "text after the cursor on its line: ghost texts at the cursor: {before_text}"
         );
         assert_eq!(
             ask(&mut server, "file:///tmp/closed.gandr", 0),

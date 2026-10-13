@@ -236,7 +236,10 @@ use gandr_theory_graphs::PrecIndex;
 use gandr_theory_spec_combinators::Holds;
 use gandr_theory_spec_combinators::sorted_around;
 
+use crate::closing::Closing;
+use crate::closing::ClosingLimit;
 use crate::closing::LeadingSlot;
+use crate::closing::Step;
 use crate::closing::push_closing;
 use crate::mold::TokenRun;
 use crate::oblig::Delta;
@@ -788,6 +791,8 @@ enum Shortfall
     /// An operator of `sort` misses its right operand, owed at `at`.
     RightOperand
     {
+        /// The operator's mold.
+        operator: MoldId,
         /// The operand's sort.
         sort: Sort,
         /// The empty span right after the operator.
@@ -4698,7 +4703,9 @@ impl<'pbg> MeldState<'pbg>
                     obligations.push(ObligationInstance::new(Oblig::MissingTile, span));
                 }
             },
-            | Shortfall::RightOperand { sort, at, pending } => {
+            | Shortfall::RightOperand {
+                sort, at, pending, ..
+            } => {
                 if pending == PendingOperand::Absent {
                     expected.push(Expected::Hole(sort));
                 }
@@ -4835,12 +4842,15 @@ impl<'pbg> MeldState<'pbg>
                         },
                     });
                 },
-                | Role::Operator { sort, shape, .. } => {
+                | Role::Operator {
+                    mold, sort, shape, ..
+                } => {
                     let wants_right = matches!(shape, OpShape::Infix | OpShape::Prefix);
                     let above = index.checked_add(1).and_then(|next| self.stack.get(next));
                     let right_filled = above.is_some_and(|next| matches!(next.role, Role::Operand));
                     if wants_right && !right_filled {
                         visit(Shortfall::RightOperand {
+                            operator: mold,
                             sort,
                             at: SourceSpan::point(SourceOffset::from(cell.end)),
                             pending: if above.is_some_and(|next| {
@@ -4907,6 +4917,91 @@ impl<'pbg> MeldState<'pbg>
     pub fn expected(&self) -> Completion
     {
         self.finalize()
+    }
+
+    /// Return what may follow the slope head: the hole the head's operator
+    /// owes, then each of the `limit` cheapest ways to close the innermost open
+    /// form.
+    ///
+    /// This is the menu form of [`expected`](Self::expected)'s innermost
+    /// material: where that names one closing as labels and sorts, this names
+    /// up to `limit`, each step by its mold and each hole by the mold whose
+    /// right context faces it, so a consumer can tell a value position from
+    /// a computation position and spell each tile as the grammar writes it.
+    ///
+    /// # Specification
+    /// - requires: none.
+    /// - ensures: `pending` holds the hole of the operator nearest the slope
+    ///   head that misses its right operand with nothing under way there, named
+    ///   by that operator, when no open form frontier stands above it; it is
+    ///   empty otherwise. `head` is the innermost open form frontier the
+    ///   completion query would close, with whether anything stands above it,
+    ///   or [`HeadForm::Closed`] when there is none. `closings` are
+    ///   [`closings`](crate::closings) of that frontier, empty when it is
+    ///   closed. Leaves `self` unchanged.
+    /// - provides: the syntactic tier of inline completion.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: one scan of the slope head down to the innermost open
+    ///   frontier, then one bounded walk of that frontier's form.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an empty slope, a binary operator under an open
+    ///   definition, a prefix operator chain, an open bracket with and without
+    ///   content and an operator whose operand is a form under way each expose
+    ///   their exact pending hole, head and first closing. Reporting a lower
+    ///   operator's hole, naming the frontier rather than the operator, or
+    ///   reading the leading slot from the wrong cell changes them.
+    /// - witness: `meld::tests::continuations_name_the_pending_hole_and_the_frontier`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.pending.len() <= 1 && ret.closings.len() <= usize::from(limit) && (ret.head != HeadForm::Closed || ret.closings.is_empty()))]
+    pub fn continuations(
+        &self,
+        limit: ClosingLimit,
+    ) -> Continuations
+    {
+        let mut pending: Vec<Step> = Vec::with_capacity(1);
+        let mut head = HeadForm::Closed;
+        let mut operated = false;
+        self.shortfalls(|shortfall| {
+            if head != HeadForm::Closed {
+                return;
+            }
+            match shortfall {
+                | Shortfall::Continuation { mold, leading, .. } => {
+                    head = HeadForm::Open { mold, leading };
+                },
+                | Shortfall::RightOperand {
+                    operator,
+                    sort,
+                    pending: under_way,
+                    ..
+                } => {
+                    // Only the operator nearest the head owes a hole: the
+                    // operand of each one below it is that operator's chain.
+                    if !operated && under_way == PendingOperand::Absent {
+                        pending.push(Step::Hole {
+                            sort,
+                            after: operator,
+                        });
+                    }
+                    operated = true;
+                },
+                | Shortfall::LeftOperand { .. } => {},
+            }
+        });
+        let closings = match head {
+            | HeadForm::Open { mold, leading } => {
+                crate::closing::closings(self.pbg, mold, leading, limit)
+            },
+            | HeadForm::Closed => Vec::new(),
+        };
+        Continuations {
+            pending,
+            head,
+            closings,
+        }
     }
 
     /// Commit the parse: close the input and build the molded
@@ -6469,6 +6564,86 @@ impl Completion
     pub fn is_complete(&self) -> CompletionStatus
     {
         CompletionStatus::from(self.expected.is_empty())
+    }
+}
+
+/// The open form at the slope head, as the completion query reads it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HeadForm
+{
+    /// The innermost open form's frontier.
+    Open
+    {
+        /// The frontier's mold.
+        mold: MoldId,
+        /// Whether anything stands after the frontier.
+        leading: LeadingSlot,
+    },
+    /// No form is open at the head.
+    Closed,
+}
+
+/// What may follow the slope head, from [`MeldState::continuations`].
+///
+/// # Specification
+/// - requires: none.
+/// - ensures: preserves the pending hole, the head form and the closings
+///   [`MeldState::continuations`] computed.
+/// - provides: the menu an inline completion ranks.
+/// - fails: never.
+/// - panics: none.
+///
+/// - executable: none — this data type has no call boundary; its construction
+///   carries the executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the continuations witness reads each field back at its
+///   exact value.
+/// - witness: `meld::tests::continuations_name_the_pending_hole_and_the_frontier`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Continuations
+{
+    /// The hole the operator nearest the head owes, before any closing.
+    pending: Vec<Step>,
+    /// The innermost open form.
+    head: HeadForm,
+    /// The cheapest ways to close it, cheapest first.
+    closings: Vec<Closing>,
+}
+
+impl Continuations
+{
+    /// The hole the operator nearest the head owes: empty, or one hole.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn pending(&self) -> &[Step]
+    {
+        &self.pending
+    }
+
+    /// The innermost open form at the head.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn head(&self) -> HeadForm
+    {
+        self.head
+    }
+
+    /// The ways to close the innermost open form, cheapest first.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn closings(&self) -> &[Closing]
+    {
+        &self.closings
     }
 }
 
@@ -10552,6 +10727,60 @@ mod tests
                 expected.get(.. innermost).unwrap_or_default(),
                 "`{source}`: the innermost form's closing"
             );
+        }
+        Ok(())
+    }
+
+    /// `continuations` names the hole the operator nearest the head owes, by
+    /// that operator, then the innermost open frontier with whether its slot
+    /// is filled, and closes it cheapest first.
+    #[test]
+    fn continuations_name_the_pending_hole_and_the_frontier() -> Result<(), Box<dyn Error>>
+    {
+        let pbg = built_in()?;
+        let label = |mold: MoldId| pbg.mold(mold).map_or("?", |def| def.label);
+        let written = |steps: &[crate::Step]| {
+            steps
+                .iter()
+                .map(|&step| match step {
+                    | crate::Step::Tile(mold) => label(mold).to_owned(),
+                    | crate::Step::Hole { sort, after } => format!("<{sort:?}@{}>", label(after)),
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        for (source, pending, head, first) in [
+            ("", "", "closed", ""),
+            ("x", "", "closed", ""),
+            ("def x = 1 +", "<Expression@+>", "= Occupied", ";"),
+            // Only the operator nearest the head owes a hole.
+            ("def x = return -", "<Expression@->", "= Occupied", ";"),
+            ("def x = (", "", "( Empty", ")"),
+            ("def x = ( 1", "", "( Occupied", ")"),
+            // The open form above the operator is the head; its operand is
+            // under way.
+            ("def x = return thunk {", "", "{ Empty", "<Expression@{> }"),
+        ] {
+            let mut molder = crate::Molder::new(&pbg);
+            let mut state = MeldState::new(&pbg);
+            let tokens = crate::label::label(gandr_surface_syntax::SourceFragment::from(source));
+            molder.mold_stream(&mut state, &tokens, SourceText::from(source));
+            let menu = state.continuations(crate::ClosingLimit::from(2_usize));
+            let found_head = match menu.head() {
+                | super::HeadForm::Open { mold, leading } => format!("{} {leading:?}", label(mold)),
+                | super::HeadForm::Closed => "closed".to_owned(),
+            };
+            let found_first = menu
+                .closings()
+                .first()
+                .map(|closing| written(closing.steps()))
+                .unwrap_or_default();
+            assert_eq!(
+                (pending.to_owned(), head.to_owned(), first.to_owned()),
+                (written(menu.pending()), found_head, found_first),
+                "`{source}`"
+            );
+            assert!(menu.closings().len() <= 2, "`{source}` keeps two at most");
         }
         Ok(())
     }

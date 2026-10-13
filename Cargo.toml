@@ -214,12 +214,14 @@ version = "0.8.8"
 default-features = false
 features = ["std"]
 
-# Snapshot comparison for the highlighter's role goldens and the printer's
-# layout goldens: a file compared whole, a diff on mismatch, and a rewrite
-# under `UPDATE_EXPECT=1`. It has no features to leave off.
+# Snapshot comparison for the highlighter's role goldens, the printer's
+# layout goldens and the inline completion's ranking golden: a file or an
+# inline literal compared whole, a diff on mismatch, and a rewrite under
+# `UPDATE_EXPECT=1`. It has no features to leave off.
 # consumers:
 # - surface-format (dev)
 # - surface-grammar (dev)
+# - surface-lsp (dev)
 # - surface-pretty (dev)
 [workspace.dependencies.expect-test]
 version = "1.5.1"

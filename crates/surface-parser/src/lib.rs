@@ -104,7 +104,12 @@ mod spec;
 #[cfg(test)]
 mod testing;
 
+pub use crate::closing::Closing;
+pub use crate::closing::ClosingLimit;
+pub use crate::closing::LeadingSlot;
+pub use crate::closing::Step;
 pub use crate::closing::TileSpelling;
+pub use crate::closing::closings;
 pub use crate::closing::tile_spelling;
 pub use crate::label::Labeling;
 pub use crate::label::Lexeme;
@@ -116,10 +121,12 @@ pub use crate::meld::CheckpointBytesRef;
 pub use crate::meld::CheckpointError;
 pub use crate::meld::Completion;
 pub use crate::meld::CompletionStatus;
+pub use crate::meld::Continuations;
 pub use crate::meld::Expected;
 pub use crate::meld::FormContinuation;
 pub use crate::meld::FormUnit;
 pub use crate::meld::Frontier;
+pub use crate::meld::HeadForm;
 pub use crate::meld::HeadOperandPresence;
 pub use crate::meld::Mark;
 pub use crate::meld::MeldError;

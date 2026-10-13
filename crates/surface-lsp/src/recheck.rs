@@ -170,6 +170,7 @@ use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
+use crate::inline::Forms;
 use crate::position::Range;
 use crate::protocol::Diagnostic;
 use crate::protocol::DocumentUri;
@@ -182,7 +183,8 @@ use crate::protocol::Severity;
 pub type DocumentSession =
     Result<Session<MemoryCheckpointStore, InMemoryBlockStore>, &'static PbgError>;
 
-/// The built-in grammar and the role table read off it.
+/// The built-in grammar, the role table read off it and the forms an inline
+/// completion offers under it.
 #[derive(Debug)]
 struct Toolkit
 {
@@ -190,6 +192,8 @@ struct Toolkit
     grammar: Pbg,
     /// The roles its molds highlight as.
     roles: RoleTable,
+    /// The forms a hole of each sort can open.
+    forms: Forms,
 }
 
 /// The process's one toolkit, or the fault that kept it from building.
@@ -199,8 +203,8 @@ static TOOLKIT: OnceLock<Result<Toolkit, PbgError>> = OnceLock::new();
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the same toolkit, at the same address, on every call; the grammar
-///   and its role table are built by the first call alone.
+/// - ensures: the same toolkit, at the same address, on every call; the
+///   grammar, its role table and its forms are built by the first call alone.
 /// - provides: the grammar every recheck and every highlight reads.
 /// - fails: the [`PbgError`] the first build met, on every call, since the
 ///   built-in grammar is the same on every call.
@@ -224,7 +228,12 @@ fn toolkit() -> Result<&'static Toolkit, &'static PbgError>
         .get_or_init(|| {
             let grammar = built_in()?;
             let roles = RoleTable::build(&grammar)?;
-            Ok(Toolkit { grammar, roles })
+            let forms = Forms::new(&grammar);
+            Ok(Toolkit {
+                grammar,
+                roles,
+                forms,
+            })
         })
         .as_ref()
 }
@@ -249,6 +258,28 @@ fn toolkit() -> Result<&'static Toolkit, &'static PbgError>
 pub fn grammar() -> Result<&'static Pbg, &'static PbgError>
 {
     toolkit().map(|toolkit| &toolkit.grammar)
+}
+
+/// The forms of the process's one grammar, read off it with it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the forms of [`toolkit`], at the same address on every call.
+/// - provides: the forms an inline completion offers to fill a slot.
+/// - fails: the [`PbgError`] the toolkit's first build met.
+/// - panics: none.
+///
+/// # Errors
+/// [`PbgError`], as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the server's inline witness answers forms at an open slot
+///   only when they are read off the process's grammar.
+/// - witness: `server::tests::inline_completion_answers_the_expected_closer`
+#[spec(ensures: |ret| ret.is_ok() == toolkit().is_ok())]
+pub fn forms() -> Result<&'static Forms, &'static PbgError>
+{
+    toolkit().map(|toolkit| &toolkit.forms)
 }
 
 /// The role table of the process's one grammar, built with it.
