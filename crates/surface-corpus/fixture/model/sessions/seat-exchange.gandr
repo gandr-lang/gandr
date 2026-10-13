@@ -1,0 +1,44 @@
+module Seat :> #{
+  type Dispatch,
+  type Report,
+  type Handoff,
+  type SeatEnd = ?Dispatch. mu turn. +{ report : !Report. &{ next : turn, retire : end }, handoff : !Handoff. end },
+  task : Dispatch,
+  progress : Report,
+  notes : Handoff
+} {
+  type Dispatch = String;
+  type Report = String;
+  type Handoff = String;
+  @[ checks ]
+  def task = "task";
+  @[ checks ]
+  def progress = "progress";
+  @[ checks ]
+  def notes = "notes";
+}
+
+@[ checks ]
+def exchange() -> -F Unit {
+  fork (seat : Seat.SeatEnd) {
+    recv(seat) as task;
+    select(seat, report);
+    send(seat, Seat.progress);
+    offer(seat) {
+      next => { select(seat, handoff); send(seat, Seat.notes); close(seat) },
+      retire => close(seat)
+    }
+  } as desk;
+  send(desk, Seat.task);
+  offer(desk) {
+    report => {
+      recv(desk) as first;
+      select(desk, next);
+      offer(desk) {
+        report => { recv(desk) as second; select(desk, retire); close(desk) },
+        handoff => { recv(desk) as notes; close(desk) }
+      }
+    },
+    handoff => { recv(desk) as notes; close(desk) }
+  }
+}

@@ -1,0 +1,48 @@
+@[ refuses("LinearResidue") ]
+def seat_left_open() -> -F Unit {
+  fork (seat : end) { pure unit } as desk;
+  close(desk)
+}
+
+@[ refuses("UsedAfterClose") ]
+def seat_closed_twice() -> -F Unit {
+  fork (seat : end) { close(seat); close(seat) } as desk;
+  close(desk)
+}
+
+@[ refuses("EndpointUsedTwice") ]
+def seat_sent_over_itself() -> -F Unit {
+  fork (seat : !String. end) { send(seat, seat); close(seat) } as desk;
+  recv(desk) as task;
+  close(desk)
+}
+
+@[ refuses("CapturedEndpoint") ]
+def seat_closed_in_a_thunk() -> -F Unit {
+  fork (seat : end) { force thunk { close(seat) } } as desk;
+  close(desk)
+}
+
+@[ refuses("Delegation") ]
+def protocol_sends_a_protocol() -> -F Unit {
+  fork (seat : !end. end) { close(seat) } as desk;
+  close(desk)
+}
+
+@[ refuses("EndpointAsValue") ]
+def seat_returned() -> -F Unit {
+  fork (seat : end) { pure seat } as desk;
+  close(desk)
+}
+
+@[ refuses("ArmsDisagree") ]
+def seat_arms_leave_it_apart() -> -F Unit {
+  fork (seat : &{ next : end, retire : end }) {
+    offer(seat) { next => close(seat), retire => pure unit }
+  } as desk;
+  select(desk, next);
+  close(desk)
+}
+
+@[ refuses("UnrestrictedEndpoint") ]
+def session_receive : ?Integer. end;

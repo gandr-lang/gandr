@@ -375,7 +375,11 @@ fn operand_of(
         | Former::AttributeBlock
         | Former::Import
         | Former::Module
-        | Former::Data => RunOperand::Tight,
+        | Former::Data
+        | Former::SessionType
+        | Former::Action
+        | Former::Offer
+        | Former::Reserved => RunOperand::Tight,
     }
 }
 

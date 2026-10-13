@@ -136,6 +136,7 @@ quenchant_shape::reason_enum! {
 ///   the form's own sort. These witnesses bound the claim to those positions.
 /// - witness: `lower::tests::a_root_that_is_not_a_module_is_refused`
 /// - witness: `lower::tests::a_written_run_lowers_to_a_run_over_its_computation`
+/// - witness: `lower::session::tests::a_malformed_protocol_is_refused_where_it_is_written`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum FragmentSort
 {
@@ -153,6 +154,9 @@ pub enum FragmentSort
     Computation,
     /// A pattern, the binder of a `run` statement.
     Pattern,
+    /// A session type's continuation: a session form, or a variable a `mu`
+    /// around it binds.
+    Continuation,
 }
 
 impl fmt::Display for FragmentSort
@@ -175,6 +179,7 @@ impl fmt::Display for FragmentSort
             | Self::Value => f.write_str("a value"),
             | Self::Computation => f.write_str("a computation"),
             | Self::Pattern => f.write_str("a pattern"),
+            | Self::Continuation => f.write_str("a session continuation"),
         }
     }
 }
@@ -184,8 +189,9 @@ impl fmt::Display for FragmentSort
 /// # Specification
 /// - requires: the producer identifies the boundary crossed by the source form.
 /// - ensures: reserved, unadmitted, wrong-sort, wrong-arity, indexed,
-///   unannotated, non-uniform, not-in-tail, joins-block and empty-list reports
-///   remain distinct; an arity report carries the number of operands offered.
+///   unannotated, non-uniform, not-in-tail, joins-block, empty-list, endpoint
+///   and non-contractive reports remain distinct; an arity report carries the
+///   number of operands offered.
 /// - provides: why a parsed form has no representation at this position.
 /// - fails: not applicable to the report itself.
 /// - panics: none.
@@ -205,6 +211,8 @@ impl fmt::Display for FragmentSort
 /// - witness: `lower::tests::the_empty_parentheses_are_never_the_unit`
 /// - witness: `lower::tests::an_exit_lowers_where_a_path_passes_and_nowhere_else`
 /// - witness: `lower::exits::tests::a_match_continuing_its_block_answers_what_the_block_does`
+/// - witness: `lower::session::tests::an_action_on_no_endpoint_is_refused`
+/// - witness: `lower::session::tests::a_malformed_protocol_is_refused_where_it_is_written`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum FragmentBoundary
 {
@@ -243,6 +251,13 @@ pub enum FragmentBoundary
     /// The form is the empty parentheses `()` standing as a value or a type:
     /// an empty list, which is never the unit.
     EmptyList,
+    /// The form stands where a session action names its endpoint and is not
+    /// a name a fork binds as one of its ends: a value, a declaration or an
+    /// ordinary binder.
+    Endpoint,
+    /// The form is a `mu` whose body is a `mu` or a recursion variable, so
+    /// the protocol recurses before any action: not contractive.
+    NonContractive,
 }
 
 impl fmt::Display for FragmentBoundary
@@ -281,6 +296,14 @@ impl fmt::Display for FragmentBoundary
             | Self::EmptyList => f.write_str(
                 "is spelled `()`, an empty list and never the unit: the unit value is `unit` and \
                  its type `Unit`",
+            ),
+            | Self::Endpoint => f.write_str(
+                "is no endpoint: a session action acts on a name a fork binds as one of its \
+                 ends",
+            ),
+            | Self::NonContractive => f.write_str(
+                "recurses before any action: a `mu` body that is a `mu` or a variable unfolds \
+                 to itself",
             ),
         }
     }

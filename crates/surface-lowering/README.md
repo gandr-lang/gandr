@@ -28,7 +28,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - `CaseOrigin`, `ArmOrigin`, `OriginTable::case` and `OriginTable::cases`: per match, the core pattern table its arms are written in and the syntax nodes of its scrutinee, patterns and bodies; a pattern hole's identity is its syntax node.
 - `def rec` and the descent claim `f[<]`: a recursive function lowered to one fixpoint over its last parameter, its evidence the claim the source writes, and `Insertion::Fixpoint` marking the inserted fixpoint.
 - `type_atom`, `type_former`, `TypeAtom`, `TypeFormer`, `HeadArity` and `OperandCount`: the type-head tables by arity.
-- `Scope`, `ScopeId`, `Frame`, `Bound`, `Mentioned`, `SurfaceName` and `binder_site::Absent`: the flat binder chain names resolve through, each frame carrying the type its binder was written with, whether a type names it, and the span it was written at.
+- `Scope`, `ScopeId`, `Frame`, `Bound`, `Mentioned`, `SurfaceName` and `binder_site::Absent`: the flat binder chain names resolve through, each frame carrying the type its binder was written with, whether a type names it, the span it was written at and the zone it binds in.
 - `OriginTable::binding` and `OriginTable::bindings`: the use-to-binder map, each core variable the lowering minted with the span of the binder it resolves to.
 - `former_of`, `Former`, `FormName` and `Repair`: the named-kind dispatch and the names a diagnostic writes forms as.
 - `LoweringRefusal`, `FragmentSort`, `FragmentBoundary` and `FormFault`: every refusal, located.
@@ -36,9 +36,9 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - `AttributeRegistry`, `AttributeSchema`, `RegisteredAttribute`, `EditDistance`, `PayloadForm`, `PayloadVerdict`, `payload_form`, `payload_verdict`, `AttributeEntry`, `AttributeTable` and `AttributedCount`: the closed registry, its five diagnostics and the side table, filed for refused declarations too.
 - `Documentation`, `DocumentationText`, `DocLink`, `LoweredModule::documentation` and `LoweredModule::documentations`: a declaration's documentation read from both spellings into one text, filed under its declaration's `NodeKey`, its links resolved; the whole filing, for a consumer that keeps it past the lowering.
 - `Origin`, `OriginTable`, `OriginToken` and `OriginCount`: the origin of every minted node and every declaration.
-- Source `?` and `?name` lower to core value or computation holes according to their term position. Occurrences have distinct `HoleId`s derived from their syntax nodes, and retain the usual written origins. The grammar already admits both spellings; no grammar artifact changes.
+- Source `?` and `?name` lower to core value or computation holes according to their term position. Occurrences have distinct `HoleId`s derived from their syntax nodes, and retain the usual written origins.
 - `Provenance` and `Insertion`: whether a minted node was written by the author or inserted by the lowering, and which bridge an insertion is.
-- `InferredExit`, `Exit`, `Explicitness` and `LoweredModule::inferred_exits`: a tail written without `return` or `become` takes the exit its polarity names — a value returned, a computation run in tail position — lowered to the term the keyword would have written, `Insertion::Return` marking an inferred return; each is listed at the tail's bytes, for a face to show the keyword the source left out and for the `explicit-exits` lint, which an `explicit_exits` attribute on a declaration or a top-level module asks for.
+- `InferredExit`, `Exit`, `Explicitness` and `LoweredModule::inferred_exits`: the exit a tail written without `return` or `become` takes by its polarity, listed at the tail's bytes for a face and the `explicit-exits` lint.
 - `AskedRuns`, `NestedSite`, `RunSpelling`, `RunOperand`, `InferredRun` and `LoweredModule::inferred_runs`: a computation written where a value is read, held for the checker to run or suspend, and each run it inferred, listed for the `explicit-runs` lint.
 - `namespace`: `Trie`, `Modifier`, `Scope`, the events and their handlers, and `Recognition` with its ordered `SeedTable`s and `ShadowPolicy`.
 - `ImportDeclaration`, `ImportIndex`, `ImportUri` and `ModuleImports`: imports kept in source order with their aliases bound.
@@ -46,6 +46,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - Type members `type T = τ ;`, type paths `M.T`, abstract components `type T` and `type T : κ`, and `Recognized::ModuleType`: a module's types, named inside it and through its namespace.
 - `DeclarationOutcome::Abstract`, `Sealing` and `SealedComponent`: an opaque ascription `:>` declaring one abstract type per abstract component, keyed by its site, and the atoms a sealed module exports.
 - `model::derive`, `ModelSignature`, `LoweredModule::signs` and `LoweredSign`: `Model(S)` derived from a `sign` block's presentation, a module ascribed `: Model(S)` checked against it, and a sign's description and presentation handed to later passes; type members with parameters, `type Hom(a : Ob, b : Ob) = τ`, expanding where they are applied.
+- Binary sessions: a session type read whole into one protocol; `send`, `select`, `offer` and `close`, and the statements `recv(c) as x ;` and `fork (c : S) t as d ;`, lowered to core session actions; `fork !`, `dup`, `acquire` and `release` reserved by name.
 
 ## Expected features
 
@@ -102,6 +103,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Native data, the match and recursive functions | [`lower::native`](src/lower/native.rs) |
 | Early exits: the survey, the commuting, the cut and the exit a tail's polarity infers; the decisions and their alternatives | [`lower::exits`](src/lower/exits.rs), [`src/lib.rs`](src/lib.rs), [`lower`](src/lower.rs) |
 | Nested computations: the lowering's record of each inferred run, the attribute's ask and how its `run` is spelled | [`lower::runs`](src/lower/runs.rs), [`lower`](src/lower.rs) |
+| Binary sessions: protocols, endpoints, actions and the statements binding them | [`lower::session`](src/lower/session.rs) |
 | The failure classifier | [`classify`](src/classify.rs) |
 | Attributes and documentation | [`attribute`](src/attribute.rs), [`doc`](src/doc.rs) |
 | Origins | [`origin`](src/origin.rs) |

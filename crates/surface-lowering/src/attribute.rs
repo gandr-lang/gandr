@@ -688,6 +688,10 @@ pub const fn payload_form(former: Former) -> PayloadForm
         | Former::Import
         | Former::Module
         | Former::Data
+        | Former::SessionType
+        | Former::Action
+        | Former::Offer
+        | Former::Reserved
         | Former::Unadmitted => PayloadForm::OtherValue,
     }
 }
