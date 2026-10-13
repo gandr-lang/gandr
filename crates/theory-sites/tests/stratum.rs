@@ -1,12 +1,13 @@
-//! The corolla stratum suite: its certification, an equivalence of species
-//! as a finite certificate, and the corolla restriction of a natural
+//! The strata suite: certification at degree one and above, an equivalence of
+//! species as a finite certificate, and the corolla restriction of a natural
 //! isomorphism of the free algebras.
 
 use alloc::collections::BTreeMap;
 
+use gandr_theory_circuit_algebras::Wire;
 use gandr_theory_sites::Bijection;
 use gandr_theory_sites::Catalogue;
-use gandr_theory_sites::CorollaStratum;
+use gandr_theory_sites::Cocones;
 use gandr_theory_sites::Defect;
 use gandr_theory_sites::Degree;
 use gandr_theory_sites::Element;
@@ -14,10 +15,16 @@ use gandr_theory_sites::ElementIndex;
 use gandr_theory_sites::Equivalence;
 use gandr_theory_sites::GeneratorCount;
 use gandr_theory_sites::GeneratorIndex;
+use gandr_theory_sites::Graft;
+use gandr_theory_sites::Leg;
 use gandr_theory_sites::Natural;
+use gandr_theory_sites::Outcome;
 use gandr_theory_sites::Port;
 use gandr_theory_sites::PortCount;
 use gandr_theory_sites::Profile;
+use gandr_theory_sites::SegalDefect;
+use gandr_theory_sites::SegalFailure;
+use gandr_theory_sites::SegalStratum;
 use gandr_theory_sites::Shape;
 use gandr_theory_sites::ShapeIndex;
 use gandr_theory_sites::ShapeSize;
@@ -26,6 +33,7 @@ use gandr_theory_sites::Species;
 use gandr_theory_sites::Table;
 use gandr_theory_sites::Uncertified;
 use gandr_theory_sites::restrict;
+use gandr_theory_sites::segal;
 use quenchant_shape::shape::Maybe;
 
 /// A profile's legs: its inputs, then its outputs.
@@ -96,7 +104,7 @@ fn bijection(Tables(forward, backward): Tables<'_>) -> Bijection
 /// # Specification
 /// trivial.
 fn corolla(
-    stratum: &CorollaStratum<'_>,
+    stratum: &SegalStratum<'_>,
     legs: Legs,
 ) -> ShapeIndex
 {
@@ -123,15 +131,19 @@ fn position(
 
 /// At size five the stratum is the fifteen corollas of at most four legs, each
 /// with its legs' permutations as automorphisms; the binary corolla holds two
-/// elements of one binary generator, the identity attachment first. Degree two
-/// is refused by its degree, and the catalogue at size zero, which lacks the
-/// point, by the empty shape the corolla condition fails at.
+/// elements of one binary generator, the identity attachment first. Degree
+/// zero is refused by its degree, and the catalogue at size zero, which lacks
+/// the point, by the empty shape the corolla condition fails at.
 #[test]
-fn the_corolla_stratum_is_certified_at_degree_one_alone()
+fn the_corolla_stratum_is_certified_at_degree_one()
 {
     let catalogue = Catalogue::build(ShapeSize::from(5)).expect("the catalogue builds");
     let stratum =
-        CorollaStratum::certify(&catalogue, Degree::from(1)).expect("degree one is certified");
+        SegalStratum::certify(&catalogue, Degree::from(1)).expect("degree one is certified");
+    assert!(
+        stratum.cocones().is_empty(),
+        "degree one holds no shape above the corollas"
+    );
     assert_eq!(
         stratum.corollas().len(),
         15,
@@ -174,16 +186,17 @@ fn the_corolla_stratum_is_certified_at_degree_one_alone()
     );
     assert!(
         matches!(
-            CorollaStratum::certify(&catalogue, Degree::from(2)),
-            Err(Uncertified::Degree { degree }) if degree == Degree::from(2)
+            SegalStratum::certify(&catalogue, Degree::from(0)),
+            Err(Uncertified::Degree { degree }) if degree == Degree::from(0)
         ),
-        "the stratum above the corollas is not certified here"
+        "the stratum below the corollas is not certified"
     );
     let empty = Catalogue::build(ShapeSize::from(0)).expect("the catalogue builds");
     assert!(
         matches!(
-            CorollaStratum::certify(&empty, Degree::from(1)),
-            Err(Uncertified::Condition { witness }) if witness == Shape::default()
+            SegalStratum::certify(&empty, Degree::from(1)),
+            Err(Uncertified::Condition { witness, degree })
+                if witness == Shape::default() && degree == Degree::from(1)
         ),
         "without the point the corolla condition fails at the empty shape"
     );
@@ -200,7 +213,7 @@ fn an_equivalence_commutes_with_the_corolla_automorphisms()
 {
     let catalogue = Catalogue::build(ShapeSize::from(4)).expect("the catalogue builds");
     let stratum =
-        CorollaStratum::certify(&catalogue, Degree::from(1)).expect("degree one is certified");
+        SegalStratum::certify(&catalogue, Degree::from(1)).expect("degree one is certified");
     let binary = corolla(&stratum, Legs(2, 1));
     let constant = corolla(&stratum, Legs(0, 1));
     let monoid = monoid();
@@ -284,7 +297,7 @@ fn restriction_reflects_a_natural_isomorphism_to_its_species()
 {
     let catalogue = Catalogue::build(ShapeSize::from(5)).expect("the catalogue builds");
     let stratum =
-        CorollaStratum::certify(&catalogue, Degree::from(1)).expect("degree one is certified");
+        SegalStratum::certify(&catalogue, Degree::from(1)).expect("degree one is certified");
     let binary = corolla(&stratum, Legs(2, 1));
     let constant = corolla(&stratum, Legs(0, 1));
     let monoid = monoid();
@@ -332,5 +345,162 @@ fn restriction_reflects_a_natural_isomorphism_to_its_species()
         Err(Defect::Tables {
             shape: ShapeIndex::from(0)
         })
+    );
+}
+
+/// At size five the stratum of degree two holds the nineteen shapes of two
+/// vertices and no inner wire, each the colimit of its two corollas with no
+/// graft. The swap checked there extends to the family it extends to at
+/// degree one and restricts back, and the family with the identity at the
+/// graft is refused at the inclusion of the binary corolla into it. At size
+/// four the closed chain of a constant into a co-constant, of degree three, is
+/// the pushout of its two corollas along their one shared leg; the condition
+/// holds at every degree the catalogue reaches over the admitted families and
+/// fails at the two points against the point over the blanket ones; degree
+/// five lies past every shape there.
+#[test]
+fn a_shape_of_degree_two_is_the_colimit_of_its_corollas()
+{
+    let catalogue = Catalogue::build(ShapeSize::from(5)).expect("the catalogue builds");
+    let stratum =
+        SegalStratum::certify(&catalogue, Degree::from(2)).expect("degree two is certified");
+    assert_eq!(stratum.degree(), Degree::from(2));
+    assert_eq!(
+        stratum.cocones().len(),
+        19,
+        "every pair of corollas within the bound"
+    );
+    assert!(
+        stratum
+            .cocones()
+            .iter()
+            .all(|cocone| cocone.inclusions().len() == 2 && cocone.grafts().is_empty()),
+        "a shape of degree two is two corollas side by side"
+    );
+    let (binary, point) = (corolla(&stratum, Legs(2, 1)), corolla(&stratum, Legs(0, 0)));
+    let beside = position(&catalogue, &shape!(2; o > 0, o > 0, 0 > o));
+    let cocone = stratum
+        .cocones()
+        .iter()
+        .find(|cocone| cocone.shape() == beside)
+        .expect("the operation beside a point is of degree two");
+    let mut included: Vec<ShapeIndex> = cocone
+        .inclusions()
+        .iter()
+        .map(|inclusion| inclusion.corolla)
+        .collect();
+    included.sort_unstable();
+    let mut expected = vec![binary, point];
+    expected.sort_unstable();
+    assert_eq!(
+        included, expected,
+        "the operation's corolla and the point's"
+    );
+
+    let constant = corolla(&stratum, Legs(0, 1));
+    let monoid = monoid();
+    let tables = BTreeMap::from([
+        (binary, bijection(Tables(&[1, 0], &[1, 0]))),
+        (constant, bijection(Tables(&[0], &[0]))),
+    ]);
+    let swap = Equivalence::check(&stratum, (&monoid, &monoid), tables)
+        .expect("the swap is natural at degree two");
+    let one = SegalStratum::certify(&catalogue, Degree::from(1)).expect("degree one is certified");
+    let natural = swap.extend(&stratum, (&monoid, &monoid));
+    assert_eq!(
+        natural,
+        swap.extend(&one, (&monoid, &monoid)),
+        "the corolla tables determine one family at every degree"
+    );
+    assert_eq!(restrict(&stratum, (&monoid, &monoid), &natural), Ok(swap));
+    let graft = position(&catalogue, &shape!(2; 0 > 1, o > 1, 1 > o));
+    let mut tampered: Vec<Bijection> = natural.components().to_vec();
+    if let Some(slot) = tampered.get_mut(usize::from(graft)) {
+        *slot = bijection(Tables(&[0, 1], &[0, 1]));
+    }
+    let Err(Defect::NotNatural {
+        corolla: refused,
+        shape,
+        ..
+    }) = restrict(&stratum, (&monoid, &monoid), &Natural::new(tampered))
+    else {
+        panic!("the identity at the graft does not commute with the swap at its operation");
+    };
+    assert_eq!((refused, shape), (binary, graft));
+
+    let small = Catalogue::build(ShapeSize::from(4)).expect("the catalogue builds");
+    let three = SegalStratum::certify(&small, Degree::from(3)).expect("degree three is certified");
+    let chain = position(&small, &shape!(2; 0 > 1));
+    let cocone = three
+        .cocones()
+        .iter()
+        .find(|cocone| cocone.shape() == chain)
+        .expect("the closed chain is of degree three");
+    let &[graft] = cocone.grafts()
+    else {
+        panic!("one inner wire, one graft");
+    };
+    let at = |leg: Leg| {
+        cocone
+            .inclusions()
+            .get(usize::from(leg.vertex))
+            .map(|inclusion| inclusion.corolla)
+    };
+    assert_eq!(
+        (at(graft.producer), at(graft.consumer)),
+        (
+            Some(corolla(&three, Legs(0, 1))),
+            Some(corolla(&three, Legs(1, 0)))
+        ),
+        "the constant's output leg glued to the co-constant's input leg"
+    );
+    assert_eq!(
+        graft,
+        Graft {
+            wire: graft.wire,
+            producer: Leg {
+                vertex: graft.producer.vertex,
+                wire: Wire::from(0),
+            },
+            consumer: Leg {
+                vertex: graft.consumer.vertex,
+                wire: Wire::from(0),
+            },
+        },
+        "each corolla's one leg"
+    );
+    assert_ne!(graft.producer.vertex, graft.consumer.vertex);
+    assert!(
+        matches!(
+            segal(&small, Degree::from(4), Cocones::Admitted),
+            Outcome::Holds { cases } if usize::from(cases) == 620
+        ),
+        "twenty shapes of degree two to four, each against thirty-one"
+    );
+    let Outcome::Fails {
+        witness: SegalFailure {
+            shape,
+            test,
+            defect,
+        },
+        ..
+    } = segal(&small, Degree::from(2), Cocones::Blanket)
+    else {
+        panic!("the blanket families include a fold");
+    };
+    let identity = SiteMap::identity(&shape!(1));
+    assert_eq!(
+        (shape, test, defect),
+        (shape!(2), shape!(1), SegalDefect::Unmediated {
+            family: vec![identity.clone(), identity].into_boxed_slice()
+        }),
+        "both points onto the one point is a family no map induces"
+    );
+    assert!(
+        matches!(
+            SegalStratum::certify(&small, Degree::from(5)),
+            Err(Uncertified::Degree { degree }) if degree == Degree::from(5)
+        ),
+        "no shape of degree five at size four"
     );
 }

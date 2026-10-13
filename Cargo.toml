@@ -730,8 +730,8 @@ default-features = false
 path = "crates/theory-orders"
 default-features = false
 
-# The carrier's shapes as a site, its degree and Reedy checks, and the
-# corolla stratum's species and their equivalences.
+# The carrier's shapes as a site, its degree, Reedy and Segal checks, and
+# the certified strata's species and their equivalences.
 # consumers:
 # - core-checker
 [workspace.dependencies.gandr-theory-sites]

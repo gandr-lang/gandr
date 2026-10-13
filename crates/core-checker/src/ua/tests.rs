@@ -11,13 +11,13 @@ use gandr_core_term::equal_certificate_syntax;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_theory_sites::Catalogue;
-use gandr_theory_sites::CorollaStratum;
 use gandr_theory_sites::Defect;
 use gandr_theory_sites::Degree;
 use gandr_theory_sites::ElementIndex;
 use gandr_theory_sites::GeneratorCount;
 use gandr_theory_sites::PortCount;
 use gandr_theory_sites::Profile;
+use gandr_theory_sites::SegalStratum;
 use gandr_theory_sites::ShapeIndex;
 use gandr_theory_sites::ShapeSize;
 use gandr_theory_sites::Species;
@@ -58,6 +58,10 @@ struct Images<'images>(&'images [usize]);
 #[derive(Clone, Copy, Debug)]
 struct At(usize);
 
+/// Two constants of a module, by position.
+#[derive(Clone, Copy, Debug)]
+struct Constants(usize, usize);
+
 /// Whether a module came through whole.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Admission
@@ -92,6 +96,19 @@ fn monoid() -> Species
     ]))
 }
 
+/// Two binary generators and nothing else: at the binary corolla four
+/// elements, generator by generator, each attached in order and then crossed.
+///
+/// # Specification
+/// trivial.
+fn two() -> Species
+{
+    Species::new(BTreeMap::from([(
+        profile(Legs(2, 1)),
+        GeneratorCount::from(2),
+    )]))
+}
+
 /// The catalogue at size four: the binary corolla is its largest.
 ///
 /// # Specification
@@ -106,7 +123,7 @@ fn catalogue() -> Catalogue
 /// # Specification
 /// trivial.
 fn corolla(
-    stratum: &CorollaStratum<'_>,
+    stratum: &SegalStratum<'_>,
     legs: Legs,
 ) -> ShapeIndex
 {
@@ -152,6 +169,66 @@ fn recased_swap(arena: &mut CoreArena) -> ValueId
     arena.value_thunk(lambda)
 }
 
+/// `automorphism ∘ translator ∘ automorphism` as one program over two
+/// synthesising translators, a module's constants: a thunk of a λ that
+/// applies `automorphism` to its argument, `translator` to the result, and
+/// `automorphism` again, each step bound.
+///
+/// # Specification
+/// trivial.
+fn conjugated(
+    arena: &mut CoreArena,
+    automorphism: ValueId,
+    translator: ValueId,
+) -> ValueId
+{
+    let nearest = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let [first, second, third] = [automorphism, translator, automorphism].map(|program| {
+        let forced = arena.computation_force(program);
+        arena.computation_application(forced, nearest)
+    });
+    let inner = arena.computation_bind(second, third);
+    let body = arena.computation_bind(first, inner);
+    let lambda = arena.computation_lambda(body);
+    arena.value_thunk(lambda)
+}
+
+/// The type of a translator at the corolla of `legs`: a thunk of a function
+/// from `species`' code there to itself.
+///
+/// # Specification
+/// trivial.
+fn translator_type(
+    arena: &mut CoreArena,
+    species: &Species,
+    legs: Legs,
+) -> ValueTypeId
+{
+    let operation = code(arena, species, profile(legs));
+    let returns = arena.comp_type_returner(operation);
+    let arrow = arena.comp_type_arrow(operation, returns);
+    arena.value_type_thunk(arrow)
+}
+
+/// The declaration at `position` of the extensionality between the module's
+/// constants `first` and `second`, at their path type over `function`.
+///
+/// # Specification
+/// trivial.
+fn extensionality(
+    arena: &mut CoreArena,
+    function: ValueTypeId,
+    Constants(first, second): Constants,
+    position: At,
+) -> Declaration
+{
+    let first = arena.value_constant(ConstantIndex::from(first));
+    let second = arena.value_constant(ConstantIndex::from(second));
+    let path = arena.value_type_path(function, first, second);
+    let funext = arena.value_funext(first, second);
+    declaration(position, path, funext)
+}
+
 /// The declaration at `position`, its origin the position itself.
 ///
 /// # Specification
@@ -187,18 +264,56 @@ fn judged(
     (report, readmission)
 }
 
-/// `ua_n` of `translators` between `monoid` and itself.
+/// `ua_n` of `translators` between the two `species`.
 ///
 /// # Specification
 /// trivial.
 fn universal(
     arena: &mut CoreArena,
-    stratum: &CorollaStratum<'_>,
+    stratum: &SegalStratum<'_>,
     species: (&Species, &Species),
     translators: &BTreeMap<ShapeIndex, Translators>,
 ) -> Result<Universal, UaRefusal>
 {
+    universal_after(arena, &[], stratum, species, translators)
+}
+
+/// A context over `arena` that has checked `prelude`, every declaration
+/// checking, so a later program may name its constants.
+///
+/// # Specification
+/// trivial.
+fn prepared<'arena>(
+    arena: &'arena mut CoreArena,
+    prelude: &[Declaration],
+) -> CheckingContext<'arena>
+{
     let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+    let report = check_module(&mut context, prelude);
+    assert!(
+        report
+            .judged()
+            .iter()
+            .all(|judged| matches!(judged.verdict(), Verdict::Checked { .. })),
+        "the prelude checks: {report:?}"
+    );
+    context
+}
+
+/// `ua_n` of `translators` between the two `species`, in a context that has
+/// checked `prelude`, so a translator may name its constants.
+///
+/// # Specification
+/// trivial.
+fn universal_after(
+    arena: &mut CoreArena,
+    prelude: &[Declaration],
+    stratum: &SegalStratum<'_>,
+    species: (&Species, &Species),
+    translators: &BTreeMap<ShapeIndex, Translators>,
+) -> Result<Universal, UaRefusal>
+{
+    let mut context = prepared(arena, prelude);
     derive(&mut context, stratum, species, translators)
 }
 
@@ -232,7 +347,7 @@ fn the_swap_of_a_binary_generator_is_a_path_of_the_certificate_universe()
 {
     let catalogue = catalogue();
     let stratum =
-        CorollaStratum::certify(&catalogue, Degree::from(1)).expect("degree one is certified");
+        SegalStratum::certify(&catalogue, Degree::from(1)).expect("degree one is certified");
     let (binary, constant) = (corolla(&stratum, Legs(2, 1)), corolla(&stratum, Legs(0, 1)));
     let monoid = monoid();
     let mut arena = CoreArena::new();
@@ -325,7 +440,7 @@ fn the_swap_of_a_binary_generator_is_a_path_of_the_certificate_universe()
 /// trivial.
 fn universal_of_nothing(
     arena: &mut CoreArena,
-    stratum: &CorollaStratum<'_>,
+    stratum: &SegalStratum<'_>,
     species: &Species,
 ) -> Universal
 {
@@ -338,7 +453,7 @@ fn equivalent_equivalences_go_to_identified_paths()
 {
     let catalogue = catalogue();
     let stratum =
-        CorollaStratum::certify(&catalogue, Degree::from(1)).expect("degree one is certified");
+        SegalStratum::certify(&catalogue, Degree::from(1)).expect("degree one is certified");
     let (binary, constant) = (corolla(&stratum, Legs(2, 1)), corolla(&stratum, Legs(0, 1)));
     let monoid = monoid();
     let mut arena = CoreArena::new();
@@ -371,23 +486,13 @@ fn equivalent_equivalences_go_to_identified_paths()
         CertificateEquality::Different,
         "the certificates keep their programs, so structural conversion keeps them apart"
     );
-    let operation = code(&mut arena, &monoid, profile(Legs(2, 1)));
-    let returns = arena.comp_type_returner(operation);
-    let arrow = arena.comp_type_arrow(operation, returns);
-    let function = arena.value_type_thunk(arrow);
-    let cell = |arena: &mut CoreArena, position: At| {
-        let first = arena.value_constant(ConstantIndex::from(0_usize));
-        let second = arena.value_constant(ConstantIndex::from(1_usize));
-        let path = arena.value_type_path(function, first, second);
-        let funext = arena.value_funext(first, second);
-        declaration(position, path, funext)
-    };
+    let function = translator_type(&mut arena, &monoid, Legs(2, 1));
     let module = [
         declaration(At(0), function, swap),
         declaration(At(1), function, recased),
         declaration(At(2), left.classifier(), left.path()),
         declaration(At(3), right.classifier(), right.path()),
-        cell(&mut arena, At(4)),
+        extensionality(&mut arena, function, Constants(0, 1), At(4)),
     ];
     let (report, readmission) = judged(&mut arena, &module);
     assert_eq!(
@@ -403,7 +508,7 @@ fn equivalent_equivalences_go_to_identified_paths()
         declaration(At(0), function, swap),
         declaration(At(1), function, same),
         declaration(At(2), identity.classifier(), identity.path()),
-        cell(&mut arena, At(3)),
+        extensionality(&mut arena, function, Constants(0, 1), At(3)),
     ];
     let (report, _) = judged(&mut arena, &module);
     assert!(
@@ -415,25 +520,286 @@ fn equivalent_equivalences_go_to_identified_paths()
     );
 }
 
+/// At degree two the swap's path is the degree-one path with degree two's
+/// unit stage last, and the kernel replays it at its classifier; so does the
+/// path at every degree the catalogue reaches.
+#[test]
+fn the_swap_at_degree_two_is_a_path_over_its_segal_telescope()
+{
+    let catalogue = catalogue();
+    let stratum =
+        SegalStratum::certify(&catalogue, Degree::from(2)).expect("degree two is certified");
+    let (binary, constant) = (corolla(&stratum, Legs(2, 1)), corolla(&stratum, Legs(0, 1)));
+    let monoid = monoid();
+    let mut arena = CoreArena::new();
+    let swap = table(&mut arena, Images(&[1, 0]));
+    let keep = table(&mut arena, Images(&[0]));
+    let translators = BTreeMap::from([
+        (binary, Translators {
+            forward: swap,
+            backward: swap,
+        }),
+        (constant, Translators {
+            forward: keep,
+            backward: keep,
+        }),
+    ]);
+    let derived = universal(&mut arena, &stratum, (&monoid, &monoid), &translators)
+        .expect("the swap is a path at degree two");
+    let Some(&Value::PathProduct(unit, rest)) = arena.value(derived.path())
+    else {
+        panic!("degree zero, then the rest");
+    };
+    assert!(
+        matches!(arena.value(unit), Some(&Value::PathRefl(_))),
+        "the empty shape's unit"
+    );
+    let Some(&Value::PathProduct(first, rest)) = arena.value(rest)
+    else {
+        panic!("the constant's corolla, then the rest");
+    };
+    assert!(
+        matches!(arena.value(first), Some(&Value::PathEquiv { forward, .. }) if forward == keep),
+        "the constant's certificate"
+    );
+    let Some(&Value::PathProduct(second, above)) = arena.value(rest)
+    else {
+        panic!("the binary corolla, then degree two");
+    };
+    assert!(
+        matches!(arena.value(second), Some(&Value::PathEquiv { forward, .. }) if forward == swap),
+        "the binary corolla's certificate"
+    );
+    assert!(
+        matches!(arena.value(above), Some(&Value::PathRefl(_))),
+        "degree two's unit stage carries reflexivity"
+    );
+    let (report, readmission) = judged(&mut arena, &[declaration(
+        At(0),
+        derived.classifier(),
+        derived.path(),
+    )]);
+    assert_eq!(
+        admission(&report, &readmission),
+        Admission::Whole,
+        "the judgement checks the path at its classifier and the kernel replays every round trip: \
+         {report:?} {:?}",
+        readmission.readmitted()
+    );
+    for degree in [3_usize, 4] {
+        let higher = SegalStratum::certify(&catalogue, Degree::from(degree))
+            .expect("every degree the catalogue reaches is certified");
+        let path = universal(&mut arena, &higher, (&monoid, &monoid), &translators)
+            .expect("the swap is a path at every certified degree");
+        let (report, readmission) = judged(&mut arena, &[declaration(
+            At(0),
+            path.classifier(),
+            path.path(),
+        )]);
+        assert_eq!(
+            admission(&report, &readmission),
+            Admission::Whole,
+            "degree {degree}: {report:?}"
+        );
+    }
+}
+
+/// The pasting coherence at degree two. The input swap `σ` of the binary
+/// corolla is a two-cell between its inclusion and the inclusion through `σ`;
+/// it acts on a certificate by conjugating its translators, `σ ∘ t ∘ σ`, one
+/// program over the module's constants. At the monoid's binary code the
+/// swap's certificate and its conjugate are two certificates the kernel keeps
+/// apart and identifies through the extensionality of their translators,
+/// replayed as a higher evaluation. On two binary generators `σ` acts on the
+/// four elements as `[1, 0, 3, 2]`: the exchange's conjugate computes the
+/// exchange and is admitted as a certificate beside it, while the crossed
+/// exchange, which the stratum refuses, computes another table under
+/// conjugation. The extensionality at a code of four summands is past the
+/// rule's binary sums, and refused by name.
+#[test]
+fn a_corolla_automorphism_acts_on_a_certificate_by_conjugation()
+{
+    let catalogue = catalogue();
+    let stratum =
+        SegalStratum::certify(&catalogue, Degree::from(2)).expect("degree two is certified");
+    let (binary, constant) = (corolla(&stratum, Legs(2, 1)), corolla(&stratum, Legs(0, 1)));
+    let mut arena = CoreArena::new();
+    let [automorphism, translator, second] =
+        [0_usize, 1, 2].map(|position| arena.value_constant(ConstantIndex::from(position)));
+
+    let monoid = monoid();
+    let function = translator_type(&mut arena, &monoid, Legs(2, 1));
+    let swap = table(&mut arena, Images(&[1, 0]));
+    let keep = table(&mut arena, Images(&[0]));
+    let conjugate = conjugated(&mut arena, automorphism, translator);
+    let prelude = [
+        declaration(At(0), function, swap),
+        declaration(At(1), function, swap),
+        declaration(At(2), function, conjugate),
+    ];
+    let at_binary = |forward: ValueId| {
+        BTreeMap::from([
+            (binary, Translators {
+                forward,
+                backward: forward,
+            }),
+            (constant, Translators {
+                forward: keep,
+                backward: keep,
+            }),
+        ])
+    };
+    let [left, right] = [swap, conjugate].map(|forward| {
+        universal_after(
+            &mut arena,
+            &prelude,
+            &stratum,
+            (&monoid, &monoid),
+            &at_binary(forward),
+        )
+        .expect("the swap and its conjugate are paths")
+    });
+    assert_eq!(
+        left.equivalence(),
+        right.equivalence(),
+        "conjugating by an automorphism fixes a natural equivalence's tables"
+    );
+    assert_eq!(
+        equal_certificate_syntax(&arena, left.path(), right.path()),
+        CertificateEquality::Different,
+        "the conjugate is another program, so structural conversion keeps the certificates apart"
+    );
+    let mut module = prelude.to_vec();
+    module.extend([
+        declaration(At(3), left.classifier(), left.path()),
+        declaration(At(4), right.classifier(), right.path()),
+        extensionality(&mut arena, function, Constants(1, 2), At(5)),
+    ]);
+    let (report, readmission) = judged(&mut arena, &module);
+    assert_eq!(
+        admission(&report, &readmission),
+        Admission::Whole,
+        "both certificates are admitted at degree two, and the translator relates pointwise to \
+         its conjugate, the naturality equation at the swap, replayed as a higher evaluation; \
+         the unit stages are one reflexivity: {report:?} {:?}",
+        readmission.readmitted()
+    );
+
+    let two = two();
+    let elements = two.elements(profile(Legs(2, 1)));
+    let action = [1_usize, 0, 3, 2];
+    for (element, &image) in elements.iter().zip(&action) {
+        let swapped = elements.get(image).expect("the action stays in the code");
+        let crossed: Vec<_> = element.inputs().iter().rev().copied().collect();
+        assert_eq!(
+            (swapped.generator(), swapped.inputs()),
+            (element.generator(), crossed.as_slice()),
+            "the swap crosses each element's inputs and keeps its generator"
+        );
+    }
+    let function = translator_type(&mut arena, &two, Legs(2, 1));
+    let swap = table(&mut arena, Images(&action));
+    let exchange = table(&mut arena, Images(&[2, 3, 0, 1]));
+    let crossed = table(&mut arena, Images(&[2, 1, 0, 3]));
+    let [conjugate, recrossed] =
+        [translator, second].map(|translator| conjugated(&mut arena, automorphism, translator));
+    let prelude = [
+        declaration(At(0), function, swap),
+        declaration(At(1), function, exchange),
+        declaration(At(2), function, crossed),
+        declaration(At(3), function, conjugate),
+        declaration(At(4), function, recrossed),
+    ];
+    let alone = |forward: ValueId| {
+        BTreeMap::from([(binary, Translators {
+            forward,
+            backward: forward,
+        })])
+    };
+    let [left, right] = [exchange, conjugate].map(|forward| {
+        universal_after(
+            &mut arena,
+            &prelude,
+            &stratum,
+            (&two, &two),
+            &alone(forward),
+        )
+        .expect("the exchange and its conjugate are paths")
+    });
+    assert_eq!(
+        left.equivalence(),
+        right.equivalence(),
+        "the exchange commutes with the swap"
+    );
+    let mut module = prelude.to_vec();
+    module.extend([
+        declaration(At(5), left.classifier(), left.path()),
+        declaration(At(6), right.classifier(), right.path()),
+    ]);
+    let (report, readmission) = judged(&mut arena, &module);
+    assert_eq!(
+        admission(&report, &readmission),
+        Admission::Whole,
+        "{report:?}"
+    );
+    assert!(
+        matches!(
+            universal(&mut arena, &stratum, (&two, &two), &alone(crossed)),
+            Err(UaRefusal::Species(Defect::NotNatural { corolla, .. })) if corolla == binary
+        ),
+        "the crossed exchange is no equivalence at the stratum"
+    );
+    let tables = {
+        let mut context = prepared(&mut arena, &prelude);
+        [crossed, recrossed].map(|translator| {
+            super::tabulated(&mut context, binary, translator, (&elements, &elements))
+        })
+    };
+    let read = |images: &[usize]| {
+        Ok(Table::new(
+            images.iter().copied().map(ElementIndex::from).collect(),
+        ))
+    };
+    assert_eq!(
+        tables,
+        [read(&[2, 1, 0, 3]), read(&[0, 3, 2, 1])],
+        "the swap moves the crossed exchange"
+    );
+    let mut module = prelude.to_vec();
+    module.push(extensionality(&mut arena, function, Constants(1, 3), At(5)));
+    let (report, _) = judged(&mut arena, &module);
+    assert!(
+        matches!(
+            report.judged().get(5).map(Judged::verdict),
+            Some(Verdict::Refused(CheckRefusal::FunextUnsupported { .. }))
+        ),
+        "a code of four summands is past the extensionality rule's binary sums: {report:?}"
+    );
+}
+
 #[test]
 fn what_the_stratum_does_not_admit_it_refuses_by_name()
 {
     let catalogue = catalogue();
     assert!(
         matches!(
-            CorollaStratum::certify(&catalogue, Degree::from(2)),
-            Err(Uncertified::Degree { .. })
+            SegalStratum::certify(&catalogue, Degree::from(5)),
+            Err(Uncertified::Degree { degree }) if degree == Degree::from(5)
         ),
-        "no stratum, so no ua_n, above the corollas"
+        "no stratum, so no ua_n, past every shape of the catalogue"
+    );
+    assert!(
+        matches!(
+            SegalStratum::certify(&catalogue, Degree::from(0)),
+            Err(Uncertified::Degree { degree }) if degree == Degree::from(0)
+        ),
+        "nor below the corollas"
     );
     let stratum =
-        CorollaStratum::certify(&catalogue, Degree::from(1)).expect("degree one is certified");
+        SegalStratum::certify(&catalogue, Degree::from(1)).expect("degree one is certified");
     let (binary, constant) = (corolla(&stratum, Legs(2, 1)), corolla(&stratum, Legs(0, 1)));
     let monoid = monoid();
-    let two = Species::new(BTreeMap::from([(
-        profile(Legs(2, 1)),
-        GeneratorCount::from(2),
-    )]));
+    let two = two();
     let mut arena = CoreArena::new();
     let crossed = table(&mut arena, Images(&[2, 1, 0, 3]));
     let crossing = BTreeMap::from([(binary, Translators {

@@ -12,6 +12,8 @@ use std::io::Write;
 use std::io::stdout;
 
 use gandr_theory_sites::Catalogue;
+use gandr_theory_sites::Cocones;
+use gandr_theory_sites::Degree;
 use gandr_theory_sites::GeneratorBound;
 use gandr_theory_sites::Outcome;
 use gandr_theory_sites::Part;
@@ -35,6 +37,7 @@ use gandr_theory_sites::invertibility;
 use gandr_theory_sites::latching;
 use gandr_theory_sites::pushouts;
 use gandr_theory_sites::rigidity;
+use gandr_theory_sites::segal;
 use gandr_theory_sites::split_lowering;
 use gandr_theory_sites::unit_property;
 
@@ -253,6 +256,18 @@ fn main() -> Result<(), RunError>
         &"grounded = zero points",
         one,
         &grounded_stratum(&single),
+    )?;
+    row(
+        &mut out,
+        &"Segal, admitted families, every degree",
+        one,
+        &segal(&single, Degree::from(5_usize), Cocones::Admitted),
+    )?;
+    row(
+        &mut out,
+        &"Segal, blanket families, every degree",
+        one,
+        &segal(&single, Degree::from(5_usize), Cocones::Blanket),
     )?;
     let units = unit_property(GeneratorBound::from(4_usize), &paired)?;
     writeln!(out)?;
