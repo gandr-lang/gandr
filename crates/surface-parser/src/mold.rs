@@ -631,7 +631,11 @@ impl From<bool> for CandidateRank
 /// * The **sort** rank is `0` when the candidate's grammar sort matches the
 ///   slot the head expects ([`MeldState::expected_operand_sort`]) and `1`
 ///   otherwise, so `"hi"` reads as the expression string at an expression slot
-///   and the pattern string in a pattern slot.
+///   and the pattern string in a pattern slot. At the top level the slot is an
+///   item's, which an expression fills only as an expression statement, so a
+///   candidate opening an item-position declaration matches there too: `run`
+///   opening a bind statement and `run` opening an expression tie, and the
+///   lookahead reads which follows.
 /// * The **operand continuation** rank is `0` when the candidate extends the
 ///   operand at the head and `1` otherwise.
 ///
@@ -2005,26 +2009,33 @@ impl<'pbg> Molder<'pbg>
     /// # Specification
     /// - ensures: returns the candidate's [`CandidateKey`] with its delta
     ///   replaced by the empty delta, so the returned key is at most the full
-    ///   key; reads `state` without changing it.
+    ///   key; the sort matches when it is the frontier's expected sort, or the
+    ///   candidate opens a declaration at the top level; reads `state` without
+    ///   changing it.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the ranks are the full key's; a floor above a found
     ///   key is what lets [`least_candidates`](Self::least_candidates) skip a
     ///   candidate's dry-run. A floor carrying a nonempty delta, or ranks that
-    ///   differ from the key's, changes which candidates are kept.
+    ///   differ from the key's, changes which candidates are kept; a top-level
+    ///   bind statement read as the expression `run` leaves its `<-` stranded.
     /// - witness: `mold::tests::dry_runs_restore_exact_state`
+    /// - witness: `tests::acceptance::bind_statement_uses_run_keyword`
     #[spec(ensures: |ret| bool::from(ret.delta.is_empty()))]
     fn floor_key(
         &self,
         state: &MeldState<'_>,
         mold: MoldId,
-        expected: Sort,
+        frontier: &Frontier,
     ) -> CandidateKey
     {
         let continuation = CandidateRank::from(!bool::from(state.would_continue_form(mold)));
         let mold_sort = self.pbg.mold(mold).map_or(Sort::Item, |def| def.sort);
-        let sort_rank = CandidateRank::from(mold_sort != expected);
+        let sort_rank = CandidateRank::from(
+            mold_sort != frontier.expected
+                && !(bool::from(frontier.boundary) && bool::from(declaration_head(self.pbg, mold))),
+        );
         // Operand-continuation tiebreak: with the head an operand, a call `(` /
         // projection `.` / infix operator that extends it beats a fresh atom or
         // paren over the same lexeme, so the molder settles that family (the `(`
@@ -2105,7 +2116,7 @@ impl<'pbg> Molder<'pbg>
         &mut self,
         state: &mut MeldState<'_>,
         text: TokenText<'_>,
-        expected: Sort,
+        frontier: &Frontier,
     )
     {
         self.ranked.clear();
@@ -2114,7 +2125,7 @@ impl<'pbg> Molder<'pbg>
             else {
                 break;
             };
-            let floor = self.floor_key(state, mold, expected);
+            let floor = self.floor_key(state, mold, frontier);
             self.ranked.push((floor, mold));
         }
         self.tied.clear();
@@ -2269,7 +2280,7 @@ impl<'pbg> Molder<'pbg>
         // ties, in ascending `MoldId` order. The expensive `completion` finalize
         // only breaks a residual key-tie, and the overwhelming majority of
         // tokens have a unique key minimum, so the finalize never runs for them.
-        self.least_candidates(state, text, frontier.expected);
+        self.least_candidates(state, text, &frontier);
         if self.tied.len() <= 1 {
             return self.tied.first().copied();
         }
@@ -2486,7 +2497,7 @@ impl<'pbg> Molder<'pbg>
         // MoldId order (the process-invariant tie-break). Each tied opener's
         // window scores its own tokens into `self.tied`, so the openers move
         // to their own buffer.
-        self.least_candidates(state, text, frontier.expected);
+        self.least_candidates(state, text, &frontier);
         if self.tied.len() <= 1 {
             return self.tied.first().copied();
         }
@@ -3254,7 +3265,7 @@ mod tests
         let invalid = gandr_surface_syntax::MoldId::from(u32::MAX);
         state.push(&crate::MoldedTile::new(invalid, crate::TileText::from("~")));
         let before = state.checkpoint().to_bytes();
-        let floor = molder.floor_key(&state, invalid, gandr_surface_grammar::Sort::Expression);
+        let floor = molder.floor_key(&state, invalid, &state.admissibility_frontier());
         assert!(bool::from(floor.delta.is_empty()));
         assert_eq!(state.checkpoint().to_bytes(), before);
         let delta = Molder::push_delta(&mut state, invalid, TokenText::from("!"));

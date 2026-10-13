@@ -460,8 +460,8 @@ pub enum EffectPresence
     Absent,
 }
 
-/// Whether a row performs no effects.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Whether a row performs no effects, the pure before the effectful.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Purity
 {
     /// No effect interface occurs.

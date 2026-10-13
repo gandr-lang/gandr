@@ -30,10 +30,10 @@
 //! where its result is consumed, and every refusal carries the sort its own
 //! position demanded.
 //!
-//! # Seven insertions, by the sort of the position
+//! # Eight insertions, by the sort of the position
 //!
 //! Where the source writes a value and the position reads a computation, or
-//! the reverse, the fragment refuses — with seven exceptions, each a site the
+//! the reverse, the fragment refuses — with eight exceptions, each a site the
 //! grammar's own shape names. An application's head reads a computation, and
 //! a value standing there is forced; a function's result reads a computation
 //! type, and a value type standing there gains a returner; a function's body is
@@ -42,14 +42,16 @@
 //! where a type is read, bound at a universe, is decoded out of it; a path
 //! type's endpoint, or the point of `here`, reads a value, and a computation
 //! standing there is the value it returns, a compound endpoint the checker
-//! compares by what it computes; and a tail, where a path through a body ends,
+//! compares by what it computes; a tail, where a path through a body ends,
 //! reads a computation, and a value standing there is returned — the exit its
-//! polarity names, as the section on exits below sets out. Each bridge is
-//! decided by the position and the name's binder, never searched for, and its
-//! origin is the syntax node that demanded it, marked inserted, so a reader
-//! can be shown the cast they did not write. Everywhere else the mismatch
-//! stays a refusal: a lambda written where a value belongs is still the
-//! author's mistake to suspend.
+//! polarity names, as the section on exits below sets out; and every other
+//! position that reads a value holds a computation standing there nested, for
+//! the checker to suspend or run. Each bridge is decided by the position and
+//! the name's binder, never searched for, and its origin is the syntax node
+//! that demanded it, marked inserted, so a reader can be shown the cast they
+//! did not write. Everywhere else the mismatch stays a refusal: a value written
+//! where a computation is read, away from a head and a tail, is the author's
+//! to return.
 //!
 //! The first five in detail: a value standing as an application's head is
 //! forced, because a force is the only way from a value to a computation; a
@@ -78,19 +80,25 @@
 //! context — a kind layer — moves type variables into it.
 //!
 //! An elaborator that reads the types in hand is the usual place for these
-//! insertions. This fragment has no elaborator, and its checker returns
-//! verdicts rather than terms, so an insertion there would need an elaborated
-//! body the readmission does not read; the lowering already knows every
-//! position's sort and every form's, so it writes them. The general rule thunks
-//! a computation in any value position; here only the function body is, and a
-//! lambda written where a value belongs stays the `WrongSort` refusal the
-//! fragment's suites pin, because the boundary this change moves is the
-//! function form's. Alternatives: type-directed insertion in the checker,
-//! returning the elaborated body; and inserting at every mismatched position.
-//! Reversal: a position whose sort is not read off the syntax — a head whose
-//! classifier only normalisation computes — moves the insertion into the
-//! checker; and the unit that moves the computation-in-value boundary thunks
-//! there too.
+//! insertions. The first seven need none: the lowering knows every position's
+//! sort and every form's, so it writes them. The eighth needs the type: a
+//! computation where a value is read is suspended when the position expects
+//! a thunk and run before the computation around it otherwise, and only the
+//! checker holds the expected type. So the lowering writes the computation
+//! as a nested value, `Value::Nested` marked `Insertion::Nested`, and the
+//! checker decides it and elaborates the body — a thunk in place, or a bind
+//! in written order before the innermost enclosing computation, never out of
+//! a thunk or a case arm. A written `run c` where a value is read is the same
+//! bridge spelled out, `Value::Run`, which the checker always runs. Every
+//! computation in value position was refused before, a lambda there
+//! included, with the reversal recorded as the unit that moves this
+//! boundary; the expected type the checker now reads is that unit's reason,
+//! and the alternatives were a run inserted here wherever the written form is
+//! a call, which runs every thunk-typed argument, and keeping the refusal,
+//! which makes every non-tail call a statement. Reversal: a position whose
+//! sort is not read off the syntax — a head whose classifier only
+//! normalisation computes — moves its insertion into the checker beside the
+//! eighth.
 //!
 //! # A parameter a type names binds a dependent arrow
 //!
@@ -485,6 +493,7 @@ use gandr_kernel_term::Sign;
 use gandr_kernel_term::StringLiteral;
 use gandr_kernel_term::Summand;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::FormRank;
 use gandr_surface_syntax::NodeDigest;
@@ -496,6 +505,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::attribute::AttributeEntry;
 use crate::attribute::AttributeRegistry;
+use crate::attribute::AttributeSchema;
 use crate::attribute::AttributeTable;
 use crate::attribute::PayloadForm;
 use crate::attribute::PayloadVerdict;
@@ -586,6 +596,14 @@ mod exits;
 pub use exits::Exit;
 pub use exits::Explicitness;
 pub use exits::InferredExit;
+
+mod runs;
+
+pub use runs::AskedRuns;
+pub use runs::InferredRun;
+pub use runs::NestedSite;
+pub use runs::RunOperand;
+pub use runs::RunSpelling;
 
 mod identity;
 
@@ -897,7 +915,7 @@ impl Reading
     /// # Adequacy
     /// - hypothesis: L3 — wrong-sort refusals distinguish the expected value,
     ///   computation and type positions; function sites report a declaration.
-    /// - witness: `lower::tests::a_lambda_in_value_position_is_refused`
+    /// - witness: `lower::tests::a_written_run_lowers_to_a_run_over_its_computation`
     /// - witness: `lower::tests::a_computation_codomain_of_a_static_pi_is_refused`
     /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
     #[spec(
@@ -939,7 +957,7 @@ impl Reading
     /// - hypothesis: L3 — term and type fixtures exercise their reading
     ///   families; a type in value position is quoted rather than rejected as a
     ///   wrong family.
-    /// - witness: `lower::tests::a_lambda_in_value_position_is_refused`
+    /// - witness: `lower::tests::a_lambda_in_value_position_is_nested_and_marked_inserted`
     /// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
     /// - witness: `lower::tests::a_static_abstraction_binds_its_name_over_a_quoted_body`
     #[spec(
@@ -1091,9 +1109,9 @@ impl Reading
 ///   `classify_form` check classification and its quoting exception.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a computation in value position is refused, while a type
+/// - hypothesis: L3 — a computation in value position is nested, while a type
 ///   in value position can be quoted or used as a static code.
-/// - witness: `lower::tests::a_lambda_in_value_position_is_refused`
+/// - witness: `lower::tests::a_lambda_in_value_position_is_nested_and_marked_inserted`
 /// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
 /// - witness: `lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -1174,6 +1192,7 @@ fn ending(former: Former) -> Ending
         | Former::Thunk
         | Former::Return
         | Former::Force
+        | Former::Run
         | Former::Call
         | Former::Telescope
         | Former::Injection
@@ -1219,7 +1238,7 @@ fn ending(former: Former) -> Ending
 /// # Adequacy
 /// - hypothesis: L3 — term and type formers distinguish ordinary interpretation
 ///   from the positional quote, including a static abstraction.
-/// - witness: `lower::tests::a_lambda_in_value_position_is_refused`
+/// - witness: `lower::tests::a_lambda_in_value_position_is_nested_and_marked_inserted`
 /// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
 /// - witness: `lower::tests::a_static_abstraction_binds_its_name_over_a_quoted_body`
 #[spec(
@@ -1241,6 +1260,7 @@ fn ending(former: Former) -> Ending
                     | Former::Exit
                     | Former::Become
                     | Former::Force
+                    | Former::Run
                     | Former::Call
                     | Former::Binary
                     | Former::Unary
@@ -1298,6 +1318,7 @@ const fn family_of(former: Former) -> Family
         | Former::Exit
         | Former::Become
         | Former::Force
+        | Former::Run
         | Former::Call
         | Former::Binary
         | Former::Unary
@@ -1881,6 +1902,8 @@ enum Plan
     Return(NodeIndex),
     /// A force over its value.
     Force(NodeIndex),
+    /// A run over its computation, standing for the value it returns.
+    Run(NodeIndex),
     /// A lambda over its block.
     Lambda(Block),
     /// A block's statements bound over its last computation.
@@ -2107,7 +2130,7 @@ impl Site
     /// - hypothesis: L3 — declined value, computation and type forms keep the
     ///   position’s sort, distinct from the former’s own family.
     /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
-    /// - witness: `lower::tests::a_lambda_in_value_position_is_refused`
+    /// - witness: `lower::tests::a_written_run_lowers_to_a_run_over_its_computation`
     #[spec(
         ensures: |ret| {
             matches!(
@@ -2355,6 +2378,13 @@ struct Lowerer<'run, 'source>
     /// The slots an `explicit_exits` attribute asks written exits of: a
     /// declaration it decorates, and every member of a module it decorates.
     asked: BTreeSet<SlotIndex>,
+    /// Which runs an `explicit_runs` attribute asks written of each slot it
+    /// reaches: a declaration it decorates, and every member of a module it
+    /// decorates, the wider ask where both reach.
+    asked_runs: BTreeMap<SlotIndex, AskedRuns>,
+    /// The first byte of every statement and tail a block holds that does not
+    /// open with `run`: where a `run` written would open a bind instead.
+    leading: BTreeSet<ByteOffset>,
     /// Each block's last computation written as a statement, `c ;` before the
     /// closing brace, with the statement's span: admitted only as an exit.
     stated: BTreeMap<NodeIndex, ByteSpan>,
@@ -2509,7 +2539,8 @@ struct Sink<'run>
 /// - witness: `lower::tests::a_static_abstraction_binds_its_name_over_a_quoted_body`
 /// - witness: `lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
 /// - witness: `static_operators::static_operators::the_relative_monad_witness_elaborates_identically_in_both_spellings`
-/// - witness: `lower::tests::a_lambda_in_value_position_is_refused`
+/// - witness: `lower::tests::a_lambda_in_value_position_is_nested_and_marked_inserted`
+/// - witness: `lower::tests::a_written_run_lowers_to_a_run_over_its_computation`
 /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
 /// - witness: `lower::tests::a_form_offered_the_wrong_operand_count_is_refused`
 /// - witness: `lower::tests::a_malformed_integer_literal_is_refused`
@@ -2648,6 +2679,7 @@ pub fn lower_module<'source>(
     lowerer.attribute(&mut attributes)?;
     let documentation = lowerer.document()?;
     let inferred = lowerer.inferred_exits();
+    let nested = lowerer.nested_sites(&origins);
     let declarations = lowerer.assemble(&mut origins);
     let structures = lowerer.structures();
     let Lowerer {
@@ -2674,7 +2706,8 @@ pub fn lower_module<'source>(
         collected.cells,
     )
     .with_documentation(documentation)
-    .with_inferred_exits(inferred))
+    .with_inferred_exits(inferred)
+    .with_nested_sites(nested))
 }
 
 impl<'run, 'source> Lowerer<'run, 'source>
@@ -2802,6 +2835,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             inferred: BTreeSet::new(),
             elided: Vec::new(),
             asked: BTreeSet::new(),
+            asked_runs: BTreeMap::new(),
+            leading: BTreeSet::new(),
             stated: BTreeMap::new(),
             cases: Vec::new(),
             signatures: BTreeMap::new(),
@@ -3676,9 +3711,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — repairs take precedence over admission, wrong
     ///   families are refused, a type read as a value is the explicit quoting
-    ///   exception, and a tail of each polarity takes its inferred exit.
+    ///   exception, a computation read as a value is nested, and a tail of each
+    ///   polarity takes its inferred exit.
     /// - witness: `lower::tests::a_repaired_declaration_is_refused`
-    /// - witness: `lower::tests::a_lambda_in_value_position_is_refused`
+    /// - witness: `lower::tests::a_lambda_in_value_position_is_nested_and_marked_inserted`
     /// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
     /// - witness: `lower::tests::an_exit_lowers_where_a_path_passes_and_nowhere_else`
     /// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
@@ -3785,6 +3821,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Former::Exit => self.keyed(site, cursor, TileName::RETURN),
             | Former::Become => self.tail_call(site, cursor),
             | Former::Force => self.keyed(site, cursor, TileName::FORCE),
+            | Former::Run => self.run(site, cursor),
             | Former::Call => self.call(site, cursor),
             | Former::Case => self.case(site, cursor),
             | Former::Telescope => self.telescope(site, cursor),
@@ -3824,12 +3861,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   sort. An application's head reads a computation and reaches a value by
     ///   a force; a function's result reads a computation type and reaches a
     ///   value type by a returner; a value position reaches a type of either
-    ///   sort by a quote, and, at an endpoint, a computation as the value it
-    ///   returns; a tail, where a path through a body ends, reaches a value by
-    ///   the `return` its polarity names, recorded as inferred and leaving; the
-    ///   bridge is recorded for the form's node, and every other match records
-    ///   none.
-    /// - provides: the sort check every former takes, and the five insertions
+    ///   sort by a quote, and a computation as the value it returns at an
+    ///   endpoint and nested everywhere else; a tail, where a path through a
+    ///   body ends, reaches a value by the `return` its polarity names,
+    ///   recorded as inferred and leaving; the bridge is recorded for the
+    ///   form's node, and every other match records none.
+    /// - provides: the sort check every former takes, and the six insertions
     ///   decided by the sort of a position.
     /// - fails: yields the wrong-sort refusal when the position reads another
     ///   sort no bridge reaches.
@@ -3841,14 +3878,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — each bridge separated from its bare neighbour: a
     ///   value and a computation at a head, a value type and a computation type
-    ///   at a result, a value and a type at a value, a value and a computation
-    ///   at a tail, each asserted through the lowered node and its origin's
+    ///   at a result, a value and a type at a value, a computation at an
+    ///   endpoint and elsewhere at a value, a value and a computation at a
+    ///   tail, each asserted through the lowered node and its origin's
     ///   provenance.
     /// - witness: `lower::tests::a_value_head_is_forced_and_marked_inserted`
     /// - witness: `lower::tests::an_author_written_force_is_not_marked_inserted`
     /// - witness: `lower::tests::a_positive_result_gains_a_returner_once`
     /// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
     /// - witness: `lower::identity::tests::a_computation_endpoint_is_the_value_it_returns`
+    /// - witness: `lower::tests::a_lambda_in_value_position_is_nested_and_marked_inserted`
     /// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
     #[spec(
         ensures: |ret| {
@@ -3873,6 +3912,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     if self.at_endpoint.contains(&site.at.node) =>
                 {
                     Some((frame, Bridge::Inserted(Insertion::Endpoint)))
+                },
+                | (Reading::Value(frame), Produced::Computation) => {
+                    Some((frame, Bridge::Inserted(Insertion::Nested)))
                 },
                 | (Reading::Computation(frame), Produced::Value)
                     if self.exits.contains(&site.at.node) =>
@@ -3922,6 +3964,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 if self.at_endpoint.contains(&site.at.node) =>
             {
                 (frame, Bridge::Inserted(Insertion::Endpoint))
+            },
+            | (Reading::Value(frame), Produced::Computation) => {
+                (frame, Bridge::Inserted(Insertion::Nested))
             },
             | (Reading::Computation(frame), Produced::Value)
                 if self.exits.contains(&site.at.node) =>
@@ -4602,11 +4647,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   a frame extending its own, reads its block under that frame as a body
     ///   a path runs through, and is planned over it.
     /// - provides: the binder of the fragment.
-    /// - fails: yields the wrong-sort refusal outside computation position; the
-    ///   unadmitted refusal for a type abstraction or a typed parameter; the
-    ///   arity refusal for any parameter count but one; the block's own
-    ///   refusal; and the unreachable refusal for statements after one every
-    ///   path of which exits.
+    /// - fails: yields the wrong-sort refusal where no bridge reaches a
+    ///   computation; the unadmitted refusal for a type abstraction or a typed
+    ///   parameter; the arity refusal for any parameter count but one; the
+    ///   block's own refusal; and the unreachable refusal for statements after
+    ///   one every path of which exits.
     /// - panics: none.
     ///
     /// # Errors
@@ -4614,9 +4659,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a lambda body uses its newly introduced binder and a
-    ///   lambda offered directly in value position is refused.
+    ///   lambda offered directly in value position is nested.
     /// - witness: `lower::tests::a_lambda_body_binds_its_own_de_bruijn_index`
-    /// - witness: `lower::tests::a_lambda_in_value_position_is_refused`
+    /// - witness: `lower::tests::a_lambda_in_value_position_is_nested_and_marked_inserted`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -4980,6 +5025,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         {
                             let _semicolon = cursor.tile(TileName::SEMICOLON);
                             let _first = self.stated.insert(written.node, span);
+                            let _leads = self.leading.insert(written.span.start());
                             closed(site, cursor, TileName::BRACE_CLOSE)?;
                             exhausted(site, cursor)?;
                             self.read(written.node, Reading::Computation(frame));
@@ -4994,6 +5040,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         let discarded = site.one(run)?;
                         let _semicolon = cursor.tile(TileName::SEMICOLON);
                         self.read(discarded.node, Reading::Computation(frame));
+                        let _leads = self.leading.insert(discarded.span.start());
                         self.statements.push(Statement {
                             origin: discarded.node,
                             bound: discarded.node,
@@ -5011,6 +5058,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     closed(site, cursor, TileName::BRACE_CLOSE)?;
                     exhausted(site, cursor)?;
                     self.read(last.node, Reading::Computation(frame));
+                    let _leads = self.leading.insert(last.span.start());
                     return Ok(Block {
                         statements: Stretch {
                             start,
@@ -5376,6 +5424,51 @@ impl<'run, 'source> Lowerer<'run, 'source>
         };
 
         self.plan(site, plan);
+
+        Ok(())
+    }
+
+    /// Classify a run written where a value is read, `run c`.
+    ///
+    /// # Specification
+    /// - requires: `site` is a run in term position.
+    /// - ensures: the form standing as a value reads its one operand as a
+    ///   computation in its own frame and is planned as the run over it; the
+    ///   checker's elaboration binds the computation before the computation
+    ///   around it.
+    /// - provides: the written form of the bridge a computation in value
+    ///   position otherwise takes inferred.
+    /// - fails: yields the wrong-sort refusal where no bridge reaches a value,
+    ///   and the hole's own refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The form's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a written run plans the run over its computation
+    ///   operand, marked written rather than inserted, and its operand is read
+    ///   as a computation, so a value operand is refused by sort.
+    /// - witness: `lower::tests::a_written_run_lowers_to_a_run_over_its_computation`
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Run(operand))
+                    if self.reading(operand) == Reading::Computation(site.reading.frame()))
+        },
+    )]
+    fn run(
+        &mut self,
+        site: Site,
+        mut cursor: Cursor<'_>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let frame = self.require(site, Produced::Value)?;
+        let _keyword = cursor.tile(TileName::RUN);
+        let operand = site.one(cursor.operands())?;
+        exhausted(site, &cursor)?;
+        self.read(operand.node, Reading::Computation(frame));
+        self.plan(site, Plan::Run(operand.node));
 
         Ok(())
     }
@@ -7912,6 +8005,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Ua { .. }
                 | Plan::ListNil
                 | Plan::ListCons(..)
+                | Plan::Run(_)
                 | Plan::Constructor(_) => Some(Produced::Value),
                 | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(_) | Plan::Block(_) | Plan::Application(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) => {
                     Some(Produced::Computation)
@@ -8136,6 +8230,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Transport(..)
             | Plan::Return(_)
             | Plan::Force(_)
+            | Plan::Run(_)
             | Plan::Lambda(_) => self.mint_over(&plan, sink, origin),
         }
     }
@@ -8627,7 +8722,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| match ret {
             | Maybe::Absent(_) => true,
             | Maybe::Present(Lowered::Value(id)) => {
-                matches!(*plan, Plan::StaticLambda(_) | Plan::Thunk(_) | Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::Ua { .. } | Plan::ListNil | Plan::ListCons(..))
+                matches!(*plan, Plan::StaticLambda(_) | Plan::Thunk(_) | Plan::Run(_) | Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::Ua { .. } | Plan::ListNil | Plan::ListCons(..))
                     && sink.origins.value(id) == Maybe::Present(origin)
             },
             | Maybe::Present(Lowered::Computation(id)) => {
@@ -8733,6 +8828,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Force(value) => self.value_at(value).map(|forced| {
                 let id = sink.arena.computation_force(forced);
                 sink.computation(id, origin)
+            }),
+            | Plan::Run(computation) => self.computation_at(computation).map(|ran| {
+                let id = sink.arena.value_run(ran);
+                sink.value(id, origin)
             }),
             | Plan::Lambda(body) => self.mint_body(body, sink, origin).map(|under| {
                 let id = sink.arena.computation_lambda(under);
@@ -9531,6 +9630,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                                     .map(SlotIndex::from),
                             );
                         }
+                        self.ask_runs(
+                            &entry,
+                            (usize::from(module.first) .. usize::from(module.end))
+                                .map(SlotIndex::from),
+                        );
                         table.file(self.key_at(module.module.node), entry);
                     },
                     | Ok(Filing::Unlowered) => {},
@@ -9609,6 +9713,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         if entry.name() == RegisteredAttribute::EXPLICIT_EXITS {
                             let _first = self.asked.insert(SlotIndex::from(index));
                         }
+                        self.ask_runs(&entry, [SlotIndex::from(index)]);
                         table.file(self.key_at(written.decorates), entry);
                     },
                     | Ok(Filing::Unlowered) => {},
@@ -9765,7 +9870,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   payload whose form is not a value at all is refused before its schema
     ///   is consulted, because being no value is a different fact from being
     ///   the wrong one; nothing is filed for a payload the mint sweep left
-    ///   unlowered, which is the case of a payload that itself refused.
+    ///   unlowered, which is the case of a payload that itself refused; a text
+    ///   where a marker-or-option schema stands is admitted only when it spells
+    ///   the option, and is ill-typed as another text otherwise.
     /// - provides: the per-attribute half of the attribute pass.
     /// - fails: yields the unknown-attribute refusal with its bounded
     ///   suggestion, the duplicate refusal naming the first spelling, the
@@ -9829,7 +9936,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 first,
             });
         }
-        let form = self.payload_form_of(written, name)?;
+        let form = match (
+            schema,
+            self.payload_form_of(written, name)?,
+            written.payload,
+        ) {
+            | (AttributeSchema::MarkerOr(option), PayloadForm::Text, Payload::Written(placed))
+                if !matches!(
+                    parse_literal(Former::Text, self.text_at(placed)),
+                    Maybe::Present(Literal::Text(ref text)) if text.as_ref() == option
+                ) =>
+            {
+                PayloadForm::OtherText
+            },
+            | (_, form, _) => form,
+        };
         match payload_verdict(schema, form) {
             | PayloadVerdict::Admitted => {},
             | PayloadVerdict::Missing => {
@@ -10625,12 +10746,12 @@ impl Sink<'_>
                 )
                 | (
                     Maybe::Present(Lowered::Computation(_)),
-                    Insertion::Endpoint,
+                    Insertion::Endpoint | Insertion::Nested,
                     Maybe::Present(Lowered::Value(id)),
                 ) => self.origins.value(id) == Maybe::Present(origin.inserted(insertion)),
                 | (Maybe::Present(Lowered::Value(_)), Insertion::Force | Insertion::Return, _)
                 | (Maybe::Present(Lowered::ValueType(_)), Insertion::Returner, _)
-                | (Maybe::Present(Lowered::Computation(_)), Insertion::Endpoint, _)
+                | (Maybe::Present(Lowered::Computation(_)), Insertion::Endpoint | Insertion::Nested, _)
                 | (
                     Maybe::Present(Lowered::ValueType(_) | Lowered::CompType(_)),
                     Insertion::Quote,
@@ -10674,6 +10795,10 @@ impl Sink<'_>
                 let id = self.arena.value_returned(returned);
                 Maybe::Present(self.value(id, inserted))
             },
+            | (Maybe::Present(Lowered::Computation(nested)), Insertion::Nested) => {
+                let id = self.arena.value_nested(nested);
+                Maybe::Present(self.value(id, inserted))
+            },
             | (Maybe::Present(Lowered::Value(returned)), Insertion::Return) => {
                 let id = self.arena.computation_return(returned);
                 Maybe::Present(self.computation(id, inserted))
@@ -10690,7 +10815,8 @@ impl Sink<'_>
                 | Insertion::Match
                 | Insertion::Fixpoint
                 | Insertion::Endpoint
-                | Insertion::Identity,
+                | Insertion::Identity
+                | Insertion::Nested,
             ) => Maybe::Absent(lowered::Absent::OtherSort),
             | (Maybe::Absent(reason), _) => Maybe::Absent(reason),
         }
@@ -11403,6 +11529,7 @@ pub fn parse_literal(
         | Former::Exit
         | Former::Become
         | Former::Force
+        | Former::Run
         | Former::Call
         | Former::Case
         | Former::Telescope
@@ -13364,15 +13491,32 @@ mod tests
             matches!(arena.computation(last), Some(&Computation::Return(value)) if arena.value(value) == Some(&Value::Variable { zone: Zone::Intuitionistic, index: DeBruijnIndex::from(0_u32) })),
             "the last computation reads the statement's binder"
         );
+        let module = lowered(
+            SourceText::from("def b = thunk { return { pure 1 } } ;"),
+            &mut arena,
+        );
+        let Some(&Value::Thunk(suspended)) = arena.value(body_of(outcomes(&module)[0]))
+        else {
+            panic!("the thunk lowers to a thunk value");
+        };
+        let Some(&Computation::Return(returned)) = arena.computation(suspended)
+        else {
+            panic!("the exit returns its operand");
+        };
+        assert!(
+            matches!(arena.value(returned), Some(&Value::Nested(nested)) if matches!(arena.computation(nested), Some(&Computation::Return(_)))),
+            "a block where a value is read stands nested, for the checker to run"
+        );
         assert_eq!(
-            refusal(SourceText::from("def b = thunk { return { pure 1 } } ;")),
-            LoweringRefusal::OutOfFragment {
-                span: at(23_usize, 33_usize),
-                form: FormName::BLOCK,
-                sort: FragmentSort::Value,
-                boundary: FragmentBoundary::WrongSort,
-            },
-            "a block is a computation, refused where a value is read"
+            module
+                .origins()
+                .value(returned)
+                .map(|inserted| (inserted.provenance(), inserted.span())),
+            Maybe::Present((
+                Provenance::Inserted(Insertion::Nested),
+                at(23_usize, 33_usize)
+            )),
+            "the nesting is the lowering's, at the block whose position demanded it"
         );
     }
 
@@ -14153,19 +14297,88 @@ mod tests
     }
 
     #[test]
-    fn a_lambda_in_value_position_is_refused()
+    fn a_lambda_in_value_position_is_nested_and_marked_inserted()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from("def a = fn (y) { return y } ;"),
+            &mut arena,
+        );
+        let body = body_of(outcomes(&module)[0]);
+        let Some(&Value::Nested(nested)) = arena.value(body)
+        else {
+            panic!("the lambda stands nested where a value is read");
+        };
+        let origin = module.origins().value(body);
 
+        assert!(
+            matches!(arena.computation(nested), Some(&Computation::Lambda(_))),
+            "the nested computation is the lambda the source wrote"
+        );
         assert_eq!(
-            refusal(SourceText::from("def a = fn (y) { return y } ;")),
+            origin.map(|inserted| inserted.provenance()),
+            Maybe::Present(Provenance::Inserted(Insertion::Nested)),
+            "the nesting is the lowering's, not the source's"
+        );
+        assert_eq!(
+            origin.map(|inserted| inserted.span()),
+            Maybe::Present(at(8_usize, 27_usize)),
+            "the nesting names the lambda whose position demanded it"
+        );
+        assert_eq!(
+            module
+                .origins()
+                .computation(nested)
+                .map(|written| written.provenance()),
+            Maybe::Present(Provenance::Written),
+            "the lambda itself is the source's"
+        );
+    }
+
+    #[test]
+    fn a_written_run_lowers_to_a_run_over_its_computation()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from("def a = thunk { return run (pure 1) } ;"),
+            &mut arena,
+        );
+        let Some(&Value::Thunk(suspended)) = arena.value(body_of(outcomes(&module)[0]))
+        else {
+            panic!("the thunk lowers to a thunk value");
+        };
+        let Some(&Computation::Return(returned)) = arena.computation(suspended)
+        else {
+            panic!("the exit returns its operand");
+        };
+        let Some(&Value::Run(ran)) = arena.value(returned)
+        else {
+            panic!("the written run lowers to a run");
+        };
+
+        assert!(
+            matches!(arena.computation(ran), Some(&Computation::Return(value)) if arena.value(value) == Some(&Value::Literal(integer(SourceFragment::from("1"))))),
+            "the run is over the computation the source wrote"
+        );
+        assert_eq!(
+            module
+                .origins()
+                .value(returned)
+                .map(|written| (written.provenance(), written.span())),
+            Maybe::Present((Provenance::Written, at(23_usize, 35_usize))),
+            "the run is the source's"
+        );
+        assert_eq!(
+            refusal(SourceText::from("def b = thunk { return run 1 } ;")),
             LoweringRefusal::OutOfFragment {
-                span: at(8_usize, 27_usize),
-                form: FormName::from(NamedKind("lambda_expression")),
-                sort: FragmentSort::Value,
+                span: at(27_usize, 28_usize),
+                form: FormName::from(NamedKind("number")),
+                sort: FragmentSort::Computation,
                 boundary: FragmentBoundary::WrongSort,
             },
-            "a lambda is a computation and must be suspended to stand as a value"
+            "a run's operand is a computation, so a value there is refused by sort"
         );
     }
 

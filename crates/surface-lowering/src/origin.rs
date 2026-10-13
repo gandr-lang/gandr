@@ -111,13 +111,14 @@ quenchant_shape::reason_enum! {
 ///
 /// The five bridges, the `return` of an inferred exit, the classifier of a
 /// constructor written without one, the eliminations a match compiles to, a
-/// recursive function's fixpoint, a compound endpoint, and the transport a
-/// derived identity operation unfolds to.
+/// recursive function's fixpoint, a compound endpoint, the transport a
+/// derived identity operation unfolds to, and a computation carried where a
+/// value is read for the checker to run or suspend.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the tag distinguishes force, thunk, returner, quote, decode,
-///   return, classifier, match, fixpoint, endpoint and identity.
+///   return, classifier, match, fixpoint, endpoint, identity and nested.
 /// - provides: the kind of an insertion recorded in an origin.
 /// - fails: not applicable to the tag itself.
 /// - panics: not applicable to the tag itself.
@@ -164,6 +165,10 @@ pub enum Insertion
     /// The motive, the base and the shifted endpoints of the transport `back`,
     /// `then` or `cong` unfolds to.
     Identity,
+    /// A computation standing where a value is read, carried to the checker,
+    /// which runs it before the computation around it or suspends it as the
+    /// type read there decides.
+    Nested,
 }
 
 /// Whether the source wrote a minted core node or the lowering inserted it.
@@ -858,6 +863,17 @@ impl OriginTable
     pub fn bindings(&self) -> &[(ValueId, ByteSpan)]
     {
         &self.bindings
+    }
+
+    /// Every value's origin, in mint order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn values(&self) -> &[(ValueId, Origin)]
+    {
+        &self.values
     }
 
     /// Every value type's origin, in mint order.

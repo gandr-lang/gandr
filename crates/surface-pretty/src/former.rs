@@ -335,6 +335,12 @@ pub enum Former<'source, Node>
     Application(Node, Node),
     /// A lambda over its body, which stands under one binder: `fn (x) { c }`.
     Lambda(Node),
+    /// A computation written where a value is read, which the checker runs
+    /// or suspends as the type there decides: the computation itself, `f(a)`,
+    /// its run left out.
+    Nested(Node),
+    /// A computation run where a value is read, as written: `run c`.
+    Run(Node),
     /// Univalence at a stratum, `ua[n, k](a, b, f, g)`, over its two
     /// translator records.
     Ua

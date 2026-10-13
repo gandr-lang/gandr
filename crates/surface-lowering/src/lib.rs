@@ -136,6 +136,39 @@
 //! and the kernel gain join points, an exit lowers to a jump and the rest is
 //! no longer copied.
 //!
+//! # The fourth bridge is the checker's
+//!
+//! Three sort-directed bridges are the lowering's, each read off the syntax:
+//! a value at an application's head is forced, a computation at a function's
+//! body is thunked, and a value type at a function's result gains a returner.
+//! A computation written anywhere else a value is read — `Succ(plus(n, p))`
+//! — lowers to a nested node, [`Insertion::Nested`], at the computation's own
+//! bytes, and the checker decides it by three rules. *Direction*: against a
+//! thunk type it is suspended, against any other type it runs, and with no
+//! type expected it is refused by name (`NotSynthesisable`, the form
+//! `Nested`). *Order*: runs bind in written order around the innermost
+//! enclosing computation, never out of a `thunk` or a `case` arm. *Where*:
+//! the checker's elaboration, each minted bind carrying the nested call's
+//! span. `run c` is the written spelling of the same run, an expression
+//! wherever a value is read; first in a block's statement it is
+//! parenthesised, `(run c)`, because there `run` opens a bind.
+//!
+//! The recorded decision was the lowering's: it inserted every bridge,
+//! because the checker returned verdicts rather than terms, so a computation
+//! in value position was refused as the wrong sort and every non-tail call
+//! had to be a statement. Whether a nested computation runs is the type
+//! expected there, which only the checker reads, so that insertion moved to
+//! the checker, which now answers the elaborated body. The record also fenced
+//! effect sequencing: none is inserted outside an explicit opt-in. A run the
+//! checker infers sequences its computation where the source wrote none, so
+//! the opt-in is the `explicit-runs` lint: [`LoweredModule::inferred_runs`]
+//! lists every inferred run, an `explicit_runs` attribute asks for each to
+//! be written, and its `effects` option asks only for the runs that perform
+//! an effect. The alternatives were a run inserted wherever the written form
+//! is a call, which is wrong at every thunk-typed parameter, and keeping the
+//! refusal. Reversal: a surface whose effects must stay visible turns the
+//! lint on by default.
+//!
 //! # Example
 //!
 //! ```
@@ -277,11 +310,16 @@ pub use crate::import::ImportDeclaration;
 pub use crate::import::ImportIndex;
 pub use crate::import::ImportUri;
 pub use crate::import::ModuleImports;
+pub use crate::lower::AskedRuns;
 pub use crate::lower::Exit;
 pub use crate::lower::Explicitness;
 pub use crate::lower::Fuel;
 pub use crate::lower::InferredExit;
+pub use crate::lower::InferredRun;
 pub use crate::lower::LoweringBudget;
+pub use crate::lower::NestedSite;
+pub use crate::lower::RunOperand;
+pub use crate::lower::RunSpelling;
 pub use crate::lower::lower_module;
 pub use crate::module::Coerced;
 pub use crate::module::ComponentPlace;

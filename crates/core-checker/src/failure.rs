@@ -164,6 +164,9 @@ pub enum FrameRole
     UaTranslators,
     /// A compound endpoint waits on its computation's type.
     ReturnedEndpoint,
+    /// A computation written where a value is read, run, waits on its
+    /// computation's type.
+    Ran,
     /// A transport waits on its element path's type.
     ElementTransportPath,
     /// A transport waits on its motive's formation.
@@ -295,6 +298,7 @@ impl fmt::Display for FrameRole
             | Self::EquivBackward => "EquivBackward",
             | Self::UaTranslators => "UaTranslators",
             | Self::ReturnedEndpoint => "ReturnedEndpoint",
+            | Self::Ran => "Ran",
             | Self::ElementTransportPath => "ElementTransportPath",
             | Self::ElementTransportMotive => "ElementTransportMotive",
             | Self::TelescopePath => "TelescopePath",
@@ -688,6 +692,7 @@ mod tests
             FrameRole::EquivBackward,
             FrameRole::UaTranslators,
             FrameRole::ReturnedEndpoint,
+            FrameRole::Ran,
             FrameRole::ElementTransportPath,
             FrameRole::ElementTransportMotive,
             FrameRole::TelescopePath,

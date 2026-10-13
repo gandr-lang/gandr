@@ -445,6 +445,10 @@ pub enum ContentNode
     /// A compound endpoint: the computation whose returned value it stands
     /// for.
     Returned(NodeIndex),
+    /// A computation written where a value is read, before elaboration.
+    Nested(NodeIndex),
+    /// A written run where a value is read, before elaboration.
+    Run(NodeIndex),
     /// Transport along an element path in a motive under one binder.
     ElementTransport
     {
@@ -854,6 +858,8 @@ impl ContentNode
         | Self::PathRefl(_)
         | Self::Here(_)
         | Self::Returned(_)
+        | Self::Nested(_)
+        | Self::Run(_)
         | Self::PrimitiveValue(_)
         | Self::PathProduct(..)
         | Self::Funext(..)
@@ -939,6 +945,8 @@ impl ContentNode
             | Self::PathRefl(_)
             | Self::Here(_)
             | Self::Returned(_)
+            | Self::Nested(_)
+            | Self::Run(_)
             | Self::PrimitiveValue(_)
             | Self::PathProduct(..)
             | Self::Funext(..)
@@ -1073,7 +1081,7 @@ impl ContentNode
             | Self::PathType { carrier, left, right } => actual == Some(&[(carrier, A), (left, V), (right, V)][..]),
             | Self::ElementTransport { motive, path, value } => actual == Some(&[(motive, A), (path, V), (value, V)][..]),
             | Self::TelescopeTransport { motive, path, start, over, value } => actual == Some(&[(motive, C), (path, V), (start, V), (over, V), (value, V)][..]),
-            | Self::Returned(a) => actual == Some(&[(a, M)][..]),
+            | Self::Returned(a) | Self::Nested(a) | Self::Run(a) => actual == Some(&[(a, M)][..]),
             | Self::PathRefl(a)
             | Self::Here(a)
             | Self::StaticLambda(a)
@@ -1235,6 +1243,8 @@ impl ContentNode
             | Self::ComputationMark { body, .. }
             | Self::Thunk(body)
             | Self::Returned(body)
+            | Self::Nested(body)
+            | Self::Run(body)
             | Self::Lambda(body)
             | Self::Fixpoint { body, .. } => Children::of(&[(body, M)]),
             | Self::Application(head, argument) => Children::of(&[(head, M), (argument, V)]),
@@ -1335,6 +1345,8 @@ impl ContentNode
             | Self::PathRefl(_)
             | Self::Here(_)
             | Self::Returned(_)
+            | Self::Nested(_)
+            | Self::Run(_)
             | Self::PathType { .. }
             | Self::ElementTransport { .. }
             | Self::TelescopeTransport { .. }
@@ -2334,6 +2346,12 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
             | Value::Returned(computation) => {
                 ContentNode::Returned(self.discover(ArenaNode::Computation(computation)))
             },
+            | Value::Nested(computation) => {
+                ContentNode::Nested(self.discover(ArenaNode::Computation(computation)))
+            },
+            | Value::Run(computation) => {
+                ContentNode::Run(self.discover(ArenaNode::Computation(computation)))
+            },
             | Value::PathProduct(first, second) => {
                 let first = self.discover(ArenaNode::Value(first));
                 ContentNode::PathProduct(first, self.discover(ArenaNode::Value(second)))
@@ -3008,6 +3026,8 @@ where
         | ContentNode::PathRefl(code) => ContentNode::PathRefl(image(code)),
         | ContentNode::Here(point) => ContentNode::Here(image(point)),
         | ContentNode::Returned(computation) => ContentNode::Returned(image(computation)),
+        | ContentNode::Nested(computation) => ContentNode::Nested(image(computation)),
+        | ContentNode::Run(computation) => ContentNode::Run(image(computation)),
         | ContentNode::PathType {
             carrier,
             left,
@@ -3608,6 +3628,8 @@ fn mint_node(
         | ContentNode::PathType { .. }
         | ContentNode::Here(_)
         | ContentNode::Returned(_)
+        | ContentNode::Nested(_)
+        | ContentNode::Run(_)
         | ContentNode::ElementTransport { .. }
         | ContentNode::TelescopeTransport { .. }
         | ContentNode::Constructor { .. }

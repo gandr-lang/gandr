@@ -448,7 +448,8 @@ impl TileName
     pub const RETURN: Self = Self("return");
     /// The tail-call exit `become`.
     pub const BECOME: Self = Self("become");
-    /// The bind keyword `run`, opening a statement.
+    /// The bind keyword `run`, opening a statement or a run where a value is
+    /// read.
     pub const RUN: Self = Self("run");
     /// The eager product's `*`.
     pub const STAR: Self = Self("*");
@@ -584,6 +585,9 @@ pub enum Former
     Become,
     /// The force `force v`.
     Force,
+    /// The run `run c` where a value is read: the computation runs before
+    /// the computation around it and stands for the value it returns.
+    Run,
     /// The application `c(v)`.
     Call,
     /// The match `case e -> T? { p => c, … }` over nominal data, integers,
@@ -682,7 +686,7 @@ impl Former
     ///   of successful table outcomes plus the miss outcome. The evidence is
     ///   bounded to the current closed enum and table.
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 45_usize] = [
+    pub const ALL: [Self; 46_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Hole,
@@ -697,6 +701,7 @@ impl Former
         Self::Exit,
         Self::Become,
         Self::Force,
+        Self::Run,
         Self::Call,
         Self::Case,
         Self::Telescope,
@@ -750,7 +755,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 46_usize] = [
+pub const FORMERS: [(&str, Former); 47_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -765,6 +770,7 @@ pub const FORMERS: [(&str, Former); 46_usize] = [
     ("return_expression", Former::Exit),
     ("become_expression", Former::Become),
     ("force_expression", Former::Force),
+    ("run_expression", Former::Run),
     ("call_expression", Former::Call),
     ("case_expression", Former::Case),
     ("telescope_expression", Former::Telescope),

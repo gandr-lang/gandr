@@ -309,7 +309,8 @@ enum Kind
         | Former::Literal(_) | Former::Tuple(_) | Former::Record(_) | Former::Injection(..) | Former::Thunk(_) | Former::ValueLift
         | Former::Reify | Former::ListNil | Former::ListCons(..)
         | Former::Quote(_) | Former::QuoteComputation(_) | Former::StaticLambda(_) | Former::StaticApplication(..)
-        | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_) | Former::Funext(..) | Former::Equiv(..) | Former::Ua { .. }),
+        | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_) | Former::Funext(..) | Former::Equiv(..)
+        | Former::Ua { .. } | Former::Nested(_) | Former::Run(_)),
     | Kind::Computation => matches!(*former, Former::Return(_) | Former::Bind(..) | Former::Force(_)
         | Former::Application(..) | Former::Lambda(_) | Former::Computation),
     | Kind::Unknown => matches!(*former, Former::Unreadable),
@@ -358,7 +359,9 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Here(_)
         | Former::Funext(..)
         | Former::Equiv(..)
-        | Former::Ua { .. } => Kind::Value,
+        | Former::Ua { .. }
+        | Former::Nested(_)
+        | Former::Run(_) => Kind::Value,
         | Former::Return(_)
         | Former::Bind(..)
         | Former::Force(_)
@@ -553,7 +556,9 @@ enum Children<Node>
 ///   and the function an application applies admit computations where the body
 ///   goes on, the rest of a bind what its own position admits; a lambda's body,
 ///   and a thunk's when bodies are spelled, admit computations where the body
-///   ends; every other former, an opaque thunk among them, is a leaf.
+///   ends; a nested computation and a run, when bodies are spelled, admit a
+///   computation where the body goes on; every other former, an opaque thunk,
+///   nested computation or run among them, is a leaf.
 /// - provides: the one table of child positions the scan and the walk share.
 /// - fails: never.
 /// - panics: none.
@@ -604,6 +609,10 @@ enum Children<Node>
     | Former::Lambda(_) => matches!(ret, Children::One(Slot { admits: Admits::Computation(Tail::Ends), .. })),
     | Former::Thunk(_) => match bodies {
         Bodies::Spelled => matches!(ret, Children::One(Slot { admits: Admits::Computation(Tail::Ends), .. })),
+        Bodies::Opaque => matches!(ret, Children::None),
+    },
+    | Former::Nested(_) | Former::Run(_) => match bodies {
+        Bodies::Spelled => matches!(ret, Children::One(Slot { admits: Admits::Computation(Tail::Continues), .. })),
         Bodies::Opaque => matches!(ret, Children::None),
     },
     | _ => matches!(ret, Children::None),
@@ -693,6 +702,10 @@ where
             | Bodies::Spelled => Children::One(slot(body, Admits::Computation(Tail::Ends))),
             | Bodies::Opaque => Children::None,
         },
+        | Former::Nested(body) | Former::Run(body) => match bodies {
+            | Bodies::Spelled => Children::One(slot(body, Admits::Computation(Tail::Continues))),
+            | Bodies::Opaque => Children::None,
+        },
         | Former::BaseType(_)
         | Former::Universe { .. }
         | Former::TypeLift
@@ -751,7 +764,8 @@ enum Binding
 {
     /// A name, a literal, a universe, a bracketed or braced form, a call.
     Atom,
-    /// `+U C`, `-F A`, `pure v`, `force v`, `fn (x) { c }` or `thunk { c }`.
+    /// `+U C`, `-F A`, `pure v`, `force v`, `run c`, `fn (x) { c }` or
+    /// `thunk { c }`.
     Prefix,
     /// `A -> C`, `(x : A) -> C`, or the static abstraction `\a. v`, whose
     /// body runs as far right as an arrow's codomain.
@@ -783,6 +797,8 @@ enum Prefix
     Pure,
     /// A force, `force v`.
     Force,
+    /// A run where a value is read, `run c`.
+    Run,
 }
 
 /// The delimiters of the arity-shaped formers, one per polarity of the
@@ -1885,17 +1901,18 @@ impl Walk<'_, '_, '_>
     /// - ensures: a value at the depth limit finishes as `<deep>`; a node of a
     ///   sort its position does not admit, an unreadable node and a former
     ///   without a surface spelling finish as `?`; a thunk finishes as
-    ///   `<thunk>` where bodies are opaque; a leaf former finishes as its
-    ///   spelling, the 0-ary product as `Unit`, the 0-ary sum as `Void` and the
-    ///   sum of two 0-ary products as `Bool`; a composite former pushes its
-    ///   join below its children's visits, each labelled entry's label
-    ///   scheduled just before it, a dependent arrow's codomain, a static
-    ///   abstraction's, a lambda's body and a bind's rest between the opening
-    ///   and the closing of its binder; a static application schedules its
-    ///   spine as [`Self::spine`] does and an application its call as
-    ///   [`Self::call`] does; a decode, a quote and a returner where the body
-    ///   ends push their child's visit alone, so the child's piece is theirs,
-    ///   and a returner anywhere else is `pure v`.
+    ///   `<thunk>` and a nested computation and a run as `?` where bodies are
+    ///   opaque; a leaf former finishes as its spelling, the 0-ary product as
+    ///   `Unit`, the 0-ary sum as `Void` and the sum of two 0-ary products as
+    ///   `Bool`; a composite former pushes its join below its children's
+    ///   visits, each labelled entry's label scheduled just before it, a
+    ///   dependent arrow's codomain, a static abstraction's, a lambda's body
+    ///   and a bind's rest between the opening and the closing of its binder; a
+    ///   static application schedules its spine as [`Self::spine`] does and an
+    ///   application its call as [`Self::call`] does; a decode, a quote, a
+    ///   returner where the body ends and a nested computation push their
+    ///   child's visit alone, so the child's piece is theirs; a returner
+    ///   anywhere else is `pure v` and a run `run c`.
     /// - provides: one step of the walk.
     /// - fails: as [`Self::leaf`].
     /// - panics: none.
@@ -1987,6 +2004,16 @@ impl Walk<'_, '_, '_>
             | Former::Thunk(_) => match self.bodies {
                 | Bodies::Opaque => return self.approximate(Glyphs("<thunk>")),
                 | Bodies::Spelled => Some(Join::Thunk),
+            },
+            // A computation where a value is read stands bare, its run left
+            // to the checker; its piece is the node's.
+            | Former::Nested(_) => match self.bodies {
+                | Bodies::Opaque => return self.approximate(Glyphs("?")),
+                | Bodies::Spelled => None,
+            },
+            | Former::Run(_) => match self.bodies {
+                | Bodies::Opaque => return self.approximate(Glyphs("?")),
+                | Bodies::Spelled => Some(Join::Prefix(Prefix::Run)),
             },
             | Former::Reify => return self.approximate(Glyphs("<stack>")),
             | Former::Stack(..) => {
@@ -2378,18 +2405,18 @@ impl Walk<'_, '_, '_>
     /// # Specification
     /// - requires: available operands are the top finished pieces in operand
     ///   order, last on top; application arity comes from a bounded spine.
-    /// - ensures: `+U C`, `-F A`, `pure v` and `force v` with the operand
-    ///   parenthesized unless it is an atom; `#{…}`, `+{…}` and `&{…}` around
-    ///   their entries, each bare and after its label when it has one; `A -> C`
-    ///   with the domain bare up to a bridge and the codomain bare, a break
-    ///   after the arrow; `(x : A) -> C` naming the binder by the binders open
-    ///   outside it, a break after the arrow; `\a. v` naming its binder so, a
-    ///   break after the dot; `f(a1, …, an)` with the operator parenthesized
-    ///   unless it is an atom, a block when it is a bind; every list with a
-    ///   break after each comma and before the closer; `run x <- c ; rest`
-    ///   naming its binder so, the bound computation a block when it is itself
-    ///   a bind, a soft line after the semicolon; `fn (x) { c }` naming its
-    ///   binder so and `thunk { c }`, each a block.
+    /// - ensures: `+U C`, `-F A`, `pure v`, `force v` and `run c` with the
+    ///   operand parenthesized unless it is an atom; `#{…}`, `+{…}` and `&{…}`
+    ///   around their entries, each bare and after its label when it has one;
+    ///   `A -> C` with the domain bare up to a bridge and the codomain bare, a
+    ///   break after the arrow; `(x : A) -> C` naming the binder by the binders
+    ///   open outside it, a break after the arrow; `\a. v` naming its binder
+    ///   so, a break after the dot; `f(a1, …, an)` with the operator
+    ///   parenthesized unless it is an atom, a block when it is a bind; every
+    ///   list with a break after each comma and before the closer; `run x <- c
+    ///   ; rest` naming its binder so, the bound computation a block when it is
+    ///   itself a bind, a soft line after the semicolon; `fn (x) { c }` naming
+    ///   its binder so and `thunk { c }`, each a block.
     /// - provides: every composite spelling.
     /// - fails: a missing operand, which the walk's scheduling excludes, or the
     ///   builder's refusal.
@@ -2454,6 +2481,7 @@ impl Walk<'_, '_, '_>
                     | Prefix::Returner => Glyphs("-F "),
                     | Prefix::Pure => Glyphs("pure "),
                     | Prefix::Force => Glyphs("force "),
+                    | Prefix::Run => Glyphs("run "),
                 })?;
                 (self.builder.concat(head, operand)?, Binding::Prefix)
             },

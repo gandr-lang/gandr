@@ -20,6 +20,7 @@
 //! | source refused as a whole | `error[<refusal>]: the source is not a list of declarations: …` | the refusal's span | none |
 //! | shadowed builtin | ``warning[ShadowedBuiltin]: `<path>` shadows a builtin name; the source's binding wins`` | the shadowing name, labelled `shadows a builtin` | none |
 //! | inferred exit | ``warning[explicit-exits]: this path ends without its exit; …`` | the tail, labelled with the exit inferred there; the fix writes that keyword before it | none |
+//! | inferred run | ``warning[explicit-runs]: this computation stands where a value is read; …`` | the computation, labelled with the run inferred there and whether it performs an effect; the fix writes `run` before it, parenthesised where it begins a statement | none |
 //! | ledger line | `<path>: <line>` | the declaration or refusal the line reports, when it has one | none |
 //!
 //! No message carries a byte range: a face locates the diagnostic by its
@@ -53,6 +54,18 @@
 //! nothing there and the lint finds nothing. Witness:
 //! `diagnostics::diagnostics::an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword`.
 //!
+//! # An inferred run is a lint's finding, carrying its fix
+//!
+//! A computation written where a value is read, which the checker runs, is a
+//! [`Class::Lint`] warning of the `explicit-runs` lint, identified by the
+//! lint's spelling. Its one annotation is the computation's own bytes,
+//! labelled with whether the run performs an effect, and its [`Fix`] inserts
+//! `run ` at the computation's first byte, or rewrites it as `(run c)` where
+//! it begins a statement or a block's tail, which a block would read as a
+//! bind: the edit that writes the run the checker would infer, after which
+//! the computation is a written run and the lint finds nothing. Witness:
+//! `diagnostics::diagnostics::an_inferred_run_is_a_finding_whose_fix_writes_its_keyword`.
+//!
 //! # The settle note says what was expected and why it did not happen
 //!
 //! A refused declaration closes with a note in words: what its source
@@ -84,6 +97,7 @@ use std::path::Path;
 use anodized::spec;
 use gandr_core_checker::Failure;
 use gandr_core_term::FailureClass;
+use gandr_core_term::effect::Purity;
 use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::Outcome;
 use gandr_surface_corpus::Refusal;
@@ -91,8 +105,11 @@ use gandr_surface_corpus::RefusalName;
 use gandr_surface_corpus::Stated;
 use gandr_surface_corpus::Surviving;
 use gandr_surface_lowering::InferredExit;
+use gandr_surface_lowering::InferredRun;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::OriginTable;
+use gandr_surface_lowering::RunOperand;
+use gandr_surface_lowering::RunSpelling;
 use gandr_surface_lowering::namespace::ShadowedBuiltin;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
@@ -321,6 +338,9 @@ pub enum Subject<'step>
     /// An exit the lowering inferred, where a path through a body ends in a
     /// form that is no exit: a finding of the `explicit-exits` lint.
     InferredExit(&'step InferredExit),
+    /// A run the checker inferred, where a computation stands in a position
+    /// that reads a value: a finding of the `explicit-runs` lint.
+    InferredRun(&'step InferredRun),
     /// A ledger line: a settled fixture, a pending source's refusal or
     /// declaration, or a pending source the lowering read.
     Ledger
@@ -437,6 +457,7 @@ impl Report<'_>
             | Subject::Source(_)
             | Subject::Shadowed(_)
             | Subject::InferredExit(_)
+            | Subject::InferredRun(_)
             | Subject::Ledger { .. } => (Vec::new(), Vec::new()),
         };
         let expression = match span {
@@ -470,7 +491,9 @@ impl Report<'_>
             path: self.path.to_path_buf(),
             severity: match self.subject {
                 | Subject::Goal(_) => Severity::Goal,
-                | Subject::Shadowed(_) | Subject::InferredExit(_) => Severity::Warning,
+                | Subject::Shadowed(_) | Subject::InferredExit(_) | Subject::InferredRun(_) => {
+                    Severity::Warning
+                },
                 | Subject::Ledger { .. } => Severity::Ledger,
                 | Subject::Refused { .. } | Subject::Unsettled { .. } | Subject::Source(_) => {
                     Severity::Error
@@ -500,6 +523,7 @@ impl Report<'_>
                     | Subject::Goal(_)
                     | Subject::Shadowed(_)
                     | Subject::InferredExit(_)
+                    | Subject::InferredRun(_)
                     | Subject::Ledger { .. } => Maybe::Absent(producer::Absent::Statement),
                 },
             },
@@ -515,7 +539,7 @@ impl Report<'_>
                 | Subject::Goal(_)
                 | Subject::Source(_)
                 | Subject::Ledger { .. } => Maybe::Absent(report_note::Absent::Statement),
-                | Subject::Shadowed(_) | Subject::InferredExit(_) => {
+                | Subject::Shadowed(_) | Subject::InferredExit(_) | Subject::InferredRun(_) => {
                     Maybe::Absent(report_note::Absent::Warning)
                 },
             },
@@ -529,6 +553,41 @@ impl Report<'_>
                             replacement: alloc::format!("{} ", inferred.exit),
                         }),
                         | Ok(_) | Err(_) => Maybe::Absent(fix::Absent::Unproposed),
+                    }
+                },
+                | Subject::InferredRun(inferred) => {
+                    match (inferred.site.spelling, inferred.site.operand) {
+                        | (RunSpelling::Bare, RunOperand::Tight) => {
+                            match ByteSpan::new(inferred.span.start(), inferred.span.start()) {
+                                | Ok(span) if self.text.fragment(span).is_ok() => {
+                                    Maybe::Present(Fix {
+                                        span,
+                                        replacement: String::from("run "),
+                                    })
+                                },
+                                | Ok(_) | Err(_) => Maybe::Absent(fix::Absent::Unproposed),
+                            }
+                        },
+                        | (spelling, operand) => match self.text.fragment(inferred.span) {
+                            | Ok(written) => {
+                                let run = match operand {
+                                    | RunOperand::Tight => {
+                                        alloc::format!("run {}", written.as_ref())
+                                    },
+                                    | RunOperand::Grouped => {
+                                        alloc::format!("run ({})", written.as_ref())
+                                    },
+                                };
+                                Maybe::Present(Fix {
+                                    span: inferred.span,
+                                    replacement: match spelling {
+                                        | RunSpelling::Bare => run,
+                                        | RunSpelling::Parenthesised => alloc::format!("({run})"),
+                                    },
+                                })
+                            },
+                            | Err(_) => Maybe::Absent(fix::Absent::Unproposed),
+                        },
                     }
                 },
                 | Subject::Refused { .. }
@@ -550,7 +609,8 @@ impl Report<'_>
     ///   declaration unsettled with no refusal is [`Class::Unsettled`] with
     ///   what it rests on; a goal is [`Class::Goal`]; a shadowed builtin is
     ///   [`Class::Warning`]; an inferred exit is [`Class::Lint`] of the
-    ///   `explicit-exits` lint; a ledger line [`Class::Ledger`].
+    ///   `explicit-exits` lint, an inferred run of the `explicit-runs` lint; a
+    ///   ledger line [`Class::Ledger`].
     /// - provides: the class a reader sorts diagnostics by.
     /// - fails: never.
     /// - panics: none.
@@ -563,6 +623,7 @@ impl Report<'_>
     /// - witness: `diagnostics::diagnostics::a_refused_declaration_is_located`
     /// - witness: `diagnostics::diagnostics::each_verb_prints_its_entries`
     /// - witness: `diagnostics::diagnostics::an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword`
+    /// - witness: `diagnostics::diagnostics::an_inferred_run_is_a_finding_whose_fix_writes_its_keyword`
     #[spec(ensures: |ret| ret == match self.subject {
         Subject::Refused { refusal, .. } => Class::Refusal(refusal.classify()),
         Subject::Unsettled { unsettlement, .. } => Class::Unsettled(unsettlement),
@@ -570,6 +631,7 @@ impl Report<'_>
         Subject::Source(refusal) => Class::Refusal(refusal.classify()),
         Subject::Shadowed(_) => Class::Warning,
         Subject::InferredExit(_) => Class::Lint(Lint::ExplicitExits),
+        Subject::InferredRun(_) => Class::Lint(Lint::ExplicitRuns),
         Subject::Ledger { .. } => Class::Ledger,
     })]
     fn class(&self) -> Class
@@ -581,6 +643,7 @@ impl Report<'_>
             | Subject::Source(refusal) => Class::Refusal(refusal.classify()),
             | Subject::Shadowed(_) => Class::Warning,
             | Subject::InferredExit(_) => Class::Lint(Lint::ExplicitExits),
+            | Subject::InferredRun(_) => Class::Lint(Lint::ExplicitRuns),
             | Subject::Ledger { .. } => Class::Ledger,
         }
     }
@@ -596,6 +659,7 @@ impl Report<'_>
             | Subject::Source(refusal) => MessageKey::Refusal(Refusal::Lowering(refusal).name()),
             | Subject::Shadowed(_) => MessageKey::Refusal(RefusalName::ShadowedBuiltin),
             | Subject::InferredExit(_) => MessageKey::Lint(Lint::ExplicitExits),
+            | Subject::InferredRun(_) => MessageKey::Lint(Lint::ExplicitRuns),
             | Subject::Unsettled { unsettlement, .. } => MessageKey::Unsettled(unsettlement),
             | Subject::Goal(_) => MessageKey::Goal,
             | Subject::Ledger { .. } => MessageKey::Ledger,
@@ -609,7 +673,8 @@ impl Report<'_>
     /// - ensures: a refused declaration names the refusal it produced, a source
     ///   refused as a whole the lowering's refusal, and a shadowed builtin
     ///   `ShadowedBuiltin`, each spelled as a `refuses` payload spells it; an
-    ///   inferred exit names the `explicit-exits` lint.
+    ///   inferred exit names the `explicit-exits` lint, an inferred run the
+    ///   `explicit-runs` lint.
     /// - provides: the identifier a face writes beside the message.
     /// - fails: never; an unsettled declaration, a goal and a ledger line carry
     ///   no refusal to name.
@@ -626,6 +691,7 @@ impl Report<'_>
         (Subject::Source(refusal), Maybe::Present(identifier)) => identifier == Identifier::Refusal(Refusal::Lowering(refusal).name().spelling()),
         (Subject::Shadowed(_), Maybe::Present(identifier)) => identifier == Identifier::Refusal(RefusalName::ShadowedBuiltin.spelling()),
         (Subject::InferredExit(_), Maybe::Present(identifier)) => identifier == Identifier::Lint(Lint::ExplicitExits),
+        (Subject::InferredRun(_), Maybe::Present(identifier)) => identifier == Identifier::Lint(Lint::ExplicitRuns),
         (Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Ledger { .. }, Maybe::Absent(report_identifier::Absent::Statement)) => true,
         _ => false,
     })]
@@ -642,6 +708,7 @@ impl Report<'_>
                 Maybe::Present(Identifier::Refusal(RefusalName::ShadowedBuiltin.spelling()))
             },
             | Subject::InferredExit(_) => Maybe::Present(Identifier::Lint(Lint::ExplicitExits)),
+            | Subject::InferredRun(_) => Maybe::Present(Identifier::Lint(Lint::ExplicitRuns)),
             | Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Ledger { .. } => {
                 Maybe::Absent(report_identifier::Absent::Statement)
             },
@@ -664,7 +731,7 @@ impl Report<'_>
     /// - witness: `diagnostics::diagnostics::a_mismatch_label_spells_both_types`
     #[spec(ensures: |ret| match self.subject {
         Subject::Refused { refusal, spellings, .. } => ret == Comparison::of(refusal, spellings),
-        Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Source(_) | Subject::Shadowed(_) | Subject::InferredExit(_) | Subject::Ledger { .. } => ret == Comparison::none(),
+        Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Source(_) | Subject::Shadowed(_) | Subject::InferredExit(_) | Subject::InferredRun(_) | Subject::Ledger { .. } => ret == Comparison::none(),
     })]
     fn comparison(&self) -> Comparison<'_>
     {
@@ -677,6 +744,7 @@ impl Report<'_>
             | Subject::Source(_)
             | Subject::Shadowed(_)
             | Subject::InferredExit(_)
+            | Subject::InferredRun(_)
             | Subject::Ledger { .. } => Comparison::none(),
         }
     }
@@ -709,6 +777,7 @@ impl Report<'_>
                 Subject::Unsettled { unsettlement, .. } => annotation.label == Label::Unsettled(unsettlement),
                 Subject::Shadowed(_) => annotation.label == Label::Shadows,
                 Subject::InferredExit(inferred) => annotation.label == Label::Inferred(inferred.exit),
+                Subject::InferredRun(inferred) => annotation.label == Label::Ran(inferred.purity),
                 Subject::Ledger { .. } => annotation.label == Label::Reported,
             },
             Maybe::Absent(_) => true,
@@ -747,6 +816,9 @@ impl Report<'_>
             | Subject::Shadowed(shadowed) => Annotations::at(shadowed.span, Label::Shadows),
             | Subject::InferredExit(inferred) => {
                 Annotations::at(inferred.span, Label::Inferred(inferred.exit))
+            },
+            | Subject::InferredRun(inferred) => {
+                Annotations::at(inferred.span, Label::Ran(inferred.purity))
             },
             | Subject::Ledger { at, .. } => match at {
                 | Maybe::Present(span) => Annotations::at(span, Label::Reported),
@@ -896,6 +968,16 @@ impl fmt::Display for TitleText<'_>
                 inferred.exit,
                 Lint::ExplicitExits
             ),
+            | Subject::InferredRun(inferred) => write!(
+                f,
+                "this computation {} where a value is read; the checker infers `run`, which \
+                 the `{}` lint asks to be written",
+                match inferred.purity {
+                    | Purity::Pure => "stands",
+                    | Purity::Effectful => "performs an effect",
+                },
+                Lint::ExplicitRuns
+            ),
             | Subject::Ledger { line, .. } => f.write_str(line),
         }
     }
@@ -943,6 +1025,7 @@ impl fmt::Display for MessageText<'_>
             | Subject::Goal(_)
             | Subject::Shadowed(_)
             | Subject::InferredExit(_)
+            | Subject::InferredRun(_)
             | Subject::Ledger { .. } => fmt::Display::fmt(&TitleText(self.0), f),
         }
     }

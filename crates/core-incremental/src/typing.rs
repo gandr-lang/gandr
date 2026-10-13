@@ -117,6 +117,8 @@ pub enum Form
     Hole,
     /// A fixpoint.
     Fixpoint(Site),
+    /// A computation written where a value is read.
+    Nested(Site),
 }
 
 /// A refusal, projected.
@@ -478,6 +480,12 @@ pub enum Refusal
     NotAnAbstractType(Reference),
     /// A sealing site minted a second atom.
     SealSiteRepeated(gandr_core_checker::SealSite),
+    /// A run with no computation enclosing it to run before.
+    UnenclosedRun
+    {
+        /// The nested computation or written run.
+        at: Site,
+    },
 }
 
 /// An item's typing: its verdict, projected.
@@ -761,7 +769,8 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
             | (CheckingForm::List(id), Form::List(at))
             | (CheckingForm::Reify(id), Form::Reify(at))
             | (CheckingForm::Thunk(id), Form::Thunk(at))
-            | (CheckingForm::StaticLambda(id), Form::StaticLambda(at)) => {
+            | (CheckingForm::StaticLambda(id), Form::StaticLambda(at))
+            | (CheckingForm::Nested(id), Form::Nested(at)) => {
                 at == self.site(ArenaNode::Value(id))
             },
             | (CheckingForm::Case(id), Form::Case(at))
@@ -844,6 +853,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
      | (CheckRefusal::NonUniformOccurrence(site), &Refusal::NonUniformOccurrence(projected)) = (matched_left_value, matched_right_value) { site == projected }
  else if let CheckRefusal::CrossBlockReference { site, index } = matched_left_value && let Refusal::CrossBlockReference { site: projected, index: ref returned } = *matched_right_value { site == projected && *returned == self.layout.resolve(index) }
  else if let CheckRefusal::DescentNotReplayed { at, reason } = matched_left_value && let Refusal::DescentNotReplayed { at: projected, reason: returned } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) && reason == returned }
+ else if let CheckRefusal::UnenclosedRun { at } = matched_left_value && let Refusal::UnenclosedRun { at: projected } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else { false }
 })]
     fn refusal(
@@ -1016,6 +1026,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                     | CheckingForm::Fixpoint(id) => {
                         Form::Fixpoint(self.site(ArenaNode::Computation(id)))
                     },
+                    | CheckingForm::Nested(id) => Form::Nested(self.site(ArenaNode::Value(id))),
                 },
             },
             | CheckRefusal::UnknownConstant { at, constant } => Refusal::UnknownConstant {
@@ -1108,6 +1119,9 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
             | CheckRefusal::DescentNotReplayed { at, reason } => Refusal::DescentNotReplayed {
                 at: self.site(ArenaNode::Computation(at)),
                 reason,
+            },
+            | CheckRefusal::UnenclosedRun { at } => Refusal::UnenclosedRun {
+                at: self.site(ArenaNode::Value(at)),
             },
         }
     }

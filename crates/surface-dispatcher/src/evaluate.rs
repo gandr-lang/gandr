@@ -1097,7 +1097,7 @@ impl<'source> Program<'source>
             Some(&Value::ListCons(..)) => ret.0.starts_with("cons(") && ret.0.ends_with(')'),
             Some(&Value::Thunk(_)) => ret.0 == "<thunk>",
             Some(&(Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. })) => ret.0 == "<path>",
-            Some(&Value::Returned(_)) => ret.0 == "<computation>",
+            Some(&(Value::Returned(_) | Value::Nested(_) | Value::Run(_))) => ret.0 == "<computation>",
             Some(&(Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..))) => ret.0 == "<code>",
             Some(&Value::Constant(constant)) => match self.name(constant) {
                 Maybe::Present(name) => ret.0 == name.as_ref(),
@@ -1225,7 +1225,9 @@ None => ret.0 == "<computation>",
                     | Value::Equiv(..)
                     | Value::Ua { .. }),
                 ) => spelled.push_str("<path>"),
-                | Some(&Value::Returned(_)) => spelled.push_str("<computation>"),
+                | Some(&(Value::Returned(_) | Value::Nested(_) | Value::Run(_))) => {
+                    spelled.push_str("<computation>");
+                },
                 | Some(&Value::Literal(Literal::Integer(ref integer))) => {
                     if integer.sign() == Sign::Negative {
                         spelled.push('-');
@@ -1367,7 +1369,7 @@ Value::QuoteComputation(_) | Value::StaticLambda(_) |
 Value::StaticApplication(..) | Value::Hole(_))) | None => ret.is_empty(),
     Some(&(Value::Constructor { .. } | Value::Record(_)) |
 &Value::Reify(_) |
-&(Value::ListCons(..) | Value::PathRefl(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::Returned(_) | Value::PathProduct(..) |
+&(Value::ListCons(..) | Value::PathRefl(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::PathProduct(..) |
 Value::PathEquiv { .. } | Value::Tuple(_) | Value::Injection(..) |
 Value::Lift { .. } | Value::Thunk(_) | Value::Mark { .. })) => true,
 })]
@@ -1439,7 +1441,12 @@ fn references(
                 ) => {
                     pending.push(Node::Value(inner));
                 },
-                | Some(&Value::Thunk(computation) | &Value::Returned(computation)) => {
+                | Some(
+                    &Value::Thunk(computation)
+                    | &Value::Returned(computation)
+                    | &Value::Nested(computation)
+                    | &Value::Run(computation),
+                ) => {
                     pending.push(Node::Computation(computation));
                 },
                 | Some(

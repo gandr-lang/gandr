@@ -1493,6 +1493,14 @@ where
             writer.tag(Tag(0x48));
             write_index(writer, computation)?;
         },
+        | ContentNode::Nested(computation) => {
+            writer.tag(Tag(0x4D));
+            write_index(writer, computation)?;
+        },
+        | ContentNode::Run(computation) => {
+            writer.tag(Tag(0x4E));
+            write_index(writer, computation)?;
+        },
         | ContentNode::Variable { zone, index } => {
             writer.tag(Tag(0x01));
             writer.tag(match zone {
@@ -2363,6 +2371,8 @@ fn read_effect_row(
                     | ContentNode::Here(_) => tag == 0x46,
                     | ContentNode::ElementTransport { .. } => tag == 0x47,
                     | ContentNode::Returned(_) => tag == 0x48,
+                    | ContentNode::Nested(_) => tag == 0x4D,
+                    | ContentNode::Run(_) => tag == 0x4E,
                     | ContentNode::Funext(..) => tag == 0x49,
                     | ContentNode::Equiv(..) => tag == 0x4A,
                     | ContentNode::TelescopeTransport { .. } => tag == 0x4B,
@@ -2791,6 +2801,8 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             value: read_index(reader)?,
         },
         | 0x48 => ContentNode::Returned(read_index(reader)?),
+        | 0x4D => ContentNode::Nested(read_index(reader)?),
+        | 0x4E => ContentNode::Run(read_index(reader)?),
         | 0x49 => ContentNode::Funext(read_index(reader)?, read_index(reader)?),
         | 0x4A => ContentNode::Equiv(read_index(reader)?, read_index(reader)?),
         | 0x4B => ContentNode::TelescopeTransport {
@@ -4108,6 +4120,10 @@ where
             write_site(writer, at)?;
             write_ua_defect(writer, defect)?;
         },
+        | Refusal::UnenclosedRun { at } => {
+            writer.tag(Tag(55));
+            write_site(writer, at)?;
+        },
         | Refusal::TypeMismatch {
             at,
             ref synthesised,
@@ -4165,6 +4181,10 @@ where
                 },
                 | Form::Split(site) => {
                     writer.tag(Tag(14));
+                    write_site(writer, site)?;
+                },
+                | Form::Nested(site) => {
+                    writer.tag(Tag(15));
                     write_site(writer, site)?;
                 },
                 | Form::Thunk(site) => {
@@ -4442,6 +4462,7 @@ where
                     | Refusal::NotOver { .. } => 52,
                     | Refusal::UaUncertified { .. } => 53,
                     | Refusal::UaInequivalent { .. } => 54,
+                    | Refusal::UnenclosedRun { .. } => 55,
                 })
         },
         | Err(CodecError::LevelOffsetTooLarge { offset }) => {
@@ -4531,6 +4552,7 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
                 | 12 => Form::Shift(read_site(reader)?),
                 | 13 => Form::With(read_site(reader)?),
                 | 14 => Form::Split(read_site(reader)?),
+                | 15 => Form::Nested(read_site(reader)?),
                 | _ => return Err(CodecError::Corrupt),
             };
             Refusal::NotSynthesisable { form }
@@ -4671,6 +4693,9 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
         | 54 => Refusal::UaInequivalent {
             at: read_site(reader)?,
             defect: read_ua_defect(reader)?,
+        },
+        | 55 => Refusal::UnenclosedRun {
+            at: read_site(reader)?,
         },
         | 28 => Refusal::NegativeOccurrence(read_occurrence_site(reader)?),
         | 29 => Refusal::NestedOccurrence(read_occurrence_site(reader)?),

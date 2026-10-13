@@ -3232,8 +3232,11 @@ fn step_value(
             Ok(())
         },
         // A compound endpoint runs its computation and stands for what it
-        // returns, or for the stuck computation when it does not return.
-        | Value::Returned(computation) => {
+        // returns, or for the stuck computation when it does not return. A
+        // nested computation and a written run evaluate the same way: only the
+        // checker meets them, before elaboration, and it reads one standing in
+        // a dependent position by what it returns.
+        | Value::Returned(computation) | Value::Nested(computation) | Value::Run(computation) => {
             machine.tasks.push(Task::Returned);
             machine.tasks.push(Task::Comp {
                 term: computation,

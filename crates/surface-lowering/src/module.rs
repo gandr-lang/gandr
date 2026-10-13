@@ -221,6 +221,7 @@ use anodized::spec;
 use gandr_core_term::DataSignature;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::effect::Purity;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::NameSegment;
 use gandr_kernel_term::StructuredName;
@@ -258,11 +259,15 @@ use crate::import::ImportUri;
 use crate::import::ModuleImports;
 use crate::lower::Fuel;
 use crate::lower::InferredExit;
+use crate::lower::InferredRun;
+use crate::lower::NestedSite;
 use crate::lower::decode_escapes;
 use crate::namespace::Recognition;
 use crate::namespace::Scope;
+use crate::origin::Insertion;
 use crate::origin::OriginTable;
 use crate::origin::OriginToken;
+use crate::origin::Provenance;
 use crate::resolve::SurfaceName;
 
 mod data;
@@ -6061,6 +6066,9 @@ pub struct LoweredModule<'source>
     /// Every exit the lowering inferred where a path through a body ends in a
     /// form that is no exit, in source order.
     inferred_exits: Vec<InferredExit>,
+    /// What the lowering recorded of each syntax node it held a computation
+    /// nested at.
+    nested: BTreeMap<NodeIndex, NestedSite>,
     /// Every minted core node's origin, and the declarations' own.
     origins: OriginTable,
     /// The imports, in source order, with their aliases bound.
@@ -6097,6 +6105,7 @@ impl<'source> LoweredModule<'source>
             attributes,
             documentation: BTreeMap::new(),
             inferred_exits: Vec::new(),
+            nested: BTreeMap::new(),
             origins,
             imports,
             recognition,
@@ -6162,6 +6171,76 @@ impl<'source> LoweredModule<'source>
     pub fn inferred_exits(&self) -> &[InferredExit]
     {
         &self.inferred_exits
+    }
+
+    /// This module, carrying what the lowering recorded of each syntax node
+    /// it held a computation nested at.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_nested_sites(
+        mut self,
+        nested: BTreeMap<NodeIndex, NestedSite>,
+    ) -> Self
+    {
+        self.nested = nested;
+        self
+    }
+
+    /// The runs the checker inferred, of the nested values `ran` it decided
+    /// to run, each with its returner's purity: located at the computation's
+    /// own bytes, with the site the lowering recorded there, in source order.
+    ///
+    /// # Specification
+    /// - requires: `ran` names values of this module's bodies, as the checker
+    ///   judged them, with the purity it decided each at.
+    /// - ensures: one record per distinct site among the values of `ran` the
+    ///   lowering inserted as nested computations, at that span, with that
+    ///   purity and the site recorded for its syntax node, an unrecorded one
+    ///   asking nothing and spelled bare; a written `run` and an unrecorded
+    ///   value give none; sorted, so a copy a rewrite made of one nested node
+    ///   is listed once.
+    /// - provides: the join of the checker's decisions with the lowering's
+    ///   record, which a face shows and the `explicit-runs` lint reports.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nested calls under a module's attribute, a
+    ///   declaration's and none, run by the checker, asserted as the exact
+    ///   list.
+    /// - witness: `lower::runs::tests::an_explicit_runs_attribute_asks_within_its_form`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.is_sorted() && ret.windows(2_usize).all(|pair| pair.first() != pair.get(1_usize)))]
+    pub fn inferred_runs<Ran>(
+        &self,
+        ran: Ran,
+    ) -> Vec<InferredRun>
+    where
+        Ran: IntoIterator<Item = (ValueId, Purity)>,
+    {
+        let mut found: Vec<InferredRun> = ran
+            .into_iter()
+            .filter_map(|(at, purity)| match self.origins.value(at) {
+                | Maybe::Present(origin)
+                    if origin.provenance() == Provenance::Inserted(Insertion::Nested) =>
+                {
+                    Some(InferredRun {
+                        span: origin.span(),
+                        purity,
+                        site: self.nested.get(&origin.node()).copied().unwrap_or_default(),
+                    })
+                },
+                | Maybe::Present(_) | Maybe::Absent(_) => None,
+            })
+            .collect();
+        found.sort_unstable();
+        found.dedup();
+
+        found
     }
 
     /// The signature of the data declaration whose outcome holds `index`.

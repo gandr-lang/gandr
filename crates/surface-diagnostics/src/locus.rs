@@ -45,6 +45,7 @@ use gandr_core_checker::UnadmittedFormer;
 use gandr_core_checker::compared;
 use gandr_core_checker::ua::StratumDefect;
 use gandr_core_checker::ua::UaDefect;
+use gandr_core_term::effect::Purity;
 use gandr_kernel_term::DescentRefusal;
 use gandr_kernel_term::OccurrenceSite;
 use gandr_surface_corpus::CorpusRefusal;
@@ -113,6 +114,10 @@ pub enum Label
     /// A tail the source wrote without its exit: the primary locus of an
     /// `explicit-exits` finding, naming the exit inferred there.
     Inferred(Exit),
+    /// A computation the source wrote where a value is read, which the
+    /// checker runs: the primary locus of an `explicit-runs` finding, saying
+    /// whether the run performs an effect.
+    Ran(Purity),
     /// The declaration or refusal a ledger line reports.
     Reported,
 }
@@ -156,6 +161,10 @@ impl fmt::Display for Label
             | Self::Endpoint => f.write_str("an endpoint the point does not convert to"),
             | Self::Shadows => f.write_str("shadows a builtin"),
             | Self::Inferred(exit) => write!(f, "exits by an inferred `{exit}`"),
+            | Self::Ran(Purity::Pure) => f.write_str("runs by an inferred `run`"),
+            | Self::Ran(Purity::Effectful) => {
+                f.write_str("runs by an inferred `run`, performing an effect")
+            },
             | Self::Reported => f.write_str("reported here"),
         }
     }
@@ -738,7 +747,8 @@ fn checked(
                 | CheckingForm::List(at)
                 | CheckingForm::Injection(at)
                 | CheckingForm::Thunk(at)
-                | CheckingForm::StaticLambda(at),
+                | CheckingForm::StaticLambda(at)
+                | CheckingForm::Nested(at),
         }
         | CheckRefusal::PathCode(at)
         | CheckRefusal::UnknownConstant { at, .. }
@@ -749,7 +759,8 @@ fn checked(
         | CheckRefusal::PointwiseDistinct { at }
         | CheckRefusal::RoundTripDistinct { at }
         | CheckRefusal::UaUncertified { at, .. }
-        | CheckRefusal::UaInequivalent { at, .. } => (spanned(origins.value(at)), UNNAMED),
+        | CheckRefusal::UaInequivalent { at, .. }
+        | CheckRefusal::UnenclosedRun { at } => (spanned(origins.value(at)), UNNAMED),
         | CheckRefusal::StaticClassifierExpected { found, .. } => {
             (spanned(origins.value_type(found)), UNNAMED)
         },
@@ -1032,6 +1043,7 @@ impl fmt::Display for Checked
                     f.write_str("a translator returns no element of its target code")
                 },
             },
+            | CheckRefusal::UnenclosedRun { .. } => f.write_str("a run where a value is read needs a computation around it to run before"),
             | CheckRefusal::TypeMismatch(_) => f.write_str(
                 "the type this term synthesises does not convert to the type it is checked against",
             ),
@@ -1057,6 +1069,7 @@ impl fmt::Display for Checked
                     | CheckingForm::Hole(_) => "a hole",
                     | CheckingForm::StaticLambda(_) => "a type operator",
                     | CheckingForm::Fixpoint(_) => "a fixpoint",
+                    | CheckingForm::Nested(_) => "a computation read as a value",
                 }
             ),
             | CheckRefusal::UnknownConstant { constant, .. } => write!(

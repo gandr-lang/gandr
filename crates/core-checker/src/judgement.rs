@@ -426,6 +426,7 @@ use crate::failure::judged;
 use crate::formation::FormedCompType;
 use crate::formation::FormedValueType;
 use crate::formation::level_of;
+use crate::nested::Nesting;
 use crate::refusal::ArgumentPosition;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CheckingForm;
@@ -1350,6 +1351,13 @@ enum Frame
         /// The compound endpoint.
         at: ValueId,
     },
+    /// Await the type a run computation synthesises, which must be a returner:
+    /// the run stands for the value it returns.
+    Ran
+    {
+        /// The nested computation or written run.
+        at: ValueId,
+    },
     /// Await the element path's classifier; the motive is then formed under a
     /// binder of its carrier.
     ElementTransportPath
@@ -1693,6 +1701,7 @@ impl Frame
             | Self::EquivBackward { .. } => FrameRole::EquivBackward,
             | Self::UaTranslators { .. } => FrameRole::UaTranslators,
             | Self::ReturnedEndpoint { .. } => FrameRole::ReturnedEndpoint,
+            | Self::Ran { .. } => FrameRole::Ran,
             | Self::ElementTransportPath { .. } => FrameRole::ElementTransportPath,
             | Self::ElementTransportMotive { .. } => FrameRole::ElementTransportMotive,
             | Self::TelescopePath { .. } => FrameRole::TelescopePath,
@@ -1788,6 +1797,7 @@ impl Frame
             | Self::EquivBackward { .. }
             | Self::UaTranslators { .. }
             | Self::ReturnedEndpoint { .. }
+            | Self::Ran { .. }
             | Self::ElementTransportPath { .. }
             | Self::ElementTransportMotive { .. }
             | Self::TelescopePath { .. }
@@ -2843,12 +2853,15 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   static application awaits its head's type and meets each argument in
     ///   turn; reflexivity awaits its point's type `A` and has `Path(A, a, a)`
     ///   at its point `a`; a compound endpoint awaits its computation's type,
-    ///   which must be a pure returner `F A`, and has `A`. A leaf ascends with
-    ///   the frames as found; every other rule descends above a new frame.
-    /// - fails: [`CheckRefusal::NotSynthesisable`] for a thunk and a static
-    ///   lambda; [`CheckRefusal::UnboundIndex`] for a variable past its zone's
-    ///   binders; [`CheckRefusal::UnknownConstant`] for a constant with no
-    ///   type; [`CheckRefusal::OutOfFragment`] for a numeric literal, an
+    ///   which must be a pure returner `F A`, and has `A`; a written run awaits
+    ///   its computation's type, which must be a returner `F^e A`, records the
+    ///   run and has `A`. A leaf ascends with the frames as found; every other
+    ///   rule descends above a new frame.
+    /// - fails: [`CheckRefusal::NotSynthesisable`] for a thunk, a static lambda
+    ///   and a computation written where a value is read, which the expected
+    ///   type decides; [`CheckRefusal::UnboundIndex`] for a variable past its
+    ///   zone's binders; [`CheckRefusal::UnknownConstant`] for a constant with
+    ///   no type; [`CheckRefusal::OutOfFragment`] for a numeric literal, an
     ///   injection and a value lift.
     /// - panics: none.
     ///
@@ -3060,6 +3073,16 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
+            | Value::Nested(_) => Err(CheckRefusal::NotSynthesisable {
+                form: CheckingForm::Nested(term),
+            }),
+            | Value::Run(computation) => {
+                self.wait(Frame::Ran { at: term });
+                Ok(Step::Descend(Goal::Computation {
+                    term: computation,
+                    direction: Direction::Synthesise,
+                }))
+            },
             | Value::Hole(_) | Value::Mark { .. } => {
                 let unknown = self.context.arena_mut().value_type_unknown();
                 Ok(Step::Ascend(Produced::ValueType(unknown)))
@@ -3104,7 +3127,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   factors it matches as an eager product; a static lambda opens a binder
     ///   of the domain it matches as a static Pi and its body checks against
     ///   the codomain shifted past the binder; a hole and a mark check against
-    ///   any type at once; a synthesising value synthesises, then crosses the
+    ///   any type at once; a computation written where a value is read is
+    ///   decided by `expected` — against a thunk type, or the unknown type, its
+    ///   computation checks against the thunk's body and it is recorded
+    ///   suspended, and against any other it runs: its computation synthesises
+    ///   a returner whose result crosses the value bridge to `expected`, and it
+    ///   is recorded run; a synthesising value synthesises, then crosses the
     ///   value bridge to `expected`. Every other rule descends.
     /// - fails: [`CheckRefusal::ShapeMismatch`] for a thunk against no thunk
     ///   type, a pair against no eager product, a static lambda against no
@@ -3119,6 +3147,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `judgement::tests::a_pair_synthesises_its_eager_product_and_checks_against_one`
     /// - witness: `judgement::tests::a_static_lambda_checks_only_against_a_static_pi`
     /// - witness: `judgement::tests::a_hole_synthesises_the_unknown_type_and_checks_against_any`
+    /// - witness: `module::tests::a_nested_computation_is_decided_by_its_expected_type`
     ///
     /// # Judgement
     /// - expected: `expected`
@@ -3166,6 +3195,32 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     term: body,
                     direction: Direction::Check(body_type),
                 }))
+            },
+            | Value::Nested(computation) => {
+                let head = self.context.whnf_value_type(expected)?;
+                match matched_thunk(self.context.arena_mut(), head) {
+                    | Maybe::Present(body_type) => {
+                        self.context.record_nesting(term, Nesting::Suspended);
+                        self.wait(Frame::ThunkBody);
+                        Ok(Step::Descend(Goal::Computation {
+                            term: computation,
+                            direction: Direction::Check(body_type),
+                        }))
+                    },
+                    | Maybe::Absent(matching::Absent::Mismatched) => {
+                        self.wait(Frame::ValueBridge { at: term, expected });
+                        self.wait(Frame::Ran { at: term });
+                        Ok(Step::Descend(Goal::Computation {
+                            term: computation,
+                            direction: Direction::Synthesise,
+                        }))
+                    },
+                    | Maybe::Absent(matching::Absent::Dangling) => {
+                        Err(CheckRefusal::DanglingNode {
+                            node: CoreNode::Type(TypeNode::Value(head)),
+                        })
+                    },
+                }
             },
             | Value::Tuple(ref components) if !components.is_empty() => {
                 let count = components.len();
@@ -3232,6 +3287,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             },
             | Value::PathRefl(_)
             | Value::Returned(_)
+            | Value::Run(_)
             | Value::Funext(..)
             | Value::Equiv(..)
             | Value::Ua { .. }
@@ -3391,6 +3447,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::Equiv(..)
             | Value::Ua { .. }
             | Value::Returned(_)
+            | Value::Nested(_)
+            | Value::Run(_)
             | Value::Constructor { .. }
             | Value::Record(_)
             | Value::Reify(_)
@@ -5014,6 +5072,33 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let identity = universal.identity(self.context.arena_mut());
                 Ok(Step::Ascend(Produced::ValueType(identity)))
             },
+            | (Frame::Ran { at }, Produced::CompType(synthesised)) => {
+                let head = self.context.whnf_comp_type(synthesised)?;
+                let (result, purity) = match comp_type_view(self.context.arena(), head)? {
+                    | CompTypeView::Returner { result, effects } => (result, effects.purity()),
+                    | CompTypeView::Unknown => (
+                        self.context.arena_mut().value_type_unknown(),
+                        gandr_core_term::effect::Purity::Pure,
+                    ),
+                    | CompTypeView::With(..)
+                    | CompTypeView::Arrow { .. }
+                    | CompTypeView::Pi { .. }
+                    | CompTypeView::Element { .. } => {
+                        let Some(&(Value::Nested(nested) | Value::Run(nested))) =
+                            self.context.arena().value(at)
+                        else {
+                            return Err(CheckRefusal::MachineInvariant);
+                        };
+                        return Err(CheckRefusal::ShapeMismatch {
+                            at: TermNode::Computation(nested),
+                            wanted: ExpectedShape::Returner,
+                            found: TypeNode::Computation(synthesised),
+                        });
+                    },
+                };
+                self.context.record_nesting(at, Nesting::Ran(purity));
+                Ok(Step::Ascend(Produced::ValueType(result)))
+            },
             | (Frame::ReturnedEndpoint { at }, Produced::CompType(synthesised)) => {
                 let head = self.context.whnf_comp_type(synthesised)?;
                 match comp_type_view(self.context.arena(), head)? {
@@ -5544,6 +5629,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Frame::ApplicationHead { .. }
                 | Frame::CompBridge { .. }
                 | Frame::ReturnedEndpoint { .. }
+                | Frame::Ran { .. }
                 | Frame::BindBound { .. }
                 | Frame::Project { .. }
                 | Frame::HandlerSubject { .. }
@@ -9259,7 +9345,7 @@ mod tests
                             "a synthesising value checks exactly as it synthesises, then crosses the value bridge"
                         );
                     },
-                    | Value::PathRefl(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::Returned(_)
+                    | Value::PathRefl(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::Returned(_) | Value::Nested(_) | Value::Run(_)
                     | Value::Constructor { .. } | Value::Record(_)
                     | Value::Reify(_)
                     | Value::PathProduct(..)

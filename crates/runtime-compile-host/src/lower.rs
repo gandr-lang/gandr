@@ -90,6 +90,8 @@ pub enum Form
     Ua,
     /// A compound endpoint.
     Returned,
+    /// A computation read as a value before elaboration ran it.
+    Nested,
     /// Element-path transport.
     ElementTransport,
     /// A term hole: an incomplete program has no image.
@@ -158,6 +160,7 @@ impl core::fmt::Display for Form
             | Self::Equiv => "a universe equivalence",
             | Self::Ua => "univalence at a stratum",
             | Self::Returned => "a compound endpoint",
+            | Self::Nested => "an unelaborated nested computation",
             | Self::ElementTransport => "element-path transport",
             | Self::Hole => "a term hole",
             | Self::Mark => "a mark",
@@ -523,6 +526,9 @@ pub fn lower_computation(
                     | Value::Ua { .. } => return Err(LowerError::OutsideSlice(Form::Ua)),
                     | Value::Returned(_) => {
                         return Err(LowerError::OutsideSlice(Form::Returned));
+                    },
+                    | Value::Nested(_) | Value::Run(_) => {
+                        return Err(LowerError::OutsideSlice(Form::Nested));
                     },
                     | Value::Hole(_) => return Err(LowerError::OutsideSlice(Form::Hole)),
                     | Value::Mark { .. } => return Err(LowerError::OutsideSlice(Form::Mark)),

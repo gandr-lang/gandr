@@ -243,8 +243,8 @@ impl Category
     ///
     /// # Specification
     /// - ensures: for an expression, [`Category::Computation`] after `{`, `;`,
-    ///   `<-`, `=>`, `become` or `#!{`, [`Category::Value`] after any other
-    ///   tile, an unknown mold included; every other sort's own category.
+    ///   `<-`, `=>`, `become`, `run` or `#!{`, [`Category::Value`] after any
+    ///   other tile, an unknown mold included; every other sort's own category.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -264,7 +264,7 @@ impl Category
             | Sort::Expression => {
                 let before = grammar.mold(after).map(|def| def.label);
                 match before {
-                    | Ok("{" | ";" | "<-" | "=>" | "become" | "#!{") => Self::Computation,
+                    | Ok("{" | ";" | "<-" | "=>" | "become" | "run" | "#!{") => Self::Computation,
                     | Ok(_) | Err(_) => Self::Value,
                 }
             },
@@ -1836,20 +1836,20 @@ mod tests
               "${1:value}"
               "- ${1:value}"
               "${1:value} : ${2:type}"
+              "run ${1:computation}"
               "hold ${1:value}"
               "()"
               "[${1:value}]"
               "thunk { ${1:computation} \\}"
-              "co { ${1:identifier} = ${2:value} \\}"
             "def x = " ‸ "answer;"
               "- "
+              "run "
               "hold "
               "pure "
               "return "
               "become "
               "force "
               "() "
-              "[${1:value}] "
             "def f(x: Nat) -> -F Nat {\n  case x {" ‸ " }\n}"
               " ${1:pattern} => ${2:computation}"
               " _ => ${1:computation}"

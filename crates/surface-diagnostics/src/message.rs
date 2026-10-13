@@ -476,6 +476,10 @@ fn checked(
                 f.write_str("a `ua` translator returns no element of its target code")
             },
         },
+        | CheckRefusal::UnenclosedRun { .. } => f.write_str(
+            "a computation read as a value runs before the computation around it, and none \
+             stands around this one",
+        ),
         | CheckRefusal::TypeMismatch(_) => f.write_str("mismatched types"),
         | CheckRefusal::ShapeMismatch { wanted, .. } => write!(f, "expected {}", Shape(wanted)),
         | CheckRefusal::NotSynthesisable { form } => write!(
@@ -497,6 +501,7 @@ fn checked(
                 | CheckingForm::Hole(_) => "a hole",
                 | CheckingForm::StaticLambda(_) => "a type operator",
                 | CheckingForm::Fixpoint(_) => "a recursive definition",
+                | CheckingForm::Nested(_) => "a computation written where a value is read",
             }
         ),
         | CheckRefusal::UnknownConstant { .. } => {
@@ -970,6 +975,7 @@ mod tests
                 at: value,
                 defect: UaDefect::Stuck { corolla, element },
             },
+            CheckRefusal::UnenclosedRun { at: value },
         ]
         .map(Refusal::Checking);
         let corpus = Refusal::Corpus(CorpusRefusal::ExpectationOutsideFixtureRoot {

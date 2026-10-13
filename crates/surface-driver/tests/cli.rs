@@ -501,6 +501,42 @@ mod cli
     }
 
     #[test]
+    fn the_runs_lint_reaches_a_pure_run_unless_its_effects_option_narrows_it()
+    {
+        let scratch = Scratch::new(Path::new("runs"));
+        let source = scratch.file(
+            Path::new("runs.gandr"),
+            Text::from(
+                "def id(n: Integer) -> -F Integer { n }\ndef twice(n: Integer) -> -F Integer { \
+                 id(id(n)) }\n",
+            ),
+        );
+        let check = Path::new("check");
+        let lint = Path::new("--lint");
+        let every = ran(gandr(&[check, lint, Path::new("explicit-runs"), &source]));
+        assert_eq!(code(&every), Code(0_i32), "a finding settles nothing");
+        let findings = printed(&every);
+        assert_eq!(
+            findings.matches("warning[explicit-runs]").count(),
+            1_usize,
+            "{findings}"
+        );
+        assert!(findings.contains("{ id(run id(n)) }"), "{findings}");
+        let effects = ran(gandr(&[
+            check,
+            lint,
+            Path::new("explicit-runs=effects"),
+            &source,
+        ]));
+        assert_eq!(code(&effects), Code(0_i32), "{}", stdout(&effects));
+        assert_eq!(
+            printed(&effects),
+            "",
+            "the `effects` option leaves a pure run silent"
+        );
+    }
+
+    #[test]
     fn goals_report_an_obligation_without_failing()
     {
         let scratch = Scratch::new(Path::new("goals"));

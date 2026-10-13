@@ -359,6 +359,8 @@ pub enum RefusalName
     NotNatural,
     /// A translator that returns no element of its target code.
     TranslatorStuck,
+    /// A run with no computation enclosing it to run before.
+    UnenclosedRun,
     /// A term name no binder or earlier declaration answers.
     UnresolvedName,
     /// A documentation link to a name nothing declares.
@@ -473,7 +475,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 90_usize] = [
+    pub const VOCABULARY: [Self; 91_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -513,6 +515,7 @@ impl RefusalName
         Self::NotInverse,
         Self::NotNatural,
         Self::TranslatorStuck,
+        Self::UnenclosedRun,
         Self::UnresolvedName,
         Self::UnresolvedDocLink,
         Self::UnresolvedTypeHead,
@@ -661,6 +664,7 @@ impl RefusalName
         | (Self::NotInverse, b"NotInverse")
         | (Self::NotNatural, b"NotNatural")
         | (Self::TranslatorStuck, b"TranslatorStuck")
+        | (Self::UnenclosedRun, b"UnenclosedRun")
     )
 },
     )]
@@ -719,6 +723,7 @@ impl RefusalName
             | Self::NotInverse => "NotInverse",
             | Self::NotNatural => "NotNatural",
             | Self::TranslatorStuck => "TranslatorStuck",
+            | Self::UnenclosedRun => "UnenclosedRun",
             | Self::ShadowedBuiltin => "ShadowedBuiltin",
             | Self::OutOfFragment => "OutOfFragment",
             | Self::GradedBridge => "GradedBridge",
@@ -990,6 +995,7 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::NotOver { .. }), RefusalName::NotOver)
         | (Self::Checking(CheckRefusal::UaUncertified { .. }), RefusalName::UncertifiedDegree | RefusalName::UncertifiedCondition | RefusalName::UncertifiedAllowance)
         | (Self::Checking(CheckRefusal::UaInequivalent { .. }), RefusalName::UnknownGenerator | RefusalName::PastTheBound | RefusalName::CorollaCardinality | RefusalName::CorollaTables | RefusalName::NotInverse | RefusalName::NotNatural | RefusalName::TranslatorStuck)
+        | (Self::Checking(CheckRefusal::UnenclosedRun { .. }), RefusalName::UnenclosedRun)
     )
 },
     )]
@@ -1207,6 +1213,7 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::UaInequivalent { defect: UaDefect::NotInverse { .. }, .. }, RefusalName::NotInverse)
         | (CheckRefusal::UaInequivalent { defect: UaDefect::NotNatural { .. }, .. }, RefusalName::NotNatural)
         | (CheckRefusal::UaInequivalent { defect: UaDefect::Stuck { .. }, .. }, RefusalName::TranslatorStuck)
+        | (CheckRefusal::UnenclosedRun { .. }, RefusalName::UnenclosedRun)
     )
 },
 )]
@@ -1255,6 +1262,7 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
             | UaDefect::NotNatural { .. } => RefusalName::NotNatural,
             | UaDefect::Stuck { .. } => RefusalName::TranslatorStuck,
         },
+        | CheckRefusal::UnenclosedRun { .. } => RefusalName::UnenclosedRun,
         | CheckRefusal::TypeMismatch(_) => RefusalName::TypeMismatch,
         | CheckRefusal::ShapeMismatch { .. } => RefusalName::ShapeMismatch,
         | CheckRefusal::NotSynthesisable { .. } => RefusalName::NotSynthesisable,

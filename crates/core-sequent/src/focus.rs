@@ -358,6 +358,10 @@ pub enum FocusRefusal
     IncompleteValue(ValueId),
     /// A hole or a mark in computation position.
     IncompleteComputation(ComputationId),
+    /// A computation standing where a value is read, before the checker's
+    /// elaboration replaced it: only an elaborated body has a command-IL
+    /// image, as only one has a kernel image.
+    Unelaborated(ValueId),
     /// An internal invariant broke: a finishing task found no result where
     /// its own children should have left one. Unreachable while the
     /// translation's own pushes are the only source of tasks; reported rather
@@ -395,6 +399,9 @@ impl fmt::Display for FocusRefusal
             | Self::IncompleteValue(_) | Self::IncompleteComputation(_) => {
                 f.write_str("a hole or a mark has no image in the command IL")
             },
+            | Self::Unelaborated(_) => f.write_str(
+                "a computation standing as a value before elaboration has no command-IL producer",
+            ),
         }
     }
 }
@@ -1284,8 +1291,9 @@ impl<'run> Focusing<'run>
     /// - provides: the `𝓥` rows.
     /// - fails: [`FocusRefusal::DanglingValue`], [`FocusRefusal::Code`] for a
     ///   quote of either sort, a static lambda or a static application,
-    ///   [`FocusRefusal::IncompleteValue`] for a hole or a mark, or a refused
-    ///   mint.
+    ///   [`FocusRefusal::IncompleteValue`] for a hole or a mark,
+    ///   [`FocusRefusal::Unelaborated`] for an unelaborated computation in
+    ///   value position, or a refused mint.
     /// - panics: none.
     ///
     /// # Errors
@@ -1309,6 +1317,7 @@ impl<'run> Focusing<'run>
             | None => ret == Err(FocusRefusal::DanglingValue(id)),
             | Some(&Value::Quote(_) | &Value::QuoteComputation(_)) => ret == Err(FocusRefusal::Code(id)),
             | Some(&Value::Hole(_) | &Value::Mark { .. }) => ret == Err(FocusRefusal::IncompleteValue(id)),
+            | Some(&Value::Nested(_) | &Value::Run(_)) => ret == Err(FocusRefusal::Unelaborated(id)),
             | Some(_) => ret.is_err() || self.tasks.len() > work || self.producers.len() > results,
         },
     )]
@@ -1421,6 +1430,7 @@ impl<'run> Focusing<'run>
             | Value::Hole(_) | Value::Mark { .. } => {
                 return Err(FocusRefusal::IncompleteValue(id));
             },
+            | Value::Nested(_) | Value::Run(_) => return Err(FocusRefusal::Unelaborated(id)),
         };
         let producer = self.arena.mint_producer(leaf)?;
         self.producers.push(producer);

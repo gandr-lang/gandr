@@ -180,6 +180,7 @@ pub fn sentence(role: FrameRole) -> Sentence
             "checking the translators of this univalence against their corollas"
         },
         | FrameRole::ReturnedEndpoint => "synthesising the computation of this endpoint",
+        | FrameRole::Ran => "synthesising the computation this runs where a value is read",
         | FrameRole::PrimitiveSecond => "checking the first argument of this operation",
         | FrameRole::PrimitiveResult => "checking the arguments of this operation",
         | FrameRole::CaseScrutinee => "synthesising the type of this case's scrutinee",
@@ -425,6 +426,7 @@ mod tests
             FrameRole::EquivBackward,
             FrameRole::UaTranslators,
             FrameRole::ReturnedEndpoint,
+            FrameRole::Ran,
             FrameRole::ElementTransportPath,
             FrameRole::ElementTransportMotive,
             FrameRole::TelescopePath,

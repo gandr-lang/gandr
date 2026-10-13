@@ -43,6 +43,24 @@
 //! it, which is how a suspended body is read back in the context it is
 //! displayed in.
 //!
+//! # Elaborating nested computations
+//!
+//! A computation written where a value is read stands in the core as
+//! [`Value::Nested`] until the checker decides it by the type expected there,
+//! and a written `run c` as [`Value::Run`]. [`elaborate_nested_traced`]
+//! replaces both once the decisions are in: a suspended one by a thunk, and
+//! the runs of each region by binds around it, in written order, the variable
+//! of each bind standing where its run stood. A region is the innermost
+//! computation a run stands in the values of, an application's head sharing
+//! its spine's; a thunk's body, a case arm, a lambda's body and either half of
+//! a bind are regions of their own, so no run leaves a suspension or a branch.
+//! The elaboration is two more modes of the same engine: one rebuilds the body
+//! by congruence, scheduling a region's runs beside its children, and one
+//! carries a region's body under its new binds while answering each run by its
+//! bind's variable. A region nested `k` deep is carried once per region
+//! around it, so the cost is quadratic in the depth of nested regions with
+//! runs and linear otherwise.
+//!
 //! # Binder machines
 //!
 //! A dependent arrow's codomain stands under one binder, so the checker shifts
@@ -254,6 +272,14 @@ enum Rewrite
     /// environment by its entry, and lower every index past the environment by
     /// the environment's length.
     Environment,
+    /// Elaborate every nested computation the engine's survey found: suspend
+    /// one the checker decided to thunk, and run the rest before their
+    /// regions.
+    Elaborate,
+    /// Raise every free index by the count, as a shift does, and answer each
+    /// run the engine's slots name by the variable of the bind its region
+    /// mints for it.
+    Splice(Binders),
 }
 
 /// Whether a lowering met the binder it lowers out of.
@@ -277,6 +303,9 @@ enum Task
     Close(Node, Binders, Rewrite),
     /// Record the result on top of the stack as a node's own.
     Record(Node, Binders, Rewrite),
+    /// Wrap an elaborated region's spliced body, on top of the stack, in the
+    /// binds of its runs beneath it, outermost first.
+    Hoist(ComputationId, Binders),
 }
 
 /// What one variable occurrence rewrites to.
@@ -307,6 +336,14 @@ struct Engine<'arena>
     /// The entries an environment substitution replaces free indices by,
     /// innermost first.
     environment: Vec<ValueId>,
+    /// How the checker decided each nested computation.
+    nesting: BTreeMap<ValueId, Nesting>,
+    /// Each region's runs beside their computations, in written order.
+    regions: BTreeMap<ComputationId, Vec<(ValueId, ComputationId)>>,
+    /// Each run's index among the binds its region mints, innermost zero.
+    slots: BTreeMap<ValueId, Binders>,
+    /// Each run beside the bind minted for it.
+    binds: Vec<(ValueId, ComputationId)>,
 }
 
 impl<'arena> Engine<'arena>
@@ -325,6 +362,10 @@ impl<'arena> Engine<'arena>
             mention: Mention::Absent,
             sites: BTreeMap::new(),
             environment: Vec::new(),
+            nesting: BTreeMap::new(),
+            regions: BTreeMap::new(),
+            slots: BTreeMap::new(),
+            binds: Vec::new(),
         }
     }
 
@@ -365,7 +406,17 @@ impl<'arena> Engine<'arena>
             match task {
                 | Task::Open(node, depth, step) => self.open(node, depth, step),
                 | Task::Close(node, depth, step) => {
+                    let runs = self.elaborated_runs(node, step);
                     let rewritten = self.close(node);
+                    if let (
+                        Node::Computation(region),
+                        Node::Computation(closed),
+                        &[first, ref rest @ ..],
+                    ) = (node, rewritten, runs.as_slice())
+                    {
+                        self.splice(region, depth, closed, first, rest);
+                        continue;
+                    }
                     let rewritten = self.wrapped(node, rewritten, step);
                     let _previous = self.memo.insert((node, depth, step), rewritten);
                     self.results.push(rewritten);
@@ -375,6 +426,7 @@ impl<'arena> Engine<'arena>
                         let _previous = self.memo.insert((node, depth, step), rewritten);
                     }
                 },
+                | Task::Hoist(region, depth) => self.hoist(region, depth),
             }
         }
         self.results.pop().unwrap_or(subject)
@@ -417,6 +469,24 @@ impl<'arena> Engine<'arena>
     {
         if let Some(&done) = self.memo.get(&(node, depth, rewrite)) {
             self.results.push(done);
+            return;
+        }
+        if let Maybe::Present(answer) = self.slotted(node, depth, rewrite) {
+            let _previous = self.memo.insert((node, depth, rewrite), answer);
+            self.results.push(answer);
+            return;
+        }
+        if rewrite == Rewrite::Elaborate
+            && let Node::Computation(region) = node
+            && let Some(runs) = self.regions.get(&region)
+        {
+            self.tasks.push(Task::Close(node, depth, rewrite));
+            self.tasks.extend(
+                runs.iter()
+                    .rev()
+                    .map(|&(_, nested)| Task::Open(Node::Computation(nested), depth, rewrite)),
+            );
+            self.push_children(node, depth, rewrite);
             return;
         }
         if let Rewrite::Fill(hole, filling) = rewrite
@@ -464,21 +534,27 @@ impl<'arena> Engine<'arena>
     }
 
     /// The mark a wrap puts around `node`'s rewritten form, if its sites name
-    /// it.
+    /// it, or the thunk an elaboration suspends a nested computation into, if
+    /// the checker decided it so.
     ///
     /// # Specification
     /// - requires: `rewritten` is `node`'s rewritten form, in its family.
     /// - ensures: under a wrap, a fresh mark over `rewritten` when the sites
-    ///   name `node` and it is a term; `rewritten` itself otherwise.
-    /// - provides: the one point a wrap differs from a congruence.
+    ///   name `node` and it is a term; under an elaboration, a fresh thunk over
+    ///   the computation of `rewritten` when `node` is a nested computation the
+    ///   checker decided to suspend; `rewritten` itself otherwise.
+    /// - provides: the one point a wrap differs from a congruence, and the one
+    ///   point an elaboration suspends.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a marked leaf, a marked variable, a marked compound
     ///   whose child is marked too, and an unmarked sibling separate wrapping,
-    ///   nesting and the identity on unnamed nodes.
+    ///   nesting and the identity on unnamed nodes; a suspended nested
+    ///   computation beside a run one separates the two elaborations.
     /// - witness: `rewrite::tests::a_wrap_marks_exactly_the_named_nodes`
+    /// - witness: `rewrite::tests::an_elaboration_suspends_and_runs_as_decided`
     #[spec(ensures: |ret| core::mem::discriminant(&ret) == core::mem::discriminant(&rewritten))]
     fn wrapped(
         &mut self,
@@ -487,6 +563,13 @@ impl<'arena> Engine<'arena>
         rewrite: Rewrite,
     ) -> Node
     {
+        if rewrite == Rewrite::Elaborate
+            && let (Node::Value(held), Node::Value(id)) = (node, rewritten)
+            && self.nesting.get(&held) == Some(&Nesting::Thunk)
+            && let Some(&Value::Nested(suspended)) = self.arena.value(id)
+        {
+            return Node::Value(self.arena.value_thunk(suspended));
+        }
         if rewrite != Rewrite::Wrap {
             return rewritten;
         }
@@ -501,16 +584,210 @@ impl<'arena> Engine<'arena>
         }
     }
 
+    /// What a run stands as before its region splices it, and the variable a
+    /// splice answers it by.
+    ///
+    /// # Specification
+    /// - requires: `depth` is the number of binders crossed to reach `node`.
+    /// - ensures: under an elaboration, a run answers itself, so its region's
+    ///   splice finds it where it stands; under a splice, a run answers the
+    ///   variable of its slot raised past `depth`; every other node and rewrite
+    ///   answers nothing.
+    /// - provides: the run half of the elaboration's open step.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two runs of one region splice to their two slots, the
+    ///   first written the outer.
+    /// - witness: `rewrite::tests::an_elaboration_runs_in_written_order_before_its_region`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(()))
+        || matches!(node, Node::Value(id) if self.slots.contains_key(&id)))]
+    fn slotted(
+        &mut self,
+        node: Node,
+        depth: Binders,
+        rewrite: Rewrite,
+    ) -> Maybe<Node, ()>
+    {
+        let Node::Value(id) = node
+        else {
+            return Maybe::Absent(());
+        };
+        let Some(&slot) = self.slots.get(&id)
+        else {
+            return Maybe::Absent(());
+        };
+        match rewrite {
+            | Rewrite::Elaborate => Maybe::Present(node),
+            | Rewrite::Splice(_) => {
+                // reason: a slot and a depth stay far below the u32 ceiling;
+                // a saturating step keeps the walk total.
+                let index = u32::from(arith::saturating_add(
+                    arith::Int::from(slot.0),
+                    arith::Int::from(depth.0),
+                ));
+                Maybe::Present(Node::Value(
+                    self.arena
+                        .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index)),
+                ))
+            },
+            | Rewrite::Shift(_)
+            | Rewrite::Substitute(_)
+            | Rewrite::Lower
+            | Rewrite::Fill(..)
+            | Rewrite::Wrap
+            | Rewrite::Environment => Maybe::Absent(()),
+        }
+    }
+
+    /// The elaborated computations of a region's runs, popped from the top of
+    /// the result stack, in written order.
+    ///
+    /// # Specification
+    /// - requires: under an elaboration, `node`'s close is due with its runs'
+    ///   elaborated computations on top of its children's results, as `open`
+    ///   scheduled them.
+    /// - ensures: one computation per run of the region `node` names under an
+    ///   elaboration, the first written first; nothing for any other node or
+    ///   rewrite, the stack untouched.
+    /// - provides: the half of a region's close that reads its runs.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the region's splice.
+    /// - witness: `rewrite::tests::an_elaboration_runs_in_written_order_before_its_region`
+    #[spec(captures: ready = self.results.len(), ensures: |ret| self.results.len().saturating_add(ret.len()) == ready)]
+    fn elaborated_runs(
+        &mut self,
+        node: Node,
+        rewrite: Rewrite,
+    ) -> Vec<ComputationId>
+    {
+        let (Rewrite::Elaborate, Node::Computation(region)) = (rewrite, node)
+        else {
+            return Vec::new();
+        };
+        let Some(runs) = self.regions.get(&region)
+        else {
+            return Vec::new();
+        };
+        let mut elaborated: Vec<ComputationId> = runs
+            .iter()
+            .rev()
+            .map(|&(_, nested)| Self::computation(&mut self.results, nested))
+            .collect();
+        elaborated.reverse();
+        elaborated
+    }
+
+    /// Schedule a region's splice: its closed body carried under one binder
+    /// per run, every later run carried under the binders of the runs before
+    /// it, and the hoist that binds them.
+    ///
+    /// # Specification
+    /// - requires: `closed` is the region's body with its children elaborated
+    ///   and its runs standing as themselves; `first` and `rest` are its runs'
+    ///   elaborated computations, in written order, scoped where the region
+    ///   stands.
+    /// - ensures: `first` on the result stack, and tasks that leave each later
+    ///   run's computation shifted past the binders before it and then the body
+    ///   spliced past them all above it, and hoist them.
+    /// - provides: the scheduling half of a region's hoist.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the region's hoist.
+    /// - witness: `rewrite::tests::an_elaboration_runs_in_written_order_before_its_region`
+    #[spec(captures: [ready = self.results.len(), pending = self.tasks.len()],
+        ensures: self.results.len() == ready.saturating_add(1)
+            && self.tasks.len() == pending.saturating_add(rest.len()).saturating_add(2))]
+    fn splice(
+        &mut self,
+        region: ComputationId,
+        depth: Binders,
+        closed: ComputationId,
+        first: ComputationId,
+        rest: &[ComputationId],
+    )
+    {
+        self.results.push(Node::Computation(first));
+        self.tasks.push(Task::Hoist(region, depth));
+        let runs = Binders::ONE.deeper_by(ComponentCount::from(rest.len()));
+        self.tasks.push(Task::Open(
+            Node::Computation(closed),
+            Binders::NONE,
+            Rewrite::Splice(runs),
+        ));
+        for (before, &later) in rest.iter().enumerate().rev() {
+            self.tasks.push(Task::Open(
+                Node::Computation(later),
+                Binders::NONE,
+                Rewrite::Shift(Binders::ONE.deeper_by(ComponentCount::from(before))),
+            ));
+        }
+    }
+
+    /// Bind a region's runs over its spliced body, the first written
+    /// outermost, and answer the binds as the region's elaboration.
+    ///
+    /// # Specification
+    /// - requires: the result stack holds, on top, the region's spliced body
+    ///   and beneath it its runs' computations, each shifted past the runs
+    ///   before it, the first written lowest.
+    /// - ensures: consumes them, mints one bind per run from the innermost out,
+    ///   records each run beside its bind, and records and answers the
+    ///   outermost as the region's elaboration at `depth`.
+    /// - provides: the minting half of a region's hoist.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two runs of one region bind in written order over the
+    ///   body, which reads each through its slot.
+    /// - witness: `rewrite::tests::an_elaboration_runs_in_written_order_before_its_region`
+    #[spec(captures: recorded = self.binds.len(),
+        ensures: self.binds.len() >= recorded
+            && self.memo.contains_key(&(Node::Computation(region), depth, Rewrite::Elaborate)))]
+    fn hoist(
+        &mut self,
+        region: ComputationId,
+        depth: Binders,
+    )
+    {
+        let runs: Vec<ValueId> = self
+            .regions
+            .get(&region)
+            .map(|runs| runs.iter().map(|&(run, _)| run).collect())
+            .unwrap_or_default();
+        let mut bound = Self::computation(&mut self.results, region);
+        let shifted: Vec<ComputationId> = runs
+            .iter()
+            .map(|_| Self::computation(&mut self.results, region))
+            .collect();
+        for (&run, nested) in runs.iter().rev().zip(shifted) {
+            bound = self.arena.computation_bind(nested, bound);
+            self.binds.push((run, bound));
+        }
+        let _previous = self.memo.insert(
+            (Node::Computation(region), depth, Rewrite::Elaborate),
+            Node::Computation(bound),
+        );
+        self.results.push(Node::Computation(bound));
+    }
+
     /// The rewritten form of one intuitionistic occurrence.
     ///
-    /// **This is the only place the binding rewrites differ.** A shift raises
-    /// an index at or past the depth and spares one inside it; a substitution
-    /// spares an index inside the depth, replaces the one the depth names and
-    /// lowers every one past it; a lowering does the same with no
-    /// replacement, recording that the named index occurred; an environment
+    /// **This is the only place the binding rewrites differ.** A shift and a
+    /// splice raise an index at or past the depth and spare one inside it; a
+    /// substitution spares an index inside the depth, replaces the one the
+    /// depth names and lowers every one past it; a lowering does the same with
+    /// no replacement, recording that the named index occurred; an environment
     /// substitution replaces every index past the depth by the entry it counts
-    /// to, and lowers one past the environment by its length. A fill and a
-    /// wrap leave every occurrence as it stands.
+    /// to, and lowers one past the environment by its length. A fill, a wrap
+    /// and an elaboration leave every occurrence as it stands.
     ///
     /// # Specification
     /// - requires: `depth` is the number of binders crossed to reach the
@@ -533,7 +810,7 @@ impl<'arena> Engine<'arena>
     #[spec(
         captures: mentioned = self.mention,
         ensures: |ret| match rewrite {
-            | Rewrite::Shift(amount) => self.mention == mentioned && if u32::from(index) < depth.0 || amount == Binders::NONE {
+            | Rewrite::Shift(amount) | Rewrite::Splice(amount) => self.mention == mentioned && if u32::from(index) < depth.0 || amount == Binders::NONE {
                 ret == Occurrence::Answered(id)
             } else {
                 matches!(ret, Occurrence::Answered(answer) if matches!(self.arena.value(answer),
@@ -557,7 +834,7 @@ impl<'arena> Engine<'arena>
                         Some(Value::Variable { zone: Zone::Intuitionistic, index: actual })
                             if u32::from(*actual).checked_add(1) == Some(u32::from(index)))),
             },
-            | Rewrite::Fill(..) | Rewrite::Wrap => self.mention == mentioned && ret == Occurrence::Answered(id),
+            | Rewrite::Fill(..) | Rewrite::Wrap | Rewrite::Elaborate => self.mention == mentioned && ret == Occurrence::Answered(id),
             | Rewrite::Environment => self.mention == mentioned
                 && (u32::from(index) >= depth.0 || ret == Occurrence::Answered(id)),
         },
@@ -572,7 +849,7 @@ impl<'arena> Engine<'arena>
     {
         let position = Binders(u32::from(index));
         match rewrite {
-            | Rewrite::Shift(amount) => {
+            | Rewrite::Shift(amount) | Rewrite::Splice(amount) => {
                 if position < depth || amount == Binders::NONE {
                     Occurrence::Answered(id)
                 }
@@ -604,7 +881,7 @@ impl<'arena> Engine<'arena>
                 },
                 | core::cmp::Ordering::Greater => Occurrence::Answered(self.lowered(position)),
             },
-            | Rewrite::Fill(..) | Rewrite::Wrap => Occurrence::Answered(id),
+            | Rewrite::Fill(..) | Rewrite::Wrap | Rewrite::Elaborate => Occurrence::Answered(id),
             | Rewrite::Environment => {
                 if position < depth {
                     return Occurrence::Answered(id);
@@ -718,7 +995,7 @@ Value::Tuple(ref components) => components.len(),
 Value::ListNil | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Hole(_) => 0_usize,
 Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } => 2,
 Value::PathEquiv { .. } => 3,
-Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::PathRefl(_) | Value::Here(_) | Value::Returned(_) | Value::Mark { .. } => 1,
+Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::PathRefl(_) | Value::Here(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Mark { .. } => 1,
 }),
         | Node::Computation(id) => self.arena.computation(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
 Computation::Perform { ref signature, .. } => 1_usize.saturating_add(signature.types().count()),
@@ -820,7 +1097,11 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                     | &Value::Lift { body, .. }
                     | &Value::Mark { body, .. },
                 ) => self.tasks.push(open(Node::Value(body), depth)),
-                | Some(&Value::Returned(computation)) => {
+                | Some(
+                    &(Value::Returned(computation)
+                    | Value::Nested(computation)
+                    | Value::Run(computation)),
+                ) => {
                     self.tasks.push(open(Node::Computation(computation), depth));
                 },
                 | Some(
@@ -1344,7 +1625,7 @@ Value::Tuple(ref components) => components.len(),
 Value::ListNil | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Hole(_) => 0_usize,
 Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } => 2,
 Value::PathEquiv { .. } => 3,
-Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::PathRefl(_) | Value::Here(_) | Value::Returned(_) | Value::Mark { .. } => 1,
+Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::PathRefl(_) | Value::Here(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Mark { .. } => 1,
 })],
         ensures: |ret| self.results.len() == ready.saturating_sub(children)
             && (ret == id || self.arena.value(id).is_some_and(|original| self.arena.value(ret).is_some_and(|rewritten|
@@ -1458,6 +1739,24 @@ Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | 
                 }
                 else {
                     self.arena.value_returned(rewritten)
+                }
+            },
+            | Value::Nested(computation) => {
+                let rewritten = Self::computation(&mut self.results, computation);
+                if rewritten == computation {
+                    id
+                }
+                else {
+                    self.arena.value_nested(rewritten)
+                }
+            },
+            | Value::Run(computation) => {
+                let rewritten = Self::computation(&mut self.results, computation);
+                if rewritten == computation {
+                    id
+                }
+                else {
+                    self.arena.value_run(rewritten)
                 }
             },
             | Value::PathProduct(first, second) => {
@@ -2766,6 +3065,431 @@ pub fn wrap_marks(
     node_term(wrapped, subject)
 }
 
+/// How the checker decided a computation written where a value is read.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Nesting
+{
+    /// Expected at a thunk type, it is suspended, as a written thunk is.
+    Thunk,
+    /// Expected at any other type, it runs before its region and stands for
+    /// the value it returns.
+    Run,
+}
+
+/// A run with no computation enclosing it to run before.
+///
+/// It stands in a definition's own value, beneath a static lambda or a static
+/// application, which are erased before anything runs, or in a type, where
+/// nothing runs.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Unenclosed
+{
+    /// The run.
+    run: ValueId,
+}
+
+impl Unenclosed
+{
+    /// The run that found no computation to run before.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn run(self) -> ValueId
+    {
+        self.run
+    }
+}
+
+/// A position the survey reads, beside where a run met there would hoist.
+#[derive(Clone, Copy, Debug)]
+enum Position
+{
+    /// A value, and the computation it stands in the values of, if any.
+    Value(ValueId, Maybe<ComputationId, ()>),
+    /// A computation, and the region of the application spine it heads, if
+    /// it heads one.
+    Computation(ComputationId, Maybe<ComputationId, ()>),
+}
+
+/// Every run `subject` holds, grouped by the region it runs before, each
+/// region's in written order.
+///
+/// A run's region is the innermost computation whose values it stands in:
+/// an application's head shares its spine's region, so `f(g(x), h(y))` runs
+/// `g` and then `h` before the whole call; every other computation child —
+/// a thunk's body, a case arm, a lambda's body, either half of a bind — is a
+/// region of its own, so no run leaves a suspension or a branch. Written
+/// order is the region's values read left to right, a head before its
+/// argument, a run before the runs nested in its own computation, which
+/// form that computation's region. A record's fields read in label order,
+/// the order the core holds them in.
+///
+/// # Specification
+/// - requires: `subject` is live in `arena`.
+/// - ensures: every `Run`, and every `Nested` that `nesting` decides to run,
+///   reachable from `subject` through terms, listed once under its region
+///   beside its computation; types are not entered.
+/// - provides: the regions an elaboration hoists into.
+/// - fails: [`Unenclosed`] for the first run, in written order, that stands in
+///   no computation's values, and then for the first node `nesting` decides
+///   that no term of `subject` reaches — one standing in a type.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — runs beside a thunk, in a case arm, in an application
+///   spine and in a definition's own value separate the region rule, the
+///   boundaries and the refusal.
+/// - witness: `rewrite::tests::an_elaboration_never_hoists_out_of_a_thunk_or_an_arm`
+/// - witness: `rewrite::tests::a_run_in_no_computation_is_unenclosed`
+/// - witness: `rewrite::tests::a_decision_no_term_reaches_is_unenclosed`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |regions| regions.values().all(|runs| !runs.is_empty())))]
+fn survey(
+    arena: &CoreArena,
+    subject: ValueId,
+    nesting: &BTreeMap<ValueId, Nesting>,
+) -> Result<BTreeMap<ComputationId, Vec<(ValueId, ComputationId)>>, Unenclosed>
+{
+    let mut regions: BTreeMap<ComputationId, Vec<(ValueId, ComputationId)>> = BTreeMap::new();
+    let mut met = alloc::collections::BTreeSet::new();
+    let mut pending = alloc::vec![Position::Value(subject, Maybe::Absent(()))];
+    while let Some(position) = pending.pop() {
+        let ready = pending.len();
+        match position {
+            | Position::Value(id, region) => {
+                let Some(value) = arena.value(id)
+                else {
+                    continue;
+                };
+                if matches!(*value, Value::Nested(_) | Value::Run(_)) {
+                    let _first = met.insert(id);
+                }
+                survey_value(value, id, region, nesting, &mut regions, &mut pending)?;
+            },
+            | Position::Computation(id, spine) => {
+                let Some(computation) = arena.computation(id)
+                else {
+                    continue;
+                };
+                let region = Maybe::Present(match spine {
+                    | Maybe::Present(region) => region,
+                    | Maybe::Absent(()) => id,
+                });
+                survey_computation(computation, region, &mut pending);
+            },
+        }
+        if let Some(written) = pending.get_mut(ready ..) {
+            written.reverse();
+        }
+    }
+    if let Some(&run) = nesting.keys().find(|decided| !met.contains(*decided)) {
+        return Err(Unenclosed { run });
+    }
+    Ok(regions)
+}
+
+/// Read one value for the survey: record it if it runs, and list its
+/// children in written order beside their regions.
+///
+/// # Specification
+/// - requires: `value` is the node `id` names, standing in `region`'s values.
+/// - ensures: a run is appended to `region`'s list; `next` gains the value's
+///   term children, in order, a value child in `region` unless a static former
+///   erases it and a computation child heading its own region.
+/// - provides: the value half of the survey.
+/// - fails: [`Unenclosed`] when the value runs and `region` is absent.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`survey`].
+/// - witness: `rewrite::tests::an_elaboration_never_hoists_out_of_a_thunk_or_an_arm`
+#[spec(captures: before = next.len(), ensures: |ret| ret.is_err() || next.len() >= before)]
+fn survey_value(
+    value: &Value,
+    id: ValueId,
+    region: Maybe<ComputationId, ()>,
+    nesting: &BTreeMap<ValueId, Nesting>,
+    regions: &mut BTreeMap<ComputationId, Vec<(ValueId, ComputationId)>>,
+    next: &mut Vec<Position>,
+) -> Result<(), Unenclosed>
+{
+    let own = Maybe::Absent(());
+    match *value {
+        | Value::Nested(nested) | Value::Run(nested) => {
+            if matches!(*value, Value::Run(_)) || nesting.get(&id) == Some(&Nesting::Run) {
+                let Maybe::Present(enclosing) = region
+                else {
+                    return Err(Unenclosed { run: id });
+                };
+                regions.entry(enclosing).or_default().push((id, nested));
+            }
+            next.push(Position::Computation(nested, own));
+        },
+        | Value::Primitive { body, .. } | Value::Returned(body) | Value::Thunk(body) => {
+            next.push(Position::Computation(body, own));
+        },
+        | Value::PathRefl(inner)
+        | Value::Here(inner)
+        | Value::Injection(_, inner)
+        | Value::Lift { body: inner, .. }
+        | Value::Mark { body: inner, .. } => next.push(Position::Value(inner, region)),
+        | Value::PathProduct(left, right)
+        | Value::Funext(left, right)
+        | Value::Equiv(left, right)
+        | Value::ListCons(left, right)
+        | Value::PathEquiv {
+            forward: left,
+            backward: right,
+            ..
+        }
+        | Value::Ua {
+            forward: left,
+            backward: right,
+            ..
+        } => next.extend([
+            Position::Value(left, region),
+            Position::Value(right, region),
+        ]),
+        | Value::StaticLambda(body) => next.push(Position::Value(body, own)),
+        | Value::StaticApplication(head, argument) => {
+            next.extend([Position::Value(head, own), Position::Value(argument, own)]);
+        },
+        | Value::Tuple(ref components) => next.extend(
+            components
+                .iter()
+                .map(|&component| Position::Value(component, region)),
+        ),
+        | Value::Constructor { ref fields, .. } => {
+            next.extend(fields.iter().map(|&field| Position::Value(field, region)));
+        },
+        | Value::Record(ref fields) => {
+            next.extend(fields.values().map(|&field| Position::Value(field, region)));
+        },
+        | Value::Reify(ref frames) => {
+            next.extend(frames.iter().filter_map(|frame| match *frame {
+                | crate::control::StackFrame::Apply(argument) => {
+                    Some(Position::Value(argument, region))
+                },
+                | crate::control::StackFrame::Bind(body) => Some(Position::Computation(body, own)),
+                | crate::control::StackFrame::Project(_) => None,
+            }));
+        },
+        | Value::Variable { .. }
+        | Value::Constant(_)
+        | Value::Literal(_)
+        | Value::ListNil
+        | Value::Quote(_)
+        | Value::QuoteComputation(_)
+        | Value::Hole(_) => {},
+    }
+    Ok(())
+}
+
+/// List one computation's term children for the survey, in written order,
+/// beside their regions.
+///
+/// # Specification
+/// - requires: `region` is where the computation's own values hoist: its
+///   spine's region when it heads an application, itself otherwise.
+/// - ensures: `next` gains the computation's term children in order: a value in
+///   `region`, an application's head carrying `region` as its spine, and every
+///   other computation child heading its own region.
+/// - provides: the computation half of the survey.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`survey`].
+/// - witness: `rewrite::tests::an_elaboration_runs_in_written_order_before_its_region`
+#[spec(captures: before = next.len(), ensures: next.len() >= before)]
+fn survey_computation(
+    computation: &Computation,
+    region: Maybe<ComputationId, ()>,
+    next: &mut Vec<Position>,
+)
+{
+    let own = Maybe::Absent(());
+    match *computation {
+        | Computation::Application(head, argument) => next.extend([
+            Position::Computation(head, region),
+            Position::Value(argument, region),
+        ]),
+        | Computation::Primitive { ref arguments, .. } => next.extend(
+            arguments
+                .iter()
+                .map(|&argument| Position::Value(argument, region)),
+        ),
+        | Computation::Transport(path, value) | Computation::PathTransport { path, value, .. } => {
+            next.extend([
+                Position::Value(path, region),
+                Position::Value(value, region),
+            ]);
+        },
+        | Computation::TelescopeTransport {
+            path,
+            start,
+            over,
+            value,
+            ..
+        } => next.extend([
+            Position::Value(path, region),
+            Position::Value(start, region),
+            Position::Value(over, region),
+            Position::Value(value, region),
+        ]),
+        | Computation::Return(value)
+        | Computation::Force(value)
+        | Computation::RecordProjection(value, _)
+        | Computation::TupleProjection(value, _)
+        | Computation::Perform { payload: value, .. } => next.push(Position::Value(value, region)),
+        | Computation::Lambda(body)
+        | Computation::Fixpoint { body, .. }
+        | Computation::Reset(body)
+        | Computation::Shift(body)
+        | Computation::Project(_, body)
+        | Computation::Mark { body, .. } => next.push(Position::Computation(body, own)),
+        | Computation::Bind(first, second) | Computation::With(first, second) => {
+            next.extend([
+                Position::Computation(first, own),
+                Position::Computation(second, own),
+            ]);
+        },
+        | Computation::Case {
+            scrutinee,
+            ref branches,
+        } => {
+            next.push(Position::Value(scrutinee, region));
+            next.extend(
+                branches
+                    .iter()
+                    .map(|&branch| Position::Computation(branch, own)),
+            );
+        },
+        | Computation::DataCase {
+            scrutinee,
+            ref branches,
+            ..
+        } => {
+            next.push(Position::Value(scrutinee, region));
+            next.extend(
+                branches
+                    .iter()
+                    .map(|&branch| Position::Computation(branch, own)),
+            );
+        },
+        | Computation::Split {
+            scrutinee, body, ..
+        } => next.extend([
+            Position::Value(scrutinee, region),
+            Position::Computation(body, own),
+        ]),
+        | Computation::ListFold {
+            list,
+            on_nil,
+            on_cons,
+            ..
+        } => next.extend([
+            Position::Value(list, region),
+            Position::Computation(on_nil, own),
+            Position::Computation(on_cons, own),
+        ]),
+        | Computation::Handle {
+            subject,
+            on_return,
+            ref clauses,
+            ..
+        } => {
+            next.extend([
+                Position::Computation(subject, own),
+                Position::Computation(on_return, own),
+            ]);
+            next.extend(
+                clauses
+                    .iter()
+                    .map(|clause| Position::Computation(clause.body, own)),
+            );
+        },
+        | Computation::Resume(stack, body) => {
+            next.extend([
+                Position::Value(stack, region),
+                Position::Computation(body, own),
+            ]);
+        },
+        | Computation::Hole(_) => {},
+    }
+}
+
+/// Elaborate every computation `subject` holds written where a value is
+/// read, as `nesting` decides it, reporting every node it rewrote.
+///
+/// A suspended one becomes the thunk of its elaborated computation. The runs
+/// of each region become binds wrapping it, the first written outermost,
+/// each over its elaborated computation, and each run stands as the variable
+/// its bind binds. A `Run` always runs. The order and the regions are
+/// [`survey`]'s.
+///
+/// # Specification
+/// - requires: `subject` is live in `arena`; `nesting` decides every `Nested`
+///   reachable from it through terms.
+/// - ensures: `subject` with every decided `Nested` and every `Run` reachable
+///   through terms elaborated; `subject` itself when it holds none; `carried`
+///   gains one pair per node the elaboration rebuilt, the nodes it was built
+///   from first, and `binds` one pair per run beside the bind minted for it.
+/// - provides: the elaborated body a checker answers, built once from the
+///   decisions it recorded.
+/// - fails: [`Unenclosed`] when a run stands in no computation's values, or a
+///   decision names a node no term of `subject` reaches.
+/// - panics: none.
+///
+/// # Errors
+/// [`Unenclosed`] for the first run, in written order, that stands in no
+/// computation's values, then for the first decided node no term reaches.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two runs in one spine, a suspension beside a run, a run
+///   in a thunk, a run in a case arm, a run nested in another's computation and
+///   a run in a definition's own value separate written order, the two
+///   decisions, the boundaries, nesting and the refusal.
+/// - witness: `rewrite::tests::an_elaboration_runs_in_written_order_before_its_region`
+/// - witness: `rewrite::tests::an_elaboration_suspends_and_runs_as_decided`
+/// - witness: `rewrite::tests::an_elaboration_never_hoists_out_of_a_thunk_or_an_arm`
+/// - witness: `rewrite::tests::a_run_in_no_computation_is_unenclosed`
+/// - witness: `rewrite::tests::a_decision_no_term_reaches_is_unenclosed`
+#[spec(captures: [entry = arena.watermark(), held = carried.len(), minted = binds.len()],
+    ensures: |ret| ret.is_err() || carried.len() >= held && binds.len() >= minted
+        && (binds.len() > minted || carried.len() > held || ret == Ok(subject) && arena.watermark() == entry))]
+#[inline]
+pub fn elaborate_nested_traced(
+    arena: &mut CoreArena,
+    subject: ValueId,
+    nesting: &BTreeMap<ValueId, Nesting>,
+    carried: &mut Vec<Carried>,
+    binds: &mut Vec<(ValueId, ComputationId)>,
+) -> Result<ValueId, Unenclosed>
+{
+    let regions = survey(arena, subject, nesting)?;
+    let mut engine = Engine::new(arena);
+    engine.slots = regions
+        .values()
+        .flat_map(|runs| {
+            runs.iter().rev().enumerate().map(|(inner, &(run, _))| {
+                (run, Binders::NONE.deeper_by(ComponentCount::from(inner)))
+            })
+        })
+        .collect();
+    engine.nesting = nesting.clone();
+    engine.regions = regions;
+    let elaborated = engine.run(Node::Value(subject), Binders::NONE, Rewrite::Elaborate);
+    report(&engine.memo, carried);
+    binds.append(&mut engine.binds);
+    match elaborated {
+        | Node::Value(id) => Ok(id),
+        | Node::Computation(_) | Node::ValueType(_) | Node::CompType(_) => Ok(subject),
+    }
+}
+
 /// Replace every free intuitionistic index of `subject` by the environment
 /// entry it counts to.
 ///
@@ -3026,6 +3750,8 @@ mod tests
             Some(&ValueType::Product([local_type, unit].into()))
         );
     }
+    use alloc::format;
+    use alloc::string::String;
     use alloc::vec;
     use alloc::vec::Vec;
 
@@ -3038,6 +3764,9 @@ mod tests
 
     use super::Binders;
     use super::Carried;
+    use super::Nesting;
+    use super::Unenclosed;
+    use super::elaborate_nested_traced;
     use super::fill_hole;
     use super::instantiate_comp_type;
     use super::instantiate_value;
@@ -3049,6 +3778,7 @@ mod tests
     use super::substitute_environment_traced;
     use super::wrap_marks;
     use crate::arena::CompTypeId;
+    use crate::arena::ComputationId;
     use crate::arena::CoreArena;
     use crate::arena::ValueId;
     use crate::arena::ValueTypeId;
@@ -3303,7 +4033,7 @@ mod tests
             | Some(&Value::StaticApplication(..)) => Token::StaticApplication,
             Some(&Value::Reify(_) | &Value::ListNil | &Value::ListCons(..) | &Value::Constructor { .. } | &Value::Record(_) | &Value::Primitive { .. }
 | &Value::Literal(_) | &Value::Injection(..) | &Value::Thunk(_)
-| &Value::Lift { .. } | &Value::PathRefl(_) | &Value::Here(_) | &Value::Funext(..) | &Value::Equiv(..) | &Value::Ua { .. } | &Value::Returned(_) | &Value::PathProduct(..) |
+| &Value::Lift { .. } | &Value::PathRefl(_) | &Value::Here(_) | &Value::Funext(..) | &Value::Equiv(..) | &Value::Ua { .. } | &Value::Returned(_) | &Value::Nested(_) | &Value::Run(_) | &Value::PathProduct(..) |
 &Value::PathEquiv { .. } | &Value::Hole(_) | &Value::Mark { .. }) | None => Token::Other,
             },
     }))]
@@ -4739,6 +5469,323 @@ mod tests
             TermId::Value(unit)
         );
         assert_eq!(mark, arena.watermark(), "an unnamed subject mints nothing");
+    }
+
+    /// Apply the constant `callee`, forced, to `argument`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn call(
+        arena: &mut CoreArena,
+        callee: ConstantIndex,
+        argument: ValueId,
+    ) -> ComputationId
+    {
+        let callee = arena.value_constant(callee);
+        let forced = arena.computation_force(callee);
+        arena.computation_application(forced, argument)
+    }
+
+    /// A compact pre-order reading of the term formers the elaboration tests
+    /// write, so a rebuilt term compares with the spelling it should have.
+    ///
+    /// # Specification
+    /// trivial.
+    fn term_text(
+        arena: &CoreArena,
+        root: ValueId,
+    ) -> String
+    {
+        enum Piece
+        {
+            Value(ValueId),
+            Computation(ComputationId),
+            Text(&'static str),
+        }
+        let mut text = String::new();
+        let mut pending = vec![Piece::Value(root)];
+        while let Some(piece) = pending.pop() {
+            let (head, children): (String, Vec<Piece>) = match piece {
+                | Piece::Text(written) => {
+                    text.push_str(written);
+                    continue;
+                },
+                | Piece::Value(id) => match arena.value(id) {
+                    | Some(&Value::Variable { index, .. }) => {
+                        (format!("v{}", u32::from(index)), Vec::new())
+                    },
+                    | Some(&Value::Constant(constant)) => {
+                        (format!("#{}", usize::from(constant)), Vec::new())
+                    },
+                    | Some(&Value::Thunk(body)) => ("thunk".into(), vec![Piece::Computation(body)]),
+                    | Some(&Value::Nested(body)) => {
+                        ("nested".into(), vec![Piece::Computation(body)])
+                    },
+                    | Some(&Value::Run(body)) => ("run".into(), vec![Piece::Computation(body)]),
+                    | Some(&Value::Tuple(ref components)) => (
+                        "tuple".into(),
+                        components
+                            .iter()
+                            .map(|&component| Piece::Value(component))
+                            .collect(),
+                    ),
+                    | Some(&Value::StaticApplication(head, argument)) => ("static".into(), vec![
+                        Piece::Value(head),
+                        Piece::Value(argument),
+                    ]),
+                    | _ => ("?".into(), Vec::new()),
+                },
+                | Piece::Computation(id) => match arena.computation(id) {
+                    | Some(&Computation::Lambda(body)) => {
+                        ("lambda".into(), vec![Piece::Computation(body)])
+                    },
+                    | Some(&Computation::Bind(bound, body)) => ("bind".into(), vec![
+                        Piece::Computation(bound),
+                        Piece::Computation(body),
+                    ]),
+                    | Some(&Computation::Return(value)) => {
+                        ("return".into(), vec![Piece::Value(value)])
+                    },
+                    | Some(&Computation::Force(value)) => {
+                        ("force".into(), vec![Piece::Value(value)])
+                    },
+                    | Some(&Computation::Application(head, argument)) => ("apply".into(), vec![
+                        Piece::Computation(head),
+                        Piece::Value(argument),
+                    ]),
+                    | Some(&Computation::Case {
+                        scrutinee,
+                        ref branches,
+                    }) => (
+                        "case".into(),
+                        core::iter::once(Piece::Value(scrutinee))
+                            .chain(branches.iter().map(|&branch| Piece::Computation(branch)))
+                            .collect(),
+                    ),
+                    | _ => ("?".into(), Vec::new()),
+                },
+            };
+            text.push_str(&head);
+            if children.is_empty() {
+                continue;
+            }
+            text.push('(');
+            pending.push(Piece::Text(")"));
+            for (position, child) in children.into_iter().enumerate().rev() {
+                pending.push(child);
+                if position > 0 {
+                    pending.push(Piece::Text(","));
+                }
+            }
+        }
+        text
+    }
+
+    #[test]
+    fn an_elaboration_runs_in_written_order_before_its_region()
+    {
+        let mut arena = CoreArena::new();
+        let [first_x, inner_x, last_x] =
+            [(); 3].map(|()| variable(&mut arena, DeBruijnIndex::from(0_u32)));
+        let first = call(&mut arena, ConstantIndex::from(1_usize), first_x);
+        let first = arena.value_nested(first);
+        let inner = call(&mut arena, ConstantIndex::from(3_usize), inner_x);
+        let inner = arena.value_nested(inner);
+        let second = call(&mut arena, ConstantIndex::from(2_usize), inner);
+        let second = arena.value_run(second);
+        let head = call(&mut arena, ConstantIndex::from(0_usize), first);
+        let spine = arena.computation_application(head, second);
+        let region = arena.computation_application(spine, last_x);
+        let lambda = arena.computation_lambda(region);
+        let subject = arena.value_thunk(lambda);
+        let nesting = BTreeMap::from([(first, Nesting::Run), (inner, Nesting::Run)]);
+        let mut carried = Vec::new();
+        let mut binds = Vec::new();
+        let Ok(elaborated) =
+            elaborate_nested_traced(&mut arena, subject, &nesting, &mut carried, &mut binds)
+        else {
+            panic!("every run stands in a computation");
+        };
+        assert_eq!(
+            term_text(&arena, elaborated),
+            "thunk(lambda(bind(apply(force(#1),v0),bind(bind(apply(force(#3),v1),apply(force(#2),v0)),apply(apply(apply(force(#0),v1),v0),v2)))))",
+            "the head's run binds outermost, the argument's next carried past it, the run nested in the argument's own call binds inside that call, and the body reads each run by its bind and every free index past them all",
+        );
+        let runs: Vec<ValueId> = binds.iter().map(|&(run, _)| run).collect();
+        assert_eq!(
+            runs,
+            [inner, second, first],
+            "binds are minted innermost first"
+        );
+        let Some(&(_, outermost)) = binds.last()
+        else {
+            panic!("three binds");
+        };
+        assert!(
+            carried.contains(&Carried::Computation(region, outermost)),
+            "the region is reported as the binds that wrap it"
+        );
+    }
+
+    #[test]
+    fn an_elaboration_suspends_and_runs_as_decided()
+    {
+        let mut arena = CoreArena::new();
+        let [suspended_x, run_x] =
+            [(); 2].map(|()| variable(&mut arena, DeBruijnIndex::from(0_u32)));
+        let suspended = call(&mut arena, ConstantIndex::from(1_usize), suspended_x);
+        let suspended = arena.value_nested(suspended);
+        let run = call(&mut arena, ConstantIndex::from(2_usize), run_x);
+        let run = arena.value_nested(run);
+        let pair = arena.value_tuple(&[suspended, run]);
+        let returned = arena.computation_return(pair);
+        let lambda = arena.computation_lambda(returned);
+        let subject = arena.value_thunk(lambda);
+        let nesting = BTreeMap::from([(suspended, Nesting::Thunk), (run, Nesting::Run)]);
+        let mut binds = Vec::new();
+        let Ok(elaborated) =
+            elaborate_nested_traced(&mut arena, subject, &nesting, &mut Vec::new(), &mut binds)
+        else {
+            panic!("every run stands in a computation");
+        };
+        assert_eq!(
+            term_text(&arena, elaborated),
+            "thunk(lambda(bind(apply(force(#2),v0),return(tuple(thunk(apply(force(#1),v1)),v0)))))",
+            "the suspension stays in place as a thunk, carried past the run's bind",
+        );
+        assert_eq!(binds.len(), 1, "only the run mints a bind");
+        let mark = arena.watermark();
+        let Ok(unchanged) = elaborate_nested_traced(
+            &mut arena,
+            pair,
+            &BTreeMap::new(),
+            &mut Vec::new(),
+            &mut binds,
+        )
+        else {
+            panic!("an undecided nested computation is not a run");
+        };
+        assert_eq!(unchanged, pair, "nothing decided, nothing rebuilt");
+        assert_eq!(mark, arena.watermark(), "and nothing minted");
+    }
+
+    #[test]
+    fn an_elaboration_never_hoists_out_of_a_thunk_or_an_arm()
+    {
+        let mut arena = CoreArena::new();
+        let [scrutinee, armed_x, suspended_x] =
+            [(); 3].map(|()| variable(&mut arena, DeBruijnIndex::from(0_u32)));
+        let armed = call(&mut arena, ConstantIndex::from(1_usize), armed_x);
+        let armed = arena.value_nested(armed);
+        let suspended = call(&mut arena, ConstantIndex::from(2_usize), suspended_x);
+        let suspended = arena.value_nested(suspended);
+        let first_arm = arena.computation_return(armed);
+        let inner = arena.computation_return(suspended);
+        let thunk = arena.value_thunk(inner);
+        let second_arm = arena.computation_return(thunk);
+        let case = arena.computation_case(scrutinee, &[first_arm, second_arm]);
+        let lambda = arena.computation_lambda(case);
+        let subject = arena.value_thunk(lambda);
+        let nesting = BTreeMap::from([(armed, Nesting::Run), (suspended, Nesting::Run)]);
+        let Ok(elaborated) = elaborate_nested_traced(
+            &mut arena,
+            subject,
+            &nesting,
+            &mut Vec::new(),
+            &mut Vec::new(),
+        )
+        else {
+            panic!("every run stands in a computation");
+        };
+        assert_eq!(
+            term_text(&arena, elaborated),
+            "thunk(lambda(case(v0,bind(apply(force(#1),v0),return(v0)),return(thunk(bind(apply(force(#2),v0),return(v0)))))))",
+            "an arm's run binds inside the arm and a thunk's inside the thunk; the case stands as written",
+        );
+    }
+
+    #[test]
+    fn a_run_in_no_computation_is_unenclosed()
+    {
+        let mut arena = CoreArena::new();
+        let argument = variable(&mut arena, DeBruijnIndex::from(0_u32));
+        let computation = call(&mut arena, ConstantIndex::from(1_usize), argument);
+        let nested = arena.value_nested(computation);
+        let definition = arena.value_tuple(&[nested]);
+        let refused = elaborate_nested_traced(
+            &mut arena,
+            definition,
+            &BTreeMap::from([(nested, Nesting::Run)]),
+            &mut Vec::new(),
+            &mut Vec::new(),
+        );
+        assert_eq!(
+            refused.map_err(Unenclosed::run),
+            Err(nested),
+            "a definition's own value has no computation to run before"
+        );
+        let Ok(suspended) = elaborate_nested_traced(
+            &mut arena,
+            definition,
+            &BTreeMap::from([(nested, Nesting::Thunk)]),
+            &mut Vec::new(),
+            &mut Vec::new(),
+        )
+        else {
+            panic!("a suspension needs no computation around it");
+        };
+        assert_eq!(
+            term_text(&arena, suspended),
+            "tuple(thunk(apply(force(#1),v0)))"
+        );
+        let operator = arena.value_constant(ConstantIndex::from(0_usize));
+        let run = arena.value_run(computation);
+        let erased = arena.value_static_application(operator, run);
+        let returned = arena.computation_return(erased);
+        let subject = arena.value_thunk(returned);
+        let refused = elaborate_nested_traced(
+            &mut arena,
+            subject,
+            &BTreeMap::new(),
+            &mut Vec::new(),
+            &mut Vec::new(),
+        );
+        assert_eq!(
+            refused.map_err(Unenclosed::run),
+            Err(run),
+            "static content is erased before anything runs, so no run hoists out of it"
+        );
+    }
+
+    #[test]
+    fn a_decision_no_term_reaches_is_unenclosed()
+    {
+        let mut arena = CoreArena::new();
+        let argument = variable(&mut arena, DeBruijnIndex::from(0_u32));
+        let computation = call(&mut arena, ConstantIndex::from(1_usize), argument);
+        let nested = arena.value_nested(computation);
+        let indexed = arena.value_type_element(nested, Level::zero());
+        let constructed = arena.value_constructor(
+            indexed,
+            gandr_kernel_term::ConstructorTag::from(0_usize),
+            alloc::vec::Vec::new(),
+        );
+        let returned = arena.computation_return(constructed);
+        let subject = arena.value_thunk(returned);
+        for decided in [Nesting::Run, Nesting::Thunk] {
+            assert_eq!(
+                elaborate_nested_traced(
+                    &mut arena,
+                    subject,
+                    &BTreeMap::from([(nested, decided)]),
+                    &mut Vec::new(),
+                    &mut Vec::new(),
+                )
+                .map_err(Unenclosed::run),
+                Err(nested),
+                "a computation standing in a type has nothing to run before or suspend in"
+            );
+        }
     }
 
     #[test]

@@ -1,7 +1,11 @@
-//! The core arena as a [`Source`]: checked types, and the values evaluation
-//! and readback leave in the arena.
+//! The core arena as a [`Source`]: checked types, the values evaluation and
+//! readback leave in the arena, and bodies, an elaborated one read as written
+//! through its [`Restoration`].
+
+use alloc::collections::BTreeMap;
 
 use anodized::spec;
+use gandr_core_term::Carried;
 use gandr_core_term::CompType;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
@@ -33,17 +37,109 @@ pub enum CoreNode
     CompType(CompTypeId),
 }
 
+/// The nodes an elaboration rebuilt, each read as the node it rebuilt it
+/// from.
+///
+/// The checker elaborates a body by rebuilding the nodes above every
+/// computation written where a value is read; [`Carried`] pairs each
+/// rebuilt node with its original. A [`CoreSource`] restoring them reads an
+/// elaborated body as the body the checker read, whose inferred runs are
+/// written as the computations they run.
+///
+/// # Specification
+/// - requires: the pairs come from one elaboration of one arena.
+/// - ensures: each rebuilt node answers the node it was rebuilt from, the first
+///   pair naming it when several do; every other node answers itself.
+/// - provides: the reading [`crate::present_computation`] prints an elaborated
+///   body's canonical form through.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an elaborated call nested in an argument, read with and
+///   without its restoration, distinguishes a lost restoration from a restored
+///   minted bind.
+/// - witness: `core_source::tests::a_restored_elaboration_reads_as_written`
+#[repr(transparent)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Restoration(BTreeMap<CoreNode, CoreNode>);
+
+impl Restoration
+{
+    /// The restoration of the nodes `carried` pairs.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each node a pair rebuilt maps to the node it was rebuilt
+    ///   from, the first pair winning.
+    /// - provides: the restoration of a checker's recorded elaboration.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Restoration`].
+    /// - witness: `core_source::tests::a_restored_elaboration_reads_as_written`
+    #[spec(ensures: |ret| carried.iter().all(|pair| ret.0.contains_key(&match *pair {
+        | Carried::Value(_, rebuilt) => CoreNode::Value(rebuilt),
+        | Carried::Computation(_, rebuilt) => CoreNode::Computation(rebuilt),
+        | Carried::ValueType(_, rebuilt) => CoreNode::ValueType(rebuilt),
+        | Carried::CompType(_, rebuilt) => CoreNode::CompType(rebuilt),
+    })))]
+    #[inline]
+    #[must_use]
+    pub fn of(carried: &[Carried]) -> Self
+    {
+        let mut restored = BTreeMap::new();
+        for pair in carried {
+            let (original, rebuilt) = match *pair {
+                | Carried::Value(original, rebuilt) => {
+                    (CoreNode::Value(original), CoreNode::Value(rebuilt))
+                },
+                | Carried::Computation(original, rebuilt) => (
+                    CoreNode::Computation(original),
+                    CoreNode::Computation(rebuilt),
+                ),
+                | Carried::ValueType(original, rebuilt) => {
+                    (CoreNode::ValueType(original), CoreNode::ValueType(rebuilt))
+                },
+                | Carried::CompType(original, rebuilt) => {
+                    (CoreNode::CompType(original), CoreNode::CompType(rebuilt))
+                },
+            };
+            restored.entry(rebuilt).or_insert(original);
+        }
+        Self(restored)
+    }
+
+    /// The node `node` was rebuilt from, or `node` itself.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn restored(
+        &self,
+        node: CoreNode,
+    ) -> CoreNode
+    {
+        self.0.get(&node).copied().unwrap_or(node)
+    }
+}
+
+/// The restoration that restores nothing.
+const UNRESTORED: &Restoration = &Restoration(BTreeMap::new());
+
 /// A core arena read through the names of the constants it mentions.
 ///
 /// A core node names a constant or an abstract type by its admission
 /// position; `names` spells position `i` as its `i`-th entry. A position past
-/// the table reads as [`Former::Unreadable`].
+/// the table reads as [`Former::Unreadable`]. A source restoring an
+/// elaboration reads every node the elaboration rebuilt as its original.
 ///
 /// # Specification
 /// - requires: `names` is indexed by admission position.
 /// - ensures: arena nodes retain their formers; missing naming-table entries
-///   read as unreadable.
-/// - provides: the printer's input over checked types and readback values.
+///   read as unreadable; a restored node reads as its original.
+/// - provides: the printer's input over checked types, readback values and
+///   bodies.
 /// - panics: none.
 /// - executable: none — admission-order correctness relates this naming table
 ///   to declarations the arena does not store. The per-node conversion
@@ -56,6 +152,7 @@ pub enum CoreNode
 ///   adapter does not own declarations.
 /// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
 /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
+/// - witness: `core_source::tests::a_restored_elaboration_reads_as_written`
 #[derive(Clone, Copy, Debug)]
 pub struct CoreSource<'arena>
 {
@@ -63,6 +160,8 @@ pub struct CoreSource<'arena>
     arena: &'arena CoreArena,
     /// The constants' names, by admission position.
     names: &'arena [Name<'arena>],
+    /// The rebuilt nodes read as their originals.
+    restoration: &'arena Restoration,
 }
 
 impl<'arena> CoreSource<'arena>
@@ -78,7 +177,29 @@ impl<'arena> CoreSource<'arena>
         names: &'arena [Name<'arena>],
     ) -> Self
     {
-        Self { arena, names }
+        Self {
+            arena,
+            names,
+            restoration: UNRESTORED,
+        }
+    }
+
+    /// This source, reading each node `restoration` restores as its
+    /// original.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn restoring(
+        self,
+        restoration: &'arena Restoration,
+    ) -> Self
+    {
+        Self {
+            restoration,
+            ..self
+        }
     }
 
     /// The name at admission position `constant`.
@@ -152,7 +273,9 @@ impl<'arena> CoreSource<'arena>
         (Some(&Value::Constructor { .. } | &Value::Hole(_) | &Value::Mark { .. } | &Value::Returned(_)) | None,
 Former::Unreadable) | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::ListNil), Former::ListNil) |
 (Some(&Value::Lift { .. }), Former::ValueLift) => true,
-        | (Some(&Value::Thunk(body)), Former::Thunk(actual)) => actual == CoreNode::Computation(body),
+        | (Some(&Value::Thunk(body)), Former::Thunk(actual))
+        | (Some(&Value::Nested(body)), Former::Nested(actual))
+        | (Some(&Value::Run(body)), Former::Run(actual)) => actual == CoreNode::Computation(body),
         | (Some(&Value::Record(ref fields)), Former::Unreadable) => fields.is_empty(),
         | (Some(&Value::Record(ref fields)), Former::Record(arity)) => !fields.is_empty() && usize::from(arity) == fields.len(),
         | (Some(&Value::Literal(ref literal)), Former::Literal(actual)) =>
@@ -191,6 +314,8 @@ Former::Unreadable) | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::Li
             | Value::Mark { .. }
             | Value::Returned(_) => Former::Unreadable,
             | Value::Here(point) => Former::Here(CoreNode::Value(point)),
+            | Value::Nested(body) => Former::Nested(CoreNode::Computation(body)),
+            | Value::Run(body) => Former::Run(CoreNode::Computation(body)),
             | Value::Funext(left, right) => {
                 Former::Funext(CoreNode::Value(left), CoreNode::Value(right))
             },
@@ -415,11 +540,11 @@ impl Source for CoreSource<'_>
     /// # Specification
     /// - requires: nothing; an id from another arena reads as whatever this
     ///   arena holds at it, or as unreadable.
-    /// - ensures: as [`Source::read`]; a return, a bind, a force, an
-    ///   application and a lambda read as their own formers over their
-    ///   children, every other held computation but a hole or a mark as
-    ///   [`Former::Computation`], and a hole, a mark or a missing handle as
-    ///   unreadable.
+    /// - ensures: as [`Source::read`], of the node `node` restores to; a
+    ///   return, a bind, a force, an application and a lambda read as their own
+    ///   formers over their children, every other held computation but a hole
+    ///   or a mark as [`Former::Computation`], and a hole, a mark or a missing
+    ///   handle as unreadable.
     /// - provides: the printer's reading of the core arena.
     /// - fails: never.
     /// - panics: none.
@@ -437,7 +562,8 @@ impl Source for CoreSource<'_>
     /// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
     /// - witness: `goldens::tests::native_paths_preserve_ordered_endpoints_and_maps`
     /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
-    #[spec(ensures: |ret| match node {
+    /// - witness: `core_source::tests::a_restored_elaboration_reads_as_written`
+    #[spec(captures: restored = self.restoration.restored(node), ensures: |ret| match restored {
         | CoreNode::Computation(id) => match (self.arena.computation(id), ret) {
             | (Some(&(Computation::Hole(_) | Computation::Mark { .. })) | None, Former::Unreadable) => true,
             | (Some(&Computation::Return(value)), Former::Return(actual))
@@ -459,7 +585,8 @@ impl Source for CoreSource<'_>
             | Former::Literal(_) | Former::Tuple(_) | Former::Record(_) | Former::Injection(..) | Former::Thunk(_)
             | Former::ValueLift | Former::Reify | Former::ListNil | Former::ListCons(..)
             | Former::Quote(_) | Former::QuoteComputation(_) | Former::StaticLambda(_) | Former::StaticApplication(..)
-            | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_) | Former::Funext(..) | Former::Equiv(..) | Former::Ua { .. } | Former::Unreadable),
+            | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_) | Former::Funext(..) | Former::Equiv(..)
+            | Former::Ua { .. } | Former::Nested(_) | Former::Run(_) | Former::Unreadable),
         | CoreNode::ValueType(_) => matches!(ret, Former::BaseType(_) | Former::Product(_) | Former::RecordType(_)
             | Former::Stack(..) | Former::List(_)
             | Former::Sum(_) | Former::ThunkType(_) | Former::Universe { .. } | Former::TypeLift
@@ -473,7 +600,7 @@ impl Source for CoreSource<'_>
         node: CoreNode,
     ) -> Former<'_, CoreNode>
     {
-        match node {
+        match self.restoration.restored(node) {
             | CoreNode::Value(id) => self.value(id),
             | CoreNode::Computation(id) => match self.arena.computation(id) {
                 | Some(&Computation::Return(value)) => Former::Return(CoreNode::Value(value)),
@@ -519,10 +646,11 @@ impl Source for CoreSource<'_>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the value type at `index` among a held product's, sum's or
-    ///   record type's components, and the value at `index` among a held
-    ///   tuple's or record's, a record's fields in label order; none for an
-    ///   index past them, another former, another family or a missing handle.
+    /// - ensures: of the node `node` restores to, the value type at `index`
+    ///   among a held product's, sum's or record type's components, and the
+    ///   value at `index` among a held tuple's or record's, a record's fields
+    ///   in label order; none for an index past them, another former, another
+    ///   family or a missing handle.
     /// - provides: the printer's reading of an n-ary former.
     /// - fails: never.
     /// - panics: none.
@@ -538,7 +666,7 @@ impl Source for CoreSource<'_>
     /// - witness: `goldens::tests::n_ary_tuples_and_injections_spell_between_their_braces`
     /// - witness: `goldens::tests::records_spell_their_fields_in_label_order`
     /// - witness: `core_source::tests::components_read_in_order_and_stop_at_the_arity`
-    #[spec(ensures: |ret| ret == match node {
+    #[spec(captures: restored = self.restoration.restored(node), ensures: |ret| ret == match restored {
         | CoreNode::ValueType(id) => match self.arena.value_type(id) {
             | Some(&(ValueType::Product(ref parts) | ValueType::Sum(ref parts))) => parts.get(usize::from(index)).map(|&part| CoreNode::ValueType(part)),
             | Some(&ValueType::Record(ref fields)) => fields.values().nth(usize::from(index)).map(|&field| CoreNode::ValueType(field)),
@@ -558,7 +686,7 @@ impl Source for CoreSource<'_>
         index: Component,
     ) -> Option<CoreNode>
     {
-        match node {
+        match self.restoration.restored(node) {
             | CoreNode::ValueType(id) => match *self.arena.value_type(id)? {
                 | ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts
                     .get(usize::from(index))
@@ -588,9 +716,9 @@ impl Source for CoreSource<'_>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the label at `index` among a held record's or record type's
-    ///   fields, in label order; none for an index past them, another former,
-    ///   another family or a missing handle.
+    /// - ensures: of the node `node` restores to, the label at `index` among a
+    ///   held record's or record type's fields, in label order; none for an
+    ///   index past them, another former, another family or a missing handle.
     /// - provides: the printer's reading of a record's labels.
     /// - fails: never.
     /// - panics: none.
@@ -602,7 +730,7 @@ impl Source for CoreSource<'_>
     ///   the fields and of a tuple observes the absence.
     /// - witness: `goldens::tests::records_spell_their_fields_in_label_order`
     /// - witness: `core_source::tests::components_read_in_order_and_stop_at_the_arity`
-    #[spec(ensures: |ret| ret.as_ref().map(|name| -> &str { name.as_ref() }) == match node {
+    #[spec(captures: restored = self.restoration.restored(node), ensures: |ret| ret.as_ref().map(|name| -> &str { name.as_ref() }) == match restored {
         | CoreNode::ValueType(id) => match self.arena.value_type(id) {
             | Some(&ValueType::Record(ref fields)) => fields.keys().nth(usize::from(index)).map(AsRef::as_ref),
             | _ => None,
@@ -620,7 +748,7 @@ impl Source for CoreSource<'_>
         index: Component,
     ) -> Option<Name<'_>>
     {
-        let label = match node {
+        let label = match self.restoration.restored(node) {
             | CoreNode::ValueType(id) => match *self.arena.value_type(id)? {
                 | ValueType::Record(ref fields) => fields.keys().nth(usize::from(index)),
                 | _ => None,
@@ -640,6 +768,8 @@ mod tests
 {
     use alloc::collections::BTreeMap;
     use alloc::string::String;
+    use alloc::string::ToString as _;
+    use alloc::vec::Vec;
 
     use gandr_core_term::ValueTypeId;
     use gandr_core_term::Zone;
@@ -876,6 +1006,62 @@ mod tests
         assert!(matches!(
             source.read(CoreNode::Computation(returned)),
             Former::Return(value) if value == CoreNode::Value(unit)
+        ));
+    }
+
+    /// An elaborated body reads as the body it was elaborated from through
+    /// its restoration, and as the bind the elaboration minted without it.
+    #[test]
+    fn a_restored_elaboration_reads_as_written()
+    {
+        let mut arena = CoreArena::new();
+        let constant = arena.value_constant(ConstantIndex::from(0_usize));
+        let forced = arena.computation_force(constant);
+        let argument = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let inner = arena.computation_application(forced, argument);
+        let nested = arena.value_nested(inner);
+        let outer = arena.computation_application(forced, nested);
+        let lambda = arena.computation_lambda(outer);
+        let subject = arena.value_thunk(lambda);
+        let (mut carried, mut binds) = (Vec::new(), Vec::new());
+        let elaborated = gandr_core_term::elaborate_nested_traced(
+            &mut arena,
+            subject,
+            &BTreeMap::from([(nested, gandr_core_term::Nesting::Run)]),
+            &mut carried,
+            &mut binds,
+        )
+        .expect("the run stands in the call's values");
+        let Some(&super::Value::Thunk(body)) = arena.value(elaborated)
+        else {
+            panic!("the elaborated subject stays a thunk");
+        };
+        let names = [Name::from("f")];
+        let restoration = super::Restoration::of(&carried);
+        let print = |source: &CoreSource<'_>| {
+            crate::present_computation(
+                source,
+                CoreNode::Computation(body),
+                crate::PageWidth::from(100_u32),
+            )
+            .expect("the body lays out")
+            .to_string()
+        };
+        assert_eq!(
+            print(&CoreSource::new(&arena, &names)),
+            "fn (a) { run b <- f(a) ; f(b) }",
+            "unrestored, the minted bind is read"
+        );
+        assert_eq!(
+            print(&CoreSource::new(&arena, &names).restoring(&restoration)),
+            "fn (a) { f(f(a)) }",
+            "restored, the run is read as written"
+        );
+        assert!(matches!(
+            CoreSource::new(&arena, &names)
+                .restoring(&restoration)
+                .read(CoreNode::Value(nested)),
+            Former::Nested(computation) if computation == CoreNode::Computation(inner)
         ));
     }
 }

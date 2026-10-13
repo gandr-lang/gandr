@@ -1627,6 +1627,11 @@ mod tests
                 FailureClass::MalformedSource,
             ),
             (
+                r#"@[ refuses("UnenclosedRun") ] def a : Integer ; def a = 1 + 2 ;"#,
+                RefusalName::UnenclosedRun,
+                FailureClass::MalformedSource,
+            ),
+            (
                 r#"def b = c ; @[ refuses("UnknownConstant") ] def a = b ;"#,
                 RefusalName::UnknownConstant,
                 FailureClass::MalformedSource,

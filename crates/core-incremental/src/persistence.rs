@@ -1813,6 +1813,7 @@ mod tests
             },
             | Typing::Refused(Refusal::NotAnAbstractType(_)) => "not-an-abstract-type",
             | Typing::Refused(Refusal::SealSiteRepeated(_)) => "seal-site-repeated",
+            | Typing::Refused(Refusal::UnenclosedRun { .. }) => "unenclosed-run",
         })
     }
 

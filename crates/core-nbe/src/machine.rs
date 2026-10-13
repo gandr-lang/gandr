@@ -5095,7 +5095,7 @@ mod tests
          CoreTerm::Value(id) => core.value(id).is_some_and(|value| match *value {
           Value::Constructor {ref fields,..} => ret.iter().copied().eq(fields.iter().copied().map(CoreTerm::Value)),
           Value::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(CoreTerm::Value)),
-          Value::Reify(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::Returned(_) => false,
+          Value::Reify(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::Returned(_) | Value::Nested(_) | Value::Run(_) => false,
           Value::PathRefl(code) => ret.as_slice() == [CoreTerm::Value(code)],
           Value::PathProduct(first, second) => ret.as_slice() == [CoreTerm::Value(first), CoreTerm::Value(second)],
           Value::PathEquiv { forward, backward, .. } => ret.as_slice() == [CoreTerm::Value(forward), CoreTerm::Value(backward)],
@@ -5139,6 +5139,8 @@ mod tests
                 | Value::Equiv(..)
                 | Value::Ua { .. }
                 | Value::Returned(_)
+                | Value::Nested(_)
+                | Value::Run(_)
                 | Value::Reify(_) => {
                     panic!("the pure fixture language has no reified stacks")
                 },
@@ -5329,6 +5331,8 @@ mod tests
                                     | Value::Equiv(..)
                                     | Value::Ua { .. }
                                     | Value::Returned(_)
+                                    | Value::Nested(_)
+                                    | Value::Run(_)
                                     | Value::Reify(_) => {
                                         panic!("the pure fixture language has no reified stacks")
                                     },
@@ -5524,7 +5528,7 @@ mod tests
          CoreTerm::Value(id) => core.value(id).is_some_and(|value| match *value {
           Value::Constructor {ref fields,..} => ret.iter().copied().eq(fields.iter().map(|field| canon[&CoreTerm::Value(*field)])),
           Value::Record(ref fields) => ret.iter().copied().eq(fields.values().map(|field| canon[&CoreTerm::Value(*field)])),
-          Value::Reify(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::Returned(_) => false,
+          Value::Reify(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::Returned(_) | Value::Nested(_) | Value::Run(_) => false,
           Value::PathRefl(code) => ret.as_slice() == [canon[&CoreTerm::Value(code)]],
           Value::PathProduct(first, second) => ret.as_slice() == [canon[&CoreTerm::Value(first)], canon[&CoreTerm::Value(second)]],
           Value::PathEquiv { forward, backward, .. } => ret.as_slice() == [canon[&CoreTerm::Value(forward)], canon[&CoreTerm::Value(backward)]],
@@ -5769,6 +5773,8 @@ mod tests
                                 | Value::Equiv(..)
                                 | Value::Ua { .. }
                                 | Value::Returned(_)
+                                | Value::Nested(_)
+                                | Value::Run(_)
                                 | Value::Reify(_) => {
                                     panic!("the pure fixture language has no reified stacks")
                                 },
@@ -6138,7 +6144,7 @@ mod tests
               Value::Tuple(ref components) => ret.iter().copied().eq(components.iter().copied().map(Node::Value)),
               Value::ListNil | Value::Primitive { .. } | Value::Variable{..} | Value::Constant(_) | Value::Literal(_) | Value::Hole(_) => ret.is_empty(),
               Value::StaticLambda(body) | Value::Injection(_,body) | Value::Lift{body,..} | Value::Mark{body,..} => ret.as_slice() == [Node::Value(body)],
-              Value::Thunk(body) | Value::Returned(body) => ret.as_slice() == [Node::Computation(body)],
+              Value::Thunk(body) | Value::Returned(body) | Value::Nested(body) | Value::Run(body) => ret.as_slice() == [Node::Computation(body)],
              Value::Quote(id) => ret.as_slice() == [Node::ValueType(id)],
              Value::QuoteComputation(id) => ret.as_slice() == [Node::CompType(id)],
               }),
@@ -6229,9 +6235,10 @@ mod tests
                         | Value::Injection(_, body)
                         | Value::Lift { body, .. }
                         | Value::Mark { body, .. } => Vec::from([Node::Value(body)]),
-                        | Value::Thunk(body) | Value::Returned(body) => {
-                            Vec::from([Node::Computation(body)])
-                        },
+                        | Value::Thunk(body)
+                        | Value::Returned(body)
+                        | Value::Nested(body)
+                        | Value::Run(body) => Vec::from([Node::Computation(body)]),
                         | Value::Quote(quoted) => Vec::from([Node::ValueType(quoted)]),
                         | Value::QuoteComputation(quoted) => Vec::from([Node::CompType(quoted)]),
                         | Value::Primitive { .. }
@@ -6445,6 +6452,8 @@ mod tests
                         | Value::Funext(..)
                         | Value::Equiv(..)
                         | Value::Ua { .. }
+                        | Value::Nested(_)
+                        | Value::Run(_)
                         | Value::Reify(_) => {
                             panic!("the pure fixture language has no reified stacks")
                         },

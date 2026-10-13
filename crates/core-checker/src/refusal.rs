@@ -165,6 +165,10 @@ pub enum CheckingForm
     Hole(ConstantIndex),
     /// A static lambda.
     StaticLambda(ValueId),
+    /// A computation written where a value is read: the type expected there
+    /// decides whether it is suspended or run, so there is nothing to decide
+    /// by without one.
+    Nested(ValueId),
 }
 
 /// A former of the core vocabulary the judgement has no rule for.
@@ -697,6 +701,14 @@ pub enum CheckRefusal
         /// The first reason the descent walk met.
         reason: gandr_kernel_term::DescentRefusal,
     },
+    /// A computation written where a value is read and run there, with no
+    /// computation enclosing it to run before: one in a definition's own
+    /// value, or under static content.
+    UnenclosedRun
+    {
+        /// The nested computation or written run.
+        at: ValueId,
+    },
 }
 
 impl CheckRefusal
@@ -716,13 +728,14 @@ impl CheckRefusal
     ///   reference past its block, a descent claim that does not replay,
     ///   reflexivity at endpoints its point does not reach, a compound endpoint
     ///   that returns no pure value, an abstract type's kind that is no
-    ///   universe, a representation above it, an atom naming no abstract type
-    ///   and translators that are no equivalence of species are malformed
-    ///   source; a former outside the fragment and a stratum the checker does
-    ///   not certify are unrepresentable; an unbound index, an exhausted
-    ///   allowance, a dangling id, an admission out of order, a repeated
-    ///   sealing site, a machine invariant and an undecided unfolding are
-    ///   engine faults; nothing is a user absence.
+    ///   universe, a representation above it, an atom naming no abstract type,
+    ///   translators that are no equivalence of species and a run with no
+    ///   computation enclosing it are malformed source; a former outside the
+    ///   fragment and a stratum the checker does not certify are
+    ///   unrepresentable; an unbound index, an exhausted allowance, a dangling
+    ///   id, an admission out of order, a repeated sealing site, a machine
+    ///   invariant and an undecided unfolding are engine faults; nothing is a
+    ///   user absence.
     /// - provides: the fact a report groups by and an exit code reads.
     /// - fails: never.
     /// - panics: none.
@@ -757,7 +770,7 @@ impl CheckRefusal
         | Self::FamilyArgumentClassifier { .. }
         | Self::StaticLambdaArgument { .. }
         | Self::StaticClassifierExpected { .. }
-        | Self::NegativeOccurrence(_) | Self::NestedOccurrence(_) | Self::IndexOccurrence(_) | Self::NonUniformOccurrence(_) | Self::CrossBlockReference { .. } | Self::DescentNotReplayed { .. } => matches!(ret, FailureClass::MalformedSource),
+        | Self::NegativeOccurrence(_) | Self::NestedOccurrence(_) | Self::IndexOccurrence(_) | Self::NonUniformOccurrence(_) | Self::CrossBlockReference { .. } | Self::DescentNotReplayed { .. } | Self::UnenclosedRun { .. } => matches!(ret, FailureClass::MalformedSource),
     })]
     #[inline]
     #[must_use]
@@ -805,7 +818,8 @@ impl CheckRefusal
             | Self::IndexOccurrence(_)
             | Self::NonUniformOccurrence(_)
             | Self::CrossBlockReference { .. }
-            | Self::DescentNotReplayed { .. } => FailureClass::MalformedSource,
+            | Self::DescentNotReplayed { .. }
+            | Self::UnenclosedRun { .. } => FailureClass::MalformedSource,
             | Self::OutOfFragment { .. }
             | Self::FunextUnsupported { .. }
             | Self::EquivUnsupported { .. }
@@ -956,7 +970,8 @@ impl CheckRefusal
             | Self::IndexOccurrence(_)
             | Self::NonUniformOccurrence(_)
             | Self::CrossBlockReference { .. }
-            | Self::DescentNotReplayed { .. } => (UNNAMED, UNNAMED),
+            | Self::DescentNotReplayed { .. }
+            | Self::UnenclosedRun { .. } => (UNNAMED, UNNAMED),
         };
         Compared { expected, found }
     }

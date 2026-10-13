@@ -7,16 +7,17 @@
 //! A finding is a [`Severity::Warning`](crate::Severity::Warning): it settles
 //! nothing, so `gandr check` still exits zero on a source whose only
 //! diagnostics are findings. Its identifier is the lint's own spelling,
-//! `explicit-exits`, where a shadowed builtin's is the refusal the reject
-//! policy files for the same bytes, because no policy turns a finding into a
-//! refusal: an elided exit is a form the language admits, and the lint is a
-//! house style a module chooses. The alternative was naming a finding as a
-//! refusal it is not, which would let a `refuses` expectation name it.
-//! Reversal: a lint some policy makes refusing takes that refusal's name, as
-//! the shadowing warning does.
+//! `explicit-exits` or `explicit-runs`, where a shadowed builtin's is the
+//! refusal the reject policy files for the same bytes, because no policy
+//! turns a finding into a refusal: an elided exit or run is a form the
+//! language admits, and the lint is a house style a module chooses. The
+//! alternative was naming a finding as a refusal it is not, which would let a
+//! `refuses` expectation name it. Reversal: a lint some policy makes refusing
+//! takes that refusal's name, as the shadowing warning does.
 //!
 //! A finding carries the fix that settles it, the keyword written before the
-//! tail, so applying the fix and checking again reports nothing.
+//! tail or the nested computation, so applying the fix and checking again
+//! reports nothing.
 
 use core::fmt;
 
@@ -31,20 +32,26 @@ use core::fmt;
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a finding of the one lint is identified by its spelling
-///   in the JSON image and on the terminal.
+/// - hypothesis: L3 — a finding of each lint is identified by its spelling in
+///   the JSON image and on the terminal.
 /// - witness: `diagnostics::diagnostics::an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword`
+/// - witness: `diagnostics::diagnostics::an_inferred_run_is_a_finding_whose_fix_writes_its_keyword`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Lint
 {
     /// `explicit-exits`: every exit the lowering inferred where a path
     /// through a body ends, which the source could write.
     ExplicitExits,
+    /// `explicit-runs`: every run the checker inferred where a computation
+    /// stands in a position that reads a value, which the source could
+    /// write; with its `effects` option, only the runs that perform an
+    /// effect.
+    ExplicitRuns,
 }
 
 impl AsRef<str> for Lint
 {
-    /// The lint's spelling: `explicit-exits`.
+    /// The lint's spelling: `explicit-exits` or `explicit-runs`.
     ///
     /// # Specification
     /// trivial.
@@ -53,6 +60,7 @@ impl AsRef<str> for Lint
     {
         match *self {
             | Self::ExplicitExits => "explicit-exits",
+            | Self::ExplicitRuns => "explicit-runs",
         }
     }
 }

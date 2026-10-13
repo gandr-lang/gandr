@@ -734,6 +734,11 @@ primitive_copy_wrapper!(
     pub struct HeadOperandPresence(bool);
 );
 primitive_copy_wrapper!(
+    /// Whether no slot is open at the slope head: the top level, where an
+    /// item begins.
+    pub struct BoundarySlot(bool);
+);
+primitive_copy_wrapper!(
     /// Whether a mold's sort fits the expected slot.
     struct SortAdmissibility(bool);
 );
@@ -1819,8 +1824,8 @@ impl<'pbg> MeldState<'pbg>
     /// # Specification
     /// - requires: none.
     /// - ensures: returns the nearest open frontier mold (if any), the
-    ///   head-is-operand flag, the head operand sort, and the expected slot
-    ///   sort; leaves `self` unchanged.
+    ///   head-is-operand flag, the head operand sort, the expected slot sort
+    ///   and whether the slot is the top level's; leaves `self` unchanged.
     /// - provides: the hoisted admissibility context.
     /// - fails: never.
     /// - panics: none.
@@ -1828,22 +1833,24 @@ impl<'pbg> MeldState<'pbg>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — empty, open-form, operand and operator heads expose
-    ///   all four snapshot fields before and after each push. A stale flag,
+    ///   all five snapshot fields before and after each push. A stale flag,
     ///   wrong head sort or frontier from the preceding state changes the
     ///   snapshot.
     /// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
     /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret.open == self.open_form_mold() && bool::from(ret.head_operand) == self.stack.last().is_some_and(|cell| matches!(cell.role, Role::Operand)) && ret.head_sort == self.stack.last().filter(|cell| matches!(cell.role, Role::Operand)).map(|cell| cell.sort) && ret.expected == self.expected_operand_sort())]
+    #[spec(ensures: |ret| ret.open == self.open_form_mold() && bool::from(ret.head_operand) == self.stack.last().is_some_and(|cell| matches!(cell.role, Role::Operand)) && ret.head_sort == self.stack.last().filter(|cell| matches!(cell.role, Role::Operand)).map(|cell| cell.sort) && ret.expected == self.expected_operand_sort() && bool::from(ret.boundary) == self.open_slot_sort().is_none())]
     pub fn admissibility_frontier(&self) -> Frontier
     {
         let open = self.open_form_mold();
+        let slot = self.open_slot_sort();
         Frontier {
             open,
             head_operand: self.head_is_operand(),
             head_sort: self.head_operand_sort(),
-            expected: self.expected_operand_sort(),
+            expected: slot.unwrap_or(Sort::Expression),
+            boundary: BoundarySlot::from(slot.is_none()),
         }
     }
 
@@ -1896,8 +1903,8 @@ impl<'pbg> MeldState<'pbg>
     /// `def` does. The damaged declaration and the surviving one need not be
     /// the same family.
     ///
-    /// Two guards keep the widened trigger from firing on well-formed source,
-    /// and both are load-bearing:
+    /// Three guards keep the widened trigger from firing on well-formed source,
+    /// and all are load-bearing:
     ///
     /// - **No candidate may continue the open frontier.** The molder gathers
     ///   every mold sharing the token's label, across every rule context, and
@@ -1908,6 +1915,10 @@ impl<'pbg> MeldState<'pbg>
     ///   mold continues the `(` frontier. Sixteen corpus files depend on the
     ///   member reading, so the whole candidate set has to agree that nothing
     ///   continues before anything is force-closed.
+    /// - **No candidate may open a form of the open slot's own sort.** Such a
+    ///   candidate fills the slot rather than ending the declaration: `run`
+    ///   heads a bind statement and opens an inline run, and inside `Succ(run
+    ///   f(x))` it is the run.
     /// - **The innermost open form must not be [`Sort::Item`].** An open item
     ///   form legitimately reaches past this point: a container (`module`,
     ///   `data`, `sign`) holds the next head as a **member** of its own rule,
@@ -1933,10 +1944,11 @@ impl<'pbg> MeldState<'pbg>
     /// # Specification
     /// - requires: `candidates` are molds of this state's PBG.
     /// - ensures: when some candidate opens a declaration, no candidate
-    ///   continues the open frontier, and the innermost open form is non-item,
-    ///   force-closes every form at or above the nearest declaration-started
-    ///   frontier (the slope base when there is none); the state is untouched
-    ///   otherwise, and at most one collapse runs per token.
+    ///   continues the open frontier or opens a non-item form of the open
+    ///   slot's sort, and the innermost open form is non-item, force-closes
+    ///   every form at or above the nearest declaration-started frontier (the
+    ///   slope base when there is none); the state is untouched otherwise, and
+    ///   at most one collapse runs per token.
     /// - provides: declaration-bounded ghost repair.
     /// - fails: never; invalid molds are ignored.
     /// - panics: none.
@@ -1946,8 +1958,11 @@ impl<'pbg> MeldState<'pbg>
     /// - hypothesis: L3 — damaged delimiters before a new declaration and
     ///   well-formed container members expose source-preserving repair and
     ///   separate items. Swallowing a sibling, closing a legitimate member or
-    ///   inserting phantom source bytes changes the reconstructed tree.
+    ///   inserting phantom source bytes changes the reconstructed tree; an
+    ///   inline run in an argument list that closed its declaration would leave
+    ///   the run's call unmolded.
     /// - witness: `tests::acceptance::unclosed_definition_delimiter_does_not_absorb_following_definition`
+    /// - witness: `tests::acceptance::run_reads_as_a_bind_or_an_inline_run_by_what_follows`
     /// - witness: `tests::acceptance::an_unclosed_delimiter_yields_to_every_declaration_family`
     /// - witness: `tests::contracts::declaration_boundary_stays_stable_under_layout`
     #[inline]
@@ -1961,8 +1976,16 @@ impl<'pbg> MeldState<'pbg>
         // that continues the open frontier is a live reading of this token, and
         // acting on a losing candidate would close a form the winner needs.
         let mut saw_declaration_head = false;
+        let expected = self.expected_operand_sort();
         for &mold in candidates {
             if bool::from(self.would_continue_form(mold)) {
+                return;
+            }
+            let fills_slot =
+                self.pbg.mold(mold).is_ok_and(|def| {
+                    def.sort == expected && !bool::from(is_item_position(def.sort))
+                }) && bool::from(FormTable::is_form_first(self.pbg, mold));
+            if fills_slot {
                 return;
             }
             saw_declaration_head = saw_declaration_head || bool::from(self.opens_declaration(mold));
@@ -2278,9 +2301,9 @@ impl<'pbg> MeldState<'pbg>
     /// matches this expectation, so `"hi"` reads as the expression string at an
     /// expression slot and the pattern string in a `val`/`case` pattern slot,
     /// without a completion traversal. The expectation is the nearest
-    /// unsaturated operator's right-hole sort, or
-    /// the nearest open form frontier's right-hole sort, defaulting to
-    /// [`Sort::Expression`] at the top level.
+    /// unsaturated operator's right-hole sort, or the nearest open form
+    /// frontier's right-hole sort, defaulting to [`Sort::Expression`] at the
+    /// top level, where no slot is open.
     ///
     /// # Specification
     /// - requires: none.
@@ -2302,6 +2325,31 @@ impl<'pbg> MeldState<'pbg>
     #[spec(ensures: |ret| !self.stack.is_empty() || ret == Sort::Expression)]
     pub fn expected_operand_sort(&self) -> Sort
     {
+        self.open_slot_sort().unwrap_or(Sort::Expression)
+    }
+
+    /// The sort of the operand slot open at the slope head: the nearest
+    /// unsaturated operator's right-hole sort, or the nearest open form
+    /// frontier's right-hole sort; none at the top level, where no slot is
+    /// open.
+    ///
+    /// # Specification
+    /// - requires: none.
+    /// - ensures: the open slot's sort, an open frontier facing no hole reading
+    ///   as an expression slot; none when neither an operator nor a frontier is
+    ///   open; leaves `self` unchanged.
+    /// - provides: [`Self::expected_operand_sort`] and the top-level flag of
+    ///   [`Self::admissibility_frontier`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an empty slope reads no slot, and unsaturated
+    ///   operator and form slots their own sorts.
+    /// - witness: `meld::tests::expected_sort_reads_the_open_slot`
+    #[spec(ensures: |ret| !self.stack.is_empty() || ret.is_none())]
+    fn open_slot_sort(&self) -> Option<Sort>
+    {
         // The scan's Operand arm is a no-op, so it starts at the topmost
         // non-operand cell (the higher of the operator / form-tile cache tops)
         // rather than walking the whole top operand run — a shell block's run
@@ -2310,12 +2358,9 @@ impl<'pbg> MeldState<'pbg>
             | (Some(&op), Some(&tile)) => op.max(tile),
             | (Some(&op), None) => op,
             | (None, Some(&tile)) => tile,
-            | (None, None) => return Sort::Expression,
+            | (None, None) => return None,
         };
-        let Some(limit) = top_non_operand.checked_add(1)
-        else {
-            return Sort::Expression;
-        };
+        let limit = top_non_operand.checked_add(1)?;
         let mut index = limit.min(self.stack.len());
         while let Some(next_index) = index.checked_sub(1) {
             index = next_index;
@@ -2326,22 +2371,19 @@ impl<'pbg> MeldState<'pbg>
                         .checked_add(1)
                         .is_some_and(|next| bool::from(self.is_operand_at(StackIndex::from(next))));
                     if wants_right && !right_filled {
-                        return sort;
+                        return Some(sort);
                     }
                 },
                 | Some(Role::FormTile {
                     mold, open: true, ..
                 }) => {
-                    if let Some(sort) = self.frontier_hole_sort(mold) {
-                        return sort;
-                    }
-                    return Sort::Expression;
+                    return Some(self.frontier_hole_sort(mold).unwrap_or(Sort::Expression));
                 },
                 | Some(Role::FormTile { open: false, .. } | Role::Operand) => {},
                 | None => break,
             }
         }
-        Sort::Expression
+        None
     }
 
     /// Return the sort of the recursive hole an open form frontier faces on its
@@ -6095,6 +6137,9 @@ pub struct Frontier
     /// sort (a local `InconMeld`), so the pre-filter discards it before any
     /// dry-run.
     pub expected: Sort,
+    /// Whether no slot is open at the head: the top level, whose slot is an
+    /// item, an expression standing there only as an expression statement.
+    pub boundary: BoundarySlot,
 }
 
 /// A lightweight in-place transaction over a [`MeldState`].

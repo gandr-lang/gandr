@@ -290,6 +290,9 @@ pub struct CheckingContext<'arena>
     /// The reflexivities the judgement checked, by node, with the dialogues
     /// relating each point to its endpoints.
     reflexivities: BTreeMap<ValueId, crate::code::Reflexivity>,
+    /// How the judgement decided each computation written where a value is
+    /// read, by node, since the declaration under way began.
+    nesting: BTreeMap<ValueId, crate::nested::Nesting>,
     /// The path each univalence statement the judgement decided derives, by
     /// node.
     universals: BTreeMap<ValueId, ValueId>,
@@ -365,6 +368,7 @@ impl<'arena> CheckingContext<'arena>
             equivalences: BTreeMap::new(),
             reflexivities: BTreeMap::new(),
             universals: BTreeMap::new(),
+            nesting: BTreeMap::new(),
             sealed: BTreeMap::new(),
             seals: SealTable::new(),
             budget,
@@ -1160,6 +1164,47 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         self.reflexivities.insert(at, reflexivity);
     }
 
+    /// Record how the judgement decided the computation `at` stands for where
+    /// a value is read.
+    ///
+    /// # Specification
+    /// - requires: `nesting` is what the rule at `at` decided.
+    /// - ensures: `at` has `nesting` as its decision, replacing an earlier one.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a nested computation against a thunk type and against
+    ///   an atom are each recorded as their rule decided.
+    /// - witness: `module::tests::a_nested_computation_is_decided_by_its_expected_type`
+    /// - witness: `module::tests::a_nested_run_elaborates_into_a_bind_before_its_region`
+    #[spec(ensures: self.nesting.get(&at) == Some(&nesting))]
+    pub(crate) fn record_nesting(
+        &mut self,
+        at: ValueId,
+        nesting: crate::nested::Nesting,
+    )
+    {
+        self.nesting.insert(at, nesting);
+    }
+
+    /// Take every decision recorded since the last take, leaving none.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the decisions recorded since the last take, by node; none
+    ///   remain.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`CheckingContext::record_nesting`]; a second
+    ///   declaration's elaboration reads only its own decisions.
+    /// - witness: `module::tests::a_nested_run_elaborates_into_a_bind_before_its_region`
+    #[spec(ensures: self.nesting.is_empty())]
+    pub(crate) fn take_nesting(&mut self) -> BTreeMap<ValueId, crate::nested::Nesting>
+    {
+        core::mem::take(&mut self.nesting)
+    }
+
     /// The path each univalence statement the judgement decided derives, by
     /// node.
     ///
@@ -1576,6 +1621,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
             | Value::Equiv(..)
             | Value::Ua { .. }
             | Value::Returned(_)
+            | Value::Nested(_)
+            | Value::Run(_)
             | Value::Constructor { .. }
             | Value::Record(_)
             | Value::Reify(_)

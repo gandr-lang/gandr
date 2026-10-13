@@ -15,8 +15,6 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 
 **What.** `check_module` judges name-free `Declaration`s in a `CheckingContext` over a core arena. Each input carries an admission position, an echoed `OriginToken`, and either optional value signature/body halves or a complete nominal data signature. Its `Verdict` records an admitted data signature, a checked body, a synthesised type, an owed hole or a refusal. Four public faces judge individual values and computations. The ledger collects holes; refusal classification separates malformed source, unrepresentable syntax and engine faults. The kernel independently checks the exportable pure fragment.
 
-**Holes.** A hole inside a body synthesises the unknown type, which conversion treats as consistent with every type; `elaborate_value` and `elaborate_comp` mark each refusal where it stands and go on; `cover` answers coverage in three values; the bridge refuses a hole and erases a mark.
-
 **Why.** A frontend needs stable per-declaration verdicts that distinguish what the author owes from what is wrong. A mode per former and comparison only at mode changes are enforced by lint and module visibility, not review. Kernel readmission independently checks pure acceptances.
 
 **How.** One goal-and-frame machine charges each transition to `CheckBudget`. Checking receives formed types and dispatches on the term former. Synthesis crosses a private conversion bridge when checking needs it. Formation computes the natural classifier. Code unfolding is certified before comparison; readmission replays those certificates. The module documentation specifies each boundary.
@@ -33,6 +31,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 - `CodeDefinitions`, `Certificate`, `Unfolded`, `unfolding::Absent` and `Lift`: static definitions, certified reductions and recorded universe lifts.
 - `Declaration`, `DeclarationContent` and `OriginToken`: name-free value/data input. Values retain optional signature/body halves; data retain a `DataSignature`.
 - `check_declaration`, `check_module`, `Verdict`, `Judged` and `ModuleReport`: one verdict per declaration, retaining accepted value definitions, native data signatures and recorded lifts.
+- `Nesting`, `NestedElaboration` and `ModuleReport::nested_elaborations`: each computation written where a value is read, run or suspended by the type expected there, and the body rebuilt with every run bound.
 - `Funext`, `FunextStep`, `Evaluation`, `Reading`, `Stalled`, `evaluated::Absent`, `ModuleReport::funexts`, `Equivalence`, `ModuleReport::equivalences`, `Reflexivity`, `converted::Absent` and `ModuleReport::reflexivities`: function extensionality, `equiv(f, g)` and reflexivity decided by computation, each with the traces the kernel replays; `ua::derive` lifts `equiv(f, g)` to `ua_n` at every stratum the site certifies, its telescope one unit per degree above one; `ModuleReport::universals`: what `ua[n, k]` derives.
 - `check_declaration_supported`, `Supported`, `Support`, `Consulted` and `CheckingContext::adopt`: query-specific value/data answers and adoption into the new prefix.
 - `CheckingContext`, `CheckBudget` and `signature_table::Absent`: context, admission tables and judgment allowance.
@@ -118,7 +117,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 | Function extensionality, universe equivalence, `ua_n` | [`funext`](src/funext.rs), [`equiv`](src/equiv.rs), [`ua`](src/ua.rs) |
 | Total elaboration and the typed run | [`judgement::elaboration`](src/judgement/elaboration.rs) |
 | Records | [`judgement::native`](src/judgement/native.rs) |
-| The three bridges, consistency, smallness and variance | [`conversion`](src/conversion.rs) |
+| The three bridges, consistency, smallness and variance; the fourth, a nested computation run or suspended | [`conversion`](src/conversion.rs), [`nested`](src/nested.rs) |
 | Formation, the classifier, universes, quotes and decodes | [`formation`](src/formation.rs) |
 | Code unfolding and its certificates | [`code`](src/code.rs) |
 | The fragment's type views | [`view`](src/view.rs) |

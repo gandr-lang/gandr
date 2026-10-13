@@ -115,6 +115,7 @@ pub use crate::label::Labeling;
 pub use crate::label::Lexeme;
 pub use crate::label::Token;
 pub use crate::label::label;
+pub use crate::meld::BoundarySlot;
 pub use crate::meld::Checkpoint;
 pub use crate::meld::CheckpointBytes;
 pub use crate::meld::CheckpointBytesRef;

@@ -59,7 +59,7 @@ use crate::form::shape_of;
 use crate::origin::Origin;
 
 #[cfg(test)]
-mod tests;
+pub(in crate::lower) mod tests;
 
 /// What the paths through a node do with the body it stands in.
 ///
