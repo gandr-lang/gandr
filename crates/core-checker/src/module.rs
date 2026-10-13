@@ -1617,5 +1617,3 @@ mod tests
         );
     }
 }
-// weave: run 'weave explain crates/core-checker/src/module.rs' for per-hunk
-// detail, 'weave check' to verify your resolution

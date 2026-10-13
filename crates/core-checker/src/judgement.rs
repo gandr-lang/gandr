@@ -8858,5 +8858,3 @@ mod tests
         }
     }
 }
-// weave: run 'weave explain crates/core-checker/src/judgement.rs' for per-hunk
-// detail, 'weave check' to verify your resolution

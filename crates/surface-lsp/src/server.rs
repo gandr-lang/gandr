@@ -3637,5 +3637,3 @@ mod tests
         );
     }
 }
-// weave: run 'weave explain crates/surface-lsp/src/server.rs' for per-hunk
-// detail, 'weave check' to verify your resolution

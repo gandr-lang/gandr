@@ -1861,5 +1861,3 @@ def h = 1 ;"#,
         assert_eq!(super::unstatable(&module).as_slice(), &[first, last]);
     }
 }
-// weave: run 'weave explain crates/surface-dispatcher/src/compose.rs' for
-// per-hunk detail, 'weave check' to verify your resolution

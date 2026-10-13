@@ -556,8 +556,6 @@ quenchant_shape::reason_enum! {
     }
 }
 
-// refused_by: statement_fold · collision: `/// - witness:
-// `session::session::every_corpus_report_is_publis…`
 /// Run the admission the document's latest recheck left in its `session`.
 ///
 /// # Specification
@@ -1416,5 +1414,3 @@ mod tests
         );
     }
 }
-// weave: run 'weave explain crates/surface-lsp/src/recheck.rs' for per-hunk
-// detail, 'weave check' to verify your resolution

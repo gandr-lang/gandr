@@ -789,5 +789,3 @@ mod tests
         assert_eq!(spelled(&cycle), approximate("?".into()));
     }
 }
-// weave: run 'weave explain crates/surface-pretty/src/content_source.rs' for
-// per-hunk detail, 'weave check' to verify your resolution

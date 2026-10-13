@@ -846,5 +846,3 @@ mod tests
         ));
     }
 }
-// weave: run 'weave explain crates/surface-pretty/src/core_source.rs' for
-// per-hunk detail, 'weave check' to verify your resolution

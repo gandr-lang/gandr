@@ -365,8 +365,6 @@ fn identity_at_an_open_type_is_a_neutral_fibre()
     );
 }
 
-// refused_by: modify_delete_guard · collision: none (no common ancestor text)
-
 #[test]
 fn reflexivity_converts_its_endpoints_by_the_laws_of_bind()
 {
