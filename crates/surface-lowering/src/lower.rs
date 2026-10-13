@@ -2160,8 +2160,9 @@ enum Plan
     /// lowerer's operand store make.
     Resume(NodeIndex, Stretch),
     /// A session type: its protocol over the payload types in the lowerer's
-    /// operand store, in slot order, standing at the protocol's root.
-    Session(Arc<Protocol>, Stretch),
+    /// operand store, in slot order, standing at the protocol's root, and
+    /// every site the source writes one of its states at.
+    Session(Arc<Protocol>, Stretch, Arc<session::Written>),
     /// A session action over the nodes of its payload, its arms and a fork's
     /// protocol and children.
     Action(SessionAction<NodeIndex, NodeIndex, NodeIndex>),
@@ -8914,8 +8915,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Resume(continuation, reply) => {
                 self.mint_resume(continuation, reply, sink, origin)
             },
-            | Plan::Session(ref protocol, payloads) => {
-                self.mint_session(protocol, payloads, sink, origin)
+            | Plan::Session(ref protocol, payloads, ref written) => {
+                self.mint_session(protocol, payloads, written, sink, origin)
             },
             | Plan::Action(ref action) => self.mint_action(action, sink, origin),
             | Plan::Recorded(ref moves) => self.mint_recorded(moves, sink, origin),

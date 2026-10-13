@@ -319,6 +319,94 @@ fn a_session_type_lowers_to_its_protocol()
 }
 
 #[test]
+fn each_state_answers_where_it_is_written()
+{
+    let text = "def seat : ?String. mu turn. +{ report : !String. &{ next : turn, retire : end }, \
+                handoff : !Integer. end } ;\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(text), &mut arena);
+    let written = |start: usize, end: usize| text.get(start .. end).unwrap_or_default();
+    let state = |ty: ValueTypeId| match arena.value_type(ty) {
+        | Some(&ValueType::Session(ref session)) => Some(session.state()),
+        | _ => None,
+    };
+    let mut forms: Vec<(&str, Option<_>)> = module
+        .origins()
+        .value_types()
+        .iter()
+        .filter(|&&(ty, origin)| {
+            origin.provenance() == crate::origin::Provenance::Written && state(ty).is_some()
+        })
+        .map(|&(ty, origin)| {
+            let span = origin.span();
+            (
+                written(usize::from(span.start()), usize::from(span.end())),
+                state(ty),
+            )
+        })
+        .collect();
+    forms.sort_unstable();
+    let at = |form: &str| {
+        forms
+            .iter()
+            .find(|&&(held, _)| held == form)
+            .map(|&(_, at)| at)
+    };
+    for continuation in [
+        "mu turn. +{ report : !String. &{ next : turn, retire : end }, handoff : !Integer. end }",
+        "+{ report : !String. &{ next : turn, retire : end }, handoff : !Integer. end }",
+        "!String. &{ next : turn, retire : end }",
+        "&{ next : turn, retire : end }",
+        "!Integer. end",
+        "turn",
+        "end",
+    ] {
+        assert!(
+            at(continuation).is_some(),
+            "`{continuation}` answers at its own state: {forms:?}"
+        );
+    }
+    let labels: Vec<(&str, Option<_>)> = module
+        .origins()
+        .labels()
+        .iter()
+        .filter_map(|label| match label.labelled {
+            | crate::origin::Labelled::ValueType { ty, .. } => Some((
+                written(
+                    usize::from(label.span.start()),
+                    usize::from(label.span.end()),
+                ),
+                state(ty),
+            )),
+            | _ => None,
+        })
+        .collect();
+    let named = |label: &str| {
+        labels
+            .iter()
+            .find(|&&(held, _)| held == label)
+            .map(|&(_, at)| at)
+    };
+    assert_eq!(
+        named("report"),
+        at("!String. &{ next : turn, retire : end }"),
+        "a select's label answers at the state it continues with"
+    );
+    assert_eq!(
+        named("next"),
+        at("turn"),
+        "an offer's label answers at its branch's state"
+    );
+    assert_eq!(
+        named("turn"),
+        at(
+            "mu turn. +{ report : !String. &{ next : turn, retire : end }, handoff : !Integer. end }"
+        ),
+        "a `mu`'s variable answers at the state it binds"
+    );
+}
+
+#[test]
 fn a_malformed_protocol_is_refused_where_it_is_written()
 {
     let source = SourceText::from(

@@ -133,6 +133,8 @@ use crate::form::Pieces;
 use crate::form::Placed;
 use crate::form::TileName;
 use crate::form::read_pieces;
+use crate::origin::Label;
+use crate::origin::Labelled;
 use crate::origin::Origin;
 use crate::resolve::SurfaceName;
 
@@ -184,11 +186,70 @@ struct Draft
     syntax: Vec<ProtocolSyntax>,
     /// The form each state is written as.
     written: Vec<Placed>,
+    /// Every place the source writes a state at: each continuation, the form
+    /// inside its parentheses, each branch's label and each `mu`'s variable.
+    sites: Vec<StateSite>,
     /// The steps of the walk still to take, the last first.
     work: Vec<Walk>,
     /// The operand-store position of the protocol's first payload, which
     /// slot zero names.
     base: usize,
+}
+
+/// A place the source writes a protocol's state at.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: `state` is a state of the protocol the site was read in.
+/// - executable: none — the site holds no protocol to check its state against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each continuation answers at its own state, and each
+///   branch label and `mu` variable at the state it names.
+/// - witness: `lower::session::tests::each_state_answers_where_it_is_written`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct StateSite
+{
+    /// Where the source writes it.
+    at: Placed,
+    /// The state written there.
+    state: ProtocolState,
+    /// Whether the site is the state's own form or a name for it.
+    naming: Naming,
+}
+
+/// Whether a site writes a state or names one.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Naming
+{
+    /// The state's own form, a session type standing where it is written.
+    Form,
+    /// A branch's label or a `mu`'s variable, naming the state it continues
+    /// with or binds.
+    Label,
+}
+
+/// What a session type's mint needs beside its protocol: every site a state
+/// is written at, and the frame its payloads are read under.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: every site names a state of the protocol it is planned with.
+/// - executable: none — the record holds no protocol.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`StateSite`].
+/// - witness: `lower::session::tests::each_state_answers_where_it_is_written`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct Written
+{
+    /// The sites, in the order the walk read them.
+    sites: Vec<StateSite>,
+    /// The frame the protocol is read under.
+    frame: Frame,
 }
 
 impl Draft
@@ -298,6 +359,7 @@ impl<'source> Lowerer<'_, 'source>
         let mut draft = Draft {
             syntax: Vec::new(),
             written: Vec::new(),
+            sites: Vec::new(),
             work: Vec::new(),
             base: self.operands.len(),
         };
@@ -313,6 +375,11 @@ impl<'source> Lowerer<'_, 'source>
                 },
                 | Walk::Node { at, state } => (at, state),
             };
+            draft.sites.push(StateSite {
+                at,
+                state,
+                naming: Naming::Form,
+            });
             let Some((written, former)) = self.form_at(at)?
             else {
                 return Err(site.fault(at.span, FormFault::MisplacedTile));
@@ -362,7 +429,7 @@ impl<'source> Lowerer<'_, 'source>
                             continue;
                         },
                         | Former::SessionType => {
-                            self.session_former(here, cursor, &mut draft, &mut binders)?
+                            self.session_former(here, state, cursor, &mut draft, &mut binders)?
                         },
                         | _ => self.choice(here, former, cursor, &mut draft)?,
                     }
@@ -377,7 +444,10 @@ impl<'source> Lowerer<'_, 'source>
         };
         let count = PayloadCount::from(payloads.end.saturating_sub(payloads.start));
         let Draft {
-            syntax, written, ..
+            syntax,
+            written,
+            sites,
+            ..
         } = draft;
         let protocol = match Protocol::new(syntax, root, count) {
             | Ok(protocol) => protocol,
@@ -388,7 +458,14 @@ impl<'source> Lowerer<'_, 'source>
             },
             | Err(_malformed) => return Err(site.out(FragmentBoundary::Unadmitted)),
         };
-        self.plan(site, Plan::Session(Arc::new(protocol), payloads));
+        self.plan(
+            site,
+            Plan::Session(
+                Arc::new(protocol),
+                payloads,
+                Arc::new(Written { sites, frame }),
+            ),
+        );
 
         Ok(())
     }
@@ -397,12 +474,13 @@ impl<'source> Lowerer<'_, 'source>
     /// t. S`, at `here`, its continuations queued on the walk.
     ///
     /// # Specification
-    /// - requires: `cursor` reads the form's pieces from the start.
+    /// - requires: `cursor` reads the form's pieces from the start, and `state`
+    ///   is the state the form is written as.
     /// - ensures: `end` is the closed node; a send or receive reads its payload
     ///   as a value type under the form's frame, stores it in the next slot and
     ///   queues its continuation as a fresh state; `mu t. S` binds `t` for the
-    ///   walk under it, queues a leave after `S`, and is the fixed point of the
-    ///   state `S` fills.
+    ///   walk under it, queues a leave after `S`, is the fixed point of the
+    ///   state `S` fills, and keeps `t` as a site naming `state`.
     /// - fails: a misplaced tile or a hole's own fault.
     /// - panics: none.
     ///
@@ -424,6 +502,7 @@ impl<'source> Lowerer<'_, 'source>
     fn session_former(
         &mut self,
         here: Site,
+        state: ProtocolState,
         mut cursor: Cursor<'_>,
         draft: &mut Draft,
         binders: &mut Vec<SurfaceName<'source>>,
@@ -442,6 +521,11 @@ impl<'source> Lowerer<'_, 'source>
             let body = here.one(cursor.operands())?;
             exhausted(here, &cursor)?;
             binders.push(self.name_at(variable));
+            draft.sites.push(StateSite {
+                at: variable,
+                state,
+                naming: Naming::Label,
+            });
             draft.work.push(Walk::Leave);
             let inner = draft.queue(body);
             return Ok(ProtocolSyntax::Mu(inner));
@@ -480,9 +564,9 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `cursor` reads the braces' pieces from the start; `former`
     ///   is the sum or the lazy record over labels.
-    /// - ensures: one fresh state per labelled branch, keyed by its label and
-    ///   queued at its continuation; the select for the sum, the offer for the
-    ///   lazy record.
+    /// - ensures: one fresh state per labelled branch, keyed by its label,
+    ///   queued at its continuation and kept with its label as a site naming
+    ///   it; the select for the sum, the offer for the lazy record.
     /// - fails: a misplaced tile at a positional branch; a label written twice;
     ///   the braces' own faults.
     /// - panics: none.
@@ -524,8 +608,13 @@ impl<'source> Lowerer<'_, 'source>
         };
         let mut branches = BTreeMap::new();
         for entry in entries.iter().rev() {
-            if let Key::Label(label, _written) = entry.key {
+            if let Key::Label(label, written) = entry.key {
                 let branch = draft.queue(entry.held.at());
+                draft.sites.push(StateSite {
+                    at: written,
+                    state: branch,
+                    naming: Naming::Label,
+                });
                 let _first =
                     branches.insert(FieldLabel::from(String::from(label.as_ref())), branch);
             }
@@ -899,31 +988,37 @@ impl<'source> Lowerer<'_, 'source>
         )))
     }
 
-    /// Mint a session type over its payload types.
+    /// Mint a session type over its payload types, and the state each site of
+    /// it is written at.
     ///
     /// # Specification
     /// - requires: every payload type is already minted or absent.
     /// - ensures: the session type at `protocol`'s root over the payloads in
-    ///   slot order, with the written origin; nothing when a payload did not
-    ///   lower.
+    ///   slot order, with the written origin; beside it, for each other site
+    ///   that writes a state, that state's session type at the site's bytes,
+    ///   and for each label or `mu` variable a label naming its state's session
+    ///   type under the protocol's frame; nothing when a payload did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the seat's protocol over its three payloads.
+    /// - hypothesis: L3 — the seat's protocol over its three payloads, and each
+    ///   of its continuations, labels and variables at its state.
     /// - witness: `lower::session::tests::a_session_type_lowers_to_its_protocol`
+    /// - witness: `lower::session::tests::each_state_answers_where_it_is_written`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::ValueType(_))))]
     pub(super) fn mint_session(
         &self,
         protocol: &Arc<Protocol>,
         payloads: Stretch,
+        written: &Written,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let written = stretch(&self.operands, payloads);
-        let mut carried: Vec<ValueTypeId> = Vec::with_capacity(written.len());
-        for &payload in written {
+        let operands = stretch(&self.operands, payloads);
+        let mut carried: Vec<ValueTypeId> = Vec::with_capacity(operands.len());
+        for &payload in operands {
             match self.value_type_at(payload) {
                 | Maybe::Present(ty) => carried.push(ty),
                 | Maybe::Absent(reason) => return Maybe::Absent(reason),
@@ -933,8 +1028,48 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Maybe::Absent(lowered::Absent::Unminted);
         };
-        let id = sink.arena.value_type_session(session);
+        let root = session.state();
+        let id = sink.arena.value_type_session(session.clone());
         sink.origins.record_value_type(id, origin);
+        let mut states: BTreeMap<ProtocolState, ValueTypeId> = BTreeMap::new();
+        let _root = states.insert(root, id);
+        let context: Vec<String> = self
+            .scope
+            .telescope_names(written.frame)
+            .into_iter()
+            .map(|name| String::from(name.as_ref()))
+            .collect();
+        for site in &written.sites {
+            if site.naming != Naming::Form || site.at.node == origin.node() {
+                continue;
+            }
+            let Ok(at) = session.at(site.state)
+            else {
+                continue;
+            };
+            let ty = sink.arena.value_type_session(at);
+            sink.origins
+                .record_value_type(ty, Origin::new(site.at.node, site.at.span));
+            let _first = states.entry(site.state).or_insert(ty);
+        }
+        // Every state is written somewhere, so each label finds its state's
+        // type among the forms minted above.
+        for site in &written.sites {
+            if site.naming != Naming::Label {
+                continue;
+            }
+            let Some(&ty) = states.get(&site.state)
+            else {
+                continue;
+            };
+            sink.origins.record_label(Label {
+                span: site.at.span,
+                labelled: Labelled::ValueType {
+                    ty,
+                    context: context.clone(),
+                },
+            });
+        }
 
         Maybe::Present(Lowered::ValueType(id))
     }
