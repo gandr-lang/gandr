@@ -23,6 +23,7 @@
 //! | `gandr check <paths>` | each unsettled declaration, each source refused as a whole | any unsettled declaration |
 //! | `gandr check --goals <paths>` | as `check`, a declaration unsettled by its obligations alone marked `goal:` | any unsettled declaration but those |
 //! | `gandr check --jobs <threads> <paths>` | as `check`, its sources parsed and lowered on that many threads | as `check` |
+//! | `gandr check --lint explicit-exits <paths>` | as `check`, plus a warning for every exit the lowering inferred where a body ends, each with the fix that writes its keyword; without the flag only the declarations and modules marked `@[ explicit_exits ]` are linted | as `check`: a finding settles nothing |
 //! | `gandr check --verbosity <level> <paths>` | as `check`, each report at `user` (the default), `detailed` (adding its class, the producer's wording and the offending source text), `debug` (adding byte spans and the producer's refusal) or `json` (each report, ledger line and the run's summary as one line of JSON); `test` takes the flag too | as `check` |
 //! | `gandr test <paths>` | as `check`, plus every fixture, settled or not, and every pending source's refusal | as `check` |
 //! | `gandr run <file>` | the value, alone, on standard output; every report `check --goals` would print, and why a run stopped or never started, on standard error | a run blamed or stuck, or a source that never reached the machine |
@@ -244,6 +245,7 @@ use std::process::ExitCode;
 use std::time::Instant;
 
 use anodized::spec;
+use gandr_surface_diagnostics::Lint;
 use gandr_surface_diagnostics::Severity;
 use gandr_surface_diagnostics::Verbosity;
 use gandr_surface_dispatcher::Evaluation;
@@ -251,6 +253,7 @@ use gandr_surface_dispatcher::FormatStep;
 use gandr_surface_dispatcher::Formatting;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::Invocation;
+use gandr_surface_dispatcher::Lints;
 use gandr_surface_dispatcher::Outcome;
 use gandr_surface_dispatcher::ProgramSpec;
 use gandr_surface_dispatcher::Ran;
@@ -334,6 +337,10 @@ enum Command
         /// rather than failing the run.
         #[arg(long)]
         goals: bool,
+        /// Report every finding of the named lint, not only within the forms
+        /// an attribute enables it on; repeatable.
+        #[arg(long, value_enum)]
+        lint: Vec<LintName>,
         /// How much of each report to print.
         #[arg(long, value_enum, default_value_t = Level::User)]
         verbosity: Level,
@@ -579,6 +586,30 @@ impl From<Level> for Verbosity
     }
 }
 
+/// A lint `check --lint` enables everywhere, beyond the forms an attribute
+/// enables it on.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, clap::ValueEnum)]
+enum LintName
+{
+    /// Every exit the lowering inferred where a path through a body ends.
+    ExplicitExits,
+}
+
+impl From<LintName> for Lint
+{
+    /// The lint `name` names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(name: LintName) -> Self
+    {
+        match name {
+            | LintName::ExplicitExits => Self::ExplicitExits,
+        }
+    }
+}
+
 /// Which face of the read-evaluate loop to run.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Face
@@ -663,12 +694,14 @@ fn main() -> ExitCode
         | None => (Invocation::Status, Verbosity::User),
         | Some(Command::Check {
             goals,
+            lint,
             verbosity,
             jobs,
             paths,
         }) => (
             Invocation::Check {
                 goals: if goals { Goals::Reported } else { Goals::Gated },
+                lints: Lints::enabling(lint.into_iter().map(Lint::from)),
                 paths,
                 width: Width::from(jobs),
             },
@@ -1331,7 +1364,12 @@ fn render(
             writeln!(stdout, "gandr {} — {report}", env!("CARGO_PKG_VERSION"))?;
             Ok(ExitCode::SUCCESS)
         },
-        | Outcome::Run { verb, walk, width } => run(verb, walk, width, verbosity, stdout, stderr),
+        | Outcome::Run {
+            verb,
+            lints,
+            walk,
+            width,
+        } => run(verb, lints, walk, width, verbosity, stdout, stderr),
         | Outcome::Script(mut runnable) => script(&mut runnable, stdout, stderr),
         | Outcome::Stage(staging) => stage(staging, stdout, stderr),
         | Outcome::Format(formatting) => fmt(formatting, stdout, stderr),
@@ -1471,15 +1509,16 @@ fn stage(
 /// - requires: nothing.
 /// - ensures: consumes the walk, writing each step in walk order: each
 ///   diagnostic the dispatcher's `entries` yields for a source step under
-///   `verb`, laid out by `gandr-surface-render-terminal`, to standard output at
-///   `verbosity` — below the JSON level a report as a plain snippet followed by
-///   an empty line and a ledger line as itself, at it each entry as one line of
-///   JSON — and each fault as one `gandr: <path>: <fault>` line to standard
-///   error; then the final report and verdict, at the JSON level as one object
-///   whose `level` is `summary`. The exit is zero for settled, one for
-///   unsettled and two for faulted, as the walk's final report decides under
-///   the offered verb, at every verbosity. Every byte written and the exit are
-///   the same at every width.
+///   `verb`, each lint reaching where `lints` says, laid out by
+///   `gandr-surface-render-terminal`, to standard output at `verbosity` — below
+///   the JSON level a report as a plain snippet followed by an empty line and a
+///   ledger line as itself, at it each entry as one line of JSON — and each
+///   fault as one `gandr: <path>: <fault>` line to standard error; then the
+///   final report and verdict, at the JSON level as one object whose `level` is
+///   `summary`. The exit is zero for settled, one for unsettled and two for
+///   faulted, as the walk's final report decides under the offered verb, at
+///   every verbosity. Every byte written and the exit are the same at every
+///   width.
 /// - provides: ordered rendering and severity aggregation for check and test.
 /// - fails: the first write error, without visiting or writing anything after
 ///   it.
@@ -1500,10 +1539,12 @@ fn stage(
 /// - witness: `cli::cli::a_failed_diagnostic_stream_stops_later_output`
 /// - witness: `cli::cli::every_width_prints_the_serial_run`
 /// - witness: `cli::cli::verbosity_chooses_how_much_of_a_report_prints`
+/// - witness: `cli::cli::a_lint_reports_each_inferred_exit_and_its_fix_settles_it`
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |exit|
     *exit == ExitCode::SUCCESS || *exit == ExitCode::from(UNSETTLED) || *exit == ExitCode::from(FAULTED)))]
 fn run(
     verb: Verb,
+    lints: Lints,
     walk: Walk,
     width: Width,
     verbosity: Verbosity,
@@ -1514,7 +1555,7 @@ fn run(
     let visited = walk.visit(width, |step| {
         match step {
             | Step::Source { .. } => {
-                for diagnostic in entries(&step, verb) {
+                for diagnostic in entries(&step, verb).linting(lints) {
                     let separator = match (diagnostic.severity, verbosity) {
                         | (
                             Severity::Error | Severity::Warning | Severity::Goal,

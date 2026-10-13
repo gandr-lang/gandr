@@ -1220,7 +1220,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   `T` as a value type under the same frame, records it as the
     ///   constructor's classifier, and adopts the constructor; an annotation
     ///   over an injection does the same, the injection reading its summand's
-    ///   label among the sum `T` states.
+    ///   label among the sum `T` states. An annotation standing at a tail,
+    ///   where a path through a body ends, is a value there and takes the
+    ///   `return` its polarity names.
     /// - fails: the unadmitted annotation refusal for any other annotation; the
     ///   hole's and the tiles' own faults.
     /// - panics: none.
@@ -1230,9 +1232,11 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an annotated parameterised constructor lowers over
-    ///   the annotation's type, and an annotated name is refused.
+    ///   the annotation's type, at a value position and at a tail, and an
+    ///   annotated name is refused.
     /// - witness: `lower::native::tests::a_parameterized_constructor_needs_its_classifier`
     /// - witness: `lower::arity::tests::an_injection_takes_its_index_from_its_label`
+    /// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Transparent(_))))]
     pub(super) fn annotated(
         &mut self,
@@ -1242,9 +1246,16 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let declined = site.folded(FormName::ANNOTATION, FragmentBoundary::Unadmitted);
-        let (Run::One(inner), Reading::Value(frame)) = (run, site.reading)
+        let Run::One(inner) = run
         else {
             return Err(declined);
+        };
+        let frame = match site.reading {
+            | Reading::Value(frame) => frame,
+            | Reading::Computation(_) if self.exits.contains(&site.at.node) => {
+                self.require(site, Produced::Value)?
+            },
+            | _ => return Err(declined),
         };
         let injected = matches!(self.form_at(inner)?, Some((_, Former::Injection)));
         if !injected && let Maybe::Absent(_) = self.applied_constructor(site, inner)? {
@@ -1255,7 +1266,7 @@ impl<'source> Lowerer<'_, 'source>
         closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
         exhausted(site, &cursor)?;
         self.read(classifier.node, Reading::ValueType(frame));
-        self.read(inner.node, site.reading);
+        self.read(inner.node, Reading::Value(frame));
         let _first = self.classifiers.insert(inner.node, classifier.node);
         self.plan(site, Plan::Transparent(inner.node));
 

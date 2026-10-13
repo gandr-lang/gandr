@@ -89,12 +89,17 @@
 //!
 //! `return v` and `become c` leave the nearest function, lambda or thunk from
 //! wherever a path through its body passes: a nested match, the computation
-//! of a `run`, a block inside an arm. The lowering puts every exit where its
-//! body ends. A statement `x ← M; N` whose `M` holds an exit commutes: the
-//! rest `N` moves into every local end of `M`, the commuting conversion of
-//! call-by-push-value (Levy, *Call-By-Push-Value: A Functional/Imperative
-//! Synthesis*, 2003), and a local end `return w` continues by the beta step
-//! `N[w/x]`. Each exit then stands in tail position, and focusing makes it
+//! of a `run`, a block inside an arm. Where a path ends the keyword may go
+//! unwritten: the lowering infers the exit the tail's polarity names —
+//! `return` over a value, `become` over a computation — checks it as a
+//! written one, and lists it in [`LoweredModule::inferred_exits`]; the
+//! `explicit-exits` lint asks for it written. The lowering puts every exit
+//! where its body ends. A statement `x ← M; N` whose `M` holds an exit
+//! commutes: the rest `N` moves into every local end of `M`, the commuting
+//! conversion of call-by-push-value (Levy, *Call-By-Push-Value: A
+//! Functional/Imperative Synthesis*, 2003), and a local end `return w`
+//! continues by the beta step `N[w/x]`. Each exit then stands in tail
+//! position, and focusing makes it
 //! the cut `⟨v | k⟩` of its value against the body's own return
 //! continuation `k` — the one `μ` the body binds (Downen and Ariola, *A
 //! tutorial on computational classical logic and the sequent calculus*,
@@ -253,7 +258,10 @@ pub use crate::import::ImportDeclaration;
 pub use crate::import::ImportIndex;
 pub use crate::import::ImportUri;
 pub use crate::import::ModuleImports;
+pub use crate::lower::Exit;
+pub use crate::lower::Explicitness;
 pub use crate::lower::Fuel;
+pub use crate::lower::InferredExit;
 pub use crate::lower::LoweringBudget;
 pub use crate::lower::lower_module;
 pub use crate::module::Coerced;

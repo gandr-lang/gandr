@@ -1,6 +1,6 @@
 # gandr-surface-pretty
 
-The presentation printer: a checked core type or a normal-form value, written in its one surface spelling and laid out at a page width through `gandr-surface-layout`.
+The presentation printer: a checked core type, a normal-form value or an elaborated body, written in its one surface spelling and laid out at a page width through `gandr-surface-layout`.
 
 <!-- toc -->
 - [Synopsis](#synopsis)
@@ -13,7 +13,7 @@ The presentation printer: a checked core type or a normal-form value, written in
 
 ## Synopsis
 
-**What.** `present_type` and `present_value` take a `Source` — a store that answers, for one node, the `Former` it carries — a root and a `PageWidth`, and return a `Presentation`: the laid-out text and its `Fidelity`, which says whether every node was written in full. `CoreSource` reads the core arena and `ContentSource` an incremental checkpoint's content table; a face with a store of its own implements `Source` beside them. The crate uses `core` and `alloc` under `no_std`.
+**What.** `present_type`, `present_value` and `present_computation` take a `Source` — a store that answers, for one node, the `Former` it carries — a root and a `PageWidth`, and return a `Presentation`: the laid-out text and its `Fidelity`, which says whether every node was written in full. `CoreSource` reads the core arena and `ContentSource` an incremental checkpoint's content table; a face with a store of its own implements `Source` beside them. The crate uses `core` and `alloc` under `no_std`.
 
 **Why.** A transcript line, a hover and a diagnostic operand each name a type or show a value, and each must say it the same way, in the syntax a reader can type back. One producer of that spelling, laid out by one engine, keeps every face in agreement on both the words and where a line breaks.
 
@@ -23,6 +23,7 @@ The presentation printer: a checked core type or a normal-form value, written in
 
 - `present_type`: a value or computation type at a page width. Witnesses: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`, `goldens::tests::n_ary_products_and_sums_spell_between_their_braces`, `goldens::tests::records_spell_their_fields_in_label_order`, `goldens::tests::universes_spell_their_sort_and_level`, `goldens::tests::dependent_function_type_breaks_before_codomain`, `goldens::tests::long_dependent_function_type_breaks_at_the_narrow_page`, `goldens::tests::arrow_chain_breaks_before_each_continuation`, `goldens::tests::nullary_declared_data_uses_its_bare_name`, `goldens::tests::a_binder_skips_the_names_the_type_mentions`, `goldens::tests::static_operators_spell_as_the_grammar_writes_them`.
 - `present_value`: a value at a page width, bounded at `DEPTH_LIMIT`. Witnesses: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`, `goldens::tests::here_witness_pins_identity_notation`, `goldens::tests::string_controls_stay_in_one_escaped_literal`, `goldens::tests::pair_of_injections_pins_sum_notation`, `goldens::tests::n_ary_tuples_and_injections_spell_between_their_braces`, `goldens::tests::records_spell_their_fields_in_label_order`, `goldens::tests::record_value_breaks_fields_at_the_narrow_page`, `goldens::tests::beyond_the_depth_limit_renders_deep`.
+- `present_computation`: an elaborated body at a page width in its canonical form, every exit the lowering infers elided — a tail returner written as its value, a tail call bare, `pure v` where the body goes on — which the lowering reads back to the same term; a source as written is the formatter's. Witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`.
 - `Presentation`, `Fidelity`: the text, and whether it says the whole node, by the nodes met rather than the characters written. Witnesses: `goldens::tests::fidelity_follows_nodes_not_the_characters_of_a_name`, `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`.
 - `Source`, `Former`, `Name`: the one question the printer asks of its input; a malformed source — a child of the wrong sort, a dangling node, a cycle — is written `?`, never a panic. Witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`.
 - `CoreSource`, `CoreNode`: the core arena as a source, constants and abstract types named from a table indexed by constant.
@@ -91,9 +92,9 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 
 | Topic | Module |
 | ----- | ------ |
-| One spelling per former, tests and their limits, references | [`src/lib.rs`](src/lib.rs) |
+| One spelling per former, a body's canonical form with its exits elided, tests and their limits, references | [`src/lib.rs`](src/lib.rs) |
 | The input is a source | [`former`](src/former.rs) |
-| Products, sums and tuples between their braces, native universe paths, break points, binder names, bounds | [`walk`](src/walk.rs) |
+| Products, sums and tuples between their braces, native universe paths, break points, a body's statements breaking together, binder names, bounds | [`walk`](src/walk.rs) |
 
 The deferred golden rows, each with the former it needs, are tracked in [#206](https://github.com/gandr-lang/gandr/issues/206).
 

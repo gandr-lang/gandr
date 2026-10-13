@@ -257,6 +257,7 @@ use crate::import::ImportIndex;
 use crate::import::ImportUri;
 use crate::import::ModuleImports;
 use crate::lower::Fuel;
+use crate::lower::InferredExit;
 use crate::lower::decode_escapes;
 use crate::namespace::Recognition;
 use crate::namespace::Scope;
@@ -265,6 +266,7 @@ use crate::origin::OriginToken;
 use crate::resolve::SurfaceName;
 
 mod data;
+
 mod sealing;
 
 pub use self::data::Constructor;
@@ -1135,6 +1137,35 @@ pub struct Collected<'source>
     /// ascription declares, or the witness checking the kind a transparent
     /// one states — with what the slot is built from.
     pub abstracts: BTreeMap<SlotIndex, AbstractSlot>,
+    /// Every top-level module an attribute block decorates, in source order.
+    pub decorated: Vec<DecoratedModule<'source>>,
+}
+
+/// A top-level module an attribute block decorates, with the slots of the
+/// members its attributes reach.
+///
+/// # Specification
+/// - requires: nothing to construct this data; the collection produces it.
+/// - ensures: every attribute decorates the module form; the member slots are
+///   the ones the module's collection admitted, nested modules' included.
+/// - fails: not applicable to the data item.
+/// - panics: not applicable to the data item.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a decorated module of two members and an undecorated
+///   declaration after it, the attribute reaching the members only.
+/// - witness: `lower::exits::tests::an_explicit_exits_attribute_asks_within_its_form`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DecoratedModule<'source>
+{
+    /// The module form.
+    pub module: Placed,
+    /// The attributes written before it, in source order.
+    pub attributes: Vec<WrittenAttribute<'source>>,
+    /// The first slot its collection admitted.
+    pub first: SlotIndex,
+    /// The slot after the last its collection admitted.
+    pub end: SlotIndex,
 }
 
 impl<'source> Collected<'source>
@@ -1515,18 +1546,20 @@ struct Collector<'run, 'source>
 ///   for one name leaves the slot's first refusal set and the first occurrence
 ///   intact. A fault in a declaration form's own tiles — a repair, an empty or
 ///   overfull hole, a tile out of place, a tail the fragment does not admit —
-///   is offered to the declaration's slot at the declaration form itself. Each
-///   import is kept in source order with its address decoded and its alias
-///   bound in the import scope.
+///   is offered to the declaration's slot at the declaration form itself. The
+///   attributes written before a top-level module are kept with the slots its
+///   collection admitted. Each import is kept in source order with its address
+///   decoded and its alias bound in the import scope.
 /// - provides: the admission order every later pass resolves names against.
 /// - fails: [`LoweringRefusal::MalformedForm`] when the root holds a repair, a
 ///   declaration has no name to file a refusal under, or an import is out of
 ///   shape; [`LoweringRefusal::DuplicateImportAlias`] when two imports bind one
 ///   alias; [`LoweringRefusal::OutOfFragment`] when a root child is neither a
-///   declaration nor an import — an attribute block decorating nothing included
-///   — or when a declaration's name is a form rather than an identifier;
-///   [`LoweringRefusal::UnknownMold`] for a mold the grammar does not hold;
-///   [`LoweringRefusal::BudgetExceeded`] when the walk outruns the allowance.
+///   declaration, a module nor an import — an attribute block decorating
+///   nothing, or a module with no member, included — or when a declaration's
+///   name is a form rather than an identifier; [`LoweringRefusal::UnknownMold`]
+///   for a mold the grammar does not hold; [`LoweringRefusal::BudgetExceeded`]
+///   when the walk outruns the allowance.
 /// - panics: none. A position the tree does not hold contributes nothing.
 ///
 /// # Errors
@@ -1632,6 +1665,7 @@ pub fn collect<'source>(
             operations: BTreeMap::new(),
             operation_names: BTreeMap::new(),
             abstracts: BTreeMap::new(),
+            decorated: Vec::new(),
         },
         pieces: Pieces::new(),
     };
@@ -1658,6 +1692,13 @@ pub fn collect<'source>(
         }
         if former == Former::Declaration {
             collector.declaration(child, &decorations)?;
+            decorations.clear();
+            continue;
+        }
+        if former == Former::Module
+            && let Some(&block) = decorations.first()
+        {
+            collector.decorated_module(child, block, &decorations)?;
             decorations.clear();
             continue;
         }
@@ -1759,6 +1800,70 @@ impl<'source> Collector<'_, 'source>
             }),
             | Shape::Root | Shape::Repair(_) | Shape::Layout => Ok(()),
         }
+    }
+
+    /// Collect a top-level module the attribute blocks `decorations` decorate,
+    /// `block` the first of them.
+    ///
+    /// # Specification
+    /// - requires: `module` is a module form standing at the root, and
+    ///   `decorations` the attribute blocks written before it.
+    /// - ensures: the module is collected as an undecorated one is, and its
+    ///   attributes are kept with the slots its collection admitted, the blocks
+    ///   owned by the first of them so a fault in a payload refuses that
+    ///   member; a module whose collection admits no slot decorates nothing,
+    ///   and refuses the run as a stray attribute block does.
+    /// - provides: the decorated half of [`collect`]'s module reading.
+    /// - fails: a block out of shape, and every fault [`Self::module`] raises.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::MalformedForm`] for a block out of shape,
+    /// [`LoweringRefusal::OutOfFragment`] for a module with no member, and as
+    /// [`Self::module`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a decorated module of two members and an undecorated
+    ///   declaration after it, the attribute reaching the members only.
+    /// - witness: `lower::exits::tests::an_explicit_exits_attribute_asks_within_its_form`
+    #[spec(
+        captures: before = (self.collected.slots.len(), self.collected.decorated.len()),
+        ensures: |ret| ret.is_err()
+            || self.collected.decorated.get(before.1).is_some_and(|decorated| {
+                decorated.first.0 == before.0
+                    && decorated.end.0 == self.collected.slots.len()
+                    && decorated.first < decorated.end
+                    && decorated.attributes.iter().all(|attribute| attribute.decorates == module.node)
+            }),
+    )]
+    fn decorated_module(
+        &mut self,
+        module: Placed,
+        block: Placed,
+        decorations: &[Placed],
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let mut attributes = Vec::new();
+        for &written in decorations {
+            self.decoration(written, module.node, &mut attributes)?;
+        }
+        let first = SlotIndex(self.collected.slots.len());
+        self.module(module)?;
+        let end = SlotIndex(self.collected.slots.len());
+        if first == end {
+            return self.module_child(block);
+        }
+        for &written in decorations {
+            self.collected.own(written.node, first);
+        }
+        self.collected.decorated.push(DecoratedModule {
+            module,
+            attributes,
+            first,
+            end,
+        });
+
+        Ok(())
     }
 
     /// Admit the described family at `child`, which the native data reading
@@ -5843,6 +5948,9 @@ pub struct LoweredModule<'source>
     /// Each documented declaration form's documentation, keyed by its
     /// cross-tree key.
     documentation: BTreeMap<NodeKey, Documentation<'source>>,
+    /// Every exit the lowering inferred where a path through a body ends in a
+    /// form that is no exit, in source order.
+    inferred_exits: Vec<InferredExit>,
     /// Every minted core node's origin, and the declarations' own.
     origins: OriginTable,
     /// The imports, in source order, with their aliases bound.
@@ -5878,6 +5986,7 @@ impl<'source> LoweredModule<'source>
             structures,
             attributes,
             documentation: BTreeMap::new(),
+            inferred_exits: Vec::new(),
             origins,
             imports,
             recognition,
@@ -5915,6 +6024,34 @@ impl<'source> LoweredModule<'source>
     {
         self.documentation = documentation;
         self
+    }
+
+    /// This module, carrying `inferred_exits`, in source order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_inferred_exits(
+        mut self,
+        inferred_exits: Vec<InferredExit>,
+    ) -> Self
+    {
+        self.inferred_exits = inferred_exits;
+        self
+    }
+
+    /// Every exit the lowering inferred where a path through a body ends in a
+    /// form that is no exit, in source order: the keyword each tail left out,
+    /// at the tail's own bytes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn inferred_exits(&self) -> &[InferredExit]
+    {
+        &self.inferred_exits
     }
 
     /// The signature of the data declaration whose outcome holds `index`.

@@ -102,7 +102,6 @@ impl LoweringRefusal<'_>
             | Self::LowercaseModuleName { .. }
             | Self::NonExhaustiveMatch { .. }
             | Self::UnmarkedSelfReference { .. }
-            | Self::MissingExit { .. }
             | Self::Unreachable { .. } => {
                 matches!(ret, FailureClass::MalformedSource)
             },
@@ -132,7 +131,6 @@ impl LoweringRefusal<'_>
             | Self::LowercaseModuleName { .. }
             | Self::NonExhaustiveMatch { .. }
             | Self::UnmarkedSelfReference { .. }
-            | Self::MissingExit { .. }
             | Self::Unreachable { .. } => FailureClass::MalformedSource,
             | Self::OutOfFragment { .. }
             | Self::GradedBridge { .. }
@@ -199,7 +197,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 27_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 26_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -316,7 +314,6 @@ mod tests
                 span: empty,
                 name: SurfaceName::from("gone"),
             },
-            LoweringRefusal::MissingExit { span: empty },
             LoweringRefusal::Unreachable { span: empty },
             LoweringRefusal::WithoutK { span: empty },
         ]
@@ -347,7 +344,6 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::Unrepresentable,
-            FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,

@@ -19,6 +19,7 @@
 //! | goal | ``goal: `<name>` states …; produced …`` | the declaration, labelled with its surviving obligations | none |
 //! | source refused as a whole | `error[<refusal>]: the source is not a list of declarations: …` | the refusal's span | none |
 //! | shadowed builtin | ``warning[ShadowedBuiltin]: `<path>` shadows a builtin name; the source's binding wins`` | the shadowing name, labelled `shadows a builtin` | none |
+//! | inferred exit | ``warning[explicit-exits]: this path ends without its exit; …`` | the tail, labelled with the exit inferred there; the fix writes that keyword before it | none |
 //! | ledger line | `<path>: <line>` | the declaration or refusal the line reports, when it has one | none |
 //!
 //! No message carries a byte range: a face locates the diagnostic by its
@@ -40,6 +41,17 @@
 //! names. Reversal: a warning that is not a would-be refusal gets its own
 //! vocabulary. Witness:
 //! `diagnostics::diagnostics::a_shadowed_builtin_is_a_warning`.
+//!
+//! # An inferred exit is a lint's finding, carrying its fix
+//!
+//! An exit the lowering inferred where a path through a body ends is a
+//! [`Class::Lint`] warning of the `explicit-exits` lint, identified by the
+//! lint's spelling (the `lint` module says why it is not a refusal's). Its
+//! one annotation is the tail's own bytes, and its [`Fix`] inserts the
+//! keyword, `return ` or `become `, at the tail's first byte: the edit that
+//! writes the exit the lowering would infer, after which the lowering infers
+//! nothing there and the lint finds nothing. Witness:
+//! `diagnostics::diagnostics::an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword`.
 //!
 //! # The settle note says what was expected and why it did not happen
 //!
@@ -76,9 +88,9 @@ use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::Outcome;
 use gandr_surface_corpus::Refusal;
 use gandr_surface_corpus::RefusalName;
-use gandr_surface_corpus::RefusalSpelling;
 use gandr_surface_corpus::Stated;
 use gandr_surface_corpus::Surviving;
+use gandr_surface_lowering::InferredExit;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::OriginTable;
 use gandr_surface_lowering::namespace::ShadowedBuiltin;
@@ -89,6 +101,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::culprit::Culprit;
 use crate::frame::contexts;
+use crate::lint::Lint;
 use crate::locus::Annotation;
 use crate::locus::Annotations;
 use crate::locus::Checked;
@@ -103,11 +116,14 @@ use crate::model::Diagnostic;
 use crate::model::DiagnosticAnnotation;
 use crate::model::DiagnosticDetail;
 use crate::model::Excerpt;
+use crate::model::Fix;
+use crate::model::Identifier;
 use crate::model::Locus;
 use crate::model::Message;
 use crate::model::MessageKey;
 use crate::model::Severity;
 use crate::model::expression;
+use crate::model::fix;
 use crate::model::producer;
 use crate::spelled::Spellings;
 use crate::spelled::kept;
@@ -179,14 +195,16 @@ pub enum Class
     Goal,
     /// A builtin name the source shadowed, which the source's binding won.
     Warning,
+    /// A finding of a lint, by the lint.
+    Lint(Lint),
     /// A ledger line: a source's standing.
     Ledger,
 }
 
 impl fmt::Display for Class
 {
-    /// Writes the failure class, the unsettlement, `goal`, `warning` or
-    /// `ledger`.
+    /// Writes the failure class, the unsettlement, `goal`, `warning`, the
+    /// lint's spelling or `ledger`.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -200,7 +218,7 @@ impl fmt::Display for Class
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the four unsettlement reasons remain distinguishable
-    ///   from one refusal class, a goal, a warning and a ledger line.
+    ///   from one refusal class, a goal, a warning, a lint and a ledger line.
     /// - witness: `report::tests::class_labels_keep_their_decision_surfaces_distinct`
     #[inline]
     fn fmt(
@@ -213,6 +231,7 @@ impl fmt::Display for Class
             | Self::Unsettled(unsettlement) => fmt::Display::fmt(&unsettlement, f),
             | Self::Goal => f.write_str("goal"),
             | Self::Warning => f.write_str("warning"),
+            | Self::Lint(lint) => write!(f, "lint {lint}"),
             | Self::Ledger => f.write_str("ledger"),
         }
     }
@@ -299,6 +318,9 @@ pub enum Subject<'step>
     /// A builtin the source's declaration or binder shadowed, under the
     /// warn-and-allow policy.
     Shadowed(&'step ShadowedBuiltin),
+    /// An exit the lowering inferred, where a path through a body ends in a
+    /// form that is no exit: a finding of the `explicit-exits` lint.
+    InferredExit(&'step InferredExit),
     /// A ledger line: a settled fixture, a pending source's refusal or
     /// declaration, or a pending source the lowering read.
     Ledger
@@ -414,6 +436,7 @@ impl Report<'_>
             | Subject::Goal(_)
             | Subject::Source(_)
             | Subject::Shadowed(_)
+            | Subject::InferredExit(_)
             | Subject::Ledger { .. } => (Vec::new(), Vec::new()),
         };
         let expression = match span {
@@ -447,7 +470,7 @@ impl Report<'_>
             path: self.path.to_path_buf(),
             severity: match self.subject {
                 | Subject::Goal(_) => Severity::Goal,
-                | Subject::Shadowed(_) => Severity::Warning,
+                | Subject::Shadowed(_) | Subject::InferredExit(_) => Severity::Warning,
                 | Subject::Ledger { .. } => Severity::Ledger,
                 | Subject::Refused { .. } | Subject::Unsettled { .. } | Subject::Source(_) => {
                     Severity::Error
@@ -476,6 +499,7 @@ impl Report<'_>
                     | Subject::Unsettled { .. }
                     | Subject::Goal(_)
                     | Subject::Shadowed(_)
+                    | Subject::InferredExit(_)
                     | Subject::Ledger { .. } => Maybe::Absent(producer::Absent::Statement),
                 },
             },
@@ -491,10 +515,29 @@ impl Report<'_>
                 | Subject::Goal(_)
                 | Subject::Source(_)
                 | Subject::Ledger { .. } => Maybe::Absent(report_note::Absent::Statement),
-                | Subject::Shadowed(_) => Maybe::Absent(report_note::Absent::Warning),
+                | Subject::Shadowed(_) | Subject::InferredExit(_) => {
+                    Maybe::Absent(report_note::Absent::Warning)
+                },
             },
             expression,
             excerpt,
+            fix: match self.subject {
+                | Subject::InferredExit(inferred) => {
+                    match ByteSpan::new(inferred.span.start(), inferred.span.start()) {
+                        | Ok(span) if self.text.fragment(span).is_ok() => Maybe::Present(Fix {
+                            span,
+                            replacement: alloc::format!("{} ", inferred.exit),
+                        }),
+                        | Ok(_) | Err(_) => Maybe::Absent(fix::Absent::Unproposed),
+                    }
+                },
+                | Subject::Refused { .. }
+                | Subject::Unsettled { .. }
+                | Subject::Goal(_)
+                | Subject::Source(_)
+                | Subject::Shadowed(_)
+                | Subject::Ledger { .. } => Maybe::Absent(fix::Absent::Unproposed),
+            },
         }
     }
 
@@ -506,7 +549,8 @@ impl Report<'_>
     ///   [`Class::Refusal`] with the class their producer's classifier gives; a
     ///   declaration unsettled with no refusal is [`Class::Unsettled`] with
     ///   what it rests on; a goal is [`Class::Goal`]; a shadowed builtin is
-    ///   [`Class::Warning`]; a ledger line [`Class::Ledger`].
+    ///   [`Class::Warning`]; an inferred exit is [`Class::Lint`] of the
+    ///   `explicit-exits` lint; a ledger line [`Class::Ledger`].
     /// - provides: the class a reader sorts diagnostics by.
     /// - fails: never.
     /// - panics: none.
@@ -514,15 +558,18 @@ impl Report<'_>
     /// # Adequacy
     /// - hypothesis: L3 — finite real reports expose the producer's exact class
     ///   across refused declarations and whole-source refusal; unproduced
-    ///   expectations and goals distinguish the non-refusal branches.
+    ///   expectations and goals distinguish the non-refusal branches, and a
+    ///   lint finding its lint.
     /// - witness: `diagnostics::diagnostics::a_refused_declaration_is_located`
     /// - witness: `diagnostics::diagnostics::each_verb_prints_its_entries`
+    /// - witness: `diagnostics::diagnostics::an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword`
     #[spec(ensures: |ret| ret == match self.subject {
         Subject::Refused { refusal, .. } => Class::Refusal(refusal.classify()),
         Subject::Unsettled { unsettlement, .. } => Class::Unsettled(unsettlement),
         Subject::Goal(_) => Class::Goal,
         Subject::Source(refusal) => Class::Refusal(refusal.classify()),
         Subject::Shadowed(_) => Class::Warning,
+        Subject::InferredExit(_) => Class::Lint(Lint::ExplicitExits),
         Subject::Ledger { .. } => Class::Ledger,
     })]
     fn class(&self) -> Class
@@ -533,6 +580,7 @@ impl Report<'_>
             | Subject::Goal(_) => Class::Goal,
             | Subject::Source(refusal) => Class::Refusal(refusal.classify()),
             | Subject::Shadowed(_) => Class::Warning,
+            | Subject::InferredExit(_) => Class::Lint(Lint::ExplicitExits),
             | Subject::Ledger { .. } => Class::Ledger,
         }
     }
@@ -547,19 +595,21 @@ impl Report<'_>
             | Subject::Refused { refusal, .. } => MessageKey::Refusal(refusal.name()),
             | Subject::Source(refusal) => MessageKey::Refusal(Refusal::Lowering(refusal).name()),
             | Subject::Shadowed(_) => MessageKey::Refusal(RefusalName::ShadowedBuiltin),
+            | Subject::InferredExit(_) => MessageKey::Lint(Lint::ExplicitExits),
             | Subject::Unsettled { unsettlement, .. } => MessageKey::Unsettled(unsettlement),
             | Subject::Goal(_) => MessageKey::Goal,
             | Subject::Ledger { .. } => MessageKey::Ledger,
         }
     }
 
-    /// The vocabulary name of the refusal the report is about.
+    /// The vocabulary name of the refusal or the lint the report is about.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: a refused declaration names the refusal it produced, a source
     ///   refused as a whole the lowering's refusal, and a shadowed builtin
-    ///   `ShadowedBuiltin`, each spelled as a `refuses` payload spells it.
+    ///   `ShadowedBuiltin`, each spelled as a `refuses` payload spells it; an
+    ///   inferred exit names the `explicit-exits` lint.
     /// - provides: the identifier a face writes beside the message.
     /// - fails: never; an unsettled declaration, a goal and a ledger line carry
     ///   no refusal to name.
@@ -567,23 +617,31 @@ impl Report<'_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — checker and lowering refusals expose their stable
-    ///   vocabulary identifiers; a goal exposes statement absence.
+    ///   vocabulary identifiers; a lint finding exposes the lint's; a goal
+    ///   exposes statement absence.
     /// - witness: `diagnostics::diagnostics::a_report_preserves_refusal_identity_and_title_payloads`
+    /// - witness: `diagnostics::diagnostics::an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword`
     #[spec(ensures: |ret| match (self.subject, ret) {
-        (Subject::Refused { refusal, .. }, Maybe::Present(spelling)) => spelling == refusal.name().spelling(),
-        (Subject::Source(refusal), Maybe::Present(spelling)) => spelling == Refusal::Lowering(refusal).name().spelling(),
-        (Subject::Shadowed(_), Maybe::Present(spelling)) => spelling == RefusalName::ShadowedBuiltin.spelling(),
+        (Subject::Refused { refusal, .. }, Maybe::Present(identifier)) => identifier == Identifier::Refusal(refusal.name().spelling()),
+        (Subject::Source(refusal), Maybe::Present(identifier)) => identifier == Identifier::Refusal(Refusal::Lowering(refusal).name().spelling()),
+        (Subject::Shadowed(_), Maybe::Present(identifier)) => identifier == Identifier::Refusal(RefusalName::ShadowedBuiltin.spelling()),
+        (Subject::InferredExit(_), Maybe::Present(identifier)) => identifier == Identifier::Lint(Lint::ExplicitExits),
         (Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Ledger { .. }, Maybe::Absent(report_identifier::Absent::Statement)) => true,
         _ => false,
     })]
-    fn identifier(&self) -> Maybe<RefusalSpelling, report_identifier::Absent>
+    fn identifier(&self) -> Maybe<Identifier, report_identifier::Absent>
     {
         match self.subject {
-            | Subject::Refused { refusal, .. } => Maybe::Present(refusal.name().spelling()),
-            | Subject::Source(refusal) => {
-                Maybe::Present(Refusal::Lowering(refusal).name().spelling())
+            | Subject::Refused { refusal, .. } => {
+                Maybe::Present(Identifier::Refusal(refusal.name().spelling()))
             },
-            | Subject::Shadowed(_) => Maybe::Present(RefusalName::ShadowedBuiltin.spelling()),
+            | Subject::Source(refusal) => Maybe::Present(Identifier::Refusal(
+                Refusal::Lowering(refusal).name().spelling(),
+            )),
+            | Subject::Shadowed(_) => {
+                Maybe::Present(Identifier::Refusal(RefusalName::ShadowedBuiltin.spelling()))
+            },
+            | Subject::InferredExit(_) => Maybe::Present(Identifier::Lint(Lint::ExplicitExits)),
             | Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Ledger { .. } => {
                 Maybe::Absent(report_identifier::Absent::Statement)
             },
@@ -606,7 +664,7 @@ impl Report<'_>
     /// - witness: `diagnostics::diagnostics::a_mismatch_label_spells_both_types`
     #[spec(ensures: |ret| match self.subject {
         Subject::Refused { refusal, spellings, .. } => ret == Comparison::of(refusal, spellings),
-        Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Source(_) | Subject::Shadowed(_) | Subject::Ledger { .. } => ret == Comparison::none(),
+        Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Source(_) | Subject::Shadowed(_) | Subject::InferredExit(_) | Subject::Ledger { .. } => ret == Comparison::none(),
     })]
     fn comparison(&self) -> Comparison<'_>
     {
@@ -618,6 +676,7 @@ impl Report<'_>
             | Subject::Goal(_)
             | Subject::Source(_)
             | Subject::Shadowed(_)
+            | Subject::InferredExit(_)
             | Subject::Ledger { .. } => Comparison::none(),
         }
     }
@@ -649,6 +708,7 @@ impl Report<'_>
                     | Subject::Goal(declaration) => annotation.label == Label::Surviving(declaration.surviving()),
                 Subject::Unsettled { unsettlement, .. } => annotation.label == Label::Unsettled(unsettlement),
                 Subject::Shadowed(_) => annotation.label == Label::Shadows,
+                Subject::InferredExit(inferred) => annotation.label == Label::Inferred(inferred.exit),
                 Subject::Ledger { .. } => annotation.label == Label::Reported,
             },
             Maybe::Absent(_) => true,
@@ -685,6 +745,9 @@ impl Report<'_>
             } => Annotations::at(declaration.span(), Label::Unsettled(unsettlement)),
             | Subject::Source(refusal) => Annotations::lowering(refusal),
             | Subject::Shadowed(shadowed) => Annotations::at(shadowed.span, Label::Shadows),
+            | Subject::InferredExit(inferred) => {
+                Annotations::at(inferred.span, Label::Inferred(inferred.exit))
+            },
             | Subject::Ledger { at, .. } => match at {
                 | Maybe::Present(span) => Annotations::at(span, Label::Reported),
                 | Maybe::Absent(reason) => Annotations {
@@ -767,7 +830,8 @@ fn excerpt(
 }
 
 /// A report's title: the producer's message for a refusal, what the
-/// declaration states and produced otherwise.
+/// declaration states and produced otherwise, and what a warning or a lint's
+/// finding is about.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug)]
 struct TitleText<'step>(Subject<'step>);
@@ -825,6 +889,13 @@ impl fmt::Display for TitleText<'_>
                 "`{}` shadows a builtin name; the source's binding wins",
                 shadowed.path
             ),
+            | Subject::InferredExit(inferred) => write!(
+                f,
+                "this path ends without its exit; the lowering infers `{}`, which the \
+                 `{}` lint asks to be written",
+                inferred.exit,
+                Lint::ExplicitExits
+            ),
             | Subject::Ledger { line, .. } => f.write_str(line),
         }
     }
@@ -871,6 +942,7 @@ impl fmt::Display for MessageText<'_>
             | Subject::Unsettled { .. }
             | Subject::Goal(_)
             | Subject::Shadowed(_)
+            | Subject::InferredExit(_)
             | Subject::Ledger { .. } => fmt::Display::fmt(&TitleText(self.0), f),
         }
     }

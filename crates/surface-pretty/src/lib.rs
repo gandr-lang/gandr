@@ -1,5 +1,5 @@
-//! The presentation printer: checked core types and normal-form values, laid
-//! out at a page width.
+//! The presentation printer: checked core types, normal-form values and
+//! elaborated bodies, laid out at a page width.
 //!
 //! A caller hands the printer a [`Source`] — a store that answers, for one
 //! handle, the [`Former`] the node carries — a root and a [`PageWidth`]. The
@@ -11,6 +11,7 @@
 //! | ----------------------------- | -------------------------------------------------------- |
 //! | [`present_type`]              | a value or computation type at a width                   |
 //! | [`present_value`]             | a value at a width, bounded at [`DEPTH_LIMIT`]            |
+//! | [`present_computation`]       | an elaborated body at a width, its exits elided           |
 //! | [`Presentation`]              | the laid-out text and whether it says the whole node     |
 //! | [`Source`], [`Former`]        | the one question the printer asks of its input           |
 //! | [`CoreSource`]                | the core arena as a source                               |
@@ -56,9 +57,9 @@
 //!
 //! A node the surface has no spelling for — a lift, the numeric atom, a linear
 //! or unbound variable, a term where a type stands — is written `?`, and a
-//! thunk value `<thunk>`; each makes the presentation approximate. Fidelity is
-//! recorded by the nodes the walk met, so a name that happens to contain `?`
-//! stays faithful.
+//! thunk value presented alone `<thunk>`; each makes the presentation
+//! approximate. Fidelity is recorded by the nodes the walk met, so a name that
+//! happens to contain `?` stays faithful.
 //!
 //! A right-nested arrow chain stays bare because the grammar parses it so. The
 //! REPL's corpus witness expects each signature's line to be its source's own
@@ -69,6 +70,35 @@
 //!   simpler to state but lengthens every chain.
 //! - **Reversal.** A ruled change to the grammar's spellings or bands; this
 //!   crate follows it, never leads it.
+//!
+//! # A body prints in its canonical form, its exits elided
+//!
+//! [`present_computation`] is the canonical printer of an elaborated body: it
+//! writes the form the lowering reads back to the same term, with every exit
+//! the lowering would infer left out. A returner where a path through the
+//! body ends is written as its value, `n`, never `return n`; any other
+//! computation there bare, `f(n)`, never `become f(n)`; a returner anywhere
+//! else is `pure v`, since a written `return` there would leave the body. A
+//! bind is `run x <- c ; rest`, its statements one per line when the body
+//! does not fit; a force is `force v`, and a force at a call's head is the
+//! value it forces, `f(a, b)`, as the surface writes a call; a lambda is
+//! `fn (x) { c }` and, inside a body, a thunk is `thunk { c }`. A value
+//! presented alone keeps its thunks opaque. Case analyses, splits,
+//! projections, fixpoints, native operations, transports and the effect and
+//! control operators have spellings that name what the core holds by position
+//! — a constructor, a field label, an operation — which no [`Source`]
+//! answers, so each is written `?`, approximate. A source as written is the
+//! formatter's (`gandr-surface-format`): it keeps every token, the exit
+//! keywords among them, so a source round-trips as written.
+//!
+//! - **Alternatives.** Printing every exit keyword, the form the surface
+//!   required before exits were inferred, which a module can still ask for
+//!   through the `explicit-exits` lint of `gandr-surface-diagnostics`; it is
+//!   the longer form for the same term, and a printer that writes it would
+//!   disagree with the shortest source the lowering reads back to that term.
+//! - **Reversal.** A ruled change that makes the written keywords canonical, or
+//!   a source that answers constructor, label and operation names, at which
+//!   point the case and projection forms gain their spellings.
 //!
 //! # Totality
 //!
@@ -161,6 +191,7 @@ pub use crate::former::Former;
 pub use crate::former::Name;
 pub use crate::former::Source;
 use crate::walk::Admits;
+use crate::walk::Tail;
 use crate::walk::Walked;
 use crate::walk::walk;
 
@@ -388,6 +419,55 @@ where
     present(source, root, Admits::Value, page)
 }
 
+/// The computation at `root` of `source`, an elaborated body, laid out at
+/// `page` in its canonical form: every exit a path through it ends in elided.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: the root written as the body of a definition: a returner where a
+///   path through the body ends written as its value and any other computation
+///   there bare, never `return` or `become`; a returner anywhere else `pure v`;
+///   a bind `run x <- c ; rest`, the computation it runs a block `{ … }` when
+///   it is itself a bind; a force `force v`, a call `f(a, b)` with a forced
+///   value at its head written as the value; a lambda `fn (x) { c }` and a
+///   thunk `thunk { c }`; binders named as a dependent arrow's are; values and
+///   types inside as [`present_value`] and [`present_type`] write them, but for
+///   thunks. Every computation without a surface spelling here is `?`,
+///   approximate. The body's statements break together: on one line when it
+///   fits the page, one per line otherwise, a block's body two columns in.
+///   Output has the same line-ending and width guarantees as [`present_type`].
+/// - provides: the canonical printer of an elaborated body, which the lowering
+///   reads back to the same term.
+/// - fails: as [`present_type`].
+/// - panics: none.
+///
+/// # Errors
+/// As [`present_type`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — bodies built as the lowering builds them, with their
+///   exits written and elided, a bind run by a bind, a call of a forced
+///   constant and a call of a returner, at the wide and a narrow page,
+///   distinguish a written exit, a lost `pure`, a missing block and binder
+///   capture; case analyses are asserted approximate.
+/// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+#[spec(ensures: |ref ret| match *ret {
+    Ok(ref presentation) => !presentation.as_ref().contains(['\r', '\t']),
+    Err(PresentationError::Render(RenderError::InvalidWidth)) => false,
+    Err(_) => true,
+})]
+#[inline]
+pub fn present_computation<S>(
+    source: &S,
+    root: S::Node,
+    page: PageWidth,
+) -> Result<Presentation, PresentationError>
+where
+    S: Source + ?Sized,
+{
+    present(source, root, Admits::Computation(Tail::Ends), page)
+}
+
 /// The node at `root` of `source`, in a position admitting `admits`, laid out
 /// at `page`.
 ///
@@ -398,7 +478,7 @@ where
 ///   candidates fit. Over-budget walks produce `?`, approximate. Successful
 ///   text has no carriage return or tab; layout-owned endings are line feeds.
 ///   Computation width is never narrower than the page.
-/// - provides: the one path both entry points take.
+/// - provides: the one path every entry point takes.
 /// - fails: as [`present_type`].
 /// - panics: none.
 ///

@@ -1,6 +1,7 @@
 //! The diagnostics model: what one step of the dispatcher's walk reports — each
-//! refusal, unsettled declaration, goal, shadowing warning and ledger line —
-//! as a [`Diagnostic`] every face projects, and the builders that make it.
+//! refusal, unsettled declaration, goal, shadowing warning, lint finding and
+//! ledger line — as a [`Diagnostic`] every face projects, and the builders
+//! that make it.
 //!
 //! # The model holds the diagnostic; a face only projects it
 //!
@@ -97,6 +98,7 @@ extern crate alloc;
 
 mod culprit;
 mod frame;
+mod lint;
 mod locus;
 mod message;
 mod model;
@@ -107,6 +109,7 @@ mod verbosity;
 pub use crate::culprit::Culprit;
 pub use crate::frame::Sentence;
 pub use crate::frame::sentence;
+pub use crate::lint::Lint;
 pub use crate::locus::Label;
 pub use crate::model::AnnotationKind;
 pub use crate::model::Binding;
@@ -117,6 +120,8 @@ pub use crate::model::DiagnosticAnnotation;
 pub use crate::model::DiagnosticContext;
 pub use crate::model::DiagnosticDetail;
 pub use crate::model::Excerpt;
+pub use crate::model::Fix;
+pub use crate::model::Identifier;
 pub use crate::model::Judged;
 pub use crate::model::Locus;
 pub use crate::model::Message;
@@ -125,6 +130,7 @@ pub use crate::model::Severity;
 pub use crate::model::binding;
 pub use crate::model::context_locus;
 pub use crate::model::expression;
+pub use crate::model::fix;
 pub use crate::model::located;
 pub use crate::model::producer;
 pub use crate::report::Class;

@@ -437,10 +437,10 @@ mod tests
             ),
             (
                 "the name of a function the lowering refused",
-                "def $0f(x: Integer) -> -F Integer { pure x }\n",
+                "def $0f(x: Integer) -> -F Integer { run y <- return x ; return y }\n",
                 Ok(String::from(
-                    "```gandr\nf\n```\n\nrefused: the body's path ends without an exit; a path \
-                     through a body ends in `return` or `become`",
+                    "```gandr\nf\n```\n\nrefused: no path reaches this code: every path \
+                     through the statement before it exits",
                 )),
             ),
             (

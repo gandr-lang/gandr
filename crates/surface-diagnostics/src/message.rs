@@ -304,9 +304,6 @@ fn lowered(
             f,
             "`{name}` calls itself without saying how it recurses; write `{name}[<](…)`"
         ),
-        | LoweringRefusal::MissingExit { .. } => {
-            f.write_str("this body ends without `return` or `become`")
-        },
         | LoweringRefusal::Unreachable { .. } => {
             f.write_str("this code never runs: every path before it leaves the body")
         },
@@ -684,7 +681,6 @@ mod tests
             LoweringRefusal::LowercaseModuleName { span, name },
             LoweringRefusal::NonExhaustiveMatch { span },
             LoweringRefusal::UnmarkedSelfReference { span, name },
-            LoweringRefusal::MissingExit { span },
             LoweringRefusal::Unreachable { span },
             LoweringRefusal::WithoutK { span },
             LoweringRefusal::BudgetExceeded {

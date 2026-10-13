@@ -12,6 +12,9 @@ use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::SourceText;
 
+use super::Exit;
+use super::Explicitness;
+use super::InferredExit;
 use super::Leaves;
 use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
@@ -316,23 +319,181 @@ fn code_no_path_reaches_is_refused()
     }
 }
 
+/// The bytes `needle` spells at its last spelling inside `context`, which
+/// `source` spells once.
+///
+/// # Specification
+/// - requires: `source` spells `context` exactly once, and `context` spells
+///   `needle`.
+/// - ensures: the span of `needle`'s last spelling inside `context`.
+/// - fails: never.
+/// - panics: if `context` is not spelled once or does not spell `needle`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the inference witnesses locate each tail here.
+/// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
+#[spec(ensures: |ret| source.as_ref().get(usize::from(ret.start()) .. usize::from(ret.end())) == Some(needle.as_ref()))]
+fn spelled_within(
+    source: SourceText<'_>,
+    context: SourceText<'_>,
+    needle: SourceText<'_>,
+) -> ByteSpan
+{
+    let outer = spelled(source, context);
+    let (text, wanted): (&str, &str) = (context.as_ref(), needle.as_ref());
+    let Some(offset) = text.rfind(wanted)
+    else {
+        panic!("`{context}` spells `{needle}`");
+    };
+    let (Some(start), Some(end)) = (
+        usize::from(outer.start()).checked_add(offset),
+        usize::from(outer.start())
+            .checked_add(offset)
+            .and_then(|start| start.checked_add(wanted.len())),
+    )
+    else {
+        panic!("a spelling ends inside the source");
+    };
+
+    span(ByteOffset::from(start), ByteOffset::from(end))
+}
+
 #[test]
-fn a_path_missing_its_exit_is_refused_where_it_ends()
+fn a_tail_without_an_exit_takes_the_one_its_polarity_names()
 {
     let source = format!(
-        "{NAT}def missing(n : Nat) -> -F Nat {{ case n {{ Zero => return n, Succ(p) => {{ run q <- case p {{ Zero => return p, Succ(r) => pure r }} ; pure q }} }} }}\n\
-         def inner(n : Nat) -> -F Nat {{ run m <- case n {{ Zero => return n, Succ(p) => case p {{ Zero => return p, Succ(r) => pure r }} }} ; pure Succ(m) }}\n"
+        "{NAT}def value(n : Nat) -> -F Nat {{ n }}\n\
+         def value_by_hand(n : Nat) -> -F Nat {{ return n }}\n\
+         def built(n : Nat) -> -F Nat {{ Succ(n) }}\n\
+         def built_by_hand(n : Nat) -> -F Nat {{ return Succ(n) }}\n\
+         def counted(n : Nat) -> -F Integer {{ 3 }}\n\
+         def counted_by_hand(n : Nat) -> -F Integer {{ return 3 }}\n\
+         def paired(n : Nat) -> -F (Nat * Nat) {{ (n, n) }}\n\
+         def paired_by_hand(n : Nat) -> -F (Nat * Nat) {{ return (n, n) }}\n\
+         def annotated(n : Nat) -> -F Nat {{ (Succ(n) : Nat) }}\n\
+         def annotated_by_hand(n : Nat) -> -F Nat {{ return (Succ(n) : Nat) }}\n\
+         def called(n : Nat) -> -F Nat {{ value(n) }}\n\
+         def called_by_hand(n : Nat) -> -F Nat {{ become value(n) }}\n\
+         def produced(n : Nat) -> -F Nat {{ pure n }}\n\
+         def produced_by_hand(n : Nat) -> -F Nat {{ become pure n }}\n\
+         def produced_returned(n : Nat) -> -F Nat {{ return n }}\n\
+         def arms(n : Nat) -> -F Nat {{ case n {{ Zero => n, Succ(p) => value(p) }} }}\n\
+         def arms_by_hand(n : Nat) -> -F Nat {{ case n {{ Zero => return n, Succ(p) => become value(p) }} }}\n\
+         def sequenced(n : Nat) -> -F Nat {{ run m <- value(n) ; Succ(m) }}\n\
+         def sequenced_by_hand(n : Nat) -> -F Nat {{ run m <- value(n) ; return Succ(m) }}\n\
+         def early(n : Nat) -> -F Nat {{ case n {{ Zero => return n, Succ(p) => {{ run q <- case p {{ Zero => return p, Succ(r) => pure r }} ; pure q }} }} }}\n\
+         def early_by_hand(n : Nat) -> -F Nat {{ case n {{ Zero => return n, Succ(p) => {{ run q <- case p {{ Zero => return p, Succ(r) => pure r }} ; become pure q }} }} }}\n\
+         def suspended(n : Nat) -> -F (+U (-F Nat)) {{ thunk {{ value(n) }} }}\n\
+         def suspended_by_hand(n : Nat) -> -F (+U (-F Nat)) {{ return thunk {{ become value(n) }} }}\n"
     );
-    let module = lowered(SourceText::from(source.as_str()), &mut CoreArena::new());
-    for (name, end) in [("missing", "pure q"), ("inner", "pure Succ(m)")] {
-        assert_eq!(
-            refusal_of(&module, SurfaceName::from(name)),
-            LoweringRefusal::MissingExit {
-                span: spelled(SourceText::from(source.as_str()), SourceText::from(end)),
-            },
-            "`{name}` is refused where its path ends, not at a local end of a bound match"
+    let text = SourceText::from(source.as_str());
+    let mut arena = CoreArena::new();
+    let module = lowered(text, &mut arena);
+    for (elided, written) in [
+        ("value", "value_by_hand"),
+        ("built", "built_by_hand"),
+        ("counted", "counted_by_hand"),
+        ("paired", "paired_by_hand"),
+        ("annotated", "annotated_by_hand"),
+        ("called", "called_by_hand"),
+        ("produced", "produced_by_hand"),
+        ("produced", "produced_returned"),
+        ("arms", "arms_by_hand"),
+        ("sequenced", "sequenced_by_hand"),
+        ("early", "early_by_hand"),
+        ("suspended", "suspended_by_hand"),
+    ] {
+        assert_same_body(
+            &module,
+            &arena,
+            (SurfaceName::from(elided), SurfaceName::from(written)),
         );
     }
+    let at = |context: &str, needle: &str| {
+        spelled_within(text, SourceText::from(context), SourceText::from(needle))
+    };
+    let inferred = |span, exit| InferredExit {
+        span,
+        exit,
+        explicitness: Explicitness::Unasked,
+    };
+    assert_eq!(
+        module.inferred_exits(),
+        [
+            inferred(at("Nat { n }", "n"), Exit::Return),
+            inferred(at("{ Succ(n) }", "Succ(n)"), Exit::Return),
+            inferred(at("{ 3 }", "3"), Exit::Return),
+            inferred(at("{ (n, n) }", "(n, n)"), Exit::Return),
+            inferred(at("{ (Succ(n) : Nat) }", "(Succ(n) : Nat)"), Exit::Return),
+            inferred(at("Nat { value(n) }", "value(n)"), Exit::Become),
+            inferred(at("{ pure n }", "pure n"), Exit::Become),
+            inferred(at("Zero => n,", "n"), Exit::Return),
+            inferred(at("=> value(p)", "value(p)"), Exit::Become),
+            inferred(at("; Succ(m) }", "Succ(m)"), Exit::Return),
+            inferred(at("; pure q }", "pure q"), Exit::Become),
+            inferred(
+                at("{ thunk { value(n) } }", "thunk { value(n) }"),
+                Exit::Return
+            ),
+            inferred(at("thunk { value(n) }", "value(n)"), Exit::Become),
+        ],
+        "each tail written without an exit takes the one its polarity names, at its own \
+         bytes, and a written exit or a bound match's local end takes none"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
+fn an_explicit_exits_attribute_asks_within_its_form()
+{
+    let source = format!(
+        "{NAT}@[ explicit_exits ]\n\
+         module Asked {{\n\
+         def kept(n : Nat) -> -F Nat {{ n }}\n\
+         def called(n : Nat) -> -F Nat {{ kept(n) }}\n\
+         }}\n\
+         @[ explicit_exits ]\n\
+         def marked(n : Nat) -> -F Nat {{ Succ(n) }}\n\
+         def unmarked(n : Nat) -> -F Nat {{ Zero }}\n\
+         @[ explicit_exits, explicit_exits ]\n\
+         def twice(n : Nat) -> -F Nat {{ pure n }}\n"
+    );
+    let text = SourceText::from(source.as_str());
+    let module = lowered(text, &mut CoreArena::new());
+    let at = |context: &str, needle: &str| {
+        spelled_within(text, SourceText::from(context), SourceText::from(needle))
+    };
+    let inferred = |span, exit, explicitness| InferredExit {
+        span,
+        exit,
+        explicitness,
+    };
+    assert_eq!(
+        module.inferred_exits(),
+        [
+            inferred(at("{ n }", "n"), Exit::Return, Explicitness::Asked),
+            inferred(
+                at("{ kept(n) }", "kept(n)"),
+                Exit::Become,
+                Explicitness::Asked
+            ),
+            inferred(
+                at("{ Succ(n) }", "Succ(n)"),
+                Exit::Return,
+                Explicitness::Asked
+            ),
+            inferred(at("{ Zero }", "Zero"), Exit::Return, Explicitness::Unasked),
+        ],
+        "a module's attribute asks for its members' exits, a declaration's for its own, \
+         and a refused declaration lists none"
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("twice")),
+            LoweringRefusal::DuplicateAttribute { .. }
+        ),
+        "the declaration whose exit goes unlisted is refused"
+    );
 }
 
 #[test]

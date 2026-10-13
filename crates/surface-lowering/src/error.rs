@@ -658,15 +658,6 @@ pub enum LoweringRefusal<'source>
         name: SurfaceName<'source>,
     },
 
-    /// A path through a function's, a lambda's or a thunk's body that ends in
-    /// something other than `return` or `become`: every way out of a body is
-    /// written at the exit.
-    MissingExit
-    {
-        /// The bytes of the computation the path ends in.
-        span: ByteSpan,
-    },
-
     /// The rest of a block after a statement whose every path exits: no path
     /// reaches it.
     Unreachable
@@ -816,10 +807,6 @@ impl fmt::Display for LoweringRefusal<'_>
                 "`{name}` names its own recursive definition without a claim; write \
                  `{name}[<](…)` to recurse on a field of the last parameter"
             ),
-            | Self::MissingExit { .. } => f.write_str(
-                "the body's path ends without an exit; a path through a body ends in `return` \
-                 or `become`",
-            ),
             | Self::Unreachable { .. } => f.write_str(
                 "no path reaches this code: every path through the statement before it exits",
             ),
@@ -905,7 +892,6 @@ impl LoweringRefusal<'_>
             | Self::LowercaseModuleName { span, .. }
             | Self::NonExhaustiveMatch { span }
             | Self::UnmarkedSelfReference { span, .. }
-            | Self::MissingExit { span }
             | Self::Unreachable { span }
             | Self::WithoutK { span }
             | Self::UnknownMold { span, .. } => Maybe::Present(span),

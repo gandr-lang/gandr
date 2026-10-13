@@ -16,6 +16,10 @@
 //!
 //! A ledger line is its path, a colon and its text, unstyled.
 //!
+//! A diagnostic that proposes a fix closes with a `help` group quoting the
+//! excerpt with the fix applied, the edit marked, so a reader sees the line
+//! as the fix leaves it.
+//!
 //! | Level | Adds |
 //! | ----- | ---- |
 //! | `User`, the default | the message, the labels, the contexts and the note |
@@ -38,6 +42,7 @@ use annotate_snippets::AnnotationKind as Mark;
 use annotate_snippets::Group;
 use annotate_snippets::Level;
 use annotate_snippets::Origin;
+use annotate_snippets::Patch;
 use annotate_snippets::Renderer;
 use annotate_snippets::Snippet;
 use annotate_snippets::renderer::DecorStyle;
@@ -63,10 +68,12 @@ use crate::style::Rendered;
 ///   brackets when it has one and its message; quotes its excerpt with each
 ///   annotation and each located context marked at its bytes, under its path,
 ///   or names its path alone when it marks nothing; closes with each unlocated
-///   context as a note, its note, and then the details its level adds. A source
-///   with an empty path is named `<input>`. Plain adds no styling; styled adds
-///   the backend's colour sequences. Caller path controls remain literal in
-///   both modes. No framing terminator is appended.
+///   context as a note, its note, and then the details its level adds; and,
+///   when it proposes a fix inside its excerpt, a `help` group quoting the
+///   excerpt with the fix applied. A source with an empty path is named
+///   `<input>`. Plain adds no styling; styled adds the backend's colour
+///   sequences. Caller path controls remain literal in both modes. No framing
+///   terminator is appended.
 /// - provides: the plain text the driver prints and the tests compare.
 /// - fails: never.
 /// - panics: none; every span reaches the backend inside the excerpt.
@@ -129,6 +136,7 @@ pub fn render(
         .map(gandr_surface_diagnostics::DiagnosticContext::label)
         .collect();
     let mut group = Group::with_title(title);
+    let mut help: Vec<Group<'_>> = Vec::new();
     match diagnostic.excerpt {
         | Maybe::Present(ref excerpt) => {
             let base = usize::from(excerpt.start);
@@ -156,6 +164,19 @@ pub fn render(
                 }
             }
             group = group.element(snippet);
+            if let Maybe::Present(ref fix) = diagnostic.fix
+                && usize::from(fix.span.start()) >= base
+                && usize::from(fix.span.end()) <= base.saturating_add(excerpt.text.len())
+            {
+                help.push(
+                    Level::HELP.secondary_title("apply this edit").element(
+                        Snippet::source(excerpt.text.as_str())
+                            .line_start(excerpt.line)
+                            .path(origin.as_str())
+                            .patch(Patch::new(range(fix.span), fix.replacement.as_str())),
+                    ),
+                );
+            }
         },
         | Maybe::Absent(_) => {
             group = group.element(Origin::path(origin.as_str()));
@@ -185,7 +206,9 @@ pub fn render(
         | RenderStyle::Plain => Renderer::plain(),
         | RenderStyle::Styled => Renderer::styled(),
     };
-    Rendered::from(renderer.decor_style(DecorStyle::Unicode).render(&[group]))
+    let mut report = Vec::from([group]);
+    report.append(&mut help);
+    Rendered::from(renderer.decor_style(DecorStyle::Unicode).render(&report))
 }
 
 /// Path boundaries the renderer leaves literal.

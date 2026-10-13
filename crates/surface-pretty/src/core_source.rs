@@ -148,8 +148,8 @@ impl<'arena> CoreSource<'arena>
         | (Some(&Value::Constant(index)), Former::Unreadable) => usize::from(index) >= self.names.len(),
         (Some(&Value::Constructor { .. } | &Value::Hole(_) | &Value::Mark { .. } | &Value::Returned(_)) | None,
 Former::Unreadable) | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::ListNil), Former::ListNil) |
-(Some(&Value::Thunk(_)), Former::Thunk) |
 (Some(&Value::Lift { .. }), Former::ValueLift) => true,
+        | (Some(&Value::Thunk(body)), Former::Thunk(actual)) => actual == CoreNode::Computation(body),
         | (Some(&Value::Record(ref fields)), Former::Unreadable) => fields.is_empty(),
         | (Some(&Value::Record(ref fields)), Former::Record(arity)) => !fields.is_empty() && usize::from(arity) == fields.len(),
         | (Some(&Value::Literal(ref literal)), Former::Literal(actual)) =>
@@ -219,7 +219,7 @@ Former::Unreadable) | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::Li
             | Value::Injection(summand, body) => {
                 Former::Injection(Component::from(usize::from(summand)), CoreNode::Value(body))
             },
-            | Value::Thunk(_) => Former::Thunk,
+            | Value::Thunk(body) => Former::Thunk(CoreNode::Computation(body)),
             | Value::Lift { .. } => Former::ValueLift,
             | Value::Quote(quoted) => Former::Quote(CoreNode::ValueType(quoted)),
             | Value::QuoteComputation(quoted) => {
@@ -400,9 +400,11 @@ impl Source for CoreSource<'_>
     /// # Specification
     /// - requires: nothing; an id from another arena reads as whatever this
     ///   arena holds at it, or as unreadable.
-    /// - ensures: as [`Source::read`]; every held computation but a hole or a
-    ///   mark reads as [`Former::Computation`], and a hole, a mark or a missing
-    ///   handle as unreadable.
+    /// - ensures: as [`Source::read`]; a return, a bind, a force, an
+    ///   application and a lambda read as their own formers over their
+    ///   children, every other held computation but a hole or a mark as
+    ///   [`Former::Computation`], and a hole, a mark or a missing handle as
+    ///   unreadable.
     /// - provides: the printer's reading of the core arena.
     /// - fails: never.
     /// - panics: none.
@@ -419,16 +421,27 @@ impl Source for CoreSource<'_>
     /// - witness: `core_source::tests::holes_marks_and_the_unknown_type_read_as_unreadable`
     /// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
     /// - witness: `goldens::tests::native_paths_preserve_ordered_endpoints_and_maps`
+    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
     #[spec(ensures: |ret| match node {
-        | CoreNode::Computation(id) => match self.arena.computation(id) {
-            | Some(&(Computation::Hole(_) | Computation::Mark { .. })) | None => matches!(ret, Former::Unreadable),
-            | Some(_) => matches!(ret, Former::Computation),
+        | CoreNode::Computation(id) => match (self.arena.computation(id), ret) {
+            | (Some(&(Computation::Hole(_) | Computation::Mark { .. })) | None, Former::Unreadable) => true,
+            | (Some(&Computation::Return(value)), Former::Return(actual))
+            | (Some(&Computation::Force(value)), Former::Force(actual)) => actual == CoreNode::Value(value),
+            | (Some(&Computation::Lambda(body)), Former::Lambda(actual)) => actual == CoreNode::Computation(body),
+            | (Some(&Computation::Bind(bound, rest)), Former::Bind(actual_bound, actual_rest)) =>
+                actual_bound == CoreNode::Computation(bound) && actual_rest == CoreNode::Computation(rest),
+            | (Some(&Computation::Application(function, argument)), Former::Application(actual_function, actual_argument)) =>
+                actual_function == CoreNode::Computation(function) && actual_argument == CoreNode::Value(argument),
+            | (Some(&(Computation::Return(_) | Computation::Force(_) | Computation::Lambda(_) | Computation::Bind(..)
+                | Computation::Application(..) | Computation::Hole(_) | Computation::Mark { .. })), _) => false,
+            | (Some(_), Former::Computation) => true,
+            | _ => false,
         },
         | CoreNode::Value(id) if self.arena.value(id).is_none() => matches!(ret, Former::Unreadable),
         | CoreNode::ValueType(id) if self.arena.value_type(id).is_none() => matches!(ret, Former::Unreadable),
         | CoreNode::CompType(id) if self.arena.comp_type(id).is_none() => matches!(ret, Former::Unreadable),
         | CoreNode::Value(_) => matches!(ret, Former::Variable { .. } | Former::Constant(_) | Former::Unit
-            | Former::Literal(_) | Former::Tuple(_) | Former::Record(_) | Former::Injection(..) | Former::Thunk
+            | Former::Literal(_) | Former::Tuple(_) | Former::Record(_) | Former::Injection(..) | Former::Thunk(_)
             | Former::ValueLift | Former::Reify | Former::ListNil | Former::ListCons(..)
             | Former::Quote(_) | Former::QuoteComputation(_) | Former::StaticLambda(_) | Former::StaticApplication(..)
             | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_) | Former::Funext(..) | Former::Equiv(..) | Former::Unreadable),
@@ -448,6 +461,15 @@ impl Source for CoreSource<'_>
         match node {
             | CoreNode::Value(id) => self.value(id),
             | CoreNode::Computation(id) => match self.arena.computation(id) {
+                | Some(&Computation::Return(value)) => Former::Return(CoreNode::Value(value)),
+                | Some(&Computation::Bind(bound, rest)) => {
+                    Former::Bind(CoreNode::Computation(bound), CoreNode::Computation(rest))
+                },
+                | Some(&Computation::Force(thunk)) => Former::Force(CoreNode::Value(thunk)),
+                | Some(&Computation::Application(function, argument)) => {
+                    Former::Application(CoreNode::Computation(function), CoreNode::Value(argument))
+                },
+                | Some(&Computation::Lambda(body)) => Former::Lambda(CoreNode::Computation(body)),
                 | Some(
                     &(Computation::Transport(..)
                     | Computation::PathTransport { .. }
@@ -464,12 +486,7 @@ impl Source for CoreSource<'_>
                     | Computation::Shift(_)
                     | Computation::With(..)
                     | Computation::Project(..)
-                    | Computation::Lambda(_)
                     | Computation::Fixpoint { .. }
-                    | Computation::Application(..)
-                    | Computation::Return(_)
-                    | Computation::Bind(..)
-                    | Computation::Force(_)
                     | Computation::ListFold { .. }
                     | Computation::Case { .. }),
                 ) => Former::Computation,
@@ -654,7 +671,7 @@ mod tests
         );
         assert!(matches!(
             source.read(CoreNode::Computation(computation)),
-            Former::Computation
+            Former::Return(value) if value == CoreNode::Value(first)
         ));
         assert!(matches!(
             source.read(CoreNode::ValueType(value_type)),
@@ -843,7 +860,7 @@ mod tests
         assert!(matches!(source.read(CoreNode::Value(unit)), Former::Unit));
         assert!(matches!(
             source.read(CoreNode::Computation(returned)),
-            Former::Computation
+            Former::Return(value) if value == CoreNode::Value(unit)
         ));
     }
 }

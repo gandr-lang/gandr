@@ -41,6 +41,7 @@ use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
 use crate::frame::Sentence;
+use crate::lint::Lint;
 use crate::report::Class;
 use crate::report::Unsettlement;
 use crate::report::report_identifier;
@@ -116,6 +117,18 @@ quenchant_shape::reason_enum! {
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a diagnostic proposes no fix.
+    pub mod fix {
+        /// The reason no edit is proposed.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No single edit settles what it reports.
+            Unproposed,
+        }
+    }
+}
+
 /// Where a span lies: its bytes, and the one-based line and column, in
 /// characters, of its first byte.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -176,7 +189,8 @@ pub enum Severity
 {
     /// A refusal or an unsettled declaration.
     Error,
-    /// A builtin the source shadowed, which settles nothing.
+    /// A warning, which settles nothing: a builtin the source shadowed, or a
+    /// lint's finding.
     Warning,
     /// A declaration unsettled by its obligations alone, under
     /// `check --goals`.
@@ -212,6 +226,8 @@ pub enum MessageKey
 {
     /// A refusal, or a warning, by its vocabulary name.
     Refusal(RefusalName),
+    /// A lint's finding, by the lint.
+    Lint(Lint),
     /// A declaration unsettled with no refusal produced, by what it rests on.
     Unsettled(Unsettlement),
     /// A goal.
@@ -222,7 +238,8 @@ pub enum MessageKey
 
 impl fmt::Display for MessageKey
 {
-    /// Writes the refusal's spelling, `unsettled`, `goal` or `ledger`.
+    /// Writes the refusal's or the lint's spelling, `unsettled`, `goal` or
+    /// `ledger`.
     ///
     /// # Specification
     /// trivial.
@@ -234,6 +251,7 @@ impl fmt::Display for MessageKey
     {
         match *self {
             | Self::Refusal(name) => f.write_str(name.spelling().as_ref()),
+            | Self::Lint(lint) => fmt::Display::fmt(&lint, f),
             | Self::Unsettled(_) => f.write_str("unsettled"),
             | Self::Goal => f.write_str("goal"),
             | Self::Ledger => f.write_str("ledger"),
@@ -500,6 +518,76 @@ pub struct Detail
     pub text: String,
 }
 
+/// The edit a diagnostic proposes: the bytes it replaces and the text written
+/// in their place, an empty span for an insertion.
+///
+/// # Specification
+/// - requires: nothing to construct this data; the builder makes it over the
+///   text its diagnostic was built from.
+/// - ensures: the span lies inside that text on character boundaries.
+/// - fails: not applicable to the data item.
+/// - panics: not applicable to the data item.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a lint finding's fix applied to its source and checked
+///   again leaves no finding.
+/// - witness: `diagnostics::diagnostics::an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword`
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Fix
+{
+    /// The bytes replaced.
+    pub span: ByteSpan,
+    /// The text written in their place.
+    pub replacement: String,
+}
+
+/// The vocabulary name a diagnostic is identified by: a refusal's or a
+/// lint's.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Identifier
+{
+    /// A refusal, or a warning named as the refusal it would be, spelled as a
+    /// `refuses` payload spells it.
+    Refusal(RefusalSpelling),
+    /// A lint's finding, by the lint's spelling.
+    Lint(Lint),
+}
+
+impl AsRef<str> for Identifier
+{
+    /// The identifier's spelling.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn as_ref(&self) -> &str
+    {
+        match *self {
+            | Self::Refusal(ref spelling) => spelling.as_ref(),
+            | Self::Lint(ref lint) => lint.as_ref(),
+        }
+    }
+}
+
+impl fmt::Display for Identifier
+{
+    /// Writes the identifier's spelling.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(self.as_ref())
+    }
+}
+
 impl fmt::Display for Detail
 {
     /// The line as a plain rendering writes it: the name, a colon, the text.
@@ -516,8 +604,8 @@ impl fmt::Display for Detail
     }
 }
 
-/// One diagnostic: a refusal, an unsettled declaration, a goal, a warning or a
-/// ledger line, with everything a face shows of it.
+/// One diagnostic: a refusal, an unsettled declaration, a goal, a warning, a
+/// lint's finding or a ledger line, with everything a face shows of it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Diagnostic
 {
@@ -526,9 +614,8 @@ pub struct Diagnostic
     pub path: PathBuf,
     /// How serious it is.
     pub severity: Severity,
-    /// The refusal's vocabulary name, spelled as a `refuses` payload spells
-    /// it.
-    pub identifier: Maybe<RefusalSpelling, report_identifier::Absent>,
+    /// The vocabulary name of the refusal or the lint it reports.
+    pub identifier: Maybe<Identifier, report_identifier::Absent>,
     /// What it leads with.
     pub message: Message,
     /// What a detailed level adds.
@@ -548,6 +635,8 @@ pub struct Diagnostic
     pub expression: Maybe<String, expression::Absent>,
     /// The lines its loci cover.
     pub excerpt: Maybe<Excerpt, report_span::Absent>,
+    /// The edit that settles it, when it proposes one.
+    pub fix: Maybe<Fix, fix::Absent>,
 }
 
 impl Diagnostic
@@ -695,8 +784,9 @@ impl Diagnostic
     ///   other diagnostic one object holding `level`, `name` (or null), `key`,
     ///   `class`, `message`, `title`, `path`, `primary` (a locus, or null),
     ///   `annotations` (the context loci), `contexts` (each with its `role`,
-    ///   `sentence`, `judged`, `binders` and locus, or null), `hypotheses` and
-    ///   `note` (or null); a locus holds its byte `start` and `end`, its
+    ///   `sentence`, `judged`, `binders` and locus, or null), `hypotheses`,
+    ///   `note` (or null) and `fix` (its byte `start` and `end` and its
+    ///   `replacement`, or null); a locus holds its byte `start` and `end`, its
     ///   one-based `line` and `column` in characters, and its `label`. One
     ///   line.
     /// - provides: the [`Verbosity::Json`] image every face shares.
@@ -706,9 +796,11 @@ impl Diagnostic
     ///
     /// # Adequacy
     /// - hypothesis: L3 — one refusal's image parses back with its name,
-    ///   message, primary locus and contexts; a ledger line's with its line.
+    ///   message, primary locus and contexts; a ledger line's with its line; a
+    ///   lint finding's with its fix.
     /// - witness: `diagnostics::diagnostics::one_refusal_details_each_verbosity`
     /// - witness: `diagnostics::diagnostics::each_verb_prints_its_entries`
+    /// - witness: `diagnostics::diagnostics::an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword`
     #[spec(ensures: |ref ret| ret.starts_with('{') && !ret.contains('\n'))]
     #[inline]
     #[must_use]
@@ -737,7 +829,7 @@ impl Diagnostic
         let image = JsonDiagnostic {
             level: alloc::format!("{}", self.severity),
             name: match self.identifier {
-                | Maybe::Present(ref spelling) => Some(String::from(spelling.as_ref())),
+                | Maybe::Present(ref identifier) => Some(String::from(identifier.as_ref())),
                 | Maybe::Absent(_) => None,
             },
             key: alloc::format!("{}", self.message.key),
@@ -777,6 +869,14 @@ impl Diagnostic
                 .collect(),
             note: match self.note {
                 | Maybe::Present(ref note) => Some(note.clone()),
+                | Maybe::Absent(_) => None,
+            },
+            fix: match self.fix {
+                | Maybe::Present(ref fix) => Some(JsonFix {
+                    start: usize::from(fix.span.start()),
+                    end: usize::from(fix.span.end()),
+                    replacement: fix.replacement.clone(),
+                }),
                 | Maybe::Absent(_) => None,
             },
         };
@@ -824,6 +924,20 @@ struct JsonDiagnostic
     hypotheses: Vec<String>,
     /// The note it closes with.
     note: Option<String>,
+    /// The fix it proposes: the bytes it replaces and their replacement.
+    fix: Option<JsonFix>,
+}
+
+/// The fix of a diagnostic's JSON image.
+#[derive(Clone, Debug, serde::Serialize)]
+struct JsonFix
+{
+    /// The first byte replaced.
+    start: usize,
+    /// The byte past the last replaced; `start` for an insertion.
+    end: usize,
+    /// The text written in their place.
+    replacement: String,
 }
 
 /// One context of a diagnostic's JSON image.

@@ -499,6 +499,17 @@ def wrong = "text" ;
                 ),
                 include_str!("golden/goal.txt"),
             ),
+            (
+                only(
+                    Path::new("exits.gandr"),
+                    SourceRoot::Strict,
+                    SourceText::from(
+                        "@[ explicit_exits ]\ndef kept(n: Integer) -> -F Integer { n }\n",
+                    ),
+                    Verb::Check(Goals::Gated),
+                ),
+                include_str!("golden/explicit-exits.txt"),
+            ),
         ] {
             assert_eq!(
                 plain(&diagnostic, Verbosity::User),

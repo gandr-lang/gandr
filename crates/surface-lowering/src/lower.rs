@@ -30,30 +30,33 @@
 //! where its result is consumed, and every refusal carries the sort its own
 //! position demanded.
 //!
-//! # Six insertions, by the sort of the position
+//! # Seven insertions, by the sort of the position
 //!
 //! Where the source writes a value and the position reads a computation, or
-//! the reverse, the fragment refuses — with six exceptions, each a site the
+//! the reverse, the fragment refuses — with seven exceptions, each a site the
 //! grammar's own shape names. An application's head reads a computation, and
 //! a value standing there is forced; a function's result reads a computation
 //! type, and a value type standing there gains a returner; a function's body is
 //! a computation where the declaration takes a value, and is thunked; a type
 //! standing where a value is read is quoted into its code; a name standing
-//! where a type is read, bound at a universe, is decoded out of it; and a path
+//! where a type is read, bound at a universe, is decoded out of it; a path
 //! type's endpoint, or the point of `here`, reads a value, and a computation
 //! standing there is the value it returns, a compound endpoint the checker
-//! compares by what it computes. Each bridge is decided by the position and
-//! the name's binder, never searched for, and its origin is the syntax node
-//! that demanded it, marked inserted, so a reader can be shown the cast they
-//! did not write. Everywhere else the mismatch stays a refusal: a lambda
-//! written where a value belongs is still the author's mistake to suspend.
+//! compares by what it computes; and a tail, where a path through a body ends,
+//! reads a computation, and a value standing there is returned — the exit its
+//! polarity names, as the section on exits below sets out. Each bridge is
+//! decided by the position and the name's binder, never searched for, and its
+//! origin is the syntax node that demanded it, marked inserted, so a reader
+//! can be shown the cast they did not write. Everywhere else the mismatch
+//! stays a refusal: a lambda written where a value belongs is still the
+//! author's mistake to suspend.
 //!
-//! Five positions bridge the sorts instead of refusing a mismatch: a value
-//! standing as an application's head is forced, because a force is the only way
-//! from a value to a computation; a value type standing as a function's result
-//! gains a returner, so `-> Integer` and `-> -F Integer` mean the same and the
-//! returner is never doubled; a function's body, a computation where the
-//! declaration takes a value, is thunked; a type standing where a value is read
+//! The first five in detail: a value standing as an application's head is
+//! forced, because a force is the only way from a value to a computation; a
+//! value type standing as a function's result gains a returner, so
+//! `-> Integer` and `-> -F Integer` mean the same and the returner is never
+//! doubled; a function's body, a computation where the declaration takes a
+//! value, is thunked; a type standing where a value is read
 //! is quoted into its code, a value type by `⌜A⌝` and a computation type by
 //! `⌜C⌝`, so `def t : Type ; def t = Integer ;` declares a code; and a name
 //! standing where a type is read, bound at a universe, is decoded out of it, as
@@ -237,13 +240,27 @@
 //! path through that body passes: its last computation, and on a path the last
 //! computation of a block, every arm of a match, a grouping's operand, the
 //! computation of a `run` and `become`'s operand. Every path through a body
-//! ends in one. A lambda ending a body answers it through its own body's exits,
-//! and a hole passes it on. Any other form where a path ends — `pure v`, a
-//! call, a force — is refused as `MissingExit` at its bytes; an exit where no
-//! path passes — a call's head, a definition's value — as `OutOfFragment` with
-//! the `NotInTail` boundary; code after a statement every path of which leaves
-//! as `Unreachable`. How an exit lowers, and the alternatives that route was
-//! chosen over, are in the crate root's § Early exits leave by a direct cut.
+//! ends in one, written or inferred. A lambda ending a body answers it through
+//! its own body's exits, and a hole passes it on. Any other form where a path
+//! ends takes the exit its polarity names, read off the form: a value — a
+//! variable, a constructor application, a literal, a thunk, a tuple, an
+//! annotation — is returned, so `n` there exits as `return n`; a computation —
+//! `pure v`, a call, a force — runs in tail position, so `f(x)` there exits as
+//! `become f(x)`. An exit where no path passes — a call's head, a definition's
+//! value — is refused as `OutOfFragment` with the `NotInTail` boundary; a
+//! block's last computation written as a statement, `c ;`, is refused unless
+//! `c` is a written exit, because `;` discards; code after a statement every
+//! path of which leaves as `Unreachable`. How an exit lowers, and the
+//! alternatives that route was chosen over, are in the crate root's § Early
+//! exits leave by a direct cut.
+//!
+//! An inferred exit is a lowering node, checked as a written one is: a value's
+//! is the returner over it, its origin the tail's, marked inserted as
+//! `Insertion::Return`; a computation's is the computation itself, as
+//! `become`'s is, so `thunk { become f(x) }` and `thunk { f(x) }` lower to one
+//! term. Each is recorded at the tail's own bytes in
+//! `LoweredModule::inferred_exits`, which a face reads to show the keyword the
+//! source left out, and which the `explicit-exits` lint reports.
 //!
 //! A `become` loop therefore runs in constant continuation however long its
 //! input, an early exit inside it included, where a recursion whose call is
@@ -253,11 +270,25 @@
 //!
 //! `pure v` is the computation that does nothing and produces `v`; it stands
 //! wherever a computation yields without leaving the function, such as an arm
-//! of a bound match. The alternative was the implicit exit the surface read
-//! before: a body's result was its last computation, so in an algorithm with
-//! nested conditionals each exit was wherever a branch happened to end. A
-//! required exit makes control flow readable at the exit, the way a descent
-//! claim makes recursion readable at the call.
+//! of a bound match. At a tail it is a computation like any other, so it exits
+//! as `become pure v`, which returns `v` as `return v` does.
+//!
+//! The recorded design requires an exit at every tail, so control flow reads at
+//! the exit the way a descent claim makes recursion readable at the call. The
+//! lowering infers the exit at a tail instead, because there the polarity of
+//! the form already names it: a value can only be returned and a computation
+//! only run, so the keyword restates the form, while an early exit — one off
+//! the last computation — is where the keyword says something, and it stays
+//! required there. The required exit is kept as an option, not a rule: the
+//! `explicit-exits` lint, off by default and enabled by an `explicit_exits`
+//! attribute on a declaration or a top-level module or by the driver's
+//! `--lint explicit-exits`, reports every inferred exit with a fix that writes
+//! its keyword. Alternatives: the required exit, kept as that lint; and a
+//! body's result as its last computation whatever its form, which hides
+//! whether a tail runs a call or returns a value — the polarity reading names
+//! it. Reversal: a tail whose polarity the syntax does not settle, a form whose
+//! sort only its type decides, needs its keyword written, and is refused
+//! rather than guessed.
 //!
 //! # Universes and the fuss-free default
 //!
@@ -498,6 +529,7 @@ use crate::module::DataIndex;
 use crate::module::DeclarationOutcome;
 use crate::module::DeclarationParts;
 use crate::module::DeclarationSlot;
+use crate::module::DecoratedModule;
 use crate::module::Half;
 use crate::module::LoweredDeclaration;
 use crate::module::LoweredModule;
@@ -549,6 +581,10 @@ mod arity;
 mod description;
 
 mod exits;
+
+pub use exits::Exit;
+pub use exits::Explicitness;
+pub use exits::InferredExit;
 
 mod identity;
 
@@ -1071,7 +1107,7 @@ enum Family
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the variants partition what a form does at a body's end.
-/// - provides: the vocabulary of the exit requirement.
+/// - provides: the vocabulary of exit inference.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -1079,6 +1115,7 @@ enum Family
 /// - hypothesis: L3 — an exit, a match passing its end to its arms and a
 ///   returner ending a body distinguish the three.
 /// - witness: `lower::tests::an_exit_lowers_where_a_path_passes_and_nowhere_else`
+/// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum Ending
 {
@@ -1089,8 +1126,9 @@ enum Ending
     /// which answers the function type the end has — or is a hole, which the
     /// author has yet to fill.
     Passes,
-    /// The form ends the body without an exit.
-    Missing,
+    /// The form ends the body without an exit, so the lowering infers the one
+    /// its polarity names: `return` over a value, `become` over a computation.
+    Inferred,
 }
 
 /// How `former`, standing where a body ends, treats that end.
@@ -1099,18 +1137,19 @@ enum Ending
 /// - requires: nothing.
 /// - ensures: `return` and `become` are the exit; a block, a match, a copattern
 ///   block, a grouping, a lambda and a hole pass the end on; every other former
-///   is missing an exit.
+///   takes an inferred exit.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — exits settle, a match ending in exits settles, and a
-///   returner or a call ending a body is refused at itself.
+///   returner or a call ending a body takes an inferred exit at itself.
 /// - witness: `lower::tests::an_exit_lowers_where_a_path_passes_and_nowhere_else`
+/// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become => ret == Ending::Exit,
     Former::Block | Former::Case | Former::LazyRecord | Former::Parenthesized | Former::Lambda | Former::Hole => ret == Ending::Passes,
-    _ => ret == Ending::Missing,
+    _ => ret == Ending::Inferred,
 })]
 fn ending(former: Former) -> Ending
 {
@@ -1158,7 +1197,7 @@ fn ending(former: Former) -> Ending
         | Former::Import
         | Former::Module
         | Former::Data
-        | Former::Unadmitted => Ending::Missing,
+        | Former::Unadmitted => Ending::Inferred,
     }
 }
 
@@ -2263,8 +2302,8 @@ struct Lowerer<'run, 'source>
     /// The computation positions where a path through a body ends: the last
     /// computation of a function's, a lambda's or a thunk's body, and what
     /// stands in tail position of one — a block's last computation, a match's
-    /// arm, a grouping's operand. A form there that is not an exit is a
-    /// missing one.
+    /// arm, a grouping's operand. A form there that is not an exit takes the
+    /// one its polarity names.
     exits: BTreeSet<NodeIndex>,
     /// The computation positions a path through a body passes, where an exit
     /// may stand: every position where a path ends, and every statement's
@@ -2275,9 +2314,18 @@ struct Lowerer<'run, 'source>
     /// computation of a statement that holds an exit, and what stands in tail
     /// position of one.
     joined: BTreeSet<NodeIndex>,
-    /// The exits read: every `return` and `become`, whose minted computation
-    /// the commuting keeps where it stands.
+    /// The exits read: every `return` and `become`, written or inferred,
+    /// whose minted computation the commuting keeps where it stands.
     leaving: BTreeSet<NodeIndex>,
+    /// The tails the source wrote without an exit, each exited by the one its
+    /// polarity names: a value by an inserted `return`, a computation by
+    /// running it in tail position.
+    inferred: BTreeSet<NodeIndex>,
+    /// Every inferred exit the mint sweep minted, with its tail's position.
+    elided: Vec<(NodeIndex, Exit)>,
+    /// The slots an `explicit_exits` attribute asks written exits of: a
+    /// declaration it decorates, and every member of a module it decorates.
+    asked: BTreeSet<SlotIndex>,
     /// Each block's last computation written as a statement, `c ;` before the
     /// closing brace, with the statement's span: admitted only as an exit.
     stated: BTreeMap<NodeIndex, ByteSpan>,
@@ -2568,6 +2616,7 @@ pub fn lower_module<'source>(
     let mut attributes = AttributeTable::new();
     lowerer.attribute(&mut attributes)?;
     let documentation = lowerer.document()?;
+    let inferred = lowerer.inferred_exits();
     let declarations = lowerer.assemble(&mut origins);
     let structures = lowerer.structures();
     let Lowerer {
@@ -2593,7 +2642,8 @@ pub fn lower_module<'source>(
         },
         collected.cells,
     )
-    .with_documentation(documentation))
+    .with_documentation(documentation)
+    .with_inferred_exits(inferred))
 }
 
 impl<'run, 'source> Lowerer<'run, 'source>
@@ -2716,6 +2766,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             exitable: BTreeSet::new(),
             joined: BTreeSet::new(),
             leaving: BTreeSet::new(),
+            inferred: BTreeSet::new(),
+            elided: Vec::new(),
+            asked: BTreeSet::new(),
             stated: BTreeMap::new(),
             cases: Vec::new(),
             signatures: BTreeMap::new(),
@@ -3025,11 +3078,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   manifest type component's and a type member's type and an abstract
     ///   component's written kind as value types, a data declaration's
     ///   parameter types, universe and field types as value types under the
-    ///   parameters before them, and an attribute's payload as a value when its
-    ///   form can stand as one; a witness's body, a member rather than a form,
-    ///   is read nowhere. Every other node stays unread. Every written payload
-    ///   is marked as one, whatever its form, and every signature type's root
-    ///   with the type components it sees.
+    ///   parameters before them, and an attribute's payload, a declaration's or
+    ///   a decorated module's, as a value when its form can stand as one; a
+    ///   witness's body, a member rather than a form, is read nowhere. Every
+    ///   other node stays unread. Every written payload is marked as one,
+    ///   whatever its form, and every signature type's root with the type
+    ///   components it sees.
     /// - provides: the entry points of the ascending sweep.
     /// - fails: [`LoweringRefusal::UnknownMold`] for a payload of a mold the
     ///   grammar does not hold.
@@ -3059,17 +3113,24 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 && self.payload.len() == before.1
                 && self.scopes.len() == before.2
                 && (ret.is_err()
-                    || self.collected.slots.iter().all(|slot| {
-                        slot.attributes
-                            .iter()
-                            .all(|attribute| match attribute.payload {
-                                | Payload::Unwritten => true,
-                                | Payload::Written(payload) => self
-                                    .payload
-                                    .get(usize::from(payload.node))
-                                    .is_none_or(|flag| flag.0),
-                            })
-                    }))
+                    || self
+                        .collected
+                        .slots
+                        .iter()
+                        .flat_map(|slot| slot.attributes.iter())
+                        .chain(
+                            self.collected
+                                .decorated
+                                .iter()
+                                .flat_map(|module| module.attributes.iter()),
+                        )
+                        .all(|attribute| match attribute.payload {
+                            | Payload::Unwritten => true,
+                            | Payload::Written(payload) => self
+                                .payload
+                                .get(usize::from(payload.node))
+                                .is_none_or(|flag| flag.0),
+                        }))
         },
     )]
     fn seed(&mut self) -> Result<(), LoweringRefusal<'source>>
@@ -3113,16 +3174,27 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     | Operand::Signature => {},
                 }
             }
-            for written in &slot.attributes {
-                let Payload::Written(payload) = written.payload
-                else {
-                    continue;
-                };
-                payloads.push(payload.node);
-                let (_shape, value) = self.payload_former(payload)?;
-                if value.0 {
-                    seeds.push((payload.node, Reading::Value(Frame::Outermost)));
-                }
+        }
+        let written = self
+            .collected
+            .slots
+            .iter()
+            .flat_map(|slot| slot.attributes.iter())
+            .chain(
+                self.collected
+                    .decorated
+                    .iter()
+                    .flat_map(|module| module.attributes.iter()),
+            );
+        for attribute in written {
+            let Payload::Written(payload) = attribute.payload
+            else {
+                continue;
+            };
+            payloads.push(payload.node);
+            let (_shape, value) = self.payload_former(payload)?;
+            if value.0 {
+                seeds.push((payload.node, Reading::Value(Frame::Outermost)));
             }
         }
         self.seed_data(&mut seeds);
@@ -3555,9 +3627,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   the position refuses as the wrong sort, except a type standing where a
     ///   value is read, which is quoted; a form where a body ends that is
     ///   neither an exit nor a form that passes the end on — a block, a match,
-    ///   a grouping — nor a hole refuses as a missing exit at its bytes; every
-    ///   other former is handed to its own reader, a declaration form to the
-    ///   function reader, the one reading of the family that seeds one.
+    ///   a grouping — nor a hole takes the exit its polarity names, recorded as
+    ///   inferred and leaving, and is handed to its reader; every other former
+    ///   is handed to its own reader, a declaration form to the function
+    ///   reader, the one reading of the family that seeds one.
     /// - provides: the dispatch on the grammar's named kind.
     /// - fails: yields the form's first refusal.
     /// - panics: none.
@@ -3567,12 +3640,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — repairs take precedence over admission, wrong
-    ///   families are refused, and a type read as a value is the explicit
-    ///   quoting exception.
+    ///   families are refused, a type read as a value is the explicit quoting
+    ///   exception, and a tail of each polarity takes its inferred exit.
     /// - witness: `lower::tests::a_repaired_declaration_is_refused`
     /// - witness: `lower::tests::a_lambda_in_value_position_is_refused`
     /// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
     /// - witness: `lower::tests::an_exit_lowers_where_a_path_passes_and_nowhere_else`
+    /// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
     #[spec(
         ensures: |ret| {
             if let Maybe::Present(repaired) = pieces.repair {
@@ -3593,8 +3667,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
             {
                 ret == Err(site.out(FragmentBoundary::WrongSort))
             }
-            else if self.exits.contains(&site.at.node) && ending(former) == Ending::Missing {
-                ret == Err(LoweringRefusal::MissingExit { span: site.at.span })
+            else if self.exits.contains(&site.at.node) && ending(former) == Ending::Inferred {
+                self.inferred.contains(&site.at.node) && self.leaving.contains(&site.at.node)
+                    && (ret.is_err()
+                        || self
+                            .plans
+                            .get(usize::from(site.at.node))
+                            .is_some_and(|plan| *plan != Plan::Unplanned))
             }
             else {
                 ret.is_err()
@@ -3630,8 +3709,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if family != site.reading.family() && !quoted {
             return Err(site.out(FragmentBoundary::WrongSort));
         }
-        if self.exits.contains(&site.at.node) && ending(former) == Ending::Missing {
-            return Err(LoweringRefusal::MissingExit { span: site.at.span });
+        if self.exits.contains(&site.at.node) && ending(former) == Ending::Inferred {
+            let _tail = self.inferred.insert(site.at.node);
+            let _exit = self.leaving.insert(site.at.node);
         }
         let cursor = Cursor::new(&pieces.pieces, site.at.span);
         match former {
@@ -3710,9 +3790,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   a force; a function's result reads a computation type and reaches a
     ///   value type by a returner; a value position reaches a type of either
     ///   sort by a quote, and, at an endpoint, a computation as the value it
-    ///   returns; the bridge is recorded for the form's node, and every other
-    ///   match records none.
-    /// - provides: the sort check every former takes, and the four insertions
+    ///   returns; a tail, where a path through a body ends, reaches a value by
+    ///   the `return` its polarity names, recorded as inferred and leaving; the
+    ///   bridge is recorded for the form's node, and every other match records
+    ///   none.
+    /// - provides: the sort check every former takes, and the five insertions
     ///   decided by the sort of a position.
     /// - fails: yields the wrong-sort refusal when the position reads another
     ///   sort no bridge reaches.
@@ -3724,13 +3806,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — each bridge separated from its bare neighbour: a
     ///   value and a computation at a head, a value type and a computation type
-    ///   at a result, a value and a type at a value, each asserted through the
-    ///   lowered node and its origin's provenance.
+    ///   at a result, a value and a type at a value, a value and a computation
+    ///   at a tail, each asserted through the lowered node and its origin's
+    ///   provenance.
     /// - witness: `lower::tests::a_value_head_is_forced_and_marked_inserted`
     /// - witness: `lower::tests::an_author_written_force_is_not_marked_inserted`
     /// - witness: `lower::tests::a_positive_result_gains_a_returner_once`
     /// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
     /// - witness: `lower::identity::tests::a_computation_endpoint_is_the_value_it_returns`
+    /// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
     #[spec(
         ensures: |ret| {
             let expected = match (site.reading, produced) {
@@ -3755,6 +3839,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 {
                     Some((frame, Bridge::Inserted(Insertion::Endpoint)))
                 },
+                | (Reading::Computation(frame), Produced::Value)
+                    if self.exits.contains(&site.at.node) =>
+                {
+                    Some((frame, Bridge::Inserted(Insertion::Return)))
+                },
                 | _ => None,
             };
             match expected {
@@ -3764,6 +3853,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             .bridges
                             .get(usize::from(site.at.node))
                             .is_none_or(|held| *held == bridge)
+                        && (bridge != Bridge::Inserted(Insertion::Return)
+                            || (self.inferred.contains(&site.at.node)
+                                && self.leaving.contains(&site.at.node)))
                 },
                 | None => ret == Err(site.out(FragmentBoundary::WrongSort)),
             }
@@ -3795,6 +3887,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 if self.at_endpoint.contains(&site.at.node) =>
             {
                 (frame, Bridge::Inserted(Insertion::Endpoint))
+            },
+            | (Reading::Computation(frame), Produced::Value)
+                if self.exits.contains(&site.at.node) =>
+            {
+                let _tail = self.inferred.insert(site.at.node);
+                let _exit = self.leaving.insert(site.at.node);
+                (frame, Bridge::Inserted(Insertion::Return))
             },
             | _ => return Err(site.out(FragmentBoundary::WrongSort)),
         };
@@ -7544,9 +7643,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: every node the plan names is already minted or absent.
     /// - ensures: the node's plan is taken and minted, its bridge written over
-    ///   it and the result kept as the node's lowered core node; a node with no
-    ///   plan left, or under a refused declaration outside a payload, is left
-    ///   as it is.
+    ///   it and the result kept as the node's lowered core node; a tail whose
+    ///   exit was inferred and minted as a computation is recorded with that
+    ///   exit, `return` when the bridge is the inserted one and `become`
+    ///   otherwise; a node with no plan left, or under a refused declaration
+    ///   outside a payload, is left as it is.
     /// - provides: the per-position half of [`Self::mint`].
     /// - fails: never.
     /// - panics: none.
@@ -7555,10 +7656,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — a refused declaration leaves its ordinary plans
     ///   untouched but still permits its attribute payloads to mint; consumed
     ///   plans are not minted twice when a manifest and the full traversal both
-    ///   reach them.
+    ///   reach them; a tail of each polarity records its own exit once.
     /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_key`
     /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
     /// - witness: `lower::tests::every_minted_node_has_an_origin`
+    /// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
     #[spec(
         captures: before = (
             self.collected.refused(position).0 && !self.in_payload(position).0,
@@ -7614,6 +7716,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             && let Maybe::Present(Lowered::Computation(exit)) = bridged
         {
             let _first = sink.exits.insert(exit);
+            if self.inferred.contains(&position) {
+                self.elided.push((position, match bridge {
+                    | Bridge::Inserted(Insertion::Return) => Exit::Return,
+                    | Bridge::Bare | Bridge::Inserted(_) => Exit::Become,
+                }));
+            }
         }
         if let Some(held) = self.lowered.get_mut(usize::from(position)) {
             *held = bridged;
@@ -9186,8 +9294,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   spellings sit, and the earlier one is the one kept. A declaration's
     ///   lowering outcome does not gate its attributes: an expectation about a
     ///   refusal is read off the refused declaration, and an attribute's own
-    ///   refusal competes with the declaration's other refusals by position.
-    /// - provides: the attribute side table of the lowered module.
+    ///   refusal competes with the declaration's other refusals by position. An
+    ///   attribute decorating a top-level module is resolved alike and filed
+    ///   under the module form's content identity, its refusal offered to the
+    ///   module's first member. An `explicit_exits` attribute marks the slot it
+    ///   decorates, or every member slot of the module it decorates, as asking
+    ///   for written exits.
+    /// - provides: the attribute side table of the lowered module, and the
+    ///   slots the `explicit-exits` lint reads as asked.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] and
     ///   [`LoweringRefusal::UnknownMold`] abort the pass. Every other refusal
     ///   is offered to the declaration that owns the attribute rather than
@@ -9201,9 +9315,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — attributes are drained and filed even for a refused
     ///   declaration, while a failing schema is retained as a declaration
-    ///   refusal.
+    ///   refusal; an `explicit_exits` attribute on a module and on a
+    ///   declaration asks within its form and nowhere else.
     /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_key`
     /// - witness: `lower::tests::the_attribute_diagnostics_fire_on_a_refused_declaration`
+    /// - witness: `lower::exits::tests::an_explicit_exits_attribute_asks_within_its_form`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -9220,11 +9336,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     .err()
                     .is_none_or(|refusal| refusal.classify() == FailureClass::EngineFault)
                 && (ret.is_err()
-                    || self
-                        .collected
-                        .slots
-                        .iter()
-                        .all(|slot| slot.attributes.is_empty()))
+                    || (self.collected.decorated.is_empty()
+                        && self
+                            .collected
+                            .slots
+                            .iter()
+                            .all(|slot| slot.attributes.is_empty())))
         },
     )]
     fn attribute(
@@ -9233,10 +9350,80 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let mut slots = core::mem::take(&mut self.collected.slots);
-        let outcome = self.attribute_slots(&mut slots, table);
+        let decorated = core::mem::take(&mut self.collected.decorated);
+        let outcome = self
+            .attribute_slots(&mut slots, table)
+            .and_then(|()| self.attribute_modules(&decorated, &mut slots, table));
         self.collected.slots = slots;
 
         outcome
+    }
+
+    /// Resolve and file the attributes of every decorated module in
+    /// `decorated`.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::attribute`], over the decorated modules and the
+    ///   slots taken out of the collection.
+    /// - ensures: as [`Self::attribute`], for the modules' attributes; each
+    ///   spends one step.
+    /// - provides: the module walk of [`Self::attribute`].
+    /// - fails: as [`Self::attribute`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::attribute`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a decorated module of two members and an undecorated
+    ///   declaration after it, the attribute reaching the members only.
+    /// - witness: `lower::exits::tests::an_explicit_exits_attribute_asks_within_its_form`
+    #[spec(
+        captures: before = (self.fuel.remaining, usize::from(table.attributed_count())),
+        ensures: |ret| {
+            self.fuel.remaining <= before.0
+                && usize::from(table.attributed_count()) >= before.1
+                && ret
+                    .as_ref()
+                    .err()
+                    .is_none_or(|refusal| refusal.classify() == FailureClass::EngineFault)
+        },
+    )]
+    fn attribute_modules(
+        &mut self,
+        decorated: &[DecoratedModule<'source>],
+        slots: &mut [DeclarationSlot<'source>],
+        table: &mut AttributeTable,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        for module in decorated {
+            let mut seen: Vec<(RegisteredAttribute, ByteSpan)> = Vec::new();
+            for written in &module.attributes {
+                self.fuel.spend()?;
+                match self.read_attribute(written, &mut seen) {
+                    | Ok(Filing::Filed(entry)) => {
+                        if entry.name() == RegisteredAttribute::EXPLICIT_EXITS {
+                            self.asked.extend(
+                                (usize::from(module.first) .. usize::from(module.end))
+                                    .map(SlotIndex::from),
+                            );
+                        }
+                        table.file(self.key_at(module.module.node), entry);
+                    },
+                    | Ok(Filing::Unlowered) => {},
+                    | Err(refusal) => {
+                        if refusal.classify() == FailureClass::EngineFault {
+                            return Err(refusal);
+                        }
+                        if let Some(slot) = slots.get_mut(usize::from(module.first)) {
+                            slot.refuse(written.at.node, refusal);
+                        }
+                    },
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Resolve and file the attributes of every slot in `slots`.
@@ -9290,12 +9477,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
         table: &mut AttributeTable,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        for slot in slots {
+        for (index, slot) in slots.iter_mut().enumerate() {
             let mut seen: Vec<(RegisteredAttribute, ByteSpan)> = Vec::new();
             for written in core::mem::take(&mut slot.attributes) {
                 self.fuel.spend()?;
                 match self.read_attribute(&written, &mut seen) {
                     | Ok(Filing::Filed(entry)) => {
+                        if entry.name() == RegisteredAttribute::EXPLICIT_EXITS {
+                            let _first = self.asked.insert(SlotIndex::from(index));
+                        }
                         table.file(self.key_at(written.decorates), entry);
                     },
                     | Ok(Filing::Unlowered) => {},
@@ -10254,25 +10444,26 @@ impl Sink<'_>
     /// - requires: `minted` is what the node's own plan minted.
     /// - ensures: a bare node is `minted` unchanged; a forced value is minted
     ///   as a force over it, a returned value type as a returner over it, a
-    ///   quoted type as the quote of it at its own sort, and a computation
-    ///   standing as an endpoint as the value it returns, each with `origin`
-    ///   marked as the insertion it is; nothing when the node did not lower at
-    ///   the sort its bridge leaves, which the classification makes
-    ///   unreachable.
+    ///   quoted type as the quote of it at its own sort, a computation standing
+    ///   as an endpoint as the value it returns, and a value standing at a tail
+    ///   as the returner over it, each with `origin` marked as the insertion it
+    ///   is; nothing when the node did not lower at the sort its bridge leaves,
+    ///   which the classification makes unreachable.
     /// - provides: the minting half of the insertions a position's sort
     ///   decides.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — forced heads, positive results and quoted types
-    ///   acquire the intended inserted provenance, while an author-written
-    ///   force stays written.
+    /// - hypothesis: L3 — forced heads, positive results, quoted types and
+    ///   values at a tail acquire the intended inserted provenance, while an
+    ///   author-written force stays written.
     /// - witness: `lower::tests::a_value_head_is_forced_and_marked_inserted`
     /// - witness: `lower::tests::a_positive_result_gains_a_returner_once`
     /// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
     /// - witness: `lower::tests::an_author_written_force_is_not_marked_inserted`
     /// - witness: `lower::identity::tests::a_computation_endpoint_is_the_value_it_returns`
+    /// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
     #[spec(
         ensures: |ret| match bridge {
             | Bridge::Bare => ret == minted,
@@ -10280,7 +10471,7 @@ impl Sink<'_>
                 | (Maybe::Absent(reason), ..) => ret == Maybe::Absent(reason),
                 | (
                     Maybe::Present(Lowered::Value(_)),
-                    Insertion::Force,
+                    Insertion::Force | Insertion::Return,
                     Maybe::Present(Lowered::Computation(id)),
                 ) => self.origins.computation(id) == Maybe::Present(origin.inserted(insertion)),
                 | (
@@ -10298,7 +10489,7 @@ impl Sink<'_>
                     Insertion::Endpoint,
                     Maybe::Present(Lowered::Value(id)),
                 ) => self.origins.value(id) == Maybe::Present(origin.inserted(insertion)),
-                | (Maybe::Present(Lowered::Value(_)), Insertion::Force, _)
+                | (Maybe::Present(Lowered::Value(_)), Insertion::Force | Insertion::Return, _)
                 | (Maybe::Present(Lowered::ValueType(_)), Insertion::Returner, _)
                 | (Maybe::Present(Lowered::Computation(_)), Insertion::Endpoint, _)
                 | (
@@ -10344,6 +10535,10 @@ impl Sink<'_>
                 let id = self.arena.value_returned(returned);
                 Maybe::Present(self.value(id, inserted))
             },
+            | (Maybe::Present(Lowered::Value(returned)), Insertion::Return) => {
+                let id = self.arena.computation_return(returned);
+                Maybe::Present(self.computation(id, inserted))
+            },
             | (
                 Maybe::Present(_),
                 Insertion::Force
@@ -10351,6 +10546,7 @@ impl Sink<'_>
                 | Insertion::Returner
                 | Insertion::Quote
                 | Insertion::Decode
+                | Insertion::Return
                 | Insertion::Classifier
                 | Insertion::Match
                 | Insertion::Fixpoint
@@ -12555,15 +12751,31 @@ mod tests
             "`become` passes its body's end to the exit it runs"
         );
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
-        let refused = refusal(SourceText::from("def a = thunk { become (return 1)(2) } ;"));
-        assert!(
-            matches!(
-                refused,
-                LoweringRefusal::OutOfFragment { span, form, boundary: FragmentBoundary::NotInTail, .. }
-                    if span == at(24, 32) && form == FormName::from(NamedKind("return_expression"))
+        for (source, start, end, form) in [
+            (
+                "def a = thunk { become (return 1)(2) } ;",
+                24_usize,
+                32_usize,
+                "return_expression",
             ),
-            "an exit at a call's head, where no path passes, is refused at itself: {refused:?}"
-        );
+            (
+                "def a = thunk { become (become pure 1)(2) } ;",
+                24_usize,
+                37_usize,
+                "become_expression",
+            ),
+        ] {
+            let refused = refusal(SourceText::from(source));
+            assert!(
+                matches!(
+                    refused,
+                    LoweringRefusal::OutOfFragment { span, form: held, boundary: FragmentBoundary::NotInTail, .. }
+                        if span == at(start, end) && held == FormName::from(NamedKind(form))
+                ),
+                "an exit at a call's head, where no path passes, is refused at itself, \
+                 inferred exits notwithstanding: `{source}` {refused:?}"
+            );
+        }
         for (source, start, end) in [
             (
                 "def a = thunk { run y <- return 1 ; return y } ;",
@@ -13617,14 +13829,16 @@ mod tests
             "a product is a value type, not a computation type"
         );
         assert_eq!(
-            refusal(SourceText::from("def u = thunk { (1, 2) } ;")),
+            refusal(SourceText::from(
+                "def u = thunk { run x <- (1, 2) ; return x } ;"
+            )),
             LoweringRefusal::OutOfFragment {
-                span: at(16_usize, 22_usize),
+                span: at(25_usize, 31_usize),
                 form: FormName::TUPLE,
                 sort: FragmentSort::Computation,
                 boundary: FragmentBoundary::WrongSort,
             },
-            "a pair is a value, not a computation"
+            "a pair is a value, not a computation: off a tail no exit is inferred for it"
         );
     }
 
