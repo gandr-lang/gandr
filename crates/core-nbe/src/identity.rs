@@ -767,6 +767,54 @@ mod tests
     }
 
     #[test]
+    fn transport_moves_a_list_through_a_universe_path()
+    {
+        // Negation as a universe equivalence of Bool with itself, in the
+        // motive `y. List(El y)`: each head is carried along it, in order.
+        let mut core = CoreArena::new();
+        let unit = core.value_unit();
+        let [truth, falsity] =
+            [Side::Left, Side::Right].map(|side| core.value_injection(side.into(), unit));
+        let negated = [falsity, truth].map(|value| core.computation_return(value));
+        let bound = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+        let body = core.computation_case(bound, &negated);
+        let lambda = core.computation_lambda(body);
+        let not = core.value_thunk(lambda);
+        let path = core.value_equiv(not, not);
+        let element = core.value_type_element(bound, gandr_kernel_strata::Level::zero());
+        let motive = core.value_type_list(element);
+        let list = |core: &mut CoreArena, heads: [ValueId; 2]| {
+            let nil = core.value_list_nil();
+            heads
+                .iter()
+                .rev()
+                .fold(nil, |tail, &head| core.value_list_cons(head, tail))
+        };
+        let operand = list(&mut core, [truth, falsity]);
+        let transported = core.computation_path_transport(motive, path, operand);
+        let moved = list(&mut core, [falsity, truth]);
+        let expected = core.computation_return(moved);
+        assert_eq!(
+            normalises_to(&mut core, transported, expected),
+            CertificateEquality::Equal,
+            "each head is negated and the spine kept"
+        );
+        let kept = core.computation_return(operand);
+        assert_eq!(
+            normalises_to(&mut core, transported, kept),
+            CertificateEquality::Different
+        );
+        let nil = core.value_list_nil();
+        let empty = core.computation_path_transport(motive, path, nil);
+        let returned = core.computation_return(nil);
+        assert_eq!(
+            normalises_to(&mut core, empty, returned),
+            CertificateEquality::Equal,
+            "the empty list is carried unchanged"
+        );
+    }
+
+    #[test]
     fn a_compound_endpoint_stands_for_what_it_returns()
     {
         let mut core = CoreArena::new();

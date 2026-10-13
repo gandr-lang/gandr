@@ -316,6 +316,12 @@ pub enum RefusalName
     FunextUnsupported,
     /// A function extensionality whose functions differ at some input.
     PointwiseDistinct,
+    /// A universe equivalence the rule does not decide.
+    EquivUnsupported,
+    /// A universe equivalence over a recursive code.
+    UncertifiedStratum,
+    /// A universe equivalence whose round trip does not return its input.
+    RoundTripDistinct,
     /// A term name no binder or earlier declaration answers.
     UnresolvedName,
     /// A documentation link to a name nothing declares.
@@ -427,7 +433,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 71_usize] = [
+    pub const VOCABULARY: [Self; 74_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -449,6 +455,9 @@ impl RefusalName
         Self::CompoundEndpoint,
         Self::FunextUnsupported,
         Self::PointwiseDistinct,
+        Self::EquivUnsupported,
+        Self::UncertifiedStratum,
+        Self::RoundTripDistinct,
         Self::UnresolvedName,
         Self::UnresolvedDocLink,
         Self::UnresolvedTypeHead,
@@ -576,6 +585,9 @@ impl RefusalName
         | (Self::CompoundEndpoint, b"CompoundEndpoint")
         | (Self::FunextUnsupported, b"FunextUnsupported")
         | (Self::PointwiseDistinct, b"PointwiseDistinct")
+        | (Self::EquivUnsupported, b"EquivUnsupported")
+        | (Self::UncertifiedStratum, b"UncertifiedStratum")
+        | (Self::RoundTripDistinct, b"RoundTripDistinct")
     )
 },
     )]
@@ -616,6 +628,9 @@ impl RefusalName
             | Self::CompoundEndpoint => "CompoundEndpoint",
             | Self::FunextUnsupported => "FunextUnsupported",
             | Self::PointwiseDistinct => "PointwiseDistinct",
+            | Self::EquivUnsupported => "EquivUnsupported",
+            | Self::UncertifiedStratum => "UncertifiedStratum",
+            | Self::RoundTripDistinct => "RoundTripDistinct",
             | Self::ShadowedBuiltin => "ShadowedBuiltin",
             | Self::OutOfFragment => "OutOfFragment",
             | Self::GradedBridge => "GradedBridge",
@@ -874,6 +889,9 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::CompoundEndpoint { .. }), RefusalName::CompoundEndpoint)
         | (Self::Checking(CheckRefusal::FunextUnsupported { .. }), RefusalName::FunextUnsupported)
         | (Self::Checking(CheckRefusal::PointwiseDistinct { .. }), RefusalName::PointwiseDistinct)
+        | (Self::Checking(CheckRefusal::EquivUnsupported { .. }), RefusalName::EquivUnsupported)
+        | (Self::Checking(CheckRefusal::UncertifiedStratum { .. }), RefusalName::UncertifiedStratum)
+        | (Self::Checking(CheckRefusal::RoundTripDistinct { .. }), RefusalName::RoundTripDistinct)
     )
 },
     )]
@@ -1071,6 +1089,9 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::CompoundEndpoint { .. }, RefusalName::CompoundEndpoint)
         | (CheckRefusal::FunextUnsupported { .. }, RefusalName::FunextUnsupported)
         | (CheckRefusal::PointwiseDistinct { .. }, RefusalName::PointwiseDistinct)
+        | (CheckRefusal::EquivUnsupported { .. }, RefusalName::EquivUnsupported)
+        | (CheckRefusal::UncertifiedStratum { .. }, RefusalName::UncertifiedStratum)
+        | (CheckRefusal::RoundTripDistinct { .. }, RefusalName::RoundTripDistinct)
     )
 },
 )]
@@ -1097,6 +1118,9 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
         | CheckRefusal::CompoundEndpoint { .. } => RefusalName::CompoundEndpoint,
         | CheckRefusal::FunextUnsupported { .. } => RefusalName::FunextUnsupported,
         | CheckRefusal::PointwiseDistinct { .. } => RefusalName::PointwiseDistinct,
+        | CheckRefusal::EquivUnsupported { .. } => RefusalName::EquivUnsupported,
+        | CheckRefusal::UncertifiedStratum { .. } => RefusalName::UncertifiedStratum,
+        | CheckRefusal::RoundTripDistinct { .. } => RefusalName::RoundTripDistinct,
         | CheckRefusal::TypeMismatch(_) => RefusalName::TypeMismatch,
         | CheckRefusal::ShapeMismatch { .. } => RefusalName::ShapeMismatch,
         | CheckRefusal::NotSynthesisable { .. } => RefusalName::NotSynthesisable,

@@ -239,6 +239,27 @@ pub enum Refusal
     /// A function extensionality whose functions do not both return one
     /// value at some covering input.
     PointwiseDistinct(Site),
+    /// A universe equivalence the rule does not decide: open translators, a
+    /// classifier that is no thunk of a pure non-dependent arrow, or a code
+    /// outside the universe-path vocabulary.
+    EquivUnsupported
+    {
+        /// The universe equivalence.
+        at: Site,
+        /// The forward translator's type, or the code the coverage stopped at.
+        classifier: TypeContent,
+    },
+    /// A universe equivalence over a recursive code.
+    UncertifiedStratum
+    {
+        /// The universe equivalence.
+        at: Site,
+        /// The List code the coverage reached.
+        code: TypeContent,
+    },
+    /// A universe equivalence one of whose round trips does not return its
+    /// input at some covering pattern.
+    RoundTripDistinct(Site),
     /// A synthesised type did not convert to the expected one.
     TypeMismatch
     {
@@ -670,6 +691,9 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
  else if let CheckRefusal::CompoundEndpoint { at, .. } = matched_left_value && let Refusal::CompoundEndpoint { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::FunextUnsupported { at, .. } = matched_left_value && let Refusal::FunextUnsupported { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let (CheckRefusal::PointwiseDistinct { at }, &Refusal::PointwiseDistinct(projected)) = (matched_left_value, matched_right_value) { projected == self.site(ArenaNode::Value(at)) }
+ else if let CheckRefusal::EquivUnsupported { at, .. } = matched_left_value && let Refusal::EquivUnsupported { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
+ else if let CheckRefusal::UncertifiedStratum { at, .. } = matched_left_value && let Refusal::UncertifiedStratum { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
+ else if let (CheckRefusal::RoundTripDistinct { at }, &Refusal::RoundTripDistinct(projected)) = (matched_left_value, matched_right_value) { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::TypeMismatch(Mismatch::Value { at, .. }) = matched_left_value && let Refusal::TypeMismatch { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::SortMismatch { at, .. } = matched_left_value && let Refusal::SortMismatch { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::LevelMismatch { at, .. } = matched_left_value && let Refusal::LevelMismatch { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
@@ -847,6 +871,17 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
             },
             | CheckRefusal::PointwiseDistinct { at } => {
                 Refusal::PointwiseDistinct(self.site(ArenaNode::Value(at)))
+            },
+            | CheckRefusal::EquivUnsupported { at, classifier } => Refusal::EquivUnsupported {
+                at: self.site(ArenaNode::Value(at)),
+                classifier: self.type_node(TypeNode::Value(classifier)),
+            },
+            | CheckRefusal::UncertifiedStratum { at, code } => Refusal::UncertifiedStratum {
+                at: self.site(ArenaNode::Value(at)),
+                code: self.type_node(TypeNode::Value(code)),
+            },
+            | CheckRefusal::RoundTripDistinct { at } => {
+                Refusal::RoundTripDistinct(self.site(ArenaNode::Value(at)))
             },
             | CheckRefusal::TypeMismatch(Mismatch::Value {
                 at,

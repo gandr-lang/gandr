@@ -1098,6 +1098,7 @@ where
     let source = Source {
         lifts: report.lifts(),
         funexts: report.funexts(),
+        equivalences: report.equivalences(),
         definitions: report.definitions(),
     };
     for judged in report.judged() {
@@ -1185,9 +1186,9 @@ where
     }
 }
 
-/// What every erasure reads besides the arena and the positions: the lifts
-/// and function extensionalities the judgement recorded and the bodies it
-/// defined its constants as.
+/// What every erasure reads besides the arena and the positions: the lifts,
+/// function extensionalities and universe equivalences the judgement recorded
+/// and the bodies it defined its constants as.
 #[derive(Clone, Copy, Debug)]
 struct Source<'source>
 {
@@ -1195,6 +1196,8 @@ struct Source<'source>
     lifts: &'source BTreeMap<ValueId, Lift>,
     /// The function extensionalities the judgement decided, by node.
     funexts: &'source BTreeMap<ValueId, Funext>,
+    /// The universe equivalences the judgement decided, by node.
+    equivalences: &'source BTreeMap<ValueId, crate::equiv::Equivalence>,
     /// The body each accepted declaration defines its constant as, elaborated
     /// to the universe it was declared at.
     definitions: &'source BTreeMap<ConstantIndex, ValueId>,
@@ -3143,6 +3146,21 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | Value::Hole(hole) => return Err(Refusal::Hole { at: node, hole }),
             | Value::Here(point) => (Frame::Here { at }, CoreNode::Term(TermNode::Value(point))),
             | Value::Funext(..) => return self.funext(target, at),
+            | Value::Equiv(forward, backward) => {
+                let Some(decided) = self.source.equivalences.get(&at)
+                else {
+                    return Err(Refusal::MachineInvariant);
+                };
+                (
+                    Frame::PathEquivType {
+                        at,
+                        forward,
+                        backward,
+                        evidence: alloc::sync::Arc::clone(decided.evidence()),
+                    },
+                    CoreNode::Type(TypeNode::Value(decided.classifier())),
+                )
+            },
             | Value::Returned(computation) => (
                 Frame::Returned { at },
                 CoreNode::Term(TermNode::Computation(computation)),
@@ -3886,6 +3904,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     Value::PathRefl(_)
                     | Value::Here(_)
                     | Value::Funext(..)
+                    | Value::Equiv(..)
                     | Value::Returned(_)
                     | Value::Constructor { .. }
                     | Value::Record(_)
@@ -4865,6 +4884,7 @@ mod tests
         let source = Source {
             lifts: &lifts,
             funexts: &BTreeMap::new(),
+            equivalences: &BTreeMap::new(),
             definitions: &definitions,
         };
         let image = Erasure::new(arena, source, &positions, ConstantIndex::from(0_usize))
@@ -6290,6 +6310,79 @@ mod tests
     }
 
     #[test]
+    fn an_equiv_crosses_as_a_universe_path()
+    {
+        // def not : U (+{(), ()} -> F +{(), ()}) ;
+        // def negation : Path(Type, +{(), ()}, +{(), ()}) = equiv(not, not) ;
+        let mut arena = CoreArena::new();
+        let functions = crate::fixture::booleans(&mut arena);
+        let not = arena.value_constant(ConstantIndex::from(0_usize));
+        let universe = arena.value_type_universe(
+            gandr_core_term::Sort::Ground(GroundSort::Value),
+            Level::zero(),
+        );
+        let code = arena.value_quote(functions.ty);
+        let path = arena.value_type_path(universe, code, code);
+        let equiv = arena.value_equiv(not, not);
+        let (_, readmission) = judge_and_readmit(&mut arena, &[
+            declaration(
+                At(0),
+                Maybe::Present(functions.function),
+                Maybe::Present(functions.not),
+            ),
+            declaration(At(1), Maybe::Present(path), Maybe::Present(equiv)),
+        ]);
+        assert!(
+            readmission
+                .readmitted()
+                .iter()
+                .all(|entry| matches!(entry.outcome(), Outcome::Defined { .. })),
+            "the kernel replays both round trips under the admitted negation: {:?}",
+            readmission.readmitted()
+        );
+        let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+        let Some(&DeclarationContent::Def { body, .. }) = artifact
+            .declarations()
+            .last()
+            .map(|marked| marked.declaration().content())
+        else {
+            panic!("the equivalence is the last definition");
+        };
+        let arena = artifact.arena();
+        let Some(KernelValue::PathEquiv {
+            path_type,
+            ref evidence,
+            ..
+        }) = arena.value(body).cloned()
+        else {
+            panic!("an equiv crosses as the kernel's native universe path");
+        };
+        assert!(
+            matches!(
+                arena.value_type(path_type),
+                Some(&KernelValueType::PathUniverse(source, target))
+                    if content_digest(arena, AnyNode::Value(source)) == content_digest(arena, AnyNode::Value(target))
+            ),
+            "its classifier relates the quote of Bool to itself"
+        );
+        assert_eq!(
+            (evidence.source.len(), evidence.target.len()),
+            (2, 2),
+            "one round trip per injection of each side's coverage"
+        );
+        assert!(
+            evidence
+                .source
+                .iter()
+                .chain(&evidence.target)
+                .all(|dialogue| dialogue
+                    .iter()
+                    .any(|decision| matches!(decision, ConversionDecision::Unfold { .. }))),
+            "every round trip unfolds the admitted negation"
+        );
+    }
+
+    #[test]
     fn marks_and_holes_are_refused_beside_their_positive_controls()
     {
         let mut arena = CoreArena::new();
@@ -6701,6 +6794,7 @@ mod tests
         let source = Source {
             lifts: &lifts,
             funexts: &BTreeMap::new(),
+            equivalences: &BTreeMap::new(),
             definitions: &definitions,
         };
         assert_eq!(
@@ -7401,6 +7495,7 @@ mod tests
         let source = Source {
             lifts: &lifts,
             funexts: &BTreeMap::new(),
+            equivalences: &BTreeMap::new(),
             definitions: &definitions,
         };
         let base = ConstantIndex::from(3_usize);

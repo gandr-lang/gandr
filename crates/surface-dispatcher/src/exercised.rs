@@ -579,6 +579,9 @@ fn checking_row(
         | CheckRefusal::CompoundEndpoint { .. }
         | CheckRefusal::FunextUnsupported { .. }
         | CheckRefusal::PointwiseDistinct { .. }
+        | CheckRefusal::EquivUnsupported { .. }
+        | CheckRefusal::UncertifiedStratum { .. }
+        | CheckRefusal::RoundTripDistinct { .. }
         | CheckRefusal::EffectSignatureConflict { .. }
         | CheckRefusal::UnknownOperation { .. }
         | CheckRefusal::HandlerCoverage { .. }
@@ -781,6 +784,7 @@ fn formers(
                 | Some(
                     &(Value::PathProduct(first, second)
                     | Value::Funext(first, second)
+                    | Value::Equiv(first, second)
                     | Value::PathEquiv {
                         forward: first,
                         backward: second,

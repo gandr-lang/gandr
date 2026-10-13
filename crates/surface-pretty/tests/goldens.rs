@@ -1275,6 +1275,35 @@ mod tests
         );
     }
 
+    /// A universe equivalence spells `equiv(f, g)` and a native list
+    /// `cons(h, t)` over `nil` in `List(A)`, each faithful: the lowering reads
+    /// every one of them back.
+    #[test]
+    fn an_equivalence_and_a_list_spell_as_written()
+    {
+        let mut core = CoreArena::new();
+        let not = core.value_constant(ConstantIndex::from(0_usize));
+        let equivalence = core.value_equiv(not, not);
+        let unit = core.value_tuple(&[]);
+        let nil = core.value_list_nil();
+        let cell = core.value_list_cons(unit, nil);
+        let element = core.value_type_unit();
+        let list = core.value_type_list(element);
+        let names = [Name::from("not")];
+        let source = CoreSource::new(&core, &names);
+        for (root, expected) in [
+            (Root::Value(CoreNode::Value(equivalence)), "equiv(not, not)"),
+            (Root::Value(CoreNode::Value(cell)), "cons(unit, nil)"),
+            (Root::Type(CoreNode::ValueType(list)), "List(Unit)"),
+        ] {
+            assert_eq!(
+                spelled(&source, root),
+                faithful(Written(expected)),
+                "the surface writes it so"
+            );
+        }
+    }
+
     /// Native introductions retain endpoint and map order but cannot claim
     /// surface round-trip fidelity, because the parser has no path syntax.
     #[test]

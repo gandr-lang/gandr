@@ -84,6 +84,8 @@ pub enum Form
     Here,
     /// Function extensionality.
     Funext,
+    /// A universe equivalence.
+    Equiv,
     /// A compound endpoint.
     Returned,
     /// Element-path transport.
@@ -151,6 +153,7 @@ impl core::fmt::Display for Form
             | Self::PathEquiv => "an equivalence path",
             | Self::Here => "element reflexivity",
             | Self::Funext => "function extensionality",
+            | Self::Equiv => "a universe equivalence",
             | Self::Returned => "a compound endpoint",
             | Self::ElementTransport => "element-path transport",
             | Self::Hole => "a term hole",
@@ -512,6 +515,7 @@ pub fn lower_computation(
                     },
                     | Value::Here(_) => return Err(LowerError::OutsideSlice(Form::Here)),
                     | Value::Funext(..) => return Err(LowerError::OutsideSlice(Form::Funext)),
+                    | Value::Equiv(..) => return Err(LowerError::OutsideSlice(Form::Equiv)),
                     | Value::Returned(_) => {
                         return Err(LowerError::OutsideSlice(Form::Returned));
                     },

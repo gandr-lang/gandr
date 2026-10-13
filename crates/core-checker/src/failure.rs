@@ -154,6 +154,11 @@ pub enum FrameRole
     /// A function extensionality's second function is being checked against
     /// the first's type.
     FunextRight,
+    /// A universe equivalence waits on its forward translator's type.
+    EquivForward,
+    /// A universe equivalence's backward translator is being checked against
+    /// the inverse of the forward's type.
+    EquivBackward,
     /// A compound endpoint waits on its computation's type.
     ReturnedEndpoint,
     /// A transport waits on its element path's type.
@@ -274,6 +279,8 @@ impl fmt::Display for FrameRole
             | Self::HereEndpoints => "HereEndpoints",
             | Self::FunextLeft => "FunextLeft",
             | Self::FunextRight => "FunextRight",
+            | Self::EquivForward => "EquivForward",
+            | Self::EquivBackward => "EquivBackward",
             | Self::ReturnedEndpoint => "ReturnedEndpoint",
             | Self::ElementTransportPath => "ElementTransportPath",
             | Self::ElementTransportMotive => "ElementTransportMotive",
@@ -660,6 +667,8 @@ mod tests
             FrameRole::HereEndpoints,
             FrameRole::FunextLeft,
             FrameRole::FunextRight,
+            FrameRole::EquivForward,
+            FrameRole::EquivBackward,
             FrameRole::ReturnedEndpoint,
             FrameRole::ElementTransportPath,
             FrameRole::ElementTransportMotive,

@@ -716,7 +716,7 @@ Value::Constructor { ref fields, .. } => fields.len().saturating_add(1),
 Value::Record(ref fields) => fields.len(),
 Value::Tuple(ref components) => components.len(),
 Value::ListNil | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Hole(_) => 0_usize,
-Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::Funext(..) => 2,
+Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::Funext(..) | Value::Equiv(..) => 2,
 Value::PathEquiv { .. } => 3,
 Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::PathRefl(_) | Value::Here(_) | Value::Returned(_) | Value::Mark { .. } => 1,
 }),
@@ -827,6 +827,7 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                     &Value::ListCons(first, second)
                     | &Value::PathProduct(first, second)
                     | &Value::Funext(first, second)
+                    | &Value::Equiv(first, second)
                     | &Value::StaticApplication(first, second),
                 ) => {
                     self.tasks.push(open(Node::Value(second), depth));
@@ -1323,7 +1324,7 @@ Value::Constructor { ref fields, .. } => fields.len().saturating_add(1),
 Value::Record(ref fields) => fields.len(),
 Value::Tuple(ref components) => components.len(),
 Value::ListNil | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Hole(_) => 0_usize,
-Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::Funext(..) => 2,
+Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::Funext(..) | Value::Equiv(..) => 2,
 Value::PathEquiv { .. } => 3,
 Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::PathRefl(_) | Value::Here(_) | Value::Returned(_) | Value::Mark { .. } => 1,
 })],
@@ -1460,6 +1461,17 @@ Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | 
                 }
                 else {
                     self.arena.value_funext(rewritten_left, rewritten_right)
+                }
+            },
+            | Value::Equiv(forward, backward) => {
+                let rewritten_backward = Self::value(&mut self.results, backward);
+                let rewritten_forward = Self::value(&mut self.results, forward);
+                if (rewritten_forward, rewritten_backward) == (forward, backward) {
+                    id
+                }
+                else {
+                    self.arena
+                        .value_equiv(rewritten_forward, rewritten_backward)
                 }
             },
             | Value::PathEquiv {
@@ -3230,7 +3242,7 @@ mod tests
             | Some(&Value::StaticApplication(..)) => Token::StaticApplication,
             Some(&Value::Reify(_) | &Value::ListNil | &Value::ListCons(..) | &Value::Constructor { .. } | &Value::Record(_) | &Value::Primitive { .. }
 | &Value::Literal(_) | &Value::Injection(..) | &Value::Thunk(_)
-| &Value::Lift { .. } | &Value::PathRefl(_) | &Value::Here(_) | &Value::Funext(..) | &Value::Returned(_) | &Value::PathProduct(..) |
+| &Value::Lift { .. } | &Value::PathRefl(_) | &Value::Here(_) | &Value::Funext(..) | &Value::Equiv(..) | &Value::Returned(_) | &Value::PathProduct(..) |
 &Value::PathEquiv { .. } | &Value::Hole(_) | &Value::Mark { .. }) | None => Token::Other,
             },
     }))]

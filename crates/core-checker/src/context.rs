@@ -250,6 +250,9 @@ pub struct CheckingContext<'arena>
     /// The function extensionalities the judgement decided, by node, with
     /// the evaluations each component replays.
     funexts: BTreeMap<ValueId, crate::funext::Funext>,
+    /// The universe equivalences the judgement decided, by node, with the
+    /// evidence each round trip replays.
+    equivalences: BTreeMap<ValueId, crate::equiv::Equivalence>,
     /// The allowance each judgement starts with.
     budget: CheckBudget,
     /// The answers the running supported judgement consulted, when one runs.
@@ -315,6 +318,7 @@ impl<'arena> CheckingContext<'arena>
             definitions: CodeDefinitions::new(),
             lifts: BTreeMap::new(),
             funexts: BTreeMap::new(),
+            equivalences: BTreeMap::new(),
             budget,
             support: SupportLog::Off,
             forming: Maybe::Absent(forming::Absent::Idle),
@@ -853,6 +857,76 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         self.funexts.insert(at, funext);
     }
 
+    /// The universe equivalences the judgement decided, by node.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn equivalences(&self) -> &BTreeMap<ValueId, crate::equiv::Equivalence>
+    {
+        &self.equivalences
+    }
+
+    /// Record the evidence the judgement decided the `equiv` at `at` by.
+    ///
+    /// # Specification
+    /// - requires: `equivalence` is what [`crate::equiv`] decided at `at`.
+    /// - ensures: `at` has `equivalence` as its record, replacing an earlier
+    ///   one.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a decided equivalence crosses with exactly its
+    ///   recorded classifier and evidence.
+    /// - witness: `bridge::tests::an_equiv_crosses_as_a_universe_path`
+    #[spec(ensures: self.equivalences.contains_key(&at))]
+    pub(crate) fn record_equivalence(
+        &mut self,
+        at: ValueId,
+        equivalence: crate::equiv::Equivalence,
+    )
+    {
+        self.equivalences.insert(at, equivalence);
+    }
+
+    /// Trace the conversion of two computations as
+    /// [`CodeDefinitions::trace_conversion`] does, over the definitions this
+    /// context holds.
+    ///
+    /// # Specification
+    /// - requires: as [`CodeDefinitions::trace_conversion`].
+    /// - ensures: as [`CodeDefinitions::trace_conversion`], over this context's
+    ///   arena and definitions.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`CodeDefinitions::trace_conversion`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`CodeDefinitions::trace_conversion`].
+    /// - witness: `equiv::tests::an_involution_is_its_own_inverse_by_computation`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::Undecided { at: found }) if found == at))]
+    pub(crate) fn trace_conversion(
+        &self,
+        at: ValueId,
+        claim: (
+            gandr_core_term::ComputationId,
+            gandr_core_term::ComputationId,
+        ),
+        open: crate::code::OpenBinders,
+    ) -> Result<
+        Maybe<
+            Vec<gandr_kernel_conversion_trace::ConversionDecision<()>>,
+            crate::code::converted::Absent,
+        >,
+        CheckRefusal,
+    >
+    {
+        self.definitions
+            .trace_conversion(self.arena(), at, claim, open)
+    }
+
     /// Evaluate the closed claim `claim` as [`CodeDefinitions::evaluate_claim`]
     /// does, over the definitions this context holds.
     ///
@@ -1137,6 +1211,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
             | Value::PathRefl(_)
             | Value::Here(_)
             | Value::Funext(..)
+            | Value::Equiv(..)
             | Value::Returned(_)
             | Value::Constructor { .. }
             | Value::Record(_)

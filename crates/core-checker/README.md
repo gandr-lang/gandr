@@ -24,7 +24,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 ## Provided features
 
 - `synthesise_value`, `check_value`, `synthesise_comp`, `check_comp`, `Synthesised` and `Checked`: the four directed faces.
-- Pairs, static lambdas and static applications in the faces: a pair synthesises the eager product of its components or checks against one; a static lambda checks only against a static Pi; a static application synthesises its head's last codomain.
+- Pairs, static lambdas and static applications in the faces, by the rules [`judgement`](src/judgement.rs) tabulates.
 - Native list introductions check against `List A`; the pure fold synthesises `F B` from explicit element and result annotations. Nil and cons branches are checked in their zero- and two-binder contexts, and readmission preserves the native kernel syntax without assumptions.
 - `ConversionCount`: the declared projection of the conversion boundary, returned by every face.
 - `form_value_type`, `form_comp_type`, `FormedValueType` and `FormedCompType`: formation as a judgement, and the types the check faces take.
@@ -33,7 +33,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 - `CodeDefinitions`, `Certificate`, `Unfolded`, `unfolding::Absent` and `Lift`: static definitions, certified reductions and recorded universe lifts.
 - `Declaration`, `DeclarationContent` and `OriginToken`: name-free value/data input. Values retain optional signature/body halves; data retain a `DataSignature`.
 - `check_declaration`, `check_module`, `Verdict`, `Judged` and `ModuleReport`: one verdict per declaration, retaining accepted value definitions, native data signatures and recorded lifts.
-- `Funext`, `FunextComponent`, `Evaluation`, `evaluated::Absent` and `ModuleReport::funexts`: function extensionality decided by computation, per covering input each side's returned value and trace.
+- `Funext`, `FunextComponent`, `Evaluation`, `evaluated::Absent` and `ModuleReport::funexts`: function extensionality decided by computation, per covering input each side's returned value and trace; `Equivalence` and `ModuleReport::equivalences` the same for `equiv(f, g)`.
 - `check_declaration_supported`, `Supported`, `Support`, `Consulted` and `CheckingContext::adopt`: query-specific value/data answers and adoption into the new prefix.
 - `CheckingContext`, `CheckBudget` and `signature_table::Absent`: context, admission tables and judgment allowance.
 - `Absence`, `ObligationEntry`, `ObligationLedger` and `ObligationCount`: the absence-only ledger.
@@ -41,7 +41,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 - `StaticArity`, `ArgumentPosition` and family refusals preserve the failing argument or arity.
 - `CheckRefusal::classify` assigns producer-failure classes; actual judgments, rather than a duplicate variant-to-class table, witness their refusals.
 - `CheckRefusal::compared`, `Compared` and `compared::Absent`: the types a refusal sets against each other, the one its rule expected and the one it found, as nodes a face spells.
-- `Failure`, `Obligation`, `FrameRole`, `FoldPremise`, `Pursuit`, `Stage`, `judged` and `ModuleReport::failures`: what the checking machine held when it refused, read off the one run that refused — the refusal, the frames it stood inside, outermost first, each a closed rule role with the term and type it judged and the binders it opened, and the goal under way — kept per refused body by position.
+- `Failure`, `Obligation`, `FrameRole`, `FoldPremise`, `Pursuit`, `Stage`, `judged` and `ModuleReport::failures`: what the checking machine held when it refused, kept per refused body by position ([`failure`](src/failure.rs)).
 - `bridge::readmit` and `bridge::Readmission`: independent admission of accepted declarations into a fresh kernel environment.
 - `bridge::Readmitted` and `bridge::Outcome`: each origin and its defined-value, admitted-data, assumed-hole, static-definition, marked, refused or rejected outcome.
 - `bridge::ArtifactAudit`: owed-hole and native-runtime assumptions used by admitted declarations.
@@ -115,7 +115,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 | Topic | Module |
 | ----- | ------ |
 | Modes, static operators, the dependent arrow and the bind, splits, holes in the faces, effects and control, native universe paths, element identity | [`judgement`](src/judgement.rs) |
-| Function extensionality | [`funext`](src/funext.rs) |
+| Function extensionality, universe equivalence | [`funext`](src/funext.rs), [`equiv`](src/equiv.rs) |
 | Total elaboration and the typed run | [`judgement::elaboration`](src/judgement/elaboration.rs) |
 | Records | [`judgement::native`](src/judgement/native.rs) |
 | The three bridges, consistency, smallness and variance | [`conversion`](src/conversion.rs) |

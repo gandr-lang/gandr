@@ -1826,6 +1826,20 @@ impl CoreArena
         self.alloc_value(Value::Funext(left, right))
     }
 
+    /// Mint a universe equivalence `equiv(f, g)`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_equiv(
+        &mut self,
+        forward: ValueId,
+        backward: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Equiv(forward, backward))
+    }
+
     /// Mint the value a pure computation returns, standing as a value.
     ///
     /// # Specification

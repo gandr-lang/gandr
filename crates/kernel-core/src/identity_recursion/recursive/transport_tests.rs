@@ -1,14 +1,27 @@
-//! Independent engine evidence for the lifted Bool negation map.
+//! Independent engine evidence for the lifted Bool negation map, and native
+//! element transport in a List motive.
 
 use alloc::vec;
 use alloc::vec::Vec;
 
+use gandr_kernel_strata::Level;
+use gandr_kernel_term::Computation;
+use gandr_kernel_term::ComputationId;
+use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::TermArena;
+use gandr_kernel_term::Value;
+use gandr_kernel_term::ValueId;
 
 use super::apply;
 use super::boolean;
 use super::engine;
 use super::equivalence;
+use super::offer;
+use crate::element_identity::ElementTransport;
+use crate::element_identity::transport_beta;
+use crate::encoding::ContentTable;
+use crate::env::Environment;
 use crate::higher_field::Depth;
 use crate::higher_field::HigherError;
 use crate::identity_recursion::recursive::ListEquivalence;
@@ -17,8 +30,51 @@ use crate::identity_recursion::recursive::Steps;
 use crate::identity_recursion::recursive::TransportEvidence;
 use crate::identity_recursion::recursive::tests::list;
 use crate::path_universe::Dialogue;
+use crate::path_universe::Reduction;
 use crate::replay::EngineClaim;
+use crate::replay::KernelVerdict;
 use crate::replay::ReplayBudget;
+use crate::replay::ReplayDecline;
+use crate::replay::ReplaySides;
+use crate::replay::Unfoldings;
+
+/// A native list of `values`, built from its last cell.
+///
+/// # Specification
+/// trivial.
+fn cells(
+    arena: &mut TermArena,
+    values: &[ValueId],
+) -> ValueId
+{
+    let mut list = arena.value_list_nil();
+    for &value in values.iter().rev() {
+        list = arena.value_list_cons(value, list);
+    }
+    list
+}
+
+/// Replay `transport` against `reduct` with an empty dialogue under `budget`:
+/// every step the claim needs is a search-free reduction.
+///
+/// # Specification
+/// trivial.
+fn moved(
+    arena: &mut TermArena,
+    transport: ComputationId,
+    reduct: ComputationId,
+    budget: ReplayBudget,
+) -> KernelVerdict
+{
+    crate::replay::replay(
+        arena,
+        &Unfoldings::default(),
+        ReplaySides::Computations(transport, reduct),
+        EngineClaim::Convertible,
+        core::iter::empty(),
+        budget,
+    )
+}
 
 #[test]
 fn negation_transport_computes()
@@ -187,4 +243,108 @@ fn negation_transport_computes()
         ListEquivalence::form(&mut arena, bad, budget),
         Err(HigherError::Relation(_))
     ));
+}
+
+#[test]
+fn negation_moves_a_list_one_cell_at_a_time()
+{
+    // The motive `x. List(El x)` checks along an identity at the universe:
+    // the input at the source endpoint's list, the result at the target's.
+    let mut environment = Environment::new();
+    let admitted = offer(&mut environment, |arena| {
+        let boolean = boolean(arena);
+        let universe = arena.value_type_universe(GroundSort::Value, Level::zero());
+        let identity = arena.value_type_path(universe, boolean.code, boolean.code);
+        let list_type = arena.value_type_list(boolean.ty);
+        let result = arena.comp_type_returner(list_type);
+        let arrow = arena.comp_type_arrow(identity, result);
+        let declared = arena.value_type_thunk(arrow);
+        let endpoint = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let element = arena.value_type_element(endpoint, Level::zero());
+        let motive = arena.value_type_list(element);
+        let input = cells(arena, &[boolean.truth, boolean.falsity]);
+        let path = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let body = arena.computation_path_transport(motive, path, input);
+        let body = arena.computation_lambda(body);
+        (declared, arena.value_thunk(body))
+    });
+    assert!(admitted.is_ok(), "{admitted:?}");
+
+    let mut arena = TermArena::new();
+    let boolean = boolean(&mut arena);
+    let negation = equivalence(&mut arena, boolean, boolean.not, boolean.not);
+    let endpoint = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let element = arena.value_type_element(endpoint, Level::zero());
+    let motive = arena.value_type_list(element);
+    let (truth, falsity) = (boolean.truth, boolean.falsity);
+    for (source, target) in [
+        (vec![], vec![]),
+        (vec![truth], vec![falsity]),
+        (vec![truth, falsity, truth], vec![falsity, truth, falsity]),
+    ] {
+        let input = cells(&mut arena, &source);
+        let output = cells(&mut arena, &target);
+        let transport = arena.computation_path_transport(motive, negation, input);
+        let expected = arena.computation_return(output);
+        assert_eq!(
+            moved(&mut arena, transport, expected, ReplayBudget::DEFAULT),
+            KernelVerdict::Convertible
+        );
+        if !source.is_empty() {
+            let unmoved = arena.computation_return(input);
+            assert_ne!(
+                moved(&mut arena, transport, unmoved, ReplayBudget::DEFAULT),
+                KernelVerdict::Convertible
+            );
+        }
+    }
+
+    // One step unfolds one cell: the reduct transports the head and binds a
+    // transport of the tail as it stands, so an open tail is never read.
+    let tail = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let open = arena.value_list_cons(truth, tail);
+    let mut table = ContentTable::new();
+    let mut memo = gandr_kernel_check_memo::NullMemo;
+    let step = transport_beta(&mut arena, &mut table, &mut memo, ElementTransport {
+        motive,
+        path: negation,
+        value: open,
+    });
+    let Ok(Reduction::Reduced(reduct)) = step
+    else {
+        panic!("a cell reduces: {step:?}");
+    };
+    let Some(&Computation::Bind(head, rest)) = arena.computation(reduct)
+    else {
+        panic!("the head is bound first");
+    };
+    assert!(matches!(
+        arena.computation(head),
+        Some(&Computation::PathTransport { motive: part, path, value })
+            if part == element && path == negation && value == truth
+    ));
+    let Some(&Computation::Bind(rest, _)) = arena.computation(rest)
+    else {
+        panic!("the tail is bound second");
+    };
+    assert!(matches!(
+        arena.computation(rest),
+        Some(&Computation::PathTransport { value, .. })
+            if arena.value(value) == Some(&Value::Variable(DeBruijnIndex::from(1_u32)))
+    ));
+
+    // A list costs the replay its length: past the budget the transport
+    // declines, never refutes.
+    let long_source = cells(&mut arena, &vec![truth; 64]);
+    let long_target = cells(&mut arena, &vec![falsity; 64]);
+    let transport = arena.computation_path_transport(motive, negation, long_source);
+    let expected = arena.computation_return(long_target);
+    assert_eq!(
+        moved(&mut arena, transport, expected, ReplayBudget::DEFAULT),
+        KernelVerdict::Convertible
+    );
+    assert_eq!(
+        moved(&mut arena, transport, expected, ReplayBudget::from(64_u64)),
+        KernelVerdict::Declined(ReplayDecline::Budget)
+    );
 }

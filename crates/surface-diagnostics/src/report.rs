@@ -1056,5 +1056,3 @@ mod tests
         assert_eq!(excerpt(text, [].into_iter()), Maybe::Absent(()));
     }
 }
-// weave: run 'weave explain crates/surface-diagnostics/src/report.rs' for
-// per-hunk detail, 'weave check' to verify your resolution

@@ -443,7 +443,7 @@ mod diagnostics
         );
         let head = label(&only(
             Path::new("spelled.gandr"),
-            SourceText::from("def f(xs: List(Integer)) -> -F Integer {\n  pure 1\n}\n"),
+            SourceText::from("def f(xs: Vec(Integer)) -> -F Integer {\n  pure 1\n}\n"),
         ));
         assert!(
             !head.contains(": "),
@@ -766,7 +766,7 @@ mod diagnostics
         let mismatch = only(Path::new("mismatch.gandr"), SourceText::from(MISMATCH));
         let head = only(
             Path::new("head.gandr"),
-            SourceText::from("def f(xs: List(Integer)) -> -F Integer {\n  pure 1\n}\n"),
+            SourceText::from("def f(xs: Vec(Integer)) -> -F Integer {\n  pure 1\n}\n"),
         );
         assert_eq!(
             (mismatch.detail.class, head.detail.class),

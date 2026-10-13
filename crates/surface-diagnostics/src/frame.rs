@@ -164,6 +164,10 @@ pub fn sentence(role: FrameRole) -> Sentence
         | FrameRole::FunextRight => {
             "checking the second function of this extensionality against the first"
         },
+        | FrameRole::EquivForward => "synthesising the forward map of this equivalence",
+        | FrameRole::EquivBackward => {
+            "checking the backward map of this equivalence against the forward one"
+        },
         | FrameRole::ReturnedEndpoint => "synthesising the computation of this endpoint",
         | FrameRole::PrimitiveSecond => "checking the first argument of this operation",
         | FrameRole::PrimitiveResult => "checking the arguments of this operation",
@@ -406,6 +410,8 @@ mod tests
             FrameRole::HereEndpoints,
             FrameRole::FunextLeft,
             FrameRole::FunextRight,
+            FrameRole::EquivForward,
+            FrameRole::EquivBackward,
             FrameRole::ReturnedEndpoint,
             FrameRole::ElementTransportPath,
             FrameRole::ElementTransportMotive,

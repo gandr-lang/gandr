@@ -315,6 +315,8 @@ pub enum Former<'source, Node>
     Here(Node),
     /// Function extensionality `funext(f, g)` over its two functions.
     Funext(Node, Node),
+    /// Universe equivalence `equiv(f, g)` over its two translators.
+    Equiv(Node, Node),
     /// A computation term, which no position the printer fills admits.
     Computation,
     /// A handle that names no node, or a node whose name the source cannot

@@ -406,6 +406,33 @@ pub enum CheckRefusal
         /// The `funext`.
         at: ValueId,
     },
+    /// A universe equivalence the rule does not decide: its translators are
+    /// open, its forward classifier is no thunk of a pure non-dependent arrow,
+    /// or a code is outside the unit type, the base atoms, sums of at least
+    /// one summand and products.
+    EquivUnsupported
+    {
+        /// The `equiv`.
+        at: ValueId,
+        /// The forward translator's type, or the code the coverage stopped at.
+        classifier: ValueTypeId,
+    },
+    /// A universe equivalence over a recursive code: the stratum of unbounded
+    /// codes, whose round trips no finite coverage certifies.
+    UncertifiedStratum
+    {
+        /// The `equiv`.
+        at: ValueId,
+        /// The List code the coverage reached.
+        code: ValueTypeId,
+    },
+    /// A universe equivalence one of whose round trips does not return its
+    /// input at some pattern the coverage reaches.
+    RoundTripDistinct
+    {
+        /// The `equiv`.
+        at: ValueId,
+    },
     /// A synthesising term in checking position synthesised a type the expected
     /// type does not convert to.
     TypeMismatch(Mismatch),
@@ -641,14 +668,14 @@ impl CheckRefusal
     ///   than turning the rejection into an obligation.
     /// - witness: `judgement::tests::a_mismatched_literal_is_refused_with_both_types`
     #[spec(ensures: |ret| match *self {
-        | Self::OutOfFragment { .. } | Self::FunextUnsupported { .. } => matches!(ret, FailureClass::Unrepresentable),
+        | Self::OutOfFragment { .. } | Self::FunextUnsupported { .. } | Self::EquivUnsupported { .. } | Self::UncertifiedStratum { .. } => matches!(ret, FailureClass::Unrepresentable),
         | Self::UnboundIndex { .. }
         | Self::BudgetExceeded { .. }
         | Self::DanglingNode { .. }
         | Self::AdmissionOrder { .. }
         | Self::MachineInvariant
         | Self::Undecided { .. } => matches!(ret, FailureClass::EngineFault),
-        | Self::PathCode(_) | Self::EndpointMismatch { .. } | Self::CompoundEndpoint { .. } | Self::PointwiseDistinct { .. }
+        | Self::PathCode(_) | Self::EndpointMismatch { .. } | Self::CompoundEndpoint { .. } | Self::PointwiseDistinct { .. } | Self::RoundTripDistinct { .. }
         | Self::NotADataType(_) | Self::DataKindNotUniverse(_) | Self::DataFieldLevel { .. } | Self::DataArgumentArity(_) | Self::UnknownConstructor { .. } | Self::ConstructorArity(_) | Self::NonExhaustiveDataCase(_) | Self::AbsentRecordField(_) | Self::AbsentTupleComponent(_) | Self::MissingRecordField { .. }
         | Self::TypeMismatch(_)
         | Self::EffectSignatureConflict { .. }
@@ -675,6 +702,7 @@ impl CheckRefusal
             | Self::EndpointMismatch { .. }
             | Self::CompoundEndpoint { .. }
             | Self::PointwiseDistinct { .. }
+            | Self::RoundTripDistinct { .. }
             | Self::NotADataType(_)
             | Self::DataKindNotUniverse(_)
             | Self::DataFieldLevel { .. }
@@ -707,9 +735,10 @@ impl CheckRefusal
             | Self::NonUniformOccurrence(_)
             | Self::CrossBlockReference { .. }
             | Self::DescentNotReplayed { .. } => FailureClass::MalformedSource,
-            | Self::OutOfFragment { .. } | Self::FunextUnsupported { .. } => {
-                FailureClass::Unrepresentable
-            },
+            | Self::OutOfFragment { .. }
+            | Self::FunextUnsupported { .. }
+            | Self::EquivUnsupported { .. }
+            | Self::UncertifiedStratum { .. } => FailureClass::Unrepresentable,
             | Self::UnboundIndex { .. }
             | Self::BudgetExceeded { .. }
             | Self::DanglingNode { .. }
@@ -751,7 +780,8 @@ impl CheckRefusal
         | Self::ShapeMismatch { found, .. } => ret.found == Maybe::Present(found) && ret.expected == UNNAMED,
         | Self::DependentBind { synthesised, .. } | Self::DependentStack { synthesised, .. } | Self::CompoundEndpoint { synthesised, .. } =>
             ret.found == Maybe::Present(TypeNode::Computation(synthesised)) && ret.expected == UNNAMED,
-        | Self::StaticClassifierExpected { found, .. } | Self::FunextUnsupported { classifier: found, .. } =>
+        | Self::StaticClassifierExpected { found, .. } | Self::FunextUnsupported { classifier: found, .. }
+        | Self::EquivUnsupported { classifier: found, .. } | Self::UncertifiedStratum { code: found, .. } =>
             ret.found == Maybe::Present(TypeNode::Value(found)) && ret.expected == UNNAMED,
         | _ => ret == Compared { expected: UNNAMED, found: UNNAMED },
     })]
@@ -800,7 +830,13 @@ impl CheckRefusal
             | Self::StaticClassifierExpected { found, .. }
             | Self::FunextUnsupported {
                 classifier: found, ..
-            } => (UNNAMED, Maybe::Present(TypeNode::Value(found))),
+            }
+            | Self::EquivUnsupported {
+                classifier: found, ..
+            }
+            | Self::UncertifiedStratum { code: found, .. } => {
+                (UNNAMED, Maybe::Present(TypeNode::Value(found)))
+            },
             | Self::NotADataType(_)
             | Self::DataKindNotUniverse(_)
             | Self::DataFieldLevel { .. }
@@ -817,6 +853,7 @@ impl CheckRefusal
             | Self::PathCode(_)
             | Self::EndpointMismatch { .. }
             | Self::PointwiseDistinct { .. }
+            | Self::RoundTripDistinct { .. }
             | Self::EffectSignatureConflict { .. }
             | Self::NotSynthesisable { .. }
             | Self::UnknownConstant { .. }

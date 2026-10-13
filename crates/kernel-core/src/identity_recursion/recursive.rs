@@ -33,7 +33,11 @@
 //! and `DepthBound` for exhausted observations, together with completed depth
 //! and visited instructions. A productive infinite spine still returns
 //! `DepthBound`: productivity does not establish a finite equality decision.
-//! There is no uncertified-stratum error and no recursive conversion rule.
+//! There is no recursive conversion rule. The universe path between two List
+//! codes is the uncertified stratum, refused by name at formation
+//! ([`crate::path_universe::PathError::UncertifiedStratum`]); a native list
+//! moves along a path at its element code by element transport in a List
+//! motive, one cell per replay step.
 //!
 //! **Choice.** A native finite List former plus borrowed guarded observations
 //! keeps code identity decidable and list observations incremental.
@@ -205,7 +209,7 @@ impl Meter
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a productive cycle stops at its finite allowance.
-    /// - witness: `identity_recursion::recursive::tests::uncertified_stratum_refuses`
+    /// - witness: `identity_recursion::recursive::tests::an_unbounded_spine_refuses_without_a_verdict`
     #[spec(
         requires: self.progress.steps.0 <= u64::from(self.limit),
         captures: before = self.progress,
@@ -276,7 +280,7 @@ impl<'graph> Cursor<'graph>
     /// # Adequacy
     /// - hypothesis: L3 — malformed or looping unobserved tails remain lazy;
     ///   requesting them refuses without claiming inequality.
-    /// - witness: `identity_recursion::recursive::tests::uncertified_stratum_refuses`
+    /// - witness: `identity_recursion::recursive::tests::an_unbounded_spine_refuses_without_a_verdict`
     #[spec(
         captures: before = meter.progress,
         ensures: |ret| meter.progress.depth == before.depth && meter.progress.steps.0 <= u64::from(meter.limit) && match ret {
@@ -392,7 +396,7 @@ impl Relation
     ///   direct and delayed loops, and exact allowance boundaries separate
     ///   finite decision from productivity and infinite certification.
     /// - witness: `identity_recursion::recursive::tests::list_identity_is_lazy`
-    /// - witness: `identity_recursion::recursive::tests::uncertified_stratum_refuses`
+    /// - witness: `identity_recursion::recursive::tests::an_unbounded_spine_refuses_without_a_verdict`
     #[spec(ensures: |ret| match ret {
         Ok(fiber) => fiber.progress.depth.0 > 0
             && u64::from(fiber.progress.depth.0).saturating_mul(2) <= fiber.progress.steps.0

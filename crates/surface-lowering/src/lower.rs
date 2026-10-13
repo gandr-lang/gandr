@@ -1842,6 +1842,15 @@ enum Plan
     Here(NodeIndex),
     /// Function extensionality between its two functions.
     Funext(NodeIndex, NodeIndex),
+    /// A universe equivalence between its two translators.
+    Equiv(NodeIndex, NodeIndex),
+    /// The empty native list.
+    ListNil,
+    /// A native list cell over its head and tail.
+    ListCons(NodeIndex, NodeIndex),
+    /// Transport along a path, over the static abstraction its motive is
+    /// written as, the path, and the transported value.
+    Transport(NodeIndex, NodeIndex, NodeIndex),
     /// `back`, `then` or `cong`, unfolded to the transport it derives
     /// against the path type its position answers.
     Derived(identity::Derived),
@@ -3903,7 +3912,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(usize::from(site.at.node)),
-                    Some(&(Plan::Variable(..) | Plan::Constant(_) | Plan::Primitive(_) | Plan::StaticApplication(..)))
+                    Some(&(Plan::Variable(..) | Plan::Constant(_) | Plan::Primitive(_) | Plan::StaticApplication(..) | Plan::ListNil))
                 )
         },
     )]
@@ -3921,6 +3930,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 Ok(())
             },
             | Maybe::Absent(_) => {
+                if name.as_ref() == identity::NIL {
+                    self.plan(site, Plan::ListNil);
+                    return Ok(());
+                }
                 let path = NamePath::from(Vec::from([Segment::from(name.as_ref())]));
                 if let PathResolution::Complete(Recognized::BuiltinPrimitive {
                     primitive, ..
@@ -5282,7 +5295,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         constructed.fields.start == start
                             && constructed.fields.end == self.operands.len()
                     },
-                    | Some(&(Plan::Here(_) | Plan::Funext(..) | Plan::Derived(_))) => true,
+                    | Some(&(Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::ListCons(..) | Plan::Transport(..) | Plan::Derived(_))) => true,
                     | _ => false,
                 }
         },
@@ -6320,10 +6333,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: `argument` is the one operand the former was written with.
     /// - ensures: the thunk former stands at value-type sort with its argument
-    ///   read at computation-type sort, and the returner former stands at
-    ///   computation-type sort with its argument read at value-type sort; the
-    ///   former decides both, so nothing is pushed down that has to be
-    ///   re-derived.
+    ///   read at computation-type sort, the returner former stands at
+    ///   computation-type sort with its argument read at value-type sort, and
+    ///   the list former stands at value-type sort with its element type read
+    ///   at value-type sort; the former decides both, so nothing is pushed down
+    ///   that has to be re-derived.
     /// - provides: the one place a type former's sorts are decided.
     /// - fails: yields the wrong-sort refusal for a former whose produced sort
     ///   does not suit the position.
@@ -6335,9 +6349,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — thunk and returner read the argument in opposite
     ///   sorts; each then lowers to its own core bridge former, not the other
-    ///   one.
+    ///   one; a list reads its element type as a value type.
     /// - witness: `lower::tests::the_thunk_and_returner_heads_lower_to_their_formers`
     /// - witness: `lower::tests::the_bridge_tokens_are_compound_and_sum_is_unaffected`
+    /// - witness: `lower::identity::tests::a_list_moves_along_a_universe_equivalence`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -6345,7 +6360,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     && self.reading(argument)
                         == match former {
                             | TypeFormer::Thunk => Reading::CompType(site.reading.frame()),
-                            | TypeFormer::Returner => Reading::ValueType(site.reading.frame()),
+                            | TypeFormer::Returner | TypeFormer::List => Reading::ValueType(site.reading.frame()),
                         })
         },
     )]
@@ -6357,13 +6372,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let produced = match former {
-            | TypeFormer::Thunk => Produced::ValueType,
+            | TypeFormer::Thunk | TypeFormer::List => Produced::ValueType,
             | TypeFormer::Returner => Produced::CompType,
         };
         let frame = self.require(site, produced)?;
         let inner = match former {
             | TypeFormer::Thunk => Reading::CompType(frame),
-            | TypeFormer::Returner => Reading::ValueType(frame),
+            | TypeFormer::Returner | TypeFormer::List => Reading::ValueType(frame),
         };
         self.read(argument, inner);
 
@@ -7259,8 +7274,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Thunk(_)
                 | Plan::Here(_)
                 | Plan::Funext(..)
+                | Plan::Equiv(..)
+                | Plan::ListNil
+                | Plan::ListCons(..)
                 | Plan::Constructor(_) => Some(Produced::Value),
-                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(_) | Plan::Block(_) | Plan::Application(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Derived(_) => {
+                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(_) | Plan::Block(_) | Plan::Application(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Derived(_) | Plan::Transport(..) => {
                     Some(Produced::Computation)
                 },
                 | Plan::Atom(_)
@@ -7271,7 +7289,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Product(..)
                 | Plan::RecordType(_)
                 | Plan::Sum(_)
-                | Plan::Former(TypeFormer::Thunk, _)
+                | Plan::Former(TypeFormer::Thunk | TypeFormer::List, _)
                 | Plan::Path(..)
                 | Plan::Data(..) => Some(Produced::ValueType),
                 | Plan::Arrow(..) | Plan::With(_) | Plan::Former(TypeFormer::Returner, _) => {
@@ -7460,6 +7478,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Thunk(_)
             | Plan::Here(_)
             | Plan::Funext(..)
+            | Plan::Equiv(..)
+            | Plan::ListNil
+            | Plan::ListCons(..)
+            | Plan::Transport(..)
             | Plan::Return(_)
             | Plan::Force(_)
             | Plan::Lambda(_) => self.mint_over(&plan, sink, origin),
@@ -7863,9 +7885,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// - requires: the argument position is interpreted in this lowering run.
-    /// - ensures: a thunk consumes a computation type and a returner consumes a
-    ///   value type; successful nodes carry the supplied origin.
-    /// - provides: the core bridge type over the already lowered argument.
+    /// - ensures: a thunk consumes a computation type, and a returner and a
+    ///   list each consume a value type; successful nodes carry the supplied
+    ///   origin.
+    /// - provides: the core bridge or list type over the already lowered
+    ///   argument.
     /// - fails: a missing or wrong-sort argument preserves its absence reason.
     /// - panics: none under the origin table’s ordered-identifier invariant.
     ///
@@ -7876,6 +7900,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::the_thunk_and_returner_heads_lower_to_their_formers`
     /// - witness: `lower::tests::the_bridge_tokens_are_compound_and_sum_is_unaffected`
     /// - witness: `lower::tests::u_and_f_are_names`
+    /// - witness: `lower::identity::tests::a_list_moves_along_a_universe_equivalence`
     #[spec(
         ensures: |ret| match former {
             | TypeFormer::Thunk => match self.comp_type_at(argument) {
@@ -7888,6 +7913,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Maybe::Absent(reason) => ret == Maybe::Absent(reason),
                 | Maybe::Present(_) => {
                     matches!(ret, Maybe::Present(Lowered::CompType(id)) if sink.origins.comp_type(id) == Maybe::Present(origin))
+                },
+            },
+            | TypeFormer::List => match self.value_type_at(argument) {
+                | Maybe::Absent(reason) => ret == Maybe::Absent(reason),
+                | Maybe::Present(_) => {
+                    matches!(ret, Maybe::Present(Lowered::ValueType(id)) if sink.origins.value_type(id) == Maybe::Present(origin))
                 },
             },
         },
@@ -7910,6 +7941,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 let id = sink.arena.comp_type_returner(inner);
                 sink.origins.record_comp_type(id, origin);
                 Lowered::CompType(id)
+            }),
+            | TypeFormer::List => self.value_type_at(argument).map(|element| {
+                let id = sink.arena.value_type_list(element);
+                sink.origins.record_value_type(id, origin);
+                Lowered::ValueType(id)
             }),
         }
     }
@@ -7939,11 +7975,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| match ret {
             | Maybe::Absent(_) => true,
             | Maybe::Present(Lowered::Value(id)) => {
-                matches!(*plan, Plan::StaticLambda(_) | Plan::Thunk(_) | Plan::Here(_) | Plan::Funext(..))
+                matches!(*plan, Plan::StaticLambda(_) | Plan::Thunk(_) | Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::ListNil | Plan::ListCons(..))
                     && sink.origins.value(id) == Maybe::Present(origin)
             },
             | Maybe::Present(Lowered::Computation(id)) => {
-                matches!(*plan, Plan::Return(_) | Plan::Force(_) | Plan::Lambda(_))
+                matches!(*plan, Plan::Return(_) | Plan::Force(_) | Plan::Lambda(_) | Plan::Transport(..))
                     && sink.origins.computation(id) == Maybe::Present(origin)
             },
             | Maybe::Present(Lowered::ValueType(id)) => {
@@ -7998,6 +8034,25 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     sink.value(id, origin)
                 })
             }),
+            | Plan::Equiv(forward, backward) => self.value_at(forward).and_then(|first| {
+                self.value_at(backward).map(|second| {
+                    let id = sink.arena.value_equiv(first, second);
+                    sink.value(id, origin)
+                })
+            }),
+            | Plan::ListNil => {
+                let id = sink.arena.value_list_nil();
+                Maybe::Present(sink.value(id, origin))
+            },
+            | Plan::ListCons(head, tail) => self.value_at(head).and_then(|first| {
+                self.value_at(tail).map(|rest| {
+                    let id = sink.arena.value_list_cons(first, rest);
+                    sink.value(id, origin)
+                })
+            }),
+            | Plan::Transport(abstraction, path, value) => {
+                self.mint_transport((abstraction, path, value), sink, origin)
+            },
             | Plan::StaticLambda(body) => self.value_at(body).map(|under| {
                 let id = sink.arena.value_static_lambda(under);
                 sink.value(id, origin)

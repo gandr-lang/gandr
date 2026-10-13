@@ -32,27 +32,32 @@ use crate::rewrite::shift_value;
 /// - requires: the code root belongs to `arena`.
 /// - ensures: outer formers are Base, Product (the unit among them), a Sum of
 ///   at least one summand, or Session; session graph structure and guards
-///   check. The empty sum is refused, as the retired empty type was. Native
+///   check. The empty sum is refused, as the retired empty type was. A List
+///   code is refused as an uncertified stratum: its inhabitants are unbounded,
+///   so no finite constructor coverage certifies a round trip over it. Native
 ///   formation separately checks session payload codes in an empty term
 ///   context.
 /// - provides: code-shape inspection, never a checking verdict.
-/// - fails: `UnsupportedCode`, `UnsupportedType`, `Session`, `Arena` or
-///   `Budget`.
+/// - fails: `UnsupportedCode`, `UnsupportedType`, `UncertifiedStratum`,
+///   `Session`, `Arena` or `Budget`.
 /// - panics: none.
 ///
 /// # Errors
 /// As `fails`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — Bool and product codes admit; thunk codes refuse.
+/// - hypothesis: L3 — Bool and product codes admit; thunk codes refuse; a list
+///   code refuses by its stratum.
 /// - witness: `path_universe::tests::a_non_equivalence_is_refused`
+/// - witness: `path_universe::tests::a_recursive_code_is_an_uncertified_stratum`
 /// - witness: `session::tests::session_codes_are_closed_and_contractive`
 #[spec(
     captures: before = allowance.0,
     ensures: |ret| allowance.0 <= before && match ret {
         Ok(root) => allowance.0 < before && matches!(arena.value(code), Some(&Value::Quote(quoted)) if root == quoted),
         Err(PathError::UnsupportedCode(named)) => named == code && !matches!(arena.value(code), Some(&Value::Quote(_))),
-        Err(PathError::UnsupportedType(root)) => arena.value_type(root).is_some_and(|node| !matches!(node, &ValueType::Base(_) | &ValueType::Product(..) | &ValueType::Session { .. }) && node.summands().is_none_or(<[_]>::is_empty)),
+        Err(PathError::UnsupportedType(root)) => arena.value_type(root).is_some_and(|node| !matches!(node, &ValueType::Base(_) | &ValueType::Product(..) | &ValueType::Session { .. } | &ValueType::List(_)) && node.summands().is_none_or(<[_]>::is_empty)),
+        Err(PathError::UncertifiedStratum(root)) => matches!(arena.value_type(root), Some(&ValueType::List(_))),
         Err(PathError::Budget) => allowance.0 == 0,
         Err(PathError::Arena | PathError::Session(_)) => true,
         Err(_) => false,
@@ -93,6 +98,7 @@ pub(super) fn code(
             | &ValueType::Sum(ref parts) | &ValueType::Product(ref parts) => {
                 pending.extend(parts.iter().rev().copied());
             },
+            | &ValueType::List(_) => return Err(PathError::UncertifiedStratum(id)),
             | _ => return Err(PathError::UnsupportedType(id)),
         }
     }
@@ -252,9 +258,12 @@ fn patterns(
 /// Construct and replay every component of one universal round-trip claim.
 ///
 /// # Specification
-/// - requires: the translators are closed and checked at opposite arrows.
-/// - ensures: every code-generated pattern replays `Convertible`; no supplied
-///   dialogue chooses its own boundary, suppresses a pattern, or adds one.
+/// - requires: the translators are closed and checked at opposite arrows; every
+///   body `unfoldings` defines lives in `arena`.
+/// - ensures: every code-generated pattern replays `Convertible` under
+///   `unfoldings`, so a translator may name a definition admitted before it; no
+///   supplied dialogue chooses its own boundary, suppresses a pattern, or adds
+///   one.
 /// - provides: formation evidence derived by the existing kernel replay.
 /// - fails: `Coverage` on dialogue cardinality, `RoundTrip` on failed replay,
 ///   or the code-pattern construction error.
@@ -265,8 +274,10 @@ fn patterns(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — constant true fails on the false branch; missing,
-///   additional and forged dialogues cannot make formation succeed.
+///   additional and forged dialogues cannot make formation succeed; negation
+///   named by an admitted definition replays its δ-steps.
 /// - witness: `path_universe::tests::a_non_equivalence_is_refused`
+/// - witness: `path_universe::tests::a_translator_may_name_an_admitted_definition`
 #[spec(ensures: |ret| match ret {
     Ok(()) => u64::from(budget) > 0 && !dialogues.is_empty(),
     Err(PathError::Coverage(found)) => found == direction,
@@ -276,11 +287,10 @@ fn patterns(
 })]
 pub fn round_trip(
     arena: &mut TermArena,
-    source: ValueTypeId,
-    forward: ValueId,
-    backward: ValueId,
+    unfoldings: &Unfoldings,
+    (source, direction): (ValueTypeId, Direction),
+    (forward, backward): (ValueId, ValueId),
     dialogues: &[Vec<gandr_kernel_conversion_trace::ConversionDecision<()>>],
-    direction: Direction,
     budget: ReplayBudget,
 ) -> Result<(), PathError>
 {
@@ -288,7 +298,6 @@ pub fn round_trip(
     if patterns.len() != dialogues.len() {
         return Err(PathError::Coverage(direction));
     }
-    let unfoldings = Unfoldings::new(Vec::new());
     for (position, (pattern, dialogue)) in patterns.into_iter().zip(dialogues).enumerate() {
         let first = arena.computation_force(forward);
         let first = arena.computation_application(first, pattern.value);
@@ -299,7 +308,7 @@ pub fn round_trip(
         let identity = arena.computation_return(pattern.value);
         let verdict = crate::replay::replay(
             arena,
-            &unfoldings,
+            unfoldings,
             ReplaySides::Computations(composite, identity),
             EngineClaim::Convertible,
             dialogue.iter().copied().map(super::anchor),

@@ -63,11 +63,23 @@
 //! the grammar parses the call and the lowering mints the witness. It is not
 //! the native `refl`, which stays approximate. The point is the call's one
 //! argument, so a pair reads `here(#{2, 2})`. Function extensionality is
-//! `funext(f, g)` by the same reasoning, its two functions in order.
+//! `funext(f, g)` and a universe equivalence `equiv(f, g)` by the same
+//! reasoning, their two functions in order; the native certificate a checked
+//! `equiv` erases to prints the same call, approximately, without its evidence.
 //!
 //! - **Alternatives.** Writing `?`, the spelling of a node the surface does not
 //!   write, would hide a former the grammar parses.
 //! - **Reversal.** A ruled change to the identity spelling.
+//!
+//! # Native lists
+//!
+//! The native list type is `List(A)`, its empty list `nil` and its cell
+//! `cons(h, t)`, each faithful: the lowering reads the three spellings back to
+//! the same formers. A list is written cell by cell, never as a literal
+//! `[a, b]`, because a cell whose tail is no literal has no literal spelling.
+//!
+//! - **Alternatives.** The literal, which the grammar parses, declined above.
+//! - **Reversal.** A literal spelling for a list whose spine is all cells.
 //!
 //! # Break points
 //!
@@ -277,7 +289,7 @@ enum Kind
         | Former::Literal(_) | Former::Tuple(_) | Former::Record(_) | Former::Injection(..) | Former::Thunk | Former::ValueLift
         | Former::Reify | Former::ListNil | Former::ListCons(..)
         | Former::Quote(_) | Former::QuoteComputation(_) | Former::StaticLambda(_) | Former::StaticApplication(..)
-        | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_) | Former::Funext(..)),
+        | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_) | Former::Funext(..) | Former::Equiv(..)),
     | Kind::Computation => matches!(*former, Former::Computation),
     | Kind::Unknown => matches!(*former, Former::Unreadable),
 })]
@@ -323,7 +335,8 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::StaticLambda(_)
         | Former::StaticApplication(..)
         | Former::Here(_)
-        | Former::Funext(..) => Kind::Value,
+        | Former::Funext(..)
+        | Former::Equiv(..) => Kind::Value,
         | Former::Computation => Kind::Computation,
         | Former::Unreadable => Kind::Unknown,
     }
@@ -490,7 +503,7 @@ enum Children<Node>
         Children::Two(Slot { admits: Admits::ValueType, .. }, Slot { admits: Admits::ValueType, .. })),
     | Former::Arrow { .. } | Former::Pi { .. } => matches!(ret,
         Children::Two(Slot { admits: Admits::ValueType, .. }, Slot { admits: Admits::CompType, .. })),
-    | Former::ListCons(..) | Former::PathUniverse(..) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Funext(..) | Former::StaticApplication(..) => matches!(ret,
+    | Former::ListCons(..) | Former::PathUniverse(..) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Funext(..) | Former::Equiv(..) | Former::StaticApplication(..) => matches!(ret,
         Children::Two(Slot { admits: Admits::Value, .. }, Slot { admits: Admits::Value, .. })),
     | Former::ThunkType(_) | Former::QuoteComputation(_) => matches!(ret,
         Children::One(Slot { admits: Admits::CompType, .. })),
@@ -544,6 +557,7 @@ where
         | Former::PathUniverse(first, second)
         | Former::PathProduct(first, second)
         | Former::Funext(first, second)
+        | Former::Equiv(first, second)
         | Former::PathEquiv(first, second)
         | Former::ListCons(first, second)
         | Former::StaticApplication(first, second) => {
@@ -641,8 +655,6 @@ struct Piece
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Prefix
 {
-    /// The native list former.
-    List,
     /// The suspension `+U C`.
     Thunk,
     /// The returner `-F A`.
@@ -716,12 +728,16 @@ enum Bracket
 {
     /// A stack classifier with ordered computation endpoints.
     Stack,
+    /// The native list former, `List(A)`.
+    List,
     /// A native path classifier.
     PathUniverse,
     /// Element identity, `here(a)`.
     Here,
     /// Function extensionality, `funext(f, g)`.
     Funext,
+    /// A universe equivalence, `equiv(f, g)`.
+    Equiv,
     /// Native reflexivity.
     PathRefl,
     /// A native equivalence's maps.
@@ -730,6 +746,28 @@ enum Bracket
     PathProduct,
     /// A native cell, `cons(head, tail)`.
     ListCons,
+}
+
+impl Bracket
+{
+    /// The head and opening parenthesis a bracketed former is spelled with.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn opener(self) -> Glyphs<'static>
+    {
+        Glyphs(match self {
+            | Self::Stack => "Stack(",
+            | Self::List => "List(",
+            | Self::PathUniverse => "Path_U(",
+            | Self::Here => "here(",
+            | Self::Funext => "funext(",
+            | Self::Equiv | Self::PathEquiv => "equiv(",
+            | Self::PathRefl => "refl(",
+            | Self::PathProduct => "pathProduct(",
+            | Self::ListCons => "cons(",
+        })
+    }
 }
 
 /// How one join combines the finished pieces below it.
@@ -1697,7 +1735,7 @@ impl Walk<'_, '_, '_>
                 return self.atom(Glyphs("Bool"));
             },
             | Former::Unit => return self.atom(Glyphs("unit")),
-            | Former::ListNil => return self.approximate(Glyphs("nil")),
+            | Former::ListNil => return self.atom(Glyphs("nil")),
             | Former::Abstract(name) | Former::Constant(name) => return self.name(name),
             | Former::Literal(value) => {
                 let spelled = literal(value);
@@ -1745,6 +1783,7 @@ impl Walk<'_, '_, '_>
             },
             | Former::Here(_) => Some(Join::Bracket(Bracket::Here)),
             | Former::Funext(..) => Some(Join::Bracket(Bracket::Funext)),
+            | Former::Equiv(..) => Some(Join::Bracket(Bracket::Equiv)),
             | Former::PathEquiv(..) => {
                 self.fidelity = Fidelity::Approximate;
                 Some(Join::Bracket(Bracket::PathEquiv))
@@ -1768,7 +1807,7 @@ impl Walk<'_, '_, '_>
                 arity: Arity(usize::from(arity)),
                 entries: Entries::Labelled(Label::Field),
             }),
-            | Former::List(_) => Some(Join::Prefix(Prefix::List)),
+            | Former::List(_) => Some(Join::Bracket(Bracket::List)),
             | Former::ThunkType(_) => Some(Join::Prefix(Prefix::Thunk)),
             | Former::Returner(_) => Some(Join::Prefix(Prefix::Returner)),
             | Former::EffectfulReturner { effects, .. } => {
@@ -1785,10 +1824,7 @@ impl Walk<'_, '_, '_>
                 arity: Arity(usize::from(arity)),
                 entries: Entries::Labelled(Label::Assignment),
             }),
-            | Former::ListCons(..) => {
-                self.fidelity = Fidelity::Approximate;
-                Some(Join::Bracket(Bracket::ListCons))
-            },
+            | Former::ListCons(..) => Some(Join::Bracket(Bracket::ListCons)),
             | Former::Injection(..) => Some(Join::Braced {
                 brace: Brace::Plus,
                 arity: Arity(1_usize),
@@ -2026,10 +2062,10 @@ impl Walk<'_, '_, '_>
     /// - witness: `walk::tests::missing_operands_are_unbalanced_not_layout_failures`
     #[spec(
         captures: [entry = self.pieces.len(), taken = match join {
-            Join::Prefix(_) | Join::EffectReturner(_) | Join::StaticLambda | Join::Bracket(Bracket::PathRefl | Bracket::Here) => Some(1_usize),
+            Join::Prefix(_) | Join::EffectReturner(_) | Join::StaticLambda | Join::Bracket(Bracket::PathRefl | Bracket::Here | Bracket::List) => Some(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Positional, .. } => Some(count),
             Join::Braced { arity: Arity(count), entries: Entries::Labelled(_), .. } => count.checked_mul(2_usize),
-            Join::Arrow | Join::Pi | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext) => Some(2_usize),
+            Join::Arrow | Join::Pi | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv) => Some(2_usize),
             Join::Apply(Arity(arguments)) => arguments.checked_add(1_usize),
         }],
         ensures: |ref ret| match *ret {
@@ -2060,7 +2096,6 @@ impl Walk<'_, '_, '_>
                 let head = self.leaf(match prefix {
                     | Prefix::Thunk => Glyphs("+U "),
                     | Prefix::Returner => Glyphs("-F "),
-                    | Prefix::List => Glyphs("List "),
                 })?;
                 (self.builder.concat(head, operand)?, Binding::Prefix)
             },
@@ -2154,31 +2189,18 @@ impl Walk<'_, '_, '_>
                     | Bracket::PathEquiv
                     | Bracket::PathProduct
                     | Bracket::Funext
+                    | Bracket::Equiv
                     | Bracket::ListCons => {
                         let second = self.pop()?;
                         let first = self.pop()?;
-                        let opener = self.leaf(Glyphs(match bracket {
-                            | Bracket::Stack => "Stack(",
-                            | Bracket::PathUniverse => "Path_U(",
-                            | Bracket::PathEquiv => "equiv(",
-                            | Bracket::PathProduct => "pathProduct(",
-                            | Bracket::Funext => "funext(",
-                            | Bracket::ListCons => "cons(",
-                            | Bracket::PathRefl => "refl(",
-                            | Bracket::Here => "here(",
-                        }))?;
+                        let opener = self.leaf(bracket.opener())?;
                         let comma = self.leaf(Glyphs(","))?;
                         let comma = self.space_or_break(comma)?;
                         items.extend([opener, first.doc, comma, second.doc]);
                     },
-                    | Bracket::Here => {
+                    | Bracket::Here | Bracket::PathRefl | Bracket::List => {
                         let body = self.pop()?;
-                        let opener = self.leaf(Glyphs("here("))?;
-                        items.extend([opener, body.doc]);
-                    },
-                    | Bracket::PathRefl => {
-                        let body = self.pop()?;
-                        let opener = self.leaf(Glyphs("refl("))?;
+                        let opener = self.leaf(bracket.opener())?;
                         items.extend([opener, body.doc]);
                     },
                 }

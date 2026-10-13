@@ -211,6 +211,9 @@ const fn checked(refusal: CheckRefusal) -> Culprit
         | CheckRefusal::CompoundEndpoint { .. } => "an endpoint that returns no pure value",
         | CheckRefusal::FunextUnsupported { .. } => "functions outside the rule's fragment",
         | CheckRefusal::PointwiseDistinct { .. } => "functions that differ at some input",
+        | CheckRefusal::EquivUnsupported { .. } => "translators outside the rule's fragment",
+        | CheckRefusal::UncertifiedStratum { .. } => "a recursive type",
+        | CheckRefusal::RoundTripDistinct { .. } => "translators that are not inverse",
         | CheckRefusal::TypeMismatch(Mismatch::Value { .. } | Mismatch::Computation { .. }) => {
             "its type does not convert"
         },

@@ -307,6 +307,103 @@ fn funext_lowers_to_its_former()
 }
 
 #[test]
+fn a_list_moves_along_a_universe_equivalence()
+{
+    let negation = "def not(b: Bool) -> -F Bool {\n  case b {\n    true => return +{.1 = unit},\n    false => return +{.0 = unit}\n  }\n}\ndef negation : Path(Type, Bool, Bool);\ndef negation = equiv(not, not);\n";
+    let mut arena = CoreArena::new();
+    let source = format!(
+        "{negation}def moved(xs: List(Bool)) -> -F List(Bool) {{\n  become transport(\\X. List(X), negation, xs)\n}}\ndef both : List(Bool);\ndef both = cons(+{{.0 = unit}}, cons(+{{.1 = unit}}, nil));\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let DeclarationOutcome::Completed { body, .. } = outcome_of(&module, "negation".into())
+    else {
+        panic!("the universe path and its equivalence lower");
+    };
+    let Some(&Value::Equiv(forward, backward)) = arena.value(body)
+    else {
+        panic!("`equiv(not, not)` is a universe equivalence");
+    };
+    assert!(
+        [forward, backward].iter().all(|&translator| {
+            matches!(arena.value(translator), Some(&Value::Constant(constant)) if usize::from(constant) == 0)
+        }),
+        "both translators are read as values"
+    );
+    let Some(&Computation::PathTransport {
+        motive,
+        path,
+        value,
+    }) = arena.computation(tail_of(&module, &arena, "moved".into()))
+    else {
+        panic!("`transport` lowers to the element transport");
+    };
+    let Some(&ValueType::List(element)) = arena.value_type(motive)
+    else {
+        panic!("the motive is the abstraction's body");
+    };
+    assert!(
+        matches!(
+            arena.value_type(element),
+            Some(&ValueType::Element { code, .. }) if arena.value(code) == Some(&variable(0_u32.into()))
+        ) && matches!(arena.value(path), Some(&Value::Constant(constant)) if usize::from(constant) == 1)
+            && arena.value(value) == Some(&variable(0_u32.into())),
+        "the motive decodes its binder; the path and the value follow in order"
+    );
+    let DeclarationOutcome::Completed { body, .. } = outcome_of(&module, "both".into())
+    else {
+        panic!("a list value lowers");
+    };
+    let Some(&Value::ListCons(_, tail)) = arena.value(body)
+    else {
+        panic!("`cons` is the list cell");
+    };
+    assert!(
+        matches!(arena.value(tail), Some(&Value::ListCons(_, end)) if arena.value(end) == Some(&Value::ListNil)),
+        "`nil` is the empty list"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+
+    let mut arena = CoreArena::new();
+    let source = format!(
+        "{negation}def named(xs: List(Bool)) -> -F List(Bool) {{\n  become transport(negation, negation, xs)\n}}\ndef half = cons(unit);\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    assert!(
+        matches!(
+            outcome_of(&module, "named".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Unannotated,
+                ..
+            })
+        ),
+        "a motive is written as a static abstraction"
+    );
+    assert!(
+        matches!(
+            outcome_of(&module, "half".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Arity(count),
+                ..
+            }) if count == OperandCount::from(1_usize)
+        ),
+        "a list cell takes a head and a tail"
+    );
+
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from("def keep(nil: Integer) -> -F Integer {\n  return nil\n}\n"),
+        &mut arena,
+    );
+    assert!(
+        matches!(
+            arena.computation(tail_of(&module, &arena, "keep".into())),
+            Some(&Computation::Return(returned)) if arena.value(returned) == Some(&variable(0_u32.into()))
+        ),
+        "a parameter named `nil` shadows the empty list"
+    );
+}
+
+#[test]
 fn a_computation_endpoint_is_the_value_it_returns()
 {
     let mut arena = CoreArena::new();

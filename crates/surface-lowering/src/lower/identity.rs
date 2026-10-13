@@ -1,6 +1,9 @@
 //! Element identity in the lowering: the path type `Path(A, a, b)`, its
-//! reflexivity `here(a)`, function extensionality `funext(f, g)`, and
-//! `back`, `then` and `cong`, each unfolded to the transport it derives.
+//! reflexivity `here(a)`, function extensionality `funext(f, g)`, universe
+//! equivalence `equiv(f, g)`, transport `transport(\X. T, p, v)`, and `back`,
+//! `then` and `cong`, each unfolded to the transport it derives; and the native
+//! list's constructors `nil` and `cons(h, t)`, the recursive motive transport
+//! first moves along a universe path.
 //!
 //! # Endpoints are values, and a computation is the value it returns
 //!
@@ -22,19 +25,35 @@
 //! dependent, as a parameter a later type decodes does. The point of `here`
 //! is a term of the body and reads its parameters there.
 //!
-//! # `here`, `funext`, `back` and `cong` are names nothing else binds
+//! # The identity vocabulary is names nothing else binds
 //!
-//! The four are spelled as ordinary calls and resolved after every binder
-//! and every earlier declaration, so a parameter or a definition of the same
-//! name shadows them, as it shadows a prelude primitive; `then` is the
-//! grammar's own infix tile. Reserving the names outright was the
-//! alternative; it would break every program that already binds one.
-//! Reversal: a namespace for the identity vocabulary, `Path.here`, once the
-//! namespaces carry formers rather than primitives.
+//! `here`, `funext`, `equiv`, `transport`, `back` and `cong` are spelled as
+//! ordinary calls and resolved after every binder and every earlier
+//! declaration, so a parameter or a definition of the same name shadows them,
+//! as it shadows a prelude primitive; `then` is the grammar's own infix tile.
+//! Reserving the names outright was the alternative; it would break every
+//! program that already binds one. Reversal: a namespace for the identity
+//! vocabulary, `Path.here`, once the namespaces carry formers rather than
+//! primitives. The native list's `nil` and `cons` resolve the same way, the
+//! spellings the printer already writes them with; a list literal `[a, b]`,
+//! which the grammar parses, was the alternative, declined because a cell over
+//! a tail that is no literal has no literal spelling to print back.
 //!
-//! `funext(f, g)` stands as a value, as `here` does, and reads both functions
-//! as values; the checker synthesises its path type from the first and
-//! decides it by computation (`gandr_core_checker`'s funext rule).
+//! `funext(f, g)` and `equiv(f, g)` stand as values, as `here` does, and read
+//! both functions as values; the checker synthesises the path type from the
+//! first and decides it by computation (`gandr_core_checker`'s funext and
+//! equiv rules).
+//!
+//! # `transport` states its motive
+//!
+//! `transport(\X. T, p, v)` moves `v : T[a/X]` along `p : Path(A, a, b)` to
+//! `T[b/X]`. Its motive is written as a static abstraction whose body is the
+//! family over the path's carrier, so `\X. List(X)` over a universe path is
+//! `y. List(El y)`; the transport stands as a computation. A motive written
+//! any other way is refused as unannotated. The alternative, inferring the
+//! motive from the expected type, is higher-order unification, which the
+//! checker does not do. Reversal: a checker that elaborates the motive from
+//! the operand's and the answer's types.
 //!
 //! # A derived operation reads its motive off the path type it answers
 //!
@@ -61,7 +80,9 @@
 use anodized::spec;
 use gandr_core_term::Binders;
 use gandr_core_term::CompType;
+use gandr_core_term::Value;
 use gandr_core_term::ValueType;
+use gandr_kernel_strata::Level;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
 
@@ -102,6 +123,10 @@ mod tests;
 /// Reflexivity's spelling, which no pattern may take.
 pub(super) const HERE: &str = "here";
 
+/// The empty native list's spelling, a name resolved after every binder and
+/// earlier declaration.
+pub(super) const NIL: &str = "nil";
+
 quenchant_shape::reason_enum! {
     /// Why a call's head names no identity operation.
     pub mod spelled {
@@ -118,13 +143,14 @@ quenchant_shape::reason_enum! {
 /// An identity operation a call's head spells.
 ///
 /// # Specification
-/// - ensures: reflexivity, function extensionality, and the two derived
-///   operations spelled as calls.
+/// - ensures: reflexivity, function and universe extensionality, transport, the
+///   two derived operations, and the native list cell, spelled as calls.
 /// - executable: none — a tag holds no head to check its spelling against.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — each spelling lowers to its own former.
 /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
+/// - witness: `lower::identity::tests::a_list_moves_along_a_universe_equivalence`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) enum Operation
 {
@@ -132,10 +158,16 @@ pub(super) enum Operation
     Here,
     /// `funext(f, g)`.
     Funext,
+    /// `equiv(f, g)`.
+    Equiv,
+    /// `transport(\X. T, p, v)`.
+    Transport,
     /// `back(p)`.
     Back,
     /// `cong(f, p)`.
     Cong,
+    /// `cons(h, t)`.
+    Cons,
 }
 
 /// The identity operations a call's head spells, by name.
@@ -152,11 +184,15 @@ pub(super) enum Operation
 /// # Adequacy
 /// - hypothesis: L3 — every row is spelled by a witness.
 /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
-const SPELLED: [(&str, Operation); 4] = [
+/// - witness: `lower::identity::tests::a_list_moves_along_a_universe_equivalence`
+const SPELLED: [(&str, Operation); 7] = [
     (HERE, Operation::Here),
     ("funext", Operation::Funext),
+    ("equiv", Operation::Equiv),
+    ("transport", Operation::Transport),
     ("back", Operation::Back),
     ("cong", Operation::Cong),
+    ("cons", Operation::Cons),
 ];
 
 /// A derived operation's written operands.
@@ -349,13 +385,16 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `operation` is what the call's head spells.
     /// - ensures: `here(a)` stands as a value reading its point as a value at
-    ///   an endpoint; `funext(f, g)` stands as a value reading both functions
-    ///   as values; `back(p)` and `cong(f, p)` stand as computations derived as
+    ///   an endpoint; `funext(f, g)`, `equiv(f, g)` and `cons(h, t)` stand as
+    ///   values reading both operands as values; `transport(\X. T, p, v)`
+    ///   stands as a computation reading its motive, path and value as values;
+    ///   `back(p)` and `cong(f, p)` stand as computations derived as
     ///   [`Self::derive`] does. Every operand is read under the site's frame.
     /// - fails: the wrong-sort refusal where the operation's sort is not read;
-    ///   the arity refusal for other than one argument to `here` or `back` and
-    ///   two to `funext` or `cong`; [`Self::derive`]'s refusal; the argument
-    ///   list's fault.
+    ///   the arity refusal for other than one argument to `here` or `back`, two
+    ///   to `funext`, `equiv`, `cons` or `cong`, and three to `transport`; the
+    ///   unannotated refusal for a transport whose motive is no static
+    ///   abstraction; [`Self::derive`]'s refusal; the argument list's fault.
     /// - panics: none.
     ///
     /// # Errors
@@ -367,6 +406,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::identity::tests::a_path_type_and_reflexivity_lower_to_their_formers`
     /// - witness: `lower::identity::tests::funext_lowers_to_its_former`
     /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
+    /// - witness: `lower::identity::tests::a_list_moves_along_a_universe_equivalence`
     #[spec(
         captures: start = self.operands.len(),
         ensures: |ret| {
@@ -375,6 +415,9 @@ impl<'source> Lowerer<'_, 'source>
                     || match (operation, self.plans.get(usize::from(site.at.node))) {
                         | (Operation::Here, Some(&Plan::Here(point))) => self.at_endpoint.contains(&point),
                         | (Operation::Funext, Some(&Plan::Funext(..)))
+                        | (Operation::Equiv, Some(&Plan::Equiv(..)))
+                        | (Operation::Cons, Some(&Plan::ListCons(..)))
+                        | (Operation::Transport, Some(&Plan::Transport(..)))
                         | (Operation::Back | Operation::Cong, Some(&Plan::Derived(_))) => true,
                         | _ => false,
                     })
@@ -388,8 +431,10 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let produced = match operation {
-            | Operation::Here | Operation::Funext => Produced::Value,
-            | Operation::Back | Operation::Cong => Produced::Computation,
+            | Operation::Here | Operation::Funext | Operation::Equiv | Operation::Cons => {
+                Produced::Value
+            },
+            | Operation::Back | Operation::Cong | Operation::Transport => Produced::Computation,
         };
         let frame = self.require(site, produced)?;
         let start = self.operands.len();
@@ -397,28 +442,89 @@ impl<'source> Lowerer<'_, 'source>
         let count = self.operands.len().saturating_sub(start);
         let first = self.operands.get(start).copied();
         let second = self.operands.get(start.saturating_add(1_usize)).copied();
+        let third = self.operands.get(start.saturating_add(2_usize)).copied();
         self.operands.truncate(start);
         read?;
-        match (operation, count, first, second) {
-            | (Operation::Here, 1_usize, Some(point), _) => {
+        match (operation, count, first, second, third) {
+            | (Operation::Here, 1_usize, Some(point), ..) => {
                 self.read(point, Reading::Value(frame));
                 let _marked = self.at_endpoint.insert(point);
                 self.plan(site, Plan::Here(point));
                 Ok(())
             },
-            | (Operation::Funext, 2_usize, Some(left), Some(right)) => {
+            | (
+                Operation::Funext | Operation::Equiv | Operation::Cons,
+                2_usize,
+                Some(left),
+                Some(right),
+                _,
+            ) => {
                 self.read(left, Reading::Value(frame));
                 self.read(right, Reading::Value(frame));
-                self.plan(site, Plan::Funext(left, right));
+                let plan = match operation {
+                    | Operation::Equiv => Plan::Equiv(left, right),
+                    | Operation::Cons => Plan::ListCons(left, right),
+                    | _ => Plan::Funext(left, right),
+                };
+                self.plan(site, plan);
                 Ok(())
             },
-            | (Operation::Back, 1_usize, Some(path), _) => {
+            | (Operation::Transport, 3_usize, Some(motive), Some(path), Some(value)) => {
+                self.stated_motive(site, motive)?;
+                for operand in [motive, path, value] {
+                    self.read(operand, Reading::Value(frame));
+                }
+                self.plan(site, Plan::Transport(motive, path, value));
+                Ok(())
+            },
+            | (Operation::Back, 1_usize, Some(path), ..) => {
                 self.derive(site, frame, Derivation::Back { path })
             },
-            | (Operation::Cong, 2_usize, Some(function), Some(path)) => {
+            | (Operation::Cong, 2_usize, Some(function), Some(path), _) => {
                 self.derive(site, frame, Derivation::Cong { function, path })
             },
             | _ => Err(site.out(FragmentBoundary::Arity(OperandCount::from(count)))),
+        }
+    }
+
+    /// Require a transport's motive to be written as a static abstraction.
+    ///
+    /// # Specification
+    /// - requires: `motive` is the first operand of the transport at `site`.
+    /// - ensures: `Ok` exactly when the operand is a static abstraction, `\X.
+    ///   T`, whose body is the family the transport moves its value in.
+    /// - fails: the unannotated refusal at `site` for any other operand; the
+    ///   refusals the tree's molds yield.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The motive's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an abstraction motive lowers and a named one is
+    ///   refused.
+    /// - witness: `lower::identity::tests::a_list_moves_along_a_universe_equivalence`
+    #[spec(ensures: |ret| ret.is_err() || matches!(
+        self.tree.node(motive).map(|node| shape_of(self.pbg, node)),
+        Some(Ok(Shape::Form { former: Former::StaticAbstraction, .. }))
+    ))]
+    fn stated_motive(
+        &self,
+        site: Site,
+        motive: NodeIndex,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let unannotated = site.out(FragmentBoundary::Unannotated);
+        let Some(node) = self.tree.node(motive)
+        else {
+            return Err(unannotated);
+        };
+        match shape_of(self.pbg, node)? {
+            | Shape::Form {
+                former: Former::StaticAbstraction,
+                ..
+            } => Ok(()),
+            | _ => Err(unannotated),
         }
     }
 
@@ -661,6 +767,63 @@ impl<'source> Lowerer<'_, 'source>
                 gandr_core_term::identity::cong(sink.arena, carrier, first, left, second)
             },
         };
+        record_since(sink, mark, inserted, Maybe::Present((root, origin)));
+
+        Maybe::Present(Lowered::Computation(root))
+    }
+
+    /// Mint `transport(\X. T, p, v)`: the element transport in the family the
+    /// abstraction's body denotes under its binder.
+    ///
+    /// # Specification
+    /// - requires: the three operands are already minted or absent.
+    /// - ensures: the transport of the value along the path in the decode of
+    ///   the motive's body at the fuss-free level — the quoted type itself when
+    ///   the body quotes one, so `\X. List(X)` is `y. List(El y)`. The
+    ///   transport carries the written origin and the family the inserted
+    ///   identity origin. Nothing when an operand did not lower or the motive
+    ///   minted as no static abstraction.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a list motive over a universe path, read back out of
+    ///   the arena.
+    /// - witness: `lower::identity::tests::a_list_moves_along_a_universe_equivalence`
+    #[spec(
+        ensures: |ret| match ret {
+            | Maybe::Present(Lowered::Computation(id)) => sink.origins.computation(id) == Maybe::Present(origin),
+            | Maybe::Present(_) => false,
+            | Maybe::Absent(_) => true,
+        },
+    )]
+    pub(super) fn mint_transport(
+        &self,
+        (abstraction, path, value): (NodeIndex, NodeIndex, NodeIndex),
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let (motive, path, value) = match (
+            self.value_at(abstraction),
+            self.value_at(path),
+            self.value_at(value),
+        ) {
+            | (Maybe::Present(motive), Maybe::Present(path), Maybe::Present(value)) => {
+                (motive, path, value)
+            },
+            | (Maybe::Absent(reason), ..)
+            | (_, Maybe::Absent(reason), _)
+            | (_, _, Maybe::Absent(reason)) => return Maybe::Absent(reason),
+        };
+        let Some(&Value::StaticLambda(body)) = sink.arena.value(motive)
+        else {
+            return Maybe::Absent(lowered::Absent::OtherSort);
+        };
+        let mark = sink.arena.watermark();
+        let family = sink.arena.value_type_element(body, Level::zero());
+        let root = sink.arena.computation_path_transport(family, path, value);
+        let inserted = origin.inserted(Insertion::Identity);
         record_since(sink, mark, inserted, Maybe::Present((root, origin)));
 
         Maybe::Present(Lowered::Computation(root))

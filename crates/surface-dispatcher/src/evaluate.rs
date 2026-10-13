@@ -1083,7 +1083,7 @@ impl<'source> Program<'source>
             Some(&Value::ListNil) => ret.0 == "nil",
             Some(&Value::ListCons(..)) => ret.0.starts_with("cons(") && ret.0.ends_with(')'),
             Some(&Value::Thunk(_)) => ret.0 == "<thunk>",
-            Some(&(Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Funext(..))) => ret.0 == "<path>",
+            Some(&(Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Funext(..) | Value::Equiv(..))) => ret.0 == "<path>",
             Some(&Value::Returned(_)) => ret.0 == "<computation>",
             Some(&(Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..))) => ret.0 == "<code>",
             Some(&Value::Constant(constant)) => match self.name(constant) {
@@ -1207,7 +1207,8 @@ None => ret.0 == "<computation>",
                     | Value::PathProduct(..)
                     | Value::PathEquiv { .. }
                     | Value::Here(_)
-                    | Value::Funext(..)),
+                    | Value::Funext(..)
+                    | Value::Equiv(..)),
                 ) => spelled.push_str("<path>"),
                 | Some(&Value::Returned(_)) => spelled.push_str("<computation>"),
                 | Some(&Value::Literal(Literal::Integer(ref integer))) => {
@@ -1351,7 +1352,7 @@ Value::QuoteComputation(_) | Value::StaticLambda(_) |
 Value::StaticApplication(..) | Value::Hole(_))) | None => ret.is_empty(),
     Some(&(Value::Constructor { .. } | Value::Record(_)) |
 &Value::Reify(_) |
-&(Value::ListCons(..) | Value::PathRefl(_) | Value::Here(_) | Value::Funext(..) | Value::Returned(_) | Value::PathProduct(..) |
+&(Value::ListCons(..) | Value::PathRefl(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Returned(_) | Value::PathProduct(..) |
 Value::PathEquiv { .. } | Value::Tuple(_) | Value::Injection(..) |
 Value::Lift { .. } | Value::Thunk(_) | Value::Mark { .. })) => true,
 })]
@@ -1396,6 +1397,7 @@ fn references(
                 | Some(
                     &(Value::PathProduct(first, second)
                     | Value::Funext(first, second)
+                    | Value::Equiv(first, second)
                     | Value::PathEquiv {
                         forward: first,
                         backward: second,

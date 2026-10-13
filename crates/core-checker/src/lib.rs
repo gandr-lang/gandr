@@ -237,6 +237,7 @@ mod coverage;
 mod declaration;
 mod descent;
 pub mod eliminator;
+mod equiv;
 mod failure;
 #[cfg(test)]
 mod fixture;
@@ -277,6 +278,7 @@ pub use crate::declaration::DeclarationContent;
 pub use crate::declaration::OriginToken;
 pub use crate::declaration::body;
 pub use crate::declaration::signature;
+pub use crate::equiv::Equivalence;
 pub use crate::failure::Failure;
 pub use crate::failure::FoldPremise;
 pub use crate::failure::FrameRole;
@@ -334,5 +336,3 @@ pub use crate::support::Consulted;
 pub use crate::support::DataConsulted;
 pub use crate::support::Support;
 pub use crate::support::Supported;
-// weave: run 'weave explain crates/core-checker/src/lib.rs' for per-hunk
-// detail, 'weave check' to verify your resolution

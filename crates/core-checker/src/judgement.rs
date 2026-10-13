@@ -283,10 +283,12 @@
 //!
 //! `bridge::tests::native_path_module_round_trips` exports all five forms,
 //! persists and imports four declarations, then replays imported product
-//! transport. The surface has no notation for these forms. The bridge mode,
-//! higher fields, `Flow_U` and guarded List inhabitants stay at their kernel
-//! rule-language boundaries; function extensionality is the element-identity
-//! rule below.
+//! transport. The surface writes none of these forms itself: it writes a
+//! universe equivalence `equiv(f, g)`, which the rule in [`crate::equiv`]
+//! decides by computation and the bridge erases to `PathEquiv` with the
+//! dialogues it recorded. The bridge mode, higher fields, `Flow_U` and guarded
+//! List inhabitants stay at their kernel rule-language boundaries; function
+//! extensionality is the element-identity rule below.
 //!
 //! **Choice.** Preserve untrusted native evidence across the export boundary
 //! instead of treating successful frontend checking as certification.
@@ -1255,6 +1257,30 @@ enum Frame
         /// The type the first function synthesised.
         classifier: ValueTypeId,
     },
+    /// Await the type `equiv`'s forward translator synthesises, which names
+    /// the two codes and so the type its backward translator checks against.
+    EquivForward
+    {
+        /// The `equiv`.
+        at: ValueId,
+        /// Its forward translator.
+        forward: ValueId,
+        /// Its backward translator.
+        backward: ValueId,
+    },
+    /// Await the check of `equiv`'s backward translator, then decide both
+    /// round trips.
+    EquivBackward
+    {
+        /// The `equiv`.
+        at: ValueId,
+        /// Its forward translator.
+        forward: ValueId,
+        /// Its backward translator.
+        backward: ValueId,
+        /// The source code's type and the target code's.
+        codes: (ValueTypeId, ValueTypeId),
+    },
     /// Await the type a compound endpoint's computation synthesises, which
     /// must be a pure returner.
     ReturnedEndpoint
@@ -1565,6 +1591,8 @@ impl Frame
             | Self::HereEndpoints { .. } => FrameRole::HereEndpoints,
             | Self::FunextLeft { .. } => FrameRole::FunextLeft,
             | Self::FunextRight { .. } => FrameRole::FunextRight,
+            | Self::EquivForward { .. } => FrameRole::EquivForward,
+            | Self::EquivBackward { .. } => FrameRole::EquivBackward,
             | Self::ReturnedEndpoint { .. } => FrameRole::ReturnedEndpoint,
             | Self::ElementTransportPath { .. } => FrameRole::ElementTransportPath,
             | Self::ElementTransportMotive { .. } => FrameRole::ElementTransportMotive,
@@ -1653,6 +1681,8 @@ impl Frame
             | Self::HereEndpoints { .. }
             | Self::FunextLeft { .. }
             | Self::FunextRight { .. }
+            | Self::EquivForward { .. }
+            | Self::EquivBackward { .. }
             | Self::ReturnedEndpoint { .. }
             | Self::ElementTransportPath { .. }
             | Self::ElementTransportMotive { .. }
@@ -2885,6 +2915,17 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
+            | Value::Equiv(forward, backward) => {
+                self.wait(Frame::EquivForward {
+                    at: term,
+                    forward,
+                    backward,
+                });
+                Ok(Step::Descend(Goal::Value {
+                    term: forward,
+                    direction: Direction::Synthesise,
+                }))
+            },
             | Value::Returned(computation) => {
                 self.wait(Frame::ReturnedEndpoint { at: term });
                 Ok(Step::Descend(Goal::Computation {
@@ -3065,6 +3106,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::PathRefl(_)
             | Value::Returned(_)
             | Value::Funext(..)
+            | Value::Equiv(..)
             | Value::Constructor { .. }
             | Value::PathProduct(..)
             | Value::PathEquiv { .. }
@@ -3218,6 +3260,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::PathRefl(_)
             | Value::Here(_)
             | Value::Funext(..)
+            | Value::Equiv(..)
             | Value::Returned(_)
             | Value::Constructor { .. }
             | Value::Record(_)
@@ -4785,6 +4828,41 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     .value_type_path(classifier, left, right);
                 Ok(Step::Ascend(Produced::ValueType(path)))
             },
+            | (
+                Frame::EquivForward {
+                    at,
+                    forward,
+                    backward,
+                },
+                Produced::ValueType(classifier),
+            ) => {
+                let codes = crate::equiv::codes(self.context, at, classifier)?;
+                let inverse = crate::equiv::translator(self.context, (codes.1, codes.0));
+                self.wait(Frame::EquivBackward {
+                    at,
+                    forward,
+                    backward,
+                    codes,
+                });
+                Ok(Step::Descend(Goal::Value {
+                    term: backward,
+                    direction: Direction::Check(inverse),
+                }))
+            },
+            | (
+                Frame::EquivBackward {
+                    at,
+                    forward,
+                    backward,
+                    codes,
+                },
+                Produced::Checked,
+            ) => {
+                let decided = crate::equiv::decide(self.context, at, (forward, backward), codes)?;
+                let path = decided.identity(self.context.arena_mut());
+                self.context.record_equivalence(at, decided);
+                Ok(Step::Ascend(Produced::ValueType(path)))
+            },
             | (Frame::ReturnedEndpoint { at }, Produced::CompType(synthesised)) => {
                 let head = self.context.whnf_comp_type(synthesised)?;
                 match comp_type_view(self.context.arena(), head)? {
@@ -5177,6 +5255,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::TransportPath { .. }
                 | Frame::HereSynthesised { .. }
                 | Frame::FunextLeft { .. }
+                | Frame::EquivForward { .. }
                 | Frame::ElementTransportPath { .. }
                 | Frame::CaseScrutinee { .. }
                 | Frame::SplitScrutinee { .. }
@@ -5213,6 +5292,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::TransportOperand { .. }
                 | Frame::HereEndpoints { .. }
                 | Frame::FunextRight { .. }
+                | Frame::EquivBackward { .. }
                 | Frame::ElementTransportMotive { .. }
                 | Frame::CaseBranch { .. }
                 | Frame::SplitBody(_)
@@ -8649,7 +8729,7 @@ mod tests
                             "a synthesising value checks exactly as it synthesises, then crosses the value bridge"
                         );
                     },
-                    | Value::PathRefl(_) | Value::Here(_) | Value::Funext(..) | Value::Returned(_)
+                    | Value::PathRefl(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Returned(_)
                     | Value::Constructor { .. } | Value::Record(_)
                     | Value::Reify(_)
                     | Value::PathProduct(..)
@@ -8778,7 +8858,3 @@ mod tests
         }
     }
 }
-// weave: run 'weave explain crates/core-checker/src/judgement.rs' for per-hunk
-// detail, 'weave check' to verify your resolution
-// weave: run 'weave explain crates/core-checker/src/judgement.rs' for per-hunk
-// detail, 'weave check' to verify your resolution

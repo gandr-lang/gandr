@@ -329,6 +329,13 @@ pub enum Value
     /// computation, and the kernel replays it as a higher evaluation; it is
     /// inert, as a native path certificate is.
     Funext(ValueId, ValueId),
+    /// A universe equivalence `equiv(f, g)`: an element of `Path(U, a, b)` for
+    /// two closed translators `f : U (A → F B)` and `g : U (B → F A)`, `a` and
+    /// `b` the quotes of `A` and `B`, whose round trips return their input at
+    /// every pattern either code's coverage reaches. The checker decides it by
+    /// computation, and the kernel admits it as the native universe path its
+    /// fibre is; it is inert, as a native path certificate is.
+    Equiv(ValueId, ValueId),
     /// The value a pure computation returns, standing where a value is read:
     /// a compound path endpoint such as `n + 1` or `f(x)`. It types as the
     /// computation's result when the computation is a returner with no
@@ -1060,8 +1067,9 @@ fn equal_syntax(
                             pending.extend([V(a, c), V(b, d)]);
                         }
                     }
-                    else if let Value::Funext(a, b) = *matched_left_value
-                        && let Value::Funext(c, d) = *matched_right_value
+                    else if let (&Value::Funext(a, b), &Value::Funext(c, d))
+                    | (&Value::Equiv(a, b), &Value::Equiv(c, d)) =
+                        (matched_left_value, matched_right_value)
                     {
                         pending.extend([V(a, c), V(b, d)]);
                     }
