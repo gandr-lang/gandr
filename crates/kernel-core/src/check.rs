@@ -913,6 +913,17 @@ where
                             goal = TypeLevelGoal::Value(endpoints.source);
                             continue 'expand;
                         },
+                        | ValueType::FlowUniverse(..) => {
+                            let endpoints = crate::flow_universe::endpoints(
+                                arena,
+                                id,
+                                crate::replay::ReplayBudget::DEFAULT,
+                            )
+                            .map_err(crate::flow_universe::classifier_refusal)?;
+                            frames.push(TypeLevelFrame::MaxSecondValue(endpoints.target));
+                            goal = TypeLevelGoal::Value(endpoints.source);
+                            continue 'expand;
+                        },
                         // An identity forms at its domain's level, open or
                         // closed: at an open domain it is its own neutral
                         // fibre. Its endpoints are terms, so their checks are
@@ -1166,6 +1177,7 @@ fn abstract_atom_level(
         | ValueType::Data { .. }
         | ValueType::Record(_)
         | ValueType::PathUniverse(..)
+        | ValueType::FlowUniverse(..)
         | ValueType::Base(_)
         | ValueType::Product(..)
         | ValueType::Session { .. }
@@ -1217,6 +1229,7 @@ fn static_classifier(
         | ValueType::Data { .. }
         | ValueType::Record(_)
         | ValueType::PathUniverse(..)
+        | ValueType::FlowUniverse(..)
         | ValueType::Base(_)
         | ValueType::Product(..)
         | ValueType::Session { .. }
@@ -2136,6 +2149,45 @@ where
                         goal = Goal::CheckValue(payload_paths, expected);
                         continue 'expand;
                     },
+                    | Value::SessionFlow {
+                        flow_type,
+                        ref evidence,
+                        payload_paths,
+                    } => {
+                        let evidence = alloc::sync::Arc::clone(evidence);
+                        let _level = type_level(
+                            arena,
+                            judgement,
+                            TypeLevelGoal::Value(flow_type),
+                            Vec::new(),
+                            Recording {
+                                memo,
+                                session,
+                                census,
+                                owed,
+                            },
+                        )?;
+                        let endpoints = crate::flow_universe::endpoints(
+                            arena,
+                            flow_type,
+                            crate::ReplayBudget::DEFAULT,
+                        )
+                        .map_err(crate::flow_universe::classifier_refusal)?;
+                        let expected = crate::session::obligations(
+                            arena,
+                            endpoints.source,
+                            endpoints.target,
+                            &evidence,
+                            crate::session::Relation::Simulation,
+                        )
+                        .map_err(KernelError::Session)?;
+                        frames.push(Frame::SessionPayload {
+                            classifier: flow_type,
+                            context: core::mem::take(&mut context),
+                        });
+                        goal = Goal::CheckValue(payload_paths, expected);
+                        continue 'expand;
+                    },
                     | Value::PathRefl(code) => {
                         let endpoint = crate::path_universe::code(
                             arena,
@@ -2548,6 +2600,7 @@ where
                     | Value::PathRefl(_)
                     | Value::PathProduct(..)
                     | Value::SessionPath { .. }
+                    | Value::SessionFlow { .. }
                     | Value::PathEquiv { .. }
                     | Value::Variable(_)
                     | Value::Constant(_)
@@ -4004,6 +4057,7 @@ where
                 | ValueType::Data { .. }
                 | ValueType::Record(_)
                 | ValueType::PathUniverse(..)
+                | ValueType::FlowUniverse(..)
                 | ValueType::Base(_)
                 | ValueType::Product(..)
                 | ValueType::Session { .. }

@@ -35,8 +35,8 @@ Contractive binary session types, coinductive relations, and endpoint replay.
 - Construction-time closure and contractivity validation.
 - Equivalence, subtyping, and duality over opaque payload-type identities.
 - Search-free replay with distinct direction, label, payload, incomplete-run, and resume-after-end refusals.
-- Candidate finite relations exported by `relate`, checked independently as native `Path_U` or in-memory `Flow_U` evidence.
-- Recorded-run transport through a freshly replayed session Flow and independently checked target monitor.
+- Candidate finite relations exported by `relate`, checked independently as native `Path_U` or native `Flow_U` evidence.
+- Recorded-run transport through a freshly replayed session Flow and independently checked target monitor; `certified::advance` is the monitor-level step a checker uses once it holds an engine simulation.
 
 ## Expected features
 
@@ -124,7 +124,7 @@ The independent elimination oracle exhausts 177 protocols: all send/receive word
 
 ## Integration boundary
 
-Live endpoint syntax, ownership and typing belong to `core-term` and `core-checker`. This crate reads no core terms. The kernel reflects finite session protocols as codes beside first-order codes in the value universe, solely to check type-identity evidence; it gains no endpoint or channel values. Recorded skeleton transport is a monitor-level operation, not a CBPV session-value eliminator. Ordinary Flow lowering refuses a session introduction as `RecordedRunRequired`. Native declaration persistence includes session codes and Path evidence; Flow certificates retain the existing in-memory representation. The monitor does not correlate asynchronous peers, check FIFO delivery, validate bodies, or establish global deadlock freedom.
+Live endpoint syntax, ownership and typing belong to `core-term` and `core-checker`. This crate reads no core terms. The kernel reflects finite session protocols as codes beside first-order codes in the value universe, solely to check type-identity evidence; it gains no endpoint or channel values. Recorded skeleton transport is a monitor-level operation, not a CBPV session-value eliminator. Ordinary Flow lowering refuses a session introduction as `RecordedRunRequired`. Native declaration persistence includes session codes, Path evidence and session Flow evidence. The monitor does not correlate asynchronous peers, check FIFO delivery, validate bodies, or establish global deadlock freedom.
 
 ## License
 

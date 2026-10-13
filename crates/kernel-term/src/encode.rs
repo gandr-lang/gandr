@@ -745,6 +745,7 @@ ensures: |ret| ret.0.as_image().as_ref().first().copied()
             Some(&ValueType::Data { .. }) => tags::NODE_VT_DATA,
             Some(&ValueType::Record(_)) => tags::NODE_VT_RECORD,
             Some(&ValueType::PathUniverse(..)) => tags::NODE_VT_PATH_UNIVERSE,
+            Some(&ValueType::FlowUniverse(..)) => tags::NODE_VT_FLOW_UNIVERSE,
             Some(&ValueType::Path { .. }) => tags::NODE_VT_PATH,
             Some(&ValueType::Base(_)) => tags::NODE_VT_BASE,
             Some(&ValueType::Universe { sort: GroundSort::Value, .. }) => tags::NODE_VT_UNIVERSE,
@@ -772,6 +773,7 @@ ensures: |ret| ret.0.as_image().as_ref().first().copied()
             Some(&Value::Constructor { .. }) => tags::NODE_V_CONSTRUCTOR,
             Some(&Value::Record(_)) => tags::NODE_V_RECORD,
             Some(&Value::SessionPath { .. }) => tags::NODE_V_SESSION_PATH,
+            Some(&Value::SessionFlow { .. }) => tags::NODE_V_SESSION_FLOW,
             Some(&Value::PathRefl(_)) => tags::NODE_V_PATH_REFL,
             Some(&Value::PathProduct(..)) => tags::NODE_V_PATH_PRODUCT,
             Some(&Value::PathEquiv { .. }) => tags::NODE_V_PATH_EQUIV,
@@ -847,6 +849,7 @@ fn encode_entry(
                     out.put_tag(base_type_tag(base));
                 },
                 | ValueType::PathUniverse(..) => out.put_tag(tags::NODE_VT_PATH_UNIVERSE),
+                | ValueType::FlowUniverse(..) => out.put_tag(tags::NODE_VT_FLOW_UNIVERSE),
                 | ValueType::Path { .. } => out.put_tag(tags::NODE_VT_PATH),
                 | ValueType::Universe {
                     sort: GroundSort::Value,
@@ -931,6 +934,10 @@ fn encode_entry(
                 },
                 | Value::SessionPath { ref evidence, .. } => {
                     out.put_tag(tags::NODE_V_SESSION_PATH);
+                    evidence.write(|word| out.put_uvarint(WireU64::from(word.0)));
+                },
+                | Value::SessionFlow { ref evidence, .. } => {
+                    out.put_tag(tags::NODE_V_SESSION_FLOW);
                     evidence.write(|word| out.put_uvarint(WireU64::from(word.0)));
                 },
                 | Value::PathRefl(_) => out.put_tag(tags::NODE_V_PATH_REFL),

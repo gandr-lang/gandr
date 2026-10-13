@@ -650,7 +650,8 @@ fn converge(
                                 .map(|(a, b)| ConversionGoal::ValueType(*a, *b)),
                         );
                     },
-                    | (&ValueType::PathUniverse(a, b), &ValueType::PathUniverse(c, d)) => {
+                    | (&ValueType::PathUniverse(a, b), &ValueType::PathUniverse(c, d))
+                    | (&ValueType::FlowUniverse(a, b), &ValueType::FlowUniverse(c, d)) => {
                         stack.push(ConversionGoal::Value(a, c));
                         stack.push(ConversionGoal::Value(b, d));
                     },
@@ -778,6 +779,7 @@ fn converge(
                         &ValueType::Data { .. }
                         | &ValueType::Record(_)
                         | &ValueType::PathUniverse(..)
+                        | &ValueType::FlowUniverse(..)
                         | &ValueType::Path { .. }
                         | &ValueType::Base(_)
                         | &ValueType::Product(..)
@@ -901,7 +903,8 @@ fn converge(
                         if a.len() != b.len() || !a.keys().eq(b.keys()) { return Convertibility::Distinct; }
                         stack.extend(a.values().zip(b.values()).map(|(a, b)| ConversionGoal::Value(*a, *b)));
                     },
-                    | (&Value::SessionPath { path_type: one_type, payload_paths: one_paths, evidence: ref one }, &Value::SessionPath { path_type: other_type, payload_paths: other_paths, evidence: ref other }) => {
+                    | (&Value::SessionPath { path_type: one_type, payload_paths: one_paths, evidence: ref one }, &Value::SessionPath { path_type: other_type, payload_paths: other_paths, evidence: ref other })
+                    | (&Value::SessionFlow { flow_type: one_type, payload_paths: one_paths, evidence: ref one }, &Value::SessionFlow { flow_type: other_type, payload_paths: other_paths, evidence: ref other }) => {
                         // Relation proof pairs are erased; payload translator assignment is not.
                         if one.payloads != other.payloads { return Convertibility::Distinct; }
                         stack.push(ConversionGoal::ValueType(one_type, other_type));
@@ -1042,7 +1045,7 @@ fn converge(
                         stack.push(ConversionGoal::CompType(one, other));
                     },
                     | (
-                        &Value::Constructor { .. } | &Value::Record(_) | &Value::SessionPath { .. } | &Value::PathRefl(_) | &Value::PathProduct(..) | &Value::PathEquiv { .. }
+                        &Value::Constructor { .. } | &Value::Record(_) | &Value::SessionPath { .. } | &Value::SessionFlow { .. } | &Value::PathRefl(_) | &Value::PathProduct(..) | &Value::PathEquiv { .. }
                         | &Value::Here { .. } | &Value::Returned(_) | &Value::Higher { .. } | &Value::HigherEvaluation { .. } | &Value::QuantifiedEvaluation { .. }
                         | &Value::Variable(_)
                         | &Value::Constant(_)

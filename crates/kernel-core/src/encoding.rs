@@ -862,7 +862,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
         requires: match *value {
             Value::Constructor { datatype, ref fields, .. } => self.placed.contains_key(&AnyNode::ValueType(datatype)) && fields.iter().all(|id| self.placed.contains_key(&AnyNode::Value(*id))),
             Value::Record(ref fields) => fields.values().all(|id| self.placed.contains_key(&AnyNode::Value(*id))),
-            Value::SessionPath { path_type, payload_paths, .. } => self.placed.contains_key(&AnyNode::ValueType(path_type)) && self.placed.contains_key(&AnyNode::Value(payload_paths)),
+            Value::SessionPath { path_type: classifier, payload_paths, .. } | Value::SessionFlow { flow_type: classifier, payload_paths, .. } => self.placed.contains_key(&AnyNode::ValueType(classifier)) && self.placed.contains_key(&AnyNode::Value(payload_paths)),
             Value::PathEquiv { path_type, forward, backward, .. } => self.placed.contains_key(&AnyNode::ValueType(path_type)) && self.placed.contains_key(&AnyNode::Value(forward)) && self.placed.contains_key(&AnyNode::Value(backward)),
             Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => true,
             Value::Tuple(ref components) => components.iter().all(|id| self.placed.contains_key(&AnyNode::Value(*id))),
@@ -881,6 +881,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Value::Constructor { .. } => gandr_kernel_term::NODE_V_CONSTRUCTOR,
             Value::Record(_) => gandr_kernel_term::NODE_V_RECORD,
             Value::SessionPath { .. } => gandr_kernel_term::NODE_V_SESSION_PATH,
+            Value::SessionFlow { .. } => gandr_kernel_term::NODE_V_SESSION_FLOW,
             Value::PathRefl(_) => gandr_kernel_term::NODE_V_PATH_REFL,
             Value::PathProduct(..) => gandr_kernel_term::NODE_V_PATH_PRODUCT,
             Value::PathEquiv { .. } => gandr_kernel_term::NODE_V_PATH_EQUIV,
@@ -945,6 +946,16 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 record.put_tag(gandr_kernel_term::NODE_V_SESSION_PATH);
                 evidence.write(|word| record.put_word(EncodedWord(word.0)));
                 record.put_content(self.content_of(AnyNode::ValueType(path_type)));
+                record.put_content(self.content_of(AnyNode::Value(payload_paths)));
+            },
+            | Value::SessionFlow {
+                flow_type,
+                payload_paths,
+                ref evidence,
+            } => {
+                record.put_tag(gandr_kernel_term::NODE_V_SESSION_FLOW);
+                evidence.write(|word| record.put_word(EncodedWord(word.0)));
+                record.put_content(self.content_of(AnyNode::ValueType(flow_type)));
                 record.put_content(self.content_of(AnyNode::Value(payload_paths)));
             },
             | Value::PathRefl(code) => {
@@ -1311,7 +1322,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             ValueType::Data { ref arguments, .. } => arguments.iter().all(|id| self.placed.contains_key(&AnyNode::Value(*id))),
             ValueType::Record(ref fields) => fields.values().all(|id| self.placed.contains_key(&AnyNode::ValueType(*id))),
             ValueType::Session { payloads, .. } => self.placed.contains_key(&AnyNode::ValueType(payloads)),
-            ValueType::PathUniverse(source, target) => self.placed.contains_key(&AnyNode::Value(source)) && self.placed.contains_key(&AnyNode::Value(target)),
+            ValueType::PathUniverse(source, target) | ValueType::FlowUniverse(source, target) => self.placed.contains_key(&AnyNode::Value(source)) && self.placed.contains_key(&AnyNode::Value(target)),
             ValueType::Path { domain, left, right } => self.placed.contains_key(&AnyNode::ValueType(domain)) && self.placed.contains_key(&AnyNode::Value(left)) && self.placed.contains_key(&AnyNode::Value(right)),
             ValueType::Base(_) | ValueType::Universe { sort: GroundSort::Value, .. } | ValueType::Universe { sort: GroundSort::Computation, .. } | ValueType::Abstract(_) => true,
             ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.iter().all(|id| self.placed.contains_key(&AnyNode::ValueType(*id))),
@@ -1327,6 +1338,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             ValueType::Record(_) => gandr_kernel_term::NODE_VT_RECORD,
             ValueType::Session { .. } => gandr_kernel_term::NODE_VT_SESSION,
             ValueType::PathUniverse(..) => gandr_kernel_term::NODE_VT_PATH_UNIVERSE,
+            ValueType::FlowUniverse(..) => gandr_kernel_term::NODE_VT_FLOW_UNIVERSE,
             ValueType::Path { .. } => gandr_kernel_term::NODE_VT_PATH,
             ValueType::List(_) => gandr_kernel_term::NODE_VT_LIST,
             ValueType::Base(..) => gandr_kernel_term::NODE_VT_BASE,
@@ -1369,6 +1381,11 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             },
             | ValueType::PathUniverse(source, target) => {
                 record.put_tag(gandr_kernel_term::NODE_VT_PATH_UNIVERSE);
+                record.put_content(self.content_of(AnyNode::Value(source)));
+                record.put_content(self.content_of(AnyNode::Value(target)));
+            },
+            | ValueType::FlowUniverse(source, target) => {
+                record.put_tag(gandr_kernel_term::NODE_VT_FLOW_UNIVERSE);
                 record.put_content(self.content_of(AnyNode::Value(source)));
                 record.put_content(self.content_of(AnyNode::Value(target)));
             },
@@ -1554,7 +1571,7 @@ Value::Constructor { datatype, ref fields, .. } => opened.eq((core::iter::once(A
 Value::Record(ref fields) => opened.eq((fields.values().copied().map(AnyNode::Value)).map(Some)),
 Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => opened.eq((core::iter::empty()).map(Some)),
 Value::Tuple(ref components) => opened.eq((components.iter().copied().map(AnyNode::Value)).map(Some)),
-Value::SessionPath { path_type, payload_paths, .. } => opened.eq(([AnyNode::ValueType(path_type), AnyNode::Value(payload_paths)].into_iter()).map(Some)),
+Value::SessionPath { path_type: classifier, payload_paths, .. } | Value::SessionFlow { flow_type: classifier, payload_paths, .. } => opened.eq(([AnyNode::ValueType(classifier), AnyNode::Value(payload_paths)].into_iter()).map(Some)),
 Value::PathEquiv { path_type, forward, backward, .. } => opened.eq(([AnyNode::ValueType(path_type), AnyNode::Value(forward), AnyNode::Value(backward)].into_iter()).map(Some)),
 Value::ListCons(a,b) | Value::PathProduct(a,b) | Value::StaticApplication(a,b) => opened.eq(([AnyNode::Value(a), AnyNode::Value(b)].into_iter()).map(Some)),
 Value::PathRefl(body) | Value::Here { point: body, .. } | Value::Injection(_,body) | Value::Lift {body,..} => opened.eq((core::iter::once(AnyNode::Value(body))).map(Some)),
@@ -1588,7 +1605,7 @@ ValueType::Data {ref arguments,..} => opened.eq((arguments.iter().copied().map(A
 ValueType::Record(ref fields) => opened.eq((fields.values().copied().map(AnyNode::ValueType)).map(Some)),
 ValueType::Base(_) | ValueType::Universe {..} | ValueType::Abstract(_) => opened.eq((core::iter::empty()).map(Some)),
 ValueType::Session {payloads: inner,..} | ValueType::List(inner) | ValueType::Lift {inner,..} => opened.eq((core::iter::once(AnyNode::ValueType(inner))).map(Some)),
-ValueType::PathUniverse(a,b) => opened.eq(([AnyNode::Value(a), AnyNode::Value(b)].into_iter()).map(Some)),
+ValueType::PathUniverse(a,b) | ValueType::FlowUniverse(a,b) => opened.eq(([AnyNode::Value(a), AnyNode::Value(b)].into_iter()).map(Some)),
 ValueType::Path { domain, left, right } => opened.eq(([AnyNode::ValueType(domain), AnyNode::Value(left), AnyNode::Value(right)].into_iter()).map(Some)),
 ValueType::Product(ref parts) | ValueType::Sum(ref parts) => opened.eq((parts.iter().copied().map(AnyNode::ValueType)).map(Some)),
 ValueType::StaticPi {domain:a,codomain:b} => opened.eq(([AnyNode::ValueType(a),AnyNode::ValueType(b)].into_iter()).map(Some)),
@@ -1649,11 +1666,18 @@ fn push_children(
                 tasks.push(EncodeTask::Open(AnyNode::Value(forward)));
                 tasks.push(EncodeTask::Open(AnyNode::Value(backward)));
             },
-            | Some(&Value::SessionPath {
-                path_type,
-                payload_paths,
-                ..
-            }) => {
+            | Some(
+                &Value::SessionPath {
+                    path_type,
+                    payload_paths,
+                    ..
+                }
+                | &Value::SessionFlow {
+                    flow_type: path_type,
+                    payload_paths,
+                    ..
+                },
+            ) => {
                 tasks.push(EncodeTask::Open(AnyNode::ValueType(path_type)));
                 tasks.push(EncodeTask::Open(AnyNode::Value(payload_paths)));
             },
@@ -1844,7 +1868,9 @@ fn push_children(
                 tasks.push(EncodeTask::Open(AnyNode::ValueType(first)));
                 tasks.push(EncodeTask::Open(AnyNode::ValueType(second)));
             },
-            | Some(&ValueType::PathUniverse(source, target)) => {
+            | Some(
+                &ValueType::PathUniverse(source, target) | &ValueType::FlowUniverse(source, target),
+            ) => {
                 tasks.push(EncodeTask::Open(AnyNode::Value(source)));
                 tasks.push(EncodeTask::Open(AnyNode::Value(target)));
             },

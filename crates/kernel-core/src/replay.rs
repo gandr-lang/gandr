@@ -1987,6 +1987,7 @@ where
                 | Value::Record(_)
                 | Value::PathProduct(..)
                 | Value::SessionPath { .. }
+                | Value::SessionFlow { .. }
                 | Value::PathEquiv { .. }
                 | Value::Here { .. }
                 | Value::Higher { .. }
@@ -2706,6 +2707,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 &(Value::PathRefl(_)
                 | Value::PathProduct(..)
                 | Value::SessionPath { .. }
+                | Value::SessionFlow { .. }
                 | Value::PathEquiv { .. }
                 | Value::Here { .. }
                 | Value::Higher { .. }
@@ -2930,6 +2932,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         | Value::PathRefl(_)
                         | Value::PathProduct(..)
                         | Value::SessionPath { .. }
+                        | Value::SessionFlow { .. }
                         | Value::PathEquiv { .. }
                         | Value::Here { .. }
                         | Value::Higher { .. }
@@ -3000,7 +3003,10 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     | Some(&(ValueType::Product(ref parts) | ValueType::Sum(ref parts))) => {
                         work.extend(parts.iter().copied().map(AnyNode::ValueType));
                     },
-                    | Some(&ValueType::PathUniverse(source, target)) => {
+                    | Some(
+                        &ValueType::PathUniverse(source, target)
+                        | &ValueType::FlowUniverse(source, target),
+                    ) => {
                         work.extend([AnyNode::Value(source), AnyNode::Value(target)]);
                     },
                     | Some(&ValueType::Path {
@@ -3165,6 +3171,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         | Value::Record(_)
                         | Value::PathProduct(..)
                         | Value::SessionPath { .. }
+                        | Value::SessionFlow { .. }
                         | Value::PathEquiv { .. }
                         | Value::Literal(_)
                         | Value::Tuple(..)
@@ -3321,6 +3328,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 | Value::Record(_)
                 | Value::PathProduct(..)
                 | Value::SessionPath { .. }
+                | Value::SessionFlow { .. }
                 | Value::PathEquiv { .. }
                 | Value::Literal(_)
                 | Value::Tuple(..)

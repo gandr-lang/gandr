@@ -6,18 +6,20 @@
 //! duplicate or discard those leaves, but cannot manufacture or inspect them.
 //! At a function code, formation orients two boundary flows by the variance
 //! the arrow fixes and assembles the translator from them. `ride` replays the
-//! forward action; `stay` returns its argument in one step. Session
-//! introductions replay finite simulations and have a recorded-run consumer
-//! rather than a CBPV endpoint-value action. The syntax is an in-memory rule
-//! language, separate from native terms and from universe paths. It carries
-//! no admission receipt or reusable verdict.
+//! forward action; `stay` returns its argument in one step. A session
+//! introduction is a native `Value::SessionFlow` at a native `Flow_U`
+//! classifier; it replays a finite simulation and has a recorded-run consumer
+//! rather than a CBPV endpoint-value action. The other introductions are an
+//! in-memory rule language, separate from native terms and from universe
+//! paths. The rule syntax carries no admission receipt or reusable verdict.
 //!
 //! # The family
 //!
-//! This module defines a separate in-memory `Flow_U a b` family over quoted
-//! Base codes, products of any arity (the unit among them), sums of at least
-//! one summand, and function codes `U (A → F B)` whose argument and result
-//! are among those. The empty sum is outside the vocabulary. A forward
+//! This module defines the `Flow_U a b` family, separate from `Path_U`, over
+//! quoted Base codes, products of any arity (the unit among them), sums of at
+//! least one summand, function codes `U (A → F B)` whose argument and result
+//! are among those, and finite session codes, which only a session simulation
+//! relates. The empty sum is outside the vocabulary. A forward
 //! certificate stores one closed CBPV translator and one proposed
 //! image/dialogue per source constructor pattern. It carries neither an
 //! inverse nor round-trip evidence. Every consuming formation checks the
@@ -43,10 +45,22 @@
 //! `form_certificate` synthesizes that value through the ordinary closed
 //! checker and decodes its checked `Path_U` endpoints; there is no auxiliary
 //! path arena or trusted classifier shortcut. Missing round-trip evidence and
-//! non-path classifiers refuse. Matching Path and Flow families retain
-//! separate formation judgements, and both cross-family directions refuse
-//! before elimination. The Flow range of `gandr-kernel-term`'s wire-tag table
-//! remains reserved and unassigned.
+//! non-path classifiers refuse. `Flow::Session` likewise carries a native
+//! value id: formation synthesizes it, and [`endpoints`] decodes its checked
+//! `Flow_U` classifier. Matching Path and Flow families retain separate
+//! formation judgements, and both cross-family directions refuse before
+//! elimination, whether the family is named by the certificate tag or by the
+//! native classifier.
+//!
+//! **Native persistence.** `Flow_U` and the session simulation are native
+//! formers with wire tags `0x48` and `0x49` in `gandr-kernel-term`'s table;
+//! [`endpoints`] admits the whole `Flow_U` vocabulary at `0x48` — first-order,
+//! function and session codes — so later persisted introductions share the
+//! classifier. Directed reflexivity, forward translators, the arrow's action
+//! and composition remain rule syntax, and `0x4A`–`0x4F` stay reserved. The
+//! kernel error carries a classifier refusal as the flat [`ClassifierError`]:
+//! a [`FlowError`] owns the kernel error of a translator's typing, so the
+//! kernel error owning it back would make the two types own each other.
 //!
 //! **Leaf naturality.** Each source Base position is a distinct rigid
 //! variable, including equal-typed positions in a product. Proposed output
@@ -106,22 +120,35 @@
 //! recursive ownership; formation and lowering tables live only for one call.
 //! The function clause is structural: the kernel assembles its translator
 //! from formed boundary flows, and it carries both endpoint codes so a
-//! misdirected boundary refuses by name.
+//! misdirected boundary refuses by name. Session simulations are native
+//! persisted formers: the recorded reversal — declaration admission must
+//! consume Flow syntax — fired on its stated trigger when session subtyping
+//! became a declared `Flow_U` statement of the surface language, which must
+//! admit, persist in an artifact and readmit by replay. The classifier is
+//! generic over the `Flow_U` vocabulary so the next persisted introduction
+//! reuses it, and the session introduction's frame is the session path's, so
+//! the two certificates encode and replay alike. `FORMAT_VERSION` holds: both
+//! bytes were reserved and unassigned, and an older reader refuses them by
+//! name.
 //! **Alternatives.** A second evaluator; host-language translators, which
-//! would bypass the obligation; native persisted formers, which would require
-//! encoding, support and wire integration. No wire tag is allocated. At
-//! function codes: forward translators covered symbolically, which have no
-//! constructor pattern to replay and would need leaf-naturality redefined for
-//! exponentials; a classifier derived from the boundary flows alone, under
-//! which no direction can be refused; and a polarity modality on contexts.
-//! **Reversal.** Declaration admission must consume Flow syntax. Motive
-//! checking is the term-structural covariance side condition over El, Flow,
-//! Arrow, Sum and Product; value transport uses `El(Moving)`. General
-//! dependent directed elimination and the reflected variance calculus remain
-//! outside this rule language. The function clause is revisited when an
-//! argument code is itself a function or universe code, where an argument
-//! variable would occur at both variances, or when a translator at function
-//! codes that is not the arrow of two boundary flows must be certified.
+//! would bypass the obligation; deciding session subtyping in the checker
+//! alone, which would leave a declared `Flow_U` statement unpersisted and the
+//! kernel out of its trust path; a session-specific classifier, which every
+//! later introduction would have to duplicate. At function codes: forward
+//! translators covered symbolically, which have no constructor pattern to
+//! replay and would need leaf-naturality redefined for exponentials; a
+//! classifier derived from the boundary flows alone, under which no direction
+//! can be refused; and a polarity modality on contexts.
+//! **Reversal.** The remaining introductions become native formers when a
+//! declaration consumes them: at that point each takes a byte of the
+//! reservation under the shared classifier. Motive checking is the
+//! term-structural covariance side condition over El, Flow, Arrow, Sum and
+//! Product; value transport uses `El(Moving)`. General dependent directed
+//! elimination and the reflected variance calculus remain outside this rule
+//! language. The function clause is revisited when an argument code is itself
+//! a function or universe code, where an argument variable would occur at both
+//! variances, or when a translator at function codes that is not the arrow of
+//! two boundary flows must be certified.
 //!
 //! # Witnesses
 //!
@@ -141,12 +168,16 @@ use core::fmt;
 
 use anodized::spec;
 use gandr_kernel_term::ComputationId;
+use gandr_kernel_term::TermArena;
+use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
+use gandr_kernel_term::ValueType;
 use gandr_kernel_term::ValueTypeId;
 
 use crate::error::KernelError;
 use crate::path_universe::Dialogue;
 use crate::replay::KernelVerdict;
+use crate::replay::ReplayBudget;
 
 mod coverage;
 mod motive;
@@ -218,18 +249,9 @@ pub enum Seam
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Flow
 {
-    /// A finite session simulation with native payload-path obligations.
-    Session
-    {
-        /// Quoted source session code.
-        source: ValueId,
-        /// Quoted target session code.
-        target: ValueId,
-        /// Untrusted finite relation.
-        evidence: alloc::sync::Arc<gandr_kernel_term::session::Evidence>,
-        /// Native payload-path tuple, terminated by Unit.
-        payload_paths: ValueId,
-    },
+    /// A finite session simulation: a native [`Value::SessionFlow`], checked
+    /// afresh at its ordinary `Flow_U` classifier.
+    Session(ValueId),
     /// Directed reflexivity at a quoted closed first-order or function code.
     Stay(ValueId),
     /// A leaf-natural forward translator with exhaustive symbolic replay.
@@ -470,6 +492,57 @@ impl Flows
     }
 }
 
+/// Inspect and decode both endpoints of a native `Flow_U` classifier.
+///
+/// # Specification
+/// - ensures: each endpoint is a quoted code of the `Flow_U` vocabulary: a
+///   first-order code, a function code over first-order codes, or a finite
+///   guarded session code. The returned roots are the quoted types. Session
+///   payload typing belongs to ordinary native formation.
+/// - fails: `FamilyMismatch` for a `Path_U` classifier, `ExpectedFlow` for any
+///   other classifier, or a code-walk refusal.
+/// - panics: none.
+///
+/// # Errors
+/// `FamilyMismatch`, `ExpectedFlow`, `UnsupportedCode`, `UnsupportedType`,
+/// `Path` for a malformed session code, `Arena` or `Budget`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — session endpoints decode; a session flow tagged as a path
+///   and a session path tagged as a flow each refuse as `FamilyMismatch`; a
+///   List endpoint refuses.
+/// - witness: `session::tests::session_flows_persist_and_refuse_by_family`
+#[spec(ensures: |ret| match ret {
+    Ok(flow) => matches!(arena.value_type(classifier), Some(&ValueType::FlowUniverse(source, target))
+        if matches!(arena.value(source), Some(&Value::Quote(root)) if root == flow.source)
+            && matches!(arena.value(target), Some(&Value::Quote(root)) if root == flow.target)),
+    Err(FlowError::FamilyMismatch { expected: Family::Flow, actual: Family::Path }) => matches!(arena.value_type(classifier), Some(&ValueType::PathUniverse(..))),
+    Err(FlowError::ExpectedFlow(named)) => named == classifier && !matches!(arena.value_type(classifier), Some(&(ValueType::FlowUniverse(..) | ValueType::PathUniverse(..)))),
+    Err(_) => true,
+})]
+#[inline]
+pub fn endpoints(
+    arena: &TermArena,
+    classifier: ValueTypeId,
+    budget: ReplayBudget,
+) -> Result<FlowType, FlowError>
+{
+    let (source, target) = match arena.value_type(classifier) {
+        | Some(&ValueType::FlowUniverse(source, target)) => (source, target),
+        | Some(&ValueType::PathUniverse(..)) => {
+            return Err(FlowError::FamilyMismatch {
+                expected: Family::Flow,
+                actual: Family::Path,
+            });
+        },
+        | _ => return Err(FlowError::ExpectedFlow(classifier)),
+    };
+    let mut allowance = Allowance(u64::from(budget));
+    let source = coverage::vocabulary(arena, source, &mut allowance, budget)?;
+    let target = coverage::vocabulary(arena, target, &mut allowance, budget)?;
+    Ok(FlowType { source, target })
+}
+
 /// Raw directed elimination, carrying the family tag checked by elaboration.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Ride
@@ -496,13 +569,15 @@ pub enum Reduct
 pub struct PatternPosition(pub usize);
 
 /// A named refusal at formation, motive elaboration or replay.
-#[derive(Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FlowError
 {
     /// A finite session simulation failed replay.
     Session(crate::session::SessionError),
     /// Session codes transport recorded runs, not native endpoint values.
     RecordedRunRequired,
+    /// A native classifier is not `Flow_U`.
+    ExpectedFlow(ValueTypeId),
     /// Missing raw certificate.
     UnknownFlow(FlowId),
     /// Missing term or impossible internal assembly state.
@@ -574,6 +649,7 @@ impl fmt::Display for FlowError
             | &Self::RecordedRunRequired => {
                 f.write_str("session transport requires a recorded run")
             },
+            | &Self::ExpectedFlow(_) => f.write_str("expected a universe-flow classifier"),
             | &Self::Arena => f.write_str("unresolved term arena reference"),
             | &Self::UnsupportedCode(_) => f.write_str("unsupported universe-flow code"),
             | &Self::UnsupportedType(_) => f.write_str("unsupported universe-flow type"),
@@ -613,6 +689,108 @@ impl fmt::Display for FlowError
 
 impl core::error::Error for FlowError
 {
+}
+
+/// A native `Flow_U` classifier's refusal, as the kernel's own error carries
+/// it.
+///
+/// A [`FlowError`] owns the [`KernelError`] of a translator's typing, so the
+/// kernel error owns this flat projection instead: a typing, path or session
+/// refusal keeps the kernel's own name, and the classifier's names stay here.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ClassifierError
+{
+    /// No coercion crosses the family boundary.
+    FamilyMismatch
+    {
+        /// Required classifier family.
+        expected: Family,
+        /// Supplied classifier family.
+        actual: Family,
+    },
+    /// A native classifier is not `Flow_U`.
+    ExpectedFlow(ValueTypeId),
+    /// An endpoint is not a quoted code of the `Flow_U` vocabulary.
+    UnsupportedCode(ValueId),
+    /// A code contains a former outside the `Flow_U` vocabulary.
+    UnsupportedType(ValueTypeId),
+    /// The code walk's allowance ran out.
+    Budget,
+}
+
+impl fmt::Display for ClassifierError
+{
+    /// Display the named refusal as [`FlowError`] spells it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            | Self::FamilyMismatch {
+                expected: Family::Flow,
+                ..
+            } => f.write_str("expected Flow, found Path"),
+            | Self::FamilyMismatch {
+                expected: Family::Path,
+                ..
+            } => f.write_str("expected Path, found Flow"),
+            | Self::ExpectedFlow(_) => f.write_str("expected a universe-flow classifier"),
+            | Self::UnsupportedCode(_) => f.write_str("unsupported universe-flow code"),
+            | Self::UnsupportedType(_) => f.write_str("unsupported universe-flow type"),
+            | Self::Budget => f.write_str("universe-flow budget exhausted"),
+        }
+    }
+}
+
+impl core::error::Error for ClassifierError
+{
+}
+
+/// The kernel's refusal for a `Flow_U` classifier [`endpoints`] refused.
+///
+/// # Specification
+/// - ensures: a classifier refusal keeps its name under `KernelError::Flow`; a
+///   typing, path or session refusal is the kernel's own; every other flow
+///   refusal, which [`endpoints`] never returns, is `ArenaFault`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a session flow forged at a `Path_U` classifier and a List
+///   endpoint each keep their classifier refusal's name.
+/// - witness: `session::tests::session_flows_persist_and_refuse_by_family`
+#[spec(captures: family = matches!(error, FlowError::FamilyMismatch { .. }),
+    ensures: |ret| !family || matches!(ret, KernelError::Flow(ClassifierError::FamilyMismatch { .. })))]
+pub(crate) fn classifier_refusal(error: FlowError) -> KernelError
+{
+    let refusal = match error {
+        | FlowError::FamilyMismatch { expected, actual } => {
+            ClassifierError::FamilyMismatch { expected, actual }
+        },
+        | FlowError::ExpectedFlow(classifier) => ClassifierError::ExpectedFlow(classifier),
+        | FlowError::UnsupportedCode(code) => ClassifierError::UnsupportedCode(code),
+        | FlowError::UnsupportedType(ty) => ClassifierError::UnsupportedType(ty),
+        | FlowError::Budget => ClassifierError::Budget,
+        | FlowError::Typing(error) => return *error,
+        | FlowError::Path(error) => return KernelError::Path(error),
+        | FlowError::Session(error) => return KernelError::Session(error),
+        | FlowError::RecordedRunRequired
+        | FlowError::UnknownFlow(_)
+        | FlowError::Arena
+        | FlowError::Coverage
+        | FlowError::NonNatural(_)
+        | FlowError::ForwardReplay { .. }
+        | FlowError::EndpointMismatch
+        | FlowError::Cycle { .. }
+        | FlowError::NonCovariantMotive(_)
+        | FlowError::Boundary(_)
+        | FlowError::UnknownMotive(_) => return KernelError::ArenaFault,
+    };
+    KernelError::Flow(refusal)
 }
 
 /// Finite allowance for syntax, code and symbolic-output traversal.

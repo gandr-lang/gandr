@@ -344,11 +344,18 @@ fn walk(
                             .map(|&field| (AnyNode::Value(field), depth, results)),
                     );
                 },
-                | Some(&Value::SessionPath {
-                    path_type,
-                    payload_paths,
-                    ..
-                }) => {
+                | Some(
+                    &Value::SessionPath {
+                        path_type,
+                        payload_paths,
+                        ..
+                    }
+                    | &Value::SessionFlow {
+                        flow_type: path_type,
+                        payload_paths,
+                        ..
+                    },
+                ) => {
                     pending.push((AnyNode::ValueType(path_type), depth, results));
                     pending.push((AnyNode::Value(payload_paths), depth, results));
                 },
@@ -581,7 +588,10 @@ fn walk(
                     pending.push((AnyNode::ValueType(first), depth, results));
                     pending.push((AnyNode::ValueType(second), depth, results));
                 },
-                | Some(&ValueType::PathUniverse(source, target)) => {
+                | Some(
+                    &ValueType::PathUniverse(source, target)
+                    | &ValueType::FlowUniverse(source, target),
+                ) => {
                     pending.push((AnyNode::Value(source), depth, results));
                     pending.push((AnyNode::Value(target), depth, results));
                 },

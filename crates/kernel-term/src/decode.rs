@@ -1915,6 +1915,23 @@ fn decode_entry(
             let id = table.arena.value_type_path_universe(source, target);
             (DecodedNode::ValueType(id), Family::ValueType)
         },
+        | tags::NODE_V_SESSION_FLOW => {
+            let evidence = session::evidence(reader)?;
+            let flow_type = read_value_type(reader, table, this, &mut children)?;
+            let payload_paths = read_value(reader, table, this, &mut children)?;
+            let id = table.arena.value_session_flow(
+                flow_type,
+                alloc::sync::Arc::new(evidence),
+                payload_paths,
+            );
+            (DecodedNode::Value(id), Family::Value)
+        },
+        | tags::NODE_VT_FLOW_UNIVERSE => {
+            let source = read_value(reader, table, this, &mut children)?;
+            let target = read_value(reader, table, this, &mut children)?;
+            let id = table.arena.value_type_flow_universe(source, target);
+            (DecodedNode::ValueType(id), Family::ValueType)
+        },
         | tags::NODE_V_PATH_REFL => {
             let code = read_value(reader, table, this, &mut children)?;
             (

@@ -817,6 +817,11 @@ impl LooseDepths
                             path_type,
                             payload_paths,
                             ..
+                        }
+                        | Value::SessionFlow {
+                            flow_type: path_type,
+                            payload_paths,
+                            ..
                         } => {
                             tasks.push(ReachTask::OpenValueType(path_type));
                             tasks.push(ReachTask::OpenValue(payload_paths));
@@ -1008,7 +1013,8 @@ impl LooseDepths
                             tasks.push(ReachTask::OpenValueType(first));
                             tasks.push(ReachTask::OpenValueType(second));
                         },
-                        | ValueType::PathUniverse(source, target) => {
+                        | ValueType::PathUniverse(source, target)
+                        | ValueType::FlowUniverse(source, target) => {
                             tasks.push(ReachTask::OpenValue(source));
                             tasks.push(ReachTask::OpenValue(target));
                         },
@@ -1215,7 +1221,7 @@ impl LooseDepths
 ValueType::Data { ref arguments, .. } => arguments.iter().fold(LooseDepth(0), |depth, id| depth.join(self.cached_value(*id))),
 ValueType::Record(ref fields) => fields.values().fold(LooseDepth(0), |depth, id| depth.join(self.cached_value_type(*id))),
 ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => LooseDepth(0),
-ValueType::PathUniverse(a, b) => self.cached_value(a).join(self.cached_value(b)),
+ValueType::PathUniverse(a, b) | ValueType::FlowUniverse(a, b) => self.cached_value(a).join(self.cached_value(b)),
 ValueType::Path { domain, left, right } => self.cached_value_type(domain).join(self.cached_value(left)).join(self.cached_value(right)),
 ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.iter().fold(LooseDepth(0), |depth, id| depth.join(self.cached_value_type(*id))),
 ValueType::StaticPi { domain: a, codomain: b } => self.cached_value_type(a).join(self.cached_value_type(b)),
@@ -1242,7 +1248,7 @@ ValueType::Element { code, .. } => self.cached_value(code),
             | ValueType::Record(ref fields) => fields.values().fold(LooseDepth(0), |depth, id| {
                 depth.join(self.cached_value_type(*id))
             }),
-            | ValueType::PathUniverse(source, target) => {
+            | ValueType::PathUniverse(source, target) | ValueType::FlowUniverse(source, target) => {
                 self.cached_value(source).join(self.cached_value(target))
             },
             | ValueType::Path {
@@ -1365,7 +1371,7 @@ Value::Variable(index) => LooseDepth(u32::from(index).saturating_add(1)),
 Value::ListNil | Value::Constant(_) | Value::Literal(_) => LooseDepth(0),
 Value::Tuple(ref components) => components.iter().fold(LooseDepth(0), |depth, id| depth.join(self.cached_value(*id))),
 Value::PathEquiv { path_type, forward, backward, .. } => self.cached_value_type(path_type).join(self.cached_value(forward)).join(self.cached_value(backward)),
-Value::SessionPath { path_type, payload_paths, .. } => self.cached_value_type(path_type).join(self.cached_value(payload_paths)),
+Value::SessionPath { path_type: classifier, payload_paths, .. } | Value::SessionFlow { flow_type: classifier, payload_paths, .. } => self.cached_value_type(classifier).join(self.cached_value(payload_paths)),
 Value::PathRefl(body) | Value::Here { point: body, .. } | Value::Injection(_, body) | Value::Lift { body, .. } => self.cached_value(body),
 Value::Higher { evidence: ref values, .. } | Value::QuantifiedEvaluation { children: ref values, .. } => values.iter().fold(LooseDepth(0), |depth, id| depth.join(self.cached_value(*id))),
 Value::HigherEvaluation { ref components, .. } => components.iter().fold(LooseDepth(0), |depth, component| depth.join(self.cached_value(component.left)).join(self.cached_value(component.right)).join(self.cached_value(component.evidence))),
@@ -1419,6 +1425,11 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
                 .join(self.cached_value(backward)),
             | Value::SessionPath {
                 path_type,
+                payload_paths,
+                ..
+            }
+            | Value::SessionFlow {
+                flow_type: path_type,
                 payload_paths,
                 ..
             } => self

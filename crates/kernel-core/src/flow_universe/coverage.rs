@@ -230,6 +230,41 @@ pub(super) fn endpoint(
     self::code(arena, code, allowance)
 }
 
+/// Validate a native `Flow_U` endpoint: a session code or a Stay endpoint.
+///
+/// # Specification
+/// - ensures: a quoted session type validates as a finite guarded session code;
+///   every other quoted type validates as a Stay endpoint.
+/// - fails: `Path` for a malformed session code, otherwise as `endpoint`.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — session and first-order endpoints decode; a List code
+///   refuses.
+/// - witness: `session::tests::session_flows_persist_and_refuse_by_family`
+#[spec(
+    captures: before = allowance.0,
+    ensures: |ret| allowance.0 <= before && ret.as_ref().map_or(true, |&root| matches!(arena.value(code), Some(&Value::Quote(ty)) if ty == root)),
+)]
+pub(super) fn vocabulary(
+    arena: &TermArena,
+    code: ValueId,
+    allowance: &mut Allowance,
+    budget: ReplayBudget,
+) -> Result<ValueTypeId, FlowError>
+{
+    if let Some(&Value::Quote(root)) = arena.value(code)
+        && matches!(arena.value_type(root), Some(&ValueType::Session { .. }))
+    {
+        allowance.charge()?;
+        return crate::path_universe::code(arena, code, budget).map_err(FlowError::Path);
+    }
+    endpoint(arena, code, allowance)
+}
+
 /// Check a closed forward translator in a fresh checker session.
 ///
 /// # Specification

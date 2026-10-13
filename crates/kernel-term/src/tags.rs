@@ -66,7 +66,9 @@
 //! | `0x3A` | Quantified evaluation: steps over returned values, evidence and stuck normal forms | Admitted |
 //! | `0x3B` | Reserved: dependent-arrow higher evaluation | Refused |
 //! | `0x3C–0x47` | Held function-identity growth | Refused |
-//! | `0x48–0x4F` | `Flow_U` reservation | Refused |
+//! | `0x48` | `Flow_U`, two value-code children | Admitted |
+//! | `0x49` | Session simulation evidence, classifier and payload-proof children | Admitted |
+//! | `0x4A–0x4F` | `Flow_U` reservation | Refused |
 //! | `0x50` | List code, one element-type child | Admitted |
 //! | `0x51` | Native List nil, no children | Admitted |
 //! | `0x52` | Session code, inline finite graph and one payload-type child | Admitted |
@@ -269,6 +271,21 @@
 //! formation. **Reversal.** A distinct protocol universe or a persisted
 //! endpoint-value language requires its own formation and elimination rules.
 //! These tags encode protocol types and identity evidence, not live channels.
+//!
+//! # Universe flows
+//!
+//! [`NODE_VT_FLOW_UNIVERSE`] is `Flow_U`, the forward-only twin of
+//! [`NODE_VT_PATH_UNIVERSE`], with the same two value-code children: source
+//! then target. The classifier names no certificate kind, so every forward
+//! introduction the `Flow_U` family grows shares it. [`NODE_V_SESSION_FLOW`]
+//! is the one persisted introduction: a Gay–Hole simulation between two
+//! session codes, framed exactly as [`NODE_V_SESSION_PATH`] — inline evidence,
+//! then the classifier and one tuple of native payload-path values. The other
+//! forward introductions (directed reflexivity, leaf-natural translators, the
+//! arrow's action, composition) stay in-memory rule syntax and keep the
+//! remaining bytes of the reservation. Both bytes hold [`FORMAT_VERSION`]: a
+//! reader that predates them refuses each by name as an unassigned byte, so no
+//! artifact means anything else by them.
 
 use anodized::spec;
 
@@ -616,6 +633,12 @@ pub const NODE_V_QUANTIFIED_EVALUATION: WireTag = WireTag(0x3A);
 /// Reserved node tag: higher evaluation at a dependent arrow.
 pub const NODE_V_DEPENDENT_EVALUATION: WireTag = WireTag(0x3B);
 
+/// Node tag: forward-only universe flows, over source and target codes.
+pub const NODE_VT_FLOW_UNIVERSE: WireTag = WireTag(0x48);
+
+/// Node tag: finite session simulation, classifier and payload-proof tuple.
+pub const NODE_V_SESSION_FLOW: WireTag = WireTag(0x49);
+
 /// Node tag: the strictly positive list code, over one element type.
 pub const NODE_VT_LIST: WireTag = WireTag(0x50);
 
@@ -844,7 +867,7 @@ pub struct NodeTagDescription
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
+    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
             && match max_token_bound { Some(bound) => bound.0 >= 1, None => true },
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -896,7 +919,7 @@ const fn row(
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
+    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
             && !matches!(tag, NODE_VT_BASE | NODE_V_VARIABLE | NODE_V_CONSTANT | NODE_VT_ABSTRACT | NODE_V_LIST_NIL),
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -996,7 +1019,7 @@ const fn bounded_alias(
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
-pub const NODE_TAG_TABLE: [NodeTagDescription; 61] = [
+pub const NODE_TAG_TABLE: [NodeTagDescription; 63] = [
     row(
         NODE_VT_BASE,
         ChildArity::Fixed(0),
@@ -1047,6 +1070,8 @@ pub const NODE_TAG_TABLE: [NodeTagDescription; 61] = [
     unbounded(NODE_V_HIGHER_EVALUATION, ChildArity::Counted(0)),
     unbounded(NODE_C_RELATED_APPLICATION, ChildArity::Fixed(5)),
     unbounded(NODE_V_QUANTIFIED_EVALUATION, ChildArity::Counted(0)),
+    unbounded(NODE_VT_FLOW_UNIVERSE, ChildArity::Fixed(2)),
+    unbounded(NODE_V_SESSION_FLOW, ChildArity::Fixed(2)),
     unbounded(NODE_VT_LIST, ChildArity::Fixed(1)),
     bounded_alias(NODE_V_LIST_NIL, TokenCount(1)),
     unbounded(NODE_VT_SESSION, ChildArity::Fixed(1)),
@@ -1134,6 +1159,7 @@ mod tests
                         Some(&crate::Value::HigherEvaluation { .. }) => row.tag == super::NODE_V_HIGHER_EVALUATION,
                         Some(&crate::Value::QuantifiedEvaluation { .. }) => row.tag == super::NODE_V_QUANTIFIED_EVALUATION,
                         Some(&crate::Value::SessionPath { .. }) => row.tag == super::NODE_V_SESSION_PATH,
+                        Some(&crate::Value::SessionFlow { .. }) => row.tag == super::NODE_V_SESSION_FLOW,
                         Some(&crate::Value::ListNil) => row.tag == super::NODE_V_LIST_NIL,
                         Some(&crate::Value::ListCons(..)) => row.tag == super::NODE_V_LIST_CONS,
                         None => false,
@@ -1172,6 +1198,7 @@ mod tests
                         Some(&crate::ValueType::StaticPi { .. }) => row.tag == super::NODE_VT_STATIC_PI,
                         Some(&crate::ValueType::Element { .. }) => row.tag == super::NODE_VT_ELEMENT,
                         Some(&crate::ValueType::PathUniverse(_, _)) => row.tag == super::NODE_VT_PATH_UNIVERSE,
+                        Some(&crate::ValueType::FlowUniverse(_, _)) => row.tag == super::NODE_VT_FLOW_UNIVERSE,
                         Some(&crate::ValueType::Path { .. }) => row.tag == super::NODE_VT_PATH,
                         Some(&crate::ValueType::List(_)) => row.tag == super::NODE_VT_LIST,
                         Some(&crate::ValueType::Session { .. }) => row.tag == super::NODE_VT_SESSION,
@@ -1280,6 +1307,8 @@ mod tests
             unit_type,
         );
         let session_path = arena.value_session_path(path_type, alloc::sync::Arc::default(), unit);
+        let flow_type = arena.value_type_flow_universe(quote, quote);
+        let session_flow = arena.value_session_flow(flow_type, alloc::sync::Arc::default(), unit);
         let datatype = arena.value_type_data(ConstantIndex::from(0), alloc::vec![quote]);
         let label = crate::FieldLabel::from(alloc::string::String::from("field"));
         let record_type = arena.value_type_record(alloc::collections::BTreeMap::from([(
@@ -1346,6 +1375,8 @@ mod tests
             AnyNode::Value(evaluation),
             AnyNode::Computation(related),
             AnyNode::Value(quantified),
+            AnyNode::ValueType(flow_type),
+            AnyNode::Value(session_flow),
             AnyNode::ValueType(arena.value_type_list(unit_type)),
             AnyNode::Value(nil),
             AnyNode::ValueType(session),
@@ -1452,16 +1483,16 @@ mod tests
                 !reserved.contains(&tag),
                 "an assigned former cannot consume a reserved sharing byte"
             );
-            let identity = matches!(tag, 0x30 ..= 0x35 | 0x38 ..= 0x3A);
+            let identity = matches!(tag, 0x30 ..= 0x35 | 0x38 ..= 0x3A | 0x48 ..= 0x49);
             assert!(
                 identity || !(0x30_u8 .. 0x50).contains(&tag),
-                "only the assigned identity bytes leave the identity, funext and flow ranges"
+                "only the assigned identity and flow bytes leave the identity, funext and flow ranges"
             );
         }
-        for unassigned in (0x36_u8 ..= 0x37).chain(0x3B ..= 0x47).chain(0x48 ..= 0x4F) {
+        for unassigned in (0x36_u8 ..= 0x37).chain(0x3B ..= 0x47).chain(0x4A ..= 0x4F) {
             assert!(
                 !assigned[usize::from(unassigned)],
-                "the unassigned identity growth and the flow reservation name no former: {unassigned:#04x}"
+                "the unassigned identity growth and the rest of the flow reservation name no former: {unassigned:#04x}"
             );
         }
         for unassigned in 0x68_u8 ..= u8::MAX {
@@ -1498,6 +1529,7 @@ mod tests
             .filter(|tag| !matches!(tag, 0x01 | 0x0B))
             .chain(0x2a ..= 0x2e)
             .chain([0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x38, 0x39, 0x3A])
+            .chain([0x48, 0x49])
             .chain([0x50, 0x51, 0x52, 0x5a, 0x5b, 0x5c])
             .chain(0x5d ..= 0x67)
             .collect();

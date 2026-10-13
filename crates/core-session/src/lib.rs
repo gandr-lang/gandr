@@ -2,8 +2,9 @@
 //! search-free endpoint replay. Payload identities and digests stay opaque.
 //!
 //! The monitor checks conformance; it produces no kernel certificate. The
-//! `certified` boundary exports candidate relations and transports recorded
-//! skeletons only after independent kernel replay.
+//! `certified` boundary exports candidate relations, moves recorded skeletons
+//! forward along a simulation, and transports them through `Flow_U` only after
+//! independent kernel replay.
 
 #![no_std]
 

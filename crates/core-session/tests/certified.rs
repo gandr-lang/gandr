@@ -136,6 +136,23 @@ fn assert_admission(
     assert_eq!(&environment.add_decl(staged).map(|_| ()), expected);
 }
 
+/// Push a candidate simulation as a native `Flow_U` introduction.
+///
+/// # Specification
+/// trivial.
+fn native_flow(
+    arena: &mut TermArena,
+    flows: &mut Flows,
+    codes: (gandr_kernel_term::ValueId, gandr_kernel_term::ValueId),
+    evidence: Evidence,
+) -> gandr_kernel_core::flow_universe::FlowId
+{
+    let classifier = arena.value_type_flow_universe(codes.0, codes.1);
+    let proofs = arena.value_unit();
+    let value = arena.value_session_flow(classifier, Arc::new(evidence), proofs);
+    flows.push(Flow::Session(value)).expect("raw simulation")
+}
+
 #[test]
 fn seat_and_generator_identity_witnesses()
 {
@@ -198,23 +215,18 @@ fn seat_and_generator_identity_witnesses()
     let twice = peer.dual();
     let peer_code = encode(&mut arena, &twice, &payloads).expect("dual peer code");
     let mut flows = Flows::new();
-    let proofs = arena.value_unit();
-    let forward = flows
-        .push(Flow::Session {
-            source: gen_code,
-            target: peer_code,
-            evidence: Arc::new(evidence(&generator, &twice, Relation::Subtype)),
-            payload_paths: proofs,
-        })
-        .expect("forward simulation");
-    let backward = flows
-        .push(Flow::Session {
-            source: peer_code,
-            target: gen_code,
-            evidence: Arc::new(evidence(&twice, &generator, Relation::Subtype)),
-            payload_paths: proofs,
-        })
-        .expect("independently produced backward simulation");
+    let forward = native_flow(
+        &mut arena,
+        &mut flows,
+        (gen_code, peer_code),
+        evidence(&generator, &twice, Relation::Subtype),
+    );
+    let backward = native_flow(
+        &mut arena,
+        &mut flows,
+        (peer_code, gen_code),
+        evidence(&twice, &generator, Relation::Subtype),
+    );
     let gen_protocol = Protocol {
         session: &generator,
         code: gen_code,
@@ -272,16 +284,13 @@ fn recorded_runs_transport_only_forward()
         payloads: &payloads,
     };
     let evidence = evidence(&old, &wide, Relation::Subtype);
-    let proofs = arena.value_unit();
     let mut flows = Flows::new();
-    let flow = flows
-        .push(Flow::Session {
-            source: old_code,
-            target: wide_code,
-            evidence: Arc::new(evidence.clone()),
-            payload_paths: proofs,
-        })
-        .expect("candidate simulation");
+    let flow = native_flow(
+        &mut arena,
+        &mut flows,
+        (old_code, wide_code),
+        evidence.clone(),
+    );
     let runs = [
         vec![
             Move::Receive(payload(DISPATCH)),
@@ -352,14 +361,7 @@ fn recorded_runs_transport_only_forward()
             .collect(),
         payloads: Vec::new(),
     };
-    let reverse = flows
-        .push(Flow::Session {
-            source: wide_code,
-            target: old_code,
-            evidence: Arc::new(inverse),
-            payload_paths: proofs,
-        })
-        .expect("raw reverse request");
+    let reverse = native_flow(&mut arena, &mut flows, (wide_code, old_code), inverse);
     assert!(matches!(
         transport(
             &mut arena,
@@ -429,14 +431,7 @@ fn recorded_runs_transport_only_forward()
     let source_code = encode(&mut arena, &source, &payloads).expect("offers source");
     let target_code = encode(&mut arena, &target, &payloads).expect("offers target");
     let relation = self::evidence(&source, &target, Relation::Subtype);
-    let flow = flows
-        .push(Flow::Session {
-            source: source_code,
-            target: target_code,
-            evidence: Arc::new(relation),
-            payload_paths: proofs,
-        })
-        .expect("offer simulation");
+    let flow = native_flow(&mut arena, &mut flows, (source_code, target_code), relation);
     let protocols = (
         Protocol {
             session: &source,

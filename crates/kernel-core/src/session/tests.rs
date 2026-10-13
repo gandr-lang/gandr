@@ -24,6 +24,7 @@ use crate::ReplayBudget;
 use crate::check::check_closed_value;
 use crate::check::synth_closed_value;
 use crate::flow_universe::Certificate;
+use crate::flow_universe::ClassifierError;
 use crate::flow_universe::Family;
 use crate::flow_universe::Flow;
 use crate::flow_universe::FlowError;
@@ -64,6 +65,22 @@ fn path(
 {
     let ty = arena.value_type_path_universe(codes.0, codes.1);
     let value = arena.value_session_path(ty, Arc::new(evidence), proofs);
+    (ty, value)
+}
+
+/// Package a candidate simulation at native `Flow_U`.
+///
+/// # Specification
+/// trivial.
+fn flow(
+    arena: &mut TermArena,
+    codes: (ValueId, ValueId),
+    evidence: Evidence,
+    proofs: ValueId,
+) -> (ValueTypeId, ValueId)
+{
+    let ty = arena.value_type_flow_universe(codes.0, codes.1);
+    let value = arena.value_session_flow(ty, Arc::new(evidence), proofs);
     (ty, value)
 }
 
@@ -320,19 +337,13 @@ fn session_relations_replay_without_search()
             State(0)
         ))))
     );
+    let (_, simulation) = flow(&mut arena, (narrow, wide), evidence.clone(), proofs);
     let mut flows = Flows::new();
-    let flow = flows
-        .push(Flow::Session {
-            source: narrow,
-            target: wide,
-            evidence: Arc::new(evidence.clone()),
-            payload_paths: proofs,
-        })
-        .expect("raw flow");
+    let flow_id = flows.push(Flow::Session(simulation)).expect("raw flow");
     form_certificate(
         &mut arena,
         &flows,
-        Certificate::Flow(flow),
+        Certificate::Flow(flow_id),
         Family::Flow,
         ReplayBudget::DEFAULT,
     )
@@ -341,7 +352,7 @@ fn session_relations_replay_without_search()
         form_certificate(
             &mut arena,
             &flows,
-            Certificate::Flow(flow),
+            Certificate::Flow(flow_id),
             Family::Path,
             ReplayBudget::DEFAULT
         ),
@@ -363,13 +374,9 @@ fn session_relations_replay_without_search()
             actual: Family::Path
         })
     ));
+    let (_, reverse) = flow(&mut arena, (wide, narrow), evidence, proofs);
     let backward = flows
-        .push(Flow::Session {
-            source: wide,
-            target: narrow,
-            evidence: Arc::new(evidence),
-            payload_paths: proofs,
-        })
+        .push(Flow::Session(reverse))
         .expect("raw reverse request");
     assert!(matches!(
         form_certificate(
@@ -464,6 +471,147 @@ fn session_relations_replay_without_search()
         ))))
     );
     assert_eq!(environment.arena().watermark(), before);
+}
+
+#[test]
+fn session_flows_persist_and_refuse_by_family()
+{
+    let select = |names: &[&str]| {
+        Node::Select(
+            names
+                .iter()
+                .zip(1_usize ..)
+                .map(|(name, state)| (Label((*name).into()), State(state)))
+                .collect(),
+        )
+    };
+    let widening = || Evidence {
+        pairs: [pair(State(0), State(0)), pair(State(1), State(1))].into(),
+        payloads: Vec::new(),
+    };
+    let mut environment = Environment::new();
+    let mut declarations = Vec::new();
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let payload = arena.value_type_unit();
+    let narrow = code(arena, vec![select(&["old"]), Node::End], payload);
+    let wide = code(
+        arena,
+        vec![select(&["old", "pause"]), Node::End, Node::End],
+        payload,
+    );
+    let proofs = arena.value_unit();
+    let (ty, value) = flow(arena, (narrow, wide), widening(), proofs);
+    let staged = staging.def(LevelSignature::monomorphic(), ty, value);
+    declarations.push(gandr_kernel_term::MarkedDeclaration::new(
+        gandr_kernel_term::AdmissionMark::Checked,
+        staged.declaration().clone(),
+    ));
+    let admitted = environment
+        .add_decl(staged)
+        .expect("a widening simulation admits at Flow_U");
+    assert!(environment.audit(admitted).axioms().is_empty());
+
+    // The reverse request offers a label the narrower protocol never selects.
+    let before = environment.arena().watermark();
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let (ty, value) = flow(arena, (wide, narrow), widening(), proofs);
+    let staged = staging.def(LevelSignature::monomorphic(), ty, value);
+    assert_eq!(
+        environment.add_decl(staged),
+        Err(KernelError::Session(SessionError::WrongLabels(pair(
+            State(0),
+            State(0)
+        ))))
+    );
+    assert_eq!(environment.arena().watermark(), before);
+
+    // Persisted bytes decode to the same native nodes and readmit.
+    let bytes = gandr_kernel_term::encode(environment.arena(), &declarations);
+    let decoded = gandr_kernel_term::decode(bytes.as_image()).expect("flow nodes decode");
+    assert_eq!(
+        gandr_kernel_term::encode(decoded.arena(), decoded.declarations()),
+        bytes
+    );
+    let mut arena = decoded.arena().clone();
+    let [ref marked] = *decoded.declarations()
+    else {
+        panic!("one declaration");
+    };
+    let gandr_kernel_term::DeclarationContent::Def { declared, body } =
+        *marked.declaration().content()
+    else {
+        panic!("definition retained");
+    };
+    assert_eq!(check_closed_value(&mut arena, body, declared), Ok(()));
+
+    // Neither family coerces: by tag, by native classifier, or by node.
+    let mut arena = TermArena::new();
+    let payload = arena.value_type_unit();
+    let narrow = code(&mut arena, vec![select(&["old"]), Node::End], payload);
+    let wide = code(
+        &mut arena,
+        vec![select(&["old", "pause"]), Node::End, Node::End],
+        payload,
+    );
+    let proofs = arena.value_unit();
+    let (_, simulation) = flow(&mut arena, (narrow, wide), widening(), proofs);
+    let (_, bisimulation) = path(
+        &mut arena,
+        (narrow, narrow),
+        Evidence {
+            pairs: [pair(State(0), State(0)), pair(State(1), State(1))].into(),
+            payloads: Vec::new(),
+        },
+        proofs,
+    );
+    let mut flows = Flows::new();
+    let mistagged = flows.push(Flow::Session(bisimulation)).expect("raw flow");
+    assert_eq!(
+        form_certificate(
+            &mut arena,
+            &flows,
+            Certificate::Flow(mistagged),
+            Family::Flow,
+            ReplayBudget::DEFAULT
+        ),
+        Err(FlowError::FamilyMismatch {
+            expected: Family::Flow,
+            actual: Family::Path
+        })
+    );
+    assert_eq!(
+        form_certificate(
+            &mut arena,
+            &flows,
+            Certificate::Path(simulation),
+            Family::Path,
+            ReplayBudget::DEFAULT
+        ),
+        Err(FlowError::FamilyMismatch {
+            expected: Family::Path,
+            actual: Family::Flow
+        })
+    );
+    let path_classifier = arena.value_type_path_universe(narrow, wide);
+    let forged = arena.value_session_flow(path_classifier, Arc::new(widening()), proofs);
+    assert_eq!(
+        synth_closed_value(&mut arena, forged),
+        Err(KernelError::Flow(ClassifierError::FamilyMismatch {
+            expected: Family::Flow,
+            actual: Family::Path
+        }))
+    );
+
+    // A List endpoint is outside the Flow_U vocabulary.
+    let list = arena.value_type_list(payload);
+    let list = arena.value_quote(list);
+    let (_, outside) = flow(&mut arena, (list, list), widening(), proofs);
+    assert!(matches!(
+        synth_closed_value(&mut arena, outside),
+        Err(KernelError::Flow(ClassifierError::UnsupportedType(_)))
+    ));
 }
 
 #[test]

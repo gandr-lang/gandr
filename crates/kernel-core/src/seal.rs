@@ -332,6 +332,7 @@ fn enter(
                 },
                 | ValueType::Data { .. }
                 | ValueType::PathUniverse(..)
+                | ValueType::FlowUniverse(..)
                 | ValueType::Base(_)
                 | ValueType::Universe { .. }
                 | ValueType::Element { .. }
@@ -476,6 +477,7 @@ fn exit_value_type(
         },
         | ValueType::Data { .. }
         | ValueType::PathUniverse(..)
+        | ValueType::FlowUniverse(..)
         | ValueType::Base(_)
         | ValueType::Universe { .. }
         | ValueType::Element { .. }

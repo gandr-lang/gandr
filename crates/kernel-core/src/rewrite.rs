@@ -1258,6 +1258,7 @@ fn carried_occurrence(
         | Value::PathRefl(_)
         | Value::PathProduct(..)
         | Value::SessionPath { .. }
+        | Value::SessionFlow { .. }
         | Value::PathEquiv { .. }
         | Value::Here { .. }
         | Value::Returned(_)
@@ -1332,9 +1333,9 @@ const fn outcome_of(node: AnyNode) -> RewriteOutcome
 /// - witness: `rewrite::tests::session_rewrites_preserve_graph_evidence_and_native_children`
 #[spec(captures: before = tasks.len(),
     ensures: tasks.get(before ..).is_some_and(|added| added.len() == match node {
-    AnyNode::Value(id) => arena.value(id).map_or(0, |source| match *source { Value::Constructor { ref fields, .. } => fields.len().saturating_add(1), Value::Record(ref fields) => fields.len(), Value::Tuple(ref components) => components.len(), Value::Higher { ref evidence, .. } => evidence.len(), Value::HigherEvaluation { ref components, .. } => components.len().saturating_mul(3), Value::QuantifiedEvaluation { ref children, .. } => children.len(), Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => 0, Value::PathEquiv { .. } => 3, Value::ListCons(..) | Value::SessionPath { .. } | Value::PathProduct(..) | Value::StaticApplication(..) => 2, _ => 1 }),
+    AnyNode::Value(id) => arena.value(id).map_or(0, |source| match *source { Value::Constructor { ref fields, .. } => fields.len().saturating_add(1), Value::Record(ref fields) => fields.len(), Value::Tuple(ref components) => components.len(), Value::Higher { ref evidence, .. } => evidence.len(), Value::HigherEvaluation { ref components, .. } => components.len().saturating_mul(3), Value::QuantifiedEvaluation { ref children, .. } => children.len(), Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => 0, Value::PathEquiv { .. } => 3, Value::ListCons(..) | Value::SessionPath { .. } | Value::SessionFlow { .. } | Value::PathProduct(..) | Value::StaticApplication(..) => 2, _ => 1 }),
     AnyNode::Computation(id) => arena.computation(id).map_or(0, |source| match *source { Computation::ListFold { .. } | Computation::RelatedApplication { .. } | Computation::TelescopeTransport { .. } => 5, Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2), Computation::Case { ref branches, .. } => branches.len().saturating_add(1), Computation::PathTransport { .. } => 3, Computation::Transport(..) | Computation::Application(..) | Computation::Bind(..) | Computation::With(..) => 2, _ => 1 }),
-    AnyNode::ValueType(id) => arena.value_type(id).map_or(0, |source| match *source { ValueType::Data { ref arguments, .. } => arguments.len(), ValueType::Record(ref fields) => fields.len(), ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.len(), ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => 0, ValueType::Path { .. } => 3, ValueType::PathUniverse(..) | ValueType::StaticPi { .. } => 2, _ => 1 }),
+    AnyNode::ValueType(id) => arena.value_type(id).map_or(0, |source| match *source { ValueType::Data { ref arguments, .. } => arguments.len(), ValueType::Record(ref fields) => fields.len(), ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.len(), ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => 0, ValueType::Path { .. } => 3, ValueType::PathUniverse(..) | ValueType::FlowUniverse(..) | ValueType::StaticPi { .. } => 2, _ => 1 }),
     AnyNode::CompType(id) => arena.comp_type(id).map_or(0, |source| match *source { CompType::Arrow { .. } | CompType::Pi { .. } | CompType::With(..) => 2, _ => 1 }),
 }
         && added.iter().all(|task| matches!(*task, RewriteTask::Open(_, child_depth, step)
@@ -1390,11 +1391,18 @@ fn push_rewrite_children(
                     rewrite,
                 ));
             },
-            | Some(&Value::SessionPath {
-                path_type,
-                payload_paths,
-                ..
-            }) => {
+            | Some(
+                &Value::SessionPath {
+                    path_type,
+                    payload_paths,
+                    ..
+                }
+                | &Value::SessionFlow {
+                    flow_type: path_type,
+                    payload_paths,
+                    ..
+                },
+            ) => {
                 tasks.push(RewriteTask::Open(
                     AnyNode::Value(payload_paths),
                     depth,
@@ -1665,7 +1673,9 @@ fn push_rewrite_children(
                 ));
                 tasks.push(RewriteTask::Open(AnyNode::ValueType(first), depth, rewrite));
             },
-            | Some(&ValueType::PathUniverse(source, target)) => {
+            | Some(
+                &ValueType::PathUniverse(source, target) | &ValueType::FlowUniverse(source, target),
+            ) => {
                 tasks.push(RewriteTask::Open(AnyNode::Value(target), depth, rewrite));
                 tasks.push(RewriteTask::Open(AnyNode::Value(source), depth, rewrite));
             },
@@ -1861,7 +1871,7 @@ Value::Tuple(ref components) => components.len(),
 Value::Higher { ref evidence, .. } => evidence.len(),
 Value::HigherEvaluation { ref components, .. } => components.len().saturating_mul(3),
 Value::QuantifiedEvaluation { ref children, .. } => children.len(),
-Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::SessionPath { .. } => 2,
+Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::SessionPath { .. } | Value::SessionFlow { .. } => 2,
 Value::Injection(..) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::PathRefl(_) | Value::Here { .. } | Value::Returned(_) => 1,
 _ => 0,
 })],
@@ -1942,6 +1952,21 @@ fn close_value(
             }
             else {
                 arena.value_session_path(classifier, alloc::sync::Arc::clone(evidence), paths)
+            }
+        },
+        | Value::SessionFlow {
+            flow_type,
+            payload_paths,
+            ref evidence,
+        } => {
+            let paths = popped(results, AnyNode::Value(payload_paths)).value_or(payload_paths);
+            let classifier =
+                popped(results, AnyNode::ValueType(flow_type)).value_type_or(flow_type);
+            if paths == payload_paths && classifier == flow_type {
+                id
+            }
+            else {
+                arena.value_session_flow(classifier, alloc::sync::Arc::clone(evidence), paths)
             }
         },
         | Value::PathRefl(code) => {
@@ -2598,7 +2623,7 @@ ValueType::Data { ref arguments, .. } => arguments.len(),
 ValueType::Record(ref fields) => fields.len(),
 ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.len(),
 ValueType::Path { .. } => 3,
-ValueType::StaticPi { .. } | ValueType::PathUniverse(..) => 2,
+ValueType::StaticPi { .. } | ValueType::PathUniverse(..) | ValueType::FlowUniverse(..) => 2,
 ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::List(_) | ValueType::Session { .. } => 1,
 _ => 0,
 }), element = match arena.value_type(id) { Some(&ValueType::Element { code, .. }) => Some(results.last().copied().map_or(code, |outcome| outcome.value_or(code))), _ => None }],
@@ -2664,6 +2689,16 @@ fn close_value_type(
             }
             else {
                 arena.value_type_path_universe(rewritten_source, rewritten_target)
+            }
+        },
+        | ValueType::FlowUniverse(source, target) => {
+            let rewritten_target = popped(results, AnyNode::Value(target)).value_or(target);
+            let rewritten_source = popped(results, AnyNode::Value(source)).value_or(source);
+            if rewritten_source == source && rewritten_target == target {
+                id
+            }
+            else {
+                arena.value_type_flow_universe(rewritten_source, rewritten_target)
             }
         },
         | ValueType::Path {
