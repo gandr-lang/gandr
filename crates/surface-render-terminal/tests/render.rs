@@ -339,6 +339,7 @@ def wrong = "text" ;
             origins: &primary,
             spellings,
             failure: failures.get(declaration.constant()),
+            upstream: Maybe::Absent(gandr_surface_diagnostics::upstream::Absent::Own),
         })
     }
 

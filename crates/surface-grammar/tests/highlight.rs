@@ -425,7 +425,8 @@ fn corpus_roles_match_the_golden() -> Result<(), Box<dyn Error>>
 /// Over every corpus source the spans are exactly the tree's tiles and its
 /// comments, in source order: sorted, pairwise disjoint, each span's range a
 /// tile's or a comment's, a comment or shebang role exactly on layout, and
-/// every byte outside every span whitespace.
+/// every byte outside every span whitespace, or grout over a token the parser
+/// molded nowhere — which a pathological source may carry as its parse error.
 #[test]
 fn spans_partition_the_tile_bytes() -> Result<(), Box<dyn Error>>
 {
@@ -497,17 +498,39 @@ fn spans_partition_the_tile_bytes() -> Result<(), Box<dyn Error>>
                 bytes.1
             );
         }
+        let grouted: Vec<(usize, usize)> = tree
+            .positions()
+            .filter_map(|position| tree.node(position))
+            .filter(|node| matches!(node.label(), NodeLabel::Grout { .. }))
+            .map(|node| {
+                (
+                    usize::from(node.span().start()),
+                    usize::from(node.span().end()),
+                )
+            })
+            .collect();
+        let unpainted = |from: usize, to: usize| {
+            source.get(from .. to).is_some_and(|gap| {
+                gap.char_indices().all(|(at, written)| {
+                    let byte = from.saturating_add(at);
+                    written.is_whitespace()
+                        || grouted
+                            .iter()
+                            .any(|&(start, end)| start <= byte && byte < end)
+                })
+            })
+        };
         let mut cursor = 0_usize;
         for &(start, end) in &ranges {
             assert!(
-                blank(cursor, start),
-                "{shown}: bytes {cursor}..{start} outside every span are whitespace"
+                unpainted(cursor, start),
+                "{shown}: bytes {cursor}..{start} outside every span are whitespace or grout"
             );
             cursor = end;
         }
         assert!(
-            blank(cursor, source.len()),
-            "{shown}: the bytes after the last span are whitespace"
+            unpainted(cursor, source.len()),
+            "{shown}: the bytes after the last span are whitespace or grout"
         );
     }
     Ok(())

@@ -51,6 +51,7 @@ use gandr_surface_lowering::FormFault;
 use gandr_surface_lowering::FormName;
 use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::LoweringRefusal;
+use gandr_surface_lowering::Offer;
 use gandr_surface_lowering::Repair;
 use gandr_surface_syntax::ClosingClass;
 use gandr_surface_syntax::GroutShape;
@@ -250,6 +251,20 @@ fn lowered(
                 | FormFault::MissingOperand => write!(f, "an operand is missing in this {form}"),
                 | FormFault::Repaired(Repair::Grout(GroutShape::Infix)) => {
                     write!(f, "an operator is missing in this {form}")
+                },
+                | FormFault::Repaired(Repair::Keyword(stray)) => match stray.offer {
+                    | Offer::Capitalised(offer) => write!(
+                        f,
+                        "`{}` is a keyword and cannot stand here in this {form}; did you mean \
+                         `{}`?",
+                        stray.written.as_ref(),
+                        offer.as_ref()
+                    ),
+                    | Offer::Unspelled => write!(
+                        f,
+                        "`{}` is a keyword and cannot stand here in this {form}",
+                        stray.written.as_ref()
+                    ),
                 },
                 | FormFault::Repaired(Repair::GhostClose(close)) => {
                     write!(f, "this {form} is missing its closing `{}`", match close {

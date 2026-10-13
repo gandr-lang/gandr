@@ -21,9 +21,11 @@ use core::slice;
 use std::path::Path;
 
 use anodized::spec;
+use gandr_core_checker::CheckRefusal;
 use gandr_core_term::effect::Purity;
 use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::Outcome;
+use gandr_surface_corpus::Refusal;
 use gandr_surface_corpus::Settlement;
 use gandr_surface_corpus::Stated;
 use gandr_surface_corpus::produced_refusal;
@@ -35,6 +37,7 @@ use gandr_surface_diagnostics::Subject;
 use gandr_surface_diagnostics::Unsettlement;
 use gandr_surface_diagnostics::diagnose;
 use gandr_surface_diagnostics::report_span;
+use gandr_surface_diagnostics::upstream;
 use gandr_surface_lowering::AskedRuns;
 use gandr_surface_lowering::Explicitness;
 use gandr_surface_lowering::InferredExit;
@@ -178,6 +181,9 @@ struct Remaining<'step>
     runs: slice::Iter<'step, InferredRun>,
     /// The declarations, in admission order.
     declarations: slice::Iter<'step, DeclarationReport<'step>>,
+    /// Every declaration of the source, visited or not: what a refusal naming
+    /// an admission position is read against.
+    admitted: &'step [DeclarationReport<'step>],
     /// The table their core nodes are located through.
     origins: &'step OriginTable,
     /// The spellings of the types their checker failures name.
@@ -362,6 +368,7 @@ fn cursor<'step>(
                 inferred: considered(verb, inferred),
                 runs: considered(verb, runs),
                 declarations: report.declarations().iter(),
+                admitted: report.declarations(),
                 origins,
                 spellings,
                 failures,
@@ -373,6 +380,52 @@ fn cursor<'step>(
                 Cursor::Declarations(held)
             }
         },
+    }
+}
+
+/// The unsettled declaration `refusal` names, among `admitted`: the
+/// declaration a refusal of its own left unsettled, which the refusal follows
+/// from.
+///
+/// A checker that meets a constant whose declaration was refused has no type
+/// to read it at, and refuses the declaration naming it; that refusal is the
+/// first one's consequence, and reporting it as a second error puts red where
+/// the author has nothing to fix. It is reported as a note naming the refused
+/// declaration instead. rust-analyzer draws the same line between the errors
+/// a source earns and those an earlier error causes, which it does not
+/// report.
+///
+/// # Specification
+/// - requires: `admitted` is the source's declarations, by admission position.
+/// - ensures: the declaration of `admitted` whose constant an `UnknownConstant`
+///   refusal names, when it is unsettled; absent for every other refusal and
+///   for a settled or unadmitted constant.
+/// - provides: the cascade cut across declarations.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a declaration calling one the lowering refused is a note
+///   naming it, and one calling a declaration that checks is not.
+/// - witness: `entry::tests::a_declaration_naming_a_refused_one_is_a_note`
+#[spec(ensures: |ret| match ret {
+    Maybe::Present(found) => found.settlement() == Settlement::Unsettled,
+    Maybe::Absent(_) => true,
+})]
+fn upstream<'step>(
+    refusal: Refusal<'step>,
+    admitted: &'step [DeclarationReport<'step>],
+) -> Maybe<&'step DeclarationReport<'step>, upstream::Absent>
+{
+    let Refusal::Checking(CheckRefusal::UnknownConstant { constant, .. }) = refusal
+    else {
+        return Maybe::Absent(upstream::Absent::Own);
+    };
+    match admitted.iter().find(|declaration| {
+        declaration.constant() == constant && declaration.settlement() == Settlement::Unsettled
+    }) {
+        | Some(found) => Maybe::Present(found),
+        | None => Maybe::Absent(upstream::Absent::Own),
     }
 }
 
@@ -537,6 +590,7 @@ impl<'step> Entries<'step>
                             origins: held.origins,
                             spellings: held.spellings,
                             failure: held.failures.get(declaration.constant()),
+                            upstream: upstream(refusal, held.admitted),
                         },
                         | Maybe::Absent(produced_refusal::Absent::Unrefused) => {
                             Subject::Unsettled {
@@ -858,6 +912,50 @@ mod tests
             )
         )]);
         assert!(entries(&shadowing, Verb::Test).next().is_none());
+    }
+
+    #[test]
+    fn a_declaration_naming_a_refused_one_is_a_note()
+    {
+        let grammar = built_in().expect("the grammar builds");
+        let text = SourceText::from(
+            "def a() -> Integer {\n  return 1 ~ 2\n}\n\ndef b() -> Integer {\n  return a()\n}\n\ndef \
+             c() -> Integer {\n  return 1\n}\n\ndef d() -> Integer {\n  return c()\n}\n",
+        );
+        let cascade = step(
+            Path::new("cascade.gandr"),
+            SourceRoot::Strict,
+            text,
+            Standing::Unsettled,
+            &grammar,
+        );
+        let at = |needle: &str, from: usize| {
+            let start = text
+                .as_ref()
+                .get(from ..)
+                .and_then(|rest| rest.find(needle))
+                .expect("the needle")
+                .saturating_add(from);
+            Maybe::Present(
+                ByteSpan::new(
+                    ByteOffset::from(start),
+                    ByteOffset::from(start.saturating_add(1)),
+                )
+                .expect("ordered"),
+            )
+        };
+        let body = text.as_ref().find("return a()").expect("the call");
+        assert_eq!(
+            entries(&cascade, Verb::Check(Goals::Gated))
+                .map(|diagnostic| (diagnostic.severity, diagnostic.span))
+                .collect::<Vec<_>>(),
+            [
+                (Severity::Error, at("~", 0)),
+                (Severity::Note, at("a()", body))
+            ],
+            "the refused declaration is the one error; the one calling it is a note at the call, \
+             and the one calling a declaration that checks prints nothing"
+        );
     }
 
     #[test]

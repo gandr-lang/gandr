@@ -1036,11 +1036,20 @@ fn a_sign_block_may_be_named_with_a_primitive_type_spelling() -> Result<(), Box<
     Ok(())
 }
 
+/// The corpus sources whose point is a parse error, each with the obligations
+/// it owes and the source text each stands over: a pathological fixture that
+/// pins a recovery is held to exactly that recovery.
+const PARSE_ERRORS: &[(&str, &[(Oblig, &str)])] = &[(
+    "fixture/pathological/modules/sign-sort-classified-by-a-keyword.gandr",
+    &[(Oblig::UnmoldedTok, "type")],
+)];
+
 /// The zero-obligation gate over the language's corpus: the candidate
 /// pre-filter and the grammar mold **every** corpus source to a
 /// globally-consistent **zero-obligation** reading — zero total obligations,
-/// no named residual. The corpus crate's runner reports how many sources each
-/// root holds; nothing here pins the number.
+/// no named residual — but the sources [`PARSE_ERRORS`] names, each of which
+/// owes exactly the obligations listed there. The corpus crate's runner
+/// reports how many sources each root holds; nothing here pins the number.
 #[test]
 fn corpus_molds_to_zero_obligations() -> Result<(), Box<dyn Error>>
 {
@@ -1048,31 +1057,53 @@ fn corpus_molds_to_zero_obligations() -> Result<(), Box<dyn Error>>
     let corpus = corpus_root();
     let files = gandr_files(&corpus);
     assert!(!files.is_empty(), "the corpus sources are present");
-    let mut total = 0_usize;
     let mut dirty: Vec<(String, Vec<String>)> = Vec::new();
+    let mut pinned = 0_usize;
     for path in &files {
         let src = read_source(path)?;
         let result = parse(pbg, SourceText::from(src.as_str()))?;
-        total = total.saturating_add(result.obligations().len());
-        if !bool::from(result.is_clean()) {
+        let relative = path
+            .strip_prefix(&corpus)
+            .unwrap_or(path)
+            .to_string_lossy()
+            .into_owned();
+        let owed: Vec<(Oblig, &str)> = result
+            .obligations()
+            .iter()
+            .map(|obligation| {
+                (
+                    obligation.class,
+                    src.get(
+                        usize::from(obligation.span.start()) .. usize::from(obligation.span.end()),
+                    )
+                    .unwrap_or_default(),
+                )
+            })
+            .collect();
+        let expected = PARSE_ERRORS
+            .iter()
+            .find(|&&(source, _)| source == relative)
+            .map_or(&[][..], |&(_, owes)| owes);
+        pinned = pinned.saturating_add(usize::from(!expected.is_empty()));
+        if owed != expected {
             dirty.push((
-                path.strip_prefix(&corpus)
-                    .unwrap_or(path)
-                    .to_string_lossy()
-                    .into_owned(),
-                result
-                    .obligations()
-                    .iter()
-                    .map(|obligation| format!("{:?} @ {:?}", obligation.class, obligation.span))
+                relative,
+                owed.iter()
+                    .map(|&(class, written)| format!("{class:?} @ {written:?}"))
                     .collect(),
             ));
         }
     }
     assert!(
         dirty.is_empty(),
-        "every corpus source molds to zero obligations; residual: {dirty:?}"
+        "every corpus source molds to zero obligations, or to exactly the ones its pin \
+         names; residual: {dirty:?}"
     );
-    assert_eq!(0, total, "the corpus carries zero total obligations");
+    assert_eq!(
+        pinned,
+        PARSE_ERRORS.len(),
+        "every pinned parse error names a corpus source"
+    );
     Ok(())
 }
 
@@ -1176,6 +1207,52 @@ fn malformed_programs_repair_predictably() -> Result<(), Box<dyn Error>>
             label_of(result.tree(), result.tree().root())
         );
     }
+    Ok(())
+}
+
+/// A keyword written where a declaration's classifier belongs stands in the
+/// classifier slot as an unmolded token: the member stays the member and the
+/// block stays whole, and the parse owes one obligation, at the keyword.
+#[test]
+fn a_keyword_in_a_classifier_slot_stands_there_unmolded() -> Result<(), Box<dyn Error>>
+{
+    let pbg = built();
+    let written = "sign Magma {\n    sort M : type;\n}";
+    let result = parse(pbg, SourceText::from(written))?;
+    let start = written.find("type").ok_or("the keyword is written")?;
+    assert_eq!(
+        result
+            .obligations()
+            .iter()
+            .map(|obligation| (
+                obligation.class,
+                usize::from(obligation.span.start()),
+                usize::from(obligation.span.end())
+            ))
+            .collect::<Vec<_>>(),
+        [(Oblig::UnmoldedTok, start, start.saturating_add(4))],
+        "one obligation, over the keyword's own bytes"
+    );
+    let tree = result.tree();
+    let [block] = *significant_children(tree, tree.root()).as_slice()
+    else {
+        panic!("the block is the one form of the source");
+    };
+    let tiles: Vec<String> = significant_children(tree, block)
+        .into_iter()
+        .filter(|&child| matches!(label_of(tree, child), Some(NodeLabel::Tile(_))))
+        .map(|child| text(tree, child))
+        .collect();
+    assert_eq!(
+        tiles,
+        ["sign", "Magma", "{", "sort", "M", ":", ";", "}"],
+        "the member's terminator and the block's closer are the block's own tiles"
+    );
+    let spelled = parse(pbg, SourceText::from("sign Magma {\n    sort M : Type;\n}"))?;
+    assert!(
+        bool::from(spelled.is_clean()),
+        "the classifier spelled `Type` owes nothing"
+    );
     Ok(())
 }
 

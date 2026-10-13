@@ -21,6 +21,7 @@ mod diagnostics
     use gandr_core_checker::TypeNode;
     use gandr_core_term::FailureClass;
     use gandr_surface_corpus::Refusal;
+    use gandr_surface_corpus::Settlement;
     use gandr_surface_diagnostics::AnnotationKind;
     use gandr_surface_diagnostics::Class;
     use gandr_surface_diagnostics::Diagnostic;
@@ -35,6 +36,7 @@ mod diagnostics
     use gandr_surface_diagnostics::diagnose;
     use gandr_surface_diagnostics::report_identifier;
     use gandr_surface_diagnostics::report_span;
+    use gandr_surface_diagnostics::upstream;
     use gandr_surface_dispatcher::Composed;
     use gandr_surface_dispatcher::Goals;
     use gandr_surface_dispatcher::Lints;
@@ -47,6 +49,8 @@ mod diagnostics
     use gandr_surface_dispatcher::compose;
     use gandr_surface_dispatcher::entries;
     use gandr_surface_grammar::built_in;
+    use gandr_surface_lowering::FormFault;
+    use gandr_surface_lowering::LoweringRefusal;
     use gandr_surface_lowering::OriginTable;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::ByteSpan;
@@ -376,6 +380,7 @@ mod diagnostics
             origins: &table,
             spellings,
             failure: failures.get(declaration.constant()),
+            upstream: Maybe::Absent(upstream::Absent::Own),
         })
     }
 
@@ -1468,5 +1473,154 @@ mod diagnostics
                 Class::Refusal(FailureClass::Unrepresentable)
             ),
         ]);
+    }
+
+    #[test]
+    fn a_declaration_naming_a_refused_one_is_a_note()
+    {
+        let text = SourceText::from(
+            "def a() -> Integer {\n  return 1 ~ 2\n}\n\ndef b() -> Integer {\n  return a()\n}\n\ndef \
+             c() -> Integer {\n  return 1\n}\n\ndef d() -> Integer {\n  return c()\n}\n",
+        );
+        let printed = printed(
+            Path::new("cascade.gandr"),
+            SourceRoot::Strict,
+            text,
+            Verb::Check(Goals::Gated),
+        );
+        let called = nth(text, SourceText::from("a()"))[1];
+        let call = ByteSpan::new(
+            called.start(),
+            ByteOffset::from(usize::from(called.start()) + 1),
+        )
+        .expect("ordered");
+        assert_eq!(
+            printed
+                .iter()
+                .map(|diagnostic| (diagnostic.severity, diagnostic.span))
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    Severity::Error,
+                    Maybe::Present(nth(text, SourceText::from("~"))[0])
+                ),
+                (Severity::Note, Maybe::Present(call)),
+            ],
+            "the refused declaration is the one error; the one calling it is a note at the \
+             call, and the one calling a declaration that checks prints nothing"
+        );
+        let Maybe::Present(ref note) = printed[1].note
+        else {
+            panic!("the note closes with what leaves it unsettled");
+        };
+        assert!(
+            note.contains("`b`") && note.contains("`a`"),
+            "the note names the declaration and the refused one it rests on: {note}"
+        );
+    }
+
+    #[test]
+    fn a_malformed_form_reports_its_parse_error_alone()
+    {
+        let grammar = built_in().expect("the built-in grammar builds");
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../surface-corpus/fixture/pathological")
+            .canonicalize()
+            .expect("the corpus is checked out beside this crate");
+        let mut walk = Walk::new(vec![root]);
+        let mut repaired = 0_usize;
+        while let Maybe::Present(step) = walk.step() {
+            let Step::Source { path, text, .. } = step
+            else {
+                continue;
+            };
+            let whole = text.as_ref();
+            let cuts = whole
+                .match_indices([' ', '\n'])
+                .map(|(at, _)| at.saturating_add(1_usize))
+                .chain([whole.len()]);
+            for cut in cuts {
+                let typed = SourceText::from(whole.get(.. cut).expect("a cut at an ASCII byte"));
+                let Ok(composed) = compose(
+                    &grammar,
+                    SourceRoot::Fixture.corpus_root(),
+                    typed,
+                    &mut LoweringCount::default(),
+                )
+                else {
+                    continue;
+                };
+                let step = Step::Source {
+                    path,
+                    root: SourceRoot::Fixture,
+                    text: typed,
+                    composed,
+                    standing: Standing::Unsettled,
+                };
+                let Step::Source {
+                    composed: Composed::Settled { ref report, .. },
+                    ..
+                } = step
+                else {
+                    continue;
+                };
+                let unsettled: Vec<_> = report
+                    .declarations()
+                    .iter()
+                    .filter(|declaration| declaration.settlement() == Settlement::Unsettled)
+                    .collect();
+                let severities: Vec<Severity> = entries(&step, Verb::Check(Goals::Gated))
+                    .map(|diagnostic| diagnostic.severity)
+                    .filter(|&severity| matches!(severity, Severity::Error | Severity::Note))
+                    .collect();
+                assert_eq!(
+                    severities.len(),
+                    unsettled.len(),
+                    "one entry per unsettled declaration"
+                );
+                for malformed in &unsettled {
+                    if !matches!(
+                        malformed.produced().refusal(),
+                        Maybe::Present(Refusal::Lowering(LoweringRefusal::MalformedForm {
+                            fault: FormFault::Repaired(_),
+                            ..
+                        }))
+                    ) {
+                        continue;
+                    }
+                    repaired = repaired.saturating_add(1_usize);
+                    let named: Vec<_> = unsettled
+                        .iter()
+                        .zip(&severities)
+                        .filter(|&(declaration, _)| declaration.name() == malformed.name())
+                        .collect();
+                    assert_eq!(
+                        named
+                            .iter()
+                            .filter(|&&(_, &severity)| severity == Severity::Error)
+                            .count(),
+                        1_usize,
+                        "{} cut at {cut}: `{}` reports its parse error alone",
+                        path.display(),
+                        malformed.name()
+                    );
+                    assert!(
+                        named.iter().all(|&(declaration, _)| !matches!(
+                            declaration.produced().refusal(),
+                            Maybe::Present(Refusal::Lowering(
+                                LoweringRefusal::OutOfFragment { .. }
+                            ))
+                        )),
+                        "{} cut at {cut}: `{}` is malformed, never unsupported",
+                        path.display(),
+                        malformed.name()
+                    );
+                }
+            }
+        }
+        assert!(
+            repaired > 0_usize,
+            "typing the corpus meets malformed forms"
+        );
     }
 }

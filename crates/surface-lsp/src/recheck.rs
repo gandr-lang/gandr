@@ -127,6 +127,11 @@
 //! `ShadowedBuiltin`, the refusal the reject policy files for the same bytes.
 //! Witness: `recheck::tests::a_shadowed_builtin_is_published_as_a_warning`.
 //!
+//! A declaration a refusal elsewhere leaves unsettled — one calling a
+//! declaration the lowering refused — is published at hint severity: the
+//! refusal it rests on is the error, and the author has nothing to fix at the
+//! call. Information is the goal's severity and stays the goal's alone.
+//!
 //! The standing the renderer reads to choose what a pending source prints is
 //! the dispatcher's `Standing::of`, carried into the step by the session's
 //! submission: under the pending root, a source refused whole or carrying a
@@ -474,12 +479,13 @@ pub struct Rechecked
 ///   contexts and note as its message, each context annotation and then each
 ///   located context, outermost first, as a related location carrying its
 ///   label, and the severity of a goal as information, of a warning as a
-///   warning and of every other diagnostic as an error; a diagnostic with no
-///   primary annotation, and a ledger line, at the document's origin. A fault
-///   that keeps the document from composing, and a grammar that did not build,
-///   is one error at the origin naming it. The timing carries the judgement's
-///   form census, the incremental checker's census, and the wall of the whole
-///   recheck; its admission is pending when the judgement left one.
+///   warning, of a note as a hint and of every other diagnostic as an error; a
+///   diagnostic with no primary annotation, and a ledger line, at the
+///   document's origin. A fault that keeps the document from composing, and a
+///   grammar that did not build, is one error at the origin naming it. The
+///   timing carries the judgement's form census, the incremental checker's
+///   census, and the wall of the whole recheck; its admission is pending when
+///   the judgement left one.
 /// - provides: the one recheck every synchronisation publishes.
 /// - fails: never; a fault is a diagnostic.
 /// - panics: none.
@@ -502,7 +508,7 @@ pub struct Rechecked
 /// - witness: `recheck::tests::a_fault_is_published_at_the_origin`
 #[spec(ensures: |ret| ret.diagnostics.iter().all(|diagnostic|
     diagnostic.source == "gandr" && diagnostic.range.start <= diagnostic.range.end
-        && matches!(diagnostic.severity, Severity::ERROR | Severity::WARNING | Severity::INFORMATION)
+        && matches!(diagnostic.severity, Severity::ERROR | Severity::WARNING | Severity::INFORMATION | Severity::HINT)
         && diagnostic.related_information.iter().all(|related|
             related.location.uri == *uri && related.location.range.start <= related.location.range.end)))]
 #[must_use]
@@ -757,7 +763,7 @@ fn diagnostics_of(
             | Seriousness::Ledger => {
                 Diagnostic::at_origin(format!("{}: {}", found.path.display(), found.message.text))
             },
-            | Seriousness::Error | Seriousness::Warning | Seriousness::Goal => {
+            | Seriousness::Error | Seriousness::Warning | Seriousness::Goal | Seriousness::Note => {
                 diagnostic(&found, &index, uri, verbosity)
             },
         })
@@ -799,7 +805,7 @@ fn diagnostics_of(
 /// - witness: `recheck::tests::a_shadowed_builtin_is_published_as_a_warning`
 /// - witness: `session::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
 #[spec(ensures: |ret| ret.source == "gandr"
-    && ret.severity == match found.severity { Seriousness::Goal => Severity::INFORMATION, Seriousness::Warning => Severity::WARNING, _ => Severity::ERROR }
+    && ret.severity == match found.severity { Seriousness::Goal => Severity::INFORMATION, Seriousness::Warning => Severity::WARNING, Seriousness::Note => Severity::HINT, _ => Severity::ERROR }
     && ret.code.is_some() == matches!(found.identifier, Maybe::Present(_))
     && (verbosity == Verbosity::Json || ret.message.starts_with(found.message.text.as_str()))
     && ret.related_information.len() == found.annotations.iter()
@@ -829,6 +835,7 @@ fn diagnostic(
     let severity = match found.severity {
         | Seriousness::Goal => Severity::INFORMATION,
         | Seriousness::Warning => Severity::WARNING,
+        | Seriousness::Note => Severity::HINT,
         | Seriousness::Error | Seriousness::Ledger => Severity::ERROR,
     };
     let message = if verbosity == Verbosity::Json {

@@ -236,6 +236,7 @@ use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
 use crate::attribute::AttributeTable;
+use crate::description::DescriptionFault;
 use crate::doc::Documentation;
 use crate::error::AscriptionForm;
 use crate::error::FormFault;
@@ -2100,22 +2101,32 @@ impl<'source> Collector<'_, 'source>
     }
 
     /// Hold every description and cell refusal raised inside the described
-    /// declaration at `child`, each at its member's own span.
+    /// declaration at `child`, each at its member's own span; a declaration
+    /// whose form the parser repaired is refused by the repair alone.
     ///
     /// # Specification
     /// - requires: `child` is a root child.
-    /// - ensures: one held slot under the family's name per description or cell
-    ///   diagnostic whose span lies inside `child`'s, in report order; nothing
-    ///   for a child the description route did not describe.
+    /// - ensures: when a [`FormFault::Repaired`] refusal lies inside `child`,
+    ///   it is the one refusal filed: offered to the declaration's own slot at
+    ///   `child` when the declaration owns one — so a native reading that
+    ///   refused the form for the same repair keeps one refusal, and a family
+    ///   admitted under its classifier is refused by the repair rather than
+    ///   decoded — and held under the family's name otherwise; with no repair,
+    ///   every diagnostic whose span lies inside `child`'s takes one held slot
+    ///   under the family's name, in report order; nothing for a child the
+    ///   description route did not describe.
     /// - provides: member-local refusal beside native admission: a declined
-    ///   member leaves its family and its siblings standing.
+    ///   member leaves its family and its siblings standing, and a malformed
+    ///   form is reported once, at its repair.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a retired rule arrow inside a data family is held at
     ///   the arrow while the family keeps both generators and the declaration
-    ///   after it lowers.
+    ///   after it lowers; an unended data or codata family is refused once, at
+    ///   its missing close, whatever its members would refuse.
     /// - witness: `description::tests::member_refusals_keep_their_spans_and_other_declarations`
+    /// - witness: `description::tests::an_unended_family_is_refused_once_at_its_close`
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: self.collected.slots.len() >= before,
@@ -2131,7 +2142,23 @@ impl<'source> Collector<'_, 'source>
         };
         let named = entry.named;
         let name = self.name_of(named);
-        for (span, refusal) in self.described_refusals(child) {
+        let refusals = self.described_refusals(child);
+        if let [
+            (
+                _,
+                repaired @ LoweringRefusal::MalformedForm {
+                    fault: FormFault::Repaired(_),
+                    ..
+                },
+            ),
+        ] = refusals[..]
+            && let Maybe::Present(owner) = self.collected.owner_of(child.node)
+            && let Some(slot) = self.collected.slots.get_mut(usize::from(owner))
+        {
+            slot.refuse(child.node, repaired);
+            return;
+        }
+        for (span, refusal) in refusals {
             let introduced = Placed {
                 node: child.node,
                 span,
@@ -2141,18 +2168,26 @@ impl<'source> Collector<'_, 'source>
     }
 
     /// Every description and cell refusal raised inside the declaration at
-    /// `child`, with its member's span, in report order.
+    /// `child`, with its member's span, in report order; the parser's repair
+    /// of the form alone when it repaired one.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the description diagnostics whose span lies inside `child`'s,
-    ///   then the cell diagnostics, each with its own span.
+    /// - ensures: the one [`FormFault::Repaired`] refusal the description route
+    ///   raised inside `child`'s span when it raised one; otherwise the
+    ///   description diagnostics whose span lies inside `child`'s, then the
+    ///   cell diagnostics, each with its own span.
+    /// - provides: the cascade cut for described declarations: what a reading
+    ///   of a repaired form refuses follows from the repair and is not reported
+    ///   beside it.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::hold_described_refusals`] and
-    ///   [`Self::refuse_signature`].
+    ///   [`Self::refuse_signature`]; an unended `sign` block whose last member
+    ///   the cell gate refuses is refused once, at its missing close.
     /// - witness: `description::tests::member_refusals_keep_their_spans_and_other_declarations`
+    /// - witness: `description::tests::an_unended_family_is_refused_once_at_its_close`
     #[spec(ensures: |ret| ret.iter().all(|&(span, _)| span.start() >= child.span.start() && span.end() <= child.span.end()))]
     fn described_refusals(
         &self,
@@ -2161,10 +2196,18 @@ impl<'source> Collector<'_, 'source>
     {
         let inside =
             |span: ByteSpan| span.start() >= child.span.start() && span.end() <= child.span.end();
-        self.collected
+        let described = self
+            .collected
             .description_diagnostics
             .iter()
-            .filter(|diagnostic| inside(diagnostic.span))
+            .filter(|diagnostic| inside(diagnostic.span));
+        if let Some(repaired) = described
+            .clone()
+            .find(|diagnostic| matches!(diagnostic.fault, DescriptionFault::Repaired { .. }))
+        {
+            return Vec::from([(repaired.span, repaired.lowering_refusal())]);
+        }
+        described
             .map(|diagnostic| (diagnostic.span, diagnostic.lowering_refusal()))
             .chain(
                 self.collected
@@ -3430,6 +3473,14 @@ struct Carried(bool);
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct SignatureRefused(bool);
+
+/// Whether a container's body declares a name in a form the parser repaired.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct MemberRepaired(bool);
 
 quenchant_shape::reason_enum! {
     /// Why a signature type sees no manifest type component.
@@ -4904,6 +4955,7 @@ impl<'source> Collector<'_, 'source>
                     scope: Maybe::Present(scope),
                 });
             },
+            | Maybe::Absent(_) if self.repaired_member(container, component.name).0 => {},
             | Maybe::Absent(_) => {
                 let refusal = LoweringRefusal::UnknownMember {
                     span: component.named.span,
@@ -4921,6 +4973,51 @@ impl<'source> Collector<'_, 'source>
         }
 
         Ok(found)
+    }
+
+    /// Whether `container`'s body declares `name` in a form the parser
+    /// repaired: the member is written, and its own refusal reports it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: affirmative exactly when some slot of `container` named
+    ///   `name` carries a [`FormFault::Repaired`] refusal.
+    /// - provides: the cascade cut for a component naming a malformed member:
+    ///   the member's parse error stands alone, with no unknown-member error
+    ///   beside it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a nested module left open is reported at its missing
+    ///   close alone, its parent's signature component naming it raising
+    ///   nothing.
+    /// - witness: `modules::modules::a_malformed_member_named_by_the_signature_is_reported_once`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks the slots once for the answer; the check walks them once more"
+        )
+    )]
+    #[spec(ensures: |ret| ret.0 == self.collected.slots.iter().any(|slot| slot.container == container && slot.name == name && matches!(slot.refusal, Maybe::Present((_, LoweringRefusal::MalformedForm { fault: FormFault::Repaired(_), .. })))))]
+    fn repaired_member(
+        &self,
+        container: Container,
+        name: SurfaceName<'source>,
+    ) -> MemberRepaired
+    {
+        MemberRepaired(self.collected.slots.iter().any(|slot| {
+            slot.container == container
+                && slot.name == name
+                && matches!(
+                    slot.refusal,
+                    Maybe::Present((_, LoweringRefusal::MalformedForm {
+                        fault: FormFault::Repaired(_),
+                        ..
+                    }))
+                )
+        }))
     }
 
     /// The member `container`'s body declares under `name`.

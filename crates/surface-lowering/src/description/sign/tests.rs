@@ -748,12 +748,19 @@ fn a_member_with_no_judgment_head_declines_rather_than_vanishing()
 {
     let source = "sign Broken {\n  sort Nat : Type;\n  rule ;\n}\n";
     let report = described(source);
-    assert!(report.diagnostics.iter().any(|diagnostic| {
-        diagnostic.fault == DescriptionFault::Signature(SignatureFault::WrittenFace)
-            && source
-                .get(usize::from(diagnostic.span.start()) .. usize::from(diagnostic.span.end()))
-                .is_some_and(|text| text.starts_with("rule"))
-    }));
+    let [ref diagnostic] = *report.diagnostics.as_slice()
+    else {
+        panic!(
+            "the repaired block is refused once: {:?}",
+            report.diagnostics
+        )
+    };
+    assert!(
+        matches!(diagnostic.fault, DescriptionFault::Repaired { .. })
+            && diagnostic.span.start()
+                >= gandr_surface_syntax::ByteOffset::from(source.find("rule").unwrap()),
+        "the parser's repair of the headless member is the block's refusal: {diagnostic:?}"
+    );
 }
 
 #[test]
@@ -772,12 +779,17 @@ fn unseparated_members_are_declined_rather_than_dropped()
 {
     let source = "sign S {\n  sort Ob : Type\n  sort Ar : Type\n}\n";
     let report = described(source);
-    assert!(report.diagnostics.iter().any(|diagnostic| {
-        diagnostic.fault == DescriptionFault::Malformed
-            && source
-                .get(usize::from(diagnostic.span.start()) .. usize::from(diagnostic.span.end()))
-                .is_some_and(|text| text.contains("sort Ob") && text.contains("sort Ar"))
-    }));
+    let [ref diagnostic] = *report.diagnostics.as_slice()
+    else {
+        panic!(
+            "the repaired block is refused once: {:?}",
+            report.diagnostics
+        )
+    };
+    assert!(
+        matches!(diagnostic.fault, DescriptionFault::Repaired { .. }),
+        "the missing separator is the block's refusal: {diagnostic:?}"
+    );
     assert!(
         report.declarations[0]
             .description

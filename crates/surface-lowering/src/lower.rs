@@ -15375,6 +15375,38 @@ mod tests
     }
 
     #[test]
+    fn a_keyword_in_a_classifier_slot_is_read_with_its_offer()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let pbg = grammar();
+        let tree = repaired(
+            &pbg,
+            SourceText::from("sign Magma {\n  sort M : type;\n}\n"),
+        );
+        let LoweringRefusal::MalformedForm { span, fault, .. } = refusal_in(&pbg, &tree)
+        else {
+            panic!("a keyword in a classifier slot refuses its form");
+        };
+        assert_eq!(
+            span,
+            at(24_usize, 28_usize),
+            "the refusal stands at the keyword itself"
+        );
+        let FormFault::Repaired(Repair::Keyword(stray)) = fault
+        else {
+            panic!("the grout over `type` reads as the keyword, not a missing term: {fault:?}");
+        };
+        assert_eq!(
+            (stray.written, stray.offer),
+            (
+                crate::form::TileName::TYPE,
+                crate::form::Offer::Capitalised(crate::form::TileName::UNIVERSE)
+            ),
+            "the keyword is named and the universe spelled with a capital is offered"
+        );
+    }
+
+    #[test]
     fn an_unended_form_names_its_missing_tile_where_it_belongs()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));

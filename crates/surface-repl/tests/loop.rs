@@ -272,7 +272,7 @@ mod tests
             .into_step(Path::new(""));
         entries(&step, Verb::Check(Goals::Reported))
             .filter_map(|diagnostic| match diagnostic.severity {
-                | Severity::Error | Severity::Warning => Some((
+                | Severity::Error | Severity::Note | Severity::Warning => Some((
                     OutKind::Diag,
                     render(&diagnostic, style, Verbosity::User)
                         .to_string()

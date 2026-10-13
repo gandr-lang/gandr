@@ -95,6 +95,7 @@ use crate::style::Rendered;
     Verbosity::User | Verbosity::Detailed | Verbosity::Debug => match (style, diagnostic.severity) {
         (_, Severity::Ledger) => !ret.as_ref().contains('\u{1b}'),
         (RenderStyle::Plain, Severity::Goal) => ret.as_ref().starts_with("goal"),
+        (RenderStyle::Plain, Severity::Note) => ret.as_ref().starts_with("note"),
         (RenderStyle::Plain, Severity::Warning) => ret.as_ref().starts_with("warning"),
         (RenderStyle::Plain, Severity::Error) => ret.as_ref().starts_with("error"),
         (RenderStyle::Styled, _) => ret.as_ref().contains("\u{1b}["),
@@ -122,6 +123,7 @@ pub fn render(
             return Rendered::from(alloc::format!("{origin}: {}", diagnostic.message.text));
         },
         | Severity::Goal => Level::INFO.with_name("goal"),
+        | Severity::Note => Level::NOTE,
         | Severity::Warning => Level::WARNING,
         | Severity::Error => Level::ERROR,
     };

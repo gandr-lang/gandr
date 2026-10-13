@@ -674,10 +674,17 @@ fn a_constructor_led_member_of_a_codata_block_declines()
     );
     let report = elaborated(SourceText::from("codata Boxed : Type { Mk : Boxed; }"));
     assert!(report.declarations[0].description.ctors.is_empty());
-    assert!(report.diagnostics.iter().any(|diagnostic| matches!(
-        diagnostic.fault,
-        DescriptionFault::MemberPolarity | DescriptionFault::Malformed
-    )));
+    let [ref diagnostic] = *report.diagnostics.as_slice()
+    else {
+        panic!(
+            "the repaired block is refused once: {:?}",
+            report.diagnostics
+        )
+    };
+    assert!(
+        matches!(diagnostic.fault, DescriptionFault::Repaired { .. }),
+        "the parser's repair of the constructor-led member is the block's refusal"
+    );
 }
 
 #[test]
@@ -757,6 +764,65 @@ fn member_refusals_keep_their_spans_and_other_declarations()
     );
     assert!(matches!(later.outcome(), DeclarationOutcome::Bodied { .. }));
     assert_eq!(later.name().as_ref(), "later");
+}
+
+#[test]
+fn an_unended_family_is_refused_once_at_its_close()
+{
+    use crate::DeclarationOutcome;
+    use crate::LoweringBudget;
+    use crate::fixture::repaired;
+    use crate::lower_module;
+    use crate::namespace::Recognition;
+    let grammar = grammar();
+    for (source, why) in [
+        (
+            "data Bit : Type {\n  Zero : Bit;\n  One : Bit;\n  rule and(x, x) ==> x;\n",
+            "a data family whose last member the cell gate refuses",
+        ),
+        (
+            "codata Point : Type {\n  x : Integer;\n",
+            "a codata family the decoder would refuse",
+        ),
+    ] {
+        let tree = repaired(&grammar, source.into());
+        let mut arena = gandr_core_term::CoreArena::new();
+        let module = lower_module(
+            &grammar,
+            &tree,
+            &mut arena,
+            LoweringBudget::DEFAULT,
+            Recognition::default(),
+        )
+        .unwrap();
+        let refusals: Vec<_> = module
+            .declarations()
+            .iter()
+            .filter_map(|declaration| match declaration.outcome() {
+                | DeclarationOutcome::Refused(refusal) => Some(refusal),
+                | _ => None,
+            })
+            .collect();
+        let end = gandr_surface_syntax::ByteOffset::from(source.trim_end().len());
+        let [
+            LoweringRefusal::MalformedForm {
+                span,
+                fault: crate::FormFault::Repaired(repair),
+                ..
+            },
+        ] = refusals[..]
+        else {
+            panic!("{why}: one refusal, its parse error: {refusals:?}");
+        };
+        assert_eq!(
+            (span, repair),
+            (
+                ByteSpan::new(end, end).unwrap(),
+                crate::Repair::GhostClose(gandr_surface_syntax::ClosingClass::Brace)
+            ),
+            "{why}: the refusal is the missing close, where it belongs"
+        );
+    }
 }
 
 #[test]

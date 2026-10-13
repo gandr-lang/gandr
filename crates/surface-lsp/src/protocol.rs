@@ -1008,6 +1008,9 @@ impl Severity
     pub const WARNING: Self = Self(2);
     /// Information: a goal the document leaves open.
     pub const INFORMATION: Self = Self(3);
+    /// A hint: a declaration a refusal elsewhere in the document leaves
+    /// unsettled, reported beside that refusal rather than as an error.
+    pub const HINT: Self = Self(4);
 }
 
 /// A locus that explains a diagnostic.

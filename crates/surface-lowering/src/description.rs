@@ -86,7 +86,9 @@ use crate::LoweringRefusal;
 use crate::form::Piece;
 use crate::form::Pieces;
 use crate::form::Placed;
+use crate::form::Shape;
 use crate::form::read_pieces;
+use crate::form::shape_of;
 
 /// A finite multiplicity decorating a field.
 #[repr(transparent)]
@@ -107,8 +109,18 @@ pub enum DescriptionGrade
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DescriptionFault
 {
-    /// The written shape is incomplete or carries parser repair.
+    /// The written shape is incomplete.
     Malformed,
+    /// The parser repaired the declaration's form: the declaration's one
+    /// refusal, whatever its reading would add.
+    Repaired
+    {
+        /// The repair, read where it stands.
+        repaired: crate::form::Repaired,
+        /// The form the repair is reported against when it stands among the
+        /// declaration's own children.
+        form: crate::FormName,
+    },
     /// Family parameters must be typed and the head must declare its index
     /// arity.
     FamilyHead,
@@ -172,6 +184,7 @@ impl DescriptionDiagnostic
             boundary,
         };
         match self.fault {
+            | DescriptionFault::Repaired { repaired, form } => repaired.refusal(form),
             | DescriptionFault::HigherOrderField
             | DescriptionFault::TypeShape
             | DescriptionFault::NativeDecode(_)
@@ -408,7 +421,10 @@ impl<'pieces> Run<'pieces>
 /// - requires: `grammar` interprets `tree`.
 /// - ensures: declarations and diagnostics follow source order; unreadable
 ///   members never disappear without a located refusal; descriptions run
-///   through `check_desc`.
+///   through `check_desc`. A declaration whose own form the parser repaired
+///   carries exactly one diagnostic, [`DescriptionFault::Repaired`] at the
+///   repair: a parse error is reported alone, never beside the refusals its
+///   repaired reading would raise.
 /// - fails: grammar lookup failures return the existing lowering refusal.
 /// - panics: none.
 ///
@@ -418,8 +434,10 @@ impl<'pieces> Run<'pieces>
 /// # Adequacy
 /// - hypothesis: L3 — exact constructor codes, refusal spans and surviving
 ///   siblings distinguish a dropped member, a substituted field and an
-///   incorrectly global refusal.
+///   incorrectly global refusal; a `sign` with a keyword in a member's
+///   classifier slot is refused once, at the keyword.
 /// - witness: `description::tests::data_lowering_preserves_constructor_fields`
+/// - witness: `lower::tests::a_keyword_in_a_classifier_slot_is_read_with_its_offer`
 #[inline]
 #[spec(ensures: |result| result.as_ref().map_or(true, |report| report.declarations.iter().all(|entry| tree.node(entry.at.node).is_some())))]
 pub fn elaborate_descriptions<'source>(
@@ -446,6 +464,7 @@ pub fn elaborate_descriptions<'source>(
         let mut run = Run::new(&pieces.pieces, at.span);
         let serial =
             NominalSerial::from(u64::try_from(report.declarations.len()).unwrap_or(u64::MAX));
+        let reported = report.diagnostics.len();
         let declaration = if run.eat(Spelling("data")).0 {
             reader.declaration(
                 at,
@@ -474,10 +493,26 @@ pub fn elaborate_descriptions<'source>(
             continue;
         };
         if let Maybe::Present(repair) = pieces.repair {
+            // A declaration whose form carries a parse error reports that error
+            // alone: what its reading of the repaired form refused follows from
+            // the repair, so it is dropped with the reading's own diagnostics.
+            report.diagnostics.truncate(reported);
             report.diagnostics.push(DescriptionDiagnostic {
                 span: repair.span,
-                fault: DescriptionFault::Malformed,
+                fault: DescriptionFault::Repaired {
+                    repaired: repair,
+                    form: match shape_of(grammar, node)? {
+                        | Shape::Form { name, .. } => name,
+                        | Shape::Root | Shape::Layout | Shape::Repair(_) => {
+                            crate::FormName::DECLARATION
+                        },
+                    },
+                },
             });
+            if let Ok(declaration) = declaration {
+                report.declarations.push(declaration);
+            }
+            continue;
         }
         match declaration {
             | Ok(declaration) => {

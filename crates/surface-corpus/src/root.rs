@@ -41,13 +41,15 @@
 //! The language's own surface programs — the model programs, the pathological
 //! cases and the surface families — are kept in their own subdirectories with
 //! their commentary removed. The parser reads every source here as its
-//! zero-obligation gate, and the highlighter's role golden in
-//! `gandr-surface-grammar` mirrors every source: a source added, moved between
-//! roots or removed is followed by `UPDATE_EXPECT=1 cargo nextest run -p
-//! gandr-surface-grammar`, which rewrites the golden to match. The parser's
-//! recovery record mirrors every `strict/` and `fixture/` source the same way:
-//! `UPDATE_EXPECT=1 GANDR_RECOVERY_SOURCE=<path here> mise run ci:recovery`
-//! re-records one source, and the diff is read for recovery regressions.
+//! zero-obligation gate — a pathological source whose point is a parse error
+//! is pinned there to exactly the obligations it owes — and the highlighter's
+//! role golden in `gandr-surface-grammar` mirrors every source: a source added,
+//! moved between roots or removed is followed by `UPDATE_EXPECT=1 cargo
+//! nextest run -p gandr-surface-grammar`, which rewrites the golden to match.
+//! The parser's recovery record mirrors every `strict/` and `fixture/` source
+//! the same way: `UPDATE_EXPECT=1 GANDR_RECOVERY_SOURCE=<path here> mise run
+//! ci:recovery` re-records one source, and the diff is read for recovery
+//! regressions.
 //!
 //! No count is pinned. The runner's report says how many sources each root
 //! holds, how many declarations settled, the ledger size and the seal, and its

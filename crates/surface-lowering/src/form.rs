@@ -56,6 +56,7 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use anodized::spec;
+use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::NamedKind;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_syntax::ByteOffset;
@@ -958,12 +959,54 @@ pub enum Repair
     /// Grout standing where the source wrote no term, or over a token no
     /// label molds.
     Grout(GroutShape),
+    /// Grout over a reserved word of the grammar written where its form takes
+    /// a term: the parser could mold the word nowhere there.
+    Keyword(StrayKeyword),
     /// A closing tile of this family that the source never wrote.
     GhostClose(ClosingClass),
     /// The tile that ends a form the source never finished: the reading of
     /// the parser's postfix grout, the ghost end it appends to a form whose
     /// end is no paired closer (a definition's `;`, a string's `"`).
     Unended(Ending),
+}
+
+/// A reserved word standing where its form takes a term, and the tile the
+/// grammar spells the same word with a capital, which a term can be.
+///
+/// # Specification
+/// - requires: the grammar supplies both spellings.
+/// - ensures: `written` is the word as written, a tile label of the grammar;
+///   `offer` is that word with its first letter capitalised when that is a tile
+///   label too.
+/// - provides: what a message names and what it offers in its stead.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the grammar is absent from the value.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the keyword `type` in a `sign` member's classifier slot
+///   is read with `Type` offered.
+/// - witness: `lower::tests::a_keyword_in_a_classifier_slot_is_read_with_its_offer`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct StrayKeyword
+{
+    /// The word as written.
+    pub written: TileName,
+    /// What the grammar offers in the word's stead.
+    pub offer: Offer,
+}
+
+/// What a keyword out of place is offered in its stead.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Offer
+{
+    /// The tile the grammar spells the word with a capital.
+    Capitalised(TileName),
+    /// The grammar has no tile spelled the word with a capital.
+    Unspelled,
 }
 
 /// The tile a form the source never finished ends with.
@@ -1009,6 +1052,9 @@ impl fmt::Display for Repair
                 f.write_str("grout for a missing operand")
             },
             | Self::Grout(GroutShape::Infix) => f.write_str("grout for a missing operator"),
+            | Self::Keyword(stray) => {
+                write!(f, "the keyword `{}` where a term belongs", stray.written.0)
+            },
             | Self::GhostClose(ClosingClass::Paren) => f.write_str("a `)` the source never wrote"),
             | Self::GhostClose(ClosingClass::Bracket) => {
                 f.write_str("a `]` the source never wrote")
@@ -1571,7 +1617,9 @@ impl Default for Pieces
                         .find_map(|child| {
                             let held = tree.node(child)?;
                             let repair = match held.label() {
-                                | NodeLabel::Grout { shape, .. } => Repair::Grout(shape),
+                                | NodeLabel::Grout { shape, .. } => {
+                                    grouted(pbg, tree, child, shape)
+                                },
                                 | NodeLabel::GhostClose { class, .. } => {
                                     Repair::GhostClose(class)
                                 },
@@ -1661,7 +1709,7 @@ pub fn read_pieces<'source>(
         let piece = match held.label() {
             | NodeLabel::Space | NodeLabel::Doc => continue,
             | NodeLabel::Grout { shape, .. } => {
-                note_repair(read, placed, Repair::Grout(shape));
+                note_repair(read, placed, grouted(pbg, tree, child, shape));
                 continue;
             },
             | NodeLabel::GhostClose { class, .. } => {
@@ -1863,7 +1911,7 @@ fn nested_repair<'source>(
                 continue;
             };
             let repair = match held.label() {
-                | NodeLabel::Grout { shape, .. } => Repair::Grout(shape),
+                | NodeLabel::Grout { shape, .. } => grouted(pbg, tree, child, shape),
                 | NodeLabel::GhostClose { class, .. } => Repair::GhostClose(class),
                 | NodeLabel::Meld(_) => {
                     forms.push((child, depth.saturating_add(1_usize)));
@@ -1901,6 +1949,67 @@ fn nested_repair<'source>(
         },
         | Maybe::Present((_, _, found)) => Maybe::Present(found),
         | Maybe::Absent(reason) => Maybe::Absent(reason),
+    })
+}
+
+/// The repair a grout child `grout` of shape `shape` reads as: a
+/// [`Repair::Keyword`] when it is convex and stands over a lowercase word the
+/// grammar spells as a tile of its own, plain grout otherwise.
+///
+/// The parser grouts a reserved word where it cannot mold it, as it grouts a
+/// byte no label molds; a word that is a tile of the grammar is one of its
+/// keywords, and the message names it rather than calling the bytes a missing
+/// term. The word with its first letter capitalised is offered in its stead
+/// when the grammar spells a tile that way: `type` where a classifier belongs
+/// offers the universe `Type`.
+///
+/// # Specification
+/// - requires: `grout` is a grout node of `tree` of shape `shape`.
+/// - ensures: [`Repair::Keyword`] exactly when `shape` is convex and the
+///   grout's bytes are a nonempty run of lowercase ASCII letters and
+///   underscores that `pbg` declares as a tile label, its offer the capitalised
+///   spelling when `pbg` declares that label too; [`Repair::Grout`] of `shape`
+///   otherwise.
+/// - provides: the one reading of grout every repair reader takes.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the keyword `type` grouted in a classifier slot reads
+///   with `Type` offered, at the keyword's own bytes; reading it as a missing
+///   term, or offering nothing, changes the observation.
+/// - witness: `lower::tests::a_keyword_in_a_classifier_slot_is_read_with_its_offer`
+#[spec(ensures: |ret| shape == GroutShape::Convex || matches!(ret, Repair::Grout(_)))]
+fn grouted(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'_>,
+    grout: NodeIndex,
+    shape: GroutShape,
+) -> Repair
+{
+    if shape != GroutShape::Convex {
+        return Repair::Grout(shape);
+    }
+    let written: &str = tree.fragment(grout).map_or("", <&str>::from);
+    let worded = !written.is_empty()
+        && written
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte == b'_');
+    let Some(label) = worded.then(|| pbg.tile_label(LabelText(written))).flatten()
+    else {
+        return Repair::Grout(shape);
+    };
+    let mut capitalised = alloc::string::String::from(written);
+    if let Some(first) = capitalised.get_mut(.. 1) {
+        first.make_ascii_uppercase();
+    }
+    let offer = match pbg.tile_label(LabelText(&capitalised)) {
+        | Some(offered) => Offer::Capitalised(TileName(offered.0)),
+        | None => Offer::Unspelled,
+    };
+    Repair::Keyword(StrayKeyword {
+        written: TileName(label.0),
+        offer,
     })
 }
 
